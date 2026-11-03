@@ -103,16 +103,3 @@ func writeChildRecordIn(root *os.Root, rec childRecord) error {
 	}
 	return nil
 }
-
-// removeChildRecordIn removes children/<pid>.json below root, which is the run dir. It
-// is one plain remove of one name, never recursive, and the os.Root keeps it inside the
-// run dir. A record that does not exist is not an error. As 89cb6289 does, the remove
-// goes through a children symlink that stays inside the run dir (Linux rows SLa, SLb,
-// macOS KDa, KDb). A symlink that leads out is refused (measured).
-func removeChildRecordIn(root *os.Root, pid int) error {
-	err := root.Remove(childRecordName(pid))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	return err
-}

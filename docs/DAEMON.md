@@ -42,7 +42,7 @@ section. The other marks are those of the [protocol reference](PROTOCOL.md).
 
 ## Token persistence (`daemon.token`)
 
-The file sits beside the socket, off the JSON-RPC wire. With it a client can
+[Transport](PROTOCOL.md#transport) gives the mode of the socket. With `daemon.token` a client can
 reconnect and authenticate after the `-token-file` was unlinked, or after the
 `-token-fd` pipe closed.
 
