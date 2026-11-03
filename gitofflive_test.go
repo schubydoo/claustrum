@@ -11,31 +11,29 @@ import (
 	"time"
 )
 
-// liveFixture is a socket daemon with no start test yet and the stub git of
-// newShadowFixture. Repository A is the repository of that fixture, and B is a
-// second repository. gate1 is the gate of the first rule of the stub, gate2 that
-// of the second rule.
+// liveFixture is the git state of a daemon with no start test yet and the
+// stub git of newShadowFixture. Each request runs in a goroutine of its own on
+// that one state. Repository A is the repository of that fixture, and B is a
+// second repository. gate1 is the gate of the first rule of the stub, gate2
+// that of the second rule.
 type liveFixture struct {
 	shadowFixture
-	s     *server
-	cl    *testClient
+	g     *gitRequests
 	repoB string
 	none  string
 	gate1 string
 	gate2 string
-	sent  *[]int
 }
 
 func newLiveFixture(t *testing.T) liveFixture {
 	t.Helper()
 	f := newShadowFixture(t)
-	s, sock := newRunningServer(t)
 	repoB, _ := configRepo(t)
 	dir := t.TempDir()
 	h := liveFixture{
-		shadowFixture: f, s: s, cl: dial(t, sock), repoB: repoB,
+		shadowFixture: f, g: newGitRequests(f.d), repoB: repoB,
 		none:  resolveTestRoot(t, t.TempDir()),
-		gate1: filepath.Join(dir, "gate1"), gate2: filepath.Join(dir, "gate2"), sent: new([]int),
+		gate1: filepath.Join(dir, "gate1"), gate2: filepath.Join(dir, "gate2"),
 	}
 	t.Setenv("CLAUSTRUM_GITSTUB_GATE", h.gate1)
 	t.Setenv("CLAUSTRUM_GITSTUB_GATE2", h.gate2)
@@ -46,50 +44,29 @@ func newLiveFixture(t *testing.T) liveFixture {
 	t.Cleanup(func() {
 		h.open(h.gate1)
 		h.open(h.gate2)
-		for _, n := range *h.sent {
-			for end := time.Now().Add(time.Minute); time.Now().Before(end) && h.raw(n) == ""; time.Sleep(5 * time.Millisecond) {
-			}
+		if !h.g.wait(time.Minute) {
+			t.Error("a request did not answer within 60 s of the release")
 		}
 	})
 	return h
 }
 
-// send writes one request with the id n.
+// send starts one request with the id n.
 func (h liveFixture) send(t *testing.T, n int, method string, params map[string]any) {
 	t.Helper()
-	raw, err := json.Marshal(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	*h.sent = append(*h.sent, n)
-	h.cl.send(authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(n) + `,"method":"` + method + `","params":` + string(raw) + `}`))
+	h.g.start(n, rpcLine(t, method, params))
 }
 
 // raw is the reply with the id n, or "" before it came.
-func (h liveFixture) raw(n int) string {
-	h.cl.mu.Lock()
-	defer h.cl.mu.Unlock()
-	for _, line := range h.cl.resp {
-		var r struct {
-			ID int `json:"id"`
-		}
-		if json.Unmarshal(line, &r) == nil && r.ID == n {
-			return string(line)
-		}
-	}
-	return ""
+func (h liveFixture) raw(t *testing.T, n int) string {
+	t.Helper()
+	return h.g.raw(t, n)
 }
 
 // reply waits up to 60 s for the reply with the id n.
 func (h liveFixture) reply(t *testing.T, n int) string {
 	t.Helper()
-	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
-		if r := h.raw(n); r != "" {
-			return r
-		}
-	}
-	t.Fatalf("no reply with the id %d within 60 s", n)
-	return ""
+	return h.g.reply(t, n)
 }
 
 // waitIn waits up to 60 s until the stub holds a call at gate.
@@ -205,7 +182,7 @@ func TestShadowNoRepoInfoWaitsForARunningStartTest(t *testing.T) {
 			h.waitCalls(t, n+1)
 			h.send(t, 4, "git.list_branches", map[string]any{"path": h.none})
 			h.reply(t, 4)
-			if r := h.raw(3); r != "" {
+			if r := h.raw(t, 3); r != "" {
 				t.Fatalf("T2: git.info answered %s while the start test ran, want a wait", r)
 			}
 			h.open(h.gate2)
@@ -234,7 +211,7 @@ func TestShadowNoRepoStatusAndBranchesDoNotWait(t *testing.T) {
 	if got := liveResult(t, h.reply(t, 3)); got != `{"isRepo":false,"branches":[]}` {
 		t.Errorf("T5b: git.list_branches = %s", got)
 	}
-	if r := h.raw(1); r != "" {
+	if r := h.raw(t, 1); r != "" {
 		t.Fatalf("git.info answered %s before the gate opened: the test did not hold", r)
 	}
 }
@@ -330,7 +307,7 @@ func TestShadowMissingPathInfoWaitsForARunningStartTest(t *testing.T) {
 	// sent after id 2, marks a time at which id 2 had the chance to answer.
 	h.send(t, 3, "git.list_branches", map[string]any{"path": h.none})
 	h.reply(t, 3)
-	if r := h.raw(2); r != "" {
+	if r := h.raw(t, 2); r != "" {
 		t.Fatalf("T7: git.info answered %s while the start test ran, want a wait", r)
 	}
 	h.open(h.gate2)
@@ -358,7 +335,7 @@ func TestShadowHoldThatStartsDuringTheWaitCountsAtTheReply(t *testing.T) {
 			t.Fatal("id 2 reached no wait within 60 s")
 		}
 	}
-	if r := h.raw(2); r != "" {
+	if r := h.raw(t, 2); r != "" {
 		t.Fatalf("git.info answered %s while the start test ran, want a wait", r)
 	}
 	h.send(t, 4, "git.info", map[string]any{"path": h.repoB, "shadowDirOff": true})
