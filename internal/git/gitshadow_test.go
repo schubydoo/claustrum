@@ -601,6 +601,68 @@ func TestShadowDeleteRefusesHome(t *testing.T) {
 	}
 }
 
+// TestShadowOneEntryRemoveRefusesHome pins the home guard of removeOneEntry.
+// The home folder of the test is an empty folder below git-shadow, the one
+// kind of folder that a plain remove deletes. It is a folder of the test, so a
+// run without the guard deletes nothing else.
+func TestShadowOneEntryRemoveRefusesHome(t *testing.T) {
+	run := resolveTestRoot(t, t.TempDir())
+	home := filepath.Join(run, shadowRootName, "empty")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(homeEnvVar(), home)
+	h := NewShadowHost(run)
+	if err := h.removeOneEntry("empty"); err == nil {
+		t.Error("removeOneEntry deleted the home folder")
+	}
+	if _, err := os.Stat(home); err != nil {
+		t.Errorf("the home folder: %v", err)
+	}
+	// The control: with the home folder elsewhere the same call deletes.
+	t.Setenv(homeEnvVar(), t.TempDir())
+	if err := h.removeOneEntry("empty"); err != nil {
+		t.Errorf("removeOneEntry with the home folder elsewhere: %v", err)
+	}
+	if _, err := os.Lstat(home); !os.IsNotExist(err) {
+		t.Errorf("the folder after the control delete: %v, want it gone", err)
+	}
+}
+
+// TestShadowLinkRemoveRefusesHome pins the home guard of removeLink. The home
+// folder of the test is a link below git-shadow to a folder of the test. A run
+// without the guard deletes that link only, and the target stays.
+func TestShadowLinkRemoveRefusesHome(t *testing.T) {
+	run := resolveTestRoot(t, t.TempDir())
+	target := filepath.Join(run, "target")
+	writeFile(t, filepath.Join(target, "keep.txt"), "x", 0o644)
+	if err := os.MkdirAll(filepath.Join(run, shadowRootName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(run, shadowRootName, "link")
+	symlinkOrSkip(t, target, link)
+	t.Setenv(homeEnvVar(), link)
+	h := NewShadowHost(run)
+	if err := h.removeLink("link"); err == nil {
+		t.Error("removeLink deleted the link that is the home folder")
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Errorf("the link that is the home folder: %v", err)
+	}
+	// The control: with the home folder elsewhere the same call deletes the
+	// link, and the target stays.
+	t.Setenv(homeEnvVar(), t.TempDir())
+	if err := h.removeLink("link"); err != nil {
+		t.Errorf("removeLink with the home folder elsewhere: %v", err)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Errorf("the link after the control delete: %v, want it gone", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "keep.txt")); err != nil {
+		t.Errorf("the file in the target: %v", err)
+	}
+}
+
 // TestShadowTestCopyTexts pins the two texts of HEAD and of the config in the
 // folder `shadow` of the start test, and the step of each. 5fd08069 writes `ref:
 // refs/heads/.invalid` and a config of 61 bytes first. Later it writes the HEAD

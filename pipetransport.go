@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // pipeNameFileName is the fixed basename the daemon writes the chosen named-pipe
@@ -50,12 +52,12 @@ func removePipeNameFile(socket string) {
 	path := pipeNameFilePath(socket)
 	if _, err := os.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
-			logErrorf("[Server] failed to stat pipe-name file: %v", err)
+			logging.Errorf("[Server] failed to stat pipe-name file: %v", err)
 		}
 		return
 	}
 	if err := os.Remove(path); err != nil {
-		logErrorf("[Server] failed to remove pipe-name file: %v", err)
+		logging.Errorf("[Server] failed to remove pipe-name file: %v", err)
 	}
 }
 
@@ -80,7 +82,7 @@ func pipeNameFileIdentity(socket string) os.FileInfo {
 // the startup stale-clear, where there is no successor to protect.
 func removePipeNameFileIfOwned(socket string, owned os.FileInfo) {
 	if err := removeIfStillOurs(pipeNameFilePath(socket), owned); err != nil {
-		logErrorf("[Server] failed to remove pipe-name file: %v", err)
+		logging.Errorf("[Server] failed to remove pipe-name file: %v", err)
 	}
 }
 

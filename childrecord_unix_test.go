@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // runShapedServer boots the harness daemon on <base>/run/c1/rpc.sock, the socket shape
@@ -46,7 +48,7 @@ func spawnSleeper(t *testing.T, cl *testClient, id string) int {
 		t.Fatal(err)
 	}
 	var reply struct {
-		Result spawnResult `json:"result"`
+		Result rpc.SpawnResult `json:"result"`
 	}
 	raw := cl.call(string(body))
 	if err := json.Unmarshal(raw, &reply); err != nil || reply.Result.Pid == 0 {
@@ -174,7 +176,7 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reply struct {
-		Result spawnResult `json:"result"`
+		Result rpc.SpawnResult `json:"result"`
 	}
 	raw := cl.call(string(body))
 	if err := json.Unmarshal(raw, &reply); err != nil || reply.Result.Pid == 0 {

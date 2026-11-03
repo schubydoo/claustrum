@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // runlockHoldFixture is the "runlock-hold" helper mode: take the flock on args[0],
@@ -892,7 +894,7 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 func TestNewServerOnSocketWritesRunLock(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	s, err := newServerOnSocket(sock, "tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
