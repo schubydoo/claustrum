@@ -71,7 +71,7 @@ func machineID() string {
 // shares its field-22 parser. Returns 0 when the process is gone or stat cannot be
 // parsed.
 func procStartTicks(pid int) int64 {
-	b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/stat")
+	b, err := os.ReadFile(procRoot() + "/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return 0
 	}
@@ -81,6 +81,6 @@ func procStartTicks(pid int) int64 {
 // procUsable reports whether procRoot answers for this process. A /proc with no
 // self/stat counts as no /proc (from the code).
 func procUsable() bool {
-	_, err := os.Stat(procRoot + "/self/stat")
+	_, err := os.Stat(procRoot() + "/self/stat")
 	return err == nil
 }

@@ -10,7 +10,7 @@ import (
 
 // Linux machine identity and holder verification for the run-dir lock, read from /proc.
 // Matches the reference's Linux build: the node is the boot id joined to the pid
-// namespace inode (nodeID, procinfo_linux.go), the holder's command line comes
+// namespace inode (nodeID, internal/procinfo), the holder's command line comes
 // from /proc/<pid>/cmdline, and the pid-namespace guard compares /proc/<pid>/ns/pid
 // to our own.
 

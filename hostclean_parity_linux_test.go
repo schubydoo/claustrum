@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // Helpers shared by the host-cleaner tests.
@@ -109,10 +111,11 @@ func hcNewPassFixture(t *testing.T) *hcPassFix {
 	}()
 
 	oldDial, oldUID, oldClock, oldSleep := hcDial, hcGetuid, hcClock, hcSleep
-	oldSig, oldGrp, oldRen, oldRm := hcHoldPid, killGroup, hcRename, hcRemoveAll
+	oldSig, oldGrp, oldRen, oldRm := hcHoldPid, procinfo.KillGroupForTest(), hcRename, hcRemoveAll
 	t.Cleanup(func() {
 		hcDial, hcGetuid, hcClock, hcSleep = oldDial, oldUID, oldClock, oldSleep
-		hcHoldPid, killGroup, hcRename, hcRemoveAll = oldSig, oldGrp, oldRen, oldRm
+		procinfo.SetKillGroupForTest(oldGrp)
+		hcHoldPid, hcRename, hcRemoveAll = oldSig, oldRen, oldRm
 	})
 	hcGetuid = func() int { return f.uid }
 	now := time.Now()
@@ -120,7 +123,7 @@ func hcNewPassFixture(t *testing.T) *hcPassFix {
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	die := func(pid int) { _ = os.RemoveAll(filepath.Join(f.proot, strconv.Itoa(pid))) }
 	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error { f.single = append(f.single, pid); die(pid); return nil })
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		if sig == 0 {
 			if _, err := os.Stat(filepath.Join(f.proot, strconv.Itoa(pid))); err != nil {
 				return syscall.ESRCH
@@ -130,7 +133,7 @@ func hcNewPassFixture(t *testing.T) *hcPassFix {
 		f.group = append(f.group, pid)
 		die(pid)
 		return nil
-	}
+	})
 	f.dial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
 	hcDial = func(addr string) (net.Conn, error) {
 		if addr == ownSock {
@@ -170,14 +173,14 @@ func TestPassListsRunDirsBeforeTheOrphanPhase(t *testing.T) {
 	hcFakeDaemonUID(t, f.proot, f.mk, f.link, orphan, filepath.Join(f.base, "ccd-cli", "2.1.0"),
 		[]string{"claude", "--output-format=stream-json"}, true, "1", f.uid)
 	hcPipeStdio(f.link, orphan)
-	record := killGroup
-	killGroup = func(pid int, sig syscall.Signal) error {
+	record := procinfo.KillGroupForTest()
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		if sig == syscall.SIGTERM {
 			now := hcClock()
 			_ = os.Chtimes(logPath, now, now) // N comes back into use during the orphan phase
 		}
 		return record(pid, sig)
-	}
+	})
 
 	dials := 0
 	f.dial = func(addr string) (net.Conn, error) {

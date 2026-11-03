@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // TestEarlierBootOfThisMachine pins the machine/boot comparison.
@@ -211,9 +213,9 @@ func TestRealReadLiveProc(t *testing.T) {
 // an unparseable stat, a zombie, an empty cmdline, and a full record with both markers.
 func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 	root := t.TempDir()
-	oldRoot := procRoot
-	t.Cleanup(func() { procRoot = oldRoot })
-	procRoot = root
+	oldRoot := procRoot()
+	t.Cleanup(func() { procinfo.SetRootForTest(oldRoot) })
+	procinfo.SetRootForTest(root)
 
 	mk := func(pid int, stat, cmdline, environ string) {
 		d := filepath.Join(root, strconv.Itoa(pid))
@@ -296,9 +298,9 @@ func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 // every other case in the shared fake tree resolves the guard.
 func TestRealReadLiveProcOtherNamespace(t *testing.T) {
 	root := t.TempDir()
-	oldRoot := procRoot
-	t.Cleanup(func() { procRoot = oldRoot })
-	procRoot = root
+	oldRoot := procRoot()
+	t.Cleanup(func() { procinfo.SetRootForTest(oldRoot) })
+	procinfo.SetRootForTest(root)
 
 	d := filepath.Join(root, "18")
 	if err := os.MkdirAll(filepath.Join(d, "ns"), 0o755); err != nil {

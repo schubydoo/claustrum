@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // fakeProc points procRoot at a temp tree and returns a helper to populate a pid's files.
@@ -22,9 +24,9 @@ import (
 func fakeProc(t *testing.T) (root string, mk func(pid int, name, content string), link func(pid int, name, target string)) {
 	t.Helper()
 	root = t.TempDir()
-	old := procRoot
-	t.Cleanup(func() { procRoot = old })
-	procRoot = root
+	old := procRoot()
+	t.Cleanup(func() { procinfo.SetRootForTest(old) })
+	procinfo.SetRootForTest(root)
 	if err := os.WriteFile(filepath.Join(root, "locks"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func TestHcReadExeAndUptime(t *testing.T) {
 	}
 	mk(0, "uptime", "12345.67 9999.00\n")
 	// /proc/uptime lives at procRoot/uptime, not under a pid; write it directly.
-	if err := os.WriteFile(filepath.Join(procRoot, "uptime"), []byte("100.5 50.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(procRoot(), "uptime"), []byte("100.5 50.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	up, ok := hcUptime()
@@ -385,13 +387,13 @@ func TestVerifyListenerGates(t *testing.T) {
 
 func TestEndGroupsTwoPhase(t *testing.T) {
 	root, mk, _ := fakeProc(t)
-	oldKill, oldClock, oldSleep := killGroup, hcClock, hcSleep
-	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldKill, oldClock, oldSleep })
+	oldKill, oldClock, oldSleep := procinfo.KillGroupForTest(), hcClock, hcSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill); hcClock, hcSleep = oldClock, oldSleep })
 	now := time.Unix(0, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	var terms, kills []int
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		switch sig {
 		case syscall.SIGTERM:
 			terms = append(terms, pid)
@@ -406,7 +408,7 @@ func TestEndGroupsTwoPhase(t *testing.T) {
 			}
 		}
 		return nil
-	}
+	})
 	// Both are live at SIGTERM time (present in procfs, matching pgid+start-ticks). g1 exits
 	// during the grace; g2 stays alive and survives SIGKILL.
 	mk(2001, "stat", "2001 (x) R 1 2001 "+strings.Repeat("0 ", 16)+"5 x")
@@ -520,14 +522,14 @@ func TestTidyKeepsADirThatCameBackAfterTheProbes(t *testing.T) {
 func hcSeamSignals(t *testing.T, root string) (single, group *[]int) {
 	t.Helper()
 	var s, g []int
-	oldSig, oldGrp, oldClock, oldSleep := hcHoldPid, killGroup, hcClock, hcSleep
-	t.Cleanup(func() { hcHoldPid, killGroup, hcClock, hcSleep = oldSig, oldGrp, oldClock, oldSleep })
+	oldSig, oldGrp, oldClock, oldSleep := hcHoldPid, procinfo.KillGroupForTest(), hcClock, hcSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcHoldPid, hcClock, hcSleep = oldSig, oldClock, oldSleep })
 	now := time.Unix(2_000_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	die := func(pid int) { _ = os.RemoveAll(filepath.Join(root, strconv.Itoa(pid))) }
 	hcHoldPid = holdWith(func(pid int, sig syscall.Signal) error { s = append(s, pid); die(pid); return nil })
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		if sig == 0 { // hcGroupExists probe: the group exists iff its leader pid is still present
 			if _, err := os.Stat(filepath.Join(root, strconv.Itoa(pid))); err != nil {
 				return syscall.ESRCH
@@ -537,7 +539,7 @@ func hcSeamSignals(t *testing.T, root string) (single, group *[]int) {
 		g = append(g, pid)
 		die(pid)
 		return nil
-	}
+	})
 	return &s, &g
 }
 
@@ -648,17 +650,17 @@ func TestEndGroupsWrapper(t *testing.T) {
 // TestEndGroupsTwoPhaseForeignOwner covers the EPERM ("belongs to another owner") arm.
 func TestEndGroupsTwoPhaseForeignOwner(t *testing.T) {
 	_, mk, _ := fakeProc(t)
-	oldGrp, oldClock, oldSleep := killGroup, hcClock, hcSleep
-	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldGrp, oldClock, oldSleep })
+	oldGrp, oldClock, oldSleep := procinfo.KillGroupForTest(), hcClock, hcSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcClock, hcSleep = oldClock, oldSleep })
 	now := time.Unix(9_100_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
-	killGroup = func(_ int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(_ int, sig syscall.Signal) error {
 		if sig == 0 {
 			return nil
 		}
 		return syscall.EPERM
-	}
+	})
 	mk(8100, "stat", "8100 (x) R 1 8100 "+strings.Repeat("0 ", 16)+"1 x")
 	sig, _ := endGroupsTwoPhase([]tracked{{pid: 8100, pgid: 8100, startTicks: "1"}}, "orphan", "")
 	if sig != 0 {
@@ -976,17 +978,17 @@ func TestTrackedFate(t *testing.T) {
 }
 
 func TestGroupExistsAndNoSuchProcess(t *testing.T) {
-	old := killGroup
-	t.Cleanup(func() { killGroup = old })
-	killGroup = func(int, syscall.Signal) error { return nil }
+	old := procinfo.KillGroupForTest()
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(old) })
+	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return nil })
 	if !hcGroupExists(500) {
 		t.Error("group with nil kill error not existing")
 	}
-	killGroup = func(int, syscall.Signal) error { return syscall.EPERM }
+	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.EPERM })
 	if !hcGroupExists(500) {
 		t.Error("EPERM should still mean the group exists")
 	}
-	killGroup = func(int, syscall.Signal) error { return syscall.ESRCH }
+	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.ESRCH })
 	if hcGroupExists(500) {
 		t.Error("ESRCH should mean no group")
 	}
@@ -1058,7 +1060,7 @@ func TestLockFileHeldAndProbe(t *testing.T) {
 	major, minor := hcDevMajorMinor(st.Dev)
 	// A /proc/locks line that matches the file's dev:inode.
 	locks := "1: POSIX ADVISORY WRITE 4321 " + fmt.Sprintf("%02x:%02x:%d", major, minor, st.Ino) + " 0 EOF\n"
-	if err := os.WriteFile(filepath.Join(procRoot, "locks"), []byte(locks), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(procRoot(), "locks"), []byte(locks), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if held, read := lockFileHeld(fi); !held || !read {
@@ -1068,7 +1070,7 @@ func TestLockFileHeldAndProbe(t *testing.T) {
 		t.Errorf("lockProbe held: state=%d rec=%v present=%v", state, got, present)
 	}
 	// No matching lock line -> stale.
-	if err := os.WriteFile(filepath.Join(procRoot, "locks"), []byte("1: POSIX ADVISORY WRITE 1 fd:00:1 0 EOF\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(procRoot(), "locks"), []byte("1: POSIX ADVISORY WRITE 1 fd:00:1 0 EOF\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if state, _, present := lockProbe(dir); state != hcLockStale || !present {
@@ -1090,18 +1092,18 @@ func TestLockFileHeldAndProbe(t *testing.T) {
 
 func TestWaitGone(t *testing.T) {
 	_, mk, _ := fakeProc(t)
-	oldKill, oldClock, oldSleep := killGroup, hcClock, hcSleep
-	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldKill, oldClock, oldSleep })
+	oldKill, oldClock, oldSleep := procinfo.KillGroupForTest(), hcClock, hcSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill); hcClock, hcSleep = oldClock, oldSleep })
 	now := time.Unix(0, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	var killed []int
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		if sig == syscall.SIGKILL {
 			killed = append(killed, pid)
 		}
 		return nil
-	}
+	})
 	// Entry 700: gone, kill enabled, group still exists -> SIGKILL the group.
 	// Entry 701: alive throughout -> survivor.
 	mk(701, "stat", "701 (server) R 1 701 "+strings.Repeat("0 ", 16)+"5 x")
@@ -1186,13 +1188,13 @@ func TestEndGroupsTwoPhaseSkipsReusedPid(t *testing.T) {
 // is now gone. Without the kill-enable, the group would leak.
 func TestEndGroupsTwoPhaseReapsDyingLeaderGroup(t *testing.T) {
 	root, mk, _ := fakeProc(t)
-	oldGrp, oldClock, oldSleep := killGroup, hcClock, hcSleep
-	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldGrp, oldClock, oldSleep })
+	oldGrp, oldClock, oldSleep := procinfo.KillGroupForTest(), hcClock, hcSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcClock, hcSleep = oldClock, oldSleep })
 	now := time.Unix(3_000_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	var terms, kills []int
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		switch sig {
 		case syscall.SIGTERM:
 			terms = append(terms, pid)
@@ -1203,7 +1205,7 @@ func TestEndGroupsTwoPhaseReapsDyingLeaderGroup(t *testing.T) {
 			return nil // the leader pid is gone but its group still has a member
 		}
 		return nil
-	}
+	})
 	mk(7001, "stat", "7001 (x) R 1 7001 "+strings.Repeat("0 ", 16)+"1 x")
 	sig, _ := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "leftover", "")
 	if sig != 1 {

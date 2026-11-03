@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // pidfdOf returns the descriptor of this process that is a pid file descriptor of
@@ -40,7 +42,7 @@ func pidfdOf(t *testing.T, pid int) int {
 // sandbox that refuses the call with EPERM.
 func skipWithoutPidfd(t *testing.T) {
 	t.Helper()
-	fd, err := hcPidfdOpen(os.Getpid())
+	fd, err := procinfo.PidfdOpenForTest()(os.Getpid())
 	if err == syscall.ENOSYS || err == syscall.EPERM {
 		t.Skipf("pidfd_open is not usable here: %v", err)
 	}
@@ -75,14 +77,18 @@ func TestEvictionSignalGoesThroughAPidfd(t *testing.T) {
 	cmd := hcStartSleeper(t)
 	pid := cmd.Process.Pid
 
-	oldOpen, oldSend, oldKill := hcPidfdOpen, hcPidfdSend, hcKillPid
-	t.Cleanup(func() { hcPidfdOpen, hcPidfdSend, hcKillPid = oldOpen, oldSend, oldKill })
+	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
+	t.Cleanup(func() {
+		procinfo.SetPidfdOpenForTest(oldOpen)
+		procinfo.SetPidfdSendForTest(oldSend)
+		procinfo.SetKillPidForTest(oldKill)
+	})
 	var opened []int
 	var sent []syscall.Signal
 	kills := 0
-	hcPidfdOpen = func(p int) (int, error) { opened = append(opened, p); return oldOpen(p) }
-	hcPidfdSend = func(fd int, sig syscall.Signal) error { sent = append(sent, sig); return oldSend(fd, sig) }
-	hcKillPid = func(int, syscall.Signal) error { kills++; return nil }
+	procinfo.SetPidfdOpenForTest(func(p int) (int, error) { opened = append(opened, p); return oldOpen(p) })
+	procinfo.SetPidfdSendForTest(func(fd int, sig syscall.Signal) error { sent = append(sent, sig); return oldSend(fd, sig) })
+	procinfo.SetKillPidForTest(func(int, syscall.Signal) error { kills++; return nil })
 
 	if !realSignalHolder(pid, syscall.SIGTERM) {
 		t.Fatal("realSignalHolder reported no delivery to a live helper")
@@ -113,30 +119,33 @@ func TestEvictionOpensThePidfdBeforeItReadsTheHolder(t *testing.T) {
 	cmd := hcStartSleeper(t)
 	pid := cmd.Process.Pid
 
-	oldOpen, oldSend, oldKill := hcPidfdOpen, hcPidfdSend, hcKillPid
-	oldLink, oldCmdline, oldWait := osReadlink, isServeCmdline, waitHolderLock
+	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
+	oldLink, oldCmdline, oldWait := procinfo.ReadlinkForTest(), isServeCmdline, waitHolderLock
 	t.Cleanup(func() {
-		hcPidfdOpen, hcPidfdSend, hcKillPid = oldOpen, oldSend, oldKill
-		osReadlink, isServeCmdline, waitHolderLock = oldLink, oldCmdline, oldWait
+		procinfo.SetPidfdOpenForTest(oldOpen)
+		procinfo.SetPidfdSendForTest(oldSend)
+		procinfo.SetKillPidForTest(oldKill)
+		procinfo.SetReadlinkForTest(oldLink)
+		isServeCmdline, waitHolderLock = oldCmdline, oldWait
 	})
 	var calls []string
-	hcPidfdOpen = func(p int) (int, error) {
+	procinfo.SetPidfdOpenForTest(func(p int) (int, error) {
 		calls = append(calls, "pidfd_open "+strconv.Itoa(p))
 		return oldOpen(p)
-	}
-	osReadlink = func(name string) (string, error) {
+	})
+	procinfo.SetReadlinkForTest(func(name string) (string, error) {
 		if name == "/proc/"+strconv.Itoa(pid)+"/ns/pid" {
 			calls = append(calls, "read ns/pid")
 		}
 		return oldLink(name)
-	}
+	})
 	// The helper is the test binary, so the read of its command line is seamed.
 	isServeCmdline = func(int, string) bool { calls = append(calls, "read cmdline"); return true }
-	hcPidfdSend = func(fd int, sig syscall.Signal) error {
+	procinfo.SetPidfdSendForTest(func(fd int, sig syscall.Signal) error {
 		calls = append(calls, "pidfd_send_signal "+sig.String())
 		return oldSend(fd, sig)
-	}
-	hcKillPid = func(int, syscall.Signal) error { calls = append(calls, "kill"); return nil }
+	})
+	procinfo.SetKillPidForTest(func(int, syscall.Signal) error { calls = append(calls, "kill"); return nil })
 	// The helper holds no lock, so the wait on the lock is seamed. Its end is read below.
 	waitHolderLock = func(int, time.Duration) bool { return true }
 

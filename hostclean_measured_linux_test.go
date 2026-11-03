@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
 // The cleaner lines and the retire call that Linux measured against f6010b97 and 89cb6289.
@@ -94,15 +96,15 @@ func TestPassLogsTheOrphanGroupCap(t *testing.T) {
 // and no line (measured, the kid variant).
 func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 	root, mk, _ := fakeProc(t)
-	oldGrp, oldClock, oldSleep := killGroup, hcClock, hcSleep
-	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldGrp, oldClock, oldSleep })
+	oldGrp, oldClock, oldSleep := procinfo.KillGroupForTest(), hcClock, hcSleep
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcClock, hcSleep = oldClock, oldSleep })
 	now := time.Unix(3_000_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	var kills []int
 	var killAt []time.Duration
 	start := now
-	killGroup = func(pid int, sig syscall.Signal) error {
+	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		switch sig {
 		case syscall.SIGTERM:
 			if pid == 5339 {
@@ -120,7 +122,7 @@ func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 			}
 		}
 		return nil
-	}
+	})
 	mk(5338, "stat", hcRunningStat(5338, 1, 5338, "1")) // ignores SIGTERM
 	mk(5339, "stat", hcRunningStat(5339, 1, 5339, "1")) // its leader ends on SIGTERM
 	buf := captureLogBuf(t)
@@ -277,13 +279,17 @@ func TestRetireChecksTheIdentityAfterThePidfdOpen(t *testing.T) {
 		link(pid, "fd/1", "/dev/null") // readable connections, none a client
 	}
 
-	oldOpen, oldSend, oldKill := hcPidfdOpen, hcPidfdSend, hcKillPid
-	t.Cleanup(func() { hcPidfdOpen, hcPidfdSend, hcKillPid = oldOpen, oldSend, oldKill })
+	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
+	t.Cleanup(func() {
+		procinfo.SetPidfdOpenForTest(oldOpen)
+		procinfo.SetPidfdSendForTest(oldSend)
+		procinfo.SetKillPidForTest(oldKill)
+	})
 	var opened, sentFds []int
 	var sent []syscall.Signal
 	kills, heldFd := 0, -1
 	reuse := false
-	hcPidfdOpen = func(p int) (int, error) {
+	procinfo.SetPidfdOpenForTest(func(p int) (int, error) {
 		opened = append(opened, p)
 		fd, err := syscall.Open(os.DevNull, syscall.O_RDONLY, 0)
 		heldFd = fd
@@ -292,12 +298,12 @@ func TestRetireChecksTheIdentityAfterThePidfdOpen(t *testing.T) {
 			mk(p, "stat", hcRunningStat(p, 1, p, "424242"))
 		}
 		return fd, err
-	}
-	hcPidfdSend = func(fd int, sig syscall.Signal) error {
+	})
+	procinfo.SetPidfdSendForTest(func(fd int, sig syscall.Signal) error {
 		sentFds, sent = append(sentFds, fd), append(sent, sig)
 		return nil
-	}
-	hcKillPid = func(int, syscall.Signal) error { kills++; return nil }
+	})
+	procinfo.SetKillPidForTest(func(int, syscall.Signal) error { kills++; return nil })
 	closed := func(fd int) bool {
 		var st syscall.Stat_t
 		return syscall.Fstat(fd, &st) == syscall.EBADF
@@ -345,19 +351,23 @@ func TestRetireSignalGoesThroughAPidfd(t *testing.T) {
 	cmd := hcStartSleeper(t)
 	pid := cmd.Process.Pid
 
-	oldOpen, oldSend, oldKill := hcPidfdOpen, hcPidfdSend, hcKillPid
-	t.Cleanup(func() { hcPidfdOpen, hcPidfdSend, hcKillPid = oldOpen, oldSend, oldKill })
+	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
+	t.Cleanup(func() {
+		procinfo.SetPidfdOpenForTest(oldOpen)
+		procinfo.SetPidfdSendForTest(oldSend)
+		procinfo.SetKillPidForTest(oldKill)
+	})
 	var opened []int
 	var sent []syscall.Signal
 	kills := 0
 	sentFd := -1
-	hcPidfdOpen = func(p int) (int, error) { opened = append(opened, p); return oldOpen(p) }
-	hcPidfdSend = func(fd int, sig syscall.Signal) error {
+	procinfo.SetPidfdOpenForTest(func(p int) (int, error) { opened = append(opened, p); return oldOpen(p) })
+	procinfo.SetPidfdSendForTest(func(fd int, sig syscall.Signal) error {
 		sent = append(sent, sig)
 		sentFd = fd
 		return oldSend(fd, sig)
-	}
-	hcKillPid = func(int, syscall.Signal) error { kills++; return nil }
+	})
+	procinfo.SetKillPidForTest(func(int, syscall.Signal) error { kills++; return nil })
 
 	if err := hcSignalDaemon(pid, syscall.SIGTERM); err != nil {
 		t.Fatalf("hcSignalDaemon = %v", err)
@@ -384,24 +394,28 @@ func TestRetireSignalGoesThroughAPidfd(t *testing.T) {
 // signal then goes out with kill. The fallback is claustrum's own choice. The reference on
 // such a kernel is not measured.
 func TestRetireSignalFallsBackToKill(t *testing.T) {
-	oldOpen, oldSend, oldKill := hcPidfdOpen, hcPidfdSend, hcKillPid
-	t.Cleanup(func() { hcPidfdOpen, hcPidfdSend, hcKillPid = oldOpen, oldSend, oldKill })
+	oldOpen, oldSend, oldKill := procinfo.PidfdOpenForTest(), procinfo.PidfdSendForTest(), procinfo.KillPidForTest()
+	t.Cleanup(func() {
+		procinfo.SetPidfdOpenForTest(oldOpen)
+		procinfo.SetPidfdSendForTest(oldSend)
+		procinfo.SetKillPidForTest(oldKill)
+	})
 	type call struct {
 		pid int
 		sig syscall.Signal
 	}
 	var kills []call
-	hcKillPid = func(pid int, sig syscall.Signal) error { kills = append(kills, call{pid, sig}); return nil }
+	procinfo.SetKillPidForTest(func(pid int, sig syscall.Signal) error { kills = append(kills, call{pid, sig}); return nil })
 
 	// No pidfd_open at all.
-	hcPidfdOpen = func(int) (int, error) { return -1, syscall.ENOSYS }
-	hcPidfdSend = func(int, syscall.Signal) error { t.Error("pidfd_send_signal ran without a descriptor"); return nil }
+	procinfo.SetPidfdOpenForTest(func(int) (int, error) { return -1, syscall.ENOSYS })
+	procinfo.SetPidfdSendForTest(func(int, syscall.Signal) error { t.Error("pidfd_send_signal ran without a descriptor"); return nil })
 	if err := hcSignalDaemon(4242, syscall.SIGTERM); err != nil {
 		t.Errorf("hcSignalDaemon = %v, want nil from the kill fallback", err)
 	}
 	// pidfd_open exists and pidfd_send_signal does not.
-	hcPidfdOpen = func(int) (int, error) { return syscall.Open(os.DevNull, syscall.O_RDONLY, 0) }
-	hcPidfdSend = func(int, syscall.Signal) error { return syscall.ENOSYS }
+	procinfo.SetPidfdOpenForTest(func(int) (int, error) { return syscall.Open(os.DevNull, syscall.O_RDONLY, 0) })
+	procinfo.SetPidfdSendForTest(func(int, syscall.Signal) error { return syscall.ENOSYS })
 	if err := hcSignalDaemon(4243, syscall.SIGTERM); err != nil {
 		t.Errorf("hcSignalDaemon = %v, want nil from the kill fallback", err)
 	}
@@ -411,7 +425,7 @@ func TestRetireSignalFallsBackToKill(t *testing.T) {
 
 	// An error that is not ENOSYS is returned, and no kill follows it.
 	kills = nil
-	hcPidfdOpen = func(int) (int, error) { return -1, syscall.ESRCH }
+	procinfo.SetPidfdOpenForTest(func(int) (int, error) { return -1, syscall.ESRCH })
 	if err := hcSignalDaemon(4244, syscall.SIGTERM); err != syscall.ESRCH {
 		t.Errorf("hcSignalDaemon = %v, want ESRCH", err)
 	}

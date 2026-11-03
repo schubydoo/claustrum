@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package main
+package procinfo
 
 import "syscall"
 

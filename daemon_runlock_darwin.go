@@ -10,7 +10,7 @@ import (
 )
 
 // macOS machine identity and holder verification for the run-dir lock. macOS has no
-// /proc, so the node comes from sysctl kern.bootsessionuuid (nodeID, procinfo_darwin.go)
+// /proc, so the node comes from sysctl kern.bootsessionuuid (nodeID, internal/procinfo)
 // and the holder's command line comes from sysctl KERN_PROCARGS2.
 //
 // The reference's macOS build does not verify the holder's command line before
