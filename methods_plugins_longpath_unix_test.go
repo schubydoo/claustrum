@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/sockroute"
 )
 
 // longSibling binds and closes a sibling socket <X>/run/beef5678/rpc.sock of 120 bytes
@@ -27,7 +29,7 @@ func longSibling(t *testing.T) (base, sock string) {
 func TestSiblingAtALongPathWithNoShorterName(t *testing.T) {
 	noFolderHandle(t)
 	base, sock := longSibling(t)
-	want := fmt.Sprintf("cannot rule out run/beef5678/rpc.sock: dial unix %s: the socket path is longer than the %d bytes that this system allows", sock, maxSocketPath)
+	want := fmt.Sprintf("cannot rule out run/beef5678/rpc.sock: dial unix %s: the socket path is longer than the %d bytes that this system allows", sock, sockroute.MaxSocketPath)
 	if got := siblingDaemonAlive(base, "abcd1234"); got != want {
 		t.Errorf("got %q\nwant %q", got, want)
 	}

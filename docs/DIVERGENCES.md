@@ -700,7 +700,7 @@ have no flag and no key.
 - **Reference.** The default matches the reference.
 - **Systems and switch.** None. Not built.
 - **Cost.** None stated.
-- **Rule.** Deferred, because there is no demand. The socket folder is owner-only
+- **Rule.** Deferred, because there is no demand. The socket folder is per-user
   in the real deployment.
 - **Reopen trigger.** None.
 - **Pointers.** [DAEMON.md → Token

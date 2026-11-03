@@ -14,8 +14,10 @@ import (
 //
 // This test does not guard the GIT_OPTIONAL_LOCKS=0 arm. The status command runs
 // with --git-dir=<temp>, which holds a copy of the index, so the real index stays
-// with the arm removed too. The argv tests TestGitStatusCallOrder and
-// TestGitStatusGateCalls (git_status_calls_unix_test.go) fail without the arm.
+// with the arm removed too. On every system the subtest
+// TestHardenedGitCallShape/status (githarden_shape_test.go) fails without the arm.
+// On Linux and macOS TestGitStatusCallOrder and TestGitStatusGateCalls
+// (git_status_calls_unix_test.go) fail too.
 //
 // No build tag: it uses no POSIX shell, so it runs on Windows too.
 func TestGitStatusDoesNotRewriteIndex(t *testing.T) {

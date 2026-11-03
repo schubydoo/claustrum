@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package sockroute
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// A socket path longer than the socket address of the system allows (maxSocketPath
+// A socket path longer than the socket address of the system allows (MaxSocketPath
 // bytes) still serves and still answers a dial. `be1c1ca5` serves at a 120-byte
 // path on Linux and at a 110-byte path on macOS, and its -bridge and -stop reach
 // it there (measured). The routes, in order:
@@ -28,7 +28,7 @@ import (
 //
 // The change of folder acts on the whole process. So it runs only in a short-lived
 // process (the launcher, -bridge, -stop) and in the bind of a -serve start, before
-// any request is served. A running daemon dials with dialSocketInDaemon, which
+// any request is served. A running daemon dials with DialSocketInDaemon, which
 // never changes folder: a request resolves a relative path against the working
 // folder (homeguard.WipesHomeDir).
 
@@ -40,18 +40,18 @@ var folderChange sync.Mutex
 // with socketTooLong where only that route is left.
 func viaShortSocketName[T io.Closer](op, path string, mayChangeFolder bool, use func(name string) (T, error)) (T, error) {
 	var zero T
-	if len(path) <= maxSocketPath {
+	if len(path) <= MaxSocketPath {
 		return use(path)
 	}
 	dir, base := filepath.Dir(path), filepath.Base(path)
-	if len(base) > maxSocketPath {
-		return zero, socketTooLong(op, path, maxSocketPath)
+	if len(base) > MaxSocketPath {
+		return zero, socketTooLong(op, path, MaxSocketPath)
 	}
 	if v, ok, err := folderHandleName(dir, base, use); ok {
 		return v, err
 	}
 	if !mayChangeFolder {
-		return zero, socketTooLong(op, path, maxSocketPath)
+		return zero, socketTooLong(op, path, MaxSocketPath)
 	}
 	return inSocketFolder(dir, base, use)
 }
@@ -59,7 +59,7 @@ func viaShortSocketName[T io.Closer](op, path string, mayChangeFolder bool, use 
 // socketTooLong builds the error of op ("listen" or "dial") on path, in the form
 // "<op> unix <path>: the socket path is longer than ...".
 func socketTooLong(op, path string, limit int) error {
-	return &net.OpError{Op: op, Net: "unix", Addr: &net.UnixAddr{Name: path, Net: "unix"}, Err: &socketTooLongError{limit: limit}}
+	return &net.OpError{Op: op, Net: "unix", Addr: &net.UnixAddr{Name: path, Net: "unix"}, Err: &TooLongError{limit: limit}}
 }
 
 // changeBack returns to the folder of back. A var so a test can make it fail.
@@ -67,7 +67,7 @@ var changeBack = func(back *os.File) error { return back.Chdir() }
 
 // inSocketFolder changes the working folder to dir, runs use on base and changes
 // back through a handle of the old folder. If the change back fails, it closes the
-// result and returns a *changeBackError.
+// result and returns a *ChangeBackError.
 func inSocketFolder[T io.Closer](dir, base string, use func(name string) (T, error)) (T, error) {
 	var zero T
 	folderChange.Lock()
@@ -85,52 +85,63 @@ func inSocketFolder[T io.Closer](dir, base string, use func(name string) (T, err
 		if err == nil {
 			_ = v.Close()
 		}
-		return zero, &changeBackError{err: cerr}
+		return zero, &ChangeBackError{err: cerr}
 	}
 	return v, err
 }
 
-// listenSocket binds the unix socket at path. A listener bound by another name
+// Listen binds the unix socket at path. A listener bound by another name
 // never removes that name at its close: the name of a folder handle can lead to
 // another folder once the handle is closed. The caller removes the real path
 // (unlinkOwnSocket).
-func listenSocket(path string) (net.Listener, error) {
+func Listen(path string) (net.Listener, error) {
 	return viaShortSocketName("listen", path, true, func(name string) (net.Listener, error) {
 		ln, err := net.Listen("unix", name)
 		if err == nil && name != path {
-			keepSocketFileAtClose(ln)
+			KeepSocketFileAtClose(ln)
 		}
 		return ln, err
 	})
 }
 
-// dialUnixPath dials the unix socket at path. It can change the working folder, so
+// DialUnixPath dials the unix socket at path. It can change the working folder, so
 // only a short-lived process calls it.
-func dialUnixPath(path string, timeout time.Duration) (net.Conn, error) {
+func DialUnixPath(path string, timeout time.Duration) (net.Conn, error) {
 	return viaShortSocketName("dial", path, true, dialName(timeout))
 }
 
-// dialSocketInDaemon dials the unix socket at path and never changes the working
+// DialSocketInDaemon dials the unix socket at path and never changes the working
 // folder. Where only that route is left, it fails with socketTooLong.
-func dialSocketInDaemon(path string, timeout time.Duration) (net.Conn, error) {
+func DialSocketInDaemon(path string, timeout time.Duration) (net.Conn, error) {
 	return viaShortSocketName("dial", path, false, dialName(timeout))
 }
 
-// dialSiblingSocket is dialSocketInDaemon for the sibling test of plugins.prune. A
+// DialSiblingSocket is DialSocketInDaemon for the sibling test of plugins.prune. A
 // failed dial by a shorter name gives "dial unix <path>: the socket path is longer
 // than ...; no shorter name for it worked: <error of that dial>". `be1c1ca5` gives
 // that text for a sibling socket of mode 000 at 120 bytes (measured on Linux). Other
 // failures of that dial: claustrum's own, not measured. The error still unwraps to the
 // error of that dial.
-func dialSiblingSocket(path string, timeout time.Duration) (net.Conn, error) {
-	c, err := dialSocketInDaemon(path, timeout)
+func DialSiblingSocket(path string, timeout time.Duration) (net.Conn, error) {
+	c, err := DialSocketInDaemon(path, timeout)
 	var op *net.OpError
 	if err != nil && errors.As(err, &op) && op.Addr != nil && op.Addr.String() != path {
-		return nil, &net.OpError{Op: "dial", Net: "unix", Addr: &net.UnixAddr{Name: path, Net: "unix"}, Err: &socketTooLongError{limit: maxSocketPath, cause: err}}
+		return nil, &net.OpError{Op: "dial", Net: "unix", Addr: &net.UnixAddr{Name: path, Net: "unix"}, Err: &TooLongError{limit: MaxSocketPath, cause: err}}
 	}
 	return c, err
 }
 
 func dialName(timeout time.Duration) func(name string) (net.Conn, error) {
 	return func(name string) (net.Conn, error) { return net.DialTimeout("unix", name, timeout) }
+}
+
+// KeepSocketFileAtClose turns off Go's removal of the socket path at the close of ln.
+// Go removes the path of a unix listener that made it, whatever file is at the path
+// then. A new daemon can bind the path while this one still shuts down, and the close
+// then removed the socket of the new daemon. closeAll removes the path itself
+// (unlinkOwnSocket).
+func KeepSocketFileAtClose(ln net.Listener) {
+	if ul, ok := ln.(*net.UnixListener); ok {
+		ul.SetUnlinkOnClose(false)
+	}
 }

@@ -1,4 +1,4 @@
-package main
+package sockroute
 
 import (
 	"io"
@@ -7,10 +7,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// maxSocketPath is the longest socket path that the socket address of macOS holds.
+// MaxSocketPath is the longest socket path that the socket address of macOS holds.
 // `be1c1ca5` names 103 bytes in its text, and applies the limit to the last element
 // of the path (measured on macOS).
-const maxSocketPath = 103
+const MaxSocketPath = 103
 
 // folderHandleName never applies on macOS: it has no /proc route.
 func folderHandleName[T io.Closer](string, string, func(string) (T, error)) (v T, ok bool, err error) {

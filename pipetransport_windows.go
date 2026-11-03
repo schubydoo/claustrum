@@ -35,8 +35,7 @@ func isOurClose(err error) bool {
 // net.Conn, so server.run feeds it through the exact same acceptLoop/serveConn as
 // the AF_UNIX socket — no protocol change.
 //
-// The pipe is locked to the daemon user's SID via an owner-only DACL (the pipe
-// analogue of the socket's 0600 mode); no Everyone/Authenticated-Users/anonymous
+// The pipe is locked to the daemon user's SID via an owner-only DACL; no Everyone/Authenticated-Users/anonymous
 // ACE is granted, and a remote principal cannot open it. On any error the caller
 // logs and keeps serving on the socket — the transport is strictly additive.
 func startPipeTransport(socket string) (net.Listener, error) {
