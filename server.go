@@ -469,7 +469,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// Start the host cleaner. It is a background sweep that ends orphaned Claude Code process groups under this
 	// install's roots. It also retires abandoned daemons and tidies their stale run dirs. It runs
 	// unconditionally at startup, right after the listening line. It stays off, with one line, when the socket
-	// is not a deployed run-dir socket. It is a no-op off linux and darwin (see hostclean_*.go). DESTRUCTIVE
+	// is not a deployed run-dir socket. It is a no-op off linux and darwin (see internal/hostsweep). DESTRUCTIVE
 	// and host-wide: validated only on a throwaway test system, never on a host that runs siblings. Kept in
 	// this shell, not in newServerOnSocket, so an in-process test boot starts no cleaner.
 	startHostCleaner(socket)

@@ -22,7 +22,7 @@ the same JSON-RPC methods.
 | Process | `process.go`, `internal/sysproc/`, `*sysproc*.go`, `childjobs*.go`, `execchild*.go`, `sessionsupersede.go`, `internal/shellenv/` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
 | Git | `internal/git/` | See [The git subsystem](#the-git-subsystem). |
 | Install | `internal/install/` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher, its settings reader and the child env strip. |
-| Host and lock | `internal/runlock/`, `compat_runlock*.go`, `internal/tokenfile/`, `compat_tokenfile.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `internal/procinfo/`, `compat_procinfo*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
+| Host and lock | `internal/runlock/`, `compat_runlock*.go`, `internal/tokenfile/`, `compat_tokenfile.go`, `childrecord*.go`, `childreap*.go`, `internal/hostsweep/`, `compat_hostsweep*.go`, `internal/procinfo/`, `compat_procinfo*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
 | Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
 | Shared | `internal/renameretry/`, `internal/pathcanon/` | The Windows rename retry. The canonical form and `~` expansion of a path. |
 
@@ -123,7 +123,7 @@ flowchart TD
   the daemon holds open, so no write or read follows a symlink out of it. The kill
   and every live-process read sit behind package-var seams, so tests exercise the decision and end no real process. See
   [Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).
-- **Host cleaner.** `hostclean.go` holds the shared decision layer, and
+- **Host cleaner.** `internal/hostsweep/hostclean.go` holds the shared decision layer, and
   `hostclean_linux.go` / `hostclean_darwin.go` hold the OS reads. Windows links no
   cleaner. Its rules and log lines are in
   [Host cleaner](DAEMON.md#host-cleaner-off-wire-linux-and-macos).
