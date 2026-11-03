@@ -17,7 +17,7 @@ Only the latest release on `main` receives security fixes.
 ## Scope & threat model
 
 claustrum is trusted, host-local infrastructure, not a multi-tenant service. It
-listens on an `AF_UNIX` socket (mode `0600`, owner-only) and supervises child
+listens on an `AF_UNIX` socket and supervises child
 processes on the host it runs on.
 
 ### Trust boundary
@@ -47,7 +47,7 @@ token did not already give. See
   its own `auth`. The daemon unsets the variable before it daemonizes, and it
   strips the variable from every spawned child.
 - Protect the token and the socket together. Whoever can read the token *and*
-  reach the socket can drive the daemon. The socket is owner-only by design. Keep
+  reach the socket can drive the daemon. The socket is owner-only on Linux and macOS. Keep
   the token source owner-readable and short-lived.
 - The running daemon persists its token to `daemon.token` (mode `0600`) in the
   socket's directory, so a client can reconnect after the token source is gone.
@@ -55,14 +55,14 @@ token did not already give. See
   [`docs/DAEMON.md`](docs/DAEMON.md) → Token persistence. At a graceful
   shutdown, a daemon whose own file is still in place unlinks it. A `SIGKILL` or a crash leaves the file behind.
   The token therefore stays on disk longer than its source, so keep the socket
-  directory owner-only. On Windows the `0600` bits are not an owner-only DACL, so
-  the ACL of the session directory confines the file.
+  directory owner-only. On Windows `0600` sets no DACL. The socket and this file
+  inherit the ACL of that directory, and claustrum sets none.
 - `server.shutdown` is the one method the token does not gate. It is not
   authenticated. That is behavioral parity with the reference. Desktop stops the
   daemon with no token in its environment
   ([driver claim](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)). Reaching the socket stops the
   daemon and drops every session, unless the Linux peer check refuses the
-  caller. `-stop` sends no token. The socket's owner-only mode confines this. An
+  caller. `-stop` sends no token. On Linux and macOS the socket mode confines this. An
   actor who already shares the uid can do strictly more through `process.spawn`.
   The optional Windows named-pipe transport shares this dispatch, so the same
   exception applies.
@@ -147,8 +147,8 @@ Details for the three surfaces that need more than a row:
   such as file contents and child output. Keep the flag off unless you need it,
   and store a capture with the same care as the socket token.
 - `-listen-pipe`: the pipe carries an owner-only DACL, in SDDL
-  `D:P(A;;GA;;;<current-user-SID>)`. It grants GENERIC_ALL to the SID of the
-  daemon user only, as the `0600` mode does for the socket. go-winio's
+  `D:P(A;;GA;;;<current-user-SID>)`. It grants GENERIC_ALL to the daemon user's SID
+  only, as the socket's `0600` does on Linux and macOS. go-winio's
   `ListenPipe` also creates the pipe with `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so
   a client over SMB (`\\host\pipe\…`) is refused. The pipe grants no access that
   the socket plus the token did not already grant. With the flag off, no pipe

@@ -56,7 +56,7 @@ func TestRemovePipeNameFileIfOwned(t *testing.T) {
 }
 
 // TestOwnerOnlySDDL asserts the pipe's security descriptor is the exact owner-only
-// DACL the AF_UNIX socket's 0600 mode is analogous to: a protected DACL granting
+// DACL that the socket's 0600 mode on Linux and macOS is analogous to: a protected DACL granting
 // GENERIC_ALL to the daemon user's SID and to NO world principal. This is the
 // "owner" half of the guardrail (a foreign SID cannot open the pipe); spinning up
 // a real foreign-SID client in CI isn't feasible, so the construction is asserted
