@@ -61,7 +61,7 @@ func TestWorktreeRemoveRootChecksBaseRepoSpelling(t *testing.T) {
 	// The daemon's working directory is B, so "T" names the repository.
 	t.Chdir(b)
 	resetUserExcludesCache(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
 	rel := func(p string) string {
 		return "refusing to remove worktree: " + p +
@@ -119,7 +119,7 @@ func TestWorktreeRemoveRootChecksBaseRepoSpelling(t *testing.T) {
 					want = spellRemoveFrame(t, managedWorktreesRefusal)
 				}
 			}
-			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", r.params))
+			got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", r.params))
 			if got != want {
 				t.Errorf("got  %s\nwant %s", got, want)
 			}
@@ -140,7 +140,7 @@ func TestWorktreeContainmentNamesAbsentBaseRepo(t *testing.T) {
 	f := newWTFixture(t, false)
 	t.Chdir(f.top)
 	resetUserExcludesCache(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	c1 := filepath.Join(f.top, ".claude", "worktrees", "c1")
 	const guidance = "; session worktrees are only created and removed under <repository>/.claude/worktrees"
 	for _, r := range []struct {
@@ -157,11 +157,11 @@ func TestWorktreeContainmentNamesAbsentBaseRepo(t *testing.T) {
 				remove[k], create[k] = v, v
 			}
 			want := spellRemoveFrame(t, "refusing to remove worktree: "+tickPath(f.leaf())+" is not inside the repository "+guidance)
-			if got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", remove)); got != want {
+			if got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", remove)); got != want {
 				t.Errorf("remove: got  %s\nwant %s", got, want)
 			}
 			want = spellCreateFrame(t, "refusing to create worktree: "+tickPath(c1)+" is not inside the repository "+guidance, "unsafe_path")
-			if got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", create)); got != want {
+			if got := gitDispatch(t, h, rpcLine(t, "git.worktree_create", create)); got != want {
 				t.Errorf("create: got  %s\nwant %s", got, want)
 			}
 			if exists(c1) {
@@ -180,7 +180,7 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
 	resetUserExcludesCache(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	sep := string(filepath.Separator)
 	params := map[string]any{"baseRepo": f.top + sep + "missing" + sep + "..", "worktreePath": f.leaf()}
 	trustRoot := runtime.GOOS == "windows"
@@ -196,7 +196,7 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 			if trustRoot {
 				want = spellRemoveFrame(t, managedWorktreesRefusal)
 			}
-			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": r.base, "worktreePath": f.leaf()}))
+			got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": r.base, "worktreePath": f.leaf()}))
 			if got != want {
 				t.Errorf("got  %s\nwant %s", got, want)
 			}
@@ -211,7 +211,7 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 		if trustRoot {
 			want = spellRemoveFrame(t, managedWorktreesRefusal)
 		}
-		if got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", params)); got != want {
+		if got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", params)); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 	})
@@ -226,7 +226,7 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 	old := evalSymlinks
 	t.Cleanup(func() { evalSymlinks = old })
-	setup := func(t *testing.T, walkFails bool) (wtFixture, *server) {
+	setup := func(t *testing.T, walkFails bool) (wtFixture, *gitDeps) {
 		t.Helper()
 		f := newWTFixture(t, false)
 		runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
@@ -240,7 +240,7 @@ func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 				return old(p)
 			}
 		}
-		return f, newTestServer(t)
+		return f, newTestGitDeps()
 	}
 	sep := string(filepath.Separator)
 	c1 := func(f wtFixture) string { return filepath.Join(f.top, ".claude", "worktrees", "c1") }
@@ -274,14 +274,14 @@ func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 		}, trc, true},
 	} {
 		t.Run(r.row, func(t *testing.T) {
-			f, s := setup(t, true)
+			f, h := setup(t, true)
 			clearDaemonConfigEnv(t)
 			if r.plantCount {
 				t.Setenv(configCountName, "x")
 			}
 			params := r.params(f)
 			params["baseRepo"] = f.top
-			if got := dispatchRaw(t, s, rpcLine(t, r.method, params)); got != r.want {
+			if got := gitDispatch(t, h, rpcLine(t, r.method, params)); got != r.want {
 				t.Errorf("got  %s\nwant %s", got, r.want)
 			}
 			// A planted GIT_CONFIG_COUNT stops the git that hasRef runs.
@@ -295,9 +295,9 @@ func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 		})
 	}
 	t.Run("control", func(t *testing.T) {
-		f, s := setup(t, false)
+		f, h := setup(t, false)
 		clearDaemonConfigEnv(t)
-		got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf()}))
+		got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf()}))
 		if got != spellRemoveOK {
 			t.Errorf("got  %s\nwant %s", got, spellRemoveOK)
 		}
@@ -314,7 +314,7 @@ func TestBaseRepoMissingDotDotWalk(t *testing.T) {
 		t.Fatal(err)
 	}
 	resetUserExcludesCache(t)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	sep := string(filepath.Separator)
 	missing := f.top + sep + "missing" + sep + ".."
 	c1 := filepath.Join(f.top, ".claude", "worktrees", "c1")
@@ -338,7 +338,7 @@ func TestBaseRepoMissingDotDotWalk(t *testing.T) {
 			pick(spellCreateFrame(t, "not a git repository", "not_a_repo"), spellCreateFrame(t, managedWorktreesRefusal, "nested_base_repo"))},
 		{"A4", "git.worktree_remove", map[string]any{"baseRepo": f.top + sep + "sub" + sep + "..", "worktreePath": f.leaf()}, spellRemoveOK},
 	} {
-		if got := dispatchRaw(t, s, rpcLine(t, r.method, r.params)); got != r.want {
+		if got := gitDispatch(t, h, rpcLine(t, r.method, r.params)); got != r.want {
 			t.Errorf("%s: got  %s\nwant %s", r.row, got, r.want)
 		}
 	}
@@ -396,7 +396,7 @@ func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 				runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
 				resetUserExcludesCache(t)
 				clearDaemonConfigEnv(t)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				c1 := filepath.Join(f.top, ".claude", "worktrees", "c1")
 				base := r.base(t, f)
 				method, params := "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": f.leaf()}
@@ -405,7 +405,7 @@ func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 					method, params = "git.worktree_create", map[string]any{"baseRepo": base, "worktreePath": c1, "branchName": "c1"}
 					want = spellCreateFrame(t, managedWorktreesRefusal, "nested_base_repo")
 				}
-				if got := dispatchRaw(t, s, rpcLine(t, method, params)); got != want {
+				if got := gitDispatch(t, h, rpcLine(t, method, params)); got != want {
 					t.Errorf("got  %s\nwant %s", got, want)
 				}
 				if !exists(filepath.Join(f.leaf(), "t.txt")) || !exists(filepath.Join(f.regDir, "w1")) {
@@ -467,7 +467,7 @@ func TestWorktreeCreateRootChecksBaseRepoSpelling(t *testing.T) {
 			}
 			resetUserExcludesCache(t)
 			clearDaemonConfigEnv(t)
-			s := newTestServer(t)
+			h := newTestGitDeps()
 			params := map[string]any{"worktreePath": leaf, "worktreeRoot": root, "branchName": "c7"}
 			base := r.base(f)
 			if !r.absent {
@@ -485,7 +485,7 @@ func TestWorktreeCreateRootChecksBaseRepoSpelling(t *testing.T) {
 				want = `{"jsonrpc":"2.0","id":1,"result":{"success":true,"path":` + jsonString(t, leaf) +
 					`,"sourceBranch":"main","branch":"c7"}}`
 			}
-			if got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", params)); got != want {
+			if got := gitDispatch(t, h, rpcLine(t, "git.worktree_create", params)); got != want {
 				t.Errorf("got  %s\nwant %s", got, want)
 			}
 			if made := exists(filepath.Join(root, "cp")) || f.hasRef(t, "c7"); made == refused {

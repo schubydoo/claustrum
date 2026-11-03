@@ -74,7 +74,7 @@ func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 		t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 		f.stubAction(t, "lockparent")
 		slowGit(t, "read-tree", "fail", 0, `fatal: synthetic checkout failure\n`, "")
-		raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+		raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 		errText := checkoutFailed + fmt.Sprintf(undoHead, f.leaf()) +
 			"the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat w1: permission denied); " +
 			undoKeptText
@@ -94,7 +94,7 @@ func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 		t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 		f.stubAction(t, "lock")
 		slowGit(t, "read-tree", "fail", 0, `fatal: synthetic checkout failure\n`, "")
-		raw, _ := f.create(t, newTestServer(t), "w1", "ex", 0)
+		raw, _ := f.create(t, newTestGitDeps(), "w1", "ex", 0)
 		errText := checkoutFailed + fmt.Sprintf(undoHead, f.leaf()) +
 			"the worktree directory and its registration both remain; remove them by hand before retrying (RemoveAll hsub: permission denied)"
 		if want := createFrame(t, errText, "worktree_add_failed", false); raw != want {
@@ -123,7 +123,7 @@ func TestWorktreeCreateRollbackKeptBranchWithGuardedLeaf(t *testing.T) {
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 	f.stubAction(t, "repl")
 	slowGit(t, "read-tree", "fail", 0, `fatal: synthetic checkout failure\n`, "")
-	raw, _ := f.create(t, newTestServer(t), "w1", "", 0)
+	raw, _ := f.create(t, newTestGitDeps(), "w1", "", 0)
 	errText := checkoutFailed + fmt.Sprintf(undoHead, f.leaf()) + undoKeptText
 	if want := createFrame(t, errText, "worktree_add_failed", true); raw != want {
 		t.Errorf("reply = %s\nwant    %s", raw, want)

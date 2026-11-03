@@ -31,16 +31,16 @@ func TestExternalWorktreeUnsupportedGuardBranch(t *testing.T) {
 	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
 	root := filepath.Join(base, "ext")
 	wtp := filepath.Join(root, "d", "wt")
-	s := newTestServer(t)
+	h := newTestGitDeps()
 
-	create := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+	create := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "w", "worktreePath": wtp, "worktreeRoot": root}))
 	if !strings.Contains(create, "a custom worktree location is not supported on Windows hosts yet") ||
 		!strings.Contains(create, `"errorCode":"unsafe_path"`) {
 		t.Errorf("create with worktreeRoot = %s, want the unsupported refusal + unsafe_path", create)
 	}
 
-	remove := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+	remove := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wtp, "worktreeRoot": root}))
 	if !strings.Contains(remove, "a custom worktree location is not supported on Windows hosts yet") {
 		t.Errorf("remove with worktreeRoot = %s, want the unsupported refusal", remove)

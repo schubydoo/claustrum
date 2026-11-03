@@ -26,7 +26,7 @@ func TestWorktreeCreateUndoOpenHandle(t *testing.T) {
 	installGitSlowStub(t, realGit)
 
 	f := newWTFixture(t, false)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 	// The checkout waits 1.5 s and then fails. The add has written <leaf>\.git by
 	// then, and the holder below opens it during the wait.
@@ -47,7 +47,7 @@ func TestWorktreeCreateUndoOpenHandle(t *testing.T) {
 			}
 		}
 	}()
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	close(done)
 	fh := <-opened
 	if fh == nil {

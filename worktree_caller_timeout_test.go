@@ -355,17 +355,17 @@ func gateStub(t *testing.T, match string, hold time.Duration, stderr, stdout str
 
 // create dispatches one git.worktree_create and returns the raw reply and its
 // wall-clock time.
-func (f wtFixture) create(t *testing.T, s *server, branch, existing string, timeoutMs int) (string, time.Duration) {
+func (f wtFixture) create(t *testing.T, d *gitDeps, branch, existing string, timeoutMs int) (string, time.Duration) {
 	t.Helper()
 	extra := map[string]any{}
 	if existing != "" {
 		extra["existingBranch"] = existing
 	}
-	return f.createWith(t, s, branch, timeoutMs, extra)
+	return f.createWith(t, d, branch, timeoutMs, extra)
 }
 
 // createWith is create with extra params, for example sourceBranch.
-func (f wtFixture) createWith(t *testing.T, s *server, branch string, timeoutMs int, extra map[string]any) (string, time.Duration) {
+func (f wtFixture) createWith(t *testing.T, d *gitDeps, branch string, timeoutMs int, extra map[string]any) (string, time.Duration) {
 	t.Helper()
 	params := map[string]any{
 		"baseRepo":     f.base,
@@ -377,7 +377,7 @@ func (f wtFixture) createWith(t *testing.T, s *server, branch string, timeoutMs 
 		params[k] = v
 	}
 	start := time.Now()
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", params))
+	raw := gitDispatch(t, d, rpcLine(t, "git.worktree_create", params))
 	return raw, time.Since(start)
 }
 
@@ -423,10 +423,10 @@ func (f wtFixture) assertRolledBack(t *testing.T, wantRegs []string, attach bool
 
 // assertRetrySucceeds runs the same create again with nothing slowed and no
 // deadline. The rollback leaves nothing that blocks it.
-func (f wtFixture) assertRetrySucceeds(t *testing.T, s *server, branch, existing, wantBranch string) {
+func (f wtFixture) assertRetrySucceeds(t *testing.T, d *gitDeps, branch, existing, wantBranch string) {
 	t.Helper()
 	slowGit(t, "", "", 0, "", "")
-	raw, _ := f.create(t, s, branch, existing, 0)
+	raw, _ := f.create(t, d, branch, existing, 0)
 	if !strings.Contains(raw, `"success":true`) || !strings.Contains(raw, `"branch":"`+wantBranch+`"`) {
 		t.Fatalf("retry at the same path = %s, want success on branch %s", raw, wantBranch)
 	}
@@ -493,13 +493,13 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, tc.linked)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				match := "worktree,add"
 				if tc.existing != "" {
 					match += "," + tc.existing
 				}
 				gate := addGate(t, match, "gate", "")
-				raw, _ := f.create(t, s, "w1", tc.existing, lateMs)
+				raw, _ := f.create(t, h, "w1", tc.existing, lateMs)
 				if !strings.Contains(raw, wantBeforeCheckout) {
 					t.Fatalf("reply = %s, want %s", raw, wantBeforeCheckout)
 				}
@@ -507,7 +507,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 					t.Errorf("the add did not pass its gate: the deadline killed the add")
 				}
 				f.assertRolledBack(t, tc.wantRegs, tc.existing != "")
-				f.assertRetrySucceeds(t, s, "w1", tc.existing, tc.retryBr)
+				f.assertRetrySucceeds(t, h, "w1", tc.existing, tc.retryBr)
 			})
 		}
 	})
@@ -527,10 +527,10 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				runGit(t, f.top, "branch", "w1")
 				gate := addGate(t, "worktree,add", tc.mode, tc.stderr)
-				raw, _ := f.create(t, s, "w1", "", lateMs)
+				raw, _ := f.create(t, h, "w1", "", lateMs)
 				if !strings.Contains(raw, tc.want) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 					t.Fatalf("reply = %s, want worktree_add_failed with %s", raw, tc.want)
 				}
@@ -553,10 +553,10 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// existingBranch that is checked out in baseRepo.
 	t.Run("attach fallback", func(t *testing.T) {
 		f := newWTFixture(t, false)
-		s := newTestServer(t)
+		h := newTestGitDeps()
 		log := filepath.Join(t.TempDir(), "git.log")
 		t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-		raw, _ := f.create(t, s, "w1", "main", 0)
+		raw, _ := f.create(t, h, "w1", "main", 0)
 		want := `{"success":true,"path":` + jsonString(t, f.leaf()) + `,"sourceBranch":"main","branch":"w1"}`
 		if !strings.Contains(raw, want) {
 			t.Fatalf("reply = %s, want %s", raw, want)
@@ -597,9 +597,9 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// the refused attach's output. Nothing the call did not create is deleted.
 	t.Run("attach fallback fails", func(t *testing.T) {
 		f := newWTFixture(t, false)
-		s := newTestServer(t)
+		h := newTestGitDeps()
 		runGit(t, f.top, "branch", "w1")
-		raw, _ := f.create(t, s, "w1", "main", 0)
+		raw, _ := f.create(t, h, "w1", "main", 0)
 		// The wording of git's two refusals depends on the git version. The pattern
 		// accepts a text with escaped quotes before each refusal.
 		re := regexp.MustCompile(`"error":"git worktree add failed: (?:[^"\\]|\\.)*a branch named 'w1' already exists \(attaching to the existing branch main was refused first: (?:[^"\\]|\\.)*'main' is already (?:[^"\\]|\\.)*\)","errorCode":"worktree_add_failed"`)
@@ -620,12 +620,12 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// and the second rule of the stub fails it at once.
 	t.Run("attach fallback fails past the deadline", func(t *testing.T) {
 		f := newWTFixture(t, false)
-		s := newTestServer(t)
+		h := newTestGitDeps()
 		gate := addGate(t, "worktree,add,ex", "gatefail", `fatal: synthetic add failure\n`)
 		t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "worktree,add,--no-track")
 		t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
 		t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "fatal: synthetic add failure\n")
-		raw, _ := f.create(t, s, "w1", "ex", lateMs)
+		raw, _ := f.create(t, h, "w1", "ex", lateMs)
 		want := `"error":"git worktree add failed: fatal: synthetic add failure (attaching to the existing branch ex was refused first: fatal: synthetic add failure)","errorCode":"worktree_add_failed"`
 		if !strings.Contains(raw, want) {
 			t.Fatalf("reply = %s, want %s", raw, want)
@@ -647,9 +647,9 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// deadline fires while the attach add waits at its gate.
 	t.Run("attach fallback outlives the deadline", func(t *testing.T) {
 		f := newWTFixture(t, false)
-		s := newTestServer(t)
+		h := newTestGitDeps()
 		gate := addGate(t, "worktree,add,main", "gate", "")
-		raw, _ := f.create(t, s, "w1", "main", lateMs)
+		raw, _ := f.create(t, h, "w1", "main", lateMs)
 		if !strings.Contains(raw, wantBeforeCheckout) {
 			t.Fatalf("reply = %s, want %s", raw, wantBeforeCheckout)
 		}
@@ -687,10 +687,10 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, tc.linked)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				gate := gateStub(t, "read-tree", never, tc.stderr, tc.stdout)
 				deadlineAt(t, gateIn(gate), nil)
-				raw, elapsed := f.create(t, s, "w1", tc.existing, lateMs)
+				raw, elapsed := f.create(t, h, "w1", tc.existing, lateMs)
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired during the checkout): ` + tc.wantDetail + `","errorCode":"timeout"`
 				if !strings.Contains(raw, want) {
@@ -700,7 +700,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 					t.Errorf("reply after %s: the deadline did not kill the checkout", elapsed)
 				}
 				f.assertRolledBack(t, tc.wantRegs, tc.existing != "")
-				f.assertRetrySucceeds(t, s, "w1", tc.existing, tc.retryBr)
+				f.assertRetrySucceeds(t, h, "w1", tc.existing, tc.retryBr)
 			})
 		}
 	})
@@ -709,18 +709,18 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 	// also succeeds.
 	t.Run("T2 retry with a fresh branch", func(t *testing.T) {
 		f := newWTFixture(t, false)
-		s := newTestServer(t)
+		h := newTestGitDeps()
 		// The stub runs the real read-tree, makes its marker and then sleeps.
 		slowGit(t, "read-tree", "post", 30*time.Second, "", "")
 		gate := filepath.Join(t.TempDir(), "gate")
 		t.Setenv("CLAUSTRUM_GITSTUB_GATE", gate)
 		deadlineAt(t, gateIn(gate), nil)
-		raw, _ := f.create(t, s, "w1", "", lateMs)
+		raw, _ := f.create(t, h, "w1", "", lateMs)
 		if !strings.Contains(raw, "(deadline expired during the checkout)") {
 			t.Fatalf("reply = %s, want the during-the-checkout timeout", raw)
 		}
 		f.assertRolledBack(t, []string{}, false)
-		f.assertRetrySucceeds(t, s, "w2", "", "w2")
+		f.assertRetrySucceeds(t, h, "w2", "", "w2")
 		if f.hasRef(t, "w1") {
 			t.Errorf("refs/heads/w1 exists after the fresh retry")
 		}
@@ -746,10 +746,10 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, tc.linked)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				gate := gateStub(t, "ls-files", 30*time.Second, "", "")
 				deadlineAt(t, gateIn(gate), openAfter(gate, 500*time.Millisecond))
-				raw, _ := f.create(t, s, "w1", tc.existing, lateMs)
+				raw, _ := f.create(t, h, "w1", tc.existing, lateMs)
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired after the checkout finished)","errorCode":"timeout"`
 				if !strings.Contains(raw, want) {
@@ -759,7 +759,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 					t.Errorf("the reply came before the copy step passed its gate: the deadline killed the copy step")
 				}
 				f.assertRolledBack(t, tc.wantRegs, tc.existing != "")
-				f.assertRetrySucceeds(t, s, "w1", tc.existing, tc.retryBr)
+				f.assertRetrySucceeds(t, h, "w1", tc.existing, tc.retryBr)
 			})
 		}
 	})
@@ -790,7 +790,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, tc.linked)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				log := filepath.Join(t.TempDir(), "git.log")
 				t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 				slowGit(t, "read-tree", "hold", drainCap+30*time.Second, "", "")
@@ -801,7 +801,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 				// The deadline fires 300 ms after a poll saw the reap of the stub.
 				// No check below uses a poll time.
 				fired := deadlineAt(t, reapedFor(self, 300*time.Millisecond), nil)
-				raw, elapsed := f.create(t, s, "w1", tc.existing, lateMs)
+				raw, elapsed := f.create(t, h, "w1", tc.existing, lateMs)
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired after the checkout finished)","errorCode":"timeout"`
 				if !strings.Contains(raw, want) {
@@ -854,13 +854,13 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				stubStderr(t, tc.stderr, false)
 				// The deadline fires only after the stub wrote its stderr. A deadline
 				// from a calibration once fired during a slow add on a Windows CI
 				// runner. The reply then said "before the checkout started".
 				deadlineAt(t, gateIn(gateStub(t, "read-tree", 30*time.Second, "", "")), nil)
-				raw, _ := f.create(t, s, "w1", "", lateMs)
+				raw, _ := f.create(t, h, "w1", "", lateMs)
 				wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
 					"ms (deadline expired during the checkout): "+tc.want, "timeout")
 				f.assertRolledBack(t, []string{}, false)
@@ -1007,7 +1007,7 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 
 	t.Run("Q1 fallback keeps the resolved start point", func(t *testing.T) {
 		f := newWTFixture(t, false)
-		s := newTestServer(t)
+		h := newTestGitDeps()
 		// c1 on feat adds feat.txt. main (c0) stays checked out in baseRepo, so the
 		// attach to main is refused and the fallback runs.
 		runGit(t, f.top, "checkout", "-q", "-b", "feat")
@@ -1018,7 +1018,7 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 		c1 := f.out(t, f.top, "rev-parse", "feat")
 		log := filepath.Join(t.TempDir(), "git.log")
 		t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-		raw, _ := f.createWith(t, s, "w1", 0, map[string]any{"existingBranch": "main", "sourceBranch": "feat"})
+		raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"existingBranch": "main", "sourceBranch": "feat"})
 		want := `{"success":true,"path":` + jsonString(t, f.leaf()) + `,"sourceBranch":"feat","branch":"w1"}`
 		if !strings.Contains(raw, want) {
 			t.Fatalf("reply = %s, want %s", raw, want)
@@ -1052,14 +1052,14 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 		}{{"rm", false}, {"repl", false}, {"replparent", false}, {"", true}} {
 			t.Run("action "+tc.action, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				log := filepath.Join(t.TempDir(), "git.log")
 				t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 				t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 				f.stubAction(t, tc.action)
 				// Only the attach add holds the word ex.
 				slowGit(t, "worktree,add,ex", "fail", 0, `fatal: synthetic add failure\n`, "")
-				raw, _ := f.create(t, s, "w1", "ex", 0)
+				raw, _ := f.create(t, h, "w1", "ex", 0)
 				adds := gitCalls(t, log, "worktree", "add")
 				if tc.fallback {
 					if !strings.Contains(raw, `"success":true`) || len(adds) != 2 {
@@ -1097,12 +1097,12 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 				stubStderr(t, tc.attach, false)
 				stubStderr(t, tc.fallback, true)
 				slowGit(t, "worktree,add", "fail", 0, "", "")
-				raw, _ := f.create(t, s, "w1", "ex", 0)
+				raw, _ := f.create(t, h, "w1", "ex", 0)
 				wantError(t, raw, tc.want, "worktree_add_failed")
 			})
 		}
@@ -1120,11 +1120,11 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 				stubStderr(t, tc.stderr, false)
 				slowGit(t, tc.match, "fail", 0, "", tc.stdout)
-				raw, _ := f.create(t, s, "w1", "", 0)
+				raw, _ := f.create(t, h, "w1", "", 0)
 				wantError(t, raw, tc.prefix+tc.want, "worktree_add_failed")
 				if f.leafEntries(t) != nil {
 					t.Errorf("leaf %s exists after the rollback", f.leaf())
@@ -1152,13 +1152,13 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				log := filepath.Join(t.TempDir(), "git.log")
 				t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 				t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
 				f.stubAction(t, tc.action)
 				slowGit(t, "worktree,add", tc.mode, 0, `fatal: synthetic add failure\n`, "")
-				raw, _ := f.create(t, s, "w1", tc.existing, 0)
+				raw, _ := f.create(t, h, "w1", tc.existing, 0)
 				// In postfail the real add runs first, and its stderr comes before the
 				// stub's own line. That row does not test for the stub's line. The
 				// other rows carry it.
@@ -1189,10 +1189,10 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 		for _, linked := range []bool{false, true} {
 			t.Run("linked="+strconv.FormatBool(linked), func(t *testing.T) {
 				f := newWTFixture(t, linked)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				ctxlog := filepath.Join(t.TempDir(), "ctx.log")
 				t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", ctxlog)
-				raw, _ := f.create(t, s, "w1", "", 0)
+				raw, _ := f.create(t, h, "w1", "", 0)
 				if !strings.Contains(raw, `"success":true`) {
 					t.Fatalf("reply = %s, want success", raw)
 				}

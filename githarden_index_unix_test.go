@@ -392,7 +392,7 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 	old := syscall.Umask(0o022)
 	t.Cleanup(func() { syscall.Umask(old) })
 	wp := filepath.Join(repo, ".claude", "worktrees", "wt")
-	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
 		map[string]any{"baseRepo": repo, "branchName": "s1", "worktreePath": wp}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("create = %s, want success", raw)
@@ -406,8 +406,8 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 }
 
 // indexInstallFixture starts the git stub for a create whose index placement fails,
-// and returns the fixture, the server and the TMPDIR of the daemon.
-func indexInstallFixture(t *testing.T) (wtFixture, *server, string) {
+// and returns the fixture, the git state and the TMPDIR of the daemon.
+func indexInstallFixture(t *testing.T) (wtFixture, *gitDeps, string) {
 	t.Helper()
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")
@@ -419,10 +419,10 @@ func indexInstallFixture(t *testing.T) (wtFixture, *server, string) {
 	}
 	installGitSlowStub(t, realGit)
 	f := newWTFixture(t, false)
-	s := newTestServer(t)
+	h := newTestGitDeps()
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	return f, s, tmp
+	return f, h, tmp
 }
 
 // requireNoIndexTemp fails the test if tmp holds a temporary index folder of the
@@ -471,7 +471,7 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 		{"X11 leaf parent locked", "", both, "w1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s, tmp := indexInstallFixture(t)
+			f, h, tmp := indexInstallFixture(t)
 			reg := filepath.Join(f.regDir, "w1")
 			t.Cleanup(func() {
 				_ = os.Chmod(reg, 0o755)
@@ -486,7 +486,7 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 			t.Setenv("CLAUSTRUM_GITSTUB_LEAF", locked)
 			slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
-			raw, _ := f.create(t, s, "w1", tc.existing, 0)
+			raw, _ := f.create(t, h, "w1", tc.existing, 0)
 			tail := jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+": "+tc.undo)
 			tail = tail[1:] + `,"errorCode":"worktree_add_failed"}}`
 			if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.HasSuffix(raw, tail) {
@@ -526,11 +526,11 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 // branch w1 go. The temporary folder in the text has the prefix of the cell,
 // claude-ssh-index-, and a decimal number after it.
 func TestWorktreeCreateTempIndexGone(t *testing.T) {
-	f, s, tmp := indexInstallFixture(t)
+	f, h, tmp := indexInstallFixture(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "rmindex")
 	slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
-	raw, _ := f.create(t, s, "w1", "", 0)
+	raw, _ := f.create(t, h, "w1", "", 0)
 	tail := regexp.MustCompile(regexp.QuoteMeta(strings.Trim(jsonString(t, " open "+tmp+"/claude-ssh-index-"), `"`)) +
 		`[0-9]+/index: no such file or directory","errorCode":"worktree_add_failed"\}\}$`)
 	if !strings.HasPrefix(raw, checkoutFailedHead) || !tail.MatchString(raw) {
@@ -663,7 +663,7 @@ func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 		{"Z13", "ex", attach, "ex", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s, tmp := indexInstallFixture(t)
+			f, h, tmp := indexInstallFixture(t)
 			t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })
 			placed := filepath.Join(f.regDir, "w1", "index")
 			steps := [][]string{{"chmod", f.regDir, "600"}}
@@ -673,7 +673,7 @@ func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 			stubSteps(t, steps...)
 			slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
-			raw, _ := f.create(t, s, "w1", tc.existing, 0)
+			raw, _ := f.create(t, h, "w1", tc.existing, 0)
 			if err := os.Chmod(f.regDir, 0o755); err != nil {
 				t.Fatal(err)
 			}

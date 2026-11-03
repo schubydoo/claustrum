@@ -251,7 +251,7 @@ func TestStaleStepRunsAfterTheLeafIsMade(t *testing.T) {
 			ran, leafThere = true, exists(f.leaf())
 		}
 	}
-	raw, _ := f.create(t, srv, "w1", "", 0)
+	raw, _ := f.create(t, srv.gitDeps(), "w1", "", 0)
 	if !ran {
 		t.Fatalf("the step did not run with a held git directory, reply = %s", raw)
 	}

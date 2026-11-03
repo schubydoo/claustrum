@@ -71,7 +71,7 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newWTFixture(t, false)
-			s := newTestServer(t)
+			h := newTestGitDeps()
 			t.Cleanup(func() {
 				// Give the temp-dir cleanup its write access back.
 				_ = os.Chmod(filepath.Join(f.leaf(), "hsub"), 0o755)
@@ -109,7 +109,7 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 				}
 			}
 			slowGit(t, tc.match, tc.mode, tc.d, stderr, "")
-			raw, _ := f.create(t, s, "w1", "", timeoutMs)
+			raw, _ := f.create(t, h, "w1", "", timeoutMs)
 			wantError(t, raw, frame+strings.ReplaceAll(tc.undo, "%s", f.leaf()), tc.code)
 			if tc.undo == stepA {
 				order := readSnap(t, snap)
@@ -179,7 +179,7 @@ func TestWorktreeUndoRawReadDirOrder(t *testing.T) {
 		told := false
 		t.Run("attempt "+strconv.Itoa(attempt), func(t *testing.T) {
 			f := newWTFixture(t, false)
-			s := newTestServer(t)
+			h := newTestGitDeps()
 			t.Cleanup(func() {
 				for i := range 8 {
 					_ = os.Chmod(filepath.Join(f.leaf(), "r"+strconv.Itoa(i)), 0o755)
@@ -190,7 +190,7 @@ func TestWorktreeUndoRawReadDirOrder(t *testing.T) {
 			snap := filepath.Join(t.TempDir(), "snap.txt")
 			t.Setenv("CLAUSTRUM_GITSTUB_SNAP", snap)
 			slowGit(t, "read-tree", "fail", 0, `fatal: synthetic checkout failure\n`, "")
-			raw, _ := f.create(t, s, "w1", "", 0)
+			raw, _ := f.create(t, h, "w1", "", 0)
 			order := readSnap(t, snap)
 			i := slices.IndexFunc(order, func(n string) bool { return strings.HasPrefix(n, "r") })
 			if i < 0 {
@@ -249,7 +249,7 @@ func TestWorktreeCreatePathSpelling(t *testing.T) {
 		} {
 			t.Run(form+" "+tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
-				s := newTestServer(t)
+				h := newTestGitDeps()
 				t.Cleanup(func() {
 					_ = os.Chmod(filepath.Join(f.leaf(), "hsub"), 0o755)
 					_ = os.Chmod(filepath.Dir(f.leaf()), 0o755)
@@ -260,7 +260,7 @@ func TestWorktreeCreatePathSpelling(t *testing.T) {
 					f.stubAction(t, tc.action)
 					slowGit(t, "read-tree", "fail", 0, `fatal: synthetic checkout failure\n`, "")
 				}
-				raw, _ := f.createWith(t, s, "w1", 0, map[string]any{"worktreePath": path})
+				raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"worktreePath": path})
 				switch tc.undo {
 				case "":
 					want := `"result":{"success":true,"path":` + jsonString(t, path) + `,"sourceBranch":"main","branch":"w1"}`
