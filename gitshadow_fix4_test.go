@@ -263,7 +263,7 @@ func TestGitInfoWithNoShortHead(t *testing.T) {
 // (measured on macOS and Windows).
 func TestShadowFallbackKeepsItsFoldersInTheDaemonFolder(t *testing.T) {
 	f := newSeededShadowFixture(t)
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.mu.Lock()
 	h.state = controlFallback
 	err := h.makeFolder()

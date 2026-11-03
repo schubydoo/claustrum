@@ -70,10 +70,10 @@ func TestShadowSweepLeavesWhatItCannotRemove(t *testing.T) {
 			t.Errorf("sweep %d: the folder holds %v, want sub0 only", i, got)
 		}
 		// The own folder goes, so the next request makes it and sweeps again.
-		f.s.gitShadow.mu.Lock()
-		f.s.gitShadow.dropLock()
-		own := f.s.gitShadow.dir
-		f.s.gitShadow.mu.Unlock()
+		f.d.Shadow.mu.Lock()
+		f.d.Shadow.dropLock()
+		own := f.d.Shadow.dir
+		f.d.Shadow.mu.Unlock()
 		if err := os.RemoveAll(own); err != nil {
 			t.Fatal(err)
 		}

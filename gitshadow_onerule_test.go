@@ -399,7 +399,7 @@ func TestGitInfoWithNoGitAndNoRunFolder(t *testing.T) {
 	f := newShadowFixture(t)
 	// A relative folder that a broken guard makes lands in a folder of the test.
 	t.Chdir(t.TempDir())
-	f.s.gitShadow = nil
+	f.d.Shadow = nil
 	t.Setenv("PATH", t.TempDir())
 	if raw, _ := f.info(t, f.repo, nil); raw != noRepoLine {
 		t.Errorf("git.info = %s\nwant %s", raw, noRepoLine)

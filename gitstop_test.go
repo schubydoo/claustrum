@@ -479,13 +479,13 @@ func worktreeConfigFixture(t *testing.T, nth int) (wtFixture, *gitDeps) {
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "config", "extensions.worktreeConfig", "true")
 	writeFile(t, filepath.Join(f.top, ".git", "config.worktree"), "[core]\n\tfilemode = false\n", 0o644)
-	s, _ := newShadowServer(t)
+	d, _ := newShadowDeps(t)
 	installGitSlowStub(t, f.realGit)
 	slowGit(t, "config,--no-includes,--file,--list", "pre", testHold, "", "")
 	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
 	t.Setenv("CLAUSTRUM_GITSTUB_NTH", strconv.Itoa(nth))
 	setDuration(t, &repoReadBound, testCallLimit)
-	return f, s.gitDeps()
+	return f, d
 }
 
 // The listing of the config.worktree file after a good add ends at 30 s. The

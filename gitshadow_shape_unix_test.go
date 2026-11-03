@@ -121,7 +121,7 @@ func newShapeFixture(t *testing.T, state shapeState) shapeFixture {
 	resetAttr()
 	t.Cleanup(resetAttr)
 	if state == stateFallback {
-		h := f.s.gitShadow
+		h := f.d.Shadow
 		h.mu.Lock()
 		h.state = controlFallback
 		h.mu.Unlock()

@@ -302,7 +302,7 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 	for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
 		t.Run(method, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
-			h := f.s.gitShadow
+			h := f.d.Shadow
 			h.mu.Lock()
 			err := h.makeFolder()
 			dir := h.dir
@@ -380,7 +380,7 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 // 5fd08069.
 func TestShadowRepoFailureInTheShutdown(t *testing.T) {
 	f := newSeededShadowFixture(t)
-	f.s.gitShadow.close()
+	f.d.Shadow.close()
 	raw, calls := f.info(t, f.repo, nil)
 	if !strings.Contains(raw, "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: the daemon is in its shutdown") {
 		t.Errorf("git.info in the shutdown = %s", raw)
@@ -424,17 +424,17 @@ func TestShadowAnswersWhereGitRefusesAValue(t *testing.T) {
 		t.Run(cell.name, func(t *testing.T) {
 			clearFolderEnv(t)
 			f := newRefusalFixture(t)
-			s, _ := newSeededShadowServer(t)
+			d, _ := newSeededShadowDeps(t)
 			setRepoConfig(t, f.gitDir, cell.config)
-			info := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
+			info := gitDispatch(t, d, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
 			if !strings.Contains(info, cell.info) || (cell.info == infoShadow && !strings.HasSuffix(info, `"settingsControl":"shadow"}}`)) {
 				t.Errorf("git.info = %s\nwant %s", info, cell.info)
 			}
-			if got := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": f.wt, "baseRepo": f.repo})); !strings.Contains(got, cell.status) {
+			if got := gitDispatch(t, d, rpcLine(t, "git.status", map[string]any{"path": f.wt, "baseRepo": f.repo})); !strings.Contains(got, cell.status) {
 				t.Errorf("git.status = %s\nwant %s", got, cell.status)
 			}
 			// With the member the answer is the one of before the copy.
-			off := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.repo, "shadowDirOff": true}))
+			off := gitDispatch(t, d, rpcLine(t, "git.info", map[string]any{"path": f.repo, "shadowDirOff": true}))
 			if normal := strings.Contains(off, `"isRepo":true`); normal != cell.normalWithMember {
 				t.Errorf("git.info with the member = %s\nwant a normal answer: %v", off, cell.normalWithMember)
 			}
@@ -451,20 +451,20 @@ func TestShadowAnswersWhereGitRefusesAValue(t *testing.T) {
 func TestShadowCreateWithBareInConfigWorktree(t *testing.T) {
 	clearFolderEnv(t)
 	f := newRefusalFixture(t)
-	s, _ := newSeededShadowServer(t)
+	d, _ := newSeededShadowDeps(t)
 	runGit(t, f.repo, "config", "extensions.worktreeConfig", "true")
 	setIncludeFile(t, f.gitDir, "config.worktree", "[core]\n\tbare = true\n")
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
-	off := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+	off := gitDispatch(t, d, rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": f.repo, "branchName": "w0", "worktreePath": filepath.Join(f.repo, ".claude", "worktrees", "w0"), "shadowDirOff": true}))
 	if !strings.Contains(off, `"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}`) {
 		t.Errorf("git.worktree_create with the member = %s", off)
 	}
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}))
+	raw := gitDispatch(t, d, rpcLine(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}))
 	if !strings.Contains(raw, `"result":{"success":true,"path":`) || !strings.HasSuffix(raw, `,"sourceBranch":"main","branch":"w1"}}`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	raw = dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": leaf, "baseRepo": f.repo}))
+	raw = gitDispatch(t, d, rpcLine(t, "git.status", map[string]any{"path": leaf, "baseRepo": f.repo}))
 	if !strings.Contains(raw, `"result":{"isRepo":true,"clean":true}`) {
 		t.Errorf("git.status on the new worktree = %s", raw)
 	}

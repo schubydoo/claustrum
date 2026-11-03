@@ -146,7 +146,7 @@ type rpcReply struct {
 
 func trustCall(t *testing.T, method string, params map[string]any) rpcReply {
 	t.Helper()
-	raw := dispatchRaw(t, newTestServer(t), rpcLine(t, method, params))
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, method, params))
 	var r rpcReply
 	if err := json.Unmarshal([]byte(raw), &r); err != nil {
 		t.Fatalf("%s: undecodable reply %s: %v", method, raw, err)
@@ -421,8 +421,8 @@ func TestGitDirTrustEntryGoneMeansNoRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEntryGoneEveryWay(t, r)
-	s, _ := newSeededShadowServer(t)
-	wantResult(t, "status(TW)", trustCallOn(t, s, "git.status", map[string]any{"path": r.TW, "baseRepo": r.TW}), notRepoStatus)
+	d, _ := newSeededShadowDeps(t)
+	wantResult(t, "status(TW)", trustCallOn(t, d, "git.status", map[string]any{"path": r.TW, "baseRepo": r.TW}), notRepoStatus)
 	wantRemoveRefused(t, r.TW, r.SWW, "s1", r.T)
 }
 
@@ -432,20 +432,20 @@ func TestGitDirTrustEntryGoneMeansNoRepository(t *testing.T) {
 // (measured on Linux).
 func wantEntryGoneEveryWay(t *testing.T, r trustRepo) {
 	t.Helper()
-	s, _ := newSeededShadowServer(t)
-	wantEntryGoneFrames(t, s, r, nil, entryGoneShadow)
-	wantEntryGoneFrames(t, s, r, map[string]any{"shadowDirOff": true},
+	d, _ := newSeededShadowDeps(t)
+	wantEntryGoneFrames(t, d, r, nil, entryGoneShadow)
+	wantEntryGoneFrames(t, d, r, map[string]any{"shadowDirOff": true},
 		`{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"off-switch"}`)
-	first, _ := newShadowServer(t)
+	first, _ := newShadowDeps(t)
 	wantResult(t, "first info(TW)", trustCallOn(t, first, "git.info", map[string]any{"path": r.TW}), notRepoInfo)
-	first, _ = newShadowServer(t)
+	first, _ = newShadowDeps(t)
 	wantResult(t, "first list_branches(TW)", trustCallOn(t, first, "git.list_branches", map[string]any{"path": r.TW}), notRepoList)
 }
 
-// trustCallOn is trustCall on the server s.
-func trustCallOn(t *testing.T, s *server, method string, params map[string]any) rpcReply {
+// trustCallOn is trustCall with the git state d.
+func trustCallOn(t *testing.T, d *gitDeps, method string, params map[string]any) rpcReply {
 	t.Helper()
-	raw := dispatchRaw(t, s, rpcLine(t, method, params))
+	raw := gitDispatch(t, d, rpcLine(t, method, params))
 	var r rpcReply
 	if err := json.Unmarshal([]byte(raw), &r); err != nil {
 		t.Fatalf("%s: undecodable reply %s: %v", method, raw, err)
@@ -457,10 +457,10 @@ func trustCallOn(t *testing.T, s *server, method string, params map[string]any) 
 const entryGoneShadow = `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`
 
 // wantEntryGoneFrames asserts the "no repository" answers of git.info,
-// git.list_branches and git.worktree_create on TW on the server s, with the extra
-// members of each request, and that create made nothing. infoResult is the result of
-// git.info.
-func wantEntryGoneFrames(t *testing.T, s *server, r trustRepo, extra map[string]any, infoResult string) {
+// git.list_branches and git.worktree_create on TW with the git state d, with the
+// extra members of each request, and that create made nothing. infoResult is the
+// result of git.info.
+func wantEntryGoneFrames(t *testing.T, d *gitDeps, r trustRepo, extra map[string]any, infoResult string) {
 	t.Helper()
 	params := func(p map[string]any) map[string]any {
 		for k, v := range extra {
@@ -468,10 +468,10 @@ func wantEntryGoneFrames(t *testing.T, s *server, r trustRepo, extra map[string]
 		}
 		return p
 	}
-	wantResult(t, "info(TW)", trustCallOn(t, s, "git.info", params(map[string]any{"path": r.TW})), infoResult)
-	wantResult(t, "list_branches(TW)", trustCallOn(t, s, "git.list_branches", params(map[string]any{"path": r.TW})), notRepoList)
+	wantResult(t, "info(TW)", trustCallOn(t, d, "git.info", params(map[string]any{"path": r.TW})), infoResult)
+	wantResult(t, "list_branches(TW)", trustCallOn(t, d, "git.list_branches", params(map[string]any{"path": r.TW})), notRepoList)
 	wt := filepath.Join(r.TW, ".claude", "worktrees", "w1")
-	rc := trustCallOn(t, s, "git.worktree_create", params(map[string]any{"baseRepo": r.TW, "worktreePath": wt, "branchName": "w1"}))
+	rc := trustCallOn(t, d, "git.worktree_create", params(map[string]any{"baseRepo": r.TW, "worktreePath": wt, "branchName": "w1"}))
 	wantResult(t, "create(TW)", rc, notRepoCreate)
 	if exists(wt) {
 		t.Errorf("create(TW) left %s", wt)
@@ -1108,7 +1108,7 @@ func wantErrorFrame(t *testing.T, method string, params map[string]any, msg stri
 		t.Fatal(err)
 	}
 	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` + string(m) + `}}`
-	if got := dispatchRaw(t, newTestServer(t), rpcLine(t, method, params)); got != want {
+	if got := gitDispatch(t, newTestGitDeps(), rpcLine(t, method, params)); got != want {
 		t.Errorf("%s = %s\nwant %s", method, got, want)
 	}
 }
@@ -1174,8 +1174,8 @@ func TestGitDirTrustDamagedTextNeedsAWorktreesParent(t *testing.T) {
 // state shadow and returns the whole frame.
 func trustRemoveFrame(t *testing.T, r trustRepo, branch string) string {
 	t.Helper()
-	s, _ := newSeededShadowServer(t)
-	return dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+	d, _ := newSeededShadowDeps(t)
+	return gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 		"baseRepo": r.T, "worktreePath": r.D, "branchName": branch}))
 }
 

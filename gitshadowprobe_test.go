@@ -127,9 +127,9 @@ func TestProbeFolder(t *testing.T) {
 	// The handle of the lock file is closed first, so that the remove works on
 	// Windows too.
 	now := setProbeClock(t)
-	f.s.gitShadow.mu.Lock()
-	f.s.gitShadow.dropLock()
-	f.s.gitShadow.mu.Unlock()
+	f.d.Shadow.mu.Lock()
+	f.d.Shadow.dropLock()
+	f.d.Shadow.mu.Unlock()
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -201,16 +201,20 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 	if err := os.Mkdir(probe, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.probeFolderMu.Lock()
+	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	line := rpcLine(t, "git.info", map[string]any{"path": f.repo})
 	type reply struct {
-		raw   string
-		calls []envCall
+		raw string
+		err error
 	}
 	done := make(chan reply, 1)
-	go func() {
-		raw, calls := f.info(t, f.repo, nil)
-		done <- reply{raw, calls}
+	go func() { // calls no t method: the test goroutine reads the result
+		raw, err := gitDispatchErr(f.d, line)
+		done <- reply{raw, err}
 	}()
 	select {
 	case r := <-done:
@@ -220,8 +224,12 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 	}
 	h.probeFolderMu.Unlock()
 	r := <-done
-	if !strings.Contains(r.raw, `"isRepo":true`) || len(probeCalls(r.calls)) != 1 {
-		t.Fatalf("git.info = %s with %d calls about the repository, want isRepo true and one call", r.raw, len(probeCalls(r.calls)))
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	calls := readEnvCalls(t, f.log)
+	if !strings.Contains(r.raw, `"isRepo":true`) || len(probeCalls(calls)) != 1 {
+		t.Fatalf("git.info = %s with %d calls about the repository, want isRepo true and one call", r.raw, len(probeCalls(calls)))
 	}
 	if got, want := entryNames(t, probe), []string{"HEAD", "config", "info", "objects", "refs"}; !slices.Equal(got, want) {
 		t.Errorf(".probe holds %v, want %v", got, want)
@@ -788,7 +796,7 @@ func TestNoProbeOutsideTheStateShadow(t *testing.T) {
 	if _, calls := f.info(t, f.repo, map[string]any{"shadowDirOff": true}); len(probeCalls(calls)) != 0 {
 		t.Errorf("with the member: %d calls about the repository", len(probeCalls(calls)))
 	}
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.mu.Lock()
 	h.state = controlFallback
 	h.mu.Unlock()

@@ -65,7 +65,7 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // with an older git). With git 2.56 that answer is claustrum's own, not measured.
 func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 	f := newNoRepoFixture(t)
-	f.s, _ = newSeededShadowServer(t)
+	f.d, _ = newSeededShadowDeps(t)
 	g := filepath.Join(filepath.Dir(f.n), "G")
 	nowhere := filepath.Join(filepath.Dir(f.n), "nowhere", "gitdir")
 	writeFile(t, filepath.Join(g, ".git"), "gitdir: "+nowhere+"\n", 0o644)
@@ -91,8 +91,8 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 		{"older git, shadowDirOff", "fatal: not a git repository: " + filepath.ToSlash(nowhere) + "\n", "", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			kept := f.s
-			defer func() { f.s = kept }()
+			kept := f.d
+			defer func() { f.d = kept }()
 			stubListing(t, 128, "")
 			stubStderr(t, tc.stderr, false)
 			if tc.first {
@@ -115,7 +115,7 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 			for _, m := range rows {
 				if tc.first {
 					// A daemon with a run folder that has made no git request yet.
-					f.s, _ = newShadowServer(t)
+					f.d, _ = newShadowDeps(t)
 				}
 				if got := f.frame(t, m.method, m.params); got != m.frame {
 					t.Errorf("%s %v = %s\nwant %s", m.method, m.params, got, m.frame)

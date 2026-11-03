@@ -43,8 +43,8 @@ func TestWorktreeRemoveCraftedGitFile(t *testing.T) {
 			}
 			text := strings.ReplaceAll(c.text, "<abs>", gd)
 			writeFile(t, filepath.Join(b, ".git"), text, 0o644)
-			s, _ := newShadowServer(t)
-			raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+			d, _ := newShadowDeps(t)
+			raw := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 				"baseRepo": b, "worktreePath": wp, "branchName": "w"}))
 			if raw != removeOK {
 				t.Fatalf("frame = %s\nwant %s", raw, removeOK)
@@ -86,8 +86,8 @@ func TestWorktreeRemoveLinkedBaseBlankGitDir(t *testing.T) {
 	if !exists(filepath.Join(gd, "worktrees", "w")) {
 		t.Fatal("setup: the registration of w is missing")
 	}
-	s, _ := newShadowServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{
+	d, _ := newShadowDeps(t)
+	raw := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 		"baseRepo": x, "worktreePath": wp, "branchName": "w"}))
 	if raw != removeOK {
 		t.Fatalf("frame = %s\nwant %s", raw, removeOK)

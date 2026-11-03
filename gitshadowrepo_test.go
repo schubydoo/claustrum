@@ -10,18 +10,18 @@ import (
 	"time"
 )
 
-// newSeededShadowServer returns a server whose settings control has a run
-// folder and the state shadow, with no start test run. The first git request
-// makes the folder of the daemon. Tests of the folder of a repository and of
-// the git calls in the state shadow use it.
-func newSeededShadowServer(t *testing.T) (*server, string) {
+// newSeededShadowDeps returns the git state of a daemon whose settings control
+// has a run folder and the state shadow, with no start test run. The first git
+// request makes the folder of the daemon. Tests of the folder of a repository
+// and of the git calls in the state shadow use it.
+func newSeededShadowDeps(t *testing.T) (*gitDeps, string) {
 	t.Helper()
-	s, run := newShadowServer(t)
-	h := s.gitShadow
+	d, run := newShadowDeps(t)
+	h := d.Shadow
 	h.mu.Lock()
 	h.state, h.tested = controlShadow, shadowClock()
 	h.mu.Unlock()
-	return s, run
+	return d, run
 }
 
 // repoFolderFixture is a repository with a linked worktree and a seeded
@@ -34,8 +34,8 @@ type repoFolderFixture struct {
 func newRepoFolderFixture(t *testing.T) repoFolderFixture {
 	t.Helper()
 	f := newRefusalFixture(t)
-	s, _ := newSeededShadowServer(t)
-	h := s.gitShadow
+	d, _ := newSeededShadowDeps(t)
+	h := d.Shadow
 	h.mu.Lock()
 	err := h.makeFolder()
 	h.mu.Unlock()
@@ -531,7 +531,7 @@ func configReads(calls []envCall) []int {
 func newSeededShadowFixture(t *testing.T) shadowFixture {
 	t.Helper()
 	f := newShadowFixture(t)
-	h := f.s.gitShadow
+	h := f.d.Shadow
 	h.mu.Lock()
 	h.state, h.tested = controlShadow, shadowClock()
 	h.mu.Unlock()
@@ -661,39 +661,39 @@ func TestShadowRepoFolderPerState(t *testing.T) {
 		}
 		return names
 	}
-	fixture := func(t *testing.T) (refusalFixture, *server, string) {
+	fixture := func(t *testing.T) (refusalFixture, *gitDeps, string) {
 		t.Helper()
 		f := newRefusalFixture(t)
-		s, run := newSeededShadowServer(t)
-		return f, s, run
+		d, run := newSeededShadowDeps(t)
+		return f, d, run
 	}
 	for i := range 5 {
-		f, s, run := fixture(t)
+		f, d, run := fixture(t)
 		r := f.fiveRequests(nil)[i]
-		raw := dispatchRaw(t, s, rpcLine(t, r.method, r.params))
+		raw := gitDispatch(t, d, rpcLine(t, r.method, r.params))
 		if got, want := folders(t, run), []string{shadowRepoName(f.gitDir)}; !slices.Equal(got, want) {
 			t.Errorf("%s as the first request: folders %v, want %v (reply %s)", r.method, got, want, raw)
 		}
 	}
 
-	f, s, run := fixture(t)
-	dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.repo, "shadowDirOff": true}))
+	f, d, run := fixture(t)
+	gitDispatch(t, d, rpcLine(t, "git.info", map[string]any{"path": f.repo, "shadowDirOff": true}))
 	if got := folders(t, run); len(got) != 0 {
 		t.Errorf("with the switch: folders %v, want none", got)
 	}
 
-	f, s, run = fixture(t)
-	s.gitShadow.mu.Lock()
-	s.gitShadow.state = controlFallback
-	s.gitShadow.mu.Unlock()
-	dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
+	f, d, run = fixture(t)
+	d.Shadow.mu.Lock()
+	d.Shadow.state = controlFallback
+	d.Shadow.mu.Unlock()
+	gitDispatch(t, d, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
 	if got := folders(t, run); len(got) != 0 {
 		t.Errorf("in the state fallback-git: folders %v, want none", got)
 	}
 
-	f, s, run = fixture(t)
+	f, d, run = fixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
-	raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
+	raw := gitDispatch(t, d, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
 	if got := folders(t, run); len(got) != 0 || !strings.Contains(raw, repoConfigPrefix) {
 		t.Errorf("with a refused config: folders %v, want none (reply %s)", got, raw)
 	}

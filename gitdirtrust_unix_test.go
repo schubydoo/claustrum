@@ -398,8 +398,8 @@ func TestGitDirTrustRefsWithoutSearchPermission(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
-	s, _ := newShadowServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": r.T}))
+	d, _ := newShadowDeps(t)
+	got := gitDispatch(t, d, rpcLine(t, "git.info", map[string]any{"path": r.T}))
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`; got != want {
 		t.Errorf("git.info = %s\nwant %s", got, want)
 	}
@@ -510,11 +510,11 @@ func TestGitDirTrustRemovePresentLeafBrokenRefs(t *testing.T) {
 func TestGitDirTrustCreateAndListRefsDenied(t *testing.T) {
 	r := newTrustRepo(t)
 	undo := denyRefsSearch(t, r.T)
-	s, _ := newSeededShadowServer(t)
+	d, _ := newSeededShadowDeps(t)
 	wt := filepath.Join(r.T, ".claude", "worktrees", "w3")
-	c := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+	c := gitDispatch(t, d, rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": r.T, "worktreePath": wt, "branchName": "w3"}))
-	l := dispatchRaw(t, s, rpcLine(t, "git.list_branches", map[string]any{"path": r.T}))
+	l := gitDispatch(t, d, rpcLine(t, "git.list_branches", map[string]any{"path": r.T}))
 	undo()
 	if want := `{"jsonrpc":"2.0","id":1,"result":` + notRepoCreate + `}`; c != want {
 		t.Errorf("create = %s\nwant %s", c, want)

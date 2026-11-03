@@ -130,7 +130,7 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 	} {
 		t.Run(ph.name, func(t *testing.T) {
 			f := newNoRepoFixture(t)
-			f.s, _ = newSeededShadowServer(t)
+			f.d, _ = newSeededShadowDeps(t)
 			g := filepath.Join(filepath.Dir(f.n), "G")
 			writeFile(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(filepath.Dir(f.n), "nowhere", "gitdir")+"\n", 0o644)
 			plantEnv(t, ph.env...)
@@ -150,8 +150,8 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 					"listing the configuration in force: exit status 128: "+text, true)
 			}
 			if newGit && ph.env == nil {
-				first, _ := newShadowServer(t)
-				if got, w := dispatchRaw(t, first, rpcLine(t, "git.info", map[string]any{"path": g})), noRepoShadow; got != w {
+				first, _ := newShadowDeps(t)
+				if got, w := gitDispatch(t, first, rpcLine(t, "git.info", map[string]any{"path": g})), noRepoShadow; got != w {
 					t.Errorf("first git.info = %s\nwant %s", got, w)
 				}
 				want = append(want, off...)

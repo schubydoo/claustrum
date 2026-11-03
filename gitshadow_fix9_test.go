@@ -21,8 +21,8 @@ func TestShadowRelativeRunFolder(t *testing.T) {
 			f := newShadowFixture(t)
 			wd := resolveTestRoot(t, t.TempDir())
 			t.Chdir(wd)
-			f.s.gitShadow = newShadowHost(execChildRunDir(sock))
-			t.Cleanup(f.s.gitShadow.close)
+			f.d.Shadow = newShadowHost(execChildRunDir(sock))
+			t.Cleanup(f.d.Shadow.close)
 			run := filepath.Join(wd, filepath.Dir(sock))
 			raw, calls := f.info(t, f.repo, nil)
 			if !strings.Contains(raw, `"isRepo":true`) || !strings.Contains(raw, `"settingsControl":"shadow"`) {

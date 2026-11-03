@@ -14,24 +14,24 @@ import (
 	"time"
 )
 
-// shadowFixture is a repository with a linked worktree, a server with a run
-// folder, and the git stub with its call log.
+// shadowFixture is a repository with a linked worktree, the git state of a
+// daemon with a run folder, and the git stub with its call log.
 type shadowFixture struct {
 	refusalFixture
-	s   *server
+	d   *gitDeps
 	run string
 	log string
 }
 
-// newShadowServer returns a server whose settings control has a run folder, as
-// the -serve daemon has it.
-func newShadowServer(t *testing.T) (*server, string) {
+// newShadowDeps returns the git state of a daemon whose settings control has a
+// run folder, as the -serve daemon has it.
+func newShadowDeps(t *testing.T) (*gitDeps, string) {
 	t.Helper()
-	s := newTestServer(t)
+	d := newTestGitDeps()
 	run := resolveTestRoot(t, t.TempDir())
-	s.gitShadow = newShadowHost(run)
-	t.Cleanup(s.gitShadow.close)
-	return s, run
+	d.Shadow = newShadowHost(run)
+	t.Cleanup(d.Shadow.close)
+	return d, run
 }
 
 func newShadowFixture(t *testing.T) shadowFixture {
@@ -54,8 +54,8 @@ func newShadowFixture(t *testing.T) shadowFixture {
 	resetUserExcludesCache(t)
 	log := filepath.Join(t.TempDir(), "env.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_ENVLOG", log)
-	s, run := newShadowServer(t)
-	return shadowFixture{refusalFixture: f, s: s, run: run, log: log}
+	d, run := newShadowDeps(t)
+	return shadowFixture{refusalFixture: f, d: d, run: run, log: log}
 }
 
 // call dispatches method and returns the reply and the git calls that it made.
@@ -64,7 +64,7 @@ func (f shadowFixture) call(t *testing.T, method string, params map[string]any) 
 	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	raw := dispatchRaw(t, f.s, rpcLine(t, method, params))
+	raw := gitDispatch(t, f.d, rpcLine(t, method, params))
 	return raw, readEnvCalls(t, f.log)
 }
 
@@ -239,7 +239,7 @@ func TestSettingsControlMember(t *testing.T) {
 	}
 	// No other method has the member.
 	for _, m := range f.fiveRequests(nil)[1:] {
-		if raw := dispatchRaw(t, f.s, rpcLine(t, m.method, m.params)); strings.Contains(raw, "settingsControl") {
+		if raw := gitDispatch(t, f.d, rpcLine(t, m.method, m.params)); strings.Contains(raw, "settingsControl") {
 			t.Errorf("%s = %s, want no settingsControl", m.method, raw)
 		}
 	}
@@ -253,8 +253,8 @@ func TestSettingsControlNeedsARunFolder(t *testing.T) {
 	// A relative folder that a broken guard makes lands in a folder of the test.
 	t.Chdir(t.TempDir())
 	for _, host := range []*shadowHost{nil, newShadowHost("")} {
-		f.s = newTestServer(t)
-		f.s.gitShadow = host
+		f.d = newTestGitDeps()
+		f.d.Shadow = host
 		for _, extra := range []map[string]any{nil, {"shadowDirOff": true}} {
 			raw, calls := f.info(t, f.repo, extra)
 			if strings.Contains(raw, "settingsControl") || !strings.Contains(raw, `"isRepo":true`) {
@@ -306,9 +306,9 @@ func TestShadowFolderLife(t *testing.T) {
 
 	// The folder goes while the daemon runs. The handle is closed first, so
 	// that the remove works on Windows too.
-	f.s.gitShadow.mu.Lock()
-	f.s.gitShadow.dropLock()
-	f.s.gitShadow.mu.Unlock()
+	f.d.Shadow.mu.Lock()
+	f.d.Shadow.dropLock()
+	f.d.Shadow.mu.Unlock()
 	if err := os.RemoveAll(first); err != nil {
 		t.Fatal(err)
 	}
@@ -328,20 +328,21 @@ func TestShadowFolderLife(t *testing.T) {
 	}
 
 	// A second daemon in the same run folder.
-	other := newTestServer(t)
-	other.gitShadow = newShadowHost(f.run)
-	if raw := dispatchRaw(t, other, rpcLine(t, "git.info", map[string]any{"path": f.repo})); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+	other := newTestGitDeps()
+	other.Shadow = newShadowHost(f.run)
+	t.Cleanup(other.Shadow.close) // a failure below must not leave its lock open
+	if raw := gitDispatch(t, other, rpcLine(t, "git.info", map[string]any{"path": f.repo})); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 		t.Fatalf("git.info of the second daemon = %s", raw)
 	}
 	if names := daemonFolders(t, f.run); len(names) != 2 {
 		t.Fatalf("git-shadow with two daemons holds %v", names)
 	}
-	other.gitShadow.close()
+	other.Shadow.close()
 	if got := daemonFolder(t, f.run); got != second {
 		t.Errorf("after the end of the second daemon git-shadow holds %s, want %s", got, second)
 	}
 
-	f.s.gitShadow.close()
+	f.d.Shadow.close()
 	if names := daemonFolders(t, f.run); names == nil || len(names) != 0 {
 		t.Errorf("git-shadow after the end holds %v, want an empty folder", names)
 	}

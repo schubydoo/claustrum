@@ -51,14 +51,14 @@ func readSettleCalls(t *testing.T, log string) []settleCall {
 func settleFixture(t *testing.T, code int, hold time.Duration) (wtFixture, *gitDeps, string) {
 	t.Helper()
 	f := newWTFixture(t, false)
-	s, _ := newShadowServer(t)
+	d, _ := newShadowDeps(t)
 	installGitSlowStub(t, f.realGit)
 	setAttrSource(t, true)
 	log := filepath.Join(t.TempDir(), "ctx.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", log)
 	slowGit(t, "diff-files", "fail", hold, "", "")
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", strconv.Itoa(code))
-	return f, s.gitDeps(), log
+	return f, d, log
 }
 
 // setAttrSource makes the probe of attrSourceArgs count as done with the answer

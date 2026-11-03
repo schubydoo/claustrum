@@ -53,9 +53,9 @@ func symlinkOrSkip(t *testing.T, target, link string) {
 
 // ownFolderName is the name of the folder of the daemon of f.
 func ownFolderName(f shadowFixture) string {
-	f.s.gitShadow.mu.Lock()
-	defer f.s.gitShadow.mu.Unlock()
-	return filepath.Base(f.s.gitShadow.dir)
+	f.d.Shadow.mu.Lock()
+	defer f.d.Shadow.mu.Unlock()
+	return filepath.Base(f.d.Shadow.dir)
 }
 
 // sweptGone fails the test when path is still there.
@@ -246,9 +246,9 @@ func TestShadowSweepAgainAtANewFolder(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)
 	first := daemonFolder(t, f.run)
-	f.s.gitShadow.mu.Lock()
-	f.s.gitShadow.dropLock()
-	f.s.gitShadow.mu.Unlock()
+	f.d.Shadow.mu.Lock()
+	f.d.Shadow.dropLock()
+	f.d.Shadow.mu.Unlock()
 	if err := os.RemoveAll(first); err != nil {
 		t.Fatal(err)
 	}
@@ -269,10 +269,10 @@ func TestShadowSweepKeepsALiveDaemon(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)
 	first := daemonFolder(t, f.run)
-	other := newTestServer(t)
-	other.gitShadow = newShadowHost(f.run)
-	t.Cleanup(other.gitShadow.close)
-	dispatchRaw(t, other, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
+	other := newTestGitDeps()
+	other.Shadow = newShadowHost(f.run)
+	t.Cleanup(other.Shadow.close)
+	gitDispatch(t, other, rpcLine(t, "git.info", map[string]any{"path": f.repo}))
 	sweptThere(t, filepath.Join(first, shadowLockName))
 	sweptThere(t, filepath.Join(first, shadowRepoName(filepath.Join(f.repo, ".git"))))
 }

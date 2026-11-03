@@ -131,8 +131,8 @@ func TestCreateSweepsNothingAfterASwap(t *testing.T) {
 func TestCreateSweepsNothingUnderTheOffSwitch(t *testing.T) {
 	f, old, _ := newSweepFixture(t)
 	atStep(t, "stale", func() {
-		f.s.offGitRequests.Add(1)
-		t.Cleanup(func() { f.s.offGitRequests.Add(-1) })
+		f.d.OffRequests.Add(1)
+		t.Cleanup(func() { f.d.OffRequests.Add(-1) })
 	})
 	if raw := createW1(t, f); !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s", raw)

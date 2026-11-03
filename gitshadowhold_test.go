@@ -426,7 +426,7 @@ func newHoldTrial(t *testing.T, match func(args []string) bool) *holdTrial {
 			return
 		}
 		f.fired = true
-		if _, err := f.s.gitShadow.syncRepo(gitB, readB); err != nil {
+		if _, err := f.d.Shadow.syncRepo(gitB, readB); err != nil {
 			t.Error(err)
 		}
 	}
@@ -754,7 +754,7 @@ func TestRepoHoldStatusRenewsBetweenCalls(t *testing.T) {
 			return
 		}
 		fired = true
-		if _, err := f.s.gitShadow.syncRepo(gitB, readB); err != nil {
+		if _, err := f.d.Shadow.syncRepo(gitB, readB); err != nil {
 			t.Error(err)
 		}
 	}
@@ -795,7 +795,7 @@ func TestRepoHoldNoRenewAfterAListing(t *testing.T) {
 			return
 		}
 		fired = true
-		if _, err := f.s.gitShadow.syncRepo(gitB, readB); err != nil {
+		if _, err := f.d.Shadow.syncRepo(gitB, readB); err != nil {
 			t.Error(err)
 		}
 	}
@@ -830,7 +830,7 @@ func TestRepoHoldBranchStepNoRenewAfterItsListing(t *testing.T) {
 			return
 		}
 		fired = true
-		if _, err := f.s.gitShadow.syncRepo(gitB, readB); err != nil {
+		if _, err := f.d.Shadow.syncRepo(gitB, readB); err != nil {
 			t.Error(err)
 		}
 	}
@@ -845,7 +845,7 @@ func TestRepoHoldBranchStepNoRenewAfterItsListing(t *testing.T) {
 		},
 	}
 	for name, step := range steps {
-		u, err := f.s.gitShadow.syncRepo(gitA, readA)
+		u, err := f.d.Shadow.syncRepo(gitA, readA)
 		if err != nil {
 			t.Fatal(err)
 		}

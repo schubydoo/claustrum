@@ -17,7 +17,7 @@ import (
 // unchanged after git.status. Reverting the env flips it: status rewrites the index.
 //
 // Cross-platform on purpose (no build tag): the fix has no OS branch, so the Windows
-// leg must exercise it too. It uses only os/filepath/bytes and the socket harness —
+// leg must exercise it too. It uses only os/filepath/bytes and gitDispatch, with
 // no POSIX shell (unlike the .gitattributes-filter sibling, which stays //go:build unix).
 func TestGitStatusDoesNotRewriteIndex(t *testing.T) {
 	requireGit(t)
@@ -47,9 +47,8 @@ func TestGitStatusDoesNotRewriteIndex(t *testing.T) {
 		t.Fatalf("read index: %v", err)
 	}
 
-	sock := startSocketServer(t)
-	cl := dial(t, sock)
-	cl.call(req(1, "git.status", map[string]any{"path": wt, "baseRepo": repo}))
+	d, _ := newShadowDeps(t)
+	gitDispatch(t, d, req(1, "git.status", map[string]any{"path": wt, "baseRepo": repo}))
 
 	after, err := os.ReadFile(idx)
 	if err != nil {

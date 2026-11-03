@@ -101,9 +101,9 @@ func TestStartTestCallSevenWithAWorkingVersion(t *testing.T) {
 	failCallSeven(t, "boom\n")
 	text := failedTestText("this repository's git config cannot be used: boom")
 	for i, m := range f.fiveRequests(nil)[:4] {
-		f.s.gitShadow.mu.Lock()
-		f.s.gitShadow.failure = ""
-		f.s.gitShadow.mu.Unlock()
+		f.d.Shadow.mu.Lock()
+		f.d.Shadow.failure = ""
+		f.d.Shadow.mu.Unlock()
 		raw, calls := f.call(t, m.method, m.params)
 		if want := startTextShapes(t, f, text)[i]; raw != want {
 			t.Errorf("%s = %s\n  want %s", m.method, raw, want)
