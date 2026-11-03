@@ -77,7 +77,7 @@ func (s *server) route(c *conn, req request) *response {
 	case "files":
 		return ptr(s.handleFiles(&req))
 	case "git":
-		return ptr(handleGit(s.gitDeps(), &req))
+		return ptr(handleGit(s.gitDeps(), req.wire()))
 	case "process":
 		r := s.handleProcess(c, &req)
 		if r.NoFrame {
@@ -91,6 +91,12 @@ func (s *server) route(c *conn, req request) *response {
 	default:
 		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+ns))
 	}
+}
+
+// gitDeps returns the git state of the server: its settings control and a
+// pointer to its own count, never a copy.
+func (s *server) gitDeps() *gitDeps {
+	return &gitDeps{Shadow: s.gitShadow, OffRequests: &s.offGitRequests}
 }
 
 // gate runs the first two steps of dispatch: the parse check, then the auth

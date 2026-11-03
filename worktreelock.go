@@ -3,6 +3,9 @@ package main
 import (
 	"path/filepath"
 	"sync"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // worktreeRepoLocks serialises git.worktree_remove per repository within this
@@ -18,8 +21,8 @@ import (
 var worktreeRepoLocks sync.Map // canonical repo path -> *sync.Mutex
 
 // withWorktreeRepoLock runs fn while holding the per-repo worktree lock.
-func withWorktreeRepoLock(repo string, fn func() response) response {
-	m, _ := worktreeRepoLocks.LoadOrStore(canonicalPath(repo), &sync.Mutex{})
+func withWorktreeRepoLock(repo string, fn func() rpc.Response) rpc.Response {
+	m, _ := worktreeRepoLocks.LoadOrStore(pathcanon.Canonical(repo), &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
 	defer mu.Unlock()
@@ -44,7 +47,7 @@ var worktreeCreateLocks sync.Map // canonical git dir -> *sync.Mutex
 // create lock of the git directory of repo. The order is always the per-repo
 // lock of a remove, the create lock, the lock of the add step, the branch lock,
 // so they do not deadlock.
-func withWorktreeCreateLock(repo string, fn func() response) response {
+func withWorktreeCreateLock(repo string, fn func() rpc.Response) rpc.Response {
 	m, _ := worktreeCreateLocks.LoadOrStore(worktreeGitDirKey(repo), &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
@@ -78,7 +81,7 @@ func worktreeGitDirKey(repo string) string {
 	if abs, err := filepath.Abs(key); err == nil {
 		key = abs
 	}
-	return canonicalPath(key)
+	return pathcanon.Canonical(key)
 }
 
 // worktreeBranchLocks serialises the branch step (worktreebranch.go) per common git

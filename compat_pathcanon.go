@@ -7,12 +7,8 @@ import "github.com/schubydoo/claustrum/internal/pathcanon"
 
 func canonicalPath(p string) string { return pathcanon.Canonical(p) }
 
-func pathAsRecorded(p string) string { return pathcanon.AsRecorded(p) }
-
 func finalDirPath(p string) string { return pathcanon.FinalDir(p) }
 
 func sameCanonicalPath(a, b string) bool { return pathcanon.Same(a, b) }
-
-func canonicalPathOfGone(p string) string { return pathcanon.OfGone(p) }
 
 func expandPath(p string) string { return pathcanon.ExpandTilde(p) }

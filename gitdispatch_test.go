@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // newTestGitDeps returns the git state of a server that newTestServer makes:
@@ -33,7 +35,7 @@ func gitDispatch(t *testing.T, d *gitDeps, line string) string {
 // gitDispatchErr is gitDispatch for a goroutine that is not the test: it reports
 // a failure as an error and calls no method of t.
 func gitDispatchErr(d *gitDeps, line string) (string, error) {
-	var req request
+	var req rpc.Request
 	if err := json.Unmarshal([]byte(line), &req); err != nil {
 		return "", fmt.Errorf("gitDispatch: line %s: %w", line, err)
 	}
