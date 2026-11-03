@@ -449,6 +449,73 @@ func TestCreateGoesOnInTheGitDirThatGitAnswers(t *testing.T) {
 	}
 }
 
+// TestCreateWithAMovedGitDirWhoseConfigChanges: a symbolic link to a copy T
+// of the git directory is put at `.git` before `rev-parse --absolute-git-dir`.
+// The test of that step passes on T. Right after the call the config of T
+// becomes a directory. The hold does not move to T, and the step of the add
+// refuses the create with the refusal of the config of T. No worktree add
+// runs, and no folder gets a registration or a branch. This order is from the
+// code, not measured. Without the config gate of takeOver (through movedTo)
+// the hold moves to T, and the create succeeds there.
+func TestCreateWithAMovedGitDirWhoseConfigChanges(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+	if err := os.CopyFS(copied, os.DirFS(f.gitDir)); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	old := createStepHook
+	t.Cleanup(func() { createStepHook = old })
+	var seen []string
+	createStepHook = func(at string) {
+		if slices.Contains(seen, at) {
+			return
+		}
+		seen = append(seen, at)
+		switch at {
+		case "gitdir":
+			if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+				t.Errorf("the rename of the git directory: %v", err)
+				return
+			}
+			linkAt(t, f.gitDir, copied)
+		case "answered":
+			config := filepath.Join(copied, "config")
+			if err := os.Rename(config, config+"-old"); err != nil {
+				t.Errorf("the rename of the config: %v", err)
+				return
+			}
+			if err := os.Mkdir(config, 0o755); err != nil {
+				t.Errorf("the folder at the config: %v", err)
+			}
+		}
+	}
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if !slices.Contains(seen, "answered") {
+		t.Fatalf("the create did not reach the step after the call, steps %q", seen)
+	}
+	want := "git worktree add failed: " + repoConfigPrefix + `"` + filepath.Join(copied, "config") + `"` + notRegularTail
+	if got := createError(t, raw); got != want {
+		t.Errorf("the error = %s\n    want %s", got, want)
+	}
+	if slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add") }) {
+		t.Error("a worktree add call ran")
+	}
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the leaf: %v, want it gone", err)
+	}
+	for _, dir := range []string{f.gitDir + "-real", copied} {
+		for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+			if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+				t.Errorf("%s in %s: %v, want none", name, dir, err)
+			}
+		}
+	}
+}
+
 // TestCreateWithAGitDirThatChangedAtTheAdd: right after a good `worktree add`
 // the path of the git directory is a symbolic link to a copy T. be1c1ca5
 // answers `git worktree add failed (completing the new worktree's git files):
