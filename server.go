@@ -68,7 +68,7 @@ type server struct {
 	procs *procManager
 
 	// socket is the path that ln was bound for. A long path is bound by a shorter
-	// name (socketroute_unix.go), so ln.Addr() can differ from it.
+	// name (sockroute.Listen), so ln.Addr() can differ from it.
 	socket string
 
 	// instanceID is a per-boot 32-hex identity and startedAt is the boot time in
