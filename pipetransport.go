@@ -91,7 +91,8 @@ func removePipeNameFileIfOwned(socket string, owned os.FileInfo) {
 // the daemon user's SID, and to no one else. There is no ACE for Everyone
 // (S-1-1-0), Authenticated Users (S-1-5-11), or anonymous (S-1-5-7), and the
 // DACL is present (not NULL, which would grant everyone), so this is the pipe
-// analogue of the AF_UNIX socket's 0600 owner-only mode.
+// analogue of the 0600 mode that makes the AF_UNIX socket owner-only on Linux
+// and macOS.
 func ownerOnlySDDL(sid string) string {
 	return "D:P(A;;GA;;;" + sid + ")"
 }

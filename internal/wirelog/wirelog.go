@@ -84,9 +84,8 @@ var chmodWireLog = (*os.File).Chmod
 // existing path — a restart mid-capture, or a file an operator pre-created — keeps
 // that file's mode, which under the usual 022 umask is 0644. Redaction is by-key
 // and best-effort, so a capture can hold a credential nothing masked; the mode is
-// load-bearing, not tidiness. Chmod re-asserts it on every open, non-fatal like the
-// socket's chmod (and, like the socket, POSIX-only — not an owner-only DACL on
-// Windows).
+// load-bearing, not tidiness. Chmod re-asserts it on every open. A failed chmod is
+// non-fatal, and the mode is POSIX-only: on Windows it is not an owner-only DACL.
 func newWireLog(path string, maxString int) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
