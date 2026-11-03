@@ -75,7 +75,8 @@ func FuzzDispatch(f *testing.F) {
 }
 
 // FuzzBindParams fuzzes the param-decode layer (bindParams) across every param
-// struct of package main. internal/files has its own FuzzBindParams. It is pure
+// struct of package main but gitParams, which FuzzBindGitParams fuzzes.
+// internal/files has its own FuzzBindParams. It is pure
 // (json.Unmarshal into a struct, no IO): the only acceptable outcomes are nil
 // (decoded) or an Invalid-params response — never a panic and never any other
 // error code.
@@ -93,7 +94,6 @@ func FuzzBindParams(f *testing.F) {
 	// params struct cannot skip `~` expansion (see expandpaths.go). Fuzzing
 	// through the same type keeps this exercising the real signature.
 	makers := []func() pathExpander{
-		func() pathExpander { return &gitParams{} },
 		func() pathExpander { return &spawnParams{} },
 		func() pathExpander { return &stdinParams{} },
 		func() pathExpander { return &killParams{} },

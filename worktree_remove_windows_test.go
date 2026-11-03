@@ -4,28 +4,12 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
 )
-
-// makeJunction links link to target with mklink /J, or skips the test when the
-// junction cannot be made.
-func makeJunction(t *testing.T, link, target string) {
-	t.Helper()
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("mklink /J %s %s: %v\n%s", link, target, err, out)
-		}
-		t.Skipf("mklink /J %s %s: %v\n%s", link, target, err, out)
-	}
-}
 
 // git.worktree_create refuses a junctioned .claude or .claude\worktrees at the parent
 // step and creates nothing: no directory in the junction target, no entry and no

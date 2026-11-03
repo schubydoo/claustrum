@@ -3,23 +3,9 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
-
-// homeEnvVar is the variable os.UserHomeDir actually reads on this platform.
-// Setting the wrong one leaves the REAL home in place, which would make every
-// assertion below vacuous — and, in the unfixed tree these tests are written to
-// fail against, would point a live os.RemoveAll at the developer's home
-// directory. That is the exact accident this file exists to prevent, so the
-// switch is not a portability nicety.
-func homeEnvVar() string {
-	if runtime.GOOS == "windows" {
-		return "USERPROFILE"
-	}
-	return "HOME"
-}
 
 // git.worktree_remove must refuse a worktreePath that is (or contains) the home
 // directory.
