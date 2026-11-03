@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // The two sentinels the seams below fail with, so each arm's error text is
@@ -52,7 +54,7 @@ func TestNewServerOnSocketChmodFailureEndsTheStart(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "c.sock")
 
-	control, err := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	control, err := newServerOnSocket(sock, "chmod-token", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("control: newServerOnSocket = %v, want a start with the real chmod", err)
 	}
@@ -66,7 +68,7 @@ func TestNewServerOnSocketChmodFailureEndsTheStart(t *testing.T) {
 	chmodSocket = func(string, os.FileMode) error { return errChmodRefused }
 	t.Cleanup(func() { chmodSocket = oldChmod })
 
-	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wirelog.Options{}, false, false)
 	if s != nil {
 		t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
 		t.Error("newServerOnSocket returned a server after a failed chmod")
@@ -106,7 +108,7 @@ func TestNewServerOnSocketChmodFailureKeepsAnotherEntry(t *testing.T) {
 	}
 	t.Cleanup(func() { chmodSocket = oldChmod })
 
-	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wireLogOptions{}, false, false)
+	s, bootErr := newServerOnSocket(sock, "chmod-token", "", wirelog.Options{}, false, false)
 	if s != nil {
 		t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
 		t.Error("newServerOnSocket returned a server after a failed chmod")

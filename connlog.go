@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The format texts of the connection log, claustrum's own, not measured. A
@@ -47,7 +49,7 @@ func (c *conn) remoteLabel() string { return quotedAddr(c.nc) }
 // the line comes before the daemon handles that request. A nil conn does nothing.
 func (c *conn) showToken() {
 	if c != nil && c.tokenMark().CompareAndSwap(false, true) {
-		logInfof(fmtNewConn, c.remoteLabel())
+		logging.Infof(fmtNewConn, c.remoteLabel())
 	}
 }
 

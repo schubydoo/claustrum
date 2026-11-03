@@ -10,6 +10,4 @@ type (
 	wireLogOptions = wirelog.Options
 )
 
-const wireLogMaxString = wirelog.MaxString
-
 func openWireLog(opt wireLogOptions) (*wireLog, error) { return wirelog.Open(opt) }
