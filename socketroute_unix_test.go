@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
 // longSocketPath returns a path of exactly total bytes under a fresh temp folder
@@ -140,7 +142,7 @@ func TestDialInDaemonWithNoFolderHandle(t *testing.T) {
 // shorter name that a long path was bound by.
 func TestSocketPathOfALongSocket(t *testing.T) {
 	sock := longSocketPath(t, 120, "run/abcd1234/rpc.sock")
-	s, err := newServerOnSocket(sock, "long-tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "long-tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket at a %d-byte path: %v", len(sock), err)
 	}
@@ -161,7 +163,7 @@ func TestSocketPathOfALongSocket(t *testing.T) {
 // on Linux).
 func TestCloseAllAtALongSocketPath(t *testing.T) {
 	sock := longSocketPath(t, 120, "rpc.sock")
-	s, err := newServerOnSocket(sock, "long-tok", "", wireLogOptions{}, false, false)
+	s, err := newServerOnSocket(sock, "long-tok", "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}

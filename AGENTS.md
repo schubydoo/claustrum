@@ -325,7 +325,7 @@ Detail: [-install](docs/INSTALL.md#staging-and-cleanup).
 
 `plugins.prune` is an `os.RemoveAll` site, and it is safe by construction. It
 deletes `<socket-derived-root>/<hash>`. The root comes from the socket layout
-and the leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
+and the leaf must match `^[0-9a-f]{16}$` (`files.PluginHashRE`). The path is never
 caller-supplied and never `~`-expanded, so it needs no `homeguard.WipesHomeDir` guard.
 
 On Linux the legacy sweep of `plugins.prune` and the host cleaner dial a socket path over

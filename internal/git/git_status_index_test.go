@@ -8,17 +8,16 @@ import (
 	"time"
 )
 
-// TestGitStatusDoesNotRewriteIndex pins the GIT_OPTIONAL_LOCKS=0 parity (4534d86): a
-// plain `git status` refreshes the worktree's index (rewriting the stat cache and
-// taking index.lock) — a mutation of the caller's repo on a read. The reference sets
-// GIT_OPTIONAL_LOCKS=0 so status leaves the index untouched, with byte-identical
-// output. This makes the stat cache stale (touch a tracked file, unchanged content)
-// so a lock-taking status WOULD rewrite the index, then asserts the index bytes are
-// unchanged after git.status. Reverting the env flips it: status rewrites the index.
+// TestGitStatusDoesNotRewriteIndex pins that git.status leaves the index of the
+// worktree untouched. It makes the stat cache stale (touch a tracked file,
+// unchanged content), then asserts the index bytes are unchanged after git.status.
 //
-// Cross-platform on purpose (no build tag): the fix has no OS branch, so the Windows
-// leg must exercise it too. It uses only os/filepath/bytes and gitDispatch, with
-// no POSIX shell (unlike the .gitattributes-filter sibling, which stays //go:build unix).
+// This test does not guard the GIT_OPTIONAL_LOCKS=0 arm. The status command runs
+// with --git-dir=<temp>, which holds a copy of the index, so the real index stays
+// with the arm removed too. The argv tests TestGitStatusCallOrder and
+// TestGitStatusGateCalls (git_status_calls_unix_test.go) fail without the arm.
+//
+// No build tag: it uses no POSIX shell, so it runs on Windows too.
 func TestGitStatusDoesNotRewriteIndex(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -55,6 +54,6 @@ func TestGitStatusDoesNotRewriteIndex(t *testing.T) {
 		t.Fatalf("read index: %v", err)
 	}
 	if !bytes.Equal(before, after) {
-		t.Errorf("git.status rewrote the worktree index (mutation on read); GIT_OPTIONAL_LOCKS=0 must prevent it")
+		t.Errorf("git.status changed the index of the worktree, want it unchanged")
 	}
 }
