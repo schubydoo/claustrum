@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -229,12 +231,18 @@ func fakeLoginShell(t *testing.T, body string) string {
 	return p
 }
 
+// shrinkAgentProbe sets the probe deadline. The bound is a minute past it, so a
+// slow start on a loaded runner does not read as a run that could not be stopped.
 func shrinkAgentProbe(t *testing.T, timeout time.Duration) {
 	t.Helper()
 	oldT, oldB := agentProbeTimeout, agentProbeBound
-	agentProbeTimeout, agentProbeBound = timeout, timeout+time.Second
+	agentProbeTimeout, agentProbeBound = timeout, timeout+time.Minute
 	t.Cleanup(func() { agentProbeTimeout, agentProbeBound = oldT, oldB })
 }
+
+// A slow runner can start the fake shell after a short deadline. Each case of
+// TestAskLoginShellForAgent ends by itself, so it gets this deadline, which it never reaches.
+const agentProbeTimeoutFar = time.Minute
 
 func TestAskLoginShellForAgent(t *testing.T) {
 	long := strings.Repeat("0", 250)
@@ -248,7 +256,6 @@ func TestAskLoginShellForAgent(t *testing.T) {
 	}{
 		{"exported path", `SSH_AUTH_SOCK=/tmp/x.sock; export SSH_AUTH_SOCK; exec /bin/sh -c "$4"`, "/tmp/x.sock", ""},
 		{"not exported", `unset SSH_AUTH_SOCK; exec /bin/sh -c "$4"`, "", ""},
-		{"a good line then a hang", `SSH_AUTH_SOCK=/tmp/y.sock; export SSH_AUTH_SOCK; /bin/sh -c "$4"; sleep 5`, "/tmp/y.sock", ""},
 		{"not a path", `SSH_AUTH_SOCK=agent; export SSH_AUTH_SOCK; exec /bin/sh -c "$4"`, "",
 			"printed something other than a path for SSH_AUTH_SOCK (67 bytes on stdout, 0 on stderr)"},
 		{"exit with output", `echo partial-out; echo errline >&2; exit 3`, "",
@@ -257,7 +264,6 @@ func TestAskLoginShellForAgent(t *testing.T) {
 		{"stdout over its cap", `printf ` + long, "",
 			"exited (cut off after it had printed more than 1 MiB on stdout or 16 MiB on stderr) without printing SSH_AUTH_SOCK (128 bytes on stdout, 0 on stderr)"},
 		{"stderr over its keep", `printf '%080d' 0 >&2`, "", "did not print SSH_AUTH_SOCK (0 bytes on stdout, 32 on stderr)"},
-		{"deadline", `sleep 5`, "", "did not finish within 300ms"},
 		{"stderr between the marker and the path", markerOf + `printf '%s\n' "$m"; echo noise >&2; echo /tmp/z.sock`,
 			"/tmp/z.sock", ""},
 		{"marker only on stderr", markerOf + `printf '%s\n/tmp/z.sock\n' "$m" >&2`, "",
@@ -271,7 +277,7 @@ func TestAskLoginShellForAgent(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			shell := fakeLoginShell(t, tc.body)
-			shrinkAgentProbe(t, 300*time.Millisecond)
+			shrinkAgentProbe(t, agentProbeTimeoutFar)
 			got, err := askLoginShellForAgent()
 			if tc.wantErr == "" {
 				if err != nil || got != tc.want {
@@ -290,6 +296,95 @@ func TestAskLoginShellForAgent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A shell that does not end gets the deadline error, and the kill ends its group.
+// The shell writes its pid, which is its group id, as its first action. Its
+// grandchild then writes its own pid and group id. A try whose deadline came
+// before both writes proves nothing, and the next try gets four times the
+// deadline. The after file catches a call that waits for the whole group to end.
+// groupGone and the poll of the grandchild check that the kill ended the group.
+func TestAskLoginShellForAgentDeadline(t *testing.T) {
+	shrinkShellCaps(t)
+	shell := fakeLoginShell(t, `echo $$ > "$FAKESHELL_PGID"; `+
+		`( /bin/sh -c 'pg=$(ps -o pgid= -p $$); echo "$$ $pg" > "$FAKESHELL_CHILD"; exec sleep 30'; `+
+		`: > "$FAKESHELL_AFTER" )`)
+	for timeout := 300 * time.Millisecond; timeout <= 20*time.Second; timeout *= 4 {
+		after := filepath.Join(t.TempDir(), "after")
+		pgidFile := filepath.Join(t.TempDir(), "pgid")
+		childFile := filepath.Join(t.TempDir(), "child")
+		t.Setenv("FAKESHELL_AFTER", after)
+		t.Setenv("FAKESHELL_PGID", pgidFile)
+		t.Setenv("FAKESHELL_CHILD", childFile)
+		shrinkAgentProbe(t, timeout)
+		got, err := askLoginShellForAgent()
+		if _, statErr := os.Lstat(after); statErr == nil {
+			t.Fatal("the call waited for the whole group of the fake shell to end")
+		}
+		// A kill between the open and the write of a file leaves it empty.
+		pgidText, _ := os.ReadFile(pgidFile)
+		childText, _ := os.ReadFile(childFile)
+		childFields := strings.Fields(string(childText))
+		if len(strings.TrimSpace(string(pgidText))) == 0 || len(childFields) != 2 {
+			note := ""
+			if timeout*4 <= 20*time.Second {
+				note = ", trying again"
+			}
+			t.Logf("the %v deadline came before the first lines of %s (got %q, %v)%s", timeout, shell, got, err, note)
+			continue
+		}
+		pgid, convErr := strconv.Atoi(strings.TrimSpace(string(pgidText)))
+		if convErr != nil || pgid <= 1 {
+			t.Fatalf("the fake shell wrote the group id %q", pgidText)
+		}
+		child, childErr := strconv.Atoi(childFields[0])
+		childGroup, groupErr := strconv.Atoi(childFields[1])
+		if childErr != nil || groupErr != nil || child <= 1 {
+			t.Fatalf("the grandchild wrote %q", childText)
+		}
+		if childGroup != pgid {
+			t.Fatalf("the grandchild %d is in the group %d, want the group %d of the fake shell", child, childGroup, pgid)
+		}
+		groupGone(t, pgid)
+		// Signal 0 sends nothing. It only asks whether our own grandchild is still there.
+		for deadline := time.Now().Add(10 * time.Second); syscall.Kill(child, 0) == nil; time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the grandchild %d of the fake shell is still there", child)
+			}
+		}
+		if want := "login shell " + shell + " did not finish within " + timeout.String(); got != "" || err == nil || err.Error() != want {
+			t.Fatalf("got %q, %v\nwant  %s", got, err, want)
+		}
+		return
+	}
+	t.Fatal("the fake shell and its grandchild never wrote their ids before the deadline")
+}
+
+// A good line wins after the deadline ended the shell. The deadline has to fire
+// after the line, so the shell writes a ready file right after it. A try whose
+// deadline came first proves nothing, and the next try gets four times the deadline.
+func TestAskLoginShellForAgentGoodLineThenHang(t *testing.T) {
+	shrinkShellCaps(t)
+	shell := fakeLoginShell(t, `SSH_AUTH_SOCK=/tmp/y.sock; export SSH_AUTH_SOCK; /bin/sh -c "$4"; `+
+		`: > "$FAKESHELL_READY"; sleep 30`)
+	for timeout := 300 * time.Millisecond; timeout <= 20*time.Second; timeout *= 4 {
+		ready := filepath.Join(t.TempDir(), "ready")
+		t.Setenv("FAKESHELL_READY", ready)
+		shrinkAgentProbe(t, timeout)
+		got, err := askLoginShellForAgent()
+		if err == nil && got == "/tmp/y.sock" {
+			return
+		}
+		if _, statErr := os.Lstat(ready); statErr == nil {
+			t.Fatalf("got %q, %v; want %q: the line came before the %v deadline", got, err, "/tmp/y.sock", timeout)
+		}
+		note := ""
+		if timeout*4 <= 20*time.Second {
+			note = ", trying again"
+		}
+		t.Logf("the %v deadline came before the line of %s (got %q, %v)%s", timeout, shell, got, err, note)
+	}
+	t.Fatal("the fake shell never printed its line before the deadline")
 }
 
 func TestProbeShellEnv(t *testing.T) {
