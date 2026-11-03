@@ -4,17 +4,26 @@ name: PR Title
 # squash-merges and the PR title becomes the squash commit subject, so a
 # conventional title keeps `main`'s history parseable. Titles are hygiene only —
 # releases are changesets-only (knope), not title-driven.
+#
+# The check is required, so it also runs on a merge group of the merge queue.
+# A merge group has no title. A queue entry comes only from a PR that passed
+# this check, so there the job passes with no title check. The job name stays,
+# so the required context still reports.
 
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
 
+# A merge-group run has no PR number. It gets a group of its own, and no other
+# run cancels it.
 concurrency:
-  group: pr-title-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: pr-title-${{ github.event.pull_request.number || format('merge-group-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 jobs:
   validate:
@@ -24,7 +33,11 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+      - name: No title in a merge group
+        if: github.event_name == 'merge_group'
+        run: echo "A merge group has no PR title. The PR run checked it."
+      - if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
