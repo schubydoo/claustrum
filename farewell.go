@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // A farewell is the optional last input of process.kill and process.killAndWait.
@@ -94,7 +97,7 @@ func readFarewell(farewell, graceMs json.RawMessage) (ask *farewellAsk, rule str
 // logFarewellNotSaid is the line of a farewell that fails a rule (measured on
 // Linux and macOS). The signal goes at once after it.
 func logFarewellNotSaid(id, rule string) {
-	logInfof("[process] kill %s: its farewell is not said: %s", id, rule)
+	logging.Infof("[process] kill %s: its farewell is not said: %s", id, rule)
 }
 
 // holdFarewell marks a pending farewell on a live record that the daemon has not
@@ -186,10 +189,10 @@ func (m *procManager) killWithFarewell(id, signal string, ask farewellAsk) strin
 // At the end of the grace the normal kill path runs and gives "expired". A kill
 // that cuts the farewell gives "cut" at once (measured on Linux and macOS). Any
 // state that holdFarewell refuses runs the normal kill path and gives "unsent".
-func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration, escalate bool, ask farewellAsk) (res killAndWaitResult) {
+func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration, escalate bool, ask farewellAsk) (res rpc.KillAndWaitResult) {
 	p := m.get(id)
 	if p == nil {
-		return killAndWaitResult{FarewellEnd: farewellUnsent}
+		return rpc.KillAndWaitResult{FarewellEnd: farewellUnsent}
 	}
 	h := p.holdFarewell(signal)
 	if h == nil {
@@ -209,7 +212,7 @@ func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration
 		// A full stdin queue takes no farewell: the normal kill path runs at once
 		// (claustrum's own, not measured).
 		if !p.dropFarewell(h) {
-			return killAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
+			return rpc.KillAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
 		}
 		res.Found, res.Died, res.AlreadyExited, res.Escalated = m.signalAndWait(p, signal, grace, escalate)
 		res.FarewellEnd = farewellUnsent
@@ -220,15 +223,15 @@ func (m *procManager) killAndWaitFarewell(id, signal string, grace time.Duration
 	select {
 	case <-p.done:
 		p.dropFarewell(h)
-		return killAndWaitResult{Found: true, Died: true, FarewellEnd: farewellLeft}
+		return rpc.KillAndWaitResult{Found: true, Died: true, FarewellEnd: farewellLeft}
 	case <-h.cut:
 		// died is true at once, before the exit frame (measured on Linux). For a
 		// child that outlives the signal of the cut it is claustrum's own, not measured.
-		return killAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
+		return rpc.KillAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
 	case <-t.C:
 	}
 	if !p.dropFarewell(h) {
-		return killAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
+		return rpc.KillAndWaitResult{Found: true, Died: true, FarewellEnd: farewellCut}
 	}
 	res.Found, res.Died, res.AlreadyExited, res.Escalated = m.signalAndWait(p, signal, grace, escalate)
 	res.FarewellEnd = farewellExpired

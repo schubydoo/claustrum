@@ -2,6 +2,9 @@ package main
 
 import (
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // A link-bound process (process.spawn with "linkBound", 683cc6a9) belongs to the
@@ -63,7 +66,7 @@ const linkReplayCap int64 = 64 * 1024
 // errSpentID is the refusal of a spawn whose id is spent (683cc6a9, measured on
 // Linux). The command does not run. A spawn while a link-bound process of that id
 // still runs or starts gets it too (claustrum's own, not measured).
-var errSpentID = &spawnRefusal{codeInvalidParam, "this id is in use, or was a terminal's or a link-bound process's: take a fresh one"}
+var errSpentID = &spawnRefusal{rpc.CodeInvalidParam, "this id is in use, or was a terminal's or a link-bound process's: take a fresh one"}
 
 // takesFrom reports whether c may write the stdin of p. A plain process takes it
 // from every connection, a link-bound one from its link only.
@@ -162,7 +165,7 @@ func (m *procManager) watchUnattended(p *managedProc, ttl, tick, grace time.Dura
 		if m.startsStopped.Load() {
 			return
 		}
-		logInfof("[process.Manager] Process %s: no connection attached for %s; ending it", p.id, ttl)
+		logging.Infof("[process.Manager] Process %s: no connection attached for %s; ending it", p.id, ttl)
 		m.killAndWaitAs(p, "HUP", "unattended", grace, true)
 		return
 	}

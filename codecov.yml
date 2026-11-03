@@ -111,11 +111,14 @@ component_management:
         - peerpid_linuxdarwin.go
         - peerpid_other.go
         # The listen and dial of a socket path over the limit of the system (OS-split).
-        - socketroute.go
-        - socketroute_unix.go
-        - socketroute_linux.go
-        - socketroute_darwin.go
-        - socketroute_windows.go
+        - compat_sockroute.go
+        - internal/sockroute/socketroute.go
+        - internal/sockroute/socketroute_unix.go
+        - internal/sockroute/socketroute_linux.go
+        - internal/sockroute/socketroute_darwin.go
+        - internal/sockroute/socketroute_windows.go
+        - internal/sockroute/fortest_unix.go
+        - internal/sockroute/fortest_linux.go
         - idleconn.go
         - connlog.go
         # 4534d86 lifecycle additions: the run-dir lock (daemon.lock + owner record,
@@ -151,7 +154,6 @@ component_management:
         - peercheck_linux.go
         - peercheck_other.go
         - internal/files/methods_files.go
-        - compat_files.go
         - internal/git/methods_git.go
         - internal/git/gitparams.go
         - internal/git/gitcall.go

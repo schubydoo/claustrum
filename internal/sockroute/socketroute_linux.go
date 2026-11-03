@@ -1,4 +1,4 @@
-package main
+package sockroute
 
 import (
 	"io"
@@ -8,9 +8,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// maxSocketPath is the longest socket path that the socket address of Linux holds.
+// MaxSocketPath is the longest socket path that the socket address of Linux holds.
 // `be1c1ca5` names 107 bytes in its text (measured on Linux).
-const maxSocketPath = 107
+const MaxSocketPath = 107
 
 // procSelfFD is the folder of the open handles of this process. A var so a test can
 // take the /proc route away.
@@ -30,7 +30,7 @@ func folderHandleName[T io.Closer](dir, base string, use func(name string) (T, e
 	defer f.Close()
 	link := procSelfFD + "/" + strconv.Itoa(fd)
 	name := link + "/" + base
-	if len(name) > maxSocketPath {
+	if len(name) > MaxSocketPath {
 		return v, false, nil
 	}
 	held, herr := f.Stat()

@@ -4,6 +4,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/files"
+	"github.com/schubydoo/claustrum/internal/git"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // request is one inbound JSON-RPC line.
@@ -32,6 +37,19 @@ type request struct {
 	Auth    string          `json:"auth"`
 }
 
+// wire returns the five wire members of req as an rpc.Request.
+func (req *request) wire() *rpc.Request {
+	return &rpc.Request{JSONRPC: req.JSONRPC, ID: req.ID, Method: req.Method, Params: req.Params, Auth: req.Auth}
+}
+
+func needParams(req *request) *rpc.Response { return rpc.NeedParams(req.wire()) }
+
+func unknownMethod(req *request) rpc.Response { return rpc.UnknownMethod(req.wire()) }
+
+func decodeParams(req *request, v interface{}) error { return rpc.DecodeParams(req.wire(), v) }
+
+func bindParams(req *request, v rpc.PathExpander) *rpc.Response { return rpc.Bind(req.wire(), v) }
+
 // methodShutdown is the one method exempt from the auth gate — see gate.
 //
 // The value is also ON THE WIRE: capabilityMethods embeds it, so it is emitted
@@ -49,7 +67,7 @@ const methodShutdown = "server.shutdown"
 // does not return here. The recover in handleRequest then leaves resp nil for
 // server.shutdown, so that request gets no frame.
 // Stream-producing methods (process.*) use the conn to attach the client.
-func (s *server) dispatch(c *conn, raw []byte) *response {
+func (s *server) dispatch(c *conn, raw []byte) *rpc.Response {
 	req, resp := s.gate(c, raw)
 	if resp != nil {
 		return resp
@@ -59,25 +77,25 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 
 // route handles a request that already passed gate. serveConn calls it with the
 // request its read loop decoded, so an accepted line is parsed only once.
-func (s *server) route(c *conn, req request) *response {
+func (s *server) route(c *conn, req request) *rpc.Response {
 	if req.JSONRPC != "2.0" {
-		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
+		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidReq, "Invalid JSON-RPC version"))
 	}
 
 	ns, _, ok := strings.Cut(req.Method, ".")
 	if !ok {
 		// A method without a "namespace.method" shape is a format error, distinct
 		// from a well-formed method naming an unknown namespace (below).
-		return ptr(errResult(req.ID, codeMethod, "Invalid method format: "+req.Method))
+		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeMethod, "Invalid method format: "+req.Method))
 	}
 
 	switch ns {
 	case "server":
 		return s.handleServer(c, &req)
 	case "files":
-		return ptr(s.handleFiles(&req))
+		return rpc.Ptr(files.Handle(req.wire()))
 	case "git":
-		return ptr(handleGit(s.gitDeps(), req.wire()))
+		return rpc.Ptr(git.Handle(s.gitDeps(), req.wire()))
 	case "process":
 		r := s.handleProcess(c, &req)
 		if r.NoFrame {
@@ -85,18 +103,18 @@ func (s *server) route(c *conn, req request) *response {
 		}
 		return &r
 	case "plugins":
-		return ptr(s.handlePlugins(&req))
+		return rpc.Ptr(s.handlePlugins(&req))
 	case "launcher":
-		return ptr(s.handleLauncher(&req))
+		return rpc.Ptr(s.handleLauncher(&req))
 	default:
-		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+ns))
+		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeMethod, "Unknown namespace: "+ns))
 	}
 }
 
 // gitDeps returns the git state of the server: its settings control and a
 // pointer to its own count, never a copy.
-func (s *server) gitDeps() *gitDeps {
-	return &gitDeps{Shadow: s.gitShadow, OffRequests: &s.offGitRequests}
+func (s *server) gitDeps() *git.Deps {
+	return &git.Deps{Shadow: s.gitShadow, OffRequests: &s.offGitRequests}
 }
 
 // gate runs the first two steps of dispatch: the parse check, then the auth
@@ -109,16 +127,16 @@ func (s *server) gitDeps() *gitDeps {
 //
 // c is the connection of the line. A request that passes the token check sets the
 // token mark of c (conn.showToken), and a nil c sets none.
-func (s *server) gate(c *conn, raw []byte) (request, *response) {
+func (s *server) gate(c *conn, raw []byte) (request, *rpc.Response) {
 	var req request
 	if err := json.Unmarshal(raw, &req); err != nil {
 		// Logged here, before serveConn writes the reply. The reference logs
 		// "Parse error: <json error>" before its reply write (measured). Claustrum
 		// counts the lines and logs the sample (logSampled, claustrum's own, not measured).
 		if n := s.parseLines.Add(1); logSampled(n) {
-			logWarnf(fmtParseError, n, err)
+			logging.Warnf(fmtParseError, n, err)
 		}
-		return req, ptr(errResult(nil, codeParse, "Parse error"))
+		return req, rpc.Ptr(rpc.ErrResult(nil, rpc.CodeParse, "Parse error"))
 	}
 	// Precedence is auth → version (probe-verified) for every method that IS
 	// authenticated: a request that fails BOTH (e.g. no auth and no/!="2.0"
@@ -159,9 +177,9 @@ func (s *server) gate(c *conn, raw []byte) (request, *response) {
 		// Claustrum's own, not measured: the id is not logged, the method is cut to
 		// 64 characters and quoted, and only the sampled counts log.
 		if n := s.unauthLines.Add(1); logSampled(n) {
-			logWarnf(fmtUnauth, n, req.Method)
+			logging.Warnf(fmtUnauth, n, req.Method)
 		}
-		return req, ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
+		return req, rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
 	c.showToken()
 	// A request past the auth step restarts the idle time of the idle exit, except

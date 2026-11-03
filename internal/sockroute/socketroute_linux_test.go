@@ -1,4 +1,4 @@
-package main
+package sockroute
 
 import (
 	"errors"
@@ -21,8 +21,8 @@ func noFolderHandle(t *testing.T) {
 
 // The limit of Linux is the one in the text of `be1c1ca5` (measured on Linux).
 func TestMaxSocketPathLinux(t *testing.T) {
-	if maxSocketPath != 107 {
-		t.Errorf("maxSocketPath = %d, want 107", maxSocketPath)
+	if MaxSocketPath != 107 {
+		t.Errorf("MaxSocketPath = %d, want 107", MaxSocketPath)
 	}
 }
 
@@ -38,7 +38,7 @@ func TestFolderHandleNameUsesProc(t *testing.T) {
 	if !ok || err != nil {
 		t.Fatalf("folderHandleName: ok=%v err=%v", ok, err)
 	}
-	keepSocketFileAtClose(ln)
+	KeepSocketFileAtClose(ln)
 	defer ln.Close()
 	rest, found := strings.CutPrefix(got, "/proc/self/fd/")
 	n, _, _ := strings.Cut(rest, "/")
@@ -71,7 +71,7 @@ func TestLongSocketPathWithoutProc(t *testing.T) {
 	noFolderHandle(t)
 	sock := longSocketPath(t, 120, "rpc.sock")
 	wd := mustGetwd(t)
-	ln, err := listenSocket(sock)
+	ln, err := Listen(sock)
 	if err != nil {
 		t.Fatalf("listen with no /proc: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestLongSocketPathWithoutProc(t *testing.T) {
 		t.Fatal("the listen did not change back")
 	}
 	acceptOnce(ln)
-	dialReadsX(t, sock, dialUnixPath)
+	dialReadsX(t, sock, DialUnixPath)
 	if got := mustGetwd(t); got != wd {
 		t.Errorf("working folder %s after the dial, want %s", got, wd)
 	}
@@ -89,15 +89,15 @@ func TestLongSocketPathWithoutProc(t *testing.T) {
 // With /proc the daemon dials a long path with no change of folder.
 func TestDialInDaemonThroughProc(t *testing.T) {
 	sock := longSocketPath(t, 120, "rpc.sock")
-	ln, err := listenSocket(sock)
+	ln, err := Listen(sock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
 	acceptOnce(ln)
-	dialReadsX(t, sock, dialSocketInDaemon)
-	var tooLong *socketTooLongError
-	if _, err := dialSocketInDaemon(sock+"x", time.Second); errors.As(err, &tooLong) {
+	dialReadsX(t, sock, DialSocketInDaemon)
+	var tooLong *TooLongError
+	if _, err := DialSocketInDaemon(sock+"x", time.Second); errors.As(err, &tooLong) {
 		t.Errorf("a missing long path gave the too-long error: %v", err)
 	}
 }
