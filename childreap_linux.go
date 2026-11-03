@@ -15,10 +15,6 @@ import (
 // gathers this daemon's node/host identity from the linux sources. The shared decision
 // logic (reapOrphans, verifyOrphan, the two-phase wait) lives in childreap.go.
 
-// procRoot is the /proc mount realReadLiveProc reads. A var so a test can point it at a
-// fake procfs tree and exercise the parse-error arms.
-var procRoot = "/proc"
-
 // procReadFile reads one file of a /proc/<pid> folder. A var so a test can let the
 // process end between two reads of one realReadLiveProc call.
 var procReadFile = os.ReadFile
