@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // tempFolderNames are the inherited names whose folder a spawn tests, in the order
@@ -64,13 +67,13 @@ func dropUnusableTempVars(env []string) []string {
 	for _, r := range runs {
 		if !waitTempProbe(r.p) {
 			if r.started {
-				logWarnf("[process.Manager] the temporary folder %s has not answered in %v: children keep it until it does", r.dir, tempProbeWait)
+				logging.Warnf("[process.Manager] the temporary folder %s has not answered in %v: children keep it until it does", r.dir, tempProbeWait)
 			}
 			continue
 		}
 		if r.p.err != nil {
-			logWarnf("[process.Manager] the inherited %s=%s is not handed on to a child: %v", r.name, r.dir, r.p.err)
-			env = removeEnvKey(env, r.name)
+			logging.Warnf("[process.Manager] the inherited %s=%s is not handed on to a child: %v", r.name, r.dir, r.p.err)
+			env = sysproc.RemoveEnvKey(env, r.name)
 		}
 	}
 	return env

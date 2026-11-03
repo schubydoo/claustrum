@@ -19,16 +19,16 @@ func statSpawnCommand(path string) error {
 }
 
 // procGroup is the per-process kill handle. On Unix the child already lives in
-// its own process group (Setpgid, newSysProcAttr), so there is no extra OS state to
+// its own process group (Setpgid, sysproc.NewSysProcAttr), so there is no extra OS state to
 // hold. The type exists only so the cross-platform caller can treat every OS
 // uniformly. On Windows it wraps a process handle of the direct child and its job.
 type procGroup struct{}
 
-// spawnSysProcAttr is newSysProcAttr for process.spawn. Unix has no jobs.
-func spawnSysProcAttr(childJobs) *syscall.SysProcAttr { return newSysProcAttr() }
+// spawnSysProcAttr is sysproc.NewSysProcAttr for process.spawn. Unix has no jobs.
+func spawnSysProcAttr(childJobs) *syscall.SysProcAttr { return sysproc.NewSysProcAttr() }
 
 // confineProcess is a no-op on Unix — the process group was established by
-// newSysProcAttr at spawn. It returns a non-nil handle for caller uniformity.
+// sysproc.NewSysProcAttr at spawn. It returns a non-nil handle for caller uniformity.
 func confineProcess(*os.Process, childJobs) (*procGroup, error) { return &procGroup{}, nil }
 
 // resumeChild has nothing to do on Unix: no child starts suspended.

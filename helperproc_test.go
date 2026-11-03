@@ -57,7 +57,7 @@ func TestMain(m *testing.M) {
 	// 2026-08-02 and took the host down hard.
 	//
 	// Every legitimate re-exec either sets a helper mode (see helperCommand) or
-	// strips daemonChildEnv (see removeEnvKey in server_daemonize_unix_test.go),
+	// strips daemonChildEnv (see sysproc.RemoveEnvKey in server_daemonize_unix_test.go),
 	// so reaching here with the child marker and no mode means a test forgot the
 	// seam. Refuse loudly: the cost is one dead process instead of a generation.
 	if mode == "" && os.Getenv(daemonChildEnv) == "1" {

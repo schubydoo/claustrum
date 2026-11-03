@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/sysproc"
 	"golang.org/x/sys/windows"
 )
 
@@ -202,7 +203,7 @@ func TestSignalFallsBackWithoutHandle(t *testing.T) {
 			}
 			cmd := exec.Command(exe, "60")
 			cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
-			cmd.SysProcAttr = newSysProcAttr()
+			cmd.SysProcAttr = sysproc.NewSysProcAttr()
 			if err := cmd.Start(); err != nil {
 				t.Fatalf("start: %v", err)
 			}

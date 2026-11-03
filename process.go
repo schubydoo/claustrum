@@ -13,6 +13,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/install"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/metrics"
+	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // streamFrame is an id-less notification pushed to attached clients.
@@ -420,7 +426,7 @@ func (m *procManager) pruneExited() {
 			// Safe to delete during range — Go defines this, and an entry removed
 			// mid-iteration is simply not produced.
 			delete(m.procs, id)
-			logDebugf("[process.Manager] Pruned exited process %s", id)
+			logging.Debugf("[process.Manager] Pruned exited process %s", id)
 		}
 	}
 }
@@ -681,7 +687,7 @@ func (p *managedProc) emit(f streamFrame) {
 			err = c.writeLine(b)
 		}
 		if err != nil {
-			logWarnf("[frameSink] write failed, detaching: %v", err)
+			logging.Warnf("[frameSink] write failed, detaching: %v", err)
 			p.mu.Lock()
 			delete(p.subs, c)
 			p.mu.Unlock()
@@ -706,7 +712,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	path, argv := command, args
 	if launcher != nil {
 		if err := refuseManagedLauncher(*launcher, command); err != nil {
-			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 		path = (*launcher)[0]
@@ -747,7 +753,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	}
 	m.mu.Unlock()
 	if taken {
-		logErrorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
 		return nil, errSpentID
 	}
 	cmd := exec.Command(path, argv...)
@@ -768,28 +774,28 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		fi, err := os.Stat(cwd)
 		if err != nil {
 			err = &cwdError{fmt.Errorf("chdir %s: %w", cwd, err)}
-			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 		if !fi.IsDir() {
 			err = &cwdError{fmt.Errorf("chdir %s: not a directory", cwd)}
-			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 		cmd.Dir = cwd
 	}
 	// The launcher variables are stripped after the caller's env is merged, so the
 	// strip covers the spawn env param as well as the daemon env.
-	cmd.Env = stripManagedLauncherEnv(buildSpawnEnv(env, noShellAgent), launcher != nil)
+	cmd.Env = install.StripEnv(buildSpawnEnv(env, noShellAgent), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
-	cmd.Env = addShellAgentSocket(cmd.Env, noShellAgent)
+	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
 	if launcher != nil {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
 		// before this failure (measured log order).
 		if err := launchedCommandError(command); err != nil {
-			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 	} else if sessionKey != "" {
@@ -797,7 +803,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		// before the supersede below, so the prior process of the session gets no
 		// signal (`89cb6289`, measured on Linux). A launched spawn has its own check above.
 		if err := missingCommandError(cmd); err != nil {
-			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 	}
@@ -834,20 +840,20 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	}
 	stderrR, stderrW, err := osPipe()
 	if err != nil {
-		closeAll(stdoutR, stdoutW)
+		sysproc.CloseAll(stdoutR, stdoutW)
 		closeExecErr()
 		return nil, err
 	}
 	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
 	stdin, err := cmdStdinPipe(cmd)
 	if err != nil {
-		closeAll(stdoutR, stdoutW, stderrR, stderrW)
+		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
 		closeExecErr()
 		return nil, err
 	}
 	// dropUnstarted releases what a spawn made for a child that does not start.
 	dropUnstarted := func() {
-		closeAll(stdoutR, stdoutW, stderrR, stderrW)
+		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
 		closeExecErr()
 		_ = stdin.Close()
 		if f, ok := cmd.Stdin.(*os.File); ok {
@@ -886,7 +892,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		// reference's. Not measured: a direct start that then works. claustrum gives
 		// that child the run dir entry and no CLAUDE_SSH_CHILD entry, as the direct
 		// start for a daemon with no re-executable binary does.
-		logWarnf("[process.Manager] exec trampoline failed for %s (%v); starting it directly — a successor daemon will not be able to reap it", id, err)
+		logging.Warnf("[process.Manager] exec trampoline failed for %s (%v); starting it directly — a successor daemon will not be able to reap it", id, err)
 		closeExecErr()
 		execErrR, execErrW = nil, nil
 		// exec.Cmd.Start closed the failed command's stdin pipe. The stdout and
@@ -908,14 +914,14 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		if launcher != nil {
 			err = managedLauncherStartError(path, err)
 		}
-		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
-		closeAll(stdoutR, stdoutW, stderrR, stderrW)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
 		closeExecErr()
 		return nil, err
 	}
 	// The child holds its own copies now. Drop ours, or the read ends never see
 	// EOF even after every process in the tree has exited.
-	closeAll(stdoutW, stderrW)
+	sysproc.CloseAll(stdoutW, stderrW)
 	// When wrapped by the exec-child trampoline, cmd.Start's own exec-error pipe only
 	// saw the trampoline exec; the target exec happens in the trampoline. Read its
 	// outcome here: any bytes are the target's exec failure — surface it exactly as a
@@ -928,9 +934,9 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 			if launcher != nil {
 				execErr = managedLauncherStartError(path, execErr)
 			}
-			logErrorf("[process.Manager] Failed to start process %s: %v", id, execErr)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, execErr)
 			_ = cmd.Wait() // reap the trampoline, which reported the error and exited
-			closeAll(stdoutR, stderrR)
+			sysproc.CloseAll(stdoutR, stderrR)
 			return nil, execErr
 		}
 	}
@@ -939,13 +945,13 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	startTime := float64(time.Now().UnixNano()) / 1e9
 	afterChildStart(id, cmd.Process.Pid)
 	// Take the kill handle of the child. On Unix this is the process group from
-	// newSysProcAttr, so a kill can end the whole tree. On Windows it is a process
+	// sysproc.NewSysProcAttr, so a kill can end the whole tree. On Windows it is a process
 	// handle of the direct child, and with m.jobs the job that the child joins here. A
 	// failure here is non-fatal: kill falls back to the parent. It comes before the
 	// check below, which needs the handle.
 	group, err := confineProc(cmd.Process, m.jobs)
 	if err != nil {
-		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
+		logging.Warnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
 	}
 	// endUnstarted ends a started child that the spawn does not keep, and reaps it. The
 	// wait is bounded by killReapGrace. This spawn holds the start gate, and
@@ -967,7 +973,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		}
 		bound.Stop()
 		group.close()
-		closeAll(stdoutR, stderrR)
+		sysproc.CloseAll(stdoutR, stderrR)
 		_ = stdin.Close()
 	}
 	// A Windows child with a job started suspended. It runs only now, after the join,
@@ -976,7 +982,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// line (claustrum's own, not measured).
 	if err := resumeProc(cmd.Process, cmd.SysProcAttr); err != nil {
 		err = fmt.Errorf("resume after the job join: %w", err)
-		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 		endUnstarted()
 		return nil, err
 	}
@@ -991,11 +997,11 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	program := ""
 	if launcher != nil {
 		program = command
-		logInfof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
 	} else {
-		logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	}
-	met.Spawns.Add(1)
+	metrics.Met.Spawns.Add(1)
 
 	p := &managedProc{
 		id:         id,
@@ -1040,7 +1046,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// child and gets the spent-id refusal (claustrum's own, not measured).
 	if old := m.procs[id]; (old != nil && old != p && old.linked) || m.spentLocked(id) {
 		m.mu.Unlock()
-		logErrorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
 		endUnstarted()
 		return nil, errSpentID
 	}
@@ -1125,15 +1131,15 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	case <-time.After(grace):
 		// The text is the reference's, and it comes before the two read-error lines
 		// that the close below causes (measured on Linux).
-		logWarnf("[process.Manager] Process %s: pipe drain grace expired (grandchild holding stdio?); force-closing", p.id)
-		closeAll(stdoutR, stderrR)
+		logging.Warnf("[process.Manager] Process %s: pipe drain grace expired (grandchild holding stdio?); force-closing", p.id)
+		sysproc.CloseAll(stdoutR, stderrR)
 	}
 	// Both pumps have returned by here: either they hit EOF on their own, or
 	// the close above turned their blocked Read into ErrClosed. That barrier
 	// is what keeps an output frame from overtaking the exit frame — no flag
 	// on the frame path required, and no seq number burnt on a dropped frame.
 	<-drained
-	closeAll(stdoutR, stderrR) // no-op on the drained path; idempotent
+	sysproc.CloseAll(stdoutR, stderrR) // no-op on the drained path; idempotent
 	// running flips only now, not when cmd.Wait returned. Probe-measured at
 	// 19f30c46: the reference still reported running:true two seconds into the
 	// drain window and false only once the exit frame was out. 90fca6e6 narrowed
@@ -1155,9 +1161,9 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// the kill handle of the direct child and the handle of its job. endRest emptied
 	// that job, so the close ends nothing.
 	p.group.close()
-	sigName := exitSignalName(err)
-	logInfof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
-	met.ProcessExits.Add(1)
+	sigName := sysproc.ExitSignalName(err)
+	logging.Infof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
+	metrics.Met.ProcessExits.Add(1)
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
 		p.onExit()
@@ -1198,12 +1204,12 @@ func exitLogSuffix(sigName, killedBy string) string {
 }
 
 func pumpStream(p *managedProc, name string, r io.Reader) {
-	logDebugf("[process.Manager] Starting %s streaming for process %s", name, p.id)
+	logging.Debugf("[process.Manager] Starting %s streaming for process %s", name, p.id)
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			met.StreamBytes.Add(int64(n))
+			metrics.Met.StreamBytes.Add(int64(n))
 			p.emit(streamFrame{
 				Stream: name,
 				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
@@ -1215,7 +1221,7 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 			// output stopped, and without it a truncated stream looks identical to
 			// a clean one.
 			if !errors.Is(err, io.EOF) {
-				logWarnf("[process.Manager] %s read error for process %s: %v", name, p.id, err)
+				logging.Warnf("[process.Manager] %s read error for process %s: %v", name, p.id, err)
 			}
 			return
 		}
@@ -1238,7 +1244,7 @@ func (m *procManager) writeStdin(id string, data []byte) bool {
 	if p.enqueueStdin(data) {
 		return false // queue full (backpressure): nothing was enqueued
 	}
-	met.StdinBytes.Add(int64(len(data)))
+	metrics.Met.StdinBytes.Add(int64(len(data)))
 	return true
 }
 
@@ -1269,7 +1275,7 @@ func (p *managedProc) enqueueStdin(data []byte) (full bool) {
 func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 	if !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
 		if !p.stdinWarned {
-			logWarnf("[process.Manager] stdin backpressure: queue full for %s", p.id)
+			logging.Warnf("[process.Manager] stdin backpressure: queue full for %s", p.id)
 			p.stdinWarned = true
 		}
 		return true
@@ -1344,7 +1350,7 @@ func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() boo
 	p.stdinApplied += uint64(len(data))
 	applied = p.stdinApplied
 	p.stdinMu.Unlock()
-	met.StdinBytes.Add(int64(len(data)))
+	metrics.Met.StdinBytes.Add(int64(len(data)))
 	return applied, false, false, false, false
 }
 
@@ -1378,7 +1384,7 @@ func (p *managedProc) stdinWriter() {
 		if err != nil {
 			// The child never sees the queued bytes, nor any that come later.
 			// Silently dropping them left no trace at all.
-			logWarnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
+			logging.Warnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
 			broken = true
 		}
 	}
@@ -1513,7 +1519,7 @@ var (
 var resumeProc = resumeChild
 
 // confineProc is confineProcess behind a seam. Confinement cannot fail on Unix: the
-// process group is already set by newSysProcAttr, so the call returns a nil error. On
+// process group is already set by sysproc.NewSysProcAttr, so the call returns a nil error. On
 // Windows it fails when the OpenProcess it needs fails, or when the job of the child
 // cannot be made or joined. The warn-and-continue arm
 // of spawn is therefore unreachable without the seam. That arm warns, keeps the group
@@ -1591,7 +1597,7 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 	var failed *signalFailed
 	if errors.As(err, &failed) {
 		// The wait and the force go on (52d82f0a, measured on Linux and macOS).
-		logWarnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.name, err)
+		logging.Warnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.name, err)
 	}
 	if !live && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain()
@@ -1642,7 +1648,7 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 	// failed: operation not permitted" (52d82f0a, measured). A group that is gone
 	// (ESRCH) prints no line there, as before (claustrum's own, not measured).
 	if err := p.killGroupAfterExit(); err != nil {
-		logWarnf("[process.Manager] KillAndWait %s: group kill failed: %v", p.id, err)
+		logging.Warnf("[process.Manager] KillAndWait %s: group kill failed: %v", p.id, err)
 	}
 	select {
 	case <-p.done:
@@ -1653,7 +1659,7 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 		// line below on Linux and macOS (measured, after a refused SIGKILL). Windows
 		// logs none (claustrum's own, not measured).
 		if logsUnreapedKill {
-			logWarnf("[process.Manager] KillAndWait %s: still running 7s after SIGKILL (D-state?)", p.id)
+			logging.Warnf("[process.Manager] KillAndWait %s: still running 7s after SIGKILL (D-state?)", p.id)
 		}
 		return true, false, false, true
 	}
@@ -1669,7 +1675,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	if p == nil {
 		return nil, false, false, 0, 0, 0
 	}
-	met.Reattaches.Add(1)
+	metrics.Met.Reattaches.Add(1)
 	// The write lock of c comes first, so no wait on a socket write holds p.mu.
 	// It also comes first because applyStdin nests p.stdinMu over p.mu. No path
 	// holds p.mu or p.stdinMu and then takes a wmu.
@@ -1759,7 +1765,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 		}
 	}
 	if err != nil {
-		logWarnf("[frameSink] replay write failed, detaching: %v", err)
+		logging.Warnf("[frameSink] replay write failed, detaching: %v", err)
 		p.mu.Lock()
 		delete(p.subs, c)
 		p.mu.Unlock()
@@ -1833,8 +1839,8 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// A spawn starts a read of the login-shell PATH that is due, and waits for a
 	// running read within its bounds (internal/shellenv/shellenv.go). A no-op after a good read, and
 	// when the read is not armed (a test server).
-	awaitLoginPATH(noShellAgent)
-	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	shellenv.AwaitLoginPATH(noShellAgent)
+	base := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	// An inherited temp-folder name whose folder cannot take a file is not handed
 	// on (tempfolder_unix.go). A caller key of that name still reaches the child
 	// (claustrum's own, not measured).
@@ -1849,8 +1855,8 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// the later PATH entry (measured on Windows against 89cb6289). With a daemon
 	// entry named Path, a caller key named exactly Path replaces it and still loses to
 	// the later PATH.
-	if lp := currentLoginPATH(); lp != "" {
-		base = replaceOrAppendEnv(base, "PATH", lp)
+	if lp := shellenv.CurrentLoginPATH(); lp != "" {
+		base = sysproc.ReplaceOrAppendEnv(base, "PATH", lp)
 	}
 	// A caller key that the base holds replaces that entry in place. A new caller key
 	// goes to the end. Measured on Linux and macOS against 89cb6289.
@@ -1868,7 +1874,7 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// not measured on Linux and macOS. On Windows Go sorts the whole block by name, so no
 	// order built here is observable there (DIVERGENCES.md D23).
 	for k, v := range env {
-		base = replaceOrAppendEnv(base, k, v)
+		base = sysproc.ReplaceOrAppendEnv(base, k, v)
 	}
 	return base
 }

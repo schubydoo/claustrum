@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/metrics"
 )
 
 // writeJSON surfaces a marshal failure instead of writing a broken frame; the
@@ -30,12 +32,12 @@ func TestServeConnSkipsEmptyLines(t *testing.T) {
 	}
 }
 
-// startMetricsServer propagates an unbindable address as an error (runServe
+// metrics.StartServer propagates an unbindable address as an error (runServe
 // logs it and keeps going — the socket, not the metrics endpoint, is the job).
 func TestStartMetricsServerBadAddr(t *testing.T) {
-	if ln, err := startMetricsServer("127.0.0.1:99999999"); err == nil {
+	if ln, err := metrics.StartServer("127.0.0.1:99999999"); err == nil {
 		_ = ln.Close()
-		t.Error("startMetricsServer on an invalid port succeeded, want error")
+		t.Error("metrics.StartServer on an invalid port succeeded, want error")
 	}
 }
 
