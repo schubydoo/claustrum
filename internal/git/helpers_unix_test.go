@@ -70,3 +70,19 @@ func pollUntil(limit time.Duration, cond func() bool) bool {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// dropGroupWrite clears the group and other write bits of dir and returns dir.
+// Under umask 0002, t.TempDir() is mode 0775, and the worktreeRoot guard
+// refuses a folder that its group can write. The fixtures call this on their
+// temp folder, so the guard sees the mode that the test means.
+func dropGroupWrite(t *testing.T, dir string) string {
+	t.Helper()
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, fi.Mode().Perm()&^0o022); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}

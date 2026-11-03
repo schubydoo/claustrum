@@ -27,7 +27,7 @@ type locCell struct {
 func newLocCell(t *testing.T) *locCell {
 	t.Helper()
 	requireGit(t)
-	b, err := filepath.EvalSymlinks(t.TempDir())
+	b, err := filepath.EvalSymlinks(dropGroupWrite(t, t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,6 +190,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 				"repository <B>/cwS/src; choose a location the repository is not inside"},
 		{name: "C-W7", setup: func(t *testing.T, c *locCell) {
 			runGit(t, c.B, "init", "-q", "-b", "main", "--separate-git-dir="+c.p("<B>/cwG"), c.p("<B>/cwT"))
+			dropGroupWrite(t, c.p("<B>/cwG"))
 			writeFile(t, c.p("<B>/cwT/keep"), "keep\n", 0o644)
 			runGit(t, c.p("<B>/cwT"), "add", "keep")
 			runGit(t, c.p("<B>/cwT"), "commit", "-q", "-m", "one")
@@ -200,6 +201,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 				"a worktree location must be outside the repository"},
 		{name: "C-W19", setup: func(t *testing.T, c *locCell) {
 			runGit(t, c.T, "worktree", "add", "-q", c.p("<X>/proj"))
+			dropGroupWrite(t, c.p("<X>/proj"))
 			c.dir(t, "<X>/proj/w1")
 			c.file(t, "<X>/proj/keep")
 		}, root: "<X>", path: "<X>/proj/w2",
@@ -208,6 +210,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 		{name: "C-W21", setup: func(t *testing.T, c *locCell) {
 			r0Repo(t, c.p("<X>/T0"))
 			runGit(t, c.p("<X>/T0"), "worktree", "add", "-q", c.p("<X>/W"))
+			dropGroupWrite(t, c.p("<X>/W"))
 			if err := os.Rename(c.p("<X>/T0"), c.p("<X>/W/T")); err != nil {
 				t.Fatal(err)
 			}
@@ -556,6 +559,7 @@ func TestLocationCellSeparateGitDirNotListed(t *testing.T) {
 		t.Run(verb, func(t *testing.T) {
 			c := newLocCell(t)
 			runGit(t, c.B, "init", "-q", "-b", "main", "--separate-git-dir="+c.p("<B>/cwG"), c.p("<B>/cwT"))
+			dropGroupWrite(t, c.p("<B>/cwG"))
 			writeFile(t, c.p("<B>/cwT/keep"), "keep\n", 0o644)
 			runGit(t, c.p("<B>/cwT"), "add", "keep")
 			runGit(t, c.p("<B>/cwT"), "commit", "-q", "-m", "one")

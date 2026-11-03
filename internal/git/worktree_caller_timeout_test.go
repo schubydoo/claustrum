@@ -52,7 +52,7 @@ func newWTFixture(t *testing.T, linked bool) wtFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
+	root := dropGroupWrite(t, t.TempDir())
 	top := filepath.Join(root, "T")
 	// The template holds no absolute path. The linked worktree does, so each
 	// test adds its own.
