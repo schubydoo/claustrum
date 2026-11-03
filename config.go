@@ -84,7 +84,7 @@ type config struct {
 	cliDownloadTimeout *time.Duration
 	// gitTimeoutSeen records that the file carries the deprecated git-timeout
 	// key. The value is ignored: the git calls always use their own time limits
-	// (gitstop.go). main logs one warning on -serve.
+	// (internal/git/gitstop.go). main logs one warning on -serve.
 	gitTimeoutSeen bool
 	// libcProbeTimeoutSeen records that the file carries the deprecated
 	// libc-probe-timeout key. The value is ignored: the ldd probe always uses

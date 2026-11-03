@@ -557,7 +557,7 @@ func TestParseConfig_WireLog(t *testing.T) {
 }
 
 // The git-timeout key is deprecated: the git calls have the time limits of
-// 5fd08069 (gitstop.go), so D5 is retired. The key is recognised with each value,
+// 5fd08069 (internal/git/gitstop.go), so D5 is retired. The key is recognised with each value,
 // so main can warn, and it sets nothing else.
 func TestParseConfig_GitTimeoutKeyIsIgnored(t *testing.T) {
 	for _, body := range []string{

@@ -8,8 +8,8 @@ Most git steps of the git methods are hardened calls: git calls
 with a fixed list of `-c` options and a fixed set of environment variables. The lists
 and the variables follow `5fd08069`. The hook pins were measured against `f6010b97`,
 and their limits against `89cb6289`. A rule that names no system was measured on
-Linux, macOS and Windows. `githarden.go` holds the lists, and
-`githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
+Linux, macOS and Windows. `internal/git/githarden.go` holds the lists, and
+`internal/git/githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
 with an empty value (claustrum's own, not measured).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config

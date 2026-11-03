@@ -373,7 +373,7 @@ the linked pages.
   are the `lfs.storage` item of the checkout and the names of the short-lived
   entries. That is measured
   on Linux and macOS in the state `shadow`. On Windows the variables and the
-  names are measured in the state `fallback-git`. `githarden.go` holds the
+  names are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
   The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries and the config call of the ssh
   door follow the pin.
@@ -595,7 +595,7 @@ Both worktree methods refuse a symlink loop in a `worktreeRoot`. A kernel ELOOP
 catches a long chain. A root that is itself a link in a loop, or starts a chain of
 more than 255 links, rests on the text "EvalSymlinks: too many links" of
 `filepath.EvalSymlinks`. If a Go release rewords it, that frame changes, and the
-S1, S1b, S1c and S1d cases in `worktree_create_chain_unix_test.go` fail. Check
+S1, S1b, S1c and S1d cases in `internal/git/worktree_create_chain_unix_test.go` fail. Check
 them after each Go bump.
 
 ### Windows junctions in `filepath.EvalSymlinks`
@@ -628,7 +628,7 @@ the frames of `89cb6289`.
 With a `worktreeRoot`, both worktree methods run `git worktree list --porcelain -z`.
 The `-z` option needs git 2.36 or later. On an older git that call fails, and both
 methods run `git worktree list --porcelain` instead. The references on such a git
-are not measured. The tests in `worktree_root_checkout_unix_test.go` that need
+are not measured. The tests in `internal/git/worktree_root_checkout_unix_test.go` that need
 `-z` skip there, so a skip in CI means a git older than 2.36. Check them after the
 git of a CI runner or a test VM changes.
 

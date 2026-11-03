@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/git"
 )
 
 // plainServeRepo makes a repository with one empty commit with the real git
@@ -63,7 +65,7 @@ func TestServeDaemonRemovesItsShadowFolder(t *testing.T) {
 	if raw := dispatchRaw(t, s, line); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 		t.Fatalf("git.info = %s", raw)
 	}
-	root := filepath.Join(run, shadowRootName)
+	root := git.ShadowFolderForTest(run)
 	names := shadowRootNames(t, root)
 	if len(names) != 1 {
 		t.Fatalf("git-shadow holds %v, want one folder", names)

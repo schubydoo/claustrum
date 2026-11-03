@@ -100,7 +100,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 		ln.Close()
 		s.procs.killAll()
 		// Closes the lock file and removes the folder of this daemon below git-shadow.
-		s.gitShadow.close()
+		s.gitShadow.Close()
 	})
 	return s, sock
 }

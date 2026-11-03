@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/git"
 )
 
 // homeEnvVar is the variable os.UserHomeDir actually reads on this platform.
@@ -14,7 +16,7 @@ import (
 // assertions of TestWorktreeRemoveRefusesHomeDir vacuous. In the unfixed tree
 // that test is written to fail against, it would also point a live os.RemoveAll
 // at the developer's home directory. That is the accident that
-// worktree_homeguard_test.go exists to prevent, so the switch is not a
+// internal/git/worktree_homeguard_test.go exists to prevent, so the switch is not a
 // portability nicety.
 func homeEnvVar() string {
 	if runtime.GOOS == "windows" {
@@ -93,7 +95,7 @@ func isolateGitConfig(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("XDG_CONFIG_HOME", empty)
 	t.Setenv("HOME", empty)
-	resetUserExcludesCache(t)
+	t.Cleanup(git.ResetUserExcludesCacheForTest())
 }
 
 func eqTree(t *testing.T, got, want []string, what string) {

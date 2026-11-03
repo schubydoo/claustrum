@@ -16,10 +16,10 @@ import (
 // Why this exists, precisely. Four paths hand a caller-supplied path to a
 // recursive delete: files.extract_tar wipes destDir before unpacking
 // (internal/files/methods_files.go), git.worktree_remove deletes worktreePath itself
-// (worktreeremove.go; a worktree locked in the .git folder of baseRepo is
-// refused, not deleted), the rollback of git.worktree_create deletes the worktree it created (worktreeverify.go),
+// (internal/git/worktreeremove.go; a worktree locked in the .git folder of baseRepo is
+// refused, not deleted), the rollback of git.worktree_create deletes the worktree it created (internal/git/worktreeverify.go),
 // and git.worktree_create removes old staging entries of the git
-// directory of baseRepo (worktreestaging.go, sweepOldStaging).
+// directory of baseRepo (internal/git/worktreestaging.go, sweepOldStaging).
 // -install is a fifth caller of this guard: it deletes a folder at the CLI path
 // (internal/install/install.go, stageAndInstall). Its sweep and its prune call the guard for
 // each entry that they remove (cliEntryHoldsHome). The RPC

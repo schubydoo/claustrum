@@ -1,0 +1,461 @@
+package git
+
+import (
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+// TestPopulateWorktree pins the manifest half of worktree seeding. `git worktree
+// add` checks out tracked files only, so a declared untracked file is missing
+// unless copied. The reference copies exactly the untracked files that are BOTH
+// named by the manifest AND git-ignored, and no manifest match that git does not
+// ignore.
+//
+// In this fixture only `secret.env` is both git-ignored and in the manifest.
+// `notes/` and `plain-untracked.txt` are in the manifest but not ignored, and
+// `logs/` is ignored but not in the manifest.
+//
+// `.claude/` is absent from every expectation here for ONE reason, and it is not
+// "the reference never copies it": this fixture does not git-ignore `.claude/`, so
+// the `--others --ignored` view copyClaudeDir reads cannot see it. The copied case
+// is TestPopulateWorktreeCopiesIgnoredClaudeDir below. An earlier version of this
+// comment read the absence as a rule and was wrong for every reference build back
+// to 5db5e4a.
+//
+// The git-config isolation matters. copyClaudeDir's `--exclude-standard` honours
+// the USER's global excludes, by design. Without the isolation the fixture's
+// ignore state depends on whose machine runs the test.
+func TestPopulateWorktree(t *testing.T) {
+	requireGit(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses symlinks and POSIX modes")
+	}
+	isolateGitConfig(t)
+
+	fixture := func(t *testing.T, withClaude, withManifest bool) (repo, wt string) {
+		t.Helper()
+		root := t.TempDir()
+		repo = filepath.Join(root, "repo")
+		runGit(t, root, "init", "-b", "master", "repo")
+		writeFile(t, filepath.Join(repo, "tracked.txt"), "tracked\n", 0o644)
+		writeFile(t, filepath.Join(repo, ".gitignore"), "secret.env\nlogs/\n", 0o644)
+		runGit(t, repo, "add", "tracked.txt", ".gitignore")
+
+		if withClaude {
+			writeFile(t, filepath.Join(repo, ".claude", "settings.json"), "{}\n", 0o644)
+			writeFile(t, filepath.Join(repo, ".claude", "nested", "deep.txt"), "deep\n", 0o644)
+			writeFile(t, filepath.Join(repo, ".claude", ".hidden"), "hid\n", 0o644)
+			if err := os.Symlink("settings.json", filepath.Join(repo, ".claude", "link.json")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if withManifest {
+			writeFile(t, filepath.Join(repo, ".worktreeinclude"),
+				"secret.env\nnotes/\nplain-untracked.txt\nlink.txt\n", 0o644)
+		}
+		writeFile(t, filepath.Join(repo, "secret.env"), "S\n", 0o644)          // gitignored + in manifest -> copied
+		writeFile(t, filepath.Join(repo, "notes", "n1.txt"), "n\n", 0o644)     // in manifest, NOT ignored
+		writeFile(t, filepath.Join(repo, "plain-untracked.txt"), "p\n", 0o644) // in manifest, NOT ignored
+		writeFile(t, filepath.Join(repo, "other-untracked.txt"), "o\n", 0o644) // in neither
+		writeFile(t, filepath.Join(repo, "logs", "l1.txt"), "l\n", 0o644)      // gitignored, NOT in manifest
+		if err := os.Symlink("tracked.txt", filepath.Join(repo, "link.txt")); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, repo, "commit", "-m", "init")
+		return repo, filepath.Join(root, "wt")
+	}
+
+	// The seeded tree is the same whether or not `.claude/` exists, because this
+	// fixture does not ignore it. It holds the tracked files plus the one
+	// git-ignored manifest match.
+	withManifest := []string{".gitignore", "secret.env", "tracked.txt"}
+
+	t.Run("claude_present_but_not_ignored_is_not_copied", func(t *testing.T) {
+		repo, wt := fixture(t, true, true)
+		runGit(t, repo, "worktree", "add", "-b", "b1", wt)
+		populateWorktree(gitUse{}, nil, repo, wt)
+		eqTree(t, treeOf(t, wt), withManifest, "claude-present")
+	})
+
+	t.Run("no_manifest_copies_nothing", func(t *testing.T) {
+		repo, wt := fixture(t, true, false)
+		runGit(t, repo, "worktree", "add", "-b", "b2", wt)
+		populateWorktree(gitUse{}, nil, repo, wt)
+		eqTree(t, treeOf(t, wt), []string{".gitignore", "tracked.txt"}, "no-manifest")
+	})
+
+	t.Run("no_claude_dir", func(t *testing.T) {
+		repo, wt := fixture(t, false, true)
+		runGit(t, repo, "worktree", "add", "-b", "b3", wt)
+		populateWorktree(gitUse{}, nil, repo, wt)
+		eqTree(t, treeOf(t, wt), withManifest, "no-claude")
+	})
+}
+
+// TestPopulateWorktreeCopiesIgnoredClaudeDir pins the half TestPopulateWorktree
+// cannot reach: when `.claude/` IS git-ignored, the reference seeds the new
+// worktree with everything under it except `.claude/worktrees/`, and no
+// `.worktreeinclude` is involved.
+//
+// Measured on Linux against 19f30c46 and 90fca6e6 alike. claustrum copied none of
+// this before, which is why the fixture carries no manifest at all: without one,
+// every file below reaches the worktree through copyClaudeDir or not at all.
+func TestPopulateWorktreeCopiesIgnoredClaudeDir(t *testing.T) {
+	requireGit(t)
+	isolateGitConfig(t)
+
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "t\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".gitignore"), ".claude/\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt", ".gitignore")
+	writeFile(t, filepath.Join(repo, ".claude", "settings.local.json"), "{}\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".claude", "agents", "a.md"), "a\n", 0o644)
+	// The worktrees dir is where session worktrees live, so copying it would copy
+	// the worktree into itself. Both reference builds skip it.
+	writeFile(t, filepath.Join(repo, ".claude", "worktrees", "w", "x.txt"), "x\n", 0o644)
+	runGit(t, repo, "commit", "-m", "init")
+
+	wt := filepath.Join(root, "wt")
+	runGit(t, repo, "worktree", "add", "-b", "b", wt)
+	populateWorktree(gitUse{}, nil, repo, wt)
+
+	eqTree(t, treeOf(t, wt), []string{
+		".claude", ".claude/agents", ".claude/agents/a.md",
+		".claude/settings.local.json", ".gitignore", "tracked.txt",
+	}, "ignored .claude")
+}
+
+// TestCopyFileDoesNotPreserveMode pins a reference behaviour that looks like a
+// bug and is reproduced deliberately: the copy is created 0666-subject-to-umask
+// and the source mode is discarded, so an executable arrives NON-executable.
+//
+// Probe-measured by varying the launcher's umask — 022 gives 0644, 077 gives
+// 0600, 000 gives 0666 — for sources that were 0755, 0640 and 0400 alike.
+func TestCopyFileDoesNotPreserveMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "exec.sh")
+	writeFile(t, src, "#!/bin/sh\n", 0o755)
+	dst := filepath.Join(dir, "out", "exec.sh")
+	copyFile(src, dst)
+
+	fi, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm()&0o111 != 0 {
+		t.Errorf("copy is executable (%o); the reference discards the source mode", fi.Mode().Perm())
+	}
+	// The umask decides the rest, so assert the property rather than a constant.
+	if fi.Mode().Perm()&^0o666 != 0 {
+		t.Errorf("copy mode %o has bits outside 0666", fi.Mode().Perm())
+	}
+}
+
+// TestCopyFileSkipsNonRegular guards the symlink rule from the other direction:
+// copyFile must not follow a link and materialize its target.
+func TestCopyFileSkipsNonRegular(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "target.txt"), "secret\n", 0o644)
+	link := filepath.Join(dir, "link.txt")
+	if err := os.Symlink("target.txt", link); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "out", "link.txt")
+	copyFile(link, dst)
+	if _, err := os.Lstat(dst); err == nil {
+		t.Error("copyFile materialized a symlink; the reference copies neither the link nor its target")
+	}
+}
+
+// TestCopyFileKeepsAnExistingTarget: a file that is already at the target keeps
+// its content.
+func TestCopyFileKeepsAnExistingTarget(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.env")
+	writeFile(t, src, "from the repository\n", 0o644)
+	dst := filepath.Join(dir, "wt", "src.env")
+	writeFile(t, dst, "of the new branch\n", 0o644)
+	copyFile(src, dst)
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "of the new branch\n" {
+		t.Errorf("target content = %q, want the content that was there before the copy", got)
+	}
+}
+
+// TestCopyFileDoesNotWriteThroughALink: a link at the target stays a link, and the
+// file that it names keeps its content.
+func TestCopyFileDoesNotWriteThroughALink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.env")
+	writeFile(t, src, "from the repository\n", 0o644)
+	outside := filepath.Join(dir, "outside.txt")
+	writeFile(t, outside, "outside the worktree\n", 0o644)
+	dst := filepath.Join(dir, "wt", "src.env")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, dst); err != nil {
+		t.Fatal(err)
+	}
+	copyFile(src, dst)
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "outside the worktree\n" {
+		t.Errorf("file behind the link = %q, want it unchanged", got)
+	}
+	if fi, err := os.Lstat(dst); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("target after the copy: mode %v, err %v, want the link that was there", fi, err)
+	}
+}
+
+// TestCopyFileKeepsAReplacementOfAFailedTarget: when another entry took the place of
+// the target during a copy that fails, that entry stays. Not parallel: it replaces
+// copyFileBody.
+func TestCopyFileKeepsAReplacementOfAFailedTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("an open file cannot be replaced by name on Windows")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a.txt")
+	writeFile(t, src, "some bytes to write\n", 0o644)
+	dst := filepath.Join(dir, "out", "a.txt")
+	old := copyFileBody
+	copyFileBody = func(io.Writer, io.Reader) (int64, error) {
+		if err := os.Remove(dst); err != nil {
+			t.Errorf("replace the target: %v", err)
+		}
+		writeFile(t, dst, "of another process\n", 0o644)
+		return 0, errors.New("no space left on device")
+	}
+	t.Cleanup(func() { copyFileBody = old })
+	copyFile(src, dst)
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("the replacement is gone after the failed copy: %v", err)
+	}
+	if string(got) != "of another process\n" {
+		t.Errorf("replacement content = %q, want it unchanged", got)
+	}
+}
+
+// The copy helpers are best-effort by design: a failure must leave the worktree
+// alone rather than turn a successful git.worktree_create into an error. These
+// cover the give-up paths.
+func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX directory permissions to provoke failures")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permission bits these cases rely on")
+	}
+
+	t.Run("copyFile_unreadable_source", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "locked.txt")
+		writeFile(t, src, "x\n", 0o000)
+		dst := filepath.Join(dir, "out", "locked.txt")
+		copyFile(src, dst) // must not panic
+		if _, err := os.Stat(dst); err == nil {
+			t.Error("an unreadable source produced a destination file")
+		}
+	})
+
+	t.Run("copyFile_undestinable_target", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "a.txt")
+		writeFile(t, src, "x\n", 0o644)
+		blocked := filepath.Join(dir, "ro")
+		if err := os.Mkdir(blocked, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
+		copyFile(src, filepath.Join(blocked, "sub", "a.txt")) // must not panic
+	})
+
+	// An unwritable worktree: the intermediate os.Mkdir fails, so no destination is
+	// returned and the copy is skipped rather than reported.
+	t.Run("safeOverlayDest_intermediate_cannot_be_made", func(t *testing.T) {
+		wt := t.TempDir()
+		if err := os.Chmod(wt, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(wt, 0o700) })
+		if got := safeOverlayDest(wt, "sub/f.txt"); got != "" {
+			t.Errorf("dest = %q, want %q (the intermediate could not be created)", got, "")
+		}
+	})
+
+	// A manifest present but git failing (not a repo) must be a no-op.
+	t.Run("copyWorktreeIncludes_git_fails", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, worktreeIncludeFile), "x\n", 0o644)
+		wt := filepath.Join(dir, "wt")
+		if err := os.Mkdir(wt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		copyWorktreeIncludes(gitUse{}, nil, dir, wt) // dir is not a git repo
+		if got := treeOf(t, wt); len(got) != 0 {
+			t.Errorf("worktree got %v, want nothing copied when git fails", got)
+		}
+	})
+}
+
+// safeOverlayDest creates missing intermediate directories for a manifest copy but
+// refuses to traverse a ".." or a symlinked component, so a planted link inside the
+// worktree cannot carry a copy outside it.
+func TestSafeOverlayDest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	wt := t.TempDir()
+
+	// A nested path with a "." segment: the "." is skipped, intermediate dirs are
+	// created, and the leaf dest returned.
+	dst := safeOverlayDest(wt, "a/./b/file.txt")
+	if want := filepath.Join(wt, "a", "b", "file.txt"); dst != want {
+		t.Errorf("nested dest = %q, want %q", dst, want)
+	}
+	if fi, err := os.Stat(filepath.Join(wt, "a", "b")); err != nil || !fi.IsDir() {
+		t.Errorf("intermediate dirs not created: %v", err)
+	}
+
+	// A second manifest entry under the same prefix — the common case, since a
+	// manifest usually names several files in one directory — finds the
+	// intermediates already there as real directories and reuses them.
+	if got := safeOverlayDest(wt, "a/./b/file.txt"); got != dst {
+		t.Errorf("repeat dest = %q, want %q (existing intermediates are reused)", got, dst)
+	}
+
+	// A ".." component is refused outright.
+	if got := safeOverlayDest(wt, "x/../../etc/passwd"); got != "" {
+		t.Errorf(`".." dest = %q, want "" (refused)`, got)
+	}
+
+	// A symlinked intermediate is refused, and nothing is written through it.
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(wt, "link")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	if got := safeOverlayDest(wt, "link/evil.txt"); got != "" {
+		t.Errorf("symlinked-intermediate dest = %q, want %q (refused)", got, "")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "evil.txt")); err == nil {
+		t.Error("safeOverlayDest wrote through a symlink out of the worktree")
+	}
+}
+
+// TestWorktreeIncludeCopiesQuotedNames pins that a filename git would C-quote is
+// copied like any other. `git ls-files` C-quotes any path containing a tab, a
+// quote, a backslash or a non-ASCII byte, and the quoted display form names no
+// real file, so a line-delimited read drops it.
+//
+// This test used to assert the opposite, citing a probe. Re-measured on
+// Linux against 19f30c46 AND 90fca6e6, all four shapes are copied by
+// both.
+func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
+	requireGit(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("tabs and quotes are not legal in Windows filenames")
+	}
+	isolateGitConfig(t)
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "t\n", 0o644)
+	// The weird files must be git-ignored to be copy candidates at all (the manifest
+	// pass copies only matches that git also ignores). The quoting is what this test
+	// isolates on top of that: the two bare names are the control, and every C-quoted
+	// shape must arrive beside them.
+	writeFile(t, filepath.Join(repo, ".gitignore"), "weird*\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt", ".gitignore")
+	writeFile(t, filepath.Join(repo, worktreeIncludeFile), "weird*\n", 0o644)
+	for _, name := range []string{
+		"weird-plain.txt",  // printed bare
+		"weird space.txt",  // printed bare
+		"weird\ttab.txt",   // C-quoted
+		"weird\"quote.txt", // C-quoted
+		"weird\\back.txt",  // C-quoted
+		"weird-café.txt",   // C-quoted (UTF-8)
+	} {
+		writeFile(t, filepath.Join(repo, name), "x\n", 0o644)
+	}
+	runGit(t, repo, "commit", "-m", "init")
+
+	wt := filepath.Join(root, "wt")
+	runGit(t, repo, "worktree", "add", "-b", "b", wt)
+	populateWorktree(gitUse{}, nil, repo, wt)
+
+	eqTree(t, treeOf(t, wt),
+		[]string{
+			".gitignore", "tracked.txt",
+			"weird\ttab.txt", "weird space.txt", "weird\"quote.txt",
+			"weird-caf\u00e9.txt", "weird-plain.txt", "weird\\back.txt",
+		},
+		"quoted-name manifest matches")
+}
+
+// copyFile's two remaining give-up paths, which the directory-permission cases
+// above cannot reach: they fail at MkdirAll before the file is ever opened.
+func TestCopyFileOpenAndWriteFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on POSIX open/write errors")
+	}
+
+	// Destination exists as a DIRECTORY: MkdirAll succeeds, OpenFile fails.
+	t.Run("destination_is_a_directory", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "a.txt")
+		writeFile(t, src, "x\n", 0o644)
+		dst := filepath.Join(dir, "out", "a.txt")
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		copyFile(src, dst) // must give up quietly
+		fi, err := os.Stat(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fi.IsDir() {
+			t.Error("copyFile replaced a directory with a file")
+		}
+	})
+}
+
+// TestCopyFileRemovesATargetItCouldNotComplete: a copy that fails after the target
+// exists leaves no target. Not parallel: it replaces copyFileBody.
+func TestCopyFileRemovesATargetItCouldNotComplete(t *testing.T) {
+	old := copyFileBody
+	copyFileBody = func(w io.Writer, _ io.Reader) (int64, error) {
+		n, _ := w.Write([]byte("half"))
+		return int64(n), errors.New("no space left on device")
+	}
+	t.Cleanup(func() { copyFileBody = old })
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a.txt")
+	writeFile(t, src, "some bytes to write\n", 0o644)
+	dst := filepath.Join(dir, "out", "a.txt")
+	copyFile(src, dst)
+	if _, err := os.Lstat(dst); !os.IsNotExist(err) {
+		t.Errorf("Lstat of the target after a failed copy: err = %v, want not exist", err)
+	}
+}

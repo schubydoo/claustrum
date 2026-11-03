@@ -129,7 +129,7 @@ type GitInfoResult struct {
 	DefaultBranch string `json:"defaultBranch"`
 	// SettingsControl is the last member of the result. 5fd08069 sends it as
 	// "shadow", "fallback-git" or "off-switch" (measured on Linux, macOS and
-	// Windows). It is absent while the daemon has no state (shadowHost.control). No
+	// Windows). It is absent while the daemon has no state (git.ShadowHost.control). No
 	// other method has it.
 	SettingsControl string `json:"settingsControl,omitempty"`
 }

@@ -151,9 +151,11 @@ component_management:
         - peercheck_other.go
         - internal/files/methods_files.go
         - compat_files.go
-        - methods_git.go
-        - gitparams.go
-        - gitcall.go
+        - internal/git/methods_git.go
+        - internal/git/gitparams.go
+        - internal/git/gitcall.go
+        - internal/git/fortest.go
+        - compat_git.go
         - methods_process.go
         # The data.reason member of a refused process.spawn start, with its OS split.
         - spawnreason.go
@@ -167,118 +169,118 @@ component_management:
         - internal/install/managedlauncher_windows.go
         - internal/install/managedlauncherdir_darwin.go
         - internal/install/managedlauncherdir_other.go
-        - worktreecopy.go
+        - internal/git/worktreecopy.go
         # The .worktreeinclude directory scan: version gate, opening rules, caps.
-        - worktreeinclude.go
+        - internal/git/worktreeinclude.go
         # Its per-OS batch budget and backslash rule.
-        - worktreeinclude_unix.go
-        - worktreeinclude_windows.go
+        - internal/git/worktreeinclude_unix.go
+        - internal/git/worktreeinclude_windows.go
         # `.claude/` seeding of a new worktree and the runtime-state skip.
-        - worktreeclaude.go
+        - internal/git/worktreeclaude.go
         # git.worktree_* machinery (containment, external roots, staleness, verify,
         # per-repo lock, leaf mkdir) + git hardening + the destructive-path guard.
-        - worktreecontain.go
+        - internal/git/worktreecontain.go
         # Windows-only worktree-path spelling guard (trailing dot/space, colon).
-        - spelling_windows.go
-        - spelling_other.go
-        - worktreeexternal.go
-        - worktreeexternal_unix.go
-        - worktreeexternal_windows.go
+        - internal/git/spelling_windows.go
+        - internal/git/spelling_other.go
+        - internal/git/worktreeexternal.go
+        - internal/git/worktreeexternal_unix.go
+        - internal/git/worktreeexternal_windows.go
         # Windows gates the custom-worktree-location (worktreeRoot) capability off.
-        - externalunsupported_windows.go
-        - externalunsupported_other.go
-        - worktreelock.go
-        - worktreemkdir_unix.go
-        - worktreemkdir_windows.go
-        - worktreestale.go
-        - worktreestale_unix.go
-        - worktreestale_windows.go
-        - worktreeverify.go
+        - internal/git/externalunsupported_windows.go
+        - internal/git/externalunsupported_other.go
+        - internal/git/worktreelock.go
+        - internal/git/worktreemkdir_unix.go
+        - internal/git/worktreemkdir_windows.go
+        - internal/git/worktreestale.go
+        - internal/git/worktreestale_unix.go
+        - internal/git/worktreestale_windows.go
+        - internal/git/worktreeverify.go
         # the settle step after the checkout of git.worktree_create (683cc6a9).
-        - worktreesettle.go
+        - internal/git/worktreesettle.go
         # git.worktree_remove's own delete of the worktree and its entry.
-        - worktreeremove.go
+        - internal/git/worktreeremove.go
         # The branch step of git.worktree_remove and the create rollbacks (89cb6289),
         # with the OS-split stop of its update-ref.
-        - worktreebranch.go
-        - worktreebranch_unix.go
-        - worktreebranch_windows.go
+        - internal/git/worktreebranch.go
+        - internal/git/worktreebranch_unix.go
+        - internal/git/worktreebranch_windows.go
         # sourceBranch start-commit choice for git.worktree_create.
-        - worktreesource.go
-        - githarden.go
+        - internal/git/worktreesource.go
+        - internal/git/githarden.go
         # the core.hooksPath value of each git call that sets it (be1c1ca5).
-        - hooksdevice_unix.go
-        - hooksdevice_windows.go
+        - internal/git/hooksdevice_unix.go
+        - internal/git/hooksdevice_windows.go
         # the time limits of the git calls (5fd08069).
-        - gitstop.go
+        - internal/git/gitstop.go
         # the test that a git call still runs, at the bound of the second checkout listing.
-        - gitlive_darwin.go
-        - gitlive_linux.go
-        - gitlive_other.go
+        - internal/git/gitlive_darwin.go
+        - internal/git/gitlive_linux.go
+        - internal/git/gitlive_other.go
         # the index file of a new worktree and the registration step of the create rollback (89cb6289).
-        - githarden_index_unix.go
-        - githarden_index_windows.go
+        - internal/git/githarden_index_unix.go
+        - internal/git/githarden_index_windows.go
         # the configuration listing before each hardened call and its hook pins (89cb6289).
-        - gitlisting.go
+        - internal/git/gitlisting.go
         # the filter rule of the git.worktree_create checkout (5fd08069).
-        - gitfilter.go
+        - internal/git/gitfilter.go
         # the ssh door of the git.worktree_create checkout (be1c1ca5).
-        - gitsshdoor.go
+        - internal/git/gitsshdoor.go
         # the daemon's own read of the repository's config and its refusals (5fd08069).
-        - gitrepoconfig.go
-        - gitrepoconfig_unix.go
-        - gitrepoconfig_windows.go
+        - internal/git/gitrepoconfig.go
+        - internal/git/gitrepoconfig_unix.go
+        - internal/git/gitrepoconfig_windows.go
         # the settings control: the state of git.info, the folder of one daemon and the start test (5fd08069).
-        - gitshadow.go
-        - gitshadowconfig.go
-        - gitshadowprobe.go
-        - gitshadowrepo.go
-        - gitshadowhold.go
-        - gitshadowuse.go
-        - gitshadowsweep.go
-        - gitshadow_unix.go
-        - gitshadow_windows.go
+        - internal/git/gitshadow.go
+        - internal/git/gitshadowconfig.go
+        - internal/git/gitshadowprobe.go
+        - internal/git/gitshadowrepo.go
+        - internal/git/gitshadowhold.go
+        - internal/git/gitshadowuse.go
+        - internal/git/gitshadowsweep.go
+        - internal/git/gitshadow_unix.go
+        - internal/git/gitshadow_windows.go
         # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
-        - worktreestaging.go
-        - worktreestaging_modes_darwin.go
-        - worktreestaging_modes_linux.go
-        - worktreestaging_modes_unix.go
-        - worktreestaging_modes_windows.go
+        - internal/git/worktreestaging.go
+        - internal/git/worktreestaging_modes_darwin.go
+        - internal/git/worktreestaging_modes_linux.go
+        - internal/git/worktreestaging_modes_unix.go
+        - internal/git/worktreestaging_modes_windows.go
         # the retry of a held rename on Windows: the copy write and the staging move (5fd08069).
         - internal/renameretry/renameretry.go
         - internal/renameretry/renameretry_other.go
         - internal/renameretry/renameretry_windows.go
         # the held git directory of a create, and its steps through that folder (5fd08069).
-        - gitdiraccept.go
-        - gitdirheld.go
+        - internal/git/gitdiraccept.go
+        - internal/git/gitdirheld.go
         # the `config.worktree` file: its settings on the git calls and the file of a new worktree (5fd08069).
-        - gitworktreeconfig.go
-        - gitworktreeconfig_unix.go
-        - gitworktreeconfig_windows.go
+        - internal/git/gitworktreeconfig.go
+        - internal/git/gitworktreeconfig_unix.go
+        - internal/git/gitworktreeconfig_windows.go
         # the gate and the answer of git.status (89cb6289).
-        - gitstatus.go
+        - internal/git/gitstatus.go
         # the git.info root per OS (89cb6289).
-        - gitinforoot_other.go
-        - gitinforoot_windows.go
+        - internal/git/gitinforoot_other.go
+        - internal/git/gitinforoot_windows.go
         # the daemon's own GIT_* variables on the git calls of the git methods.
-        - gitenv.go
+        - internal/git/gitenv.go
         # the cleaning of the daemon's environment for the git children (5fd08069, with claustrum's own rules).
-        - gitchildenv.go
-        - gitchildenv_darwin.go
-        - gitchildenv_other.go
-        - gitchildenv_unix.go
-        - gitchildenv_windows.go
-        - gitoutsidecalls.go
+        - internal/git/gitchildenv.go
+        - internal/git/gitchildenv_darwin.go
+        - internal/git/gitchildenv_other.go
+        - internal/git/gitchildenv_unix.go
+        - internal/git/gitchildenv_windows.go
+        - internal/git/gitoutsidecalls.go
         # the git-directory trust check every git.* method runs first (f6010b97).
-        - gitdirtrust.go
-        - gitdirtrust_unix.go
-        - gitdirtrust_windows.go
-        - gitnorepo.go
-        - gitnorepo_unix.go
-        - gitnorepo_windows.go
+        - internal/git/gitdirtrust.go
+        - internal/git/gitdirtrust_unix.go
+        - internal/git/gitdirtrust_windows.go
+        - internal/git/gitnorepo.go
+        - internal/git/gitnorepo_unix.go
+        - internal/git/gitnorepo_windows.go
         # the daemon's own read of a .git file, a commondir file and a gitdir record.
-        - gitplainfile_unix.go
-        - gitplainfile_windows.go
+        - internal/git/gitplainfile_unix.go
+        - internal/git/gitplainfile_windows.go
         - internal/homeguard/homeguard.go
         - compat_homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git

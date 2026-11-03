@@ -18,9 +18,9 @@ the same JSON-RPC methods.
 |---|---|---|
 | Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install`, `-probe-cli` and `-bridge`. |
 | Transport | `server.go`, `idleconn.go`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go`, `socketroute*.go` | The `AF_UNIX` listener and the connection loop. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. |
-| Dispatch | `rpc.go`, `internal/rpc/`, `compat_rpc.go`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `compat_homeguard.go`, `internal/files/`, `compat_files.go`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go` and `internal/files/` have the 21 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `methods_launcher.go` holds the `process.spawn` launcher checks. |
+| Dispatch | `rpc.go`, `internal/rpc/`, `compat_rpc.go`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `compat_homeguard.go`, `internal/files/`, `compat_files.go`, `pluginsibling_*.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go`, `internal/files/` and `internal/git/` have the 21 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `methods_launcher.go` holds the `process.spawn` launcher checks. |
 | Process | `process.go`, `internal/sysproc/`, `*sysproc*.go`, `childjobs*.go`, `execchild*.go`, `sessionsupersede.go`, `internal/shellenv/`, `compat_shellenv.go` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
-| Git | `git*.go`, `worktree*.go`, `externalunsupported_*.go`, `spelling_*.go` | See [The git subsystem](#the-git-subsystem). |
+| Git | `internal/git/`, `compat_git.go` | See [The git subsystem](#the-git-subsystem). |
 | Install | `internal/install/`, `compat_install.go` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher, its settings reader and the child env strip. |
 | Host and lock | `daemon_runlock_*.go`, `tokenpersist.go`, `childrecord*.go`, `childreap*.go`, `hostclean*.go`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
 | Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/`, `compat_logging.go`, `compat_metrics.go`, `compat_wirelog.go` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
@@ -28,35 +28,35 @@ the same JSON-RPC methods.
 
 ## The git subsystem
 
-The five `git.*` methods start in `methods_git.go`, and their params in
-`gitparams.go`.
+The five `git.*` methods start in `internal/git/methods_git.go`, and their params in
+`internal/git/gitparams.go`.
 
-- **Each git call.** `gitenv.go`, `gitchildenv*.go` and `githarden.go` build the
-  environment of a git child. `gitstop.go` holds the time limits.
-  `gitlive_*.go` tests whether a git process still runs. `gitworktreeconfig*.go`
-  holds the `config.worktree` items, and the file of a new worktree. `gitsshdoor.go`
+- **Each git call.** `internal/git/gitenv.go`, `internal/git/gitchildenv*.go` and `internal/git/githarden.go` build the
+  environment of a git child. `internal/git/gitstop.go` holds the time limits.
+  `internal/git/gitlive_*.go` tests whether a git process still runs. `internal/git/gitworktreeconfig*.go`
+  holds the `config.worktree` items, and the file of a new worktree. `internal/git/gitsshdoor.go`
   holds the ssh door of the checkout.
-- **Trust of a repository.** `gitdirtrust*.go`, `gitlisting.go`,
-  `gitrepoconfig*.go`, `gitfilter.go` and `gitplainfile_*.go` hold the checks
+- **Trust of a repository.** `internal/git/gitdirtrust*.go`, `internal/git/gitlisting.go`,
+  `internal/git/gitrepoconfig*.go`, `internal/git/gitfilter.go` and `internal/git/gitplainfile_*.go` hold the checks
   before git runs. They also read the `.git` files.
-- **Settings copy.** `gitshadow*.go` holds the state and the sweep. It also
+- **Settings copy.** `internal/git/gitshadow*.go` holds the state and the sweep. It also
   holds the folder of one daemon under `<socket folder>/git-shadow` with its
   lock, the hold of a repository folder and the copied settings.
-- **Info and status.** `gitstatus.go` and `gitinforoot_*.go`.
-- **Create and remove.** `worktreecontain.go`, `worktreeexternal*.go`,
-  `externalunsupported_*.go` and `spelling_*.go` hold the path refusals of both.
-  `worktreelock.go` holds their locks. `worktreebranch*.go` holds the branch
+- **Info and status.** `internal/git/gitstatus.go` and `internal/git/gitinforoot_*.go`.
+- **Create and remove.** `internal/git/worktreecontain.go`, `internal/git/worktreeexternal*.go`,
+  `internal/git/externalunsupported_*.go` and `internal/git/spelling_*.go` hold the path refusals of both.
+  `internal/git/worktreelock.go` holds their locks. `internal/git/worktreebranch*.go` holds the branch
   step of a remove and of a rollback.
-- **Create.** `gitdiraccept.go` and `gitdirheld.go` hold the git directory open
-  and act through it. On Linux and macOS `gitshadowuse.go` also holds the
-  `worktree add` steps. `worktreeverify.go` holds the tests after the add and
-  the rollback steps. `githarden_index_*.go` places the index. For a create
+- **Create.** `internal/git/gitdiraccept.go` and `internal/git/gitdirheld.go` hold the git directory open
+  and act through it. On Linux and macOS `internal/git/gitshadowuse.go` also holds the
+  `worktree add` steps. `internal/git/worktreeverify.go` holds the tests after the add and
+  the rollback steps. `internal/git/githarden_index_*.go` places the index. For a create
   that holds no git directory, it deletes the registration of a rollback.
-  `worktreestaging.go` is the staged add and the sweep of old staging entries. The copy steps
-  are `worktreecopy.go`, `worktreeinclude*.go` and `worktreeclaude.go`. The
-  other steps are `worktreemkdir_*.go`, `worktreestale*.go` and
-  `worktreesource.go`.
-- **Remove.** `worktreeremove.go`.
+  `internal/git/worktreestaging.go` is the staged add and the sweep of old staging entries. The copy steps
+  are `internal/git/worktreecopy.go`, `internal/git/worktreeinclude*.go` and `internal/git/worktreeclaude.go`. The
+  other steps are `internal/git/worktreemkdir_*.go`, `internal/git/worktreestale*.go` and
+  `internal/git/worktreesource.go`.
+- **Remove.** `internal/git/worktreeremove.go`.
 
 [`AGENTS.md`](https://github.com/schubydoo/claustrum/blob/main/AGENTS.md) names
 the delete paths of these files and their guards. The page of each method has
