@@ -203,14 +203,18 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 	}
 	h := f.d.Shadow
 	h.probeFolderMu.Lock()
+	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	line := rpcLine(t, "git.info", map[string]any{"path": f.repo})
 	type reply struct {
-		raw   string
-		calls []envCall
+		raw string
+		err error
 	}
 	done := make(chan reply, 1)
-	go func() {
-		raw, calls := f.info(t, f.repo, nil)
-		done <- reply{raw, calls}
+	go func() { // calls no t method: the test goroutine reads the result
+		raw, err := gitDispatchErr(f.d, line)
+		done <- reply{raw, err}
 	}()
 	select {
 	case r := <-done:
@@ -219,14 +223,13 @@ func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 	h.probeFolderMu.Unlock()
-	var r reply
-	select {
-	case r = <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("git.info did not answer after the make of .probe") // a failed goroutine sends nothing
+	r := <-done
+	if r.err != nil {
+		t.Fatal(r.err)
 	}
-	if !strings.Contains(r.raw, `"isRepo":true`) || len(probeCalls(r.calls)) != 1 {
-		t.Fatalf("git.info = %s with %d calls about the repository, want isRepo true and one call", r.raw, len(probeCalls(r.calls)))
+	calls := readEnvCalls(t, f.log)
+	if !strings.Contains(r.raw, `"isRepo":true`) || len(probeCalls(calls)) != 1 {
+		t.Fatalf("git.info = %s with %d calls about the repository, want isRepo true and one call", r.raw, len(probeCalls(calls)))
 	}
 	if got, want := entryNames(t, probe), []string{"HEAD", "config", "info", "objects", "refs"}; !slices.Equal(got, want) {
 		t.Errorf(".probe holds %v, want %v", got, want)
