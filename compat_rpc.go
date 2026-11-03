@@ -23,7 +23,6 @@ type (
 	stdinResult           = rpc.StdinResult
 	killAndWaitResult     = rpc.KillAndWaitResult
 	killResult            = rpc.KillResult
-	notRepoResult         = rpc.NotRepoResult
 	managedLauncherResult = rpc.ManagedLauncherResult
 )
 

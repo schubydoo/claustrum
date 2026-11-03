@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // worktreePathRefusal reports the reference daemon's refusal reason when
@@ -118,7 +120,7 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 // git.worktree_remove (no errorCode). git.list_branches ignores a baseRepo member
 // (measured on Linux).
 func baseRepoUnderManagedWorktrees(repo string) bool {
-	p := canonicalPath(repo)
+	p := pathcanon.Canonical(repo)
 	for {
 		if fi, err := os.Stat(filepath.Join(p, managedWorktreesMarker)); err == nil && !fi.IsDir() {
 			return true

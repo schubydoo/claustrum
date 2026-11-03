@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
 // isSymlinkLoop reports whether err from filepath.EvalSymlinks comes from a symlink
@@ -130,7 +132,7 @@ func locationLinkRefusal(worktreeRoot, verb string) string {
 		return fmt.Sprintf("refusing to %s worktree: %s passes through too many symbolic links (a loop?)",
 			verb, filepath.Clean(worktreeRoot))
 	}
-	if err == nil && !missing && isFilesystemRoot(resolved) {
+	if err == nil && !missing && homeguard.IsFilesystemRoot(resolved) {
 		return fmt.Sprintf("refusing to %s worktree: %s resolves to the filesystem root; choose the "+
 			"worktree location by its absolute path, without %q, beneath the filesystem root", verb, worktreeRoot, "..")
 	}

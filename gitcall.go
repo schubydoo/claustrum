@@ -1,6 +1,10 @@
 package main
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
+)
 
 // gitDeps is the daemon state that the git methods read. Both fields point at
 // objects that the server owns for its whole life, so every request shares them.
@@ -13,17 +17,11 @@ type gitDeps struct {
 	OffRequests *atomic.Int32
 }
 
-// gitDeps returns the git state of the server: its settings control and a
-// pointer to its own count, never a copy.
-func (s *server) gitDeps() *gitDeps {
-	return &gitDeps{Shadow: s.gitShadow, OffRequests: &s.offGitRequests}
-}
-
 // gitCall is the state of one request of a git method. handleGit makes one
 // for each request, so no two requests share it.
 type gitCall struct {
-	// request is the wire request.
-	*request
+	// Request is the wire request.
+	*rpc.Request
 	// shadow is the settings control of the daemon that serves the request
 	// (gitshadow.go). handleGit sets it. It is nil for a server with no run folder.
 	shadow *shadowHost

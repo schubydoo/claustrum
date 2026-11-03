@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // The removal of git.worktree_remove. It runs no `git worktree remove` and no `git worktree prune`. The daemon deletes the
@@ -249,7 +251,7 @@ func worktreeGitFileTarget(leafDir *os.Root, path string) (string, error) {
 }
 
 // worktreePathSet is the set of spellings that name the worktree being removed: each
-// path as given and cleaned, and its pathAsRecorded form. The match is exact: a
+// path as given and cleaned, and its pathcanon.AsRecorded form. The match is exact: a
 // spelling that differs only in letter case is a different path on macOS (measured).
 // On Windows the match ignores letter case and the slash direction, because git
 // records its paths with forward slashes there (measured). An 8.3 short name does not
@@ -262,7 +264,7 @@ func newWorktreePathSet(paths ...string) worktreePathSet {
 		if p == "" {
 			continue
 		}
-		s = append(s, filepath.Clean(p), pathAsRecorded(p))
+		s = append(s, filepath.Clean(p), pathcanon.AsRecorded(p))
 	}
 	return s
 }
@@ -270,7 +272,7 @@ func newWorktreePathSet(paths ...string) worktreePathSet {
 func (s worktreePathSet) has(p string) bool {
 	p = filepath.Clean(p)
 	for _, x := range s {
-		if sameCanonicalPath(x, p) {
+		if pathcanon.Same(x, p) {
 			return true
 		}
 	}
@@ -506,7 +508,7 @@ func registrationGitDir(repo, answered string) string {
 		return verifyGitDir(repo)
 	}
 	answered = filepath.FromSlash(answered)
-	if isWorktreeEntry(answered) || canonicalPath(answered) == canonicalPath(filepath.Join(repo, ".git")) {
+	if isWorktreeEntry(answered) || pathcanon.Canonical(answered) == pathcanon.Canonical(filepath.Join(repo, ".git")) {
 		return verifyGitDir(repo)
 	}
 	return answered
@@ -545,7 +547,7 @@ func baseRepoGitFileEndsInSpace(repo string) bool {
 // remove answers the lock-check refusal (openRegistrationsFolder, not measured).
 func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (lock worktreeLock, readable bool) {
 	base := filepath.Join(repo, ".git")
-	if canonicalPath(base) == canonicalPath(commonDir) {
+	if pathcanon.Canonical(base) == pathcanon.Canonical(commonDir) {
 		return notLocked, true
 	}
 	// A `.git` that is a file, as in a linked worktree or a submodule, holds no
@@ -779,9 +781,9 @@ func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktree
 		named = filepath.Join(dir, name, named)
 	}
 	named = filepath.Clean(named)
-	if !sameCanonicalPath(named, filepath.Clean(commonDir)) &&
-		!sameCanonicalPath(canonicalPathOfGone(named), canonicalPathOfGone(commonDir)) &&
-		(answered == "" || !sameCanonicalPath(named, filepath.FromSlash(answered))) {
+	if !pathcanon.Same(named, filepath.Clean(commonDir)) &&
+		!pathcanon.Same(pathcanon.OfGone(named), pathcanon.OfGone(commonDir)) &&
+		(answered == "" || !pathcanon.Same(named, filepath.FromSlash(answered))) {
 		return "", notOurs
 	}
 	rec, ok := loadEntryRecord(root, dir, name)
@@ -835,8 +837,8 @@ func entryAlreadyGone(gitDir, commonDir string) bool {
 		return false
 	}
 	ownerGitDir := filepath.Dir(filepath.Dir(g))
-	if !sameCanonicalPath(ownerGitDir, filepath.Clean(commonDir)) &&
-		!sameCanonicalPath(ownerGitDir, canonicalPathOfGone(commonDir)) {
+	if !pathcanon.Same(ownerGitDir, filepath.Clean(commonDir)) &&
+		!pathcanon.Same(ownerGitDir, pathcanon.OfGone(commonDir)) {
 		return false
 	}
 	dir := filepath.Join(commonDir, worktreesSubdir)

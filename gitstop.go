@@ -12,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // The time limits of the git calls of git.list_branches, git.info, git.status and
@@ -113,7 +116,7 @@ func limitedGitMethod(method string) bool {
 // A params object that does not parse reports false.
 func offSwitchSet(params json.RawMessage) bool {
 	var p struct {
-		ShadowDirOff jsonTrueSwitch `json:"shadowDirOff"`
+		ShadowDirOff rpc.JSONTrueSwitch `json:"shadowDirOff"`
 	}
 	return json.Unmarshal(params, &p) == nil && bool(p.ShadowDirOff)
 }
@@ -321,13 +324,13 @@ func runToEOF(cmd *exec.Cmd, grace time.Duration, started func()) error {
 		// to its end with stdout, and no two copies write to the writer.
 		cmd.Stderr = outW
 	} else if errSink, errR, errW, err = own(&cmd.Stderr); err != nil {
-		closeAll(outR, outW)
+		sysproc.CloseAll(outR, outW)
 		return err
 	}
 	err = cmd.Start()
-	closeAll(outW, errW)
+	sysproc.CloseAll(outW, errW)
 	if err != nil {
-		closeAll(outR, errR)
+		sysproc.CloseAll(outR, errR)
 		return err
 	}
 	started()
@@ -415,10 +418,10 @@ func gitSubcommand(args []string) string {
 // git.list_branches, git.info and git.status answer -32603 with the stop text
 // (measured). git.worktree_create keeps the frame of the step whose call
 // stopped, with the stop text as its cause (measured).
-func (s *gitStop) reply(req *gitCall, resp response) response {
+func (s *gitStop) reply(req *gitCall, resp rpc.Response) rpc.Response {
 	err := s.halted()
 	if err == nil || req.Method == "git.worktree_create" {
 		return resp
 	}
-	return errResult(req.ID, codeInternal, err.Error())
+	return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 }

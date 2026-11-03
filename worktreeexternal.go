@@ -9,6 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
+	"github.com/schubydoo/claustrum/internal/pathcanon"
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // External worktrees (the "Worktree location" capability, added by reference build
@@ -77,7 +81,7 @@ func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) st
 	if msg := sessionFolderSpellingRefusal(worktreePath, verb); msg != "" {
 		return msg
 	}
-	if isFilesystemRoot(worktreeRoot) {
+	if homeguard.IsFilesystemRoot(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a filesystem root; choose the "+
 			"worktree location by its absolute path, without %q, beneath the filesystem root",
 			verb, worktreeRoot, "..")
@@ -126,7 +130,7 @@ func repoFolderHoldsRepoRefusal(worktreeRoot, worktreePath, baseRepo, repo, verb
 	folder := filepath.Dir(filepath.Clean(worktreePath))
 	f, r := folder, filepath.Clean(repo)
 	if resolve {
-		f, r = canonicalPathOfGone(folder), canonicalPathOfGone(repo)
+		f, r = pathcanon.OfGone(folder), pathcanon.OfGone(repo)
 	}
 	if !samePath(r, f) && !pathStrictlyUnder(r, f) {
 		return ""
@@ -370,7 +374,7 @@ func makeGoneWorktreeFolder(g goneWorktree) {
 
 // worktreeRootCheckoutRefusal is the refusal of a worktreeRoot that passes
 // worktreeRootInRepoRefusal but leads into a checkout of the repository, or "" when
-// the root passes. It resolves the root as canonicalPathOfGone does and tests each
+// the root passes. It resolves the root as pathcanon.OfGone does and tests each
 // folder of that path from "/" down with refusalAt. The first folder that fails
 // decides. The text names that folder, and worktreeRoot and baseRepo as sent.
 // f6010b97 and 89cb6289 send the same frames on Linux and macOS:
@@ -399,7 +403,7 @@ func makeGoneWorktreeFolder(g goneWorktree) {
 // (measured). Any other error of the lstat keeps the entry (not measured).
 func worktreeRootCheckoutRefusal(worktreeRoot string, c repoCheckouts, verb string, keepGone bool) (msg string, gone goneWorktree) {
 	var chain []string
-	for at := canonicalPathOfGone(worktreeRoot); ; at = filepath.Dir(at) {
+	for at := pathcanon.OfGone(worktreeRoot); ; at = filepath.Dir(at) {
 		chain = append([]string{at}, chain...)
 		if filepath.Dir(at) == at {
 			break
@@ -478,7 +482,7 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 }
 
 // sessionLocationRefusal is the refusal of a create whose worktreeRoot lies in a
-// session worktree, or "". It resolves the root as canonicalPathOfGone does and
+// session worktree, or "". It resolves the root as pathcanon.OfGone does and
 // tests each folder of that path from "/" down. The first folder below a folder
 // with a .claude-managed-worktrees file, or below .claude/worktrees, decides. A
 // folder that exists gets the "leads into" text, and a missing one the "would be
@@ -488,7 +492,7 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 func sessionLocationRefusal(worktreeRoot string) string {
 	const tail = "; beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
 		"marker); a worktree location must be outside every session's worktree"
-	resolved := canonicalPathOfGone(worktreeRoot)
+	resolved := pathcanon.OfGone(worktreeRoot)
 	var chain []string
 	for at := resolved; ; at = filepath.Dir(at) {
 		chain = append([]string{at}, chain...)
@@ -575,7 +579,7 @@ func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
 func verifyGitDir(baseRepo string) string {
 	asGiven := filepath.Join(baseRepo, ".git")
 	g := pruneGitDir(baseRepo)
-	if canonicalPath(g) == canonicalPath(asGiven) {
+	if pathcanon.Canonical(g) == pathcanon.Canonical(asGiven) {
 		return asGiven
 	}
 	return g
@@ -654,7 +658,7 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // four folder variables there, and 14 with branchName (measured on Linux). The
 // calls before the gate have no copy. A failed start test in a remove with
 // worktreeRoot is not measured: its text is the reason, as for a refused config.
-func externalWorkTreeRefusal(req *gitCall, repo string, off jsonTrueSwitch) (string, string) {
+func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) (string, string) {
 	u := gitUse{}
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
 	// baseRepo behind a symlink chain that the kernel does not follow still resolves in

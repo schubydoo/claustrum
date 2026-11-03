@@ -1,5 +1,10 @@
 package main
 
+import (
+	"github.com/schubydoo/claustrum/internal/pathcanon"
+	"github.com/schubydoo/claustrum/internal/rpc"
+)
+
 // Each git method decodes only the members that it reads. A member that the
 // method does not read takes no part in the decode, so a wrong type there is
 // ignored. 5fd08069 does the same (measured on Linux, and in part on macOS
@@ -10,8 +15,8 @@ package main
 
 // infoViewParams holds the members that git.info and git.list_branches read.
 type infoViewParams struct {
-	Path         string         `json:"path"`
-	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
+	Path         string             `json:"path"`
+	ShadowDirOff rpc.JSONTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
 func (q *infoViewParams) params() gitParams {
@@ -20,9 +25,9 @@ func (q *infoViewParams) params() gitParams {
 
 // statusViewParams holds the members that git.status reads.
 type statusViewParams struct {
-	Path         string         `json:"path"`
-	BaseRepo     string         `json:"baseRepo"`
-	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
+	Path         string             `json:"path"`
+	BaseRepo     string             `json:"baseRepo"`
+	ShadowDirOff rpc.JSONTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
 func (q *statusViewParams) params() gitParams {
@@ -31,11 +36,11 @@ func (q *statusViewParams) params() gitParams {
 
 // removeViewParams holds the members that git.worktree_remove reads.
 type removeViewParams struct {
-	BaseRepo     string         `json:"baseRepo"`
-	BranchName   string         `json:"branchName"`
-	WorktreePath string         `json:"worktreePath"`
-	WorktreeRoot string         `json:"worktreeRoot,omitempty"`
-	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
+	BaseRepo     string             `json:"baseRepo"`
+	BranchName   string             `json:"branchName"`
+	WorktreePath string             `json:"worktreePath"`
+	WorktreeRoot string             `json:"worktreeRoot,omitempty"`
+	ShadowDirOff rpc.JSONTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
 func (q *removeViewParams) params() gitParams {
@@ -47,14 +52,14 @@ func (q *removeViewParams) params() gitParams {
 
 // createViewParams holds the members that git.worktree_create reads.
 type createViewParams struct {
-	BaseRepo       string         `json:"baseRepo"`
-	BranchName     string         `json:"branchName"`
-	WorktreePath   string         `json:"worktreePath"`
-	SourceBranch   string         `json:"sourceBranch"`
-	ExistingBranch string         `json:"existingBranch,omitempty"`
-	WorktreeRoot   string         `json:"worktreeRoot,omitempty"`
-	TimeoutMs      int            `json:"timeoutMs,omitempty"`
-	ShadowDirOff   jsonTrueSwitch `json:"shadowDirOff,omitempty"`
+	BaseRepo       string             `json:"baseRepo"`
+	BranchName     string             `json:"branchName"`
+	WorktreePath   string             `json:"worktreePath"`
+	SourceBranch   string             `json:"sourceBranch"`
+	ExistingBranch string             `json:"existingBranch,omitempty"`
+	WorktreeRoot   string             `json:"worktreeRoot,omitempty"`
+	TimeoutMs      int                `json:"timeoutMs,omitempty"`
+	ShadowDirOff   rpc.JSONTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
 func (q *createViewParams) params() gitParams {
@@ -71,17 +76,27 @@ type gitMethodParams interface {
 }
 
 // bindGitParams decodes the params of req into view and returns them as
-// gitParams, with each path `~`-expanded. A decode error is the reply of
-// bindParams: -32602 "Invalid params". The request's own member only takes and
+// gitParams, with each path `~`-expanded. A decode error gives
+// -32602 "Invalid params". The request's own member only takes and
 // releases the hold (handleGit). The member of the result is the hold at this
 // call, before the first git command of the method (gitCall.offLive).
-func bindGitParams(req *gitCall, view gitMethodParams) (gitParams, *response) {
-	if err := decodeParams(req.request, view); err != nil {
-		return gitParams{}, ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
+func bindGitParams(req *gitCall, view gitMethodParams) (gitParams, *rpc.Response) {
+	if err := rpc.DecodeParams(req.Request, view); err != nil {
+		return gitParams{}, rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
 	}
 	p := view.params()
 	req.offOwn = bool(p.ShadowDirOff)
-	p.ShadowDirOff = jsonTrueSwitch(req.offLive())
+	p.ShadowDirOff = rpc.JSONTrueSwitch(req.offLive())
 	p.ExpandPaths()
 	return p, nil
+}
+
+// ExpandPaths `~`-expands the path members of p, so gitParams implements
+// rpc.PathExpander.
+func (p *gitParams) ExpandPaths() {
+	p.Path = pathcanon.ExpandTilde(p.Path)
+	p.BaseRepo = pathcanon.ExpandTilde(p.BaseRepo)
+	p.WorktreePath = pathcanon.ExpandTilde(p.WorktreePath)
+	p.WorktreeRoot = pathcanon.ExpandTilde(p.WorktreeRoot)
+	// BranchName and SourceBranch are refs, not paths — never expanded.
 }

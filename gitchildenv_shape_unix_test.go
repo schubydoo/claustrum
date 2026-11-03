@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // The ssh command and the trace entries on each git call of the five git
@@ -125,7 +127,7 @@ func TestSettingsGateKeepsTheSSHMark(t *testing.T) {
 	for _, state := range []shapeState{stateShadow, stateFallback} {
 		t.Run(state.String(), func(t *testing.T) {
 			f := newShapeFixture(t, state)
-			req := &gitCall{request: &request{}, shadow: f.d.Shadow}
+			req := &gitCall{Request: &rpc.Request{}, shadow: f.d.Shadow}
 			req.use.sshKept = func() bool { return true }
 			if msg, noRepo := req.settingsGate(requestGitDirTrust(f.repo, false), false, f.repo, true); msg != "" || noRepo {
 				t.Fatalf("gate refused: %q, noRepo %v", msg, noRepo)
