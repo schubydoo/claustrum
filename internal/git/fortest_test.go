@@ -26,14 +26,21 @@ func TestResetUserExcludesCacheForTestRestores(t *testing.T) {
 		userExcludesDone, userExcludesCached = oldDone, oldValue
 		userExcludesMu.Unlock()
 	})
+	userExcludesMu.Lock()
+	genBefore := userExcludesGen
+	userExcludesMu.Unlock()
 	restore := ResetUserExcludesCacheForTest()
 	userExcludesMu.Lock()
-	doneDuring, valueDuring := userExcludesDone, userExcludesCached
+	doneDuring, valueDuring, genDuring := userExcludesDone, userExcludesCached, userExcludesGen
 	userExcludesMu.Unlock()
 	restore()
 	userExcludesMu.Lock()
-	doneAfter, valueAfter := userExcludesDone, userExcludesCached
+	doneAfter, valueAfter, genAfter := userExcludesDone, userExcludesCached, userExcludesGen
 	userExcludesMu.Unlock()
+	// Each change counts, so a read that began before it stores nothing.
+	if genDuring != genBefore+1 || genAfter != genBefore+2 {
+		t.Errorf("generation = %d during, %d after, from %d; want +1, then +2", genDuring, genAfter, genBefore)
+	}
 	if doneDuring || valueDuring != "" || !doneAfter || valueAfter != "/cached/ignore" {
 		t.Errorf("cache = (%v, %q) during, (%v, %q) after; want empty, then the old value",
 			doneDuring, valueDuring, doneAfter, valueAfter)

@@ -7,7 +7,7 @@ import (
 )
 
 // Kept is the kept head alone: the dropped-byte count of String is not in it.
-// gitrepoconfig.go of package main returns these bytes as the error output of git.
+// internal/git/gitrepoconfig.go returns these bytes as the error output of git.
 func TestCappedTextKeptHasNoDroppedCount(t *testing.T) {
 	const limit = 1 << 16
 	c := &CappedText{Max: limit}

@@ -69,7 +69,7 @@ Every OS serves the same JSON-RPC methods.
 
 - Byte-identical wire frames are the contract. Results are ordered structs,
   not maps. Any change to `rpc.go`, `methods_*.go`, `process.go`,
-  `internal/rpc/`, `internal/files/` must keep the socket-integration suite and its golden
+  `internal/rpc/`, `internal/files/`, `internal/git/` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
   divergence owes two things. Give it an entry with its decision rules in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in

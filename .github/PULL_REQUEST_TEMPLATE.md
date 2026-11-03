@@ -15,7 +15,7 @@ internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
      frames. Tick the box that applies. -->
 
 - [ ] No wire-surface change. It does not touch `rpc.go`, `methods_*.go`,
-      `process.go`, `internal/rpc/`, or `internal/files/`.
+      `process.go`, `internal/rpc/`, `internal/files/` or `internal/git/`.
 - [ ] Intentional divergence. It has an entry in
       [`docs/DIVERGENCES.md`](../docs/DIVERGENCES.md), and its frames are in
       [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) or in the page of its method
