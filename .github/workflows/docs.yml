@@ -26,8 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Strict build runs on every PR and push — a broken doc link or bad nav fails
-  # the check. The Pages artifact is only uploaded for a real deploy (push/main).
+  # Strict build runs on every push and on every PR that is not a draft. A broken
+  # doc link or bad nav fails the check. The Pages artifact is only uploaded for a real deploy (push/main).
   build:
     name: build (mkdocs --strict)
     # A draft pull request skips the build. The test is `!= true`, because the
