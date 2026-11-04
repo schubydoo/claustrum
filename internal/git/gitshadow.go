@@ -805,10 +805,15 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	if r := run(realEnv, "config", "helper.check", "real"); r.err != nil {
 		return setupFailed("config", r)
 	}
-	if r := run(realEnv, "mktree"); r.err != nil {
-		return setupFailed("mktree", r)
+	// The commit-tree call names the tree that mktree printed. After a mktree that
+	// prints "garbage" and exits 0, the commit-tree call fails and nothing is
+	// deleted (b3081b51 and be1c1ca5, measured on Linux). Other output is not
+	// measured.
+	tree := run(realEnv, "mktree")
+	if tree.err != nil {
+		return setupFailed("mktree", tree)
 	}
-	commit := run(realEnv, "commit-tree", "-m", "c", gitEmptyTree)
+	commit := run(realEnv, "commit-tree", "-m", "c", tree.out)
 	if commit.err != nil {
 		return setupFailed("commit-tree", commit)
 	}

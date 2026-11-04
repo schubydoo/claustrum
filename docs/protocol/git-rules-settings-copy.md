@@ -90,6 +90,10 @@ call that makes the test repository: if the first `git version` fails too, that 
 the answer, and the second `version` call does not run (`b3081b51`, measured on Linux,
 claustrum's own on macOS and Windows).
 
+The `commit-tree` call of the test names the tree that `mktree` printed. A `mktree` that
+prints `garbage` and exits 0 fails the test at `commit-tree`, and a remove deletes
+nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with its line ending cut (claustrum's own, not measured).
+
 | `<cause>` | When |
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder |

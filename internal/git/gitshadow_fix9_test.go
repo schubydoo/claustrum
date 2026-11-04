@@ -181,9 +181,7 @@ func TestShadowInfoOnAFileOutsideARepository(t *testing.T) {
 // or GIT_CONFIG_SYSTEM in its environment passes the start test. No test call
 // has the variable, and the calls after the test have it. On 5fd08069 the
 // daemon answers normally there, with 9 test calls and the variable in the
-// later calls only (measured on Linux). With GIT_DEFAULT_HASH in a test call,
-// `git init` makes a SHA-256 repository and the commit-tree call of the test
-// fails.
+// later calls only (measured on Linux).
 func TestStartTestWithoutTheDaemonHashDefault(t *testing.T) {
 	for _, kv := range [][2]string{
 		{"GIT_DEFAULT_HASH", "sha256"},
