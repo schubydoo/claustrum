@@ -128,6 +128,11 @@ func parseSignal(name string) syscall.Signal {
 	}
 }
 
+// shutdownAsksEnd is true: the shutdown sweep sends SIGTERM to a child that
+// argsAskEnd accepts, and the group SIGKILL later (b3081b51, measured on Linux and
+// macOS).
+const shutdownAsksEnd = true
+
 // logsUnreapedKill is true: a killAndWait whose SIGKILL did not reap the child in
 // killReapGrace logs one line (52d82f0a, measured on Linux and macOS).
 const logsUnreapedKill = true

@@ -682,6 +682,9 @@ texts with its own values (measured on Linux):
 [Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
 ```
 
+Since `b3081b51` the `cleanup:` line says `ended` in place of `killed` ([Log
+lines](protocol/server.md#log-lines)).
+
 On `89cb6289` the second line came about 10 minutes after the first, and the
 third one minute later (measured on Linux). The reference logs `orphaned for
 11m0s` or `12m0s` (measured on Linux). claustrum logged `12m0s` (measured on

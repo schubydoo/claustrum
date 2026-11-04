@@ -117,7 +117,11 @@ A client must treat EOF after a shutdown request as a success. The reference oft
 
 ### What the stop does
 
-The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the job of each child on Windows (`52d82f0a`). With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). The stop removes `daemon.token` by the rules of [Token persistence](../DAEMON.md#token-persistence-daemontoken). The daemon then exits with code 0 (from the code).
+The stop closes the listener. On Linux and macOS, if the socket file is still the one that the daemon bound, the stop removes it (from the code on macOS). On Windows the close of the listener removes the path, also the socket of a successor. Then the stop closes every connection and ends the children. That is the whole process group on Linux and macOS, and the job of each child on Windows (`52d82f0a`), except [D28](../DIVERGENCES.md#d28).
+
+On Linux and macOS `b3081b51` first sends `SIGTERM` to a child whose args hold `stream-json`, `--input-format=stream-json` or `--output-format=stream-json`, and to that child alone. With a launcher the args of the request decide (the last form and the launcher measured on Linux). Every other child gets the group `SIGKILL` at once. A child that stays gets the group `SIGKILL` 1.5 s after the `SIGTERM`. So the stop takes up to 1.5 s longer (measured on Linux and macOS). On Linux `b3081b51` also sends the group `SIGKILL` after the exit of an ended child (measured). claustrum sends none after the exit frame ([D28](../DIVERGENCES.md#d28)). On Windows every child ends at once by the kill of its job (`b3081b51`, measured on Windows).
+
+With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). The stop removes `daemon.token` by the rules of [Token persistence](../DAEMON.md#token-persistence-daemontoken). The daemon then exits with code 0 (from the code).
 
 ### Log lines
 
@@ -133,12 +137,16 @@ On `server.shutdown` the daemon logs these two lines before it closes any connec
 If the daemon logs a `[Server] Connection closed: <label>` line, the line comes after the close of its connection. Then the daemon logs:
 
 ```
-[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)
+[Server] cleanup: closed <n> connection(s), ended <n> child process group(s)
 ```
 
-The first count includes the connection that sent the request (measured against `5fd08069` on Windows only).
+The first count includes the connection that sent the request (measured against `5fd08069` on Windows only). The word `ended` is that of `b3081b51`, where `be1c1ca5` says `killed` (measured on Linux, macOS and Windows). Before it, a stop that sent `SIGTERM` logs this line (`b3081b51`, measured on Linux and macOS):
 
-A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (measured against `5fd08069` on Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed`, and the `cleanup:` line says `killed 0 child process group(s)` (both claustrum's own).
+```
+[process.Manager] KillAll: asked <n> Claude Code process(es) to end: <n> exited, <n> had to be killed, after <duration>
+```
+
+A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (measured against `5fd08069` on Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed`, and the `cleanup:` line says `ended 0 child process group(s)` (both claustrum's own).
 
 A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Handler panic recovery](../PROTOCOL.md#handler-panic-recovery).
 
