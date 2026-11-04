@@ -12,6 +12,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `ready_for_review` joins the default types. A draft runs no job here, so
+    # the flip to ready starts the whole run on the current head.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -21,11 +24,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A draft pull request runs no job of this file. Each job, the aggregator too,
+  # carries `github.event.pull_request.draft != true`. The test is `!= true`, not
+  # `== false`, because the field is null on a push to main, and so a push runs
+  # every job. GitHub reports a job skipped by its `if:` as a skipped check run.
+  # So `ci required checks passed` shows skipped on a draft and does not wait.
+  # A draft cannot merge. Its first CI result comes when it is marked ready.
+  #
   # A pull request that changes only documentation skips test, cross-build and
   # coverage (decision-051). The docs tests still run in the lint job. Any other
   # path, a push to main, or a failed diff runs every job.
   changes:
     name: detect changes
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -68,6 +79,7 @@ jobs:
 
   lint:
     name: lint (gofmt + vet + tidy + golangci)
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -131,7 +143,7 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     # On Windows the setup and the compile take up to about 3.3 minutes. A hung
@@ -332,7 +344,7 @@ jobs:
 
   cross-build:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: cross-build (6 targets)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -364,7 +376,7 @@ jobs:
     # unreachable in-process (os.Executable/build-info/crypto-rand failures) or
     # Windows-only arms this Ubuntu job can't see.)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.go != 'false' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: coverage (>= 95%)
     runs-on: ubuntu-latest
     timeout-minutes: 15 # above the 12 minutes of the go test time limit below
@@ -436,7 +448,8 @@ jobs:
     # (seen in runs of this repo, the GitHub docs do not say it). A cancelled
     # context does not pass the gate. A failed job in a run that goes on still
     # fails this job. A job stopped by its time limit is not measured here.
-    if: ${{ !cancelled() }}
+    # The draft term skips it on a draft, as it skips the jobs that it needs.
+    if: ${{ !cancelled() && github.event.pull_request.draft != true }}
     needs: [changes, lint, test, cross-build, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 2
