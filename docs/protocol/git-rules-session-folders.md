@@ -42,9 +42,9 @@ on Linux and macOS). `git.info`, `git.status` and `git.list_branches` make no re
 (`b3081b51`, measured on Linux). For a `baseRepo` that is a linked worktree, the folder
 is the git directory of its main repository (claustrum's own, not measured). A failed
 create and a create with the off switch make none (claustrum's own, not measured).
-claustrum's own, not measured: the record is written at the good reply, its path has
-its links resolved on Linux and macOS, and a create whose trust check names no git
-directory records the folder that git names.
+The record is written at the good reply, and on Linux and macOS its path has its links
+resolved (claustrum's own, not measured). A create whose trust check names no git
+directory records the folder that git names (claustrum's own, not measured).
 
 ## The record
 
