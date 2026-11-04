@@ -256,7 +256,8 @@ It runs after each refusal of the content check after the checkout
   registrations directory, after `homeguard.WipesHomeDir`. The entry must still have its accepted
   identity after the open, and create holds the accepted folder open. If the open fails, the
   identity comes from a stat of the path (not measured). A folder that is not the accepted
-  one stays (D24).
+  one stays (D24). A registrations directory that cannot be searched after the open gets no index.
+  The leaf goes, and the registration and the branch stay (measured on macOS). Linux is claustrum's own, not measured.
 - **Held, or no answer of git.** A create that holds its git directory deletes the
   registration by name through the held folder (the moved entry), and none if
   `.git` is no longer that folder. Otherwise, with no answer or on Windows, the folder is

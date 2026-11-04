@@ -58,7 +58,11 @@ func installWorktreeIndex(src, adminDir string) error {
 // before it makes the file, it tests through that root that the entry is still
 // the accepted folder (replacedIn, D24). If it is another folder, nothing is
 // placed, and the error is claustrum's own text. An entry whose stat fails takes
-// the placement itself, with the measured texts.
+// the placement itself, with the measured texts. Before that test, a registrations
+// folder that cannot be searched gets no index, and the error is
+// registrationsExamineError (b3081b51, measured on macOS, Linux not measured).
+// The openat text of a registrations directory of mode 0600 above is that of
+// 89cb6289 and of installWorktreeIndex.
 func installTestedWorktreeIndex(src string, tested testedRegistration) error {
 	return installIndexInto(src, tested.path, tested)
 }
@@ -89,8 +93,13 @@ func installIndexInto(src, adminDir string, tested testedRegistration) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	if tested.path != "" && tested.replacedIn(root, filepath.Base(adminDir)) {
-		return errors.New("the registration " + adminDir + " is not the folder that was tested after the add")
+	if tested.path != "" {
+		if err := registrationsExamineError(root, filepath.Dir(adminDir)); err != nil {
+			return err
+		}
+		if tested.replacedIn(root, filepath.Base(adminDir)) {
+			return errors.New("the registration " + adminDir + " is not the folder that was tested after the add")
+		}
 	}
 	name := filepath.Base(adminDir) + "/index"
 	create := func() (*os.File, error) {
