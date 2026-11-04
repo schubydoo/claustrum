@@ -51,6 +51,9 @@ type contentCheck struct {
 	topNames []string
 	// linkBlobs are the blobs of the committed links, by path.
 	linkBlobs map[string][]byte
+	// fileModeOff is a core.fileMode of false, as git reads it in the base
+	// repository.
+	fileModeOff bool
 }
 
 // contentRefusal is the code and the hint of a refused content check.
@@ -123,6 +126,7 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	}
 	defer remove()
 	c.objects = dir
+	c.fileModeOff = c.readFileMode()
 	body, text := c.readObject("commit", c.commit)
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
@@ -162,9 +166,26 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 		}
 	}
 	// A link that leads to the top of the new worktree is refused (measured on
-	// Linux, macOS and Windows). A link to a folder outside is not.
+	// Linux, macOS and Windows). A link to a folder outside is not. Before that
+	// test, on Linux and macOS, a link whose chain runs in a circle or through
+	// /proc or /dev/fd is refused (b3081b51, measured). A chain of more than 8
+	// links inside the new worktree is refused too (measured on macOS). The
+	// order of the two tests is claustrum's own (not measured).
 	for _, f := range files {
-		if f.mode == "120000" && leadsToTop(c.leaf, f.path) {
+		if f.mode != "120000" {
+			continue
+		}
+		switch committedLinkFault(c.leaf, f.path) {
+		case linkTooLong:
+			return nil, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
+				"Shorten the chain of links that starts at %q in this repository, or remove the link that leads back: it runs through more than %d links, or in a circle, further than this check follows (commit %s).",
+				f.path, contentLinkLimit, c.short())}
+		case linkThroughProc:
+			return nil, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
+				"Point the link %q, or the link it leads through, somewhere that does not pass through /proc or /dev/fd (directly or by a link): what a path there names depends on the program reading it, so what Claude Code would read through it cannot be checked (commit %s).",
+				f.path, c.short())}
+		}
+		if leadsToTop(c.leaf, f.path) {
 			return nil, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
 				"Point the link %q, or the link it leads through, at a folder inside the repository instead of its top: everything in the repository could be read through it unchecked (commit %s).",
 				f.path, c.short())}
@@ -177,6 +198,9 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 		return nil, r
 	}
 	if r := c.otherWriter(); r != nil {
+		return nil, r
+	}
+	if r := c.lostExecBit(hashed); r != nil {
 		return nil, r
 	}
 	ids, failed := c.worktreeIDs(hashed)
@@ -384,16 +408,26 @@ func (c *contentCheck) worktreeIDs(files []contentFile) (ids []string, failed bo
 // regular file that a link to "." replaced during that call does (measured on
 // Linux). A file that cannot be read gives the retry code, and so does a file
 // that is gone, with "no such file or directory" (measured on Linux). With no such
-// file the check goes on to the compare (claustrum's own, not measured).
+// file the check goes on to the compare (claustrum's own, not measured). On
+// Linux a link in place of a file gives the retry code first if a root at the
+// new worktree cannot follow it. A loop then gives "too many levels of symbolic
+// links" (b3081b51, measured on Linux). macOS and Windows keep the other_writer
+// code there (claustrum's own, not measured).
 func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal {
 	for _, f := range files {
 		p := filepath.Join(c.leaf, filepath.FromSlash(f.path))
 		fi, err := os.Lstat(p)
 		if err == nil {
 			link := fi.Mode()&fs.ModeSymlink != 0
-			if link != (f.mode == "120000") || (!link && !fi.Mode().IsRegular()) {
+			if link {
+				err = leafLinkErr(c.leaf, f.path)
+			}
+			switch {
+			case err != nil:
+				// The link cannot be followed: the retry code below.
+			case link != (f.mode == "120000") || (!link && !fi.Mode().IsRegular()):
 				err = errChangedKind
-			} else if !link {
+			case !link:
 				var fh *os.File
 				if fh, err = os.Open(p); err == nil {
 					_ = fh.Close()
@@ -412,6 +446,70 @@ func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal 
 	}
 	return nil
 }
+
+// lostExecBit refuses a file that the commit records with mode 100755 and
+// that has no execute bit in the new worktree (b3081b51, measured on Linux and
+// macOS). The mode is read before the hash-object call, so a change during
+// that call passes (measured on Linux). With core.fileMode false in any config
+// scope that git reads in the base repository the file passes (measured on
+// Linux and macOS, for the repository config). A
+// failed read of that setting keeps the test (claustrum's own, not measured).
+// Windows has no such test (claustrum's own, not measured). The place of this
+// test after the other tests before that call is claustrum's own (not
+// measured).
+func (c *contentCheck) lostExecBit(files []contentFile) *contentRefusal {
+	for _, f := range files {
+		if f.mode != "100755" {
+			continue
+		}
+		fi, err := os.Lstat(filepath.Join(c.leaf, filepath.FromSlash(f.path)))
+		if err != nil || !fi.Mode().IsRegular() || !lacksExecBit(fi) || c.fileModeOff {
+			continue
+		}
+		return &contentRefusal{ErrorCode: "worktree_verify_content", hint: fmt.Sprintf(
+			"Run \"git config core.fileMode false\" in %q if this file system doesn't keep executable bits, otherwise \"git fsck\" there: %q came out not executable though commit %s records it executable.",
+			c.repo, f.path, c.short())}
+	}
+	return nil
+}
+
+// readFileMode runs one `config -z --bool --get-regexp
+// ^core\.(filemode|symlinks)$` in the base repository, before `cat-file commit`
+// (b3081b51, measured on Linux and macOS). git answers from every config scope
+// that it reads there. The last core.filemode of the answer counts. The check
+// does not act on core.symlinks. A failed or stopped call gives false, and the
+// execute-bit test runs (claustrum's own, not measured).
+func (c *contentCheck) readFileMode() bool {
+	out, _, err := c.git(c.repo, nil, nil, "config", "-z", "--bool", "--get-regexp", `^core\.(filemode|symlinks)$`)
+	if err != nil {
+		return false
+	}
+	off := false
+	for rec := range strings.SplitSeq(string(out), "\x00") {
+		key, value, _ := strings.Cut(rec, "\n")
+		if key == "core.filemode" {
+			off = value == "false"
+		}
+	}
+	return off
+}
+
+// linkFault is what the chain of a committed link runs into.
+type linkFault int
+
+const (
+	linkNoFault linkFault = iota
+	// linkTooLong is a circle, or a chain of more than contentLinkLimit
+	// links inside the new worktree.
+	linkTooLong
+	// linkThroughProc is a chain that passes through /proc or /dev/fd.
+	linkThroughProc
+)
+
+// contentLinkLimit is the count of links inside the new worktree that the
+// check follows in a chain: 8 pass and 9 are refused (b3081b51, measured on
+// macOS). The 8 is in the text on Linux and macOS too.
+const contentLinkLimit = 8
 
 // errChangedKind marks a file that is no longer of the kind of the commit.
 var errChangedKind = errors.New("the file changed its kind")
@@ -442,6 +540,15 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 		return c.contentMismatch(f.path)
 	case err != nil:
 		return c.retryRefusal(f, err)
+	}
+	// On Linux a link in place of a committed file that leaves the new worktree
+	// gives the retry code, before the blob is read. Its cause is "path escapes
+	// from parent" (b3081b51, measured on Linux). macOS and Windows keep the
+	// content code (claustrum's own, not measured).
+	if link && f.mode != "120000" {
+		if err := leafLinkErr(c.leaf, f.path); err != nil {
+			return c.retryRefusal(f, err)
+		}
 	}
 	blob, ok := c.linkBlobs[f.path]
 	if !ok {
