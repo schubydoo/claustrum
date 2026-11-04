@@ -5,6 +5,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -48,5 +49,35 @@ func TestContentCheckLinkToAFifo(t *testing.T) {
 	}
 	if want := checkedLine("4", "files", 4, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+}
+
+// TestContentCheckUndoThatCannotFinish: a file of the check that cannot be
+// read refuses with the retry code. When the rollback cannot remove an entry
+// of the leaf, the frame says so after "Removing it could not finish for",
+// and the registration and the branch stay (measured on Windows, with a held
+// file. Here a folder of mode 0555 stands in for it).
+func TestContentCheckUndoThatCannotFinish(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root removes entries of a folder of mode 0555")
+	}
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".claude/settings.json": "{}\n"})
+	dir := filepath.Join(f.leaf, ".claude")
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+		_ = os.Chmod(filepath.Join(dir, "settings.json"), 0o644)
+	})
+	afterCheckout(t, []string{"chmod", filepath.Join(dir, "settings.json"), "000"}, []string{"chmod", dir, "555"})
+	raw, calls := f.create(t, nil)
+	if slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--stdin-paths") }) {
+		t.Error("a hash-object --stdin-paths call ran, want the refusal before it (measured on Windows)")
+	}
+	start := `"error":"Claude could not confirm that the new worktree matches its commit, so it did not keep it. Try again, and if this repeats check the permissions of the folder the worktree is made in: \".claude/settings.json\" in the new worktree couldn't be read`
+	undo := `. Removing it could not finish for ` + strings.Trim(jsonQuoted(t, f.leaf), `"`) + `: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll .claude: `
+	if !strings.Contains(raw, start) || !strings.Contains(raw, undo) || !strings.HasSuffix(raw, `).","errorCode":"worktree_verify_retry"}}`) {
+		t.Errorf("git.worktree_create =\n%s\nwant the retry text, then %q, and a final period", raw, undo)
+	}
+	if !exists(f.reg) || !branchExists(t, f.repo, "w1") {
+		t.Errorf("registration stays %v, branch stays %v, want both", exists(f.reg), branchExists(t, f.repo, "w1"))
 	}
 }

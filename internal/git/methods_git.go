@@ -2170,7 +2170,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{
 				Success:    false,
-				Error:      contentRefusalStart + r.hint + undo,
+				Error:      contentRefusalStart + r.hint + contentUndoText(undo),
 				ErrorCode:  r.ErrorCode,
 				BranchKept: kept,
 			})

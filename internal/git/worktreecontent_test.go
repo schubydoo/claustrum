@@ -151,7 +151,7 @@ func TestContentCheckRefusals(t *testing.T) {
 		}, "worktree_verify_other_writer", func(repo, commit string) string {
 			return `Check what else writes into the folder the worktree is made in, or run "git fsck" in ` + fmt.Sprintf("%q", repo) +
 				`: "AGENTS.md" appeared in the new worktree though commit ` + commit + ` has no such file.`
-		}, 2, "1"},
+		}, 2, "0"},
 		{"a file that cannot be read", true, func(leaf string) [][]string {
 			return [][]string{{"chmod", filepath.Join(leaf, "CLAUDE.md"), "000"}}
 		}, "worktree_verify_retry", func(repo, commit string) string {
@@ -209,6 +209,7 @@ func TestContentCheckLinks(t *testing.T) {
 			}
 			runGit(t, f.repo, "add", "--", "CLAUDE.md")
 			runGit(t, f.repo, "commit", "-q", "-m", "link")
+			logs := captureLogBuf(t)
 			raw, _ := f.create(t, nil)
 			if row.code == "" {
 				if !strings.Contains(raw, `"success":true`) {
@@ -220,6 +221,11 @@ func TestContentCheckLinks(t *testing.T) {
 			hint := `Point the link "CLAUDE.md", or the link it leads through, at a folder inside the repository instead of its top: everything in the repository could be read through it unchecked (commit ` + commit + `).`
 			if want := contentFrame(t, row.code, hint); raw != want {
 				t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
+			}
+			// The blob of the link is read before the test, and it counts
+			// (measured on Windows).
+			if want := checkedLine("0", "files", 3, gitRevParse(t, f.repo, "HEAD"), "refused: "); !want.MatchString(logs.String()) {
+				t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 			}
 			f.wantGone(t)
 		})
@@ -328,13 +334,11 @@ func TestContentCheckNotWithTheOffSwitch(t *testing.T) {
 	}
 }
 
-// TestContentCheckReadHeldElsewherePasses: a read that fails with the error of
-// readHeldElsewhere passes the compare, and no git call runs. On Windows that
-// error is the sharing violation (the reference answers success, measured on
-// Windows). Here the error of a file of mode 000 stands in for it.
-func TestContentCheckReadHeldElsewherePasses(t *testing.T) {
+// TestContentCheckCompareRetry: the compare of a file that cannot be read
+// gives the retry code with the error of the system, and no git call runs.
+func TestContentCheckCompareRetry(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("TestContentCheckSharingViolationPasses holds the file on Windows")
+		t.Skip("a mode of 000 is a Unix test")
 	}
 	if os.Getuid() == 0 {
 		t.Skip("root reads a file of mode 000")
@@ -343,21 +347,9 @@ func TestContentCheckReadHeldElsewherePasses(t *testing.T) {
 	writeFile(t, filepath.Join(leaf, "CLAUDE.md"), "c\n", 0o000)
 	f := contentFile{path: "CLAUDE.md", mode: "100644", id: strings.Repeat("0", 40)}
 	c := &contentCheck{leaf: leaf, commit: strings.Repeat("0", 40)}
-	if r := c.compare(f); r == nil || r.ErrorCode != "worktree_verify_retry" {
-		t.Fatalf("compare with no held error = %+v, want worktree_verify_retry", r)
+	if r := c.compare(f); r == nil || r.ErrorCode != "worktree_verify_retry" || !strings.HasSuffix(r.hint, "("+syscall.EACCES.Error()+").") {
+		t.Fatalf("compare = %+v, want worktree_verify_retry with %q", r, syscall.EACCES.Error())
 	}
-	setReadHeldElsewhere(t, syscall.EACCES)
-	if r := c.compare(f); r != nil {
-		t.Errorf("compare = %+v, want a pass", r)
-	}
-}
-
-// setReadHeldElsewhere sets readHeldElsewhere to err for the test.
-func setReadHeldElsewhere(t *testing.T, err error) {
-	t.Helper()
-	old := readHeldElsewhere
-	readHeldElsewhere = err
-	t.Cleanup(func() { readHeldElsewhere = old })
 }
 
 // TestContentCheckChangedDuringTheHash: a racer replaces CLAUDE.md by a link
@@ -417,4 +409,18 @@ func TestContentCheckFileGoneDuringTheHash(t *testing.T) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	f.wantGone(t)
+}
+
+// TestContentUndoText: after a refusal of the check, a failed rollback text
+// starts " Removing it could not finish for " and ends with a period
+// (measured on Windows). An empty text stays empty.
+func TestContentUndoText(t *testing.T) {
+	in := "; and the undo could not finish for C:\\R\\w1: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll CLAUDE.md: x)"
+	want := " Removing it could not finish for C:\\R\\w1: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll CLAUDE.md: x)."
+	if got := contentUndoText(in); got != want {
+		t.Errorf("contentUndoText = %q\nwant %q", got, want)
+	}
+	if got := contentUndoText(""); got != "" {
+		t.Errorf("contentUndoText of no text = %q, want none", got)
+	}
 }

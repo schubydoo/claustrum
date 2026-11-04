@@ -137,7 +137,7 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 
 ### Content check refusals
 
-Each text starts `Claude could not confirm that the new worktree matches its commit, so it did not keep it. `, and the rollback of a failed checkout follows. `<c>` is the first 12 hex digits of the commit. Each quoted name and path has Go escapes, so a Windows path has two backslashes for each one. Build `b3081b51`, measured on Linux, macOS and Windows.
+Each text starts `Claude could not confirm that the new worktree matches its commit, so it did not keep it. `, and the rollback of a failed checkout follows. If an entry of the worktree cannot be removed, ` Removing it could not finish for <leaf>: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>).` follows the text, and all three stay (measured on Windows). `<c>` is the first 12 hex digits of the commit. Each quoted name and path has Go escapes, so a Windows path has two backslashes for each one. Build `b3081b51`, measured on Linux, macOS and Windows.
 
 | Text after the start | Code and cause |
 |---|---|
@@ -246,9 +246,10 @@ In the state `shadow` the daemon compares files of the new worktree with the com
 - The files are those under `.claude`, and `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md`, at the top of the commit. `CLAUDE.local.md` is claustrum's own, not measured. A `.claude` folder in another letter case counts (measured on macOS and Windows). Claustrum's own, not measured: no check with `"shadowDirOff":true` or in the state `fallback-git`, `.mcp.json` in any letter case, and the check before the copy step.
 - A file passes if its bytes equal the output of the filters of its path. A smudge filter of the user config with the same output at each run passes.
 - A link to a folder outside the repository passes, and so do mode 100755 and a Git LFS pointer with no git-lfs.
-- On Windows a file that another process holds open with no share mode passes.
+- A file that cannot be read and a name that the commit does not have refuse before the `hash-object` call, and the log line counts 0 files (measured on Windows).
+- On Windows a file that another process holds open with no share mode gives `worktree_verify_retry`, with `The process cannot access the file because it is being used by another process.` (measured on Windows).
 - The calls `cat-file commit`, `cat-file tree` and `hash-object --no-filters --stdin-paths` run in `baseRepo` (measured on Linux and macOS).
-- A committed link goes on no `hash-object` list, and the log line counts the other files only (measured on Linux).
+- A committed link goes on no `hash-object` list, and the log line counts the other files only (measured on Linux). Its blob is read first and counts as an object (measured on Linux and Windows). A link that the checkout wrote as a regular file is hashed and counted (measured on Windows).
 - `cat-file --filters --path=<f> <blob>` runs in the new worktree, only for a file that differs (measured on Windows).
 - Each call stops at 2 minutes, as in [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). The stop goes to the git process alone, and a child of git lives on.
 - A stopped `hash-object --stdin-paths` call stops no other call, and the create succeeds (measured on macOS).

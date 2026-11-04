@@ -49,6 +49,8 @@ type contentCheck struct {
 	read int
 	// topNames are the names of the top tree of the commit.
 	topNames []string
+	// linkBlobs are the blobs of the committed links, by path.
+	linkBlobs map[string][]byte
 }
 
 // contentRefusal is the code and the hint of a refused content check.
@@ -133,22 +135,49 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
 	}
-	// A link goes on no hash-object list, and the log line counts the other
-	// files only (measured on Linux). hashed are those files.
+	// The blob of each committed link is read first, and it counts in the log
+	// line (measured on Linux and Windows). A link of the worktree goes on no
+	// hash-object list, and the log line counts the other files only
+	// (measured on Linux). A committed link that the checkout wrote as a
+	// regular file is hashed and counted as one (measured on Windows). hashed
+	// are those files.
 	var hashed []contentFile
-	for _, f := range files {
+	for i, f := range files {
 		if f.mode != "120000" {
 			hashed = append(hashed, f)
+			continue
+		}
+		blob, stderr, err := c.git(c.repo, nil, nil, "cat-file", "blob", f.id)
+		if err != nil {
+			return nil, c.repositoryRefusal(failText(stderr, err))
+		}
+		c.read++
+		if c.linkBlobs == nil {
+			c.linkBlobs = map[string][]byte{}
+		}
+		c.linkBlobs[f.path] = blob
+		if fi, err := os.Lstat(filepath.Join(c.leaf, filepath.FromSlash(f.path))); err == nil && fi.Mode().IsRegular() {
+			files[i].mode = "100644"
+			hashed = append(hashed, files[i])
 		}
 	}
 	// A link that leads to the top of the new worktree is refused (measured on
 	// Linux, macOS and Windows). A link to a folder outside is not.
 	for _, f := range files {
 		if f.mode == "120000" && leadsToTop(c.leaf, f.path) {
-			return hashed, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
+			return nil, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
 				"Point the link %q, or the link it leads through, at a folder inside the repository instead of its top: everything in the repository could be read through it unchecked (commit %s).",
 				f.path, c.short())}
 		}
+	}
+	// A file that cannot be read, and a name of the check that the commit does
+	// not have, refuse before the hash-object call, and the log line counts no
+	// file (measured on Windows).
+	if r := c.changedWhileChecked(hashed); r != nil {
+		return nil, r
+	}
+	if r := c.otherWriter(); r != nil {
+		return nil, r
 	}
 	ids, failed := c.worktreeIDs(hashed)
 	if failed {
@@ -172,9 +201,6 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 		if r := c.compare(f); r != nil {
 			return hashed, r
 		}
-	}
-	if r := c.otherWriter(); r != nil {
-		return hashed, r
 	}
 	return hashed, nil
 }
@@ -351,7 +377,9 @@ func (c *contentCheck) worktreeIDs(files []contentFile) (ids []string, failed bo
 	return ids, false
 }
 
-// changedWhileChecked tests each file after a failed hash-object call. A file
+// changedWhileChecked tests each file before the hash-object call and after a
+// failed one. On Windows a file that another process holds open with no share
+// mode gives the retry code before that call (measured on Windows). A file
 // that is no longer of the kind of the commit gives the other_writer code: a
 // regular file that a link to "." replaced during that call does (measured on
 // Linux). A file that cannot be read gives the retry code, and so does a file
@@ -373,7 +401,7 @@ func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal 
 			}
 		}
 		switch {
-		case err == nil, readHeldElsewhere != nil && errors.Is(err, readHeldElsewhere):
+		case err == nil:
 		case errors.Is(err, errChangedKind):
 			return &contentRefusal{ErrorCode: "worktree_verify_other_writer", hint: fmt.Sprintf(
 				"Check what else writes into the folder the worktree is made in, or run \"git fsck\" in %q: %q in the new worktree isn't what commit %s has there (it changed while it was being checked).",
@@ -412,18 +440,18 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 	case errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotAFile):
 		// A file that is gone or is no file is not measured (claustrum's own).
 		return c.contentMismatch(f.path)
-	case readHeldElsewhere != nil && errors.Is(err, readHeldElsewhere):
-		// On Windows a file that another process holds open with no share
-		// mode passes (the reference answers success, measured on Windows).
-		return nil
 	case err != nil:
 		return c.retryRefusal(f, err)
 	}
-	blob, stderr, err := c.git(c.repo, nil, nil, "cat-file", "blob", f.id)
-	if err != nil {
-		return c.repositoryRefusal(failText(stderr, err))
+	blob, ok := c.linkBlobs[f.path]
+	if !ok {
+		var stderr string
+		blob, stderr, err = c.git(c.repo, nil, nil, "cat-file", "blob", f.id)
+		if err != nil {
+			return c.repositoryRefusal(failText(stderr, err))
+		}
+		c.read++
 	}
-	c.read++
 	if bytes.Equal(have, blob) {
 		return nil
 	}
@@ -484,4 +512,18 @@ func (c *contentCheck) otherWriter() *contentRefusal {
 // contentNameAtTop reports whether name is one of contentTopNames exactly.
 func contentNameAtTop(name string) bool {
 	return slices.Contains(contentTopNames, name)
+}
+
+// contentUndoText is the text of a failed rollback after a refusal of the
+// check. It starts " Removing it could not finish for <leaf>: " and ends with
+// a period, where the other frames start "; and the undo could not finish for
+// <leaf>: " (measured on Windows, for a leaf entry that cannot be removed).
+// The same form for the other texts of the rollback is claustrum's own (not
+// measured).
+func contentUndoText(undo string) string {
+	rest, ok := strings.CutPrefix(undo, "; and the undo could not finish for ")
+	if !ok {
+		return undo
+	}
+	return " Removing it could not finish for " + rest + "."
 }
