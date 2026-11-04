@@ -79,6 +79,16 @@ func runHelper(mode string, args []string) int {
 		// that it ran, and then copies stdin to stdout as cat does.
 		appendLine(args[0], "ran")
 		_, _ = io.Copy(os.Stdout, os.Stdin)
+	case "filter-suffix":
+		// A stand-in smudge filter that changes the file. It copies stdin to
+		// stdout and adds args[0], or the time in nanoseconds when args[0] is
+		// "time", so that each run gives other output.
+		_, _ = io.Copy(os.Stdout, os.Stdin)
+		suffix := args[0]
+		if suffix == "time" {
+			suffix = strconv.FormatInt(time.Now().UnixNano(), 10)
+		}
+		fmt.Print(suffix)
 	case "stderr-exit5": // integration fixture: one stderr line, exit 5
 		fmt.Fprint(os.Stderr, "err\n")
 		return 5

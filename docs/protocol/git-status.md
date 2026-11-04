@@ -135,6 +135,7 @@ If `HEAD` names no commit, `diff-index` compares the staged changes with the emp
 
 - The calls ignore the `.gitattributes` files of the repository, so no clean filter runs. A git older than 2.40 has no option for that, and then the attributes apply.
 - The calls do not read replace objects (`refs/replace`), so the status is that of the real commits.
+- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). The item comes before the other items, and it stays where the user config sets `lfs.storage` (claustrum's own, not measured).
 - `status`, `ls-files` and `diff-index` carry `GIT_OPTIONAL_LOCKS=0`. All calls run as [hardened git calls](git-rules-calls.md#hardened-git-calls).
 - If the user has a global excludes file, the status uses it.
 

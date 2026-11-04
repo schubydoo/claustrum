@@ -216,6 +216,8 @@ filters](docs/protocol/git-worktree-create.md#git-filters)). It runs after three
 the staging step too (`be1c1ca5`, measured on Linux): a `.git` that something put in the leaf,
 which goes with the leaf, an entry replaced right after its rename, and a `locked` file that
 cannot be removed. The last two delete no registration (D24, and the maintainer's choice).
+It runs after each refusal of the content check after the checkout
+(`internal/git/worktreecontent.go`, `b3081b51`, measured on Linux, macOS and Windows).
 
 ##### Leaf, stale entry and refusals
 
@@ -370,7 +372,7 @@ folder>/git-shadow` (`internal/git/gitshadow.go`): `os.Root.RemoveAll` (`removeE
 with content (`removeOneEntry`). The sites are the test folder `.check-<n>`, the folder of
 the daemon at shutdown (`ShadowHost.Close`) or after a failed lock step, a copy that this
 daemon wrote whose repository file is gone, the short-lived entries of one request
-(`.gitdir-<n>`, `.index-<n>`, `.worktreeinclude-<n>`, `.config-<n>`, `.s<n>`), each gone at the end of its step or at the reply (`.config-<n>`
+(`.gitdir-<n>`, `.index-<n>`, `.worktreeinclude-<n>`, `.config-<n>`, `.s<n>`, `.readback-objects-<n>`), each gone at the end of its step or at the reply (`.config-<n>`
 right after the file of the registration is written, or at the reply of a create refused
 before that step), the sweep
 `sweepOldFolders`, and one repository folder at 128 (`evictOldRepoFolder`). [The

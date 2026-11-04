@@ -1641,10 +1641,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		if addErr != nil {
 			undoFailedAdd(p.WorktreePath, checkpoint)
+			// The note quotes the name of the branch and cuts it at 100 bytes,
+			// with no mark of the cut. b3081b51 does so where be1c1ca5 writes the
+			// name with no quotes (measured on Linux, macOS and Windows). The Go
+			// quotes are claustrum's own for a name with a quote or a byte that
+			// prints no letter (not measured).
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{
 				Success: false,
-				Error: fmt.Sprintf("git worktree add failed: %s (attaching to the existing branch %s was refused first: %s)",
-					worktreeGitText(addStderr, addErr), attachBranch, worktreeGitText(attachStderr, attachErr)),
+				Error: fmt.Sprintf("git worktree add failed: %s (attaching to the existing branch %q was refused first: %s)",
+					worktreeGitText(addStderr, addErr), branchNoteName(attachBranch), worktreeGitText(attachStderr, attachErr)),
 				ErrorCode: "worktree_add_failed",
 			})
 		}
@@ -1967,6 +1972,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// index becomes the new worktree's own index. Measured against f6010b97 and
 	// 90fca6e6 on Windows. A checkout that fails also fails the request. See the last arm of
 	// the switch.
+	var checkUse *gitUse
+	var checkCommit string
 	if indexDir != "" {
 		// The filter rule runs in the checkout (gitfilter.go). 5fd08069 refuses after
 		// its read-tree call, and rolls back as after a failed checkout (measured on
@@ -1991,6 +1998,28 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// held git directory, as before.
 		cu, offNow := req.use.fixedForm(false)
 		offNow = offNow || (!cu.shadow() && bool(p.ShadowDirOff))
+		// In the state shadow the read-tree call names the commit id of the
+		// branch. b3081b51 does so where be1c1ca5 names refs/heads/<branch>
+		// (measured on Linux and macOS). The id comes from one `rev-parse
+		// --verify --quiet <ref>^{commit}`. b3081b51 runs that call in a create
+		// on Windows (measured). Its place and its `-c` items are claustrum's
+		// own, and so is the ref in the other states (not measured). A call
+		// that fails leaves the ref, and then no content check runs
+		// (claustrum's own, not measured).
+		//
+		// The call and the content check ask git no new question about the
+		// repository (recheck). Skipping recheck there is claustrum's own (not
+		// measured).
+		quiet := cu
+		quiet.noRecheck = true
+		if cu.shadow() && !offNow && !isObjectID(checkoutRev) {
+			if id := resolveCommit(quiet, repo, checkoutRev); id != "" {
+				checkoutRev = id
+			}
+		}
+		if cu.shadow() && !offNow && isObjectID(checkoutRev) {
+			checkUse, checkCommit = &quiet, checkoutRev
+		}
 		var rule *filterRule
 		if !offNow && req.shadow.readsRepoConfig() {
 			rule = &filterRule{}
@@ -2138,6 +2167,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			ErrorCode: "worktree_add_failed",
 		})
 	}
+	// After a good checkout b3081b51 compares the config files of the new
+	// worktree with the commit (worktreecontent.go). A refusal is a result with
+	// its code, and the rollback of a failed checkout runs (measured on Linux,
+	// macOS and Windows). The check runs in the state shadow only. The place
+	// before the copy step, and no check with "shadowDirOff":true or in the
+	// state fallback-git, are claustrum's own (not measured).
+	if checkUse != nil {
+		if r := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit); r != nil {
+			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+				Success:    false,
+				Error:      contentRefusalStart + r.hint + contentUndoText(undo),
+				ErrorCode:  r.ErrorCode,
+				BranchKept: kept,
+			})
+		}
+	}
 	// `git worktree add` checks out tracked files only, so the reference seeds the new
 	// worktree in two passes: the untracked files that .worktreeinclude names AND git
 	// also ignores (copyWorktreeIncludes), and the git-ignored files under .claude/,
@@ -2165,6 +2211,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		})
 	}
 	return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
+}
+
+// branchNoteName is name cut at 100 bytes, for the note of a refused attach.
+func branchNoteName(name string) string {
+	if len(name) > 100 {
+		return name[:100]
+	}
+	return name
 }
 
 // entryIsLink reports whether repo is a linked worktree whose `.git` file names
