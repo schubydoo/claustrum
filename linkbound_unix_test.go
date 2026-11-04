@@ -4,9 +4,11 @@ package main
 
 import (
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -38,8 +40,11 @@ func recordSignals(t *testing.T, pid *atomic.Int64) func() []string {
 // TestLinkBoundUnattendedEndHUP: a child that takes the SIGHUP ends by it, and the
 // exit line is the one of 683cc6a9 (measured on Linux).
 // Under a runner that ignores SIGHUP (nohup), the helper ignores it too. The
-// child then dies by the SIGKILL, and this test fails.
+// helper then cannot end by the SIGHUP, so the test skips in that state.
 func TestLinkBoundUnattendedEndHUP(t *testing.T) {
+	if signal.Ignored(syscall.SIGHUP) {
+		t.Skip("this process ignores SIGHUP, so the helper inherits that and cannot end by it")
+	}
 	buf := captureLogBuf(t)
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
