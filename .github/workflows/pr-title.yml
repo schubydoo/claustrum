@@ -7,7 +7,9 @@ name: PR Title
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    # This required check runs on a draft too, because it is cheap.
+    # `ready_for_review` runs it again on the flip to ready.
+    types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read

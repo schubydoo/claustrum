@@ -6,5 +6,5 @@ package main
 // custom-worktree-location capability off there and does not advertise
 // git.worktree.external_root in server.capabilities (measured against 7d193f89).
 // 683cc6a9 lists no process.spawn.link_bound on Windows either (measured on
-// Windows).
+// Windows), and b3081b51 lists no process.spawn.cli_temp_root there (measured on Windows).
 var osCapabilityFeatures []string
