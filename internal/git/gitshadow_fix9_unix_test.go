@@ -256,8 +256,10 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	// the create runs no pair before the add (pairBeforeAdd). 683cc6a9 adds the
 	// settle call after the checkout (worktreesettle.go). be1c1ca5 adds the
 	// config read of the ssh door before it, so the create makes 13 (gitsshdoor.go).
-	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 13}) {
-		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 13", got)
+	// b3081b51 adds the rev-parse pair of the commit id and the four pairs of the
+	// content check of a commit with no file of the check (worktreecontent.go), 23.
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 23}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 23", got)
 	}
 }
 

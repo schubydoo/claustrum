@@ -660,7 +660,7 @@ func (h *ShadowHost) asksGit(t gitDirTrust, off bool) bool {
 // place before each such listing is fitted to those rows. A bad answer at such
 // a step is not measured: the request goes on, and the next request asks again.
 func (u gitUse) recheck(dir string) {
-	if !u.shadow() || u.host == nil {
+	if !u.shadow() || u.host == nil || u.noRecheck {
 		return
 	}
 	t, ok := u.names(dir)

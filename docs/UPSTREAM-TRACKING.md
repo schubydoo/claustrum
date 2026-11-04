@@ -367,6 +367,11 @@ the linked pages.
     listing before the `-b` add, and `5fd08069` none.
   - With a git filter or git-lfs, the read-tree of claustrum can carry filter
     items before its list.
+  - In the state `shadow` a create runs the content check of `b3081b51`, and its
+    read-tree call names the commit id ([The content
+    check](protocol/git-worktree-create.md#the-content-check)). The `status` call
+    of git.status carries `lfs.storage` ([What the status
+    reads](protocol/git-status.md#what-the-status-reads)).
 
   With `"shadowDirOff":true` the other calls are equal in list, arguments,
   working directory and variables. Without the member these are equal: the

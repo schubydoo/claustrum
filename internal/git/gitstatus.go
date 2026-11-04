@@ -999,6 +999,15 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	var front []string
 	if r.form.shadow() {
 		front = r.entryItems()
+		// The `status` call names the lfs folder of the temporary git folder.
+		// b3081b51 does so where be1c1ca5 names none (measured on Linux, macOS
+		// and Windows). The other calls get no such item (measured on Linux
+		// and macOS). Its place before the other items, and the same item
+		// where the user config sets lfs.storage, are claustrum's own (not
+		// measured).
+		if args[0] == "status" {
+			front = append([]string{"-c", "lfs.storage=" + filepath.Join(r.tmp, "lfs")}, front...)
+		}
 	}
 	var attr []string
 	if r.attrSource {
