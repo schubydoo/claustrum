@@ -665,7 +665,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-list-branches.md":         995,  // the page rewrite
 	"docs/protocol/git-status.md":                3254, // the lfs.storage item of b3081b51. 3204: the object sources line of b3081b51. 3185: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md":       9970, // the claims fixes of m-19. 9968: the content check of b3081b51. 8843: the alternates line of b3081b51. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
-	"docs/protocol/git-worktree-remove.md":       4433, // the claims fixes of m-19. 4422: the gone worktree of b3081b51. 4398: the alternates line of b3081b51. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
+	"docs/protocol/git-worktree-remove.md":       4438, // the claims fixes of m-19. 4422: the gone worktree of b3081b51. 4398: the alternates line of b3081b51. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":          1834, // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
 	"docs/protocol/plugins-prune.md":             1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
 	"docs/protocol/process-kill.md":              931,  // the page template
@@ -676,7 +676,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-stdin.md":             929,  // attach
 	"docs/protocol/server.md":                    1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                   584,  // moved from PROTOCOL.md
-	"docs/protocol/git-rules-session-folders.md": 1355, // the claims fixes of m-19. 1335: the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
+	"docs/protocol/git-rules-session-folders.md": 1361, // the claims fixes of m-19. 1335: the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 }
 
 // The limits of a document that docWordLimits does not name.
@@ -761,7 +761,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         5254,
 	"docs/protocol/git-status.md":              3255, // the object sources line of b3081b51. 414 before
 	"docs/protocol/git-worktree-create.md":     2511, // macOS for the containment backticks. 2509: the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
-	"docs/protocol/git-worktree-remove.md":     4405,
+	"docs/protocol/git-worktree-remove.md":     4438,
 	"docs/protocol/launcher-resolve.md":        293,
 	"docs/protocol/plugins-prune.md":           258,
 	"docs/protocol/process-killandwait.md":     285,

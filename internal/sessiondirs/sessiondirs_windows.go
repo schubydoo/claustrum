@@ -20,8 +20,8 @@ const warnBare = false
 // case (samePath).
 const matchByIdentity = false
 
-// samePath compares two paths with no regard to letter case (claustrum's own, not
-// measured).
+// samePath compares two paths with no regard to letter case (measured on Windows:
+// a lower-case entry is passed over and cut).
 func samePath(a, b string) bool { return strings.EqualFold(a, b) }
 
 // folderIdentity is 0 and 0 on Windows, as the records of b3081b51 hold there
