@@ -199,22 +199,22 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 	}{
 		{name: "R01 main at the tip"},
 		{name: "R02 a commit no other ref reaches", setup: func(t *testing.T, f rmFixture) { unique(t, f) }, kept: true},
-		{name: "R03 a remote-tracking ref at the tip", setup: func(t *testing.T, f rmFixture) {
+		{name: "a remote-tracking ref at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "update-ref", "refs/remotes/origin/wt1", unique(t, f))
 		}},
 		{name: "R04 another branch at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "branch", "k", unique(t, f))
 		}},
-		{name: "R04b another branch past the tip", setup: func(t *testing.T, f rmFixture) {
+		{name: "another branch past the tip", setup: func(t *testing.T, f rmFixture) {
 			unique(t, f)
 			runGit(t, f.wt, "commit", "-q", "--allow-empty", "-m", "c3")
 			runGit(t, f.wt, "branch", "k")
 			runGit(t, f.wt, "reset", "-q", "--soft", "HEAD~1")
 		}},
-		{name: "R06 only a tag", setup: func(t *testing.T, f rmFixture) {
+		{name: "only a tag", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "tag", "v", unique(t, f))
 		}, kept: true},
-		{name: "R07 a detached HEAD at the tip", setup: func(t *testing.T, f rmFixture) {
+		{name: "a detached HEAD at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "checkout", "-q", "--detach", unique(t, f))
 		}, kept: true},
 		{name: "R08 a symref to the branch", setup: func(t *testing.T, f rmFixture) {
@@ -232,12 +232,12 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 				t.Errorf("wt1 = %q, want it kept at %s", got, before)
 			}
 		}},
-		{name: "R11 a missing branch", branch: "nosuch", check: func(t *testing.T, f rmFixture, before string) {
+		{name: "a missing branch", branch: "nosuch", check: func(t *testing.T, f rmFixture, before string) {
 			if got := refAt(t, realGit, f.repo, "wt1"); got != before {
 				t.Errorf("wt1 = %q, want it untouched at %s", got, before)
 			}
 		}},
-		{name: "R14 a lock on the branch", setup: func(t *testing.T, f rmFixture) {
+		{name: "a lock on the branch", setup: func(t *testing.T, f rmFixture) {
 			writeFile(t, filepath.Join(gitDir(f), "refs", "heads", "wt1.lock"), "", 0o644)
 		}, kept: true, check: func(t *testing.T, f rmFixture, before string) {
 			if got := refAt(t, realGit, f.repo, "wt1"); got != before {
@@ -245,10 +245,10 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 			}
 			mustExist(t, filepath.Join(gitDir(f), "refs", "heads", "wt1.lock"))
 		}},
-		{name: "R16 a packed twin in another letter case", setup: func(t *testing.T, f rmFixture) {
+		{name: "a packed twin in another letter case", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), []string{"WT1"})
 		}, kept: true},
-		{name: "R16b the request names the twin", branch: "WT1", kept: true, check: func(t *testing.T, f rmFixture, before string) {
+		{name: "the request names the twin", branch: "WT1", kept: true, check: func(t *testing.T, f rmFixture, before string) {
 			if got := refAt(t, realGit, f.repo, "wt1"); got != before {
 				t.Errorf("wt1 = %q, want it kept at %s", got, before)
 			}
@@ -256,19 +256,19 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 		{name: "R15a 10001 heads", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), numbered("zz", branchListLimit-2))
 		}, kept: true},
-		{name: "R15c 10002 heads, wt1 not listed", setup: func(t *testing.T, f rmFixture) {
+		{name: "10002 heads, wt1 not listed", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), numbered("b", branchListLimit-1))
 		}, kept: true},
 		{name: "R15b 10000 heads", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), numbered("zz", branchListLimit-3))
 		}},
-		{name: "R17a gone path, a commit no other ref reaches", setup: func(t *testing.T, f rmFixture) {
+		{name: "gone path, a commit no other ref reaches", setup: func(t *testing.T, f rmFixture) {
 			unique(t, f)
 			if err := os.RemoveAll(f.wt); err != nil {
 				t.Fatal(err)
 			}
 		}, kept: true},
-		{name: "R17b gone path, main at the tip", setup: func(t *testing.T, f rmFixture) {
+		{name: "gone path, main at the tip", setup: func(t *testing.T, f rmFixture) {
 			if err := os.RemoveAll(f.wt); err != nil {
 				t.Fatal(err)
 			}
@@ -278,7 +278,7 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 			runGit(t, f.repo, "checkout", "-q", "--detach")
 			runGit(t, f.repo, "update-ref", "-d", "refs/heads/main")
 		}, kept: true},
-		{name: "B2-04b the only local branch, origin/main at the tip", setup: func(t *testing.T, f rmFixture) {
+		{name: "the only local branch, origin/main at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "checkout", "-q", "--detach")
 			runGit(t, f.repo, "update-ref", "refs/remotes/origin/main", "HEAD")
 			runGit(t, f.repo, "update-ref", "-d", "refs/heads/main")
@@ -436,9 +436,9 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 func TestWorktreeRemoveBranchStepSerialized(t *testing.T) {
 	realGit := realGitPath(t)
 	for _, viaLinked := range []bool{false, true} {
-		name := "R21 same baseRepo"
+		name := "same baseRepo"
 		if viaLinked {
-			name = "R21b baseRepo through a linked worktree"
+			name = "baseRepo through a linked worktree"
 		}
 		t.Run(name, func(t *testing.T) {
 			f := newRmFixture(t)
@@ -721,7 +721,7 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 		w1Stays bool
 		bounded bool // a bound stops a stub call that never ends
 	}{
-		{name: "C01 main at the tip"},
+		{name: "main at the tip"},
 		// X1 and X2: a name that the skip rule leaves alone stays, with its own text
 		// and no member, whatever reaches it (`f6010b97`, `89cb6289`, measured on
 		// Linux).
@@ -738,29 +738,29 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 		{name: "C06c 10000 heads", setup: func(t *testing.T, f wtFixture) {
 			addPackedHeads(t, commonGit(f), refAt(t, realGit, f.top, "main"), numbered("zz", branchListLimit-4))
 		}},
-		{name: "B2-09b for-each-ref fails", arm: func(t *testing.T, f wtFixture) {
+		{name: "for-each-ref fails", arm: func(t *testing.T, f wtFixture) {
 			stubRule2(t, "for-each-ref", "", 0, "128", "", "")
 		}, undo: undoUnchecked + " (exit status 128)", w1Stays: true},
-		{name: "B2-09a for-each-ref stopped at the bound", arm: func(t *testing.T, f wtFixture) {
+		{name: "for-each-ref stopped at the bound", arm: func(t *testing.T, f wtFixture) {
 			shortBounds(t, time.Second, 5*time.Second, 5*time.Second)
 			stubRule2(t, "for-each-ref", "", stubNever, "", "", "")
 		}, undo: undoUnchecked + " (" + killedText() + ")", w1Stays: true, bounded: true},
-		{name: "B2-09c a packed twin in another letter case", setup: func(t *testing.T, f wtFixture) {
+		{name: "a packed twin in another letter case", setup: func(t *testing.T, f wtFixture) {
 			addPackedHeads(t, commonGit(f), refAt(t, realGit, f.top, "main"), []string{"W1"})
 		}, undo: undoUnchecked, w1Stays: true},
-		{name: "B2-09d the branch is gone before for-each-ref", arm: func(t *testing.T, f wtFixture) {
+		{name: "the branch is gone before for-each-ref", arm: func(t *testing.T, f wtFixture) {
 			stubRule2(t, "for-each-ref", "", 0, "", "rm", filepath.Join(commonGit(f), "refs", "heads", "w1"))
 		}},
-		{name: "B2-09f rev-list fails", arm: func(t *testing.T, f wtFixture) {
+		{name: "rev-list fails", arm: func(t *testing.T, f wtFixture) {
 			stubRule2(t, "rev-list", "", 0, "128", "", "")
 		}, undo: undoUnchecked + " (exit status 128)", w1Stays: true},
-		{name: "C07a update-ref fails", arm: func(t *testing.T, f wtFixture) {
+		{name: "update-ref fails", arm: func(t *testing.T, f wtFixture) {
 			stubRule2(t, "update-ref", "", 0, "128", "", "")
 		}, undo: undoDelFailed + ": exit status 128", w1Stays: true},
-		{name: "C07b update-ref fails on a lock", arm: func(t *testing.T, f wtFixture) {
+		{name: "update-ref fails on a lock", arm: func(t *testing.T, f wtFixture) {
 			stubRule2(t, "update-ref", "", 0, "", "touch", filepath.Join(commonGit(f), "refs", "heads", "w1.lock"))
 		}, undo: undoDelFailed + undoLockText + ": exit status 1", w1Stays: true},
-		{name: "B2-09e update-ref stopped", arm: func(t *testing.T, f wtFixture) {
+		{name: "update-ref stopped", arm: func(t *testing.T, f wtFixture) {
 			shortBounds(t, 60*time.Second, 300*time.Millisecond, 300*time.Millisecond)
 			stubRule2(t, "update-ref", "", stubNever, "", "", "")
 		}, undo: undoDelFailed + ": " + stoppedText(), w1Stays: true, bounded: true},

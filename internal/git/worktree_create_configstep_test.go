@@ -106,8 +106,8 @@ func TestConfigStepReplacesAnEntryAtTheDestination(t *testing.T) {
 		stage       func(t *testing.T, at string)
 		failsOnThis bool
 	}{
-		{"C4 a file", func(t *testing.T, at string) { mustWrite(t, at, "x\n") }, false},
-		{"C5 an empty folder", func(t *testing.T, at string) {
+		{"a file", func(t *testing.T, at string) { mustWrite(t, at, "x\n") }, false},
+		{"an empty folder", func(t *testing.T, at string) {
 			if err := os.Mkdir(at, 0o755); err != nil {
 				t.Error(err)
 			}

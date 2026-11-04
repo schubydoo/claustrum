@@ -41,7 +41,7 @@ const (
 	// off, which is claustrum's choice. -serve does not read it.
 	managedLauncherGateEnv = "CLAUDE_SSH_MANAGED_LAUNCHER"
 	// managedSettingsDirEnv moves the managed-settings folder. The reference honors
-	// it on Linux and macOS (row RX). Windows answers none with it set (measured).
+	// it on Linux and macOS (measured). Windows answers none with it set (measured).
 	managedSettingsDirEnv = "CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR"
 	// managedWrapperEnv is the env-key form of the value, and also the variable
 	// that a launched child loses.
@@ -124,7 +124,7 @@ func resolveManagedLauncher(cliPath string) rpc.ManagedLauncherResult {
 
 // Resolve is resolveManagedLauncher plus the ignored-variable line the resolve
 // owes, or "" when it owes none. handleLauncher of package main logs that line
-// once per daemon (row RXs, Linux: two resolves, the line only on the first). More
+// once per daemon (measured on Linux: two resolves, the line only on the first). More
 // than two resolves are not measured. -install and -probe-cli log nothing (not
 // measured there).
 func Resolve(cliPath string) (rpc.ManagedLauncherResult, string) {

@@ -151,15 +151,15 @@ func TestTrustWalkStartsAtSpelledPath(t *testing.T) {
 		cell, path string
 		want       []string
 	}{
-		{"B-01 junction before the last component", filepath.Join(f.J, "sub"), pinOf(f.P)},
-		{"B-03 junction outside any repository", filepath.Join(f.QJ, "sub"), []string{"GIT_DIR=" + os.DevNull}},
-		{"B-04 junction as the last component", f.J, pinOf(f.P)},
-		{"B-05p no junction, P", f.P, pinOf(f.P)},
-		{"B-05r no junction, R", filepath.Join(f.R, "inner", "sub"), pinOf(f.R)},
-		{"B-06 folder symlink", filepath.Join(f.P, "L", "sub"), pinOf(f.R)},
+		{"junction before the last component", filepath.Join(f.J, "sub"), pinOf(f.P)},
+		{"junction outside any repository", filepath.Join(f.QJ, "sub"), []string{"GIT_DIR=" + os.DevNull}},
+		{"junction as the last component", f.J, pinOf(f.P)},
+		{"no junction, P", f.P, pinOf(f.P)},
+		{"no junction, R", filepath.Join(f.R, "inner", "sub"), pinOf(f.R)},
+		{"folder symlink", filepath.Join(f.P, "L", "sub"), pinOf(f.R)},
 		// The pin of 89cb6289 is spelled <KP>\.git on Windows. Off Windows the check
 		// resolves the symlink KP in the git directory, so the pin names P.
-		{"B-17k two junctions", filepath.Join(f.KP, "J", "sub"), pinOf(f.P)},
+		{"two junctions", filepath.Join(f.KP, "J", "sub"), pinOf(f.P)},
 	} {
 		t.Run(tc.cell, func(t *testing.T) {
 			if got := commonDirPinEnv(tc.path); !slices.Equal(got, tc.want) {
@@ -168,14 +168,14 @@ func TestTrustWalkStartsAtSpelledPath(t *testing.T) {
 		})
 	}
 	// A daemon GIT_DIR of R is the directory that the check judges and pins (measured).
-	t.Run("B-14 daemon GIT_DIR", func(t *testing.T) {
+	t.Run("daemon GIT_DIR", func(t *testing.T) {
 		t.Setenv("GIT_DIR", dotGitOf(f.R))
 		if got, want := commonDirPinEnv(filepath.Join(f.J, "sub")), pinOf(f.R); !slices.Equal(got, want) {
 			t.Errorf("pin = %q, want %q", got, want)
 		}
 	})
 	// A daemon GIT_COMMON_DIR leaves the calls with no entry of the check (measured).
-	t.Run("B-13 daemon GIT_COMMON_DIR", func(t *testing.T) {
+	t.Run("daemon GIT_COMMON_DIR", func(t *testing.T) {
 		t.Setenv("GIT_COMMON_DIR", dotGitOf(f.R))
 		if got := commonDirPinEnv(filepath.Join(f.J, "sub")); got != nil {
 			t.Errorf("pin = %q, want none", got)
@@ -235,24 +235,24 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 	t.Helper()
 	sub := filepath.Join(f.J, "sub")
 	mixed := infoFrame(t, f.P, "rmain", "p/p", "")
-	t.Run("B-01 junction before the last component", func(t *testing.T) {
+	t.Run("junction before the last component", func(t *testing.T) {
 		wantResult(t, "info", info(t, sub), mixed)
 	})
-	t.Run("B-04 junction as the last component", func(t *testing.T) {
+	t.Run("junction as the last component", func(t *testing.T) {
 		wantResult(t, "info", info(t, f.J), mixed)
 	})
-	t.Run("B-05p no junction, P", func(t *testing.T) {
+	t.Run("no junction, P", func(t *testing.T) {
 		wantResult(t, "info", info(t, f.P), infoFrame(t, f.P, "main", "p/p", "main"))
 	})
-	t.Run("B-05r no junction, R", func(t *testing.T) {
+	t.Run("no junction, R", func(t *testing.T) {
 		wantResult(t, "info", info(t, filepath.Join(f.R, "inner", "sub")), infoFrame(t, f.R, "rmain", "r/r", "rmain"))
 	})
-	t.Run("B-03 junction outside any repository", func(t *testing.T) {
+	t.Run("junction outside any repository", func(t *testing.T) {
 		wantResult(t, "info", info(t, filepath.Join(f.QJ, "sub")), `{"isRepo":false,"repoSlug":"","defaultBranch":""}`)
 	})
 	// The hooks and fsmonitor settings of R are not in the configuration that git
 	// reads, so the frame stays (measured).
-	t.Run("B-16 hooks path in the config of R", func(t *testing.T) {
+	t.Run("hooks path in the config of R", func(t *testing.T) {
 		rCfg := filepath.Join(dotGitOf(f.R), "config")
 		before, err := os.ReadFile(rCfg)
 		if err != nil {
@@ -263,12 +263,12 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 		runGit(t, f.R, "config", "core.fsmonitor", filepath.Join(f.base, "marker"))
 		wantResult(t, "info", info(t, sub), mixed)
 	})
-	t.Run("B-08 R has no origin", func(t *testing.T) {
+	t.Run("R has no origin", func(t *testing.T) {
 		t.Cleanup(func() { setOrigin(t, f.R, "r/r", "rmain") })
 		runGit(t, f.R, "remote", "remove", "origin")
 		wantResult(t, "info", info(t, sub), mixed)
 	})
-	t.Run("B-07 P has no origin", func(t *testing.T) {
+	t.Run("P has no origin", func(t *testing.T) {
 		t.Cleanup(func() { setOrigin(t, f.P, "p/p", "main") })
 		runGit(t, f.P, "remote", "remove", "origin")
 		wantResult(t, "info", info(t, sub), infoFrame(t, f.P, "rmain", "", ""))
@@ -278,7 +278,7 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 	// own read now answers that state first (TestRepoConfigSyntaxError), so the
 	// line here is an include.path with no value, which the listing of git refuses
 	// and the read does not.
-	t.Run("B-15 broken config of P", func(t *testing.T) {
+	t.Run("broken config of P", func(t *testing.T) {
 		cfg := filepath.Join(dotGitOf(f.P), "config")
 		b, err := os.ReadFile(cfg)
 		if err != nil {

@@ -747,7 +747,7 @@ func TestInstallNewCLIRunsAtItsFinalName(t *testing.T) {
 				t.Errorf("the folder at the --version run\n got %q\nwant %q", dir, want)
 			}
 			// -cli-keep 2 keeps the new CLI and the newest old version.
-			f.wantNames(t, "F01 prune", ".fetch-12", "1.0.8.zst", "1.3.0"+cliExeSuffix, filepath.Base(f.cli))
+			f.wantNames(t, "prune", ".fetch-12", "1.0.8.zst", "1.3.0"+cliExeSuffix, filepath.Base(f.cli))
 		})
 	}
 }
@@ -863,12 +863,12 @@ func TestInstallSweepsOnceBeforeTheRun(t *testing.T) {
 // fetch keeps the newest old version. The same holds when a file that does not
 // run sits at the final name.
 func TestInstallSweepsAfterAnAttemptWithNoSource(t *testing.T) {
-	for _, row := range []string{"E01", "B12"} {
+	for _, row := range []string{"no file at the final name", "a file that does not run at the final name"} {
 		t.Run(row, func(t *testing.T) {
 			f := newStubFixture(t)
 			f.litter(t)
 			want := []string{newestOldVersion(), ".fetch-12", "1.0.8.zst"}
-			if row == "B12" {
+			if row == "a file that does not run at the final name" {
 				if err := os.WriteFile(f.cli, []byte("not a cli"), 0o755); err != nil {
 					t.Fatal(err)
 				}

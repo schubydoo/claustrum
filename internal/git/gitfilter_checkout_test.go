@@ -82,26 +82,26 @@ func readTreeArgs(calls []envCall) []string {
 
 // TestCheckoutFilterNameCap: more than 64 filter names in the repository's own
 // config refuse the create after the add. No read-tree call runs, and the
-// rollback removes everything. Measurements show it on Linux and macOS, and C2
-// on Windows too. 64 names pass, also with more keys (measured).
+// rollback removes everything. Measurements show it on Linux and macOS, and 65
+// names on Windows too. 64 names pass, also with more keys (measured).
 // "shadowDirOff":true turns the cap off (measured).
 func TestCheckoutFilterNameCap(t *testing.T) {
 	const smudge = "\tsmudge = false\n"
 	refused := failedFrame(t, "git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters")
 	for _, row := range []struct {
-		cell, config, user string
+		name, config, user string
 		extra              map[string]any
 		refused            bool
 	}{
-		{cell: "C1 64 names", config: filterSections(64, smudge)},
-		{cell: "C2 65 names", config: filterSections(65, smudge), refused: true},
-		{cell: "C3 65 names with only clean", config: filterSections(65, "\tclean = x\n"), refused: true},
-		{cell: "C4 65 names the user config defines too", config: filterSections(65, smudge),
+		{name: "64 names", config: filterSections(64, smudge)},
+		{name: "65 names", config: filterSections(65, smudge), refused: true},
+		{name: "65 names with only clean", config: filterSections(65, "\tclean = x\n"), refused: true},
+		{name: "65 names the user config defines too", config: filterSections(65, smudge),
 			user: filterSections(65, "\tsmudge = cat\n"), refused: true},
-		{cell: "C5a 64 names with more keys", config: filterSections(64, smudge+"\tclean = x\n\trequired = true\n")},
-		{cell: "C5b 65 names with shadowDirOff", config: filterSections(65, smudge), extra: map[string]any{"shadowDirOff": true}},
+		{name: "64 names with more keys", config: filterSections(64, smudge+"\tclean = x\n\trequired = true\n")},
+		{name: "65 names with shadowDirOff", config: filterSections(65, smudge), extra: map[string]any{"shadowDirOff": true}},
 	} {
-		t.Run(row.cell, func(t *testing.T) {
+		t.Run(row.name, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
 			f.addConfig(t, row.config)
 			if row.user != "" {
@@ -238,14 +238,14 @@ func TestCheckoutOwnConfigListingStops(t *testing.T) {
 // timeoutMs of 2000.
 func TestCheckoutOwnConfigListingOutlivesDeadline(t *testing.T) {
 	for _, row := range []struct {
-		cell  string
+		name  string
 		names int
 		want  string
 	}{
-		{"P1 65 names", 65, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters","errorCode":"worktree_add_failed"}}`},
-		{"P2 64 names", 64, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add timed out after ` + strconv.Itoa(markerTimeoutMs) + `ms (deadline expired during the checkout): context deadline exceeded","errorCode":"timeout"}}`},
+		{"65 names", 65, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: it defines more than 64 filters","errorCode":"worktree_add_failed"}}`},
+		{"64 names", 64, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add timed out after ` + strconv.Itoa(markerTimeoutMs) + `ms (deadline expired during the checkout): context deadline exceeded","errorCode":"timeout"}}`},
 	} {
-		t.Run(row.cell, func(t *testing.T) {
+		t.Run(row.name, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
 			f.addConfig(t, filterSections(row.names, "\tsmudge = false\n"))
 			gate := gateStub(t, "config,-z,--list", 30*time.Second, "", "")
@@ -378,13 +378,13 @@ func TestFallbackGitRunsTheRepositoryFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, row := range []struct {
-		cell, name, attrs string
+		desc, name, attrs string
 		ran               bool
 	}{
-		{"R-Q4f", "f", "a.txt filter=f\n", true},
-		{"R-Q4g", "a=b", "", false},
+		{"a filter that a path uses", "f", "a.txt filter=f\n", true},
+		{"a name with = that no path uses", "a=b", "", false},
 	} {
-		t.Run(row.cell, func(t *testing.T) {
+		t.Run(row.desc, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
 			h := f.d.Shadow
 			h.mu.Lock()
@@ -424,16 +424,16 @@ func TestCheckoutRefusalOrder(t *testing.T) {
 	const capText = "this repository's git config cannot be used: it defines more than 64 filters"
 	eqText := "this repository's git config cannot be used: the filter \"a=b\" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it"
 	for _, row := range []struct {
-		cell, config string
+		name, config string
 		failListing  bool
 		want         string
 	}{
-		{"R3 65 names and a=b", filterSections(65, smudge) + "[filter \"a=b\"]\n" + smudge, false, capText},
-		{"R4 65 names and a long name", filterSections(65, smudge) + "[filter \"" + strings.Repeat("n", 201) + "\"]\n" + smudge, false, capText},
-		{"R5 65 names and a failed listing", filterSections(65, smudge), true, "Claude could not read your own git config on the remote machine (exit status 1). Run git config --list there to see the problem."},
+		{"65 names and a=b", filterSections(65, smudge) + "[filter \"a=b\"]\n" + smudge, false, capText},
+		{"65 names and a long name", filterSections(65, smudge) + "[filter \"" + strings.Repeat("n", 201) + "\"]\n" + smudge, false, capText},
+		{"65 names and a failed listing", filterSections(65, smudge), true, "Claude could not read your own git config on the remote machine (exit status 1). Run git config --list there to see the problem."},
 		{"a=b alone", "[filter \"a=b\"]\n" + smudge, false, eqText},
 	} {
-		t.Run(row.cell, func(t *testing.T) {
+		t.Run(row.name, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
 			f.addConfig(t, row.config)
 			if row.failListing {
@@ -460,7 +460,7 @@ func TestCheckoutRefusalOrder(t *testing.T) {
 // TestPlanForSharedFilter: the plan of a filter that both configs define. With a settings copy
 // only the state (measured) gets a pair, the one `required` pair, also with `yes` and `1`. The
 // states next to it get no pair (measured). With no copy they get the pairs with the outside
-// values (claustrum's own). With no copy the C6 state gets no pair (claustrum's own, following a
+// values (claustrum's own). With no copy that state gets no pair (claustrum's own, following a
 // measured case in the state fallback-git). A shared name with "=" is still refused.
 func TestPlanForSharedFilter(t *testing.T) {
 	recs := func(r ...string) []byte { return []byte(strings.Join(r, "\x00") + "\x00") }
@@ -471,17 +471,17 @@ func TestPlanForSharedFilter(t *testing.T) {
 		noCopy        bool
 		refusal       string
 	}{
-		{name: "C6", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
+		{name: "required true", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
 			want: []string{"-c", "filter.f.required=true"}},
-		{name: "R1 yes", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\nyes"},
+		{name: "required yes", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\nyes"},
 			want: []string{"-c", "filter.f.required=true"}},
-		{name: "R2 1", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\n1"},
+		{name: "required 1", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\n1"},
 			want: []string{"-c", "filter.f.required=true"}},
 		{name: "ON", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\nON"},
 			want: []string{"-c", "filter.f.required=true"}},
 		{name: "bare key", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required"},
 			want: []string{"-c", "filter.f.required=true"}},
-		{name: "R7 state, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
+		{name: "state, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue"},
 			noCopy: true},
 		{name: "a=b", outside: []string{"filter.a=b.smudge\nrun-me"}, repo: []string{"filter.a=b.required\ntrue"},
 			refusal: unreplaceableFilterText("a=b")},
@@ -491,10 +491,10 @@ func TestPlanForSharedFilter(t *testing.T) {
 		{name: "repository smudge too", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue", "filter.f.smudge\nown"}},
 		{name: "repository smudge too, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.required\ntrue", "filter.f.smudge\nown"},
 			want: []string{"-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}, noCopy: true},
-		{name: "F1 repository process", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.process\nown"}},
-		{name: "F1 repository process, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.process\nown"},
+		{name: "repository process", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.process\nown"}},
+		{name: "repository process, no copy", outside: []string{"filter.f.smudge\nrun-me"}, repo: []string{"filter.f.process\nown"},
 			noCopy: true, refusal: unreplaceableFilterText("f")},
-		{name: "F19", outside: []string{"filter.f.smudge\ngit-lfs smudge -- %f", "filter.f.required\ntrue"}, repo: []string{"filter.f.required\nfalse"}},
+		{name: "user git-lfs smudge and required", outside: []string{"filter.f.smudge\ngit-lfs smudge -- %f", "filter.f.required\ntrue"}, repo: []string{"filter.f.required\nfalse"}},
 		{name: "user process = cat, no copy", outside: []string{"filter.f.process\ncat", "filter.f.smudge\nrun-me"}, repo: []string{"filter.f.smudge\nown"},
 			want: []string{"-c", "filter.f.process=cat", "-c", "filter.f.required=false", "-c", "filter.f.smudge=run-me"}, noCopy: true},
 		{name: "user process = cat and no repository value", outside: []string{"filter.f.process\ncat", "filter.f.smudge\nrun-me"}},

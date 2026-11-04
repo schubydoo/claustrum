@@ -134,31 +134,31 @@ func TestRootAncestorFault(t *testing.T) {
 		want     string
 	}{
 		// Measured.
-		{name: "G9_root_owner", uid: 0, gid: 0, mode: 0o755},
-		{name: "G9_daemon_user", uid: me, gid: gid, mode: 0o755},
-		{name: "G10_foreign_linux", uid: 65534, gid: gid, mode: 0o755, want: owner(65534)},
-		{name: "G10_foreign_macos_unsigned", uid: 4294967294, gid: gid, mode: 0o755, want: owner(4294967294)},
+		{name: "root_owner", uid: 0, gid: 0, mode: 0o755},
+		{name: "daemon_user", uid: me, gid: gid, mode: 0o755},
+		{name: "foreign_linux", uid: 65534, gid: gid, mode: 0o755, want: owner(65534)},
+		{name: "foreign_macos_unsigned", uid: 4294967294, gid: gid, mode: 0o755, want: owner(4294967294)},
 		// The owner test comes first, and the sticky bit does not clear it.
-		{name: "G31_foreign_0777", uid: 65534, gid: gid, mode: 0o777, want: owner(65534)},
-		{name: "G32_foreign_1755", uid: 65534, gid: gid, mode: 0o755 | fs.ModeSticky, want: owner(65534)},
+		{name: "foreign_0777", uid: 65534, gid: gid, mode: 0o777, want: owner(65534)},
+		{name: "foreign_1755", uid: 65534, gid: gid, mode: 0o755 | fs.ModeSticky, want: owner(65534)},
 		// Measured: uid 0 passes the owner test only.
-		{name: "G8_root_0775", uid: 0, gid: 0, mode: 0o775, want: write("its group", "0775")},
-		{name: "G33a_root_0757", uid: 0, gid: 0, mode: 0o757, want: write("every user on this host", "0757")},
-		{name: "G33b_root_0777", uid: 0, gid: 0, mode: 0o777, want: write("its group and every user on this host", "0777")},
+		{name: "root_0775", uid: 0, gid: 0, mode: 0o775, want: write("its group", "0775")},
+		{name: "root_0757", uid: 0, gid: 0, mode: 0o757, want: write("every user on this host", "0757")},
+		{name: "root_0777", uid: 0, gid: 0, mode: 0o777, want: write("its group and every user on this host", "0777")},
 		// Measured: the private-group pass does not depend on the owner.
-		{name: "G33c_root_private_0775", private: true, uid: 0, gid: gid, mode: 0o775},
-		{name: "G1_private_0775", private: true, uid: me, gid: gid, mode: 0o775},
-		{name: "K1_shared_0775", uid: me, gid: gid, mode: 0o775, want: write("its group", "0775")},
+		{name: "root_private_0775", private: true, uid: 0, gid: gid, mode: 0o775},
+		{name: "private_0775", private: true, uid: me, gid: gid, mode: 0o775},
+		{name: "shared_0775", uid: me, gid: gid, mode: 0o775, want: write("its group", "0775")},
 		// Measured.
 		{name: "G2_0757", private: true, uid: me, gid: gid, mode: 0o757, want: write("every user on this host", "0757")},
-		{name: "G3_linux_private_0777", private: true, uid: me, gid: gid, mode: 0o777, want: write("every user on this host", "0777")},
-		{name: "G3_macos_shared_0777", uid: me, gid: gid, mode: 0o777, want: write("its group and every user on this host", "0777")},
+		{name: "linux_private_0777", private: true, uid: me, gid: gid, mode: 0o777, want: write("every user on this host", "0777")},
+		{name: "macos_shared_0777", uid: me, gid: gid, mode: 0o777, want: write("its group and every user on this host", "0777")},
 		// Measured.
 		{name: "G4_1777", uid: me, gid: gid, mode: 0o777 | fs.ModeSticky},
-		{name: "G5_shared_1775", uid: me, gid: gid, mode: 0o775 | fs.ModeSticky},
+		{name: "shared_1775", uid: me, gid: gid, mode: 0o775 | fs.ModeSticky},
 		// Measured: the permission bits only, four digits.
-		{name: "G7_setgid_2775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetgid, want: write("its group", "0775")},
-		{name: "G36b_setuid_4775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetuid, want: write("its group", "0775")},
+		{name: "setgid_2775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetgid, want: write("its group", "0775")},
+		{name: "setuid_4775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetuid, want: write("its group", "0775")},
 		{name: "G36a_0070", uid: me, gid: gid, mode: 0o070, want: write("its group", "0070")},
 		// Measured.
 		{name: "G29_0111", uid: me, gid: gid, mode: 0o111},
@@ -216,8 +216,8 @@ func TestRootAncestorWorldWritable(t *testing.T) {
 		who     string
 	}{
 		{"G2_0757", true, 0o757, "every user on this host"},
-		{"G3_private_0777", true, 0o777, "every user on this host"},
-		{"G3_shared_0777", false, 0o777, "its group and every user on this host"},
+		{"private_0777", true, 0o777, "every user on this host"},
+		{"shared_0777", false, 0o777, "its group and every user on this host"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.private {
@@ -302,7 +302,7 @@ func TestRootAncestorTopFirstMixedKinds(t *testing.T) {
 	if os.Geteuid() == 65534 {
 		t.Skip("the test user is uid 65534, the foreign owner of these rows")
 	}
-	t.Run("G34a_write_above_owner", func(t *testing.T) {
+	t.Run("write_above_owner", func(t *testing.T) {
 		sharedGroup(t)
 		b := ancBase(t)
 		h, g := filepath.Join(b, "H"), filepath.Join(b, "H", "G")
@@ -312,7 +312,7 @@ func TestRootAncestorTopFirstMixedKinds(t *testing.T) {
 		root := filepath.Join(g, "o")
 		wantAncestor(t, root, ancWrite(root, h, "its group", "0775"))
 	})
-	t.Run("G34b_owner_above_write", func(t *testing.T) {
+	t.Run("owner_above_write", func(t *testing.T) {
 		sharedGroup(t)
 		b := ancBase(t)
 		h, g := filepath.Join(b, "H"), filepath.Join(b, "H", "G")
@@ -368,7 +368,7 @@ func TestRootAncestorJudgedBeforeSearch(t *testing.T) {
 // Measured: a symlink is not judged itself. The directory it
 // names is judged and named. <root> keeps the link.
 func TestRootAncestorLinkToGroupDir(t *testing.T) {
-	for _, c := range []struct{ name, target string }{{"G14_absolute", ""}, {"G14c_relative", "G"}} {
+	for _, c := range []struct{ name, target string }{{"absolute", ""}, {"relative", "G"}} {
 		t.Run(c.name, func(t *testing.T) {
 			sharedGroup(t)
 			b := ancBase(t)
@@ -502,7 +502,7 @@ func TestRootAncestorNotMeasured(t *testing.T) {
 	})
 	// A group-writable regular file above the root is not judged. The root-chain step
 	// answers "not a directory" (`5fd08069`, measured on Linux).
-	t.Run("C-W14_group_writable_file", func(t *testing.T) {
+	t.Run("group_writable_file", func(t *testing.T) {
 		sharedGroup(t)
 		b := ancBase(t)
 		f := filepath.Join(b, "F")
@@ -610,9 +610,9 @@ func TestWorktreeCreateRootAncestorBeforeGitChain(t *testing.T) {
 		name, root string
 		setup      func(t *testing.T, f *ancFixture)
 	}{
-		{"G18_repo_below", "G/X/o", func(t *testing.T, f *ancFixture) { runGit(t, f.p("G/X"), "init", "-q") }},
-		{"G40a_repo_in_root", "G/o", func(t *testing.T, f *ancFixture) { runGit(t, f.p("G/o"), "init", "-q") }},
-		{"G40b_git_file_in_G", "G/o", func(t *testing.T, f *ancFixture) { writeFile(t, f.p("G/.git"), "", 0o644) }},
+		{"repo_below", "G/X/o", func(t *testing.T, f *ancFixture) { runGit(t, f.p("G/X"), "init", "-q") }},
+		{"repo_in_root", "G/o", func(t *testing.T, f *ancFixture) { runGit(t, f.p("G/o"), "init", "-q") }},
+		{"git_file_in_G", "G/o", func(t *testing.T, f *ancFixture) { writeFile(t, f.p("G/.git"), "", 0o644) }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sharedGroup(t)
@@ -666,10 +666,10 @@ func TestWorktreeCreateRootAncestorKeepsChainTexts(t *testing.T) {
 		text   string
 		code   string
 	}{
-		{name: "G37a_regular_file", rootAt: "G/o",
+		{name: "regular_file", rootAt: "G/o",
 			setup: func(t *testing.T, f *ancFixture) { writeFile(t, f.p("G"), "", 0o644) },
 			text:  "failed to create parent directory: <B>/G: not a directory", code: "mkdir_failed"},
-		{name: "G37b_dangling_link", rootAt: "G/o",
+		{name: "dangling_link", rootAt: "G/o",
 			setup: func(t *testing.T, f *ancFixture) { ancLink(t, f.p("nonexistent"), f.p("G")) },
 			text:  "failed to create parent directory: lstat <B>/nonexistent: no such file or directory", code: "mkdir_failed"},
 		{name: "G38a_0600", root: true, rootAt: "G/o",
@@ -678,7 +678,7 @@ func TestWorktreeCreateRootAncestorKeepsChainTexts(t *testing.T) {
 				ancDir(t, f.p("G"), 0o600)
 			},
 			text: "failed to create parent directory: lstat <B>/G/.git: permission denied", code: "mkdir_failed"},
-		{name: "G39_loop", rootAt: "L/o",
+		{name: "loop", rootAt: "L/o",
 			setup: func(t *testing.T, f *ancFixture) {
 				ancLink(t, "L2", f.p("L"))
 				ancLink(t, "L", f.p("L2"))

@@ -89,8 +89,8 @@ func probeStat(path string) os.FileInfo {
 // 5fd08069 makes the call about the repository, and its seven later requests
 // make no git call. The driver runs a plain `git status` in the repository
 // between two requests. With a real `.git` directory and the same driver, each
-// request of 5fd08069 makes the call again (control cell Qk). The time and the
-// identity of the junction entry are the same at every view of the cell. On
+// request of 5fd08069 makes the call again (a measured control). The time and the
+// identity of the junction entry are the same at every view of that case. On
 // Windows Lstat gives ModeIrregular for a junction. A symbolic link keeps the
 // Stat rule, on every system. On 5fd08069 later requests make no call with a
 // directory symbolic link too (measured). claustrum makes one call for each

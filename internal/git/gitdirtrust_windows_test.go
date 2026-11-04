@@ -176,14 +176,14 @@ func TestResolveGitDirLinksKeepsShortNamesWindows(t *testing.T) {
 func TestGitDirTrustShortNamePinWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	shortGit := shortPathName(t, filepath.Join(r.T, ".git"))
-	t.Run("K09_GIT_DIR_short", func(t *testing.T) {
+	t.Run("GIT_DIR_short", func(t *testing.T) {
 		t.Setenv("GIT_DIR", shortGit)
 		got := commonDirPinEnv(r.T)
 		if want := "GIT_COMMON_DIR=" + shortGit; len(got) != 1 || got[0] != want {
 			t.Errorf("commonDirPinEnv = %q, want [%q]", got, want)
 		}
 	})
-	t.Run("K02_request_dir_short", func(t *testing.T) {
+	t.Run("request_dir_short", func(t *testing.T) {
 		shortT := filepath.Dir(shortGit)
 		got := commonDirPinEnv(shortT)
 		if want := "GIT_COMMON_DIR=" + filepath.Join(r.T, ".git"); len(got) != 1 || !strings.EqualFold(got[0], want) {

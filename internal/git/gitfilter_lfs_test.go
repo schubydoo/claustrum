@@ -30,9 +30,9 @@ func failLfsCheckout(t *testing.T, stderr string) {
 	stubStderr(t, stderr, false)
 }
 
-// TestShadowLfsFilterItemsOfRoundTask081: the items of the read-tree call and
+// TestShadowLfsFilterItems: the items of the read-tree call and
 // the reply for each state of the filter lfs (measured on Linux).
-func TestShadowLfsFilterItemsOfRoundTask081(t *testing.T) {
+func TestShadowLfsFilterItems(t *testing.T) {
 	const forced = "fatal: forced failure\n"
 	neutral := []string{"filter.lfs.process=", "filter.lfs.required=true", "filter.lfs.smudge=false"}
 	for _, row := range []struct {
@@ -43,29 +43,29 @@ func TestShadowLfsFilterItemsOfRoundTask081(t *testing.T) {
 		items   []string
 		refused bool
 	}{
-		{"K1 the known lines in the repository config", func(t *testing.T, f shadowFilterFixture) {
+		{"the known lines in the repository config", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, lfsKnownLines)
 		}, forced, lfsKnownItems, false},
-		{"K2 the known lines in the user config", func(t *testing.T, _ shadowFilterFixture) {
+		{"the known lines in the user config", func(t *testing.T, _ shadowFilterFixture) {
 			outside(t, lfsKnownLines)
 		}, forced, nil, false},
-		{"K3 a repository smudge with --skip alone", func(t *testing.T, f shadowFilterFixture) {
+		{"a repository smudge with --skip alone", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, "[filter \"lfs\"]\n\tsmudge = git-lfs smudge --skip %f\n")
 		}, forced, []string{"filter.lfs.smudge=git-lfs smudge --skip %f"}, false},
-		{"K4 a repository smudge program under the name lfs", func(t *testing.T, f shadowFilterFixture) {
+		{"a repository smudge program under the name lfs", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, f.section(t, "lfs", "smudge"))
 		}, "fatal: a.txt: smudge filter lfs failed\n", neutral, true},
-		{"K5 a custom transfer agent of the repository", func(t *testing.T, f shadowFilterFixture) {
+		{"a custom transfer agent of the repository", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, lfsKnownLines+"[lfs]\n\tstandalonetransferagent = x\n[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n")
 		}, forced, lfsKnownItems, false},
-		{"K6 an extension of the repository", func(t *testing.T, f shadowFilterFixture) {
+		{"an extension of the repository", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, lfsKnownLines+"[lfs \"extension.x\"]\n\tsmudge = /no/such/command\n\tclean = /no/such/command\n")
 		}, forced, lfsKnownItems, false},
-		{"L2 a custom transfer agent of the repository, the known lines outside", func(t *testing.T, f shadowFilterFixture) {
+		{"a custom transfer agent of the repository, the known lines outside", func(t *testing.T, f shadowFilterFixture) {
 			outside(t, lfsKnownLines)
 			f.addConfig(t, "[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n")
 		}, forced, nil, false},
-		{"K10 cat for smudge and clean in the repository config", func(t *testing.T, f shadowFilterFixture) {
+		{"cat for smudge and clean in the repository config", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, "[filter \"lfs\"]\n\tsmudge = cat\n\tclean = cat\n")
 		}, forced, nil, false},
 	} {
@@ -87,25 +87,25 @@ func TestShadowLfsFilterItemsOfRoundTask081(t *testing.T) {
 	}
 }
 
-// TestShadowLfsDownloadNoteOfRoundTask081: with a settings copy a failed
+// TestShadowLfsDownloadNote: with a settings copy a failed
 // checkout text that holds "smudge filter lfs failed" after the cut gets the
 // note after it (measured). A text that the cut of 512 bytes ends at "smudge
 // filter lf" gets none (measured). With a program key of the repository the
 // answer is the same text, not the git-lfs program refusal (measured). With
 // "shadowDirOff":true there is no rule and no note (claustrum's own, not
 // measured).
-func TestShadowLfsDownloadNoteOfRoundTask081(t *testing.T) {
+func TestShadowLfsDownloadNote(t *testing.T) {
 	const failed = "fatal: a.txt: smudge filter lfs failed"
 	cut := strings.Repeat("x", stderrHeadCap-len("smudge filter lf")) + "smudge filter lfs failed\n"
 	for _, row := range []struct {
 		name, config, user, stderr, want string
 		extra                            map[string]any
 	}{
-		{"K6 the words end the text", lfsKnownLines, "", failed + "\n", failed + lfsDownloadNote, nil},
-		{"L5 a text before the words", lfsKnownLines, "", "Downloading a.txt (36 B)\nerror: external filter 'git-lfs filter-process' failed\n" + failed + "\n",
+		{"the words end the text", lfsKnownLines, "", failed + "\n", failed + lfsDownloadNote, nil},
+		{"a text before the words", lfsKnownLines, "", "Downloading a.txt (36 B)\nerror: external filter 'git-lfs filter-process' failed\n" + failed + "\n",
 			"Downloading a.txt (36 B) error: external filter 'git-lfs filter-process' failed " + failed + lfsDownloadNote, nil},
-		{"K7 the cut ends before the words", lfsKnownLines, "", cut, strings.TrimSuffix(cut, "s failed\n"), nil},
-		{"L2 a program key of the repository", "[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n", lfsKnownLines, failed + "\n", failed + lfsDownloadNote, nil},
+		{"the cut ends before the words", lfsKnownLines, "", cut, strings.TrimSuffix(cut, "s failed\n"), nil},
+		{"a program key of the repository", "[lfs \"customtransfer.x\"]\n\tpath = /no/such/agent\n", lfsKnownLines, failed + "\n", failed + lfsDownloadNote, nil},
 		{"shadowDirOff", lfsKnownLines, "", failed + "\n", failed, map[string]any{"shadowDirOff": true}},
 	} {
 		t.Run(row.name, func(t *testing.T) {

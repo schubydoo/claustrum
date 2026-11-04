@@ -376,7 +376,7 @@ func TestFifoDotGitReadMethods(t *testing.T) {
 // Measured: a FIFO `.git` with no repository above it, and a `.git` file of 0
 // bytes. Both answer not_a_repo, and nothing is made.
 func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
-	t.Run("B-F5 FIFO and no outer repository", func(t *testing.T) {
+	t.Run("FIFO and no outer repository", func(t *testing.T) {
 		tmp := realTempDir(t)
 		requireTempOutsideCheckout(t, tmp)
 		T := filepath.Join(tmp, "P5", "T")
@@ -385,7 +385,7 @@ func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 		wantFifoFrame(t, "create(T)", frameWithin(t, "git.worktree_create", createParams(T, wt, "w1")), createNotARepo)
 		mustBeGone(t, filepath.Join(T, ".claude"))
 	})
-	t.Run("B-S1 file of 0 bytes", func(t *testing.T) {
+	t.Run("file of 0 bytes", func(t *testing.T) {
 		T := filepath.Join(realTempDir(t), "T")
 		newFifoRepo(t, T)
 		a := filepath.Join(T, "a")

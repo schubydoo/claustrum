@@ -215,8 +215,8 @@ func TestGitStatusGateCalls(t *testing.T) {
 		// Measured: the tests on path come before the fourth call.
 		{"n09", filepath.Join(f.root, "F"), f.T, gate[:3]},
 		{"n26b", filepath.Join(f.root, "gone"), f.T, gate[:3]},
-		// Row KN: a plain folder gets the two calls in the common directory.
-		{"KN", plain, f.T, statusGateCalls("<fx>/P")[1:]},
+		// Measured: a plain folder gets the two calls in the common directory.
+		{"plain folder", plain, f.T, statusGateCalls("<fx>/P")[1:]},
 		// Measured: for a path inside baseRepo, or baseRepo itself, the
 		// --work-tree value is baseRepo.
 		{"A05a", inside, f.T, statusGateCalls("<fx>/T")[1:]},
@@ -360,20 +360,20 @@ func TestGitStatusFailingCalls(t *testing.T) {
 		name, match, want string
 		calls             int
 	}{
-		{"n17b absolute-git-dir", "rev-parse,--absolute-git-dir", statusNotRepo, 3},
-		{"n17 show-toplevel", "rev-parse,--show-toplevel", statusNotRepo, 5},
-		{"n17c status", "status,--porcelain", exit1, 9},
-		{"n17d ls-files", "ls-files,-s", exit1, 13},
-		{"n17e diff-index", "diff-index,--cached", exit1, 21},
-		{"n17f hash-object", "hash-object", statusClean, 21},
+		{"absolute-git-dir", "rev-parse,--absolute-git-dir", statusNotRepo, 3},
+		{"show-toplevel", "rev-parse,--show-toplevel", statusNotRepo, 5},
+		{"status", "status,--porcelain", exit1, 9},
+		{"ls-files", "ls-files,-s", exit1, 13},
+		{"diff-index", "diff-index,--cached", exit1, 21},
+		{"hash-object", "hash-object", statusClean, 21},
 		// Measured: the listing with --git-dir=<common> fails. `git version`
 		// follows.
-		{"o22 listing in the common directory", "--git-dir=" + filepath.Join(f.T, ".git") + ",--list",
+		{"listing in the common directory", "--git-dir=" + filepath.Join(f.T, ".git") + ",--list",
 			`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 1: boom"}}`, 5},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stderr := ""
-			if strings.HasPrefix(c.name, "o22") {
+			if c.name == "listing in the common directory" {
 				stderr = "boom"
 			}
 			slowGit(t, c.match, "fail", 0, stderr, "")

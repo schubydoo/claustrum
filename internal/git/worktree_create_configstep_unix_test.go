@@ -82,8 +82,8 @@ func writeIn(t *testing.T, p, text string) {
 
 // TestConfigStepFailureFailsTheCreate: a failure of the step of the
 // `config.worktree` file fails the create with the prefix and its cause. No
-// read-tree runs, and the undo of a failed checkout runs. The rows are cells C2,
-// C6, C7, C9, C10 and C11 (measured on Linux and macOS). The stub or the seam
+// read-tree runs, and the undo of a failed checkout runs. The rows C2,
+// C6, C7, C9, C10 and C11 are measured on Linux and macOS. The stub or the seam
 // after the add stands in for the wrapper of the measurement. In two measured cases the
 // branch step reads the config again, gets its refusal and keeps the branch.
 // Another case is TestConfigStepUnsetAllFailureFailsTheCreate.
@@ -202,8 +202,8 @@ func TestConfigStepOfALinkedBase(t *testing.T) {
 	for _, row := range []struct {
 		cell, main, own string
 	}{
-		{"C12 the base has its own file", "[core]\n\tfilemode = false\n", "[core]\n\teol = lf\n"},
-		{"C12b the base has no own file", "[core]\n\tfilemode = false\n", ""},
+		{"the base has its own file", "[core]\n\tfilemode = false\n", "[core]\n\teol = lf\n"},
+		{"the base has no own file", "[core]\n\tfilemode = false\n", ""},
 		// claustrum's own row: the file of the repository has no setting.
 		{"the file of the repository has no setting", "# none\n", "[core]\n\teol = lf\n"},
 	} {
@@ -287,7 +287,7 @@ func TestGateRefusesAnUnusableConfigWorktree(t *testing.T) {
 		stage func(t *testing.T, path string)
 		want  func(path string) string
 	}{
-		{"R4 a file of mode 000", func(t *testing.T, path string) {
+		{"a file of mode 000", func(t *testing.T, path string) {
 			if os.Geteuid() == 0 {
 				t.Skip("root opens a file of mode 000")
 			}
@@ -296,7 +296,7 @@ func TestGateRefusesAnUnusableConfigWorktree(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 		}, func(path string) string { return repoConfigPrefix + "open " + path + ": permission denied" }},
-		{"R7 a file of 9 MiB", func(t *testing.T, path string) {
+		{"a file of 9 MiB", func(t *testing.T, path string) {
 			if err := os.WriteFile(path, []byte("[core]\n\tfilemode = false\n# "+strings.Repeat("x", 9<<20)+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}

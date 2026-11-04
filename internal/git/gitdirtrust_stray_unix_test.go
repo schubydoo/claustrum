@@ -36,8 +36,8 @@ func TestStrayCommondirNotAPlainFileUnix(t *testing.T) {
 		wantRPCError(t, "info(T)", info(t, r.T), wantTP(cd, "path escapes from parent"))
 	})
 	for _, tc := range []struct{ name, target string }{
-		{"T07d absolute dangling symlink", "/nonexistent-claustrum-t07d"},
-		{"T07e relative dangling symlink out", "../nothing"},
+		{"absolute dangling symlink", "/nonexistent-claustrum-t07d"},
+		{"relative dangling symlink out", "../nothing"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newTrustRepo(t)
@@ -109,8 +109,8 @@ func TestStrayCommondirDanglingSymlinkRemoveInRepository(t *testing.T) {
 		name     string
 		leafGone bool
 	}{
-		{"DG3-g_worktree_present", false},
-		{"DG3x-g_worktree_gone", true},
+		{"worktree_present", false},
+		{"worktree_gone", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newTrustRepo(t)

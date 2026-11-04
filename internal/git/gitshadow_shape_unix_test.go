@@ -521,8 +521,8 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 		stage func(t *testing.T, f shapeFixture)
 		pair  bool
 	}{
-		{"R-Q2b an entry of another worktree", stateShadow, func(*testing.T, shapeFixture) {}, true},
-		{"R-Q2c a stale entry of the leaf", stateShadow, func(t *testing.T, f shapeFixture) {
+		{"an entry of another worktree", stateShadow, func(*testing.T, shapeFixture) {}, true},
+		{"a stale entry of the leaf", stateShadow, func(t *testing.T, f shapeFixture) {
 			old := filepath.Join(f.gitDir, "worktrees", "old")
 			if err := os.Mkdir(old, 0o755); err != nil {
 				t.Fatal(err)
@@ -531,7 +531,7 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 		}, false},
 		{"no registrations folder", stateShadow, noFolder, false},
 		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true},
-		{"R-Q2a with the member and no registrations folder", stateOff, noFolder, false},
+		{"with the member and no registrations folder", stateOff, noFolder, false},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newShapeFixture(t, row.state)

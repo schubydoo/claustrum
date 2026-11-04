@@ -103,43 +103,43 @@ func TestGitStatusEntryGate(t *testing.T) {
 		want string
 	}{
 		// Measured.
-		{"K0 control", func(*testing.T, statusFixture) {}, statusClean},
+		{"control", func(*testing.T, statusFixture) {}, statusClean},
 		// Measured: the .git inside path plays no part.
-		{"G01 no .git in path", func(t *testing.T, f statusFixture) {
+		{"no .git in path", func(t *testing.T, f statusFixture) {
 			if err := os.Remove(filepath.Join(f.W, ".git")); err != nil {
 				t.Fatal(err)
 			}
 		}, statusClean},
-		{"n26d .git in path names another place", func(t *testing.T, f statusFixture) {
+		{".git in path names another place", func(t *testing.T, f statusFixture) {
 			writeFile(t, filepath.Join(f.W, ".git"), "gitdir: "+filepath.Join(f.root, "nowhere")+"\n", 0o644)
 		}, statusClean},
 		// Measured: a relative gitdir counts from the entry
 		// folder.
-		{"n03 relative gitdir", func(t *testing.T, f statusFixture) {
+		{"relative gitdir", func(t *testing.T, f statusFixture) {
 			f.write(t, "gitdir", "../../../../W/.git\n")
 		}, statusClean},
 		// Measured: the last component must be .git.
-		{"n04 gitdir ends in dotgit", func(t *testing.T, f statusFixture) {
+		{"gitdir ends in dotgit", func(t *testing.T, f statusFixture) {
 			f.write(t, "gitdir", filepath.Join(f.W, "dotgit")+"\n")
 		}, statusNotRepo},
 		// Measured: exactly 1 MiB passes, one byte more fails.
-		{"n05c gitdir of 1 MiB", func(t *testing.T, f statusFixture) {
+		{"gitdir of 1 MiB", func(t *testing.T, f statusFixture) {
 			v := filepath.Join(f.W, ".git")
 			f.write(t, "gitdir", v+mib[len(v):])
 		}, statusClean},
-		{"n05b gitdir of 1 MiB + 1", func(t *testing.T, f statusFixture) {
+		{"gitdir of 1 MiB + 1", func(t *testing.T, f statusFixture) {
 			f.write(t, "gitdir", filepath.Join(f.W, ".git")+mib[len(filepath.Join(f.W, ".git")):]+"\n")
 		}, statusNotRepo},
 		// No row: an empty gitdir names no folder.
 		{"empty gitdir", func(t *testing.T, f statusFixture) { f.write(t, "gitdir", "\n") }, statusNotRepo},
 		// Measured on Linux: a second entry whose gitdir is a directory is passed over.
-		{"v2 second entry with a gitdir folder", func(t *testing.T, f statusFixture) {
+		{"second entry with a gitdir folder", func(t *testing.T, f statusFixture) {
 			if err := os.MkdirAll(filepath.Join(filepath.Dir(f.entry), "other", "gitdir"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}, statusClean},
 		// Measured: two entries name path.
-		{"n01 two matching entries", func(t *testing.T, f statusFixture) {
+		{"two matching entries", func(t *testing.T, f statusFixture) {
 			twin := filepath.Join(filepath.Dir(f.entry), "W2")
 			if err := os.CopyFS(twin, os.DirFS(f.entry)); err != nil {
 				t.Fatal(err)
@@ -147,24 +147,24 @@ func TestGitStatusEntryGate(t *testing.T) {
 		}, statusNotRepo},
 		// Measured on macOS: another letter case in the gitdir file does not match. On
 		// Windows it matches (measured on Windows).
-		{"C10 gitdir in another case", func(t *testing.T, f statusFixture) {
+		{"gitdir in another case", func(t *testing.T, f statusFixture) {
 			f.write(t, "gitdir", filepath.Join(f.root, "w", ".git")+"\n")
 		}, map[bool]string{false: statusNotRepo, true: statusClean}[runtime.GOOS == "windows"]},
 		// Measured.
-		{"n19a no commondir", func(t *testing.T, f statusFixture) {
+		{"no commondir", func(t *testing.T, f statusFixture) {
 			if err := os.Remove(filepath.Join(f.entry, "commondir")); err != nil {
 				t.Fatal(err)
 			}
 		}, statusNotRepo},
 		// Measured.
-		{"n19b absolute commondir", func(t *testing.T, f statusFixture) {
+		{"absolute commondir", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", filepath.Join(f.T, ".git")+"\n")
 		}, statusClean},
 		// A measurement gave a clean status for this content on an older build.
 		// Build 52d82f0a reads only trailing CR and LF away (commondirValue), so
 		// the two blanks stay and the entry fails. That content is not measured
 		// there.
-		{"n19c commondir with spaces", func(t *testing.T, f statusFixture) {
+		{"commondir with spaces", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", "../..\n  \n")
 		}, statusNotRepo},
 		// Build 52d82f0a: two blanks and LF fail, and a NUL ends the value (measured
@@ -175,60 +175,60 @@ func TestGitStatusEntryGate(t *testing.T) {
 		{"commondir with a NUL and junk", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", "../..\x00junk")
 		}, statusClean},
-		{"n19d commondir ../../.", func(t *testing.T, f statusFixture) {
+		{"commondir ../../.", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", "../../.\n")
 		}, statusClean},
 		// Measured.
-		{"n19g commondir of 1 MiB + 1", func(t *testing.T, f statusFixture) {
+		{"commondir of 1 MiB + 1", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", "../.."+mib[len("../.."):]+"\n")
 		}, statusNotRepo},
 		// Measured on macOS and Windows: another letter case fails.
-		{"C11 commondir in another case", func(t *testing.T, f statusFixture) {
+		{"commondir in another case", func(t *testing.T, f statusFixture) {
 			f.write(t, "commondir", filepath.Join(f.root, "t", ".git")+"\n")
 		}, statusNotRepo},
 		// Measured.
-		{"n15 HEAD garbage", func(t *testing.T, f statusFixture) { f.write(t, "HEAD", "garbage\n") }, statusNotRepo},
-		{"o14a HEAD of 39 hex", func(t *testing.T, f statusFixture) {
+		{"HEAD garbage", func(t *testing.T, f statusFixture) { f.write(t, "HEAD", "garbage\n") }, statusNotRepo},
+		{"HEAD of 39 hex", func(t *testing.T, f statusFixture) {
 			f.write(t, "HEAD", strings.Repeat("a", 39)+"\n")
 		}, statusNotRepo},
-		{"o14e HEAD ref: x", func(t *testing.T, f statusFixture) { f.write(t, "HEAD", "ref: x\n") }, statusNotRepo},
+		{"HEAD ref: x", func(t *testing.T, f statusFixture) { f.write(t, "HEAD", "ref: x\n") }, statusNotRepo},
 		// Measured.
-		{"o14b HEAD of 40 hex", func(t *testing.T, f statusFixture) {
+		{"HEAD of 40 hex", func(t *testing.T, f statusFixture) {
 			f.write(t, "HEAD", statusGitOut(t, f.T, "", "rev-parse", "HEAD")+"\n")
 		}, statusClean},
-		{"o14f HEAD with trailing spaces", func(t *testing.T, f statusFixture) {
+		{"HEAD with trailing spaces", func(t *testing.T, f statusFixture) {
 			f.write(t, "HEAD", "ref: refs/heads/main   \n")
 		}, statusClean},
 		// Measured.
-		{"n12 config.worktree core.sparseCheckout", func(t *testing.T, f statusFixture) {
+		{"config.worktree core.sparseCheckout", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[core]\n\tsparseCheckout = true\n")
 		}, statusClean},
-		{"n12b config.worktree index.sparse", func(t *testing.T, f statusFixture) {
+		{"config.worktree index.sparse", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[index]\n\tsparse = true\n")
 		}, statusClean},
 		// Measured on Linux.
-		{"v3a config.worktree core.sparseCheckoutCone", func(t *testing.T, f statusFixture) {
+		{"config.worktree core.sparseCheckoutCone", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[core]\n\tsparseCheckoutCone = true\n")
 		}, statusClean},
-		{"v3b config.worktree core.bare", func(t *testing.T, f statusFixture) {
+		{"config.worktree core.bare", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[core]\n\tbare = false\n")
 		}, statusNotRepo},
 		// Measured.
-		{"n13 config.worktree user.name", func(t *testing.T, f statusFixture) {
+		{"config.worktree user.name", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[user]\n\tname = x\n")
 		}, statusNotRepo},
 		// Measured.
-		{"n14c config.worktree syntax error", func(t *testing.T, f statusFixture) {
+		{"config.worktree syntax error", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[core\n")
 		}, statusNotRepo},
 		// Measured.
-		{"n14 config.worktree is a folder", func(t *testing.T, f statusFixture) {
+		{"config.worktree is a folder", func(t *testing.T, f statusFixture) {
 			if err := os.Mkdir(filepath.Join(f.entry, "config.worktree"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}, statusNotRepo},
 		// Measured: a locked worktree passes.
-		{"n26 locked", func(t *testing.T, f statusFixture) { f.write(t, "locked", "") }, statusClean},
+		{"locked", func(t *testing.T, f statusFixture) { f.write(t, "locked", "") }, statusClean},
 	}
 	// A row sets no environment variable and no working folder, and it writes
 	// package state only through caches that hold a lock. So the rows run in
@@ -262,23 +262,23 @@ func TestGitStatusPathGate(t *testing.T) {
 	cases := []struct{ name, path, base, want string }{
 		// Measured: path is a regular file. Measured: path is
 		// gone.
-		{"n09 path is a file", filepath.Join(f.root, "F"), f.T, statusNotRepo},
-		{"n26b path is gone", filepath.Join(f.root, "gone"), f.T, statusNotRepo},
+		{"path is a file", filepath.Join(f.root, "F"), f.T, statusNotRepo},
+		{"path is gone", filepath.Join(f.root, "gone"), f.T, statusNotRepo},
 		// Measured: no entry names baseRepo or a subfolder of the worktree.
-		{"n18b path is baseRepo", f.T, f.T, statusNotRepo},
-		{"n25 subfolder of the worktree", filepath.Join(f.W, "sub"), f.T, statusNotRepo},
+		{"path is baseRepo", f.T, f.T, statusNotRepo},
+		{"subfolder of the worktree", filepath.Join(f.W, "sub"), f.T, statusNotRepo},
 		// Measured: a trailing separator.
-		{"n25b trailing separator", f.W + string(os.PathSeparator), f.T, statusClean},
+		{"trailing separator", f.W + string(os.PathSeparator), f.T, statusClean},
 		// Measured: a worktree inside baseRepo with no link.
-		{"n07b worktree under .claude/worktrees", inside, f.T, statusClean},
-		{"n08 worktree at T/sub/wt", deep, f.T, statusClean},
+		{"worktree under .claude/worktrees", inside, f.T, statusClean},
+		{"worktree at T/sub/wt", deep, f.T, statusClean},
 		// Measured: baseRepo is the cwd as sent. Measured: a trailing separator.
 		{"n11c2 baseRepo T/sub/..", f.W, filepath.Join(f.T, "sub") + string(os.PathSeparator) + "..", statusClean},
 		{"n11c3 baseRepo T/", f.W, f.T + string(os.PathSeparator), statusClean},
 		// Measured: baseRepo does not resolve.
 		{"n11c1 baseRepo T/nosub/..", f.W, filepath.Join(f.T, "nosub") + string(os.PathSeparator) + "..", statusNotRepo},
 		// Measured: baseRepo is a subfolder of the repository.
-		{"A05b baseRepo is a subfolder", inside, filepath.Join(f.T, "a", "b"), statusClean},
+		{"baseRepo is a subfolder", inside, filepath.Join(f.T, "a", "b"), statusClean},
 		// Measured.
 		{"n25d1 empty path", "", f.T, statusNotRepo},
 		{"KN plain folder", f.root, f.T, statusNotRepo},
@@ -321,7 +321,7 @@ func TestGitStatusBaseInWorktreesTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ name, base, want string }{
-		{"n10 below .claude/worktrees", r, statusNotRepo},
+		{"below .claude/worktrees", r, statusNotRepo},
 		{"n10c1 .claude/worktrees itself", filepath.Dir(r), statusNotRepo},
 		{"n10c2 .claude", filepath.Join(x, ".claude"), statusClean},
 	} {
@@ -344,21 +344,21 @@ func TestGitStatusMarkerAboveBaseRepo(t *testing.T) {
 		build func(t *testing.T, m string) (base string)
 		want  string
 	}{
-		{"o23 marker file", func(t *testing.T, m string) string {
+		{"marker file", func(t *testing.T, m string) string {
 			writeFile(t, filepath.Join(m, managedWorktreesMarker), "", 0o644)
 			return filepath.Join(m, "T")
 		}, statusNotRepo},
-		{"o23c marker two levels up", func(t *testing.T, m string) string {
+		{"marker two levels up", func(t *testing.T, m string) string {
 			writeFile(t, filepath.Join(m, managedWorktreesMarker), "", 0o644)
 			return filepath.Join(m, "a", "T")
 		}, statusNotRepo},
-		{"o23d marker is a folder", func(t *testing.T, m string) string {
+		{"marker is a folder", func(t *testing.T, m string) string {
 			if err := os.MkdirAll(filepath.Join(m, managedWorktreesMarker), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			return filepath.Join(m, "T")
 		}, statusNotRepo},
-		{"o23b marker beside a .git", func(t *testing.T, m string) string {
+		{"marker beside a .git", func(t *testing.T, m string) string {
 			writeFile(t, filepath.Join(m, managedWorktreesMarker), "", 0o644)
 			runGit(t, filepath.Dir(m), "init", "-q", "-b", "main", m)
 			return filepath.Join(m, "T")
@@ -466,7 +466,7 @@ func TestGitStatusSharedIndexBudget(t *testing.T) {
 	f.write(t, hexB, zeros(unit))
 	f.write(t, hexC, zeros(1))
 	if got := f.status(t); got != statusNotRepo {
-		t.Errorf("R3b sum over the bound = %s\nwant %s", got, statusNotRepo)
+		t.Errorf("sum over the bound = %s\nwant %s", got, statusNotRepo)
 	}
 	remove(hexB, hexC)
 

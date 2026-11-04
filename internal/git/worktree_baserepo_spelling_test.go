@@ -147,8 +147,8 @@ func TestWorktreeContainmentNamesAbsentBaseRepo(t *testing.T) {
 		row  string
 		base map[string]any
 	}{
-		{"A12 absent", map[string]any{}},
-		{"A12b empty", map[string]any{"baseRepo": ""}},
+		{"absent", map[string]any{}},
+		{"empty", map[string]any{"baseRepo": ""}},
 	} {
 		t.Run(r.row, func(t *testing.T) {
 			remove := map[string]any{"worktreePath": f.leaf()}
@@ -205,7 +205,7 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 			}
 		})
 	}
-	t.Run("A1 P0", func(t *testing.T) {
+	t.Run("P0", func(t *testing.T) {
 		clearDaemonConfigEnv(t)
 		want := spellRemoveOK
 		if trustRoot {

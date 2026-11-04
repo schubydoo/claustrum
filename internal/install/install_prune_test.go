@@ -446,7 +446,7 @@ func TestSweepRows(t *testing.T) {
 		want   []string
 	}{
 		{id: "L8/M3a/W5", before: cells, want: append([]string{pruneCLIName}, stays...)},
-		{id: "L9 cache hit", before: cells, hit: true,
+		{id: "cache hit", before: cells, hit: true,
 			want: append([]string{pruneCLIName, ".fetch-123", "1.0.0.zst"}, stays...)},
 		{id: "link", before: links, want: []string{pruneCLIName, "2.0.0.zst"}},
 	} {

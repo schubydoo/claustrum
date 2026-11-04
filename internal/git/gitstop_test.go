@@ -76,13 +76,13 @@ func TestGitTimeLimitValues(t *testing.T) {
 		name      string
 		got, want time.Duration
 	}{
-		{"gitCallLimit (cells T1 to T7)", gitCallLimit, 120 * time.Second},
-		{"gitWideLimit (claustrum's own, cells T8 and T9 show no stop at 2 minutes)", gitWideLimit, 1800 * time.Second},
-		{"configListingLimit (cells T10 and T11)", configListingLimit, 30 * time.Second},
-		{"includeScanLimit (cells T13 and T14)", includeScanLimit, 600 * time.Second},
-		{"gitStopGrace (cell T2)", gitStopGrace, 2 * time.Second},
-		{"gitDrainWait (cells T15 and T16)", gitDrainWait, 2 * time.Second},
-		{"repoReadBound (cell T18)", repoReadBound, 30 * time.Second},
+		{"gitCallLimit", gitCallLimit, 120 * time.Second},
+		{"gitWideLimit (claustrum's own, measured with no stop at 2 minutes)", gitWideLimit, 1800 * time.Second},
+		{"configListingLimit", configListingLimit, 30 * time.Second},
+		{"includeScanLimit", includeScanLimit, 600 * time.Second},
+		{"gitStopGrace", gitStopGrace, 2 * time.Second},
+		{"gitDrainWait", gitDrainWait, 2 * time.Second},
+		{"repoReadBound", repoReadBound, 30 * time.Second},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)

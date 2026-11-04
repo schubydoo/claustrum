@@ -27,19 +27,19 @@ func TestRecordMatchesLive(t *testing.T) {
 		args           []string
 		want           bool
 	}{
-		{"PG02a launcher replaced itself with the command", "/f/bin/wrap", stub, stub, stubArgs, true},
-		{"PG02b launcher shell still runs and holds the command", "/f/bin/wrapstay", stub, "/bin/sh", []string{"/f/bin/wrapstay", stub, "--log", "/r/c1.log"}, true},
-		{"ED03a program is the full path of the process", "/nonexistent/other", stub, stub, stubArgs, true},
-		{"ED03b program matches by base name", "/nonexistent/other", "/elsewhere/sigstub", stub, stubArgs, true},
-		{"ED04a program is one whole argument", "/nonexistent/other", target, stub, append(stubArgs[:2:2], target), true},
-		{"ED04b a cleaned path of an argument does not match", "/nonexistent/other", "/f/bin/../bin/target", stub, append(stubArgs[:2:2], target), false},
-		{"ED04c a base name of an argument does not match", "/nonexistent/other", "target", stub, append(stubArgs[:2:2], target), false},
-		{"ED04d a part of an argument does not match", "/nonexistent/other", target, stub, append(stubArgs[:2:2], "--cli="+target), false},
-		{"ED04e an argument with a space matches whole", "/nonexistent/other", "/f/bin/my target", stub, append(stubArgs[:2:2], "/f/bin/my target"), true},
-		{"ED06a empty program, argv0 matches", stub, "", stub, stubArgs, true},
-		{"ED06b empty program, argv0 does not match", "/nonexistent/other", "", stub, stubArgs, false},
-		{"PG01b no program key, a shell runs the recorded script", "/f/bin/shstay", "", "/bin/sh", []string{"/f/bin/shstay", "--log", "/r/c1.log"}, false},
-		{"ED01a no program key, another program", "/nonexistent/other", "", stub, stubArgs, false},
+		{"launcher replaced itself with the command", "/f/bin/wrap", stub, stub, stubArgs, true},
+		{"launcher shell still runs and holds the command", "/f/bin/wrapstay", stub, "/bin/sh", []string{"/f/bin/wrapstay", stub, "--log", "/r/c1.log"}, true},
+		{"program is the full path of the process", "/nonexistent/other", stub, stub, stubArgs, true},
+		{"program matches by base name", "/nonexistent/other", "/elsewhere/sigstub", stub, stubArgs, true},
+		{"program is one whole argument", "/nonexistent/other", target, stub, append(stubArgs[:2:2], target), true},
+		{"a cleaned path of an argument does not match", "/nonexistent/other", "/f/bin/../bin/target", stub, append(stubArgs[:2:2], target), false},
+		{"a base name of an argument does not match", "/nonexistent/other", "target", stub, append(stubArgs[:2:2], target), false},
+		{"a part of an argument does not match", "/nonexistent/other", target, stub, append(stubArgs[:2:2], "--cli="+target), false},
+		{"an argument with a space matches whole", "/nonexistent/other", "/f/bin/my target", stub, append(stubArgs[:2:2], "/f/bin/my target"), true},
+		{"empty program, argv0 matches", stub, "", stub, stubArgs, true},
+		{"empty program, argv0 does not match", "/nonexistent/other", "", stub, stubArgs, false},
+		{"no program key, a shell runs the recorded script", "/f/bin/shstay", "", "/bin/sh", []string{"/f/bin/shstay", "--log", "/r/c1.log"}, false},
+		{"no program key, another program", "/nonexistent/other", "", stub, stubArgs, false},
 	} {
 		t.Run(tc.row, func(t *testing.T) {
 			rec := childRecord{Argv0: tc.argv0, Program: tc.program}
@@ -76,11 +76,11 @@ func TestRecordMatchesCommandText(t *testing.T) {
 		{"whole text, a blank in the path, no arguments", "/tmp/e/bin/my stub", "", "/tmp/e/bin/my stub", true},
 		{"whole text without a blank", "/tmp/e/bin/sigstub", "", "/tmp/e/bin/sigstub", true},
 		// The text starts with p and one blank.
-		{"PG04s the text starts with the program and a blank", "/tmp/e/bin/my stub", "", "/tmp/e/bin/my stub --log x", true},
-		{"PG02s the same through the program key", "/tmp/e/bin/wrap", "/tmp/e/bin/my stub", "/tmp/e/bin/my stub --log x", true},
+		{"the text starts with the program and a blank", "/tmp/e/bin/my stub", "", "/tmp/e/bin/my stub --log x", true},
+		{"the same through the program key", "/tmp/e/bin/wrap", "/tmp/e/bin/my stub", "/tmp/e/bin/my stub --log x", true},
 		{"a prefix with no blank after it", "/tmp/e/bin/m", "", "/tmp/e/bin/my stub --log x", false},
 		{"a prefix that ends inside the second word", "/tmp/e/bin/my st", "", "/tmp/e/bin/my stub --log x", false},
-		{"follows from the rule (cell B2): the first word alone", "/tmp/e/bin/my", "", "/tmp/e/bin/my stub --log x", true},
+		{"follows from the rule: the first word alone", "/tmp/e/bin/my", "", "/tmp/e/bin/my stub --log x", true},
 		// Two blanks in a row (measured on macOS), and a raw tab. A real `ps`
 		// prints a tab as the four characters \011 (measured on macOS), so the two
 		// tab cases pin only how claustrum cuts a text that holds a raw tab.
@@ -89,16 +89,16 @@ func TestRecordMatchesCommandText(t *testing.T) {
 		{"a tab in the path, record with the tab", "/tmp/e/bin/my\tstub", "", "/tmp/e/bin/my\tstub --log x", true},
 		{"a tab is not a blank: the part before it is not the first word", "/tmp/e/bin/my", "", "/tmp/e/bin/my\tstub --log x", false},
 		// A handed word.
-		{"ED04a a handed word with no blank", "/nonexistent/other", "/tmp/e/bin/target", stub + " /tmp/e/bin/target", true},
-		{"ED04e a program with a blank is never handed", "/nonexistent/other", "/tmp/e/bin/my target", stub + " /tmp/e/bin/my target", false},
-		{"PG02b a launcher shell holds the program as a word", "/tmp/e/bin/wrapstay", "/tmp/e/bin/sigstub", "/bin/sh /tmp/e/bin/wrapstay " + stub, true},
-		{"ED04d a part of a word is not handed", "/nonexistent/other", "/tmp/e/bin/target", stub + " --cli=/tmp/e/bin/target", false},
+		{"a handed word with no blank", "/nonexistent/other", "/tmp/e/bin/target", stub + " /tmp/e/bin/target", true},
+		{"a program with a blank is never handed", "/nonexistent/other", "/tmp/e/bin/my target", stub + " /tmp/e/bin/my target", false},
+		{"a launcher shell holds the program as a word", "/tmp/e/bin/wrapstay", "/tmp/e/bin/sigstub", "/bin/sh /tmp/e/bin/wrapstay " + stub, true},
+		{"a part of a word is not handed", "/nonexistent/other", "/tmp/e/bin/target", stub + " --cli=/tmp/e/bin/target", false},
 		// The first word against a later word.
 		{"argv0 equals a later word only", "/tmp/e/bin/shstay", "", "/bin/sh /tmp/e/bin/shstay --log x", false},
-		{"ED03a the program is the first word", "/nonexistent/other", "/tmp/e/bin/sigstub", stub, true},
-		{"ED01a another program", "/nonexistent/other", "", stub, false},
+		{"the program is the first word", "/nonexistent/other", "/tmp/e/bin/sigstub", stub, true},
+		{"another program", "/nonexistent/other", "", stub, false},
 		// Equal base names in other folders.
-		{"PG05b the same base name in another folder", "/tmp/e/bin/sigstub", "", "/tmp/e/alt/sigstub --log x", true},
+		{"the same base name in another folder", "/tmp/e/bin/sigstub", "", "/tmp/e/alt/sigstub --log x", true},
 		{"a blank in the folder of the record", "/tmp/my dir/sigstub", "", "/tmp/e/alt/sigstub --log x", true},
 		{"a blank in the folder of the live program: its first word ends there", "/tmp/other/sigstub", "", "/tmp/my dir/sigstub --log x", false},
 		{"a blank in the folder of the live program, same path in the record", "/tmp/my dir/sigstub", "", "/tmp/my dir/sigstub --log x", true},

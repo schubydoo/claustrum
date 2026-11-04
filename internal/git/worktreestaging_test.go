@@ -94,17 +94,17 @@ func TestGoesAsTree(t *testing.T) {
 
 // The texts.
 const (
-	cell49Head   = "ref: refs/heads/main\n"
-	cell49WsHead = "ref: refs/heads/ws\n"
-	cell49Common = "../..\n"
-	cell49WsDir  = "C:/o/w/repo/.claude/worktrees/ws/.git\n"
-	cell49Ws2Dir = "C:/o/w/repo/.claude/worktrees/ws2/.git\n"
+	copyFixtureHead   = "ref: refs/heads/main\n"
+	copyFixtureWsHead = "ref: refs/heads/ws\n"
+	copyFixtureCommon = "../..\n"
+	copyFixtureWsDir  = "C:/o/w/repo/.claude/worktrees/ws/.git\n"
+	copyFixtureWs2Dir = "C:/o/w/repo/.claude/worktrees/ws2/.git\n"
 )
 
-func cell49Registration(name, head, gitdir string, locked *string) registrationCopy {
+func copyFixtureRegistration(name, head, gitdir string, locked *string) registrationCopy {
 	reg := registrationCopy{name: name, files: []copyEntry{
 		{path: "HEAD", data: []byte(head)},
-		{path: "commondir", data: []byte(cell49Common)},
+		{path: "commondir", data: []byte(copyFixtureCommon)},
 		{path: "gitdir", data: []byte(gitdir)},
 	}}
 	if locked != nil {
@@ -117,8 +117,8 @@ func cell49Registration(name, head, gitdir string, locked *string) registrationC
 // with the six states: one registration, none, two, a locked one, a locked one
 // with a reason, and one whose worktree folder is gone. Each entry is a line
 // `<path> <size>`, and a folder has the size `dir`. The sizes are those of the
-// cell. A `worktrees` folder that is always made fails the state 49b, and a
-// missing `locked` fails 49d and 49e.
+// cell. A `worktrees` folder that is always made fails the state with no
+// registration, and a missing `locked` fails the two locked states.
 func TestAddCopyEntries(t *testing.T) {
 	config := []byte(strings.Repeat("c", 212))
 	exclude := []byte(strings.Repeat("e", 240))
@@ -130,20 +130,20 @@ func TestAddCopyEntries(t *testing.T) {
 		regs []registrationCopy
 		want []string
 	}{
-		{"49a, one registration", []registrationCopy{cell49Registration("ws", cell49WsHead, cell49WsDir, nil)}, ws},
-		{"49b, no registration", nil, nil},
-		{"49c, two registrations", []registrationCopy{
-			cell49Registration("ws", cell49WsHead, cell49WsDir, nil),
-			cell49Registration("ws2", "ref: refs/heads/ws2\n", cell49Ws2Dir, nil),
+		{"one registration", []registrationCopy{copyFixtureRegistration("ws", copyFixtureWsHead, copyFixtureWsDir, nil)}, ws},
+		{"no registration", nil, nil},
+		{"two registrations", []registrationCopy{
+			copyFixtureRegistration("ws", copyFixtureWsHead, copyFixtureWsDir, nil),
+			copyFixtureRegistration("ws2", "ref: refs/heads/ws2\n", copyFixtureWs2Dir, nil),
 		}, append(slices.Clone(ws), "worktrees/ws2 dir", "worktrees/ws2/HEAD 20", "worktrees/ws2/commondir 6", "worktrees/ws2/gitdir 39")},
-		{"49d, locked", []registrationCopy{cell49Registration("ws", cell49WsHead, cell49WsDir, &empty)},
+		{"locked", []registrationCopy{copyFixtureRegistration("ws", copyFixtureWsHead, copyFixtureWsDir, &empty)},
 			append(slices.Clone(ws), "worktrees/ws/locked 0")},
-		{"49e, locked with a reason", []registrationCopy{cell49Registration("ws", cell49WsHead, cell49WsDir, &reason)},
+		{"locked with a reason", []registrationCopy{copyFixtureRegistration("ws", copyFixtureWsHead, copyFixtureWsDir, &reason)},
 			append(slices.Clone(ws), "worktrees/ws/locked 18")},
-		{"49f, the worktree folder is gone", []registrationCopy{cell49Registration("ws", cell49WsHead, cell49WsDir, nil)}, ws},
+		{"the worktree folder is gone", []registrationCopy{copyFixtureRegistration("ws", copyFixtureWsHead, copyFixtureWsDir, nil)}, ws},
 	} {
 		var got []string
-		for _, e := range addCopyEntries([]byte(cell49Head), config, exclude, true, row.regs) {
+		for _, e := range addCopyEntries([]byte(copyFixtureHead), config, exclude, true, row.regs) {
 			if e.dir {
 				got = append(got, e.path+" dir")
 			} else {
@@ -155,14 +155,14 @@ func TestAddCopyEntries(t *testing.T) {
 		}
 	}
 	// No cell has a repository with no info/exclude: the folder `info` is empty.
-	for _, e := range addCopyEntries([]byte(cell49Head), config, nil, false, nil) {
+	for _, e := range addCopyEntries([]byte(copyFixtureHead), config, nil, false, nil) {
 		if e.path == "info/exclude" {
 			t.Error("a repository with no info/exclude got that entry")
 		}
 	}
 	// The texts go in as they are: the locked text.
-	last := addCopyEntries([]byte(cell49Head), config, exclude, true,
-		[]registrationCopy{cell49Registration("ws", cell49WsHead, cell49WsDir, &reason)})
+	last := addCopyEntries([]byte(copyFixtureHead), config, exclude, true,
+		[]registrationCopy{copyFixtureRegistration("ws", copyFixtureWsHead, copyFixtureWsDir, &reason)})
 	if e := last[len(last)-1]; e.path != "worktrees/ws/locked" || string(e.data) != reason {
 		t.Errorf("the last entry = %q with %q, want worktrees/ws/locked with %q", e.path, e.data, reason)
 	}
@@ -196,7 +196,7 @@ func TestStagedGitFileText(t *testing.T) {
 	const want = "gitdir: C:/o/w/repo/.git/worktrees/w1\n"
 	viaCopy := "gitdir: C:/o/w/run/git-shadow/WIN_ABCDEFGHIJK-1234-0123456789abcdef/.s3621190347/worktrees/w1\n"
 	if len(viaCopy) != 94 {
-		t.Fatalf("the fixture text has %d bytes, want the 94 of cell 44a", len(viaCopy))
+		t.Fatalf("the fixture text has %d bytes, want the measured 94", len(viaCopy))
 	}
 	for _, row := range []struct {
 		name, old string

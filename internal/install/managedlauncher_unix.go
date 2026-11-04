@@ -15,11 +15,12 @@ var managedSystemSettingsDir = managedSettingsSystemDir
 
 // managedSettingsDir is the managed-settings folder. The reference reads the system
 // folder first. When it holds this host's policy, the E2E variable is ignored and
-// the system folder is read (row RXs on Linux and macOS). The folder holds a policy
-// when it has the base file (RXs) or a drop-in (row RXd, Linux). An existing but
-// empty system folder does not count (row RXe, Linux). With the system folder
-// absent, the variable selects its folder (row RX, Linux and macOS). An empty value
-// counts as unset, and the system folder is read (row RY, Linux and macOS). A
+// the system folder is read (measured on Linux and macOS). The folder holds a policy
+// when it has the base file (measured on Linux and macOS) or a drop-in (measured on
+// Linux). An existing but
+// empty system folder does not count (measured on Linux). With the system folder
+// absent, the variable selects its folder (measured on Linux and macOS). An empty value
+// counts as unset, and the system folder is read (measured on Linux and macOS). A
 // hidden .json entry alone counts too, although the resolve skips it (measured on
 // Linux). The second return is true when the variable was set and ignored, so the
 // caller logs the line.
@@ -59,7 +60,7 @@ func managedSystemFolderHoldsPolicy() bool {
 }
 
 // managedIgnoredVarLine is the log line of a resolve that ignored the E2E variable.
-// The system folder held this host's policy (row RXs, measured on Linux and macOS). The path
+// The system folder held this host's policy (measured on Linux and macOS). The path
 // is the system folder of the OS.
 func managedIgnoredVarLine() string {
 	return "[launcher] " + managedSettingsDirEnv + " ignored: " + managedSystemSettingsDir + " holds this host's policy"

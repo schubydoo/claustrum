@@ -86,10 +86,10 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 		refused string
 		ran     bool
 	}{
-		{"R-Q1a the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, f.section(t, "m", "smudge"))
 		}, "m", false},
-		{"F1 a file that the repository config includes", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a file that the repository config includes", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			setIncludeFile(t, f.gitDir, "inc.cfg", f.section(t, "m", "smudge"))
 			f.addConfig(t, "[include]\n\tpath = inc.cfg\n")
 		}, "m", false},
@@ -103,7 +103,7 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			f.addConfig(t, f.section(t, "m", "smudge"))
 			outside(t, f.section(t, "m", "smudge"))
 		}, "", true},
-		{"R-Q4h a conditional include of the user config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a conditional include of the user config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			top, err := filepath.EvalSymlinks(f.repo)
 			if err != nil {
 				t.Fatal(err)
@@ -112,7 +112,7 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 			mustWrite(t, inc, f.section(t, "m", "smudge"))
 			outside(t, "[includeIf \"gitdir/i:"+filepath.ToSlash(top)+"/\"]\n\tpath = "+filepath.ToSlash(inc)+"\n")
 		}, "", true},
-		{"F1b a conditional include of the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a conditional include of the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			top, err := filepath.EvalSymlinks(f.repo)
 			if err != nil {
 				t.Fatal(err)
@@ -124,7 +124,7 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 		// includeIf line. Each value of the filter comes from a file of the
 		// repository, and 5fd08069 answers repository_only_filter with the three
 		// items and the rollback.
-		{"F1e a later smudge = cat after an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a later smudge = cat after an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			top, err := filepath.EvalSymlinks(f.repo)
 			if err != nil {
 				t.Fatal(err)
@@ -134,20 +134,20 @@ func TestShadowFilterRuleFailsClosed(t *testing.T) {
 		}, "m", false},
 		// Measured: in one file the last value counts, so a command and then
 		// `smudge = cat` in .git/config pass (lastLinePerFile).
-		{"Q8 a command and then cat in the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a command and then cat in the repository config", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			f.addConfig(t, f.section(t, "m", "smudge")+"[filter \"m\"]\n\tsmudge = cat\n")
 		}, "", false},
 		// Measured on Linux (3 of 3 runs): an includeIf file with `smudge = cat` and a command in
 		// .git/config, in either order. 5fd08069 refuses, whatever the order.
-		{"F1g cat in an includeIf file, then a command", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"cat in an includeIf file, then a command", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			setIncludeFile(t, f.gitDir, "c.cfg", "[filter \"m\"]\n\tsmudge = cat\n")
 			f.addConfig(t, "[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = c.cfg\n"+f.section(t, "m", "smudge"))
 		}, "m", false},
-		{"F1h a command, then cat in an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a command, then cat in an includeIf file", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			setIncludeFile(t, f.gitDir, "c.cfg", "[filter \"m\"]\n\tsmudge = cat\n")
 			f.addConfig(t, f.section(t, "m", "smudge")+"[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = c.cfg\n")
 		}, "m", false},
-		{"F2 a filter that the repository config gets after a git.info", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
+		{"a filter that the repository config gets after a git.info", "a.txt filter=m\n", func(t *testing.T, f shadowFilterFixture) {
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 				t.Fatalf("git.info = %s", raw)
 			}
@@ -185,7 +185,7 @@ func TestShadowCreateMakesNoScopedListing(t *testing.T) {
 	for _, tc := range []struct {
 		name, seam string
 		filter     bool
-	}{{"R-Q4b the call fails", "scoped", false}, {"R-Q4a the call is held", "hold-scoped", true}} {
+	}{{"the call fails", "scoped", false}, {"the call is held", "hold-scoped", true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newShadowFilterFixture(t, "a.txt filter=m\n")
 			if tc.filter {
@@ -337,11 +337,11 @@ func filterItems(calls []envCall) []string {
 	return items
 }
 
-// TestShadowFilterRulesOfRoundTask073: the cells (measured on Linux) and G5a and
-// G5b (measured on macOS) in the state shadow, and rows that are not measured.
+// TestShadowFilterRules: the rows measured on Linux, and G5a and G5b
+// (measured on macOS) in the state shadow, and rows that are not measured.
 // "user" is the marker of the user config and "repository" the one of
 // .git/config.
-func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
+func TestShadowFilterRules(t *testing.T) {
 	off := []string{"filter.x.process=", "filter.x.required=true", "filter.x.smudge=false"}
 	for _, row := range []struct {
 		name string
@@ -353,13 +353,13 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 	}{
 		// Measured: the repository process program does not run, and the
 		// read-tree call gets no filter item.
-		{"F1 a user smudge and a repository process", func(t *testing.T, f shadowFilterFixture, user, repo string) {
+		{"a user smudge and a repository process", func(t *testing.T, f shadowFilterFixture, user, repo string) {
 			outside(t, sectionTo(t, "x", "smudge", user))
 			f.addConfig(t, sectionTo(t, "x", "process", repo))
 		}, false, nil, true},
 		// Measured: a user process = cat makes no definition
 		// outside.
-		{"F4 a user process = cat beside a user smudge", func(t *testing.T, f shadowFilterFixture, user, repo string) {
+		{"a user process = cat beside a user smudge", func(t *testing.T, f shadowFilterFixture, user, repo string) {
 			outside(t, sectionTo(t, "x", "smudge", user)+"\tprocess = cat\n")
 			f.addConfig(t, sectionTo(t, "x", "smudge", repo))
 		}, true, off, false},
@@ -396,10 +396,10 @@ func TestShadowFilterRulesOfRoundTask073(t *testing.T) {
 			f.addConfig(t, "[filter \"x\"]\n\tprocess =\n\tprocess\n")
 		}, true, off, false},
 		// Measured: a line with no "=".
-		{"F5 a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+		{"a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			f.addConfig(t, "[filter \"x\"]\n\tsmudge\n")
 		}, true, off, false},
-		{"F6 a bare process line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+		{"a bare process line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			f.addConfig(t, "[filter \"x\"]\n\tprocess\n")
 		}, true, off, false},
 	} {

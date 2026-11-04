@@ -304,7 +304,7 @@ func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 		t.Error("the worktree folder stays")
 	}
 	if !exists(f.entry(f.T, "s0")) {
-		t.Error("the entry s0 of T is gone, want it kept (row 7c)")
+		t.Error("the entry s0 of T is gone, want it kept")
 	}
 	wantRemoveCalls(t, "row 7c", calls, 1, []string{callExcludes})
 }
@@ -341,8 +341,8 @@ func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 		// entries are the names under T/.git/worktrees after the request.
 		entries []string
 	}{
-		{"K0 plain", nil, removeOK, 10, [][]string{read, check}, nil},
-		{"K1 no worktree", func(t *testing.T, f regFixture) map[string]any {
+		{"plain", nil, removeOK, 10, [][]string{read, check}, nil},
+		{"no worktree", func(t *testing.T, f regFixture) map[string]any {
 			nope := filepath.Join(f.T, ".claude", "worktrees", "nope")
 			writeFile(t, filepath.Join(nope, "n.txt"), "n\n", 0o644)
 			return map[string]any{"baseRepo": f.T, "worktreePath": nope, "branchName": "nope"}
@@ -388,7 +388,7 @@ func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 		}, removeKept, 5, [][]string{callsCheck("<fx>/plain", pinNoRepo)}, []string{"s0"}},
 		// Measured on Windows: the folder and its entry are gone, and the
 		// worktrees directory is empty. The pair runs twice.
-		{"W01 gone, no entry", func(t *testing.T, f regFixture) map[string]any {
+		{"gone, no entry", func(t *testing.T, f regFixture) map[string]any {
 			for _, p := range []string{f.S, f.entry(f.T, "s0")} {
 				if err := os.RemoveAll(p); err != nil {
 					t.Fatal(err)
@@ -593,7 +593,7 @@ func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	if !strings.Contains(raw, `"success":false`) || !strings.Contains(raw, want) {
 		t.Fatalf("frame = %s\nwant %s", raw, want)
 	}
-	wantAllCalls(t, "N04 remove with worktreeRoot", calls, "<fx>/R|L|config -z --list"+pin)
+	wantAllCalls(t, "remove with worktreeRoot", calls, "<fx>/R|L|config -z --list"+pin)
 }
 
 // Measured on Linux and macOS: the daemon GIT_DIR names the `.git` file of a linked
@@ -709,8 +709,8 @@ func TestWorktreeRemoveExternalMissingBaseRepoFrame(t *testing.T) {
 // the lock-check refusal, nothing is deleted, and no git call starts.
 func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 	for _, c := range []struct{ name, base string }{
-		{"p1 missing", "missing"},
-		{"p1b dangling link", "dl"},
+		{"missing", "missing"},
+		{"dangling link", "dl"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newRegFixture(t)

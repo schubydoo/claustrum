@@ -636,7 +636,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	}
 	// The owner record gets its instanceId and startedAt now. Both are the values that
 	// server.capabilities answers, and the instance is the one of the listening line
-	// and of the child records (row D3: the four instance values are equal, and the
+	// and of the child records (measured: the four instance values are equal, and the
 	// startedAt of the lock equals the one of server.capabilities). startedAt is read
 	// right after the bind. Measured on Linux against 89cb6289 (8 of 8 runs): the
 	// startedAt of the lock was within 1.5 ms of the listen call.

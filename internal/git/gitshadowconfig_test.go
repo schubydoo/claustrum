@@ -21,15 +21,15 @@ import (
 //
 // The measured cells have the copy texts, the `-c` items and the measured refusal texts. The files
 // are the measured inputs. One case has its refusal text. Items are the `-c` items of the
-// `config.worktree` file, tested in these cells only. Refusal is the message of the refusal, with
+// `config.worktree` file, tested in the cells with itemsMeasured only. Refusal is the message of the refusal, with
 // {GITDIR} for the git directory. A cell with a refusal has no copy.
 type shadowConfigCell struct {
-	Round   string            `json:"round"`
-	Cell    string            `json:"cell"`
-	Files   map[string]string `json:"files"`
-	Want    string            `json:"want"`
-	Items   []string          `json:"items,omitempty"`
-	Refusal string            `json:"refusal,omitempty"`
+	ItemsMeasured bool              `json:"itemsMeasured,omitempty"`
+	Cell          string            `json:"cell"`
+	Files         map[string]string `json:"files"`
+	Want          string            `json:"want"`
+	Items         []string          `json:"items,omitempty"`
+	Refusal       string            `json:"refusal,omitempty"`
 }
 
 // readCellFiles writes the files of a cell below a new git directory and
@@ -104,26 +104,26 @@ func TestShadowConfigCells(t *testing.T) {
 			defer func() { <-slots }()
 			r, detail, gitDir, err := readCellFiles(t, c.Files, home)
 			if err != nil {
-				t.Errorf("%s cell %s: %v", c.Round, c.Cell, err)
+				t.Errorf("cell %s: %v", c.Cell, err)
 				return
 			}
 			if c.Refusal != "" {
 				want := strings.ReplaceAll(c.Refusal, `"{GITDIR}/config.worktree"`, quoteOperand(filepath.Join(gitDir, "config.worktree")))
 				if got := repoConfigPrefix + detail; detail == "" || got != want {
-					t.Errorf("%s cell %s: refusal\n got %q\nwant %q", c.Round, c.Cell, got, want)
+					t.Errorf("cell %s: refusal\n got %q\nwant %q", c.Cell, got, want)
 				}
 				return
 			}
 			if detail != "" || r.unlisted {
-				t.Errorf("%s cell %s: the read refused the fixture: %q (no listing: %v)", c.Round, c.Cell, detail, r.unlisted)
+				t.Errorf("cell %s: the read refused the fixture: %q (no listing: %v)", c.Cell, detail, r.unlisted)
 				return
 			}
 			if got := shadowConfigText(r.settings, r.worktree); got != c.Want {
-				t.Errorf("%s cell %s:\n got %q\nwant %q", c.Round, c.Cell, got, c.Want)
+				t.Errorf("cell %s:\n got %q\nwant %q", c.Cell, got, c.Want)
 			}
-			// The older rounds hold no items.
-			if got := worktreeConfigItems(r.worktree); c.Round == "tier0-14-linux" && !slices.Equal(got, c.Items) {
-				t.Errorf("%s cell %s: items %q, want %q", c.Round, c.Cell, got, c.Items)
+			// Only the cells with itemsMeasured have measured items.
+			if got := worktreeConfigItems(r.worktree); c.ItemsMeasured && !slices.Equal(got, c.Items) {
+				t.Errorf("cell %s: items %q, want %q", c.Cell, got, c.Items)
 			}
 		}()
 	}
@@ -161,7 +161,7 @@ func TestShadowConfigOtherSystems(t *testing.T) {
 		},
 		{
 			// Measured: the byte is carried as it is.
-			cell:   "F1 byte 0xff in a URL",
+			cell:   "byte 0xff in a URL",
 			config: stdRepoConfig + "[remote \"u04-byte-ff\"]\n\turl = \"https://example.invalid/o/a\xffb.git\"\n",
 			want:   stdCopyBlocks + "[remote \"u04-byte-ff\"]\n\turl = \"https://example.invalid/o/a\xffb.git\"\n" + shadowConfigTail,
 		},

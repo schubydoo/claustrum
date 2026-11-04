@@ -64,14 +64,14 @@ func TestGitStatusLinkRows(t *testing.T) {
 		want string
 	}{
 		// Measured: path is a symlink to the worktree.
-		{"n06 path through a symlink", func(t *testing.T, f statusFixture) string {
+		{"path through a symlink", func(t *testing.T, f statusFixture) string {
 			l := filepath.Join(f.root, "L")
 			mustSymlink(t, f.W, l)
 			return l
 		}, statusClean},
 		// Measured: the entry is a symlink to a folder
 		// elsewhere.
-		{"n02 symlinked entry", func(t *testing.T, f statusFixture) string {
+		{"symlinked entry", func(t *testing.T, f statusFixture) string {
 			aside := filepath.Join(f.T, ".git", "aside")
 			if err := os.Mkdir(aside, 0o755); err != nil {
 				t.Fatal(err)
@@ -83,7 +83,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			return f.W
 		}, statusNotRepo},
 		// Measured: a real entry folder that a symlink also points at counts once.
-		{"n02b real entry beside a symlink to it", func(t *testing.T, f statusFixture) string {
+		{"real entry beside a symlink to it", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(f.entry, f.entry+".real"); err != nil {
 				t.Fatal(err)
 			}
@@ -92,14 +92,14 @@ func TestGitStatusLinkRows(t *testing.T) {
 			return f.W
 		}, statusClean},
 		// Measured: commondir is a relative symlink. Measured: an absolute one.
-		{"n19e commondir relative symlink", func(t *testing.T, f statusFixture) string {
+		{"commondir relative symlink", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(filepath.Join(f.entry, "commondir"), filepath.Join(f.entry, "cd.real")); err != nil {
 				t.Fatal(err)
 			}
 			mustSymlink(t, "cd.real", filepath.Join(f.entry, "commondir"))
 			return f.W
 		}, statusClean},
-		{"n19f commondir absolute symlink", func(t *testing.T, f statusFixture) string {
+		{"commondir absolute symlink", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(filepath.Join(f.entry, "commondir"), filepath.Join(f.entry, "cd.real")); err != nil {
 				t.Fatal(err)
 			}
@@ -107,7 +107,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			return f.W
 		}, statusNotRepo},
 		// Measured: index is a symlink to a regular file in the entry.
-		{"o15a index symlink", func(t *testing.T, f statusFixture) string {
+		{"index symlink", func(t *testing.T, f statusFixture) string {
 			if err := os.Rename(filepath.Join(f.entry, "index"), filepath.Join(f.entry, "index.real")); err != nil {
 				t.Fatal(err)
 			}
@@ -115,7 +115,7 @@ func TestGitStatusLinkRows(t *testing.T) {
 			return f.W
 		}, statusClean},
 		// Measured: path lies inside baseRepo and .claude is a symlink.
-		{"n07 symlinked .claude inside baseRepo", func(t *testing.T, f statusFixture) string {
+		{"symlinked .claude inside baseRepo", func(t *testing.T, f statusFixture) string {
 			elsewhere := filepath.Join(f.root, "elsewhere")
 			if err := os.Mkdir(elsewhere, 0o755); err != nil {
 				t.Fatal(err)
@@ -188,11 +188,11 @@ func TestGitStatusDotDotRows(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ name, path, want string }{
-		{"y2 outside, folder there", f.W + "/sub/..", statusClean},
-		{"y3 inside, no folder", wt + "/s0/missing/..", statusNotRepo},
-		{"y4 inside, no folder before the leaf", wt + "/none/../s0", statusNotRepo},
-		{"y5 inside, folder there", wt + "/q/../s0", statusNotRepo},
-		{"y10 dot", wt + "/s0/.", statusClean},
+		{"outside, folder there", f.W + "/sub/..", statusClean},
+		{"inside, no folder", wt + "/s0/missing/..", statusNotRepo},
+		{"inside, no folder before the leaf", wt + "/none/../s0", statusNotRepo},
+		{"inside, folder there", wt + "/q/../s0", statusNotRepo},
+		{"dot", wt + "/s0/.", statusClean},
 	} {
 		if got := statusFrame(t, c.path, f.T); got != c.want {
 			t.Errorf("%s: git.status = %s\nwant %s", c.name, got, c.want)
@@ -204,7 +204,7 @@ func TestGitStatusDotDotRows(t *testing.T) {
 func TestGitStatusReftableLinkRows(t *testing.T) {
 	// Measured: a table that is a symlink answers
 	// isRepo:false.
-	t.Run("r3 table is a symlink", func(t *testing.T) {
+	t.Run("table is a symlink", func(t *testing.T) {
 		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
 		dir := filepath.Join(f.entry, "reftable")
 		names, err := os.ReadFile(filepath.Join(dir, "tables.list"))
@@ -224,7 +224,7 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 	// folder then gets the table and no list. git decides the frame: git 2.50 on
 	// macOS read every tracked file as added, and another git can exit non-zero.
 	// The test asserts only that the gate passed and that no read waited.
-	t.Run("r2 tables.list is a FIFO", func(t *testing.T) {
+	t.Run("tables.list is a FIFO", func(t *testing.T) {
 		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
 		list := filepath.Join(f.entry, "reftable", "tables.list")
 		if err := os.Remove(list); err != nil {
@@ -248,7 +248,7 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 // the entry, or a regular file, counts as no folder. The answer is the clean
 // status.
 func TestGitStatusReftableNotAFolder(t *testing.T) {
-	t.Run("w1 symlink out of the entry", func(t *testing.T) {
+	t.Run("symlink out of the entry", func(t *testing.T) {
 		f := newStatusFixture(t)
 		out := filepath.Join(f.root, "out")
 		writeFile(t, filepath.Join(out, "a.ref"), "table", 0o644)
@@ -257,7 +257,7 @@ func TestGitStatusReftableNotAFolder(t *testing.T) {
 			t.Errorf("git.status = %s\nwant %s", got, statusClean)
 		}
 	})
-	t.Run("w2 regular file", func(t *testing.T) {
+	t.Run("regular file", func(t *testing.T) {
 		f := newStatusFixture(t)
 		f.write(t, "reftable", "x\n")
 		if got := f.status(t); got != statusClean {
@@ -267,7 +267,7 @@ func TestGitStatusReftableNotAFolder(t *testing.T) {
 	// Measured on macOS: in a reftable repository the folder is moved out and a symlink
 	// takes its place. Nothing of it is copied and the gate passes. git decides
 	// the frame: in the measurement it showed every tracked file as added.
-	for name, keepList := range map[string]bool{"w1 moved out": true, "w1b moved out, no list": false} {
+	for name, keepList := range map[string]bool{"moved out": true, "w1b moved out, no list": false} {
 		t.Run(name, func(t *testing.T) {
 			f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
 			out := filepath.Join(f.root, "out")

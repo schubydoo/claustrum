@@ -180,7 +180,7 @@ func TestDaemonizePredecessorHandoffPrintsToStderr(t *testing.T) {
 
 // The stale socket file of a killed daemon is not the socket of the new one: the
 // launcher waits past it, and exits 0 when a daemon accepts on the path. Measured on
-// Linux against f6010b97 and 89cb6289 (row XA): the -serve command returned 2.06 s
+// Linux against f6010b97 and 89cb6289: the -serve command returned 2.06 s
 // after its start, when the new daemon had ended a recorded child and bound. The
 // helper child here never binds, so the test binds the path itself after a pause.
 func TestDaemonizeWaitsPastAStaleSocketFile(t *testing.T) {

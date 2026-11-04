@@ -25,11 +25,11 @@ func TestBrokenConfigPairMode0000KeepsFrame(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(n0, 0o755) })
 	want := `{"jsonrpc":"2.0","id":1,"result":` + notRepoInfo + `}`
 	if got := f.frame(t, "git.info", map[string]any{"path": n0}); got != want {
-		t.Errorf("A-X1 in P0 = %s\nwant %s", got, want)
+		t.Errorf("in P0 = %s\nwant %s", got, want)
 	}
 	plantEnv(t, brokenPairPhases[0].env...)
 	if got := f.frame(t, "git.info", map[string]any{"path": n0}); got != want {
-		t.Errorf("A-X1 in P3 = %s\nwant %s", got, want)
+		t.Errorf("in P3 = %s\nwant %s", got, want)
 	}
 }
 

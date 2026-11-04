@@ -16,8 +16,8 @@ import (
 
 // These tests cover git.worktree_remove with worktreeRoot on a baseRepo whose git
 // directory the trust check refuses, or in which there is no repository, plus the
-// linked-worktree baseRepo. Each row name is the row of the side-by-side run against
-// f6010b97 on Linux (rows WR* and K*). worktreeRoot is unix-only.
+// linked-worktree baseRepo. The rows are measured side by side against
+// f6010b97 on Linux. worktreeRoot is unix-only.
 
 // wrFixture is the layout of those rows. T is a repository and TW its linked
 // worktree. X is a second repository. The worktree location is R. e0 is a worktree
@@ -139,24 +139,24 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 			wrWrite(t, cd, "x\n")
 			return f.T, f.e0, "e0", strayText(wantTR(cd, "x"))
 		}},
-		{"WR02_stray_commondir_own_abs", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		{"stray_commondir_own_abs", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
 			wrWrite(t, cd, filepath.Join(f.T, ".git")+"\n")
 			return f.T, f.e0, "e0", strayText(wantTR(cd, filepath.Join(f.T, ".git")))
 		}},
-		{"WR03_stray_commondir_is_dir", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		{"stray_commondir_is_dir", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
 			if err := os.MkdirAll(cd, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			return f.T, f.e0, "e0", strayText(wantTP(cd, "commondir is not a regular file"))
 		}},
-		{"WR04_linked_base_commondir_other_repo", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		{"linked_base_commondir_other_repo", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.eTW, "commondir")
 			wrWrite(t, cd, filepath.Join(f.X, ".git")+"\n")
 			return f.TW, f.e1, "e1", foreignText(cd, filepath.Join(f.T, ".git"))
 		}},
-		{"WR05_linked_base_commondir_removed", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		{"linked_base_commondir_removed", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			if err := os.Remove(filepath.Join(f.eTW, "commondir")); err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +164,7 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 				`" has none (git always writes one there, containing ../..); the entry is damaged ` +
 				"or was not made by git — recreate the worktree with git worktree add, or remove the entry"
 		}},
-		{"WR06_linked_base_commondir_nonexistent", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		{"linked_base_commondir_nonexistent", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.eTW, "commondir")
 			wrWrite(t, cd, filepath.Join(f.base, "nope", ".git")+"\n")
 			return f.TW, f.e1, "e1", foreignText(cd, filepath.Join(f.T, ".git"))
@@ -204,21 +204,21 @@ func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
 		name  string
 		plant func(t *testing.T, f *wrFixture) (base, target, branch string)
 	}{
-		{"WR10_nested_empty_dotgit", func(t *testing.T, f *wrFixture) (string, string, string) {
+		{"nested_empty_dotgit", func(t *testing.T, f *wrFixture) (string, string, string) {
 			a := filepath.Join(f.base, "A")
 			if err := os.MkdirAll(filepath.Join(a, ".git"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			return a, f.e0, "e0"
 		}},
-		{"WR11_plain_dir", func(t *testing.T, f *wrFixture) (string, string, string) {
+		{"plain_dir", func(t *testing.T, f *wrFixture) (string, string, string) {
 			a := filepath.Join(f.base, "A")
 			if err := os.MkdirAll(a, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			return a, f.e0, "e0"
 		}},
-		{"WR12_dotgit_file_garbage", func(t *testing.T, f *wrFixture) (string, string, string) {
+		{"dotgit_file_garbage", func(t *testing.T, f *wrFixture) (string, string, string) {
 			a := filepath.Join(f.base, "A")
 			wrWrite(t, filepath.Join(a, ".git"), "junk\n")
 			return a, f.e0, "e0"
@@ -331,7 +331,7 @@ func TestWorktreeRemoveExternalResolvesBaseRepository(t *testing.T) {
 // Measured: a baseRepo that is a git directory answers the prefix and "exit
 // status 128". Nothing is deleted.
 func TestWorktreeRemoveExternalBaseIsGitDir(t *testing.T) {
-	t.Run("K07_bare_repo", func(t *testing.T) {
+	t.Run("bare_repo", func(t *testing.T) {
 		f := newWRFixture(t)
 		bare := filepath.Join(f.base, "B.git")
 		runGit(t, f.base, "clone", "-q", "--bare", f.T, bare)
@@ -346,7 +346,7 @@ func TestWorktreeRemoveExternalBaseIsGitDir(t *testing.T) {
 			}
 		}
 	})
-	t.Run("K25_base_is_dotgit", func(t *testing.T) {
+	t.Run("base_is_dotgit", func(t *testing.T) {
 		f := newWRFixture(t)
 		if got, want := f.remove(t, filepath.Join(f.T, ".git"), f.e0, "e0"), refusalFrame(t, wtUnknown+"exit status 128"); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
@@ -359,7 +359,7 @@ func TestWorktreeRemoveExternalBaseIsGitDir(t *testing.T) {
 // check fails with "exit status 128". Second, it names the repository X, so the
 // registration check reads X/.git/worktrees, which does not exist.
 func TestWorktreeRemoveExternalDaemonGitDir(t *testing.T) {
-	t.Run("K12_names_nothing", func(t *testing.T) {
+	t.Run("names_nothing", func(t *testing.T) {
 		f := newWRFixture(t)
 		t.Setenv("GIT_DIR", filepath.Join(f.base, "nope.git"))
 		if got, want := f.remove(t, f.T, f.e0, "e0"), refusalFrame(t, wtUnknown+"exit status 128"); got != want {
@@ -367,7 +367,7 @@ func TestWorktreeRemoveExternalDaemonGitDir(t *testing.T) {
 		}
 		f.kept(t, f.e0, "e0")
 	})
-	t.Run("K15_names_other_repo", func(t *testing.T) {
+	t.Run("names_other_repo", func(t *testing.T) {
 		f := newWRFixture(t)
 		t.Setenv("GIT_DIR", filepath.Join(f.X, ".git"))
 		want := refusalFrame(t, "failed to remove worktree: could not verify that "+f.e0+
@@ -488,7 +488,7 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 	}
 	hooks := wtUnknown + "config-defined hooks could not be pinned off; git not run: " +
 		"listing the configuration in force: fork/exec " + gitPath + ": "
-	t.Run("K10_mode0600_plain", func(t *testing.T) {
+	t.Run("mode0600_plain", func(t *testing.T) {
 		f := newWRFixture(t)
 		n := filepath.Join(f.base, "N")
 		if err := os.MkdirAll(n, 0o755); err != nil {
@@ -507,7 +507,7 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 			t.Errorf("the plain folder was touched: %v", err)
 		}
 	})
-	t.Run("K11_mode0600_repo", func(t *testing.T) {
+	t.Run("mode0600_repo", func(t *testing.T) {
 		f := newWRFixture(t)
 		if err := os.Chmod(f.T, 0o600); err != nil {
 			t.Fatal(err)
@@ -707,10 +707,10 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 		noGit bool
 		arm   func(t *testing.T, f *wrFixture) wrRow
 	}{
-		{"L13xc_repository", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"repository", true, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: f.T, target: f.p0, want: gitx}
 		}},
-		{"L13xd_repository_registered_worktree_gone", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"repository_registered_worktree_gone", true, func(t *testing.T, f *wrFixture) wrRow {
 			if err := os.RemoveAll(f.e0); err != nil {
 				t.Fatal(err)
 			}
@@ -721,7 +721,7 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 			wrWrite(t, file, "f\n")
 			return wrRow{base: file, target: f.p0, want: gitx}
 		}},
-		{"L13v_mode0600_repository", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"mode0600_repository", true, func(t *testing.T, f *wrFixture) wrRow {
 			if os.Geteuid() == 0 {
 				t.Skip("root ignores the permission this test depends on")
 			}
@@ -731,67 +731,67 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 			t.Cleanup(func() { _ = os.Chmod(f.T, 0o755) })
 			return wrRow{base: f.T, target: f.p0, want: gitx}
 		}},
-		{"L13y_git_file_to_nowhere", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"git_file_to_nowhere", true, func(t *testing.T, f *wrFixture) wrRow {
 			g := filepath.Join(f.base, "G")
 			wrWrite(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(f.base, "nowhere")+"\n")
 			return wrRow{base: g, target: f.p0, want: gitx}
 		}},
-		{"L13z_plain_folder", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"plain_folder", true, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: wrPlainFolder(t, f), target: f.p0, want: gitx}
 		}},
-		{"L13z-g_plain_folder_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"plain_folder_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: wrPlainFolder(t, f), target: f.p0, want: refusalFrame(t, wtUnknown+"exit status 128")}
 		}},
-		{"L13t_refused_git_directory", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"refused_git_directory", true, func(t *testing.T, f *wrFixture) wrRow {
 			strayX(t, f)
 			return wrRow{base: f.T, target: f.p0, want: gitx}
 		}},
-		{"L13t-g_refused_git_directory_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"refused_git_directory_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: f.T, target: f.p0, want: refusalFrame(t, strayText(wantTR(strayX(t, f), "x")))}
 		}},
-		{"L13wa_base_missing_worktree_holds_a_file", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_holds_a_file", true, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: nope(f), target: f.p0, want: lock(f.p0, nope(f))}
 		}},
-		{"L13wa-g_base_missing_worktree_holds_a_file_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_holds_a_file_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: nope(f), target: f.p0, want: refusalFrame(t, "refusing to remove worktree: "+f.p0+
 				" is not a worktree of "+nope(f)+" ("+f.p0+" has no .git file), so it is left in place; remove it by hand if it is a leftover")}
 		}},
-		{"L13we_base_missing_worktree_empty", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_empty", true, func(t *testing.T, f *wrFixture) wrRow {
 			leaf := emptyLeaf(t, f)
 			return wrRow{base: nope(f), target: leaf, want: lock(leaf, nope(f)), stays: []string{leaf}}
 		}},
-		{"L13we-g_base_missing_worktree_empty_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_empty_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			leaf := emptyLeaf(t, f)
 			return wrRow{base: nope(f), target: leaf, want: success, gone: []string{leaf}}
 		}},
-		{"DG1_base_missing_worktree_names_its_entry", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_names_its_entry", true, func(t *testing.T, f *wrFixture) wrRow {
 			leaf := entryLeaf(t, f)
 			return wrRow{base: nope(f), target: leaf, want: lock(leaf, nope(f)),
 				stays: []string{filepath.Join(leaf, ".git"), filepath.Join(leaf, "a.txt"), filepath.Join(leaf, "sub", "b.txt")}}
 		}},
-		{"DG1-g_base_missing_worktree_names_its_entry_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_names_its_entry_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			leaf := entryLeaf(t, f)
 			return wrRow{base: nope(f), target: leaf, want: success, gone: []string{leaf}}
 		}},
-		{"L13wb_base_missing_worktree_gone", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_gone", true, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: nope(f), target: filepath.Join(f.R, "proj", "gone"), want: success}
 		}},
-		{"L13wb-g_base_missing_worktree_gone_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_worktree_gone_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: nope(f), target: filepath.Join(f.R, "proj", "gone"), want: success}
 		}},
-		{"L13wc_base_missing_root_empty", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_root_empty", true, func(t *testing.T, f *wrFixture) wrRow {
 			root := emptyRoot(t, f)
 			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: success}
 		}},
-		{"L13wc-g_base_missing_root_empty_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_root_empty_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			root := emptyRoot(t, f)
 			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: success}
 		}},
-		{"L13wr_base_missing_root_missing", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_root_missing", true, func(t *testing.T, f *wrFixture) wrRow {
 			root := filepath.Join(f.base, "ext")
 			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: unreachable(root)}
 		}},
-		{"L13wr-g_base_missing_root_missing_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_missing_root_missing_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			root := filepath.Join(f.base, "ext")
 			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: unreachable(root)}
 		}},
@@ -1006,7 +1006,7 @@ func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 		}
 		return f, inRepo, wantShapeRefusal(cd)
 	}
-	t.Run("DG2-g_remove_with_root", func(t *testing.T) {
+	t.Run("remove_with_root", func(t *testing.T) {
 		f, _, shape := arm(t, true)
 		if got, want := f.remove(t, f.T, f.e0, "e0"), refusalFrame(t, wtUnknown+shape); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
@@ -1021,7 +1021,7 @@ func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 		f, _, shape := arm(t, true)
 		wantRPCError(t, "status(T,T)", status(t, f.T, f.T), shape)
 	})
-	t.Run("DG2i-g_remove_in_repository", func(t *testing.T) {
+	t.Run("remove_in_repository", func(t *testing.T) {
 		f, inRepo, _ := arm(t, true)
 		got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": f.T, "worktreePath": inRepo, "branchName": "w1"}))
@@ -1030,7 +1030,7 @@ func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 		}
 		f.kept(t, inRepo, "w1")
 	})
-	t.Run("DG2h-g_bad_head_only", func(t *testing.T) {
+	t.Run("bad_head_only", func(t *testing.T) {
 		f, _, _ := arm(t, false)
 		if got, want := f.remove(t, f.T, f.e0, "e0"), refusalFrame(t, wtUnknown+"exit status 128"); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)

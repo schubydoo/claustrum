@@ -168,10 +168,10 @@ func TestCreatedEntryOnly(t *testing.T) {
 		registration  string
 		want          bool
 	}{
-		{"one new name, the entry (cell BASE)", nil, []string{"w1"}, "/g/worktrees/w1", true},
-		{"one new name beside an old entry (cells A9 p and A10 p)", []string{"w1"}, []string{"w1", "w11"}, "/g/worktrees/w11", true},
-		{"two new names (cell V2)", nil, []string{"w1", "w1b"}, "/g/worktrees/w1", false},
-		{"no new name (cells A9 g and A13 g)", []string{"old9", "w1"}, []string{"old9", "w1"}, "/g/worktrees/w1", false},
+		{"one new name, the entry", nil, []string{"w1"}, "/g/worktrees/w1", true},
+		{"one new name beside an old entry", []string{"w1"}, []string{"w1", "w11"}, "/g/worktrees/w11", true},
+		{"two new names", nil, []string{"w1", "w1b"}, "/g/worktrees/w1", false},
+		{"no new name", []string{"old9", "w1"}, []string{"old9", "w1"}, "/g/worktrees/w1", false},
 		{"one new name, another entry", []string{"w1"}, []string{"w1", "w11"}, "/g/worktrees/w1", false},
 	} {
 		if got := createdEntryOnly(tc.before, tc.after, tc.registration); got != tc.want {
@@ -1003,7 +1003,7 @@ func TestWorktreeCreateStaleEntryCount(t *testing.T) {
 //
 //   - T1 and A12c g: the old entry w1 of T is stale and goes. The "does not name"
 //     text.
-//   - T2: the state of cell P-c. The "different worktree" text.
+//   - T2: a record of another worktree. The "different worktree" text.
 //   - T3: the old entry is stale and locked. The "other than the one just
 //     created" text.
 //   - T4: T has no worktrees folder. The "was not populated" text.

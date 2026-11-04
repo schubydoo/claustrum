@@ -20,44 +20,44 @@ import (
 func TestManagedLauncherParseValue(t *testing.T) {
 	const w = "/fx/bin/wrap"
 	cases := []struct {
-		row, value string
-		argv       []string
-		reason     string
+		name, value string
+		argv        []string
+		reason      string
 	}{
-		{"R5", w + ` --x "a b"`, []string{w, "--x", "a b"}, ""},
-		{"R10b", `"` + w + `" "a;b"`, []string{w, "a;b"}, ""},
-		{"R10c", w + ` "abc`, nil, managedUnterminated},
-		{"R10d", w + ` "a\"b" "c\\d" "e\nf"`, []string{w, `a"b`, `c\d`, `e\nf`}, ""},
-		{"R10e", w + ` a\"b c"`, []string{w, `a\b c`}, ""},
-		{"R10f", w + ` 'a b'`, []string{w, "'a", "b'"}, ""},
-		{"R10g-00A0", w + "\u00a0a", []string{w, "a"}, ""},
-		{"R10g-FEFF", w + "\ufeffa", []string{w, "a"}, ""},
-		{"R10g-0085", w + "\u0085a", []string{w + "\u0085a"}, ""},
-		{"R10h-1", w + ` ""`, nil, managedEmptyToken},
-		{"R10h-2", `""`, nil, managedNoLauncher},
-		{"R10i", w + " a\ufffd", []string{w, "a\ufffd"}, ""},
-		{"R6d", "   ", nil, managedNoLauncher},
-		{"R9a", `["` + w + `","a b"]`, []string{w, "a b"}, ""},
-		{"R9b", `  ["` + w + `"]`, []string{w}, ""},
-		{"R9c", `["` + w + `",""]`, nil, managedEmptyElement},
-		{"R9d-1", `[""]`, nil, managedNoLauncher},
-		{"R9d-2", `[]`, nil, managedNoLauncher},
-		{"R9e", `["` + w + `",1]`, nil, managedNotStrings},
-		{"R9f-1", `[`, nil, managedBadJSONForm},
-		{"R9f-2", `["` + w + `"] x`, nil, managedBadJSONForm},
-		{"R9g", `["` + w + `","<a&b>","x\u2028y"]`, []string{w, "<a&b>", "x\u2028y"}, ""},
+		{"a quoted argument with a blank", w + ` --x "a b"`, []string{w, "--x", "a b"}, ""},
+		{"a quoted program and a quoted semicolon", `"` + w + `" "a;b"`, []string{w, "a;b"}, ""},
+		{"an unterminated quote", w + ` "abc`, nil, managedUnterminated},
+		{"escapes in quotes", w + ` "a\"b" "c\\d" "e\nf"`, []string{w, `a"b`, `c\d`, `e\nf`}, ""},
+		{"a backslash quote outside quotes", w + ` a\"b c"`, []string{w, `a\b c`}, ""},
+		{"single quotes do not group", w + ` 'a b'`, []string{w, "'a", "b'"}, ""},
+		{"a no-break space splits", w + "\u00a0a", []string{w, "a"}, ""},
+		{"a byte order mark splits", w + "\ufeffa", []string{w, "a"}, ""},
+		{"a next-line character does not split", w + "\u0085a", []string{w + "\u0085a"}, ""},
+		{"an empty token", w + ` ""`, nil, managedEmptyToken},
+		{"an empty quoted program", `""`, nil, managedNoLauncher},
+		{"a replacement character", w + " a\ufffd", []string{w, "a\ufffd"}, ""},
+		{"blanks only", "   ", nil, managedNoLauncher},
+		{"a JSON array", `["` + w + `","a b"]`, []string{w, "a b"}, ""},
+		{"a JSON array after blanks", `  ["` + w + `"]`, []string{w}, ""},
+		{"an empty JSON element", `["` + w + `",""]`, nil, managedEmptyElement},
+		{"a JSON array of one empty string", `[""]`, nil, managedNoLauncher},
+		{"an empty JSON array", `[]`, nil, managedNoLauncher},
+		{"a JSON number", `["` + w + `",1]`, nil, managedNotStrings},
+		{"a JSON array cut short", `[`, nil, managedBadJSONForm},
+		{"text after a JSON array", `["` + w + `"] x`, nil, managedBadJSONForm},
+		{"JSON with HTML characters and a line separator", `["` + w + `","<a&b>","x\u2028y"]`, []string{w, "<a&b>", "x\u2028y"}, ""},
 	}
 	for _, mc := range []string{";", "&", "|", "<", ">", "$", "`", "(", ")"} {
 		cases = append(cases, struct {
-			row, value string
-			argv       []string
-			reason     string
-		}{"R10a " + mc, w + " a" + mc, nil, managedMetachar})
+			name, value string
+			argv        []string
+			reason      string
+		}{"a metacharacter " + mc, w + " a" + mc, nil, managedMetachar})
 	}
 	for _, c := range cases {
 		argv, reason := parseManagedLauncherValue(c.value)
 		if reason != c.reason || !slices.Equal(argv, c.argv) {
-			t.Errorf("%s %q: argv %q reason %q, want argv %q reason %q", c.row, c.value, argv, reason, c.argv, c.reason)
+			t.Errorf("%s %q: argv %q reason %q, want argv %q reason %q", c.name, c.value, argv, reason, c.argv, c.reason)
 		}
 	}
 }
@@ -108,7 +108,7 @@ func TestManagedLauncherTexts(t *testing.T) {
 	}
 }
 
-// TestManagedLauncherShownCut pins the R11e cut: a 300-byte launcher path with a
+// TestManagedLauncherShownCut pins the cut of a shown launcher: a 300-byte launcher path with a
 // 3-byte character at bytes 254-256 keeps its first 254 bytes, then an ellipsis.
 // The 256-byte limit itself is claustrum's choice, so the ASCII arms pin that
 // choice, not a measurement.
@@ -120,7 +120,7 @@ func TestManagedLauncherShownCut(t *testing.T) {
 	got := managedNotExecutable(long)
 	want := "launcher `" + strings.Repeat("x", 254) + "\xe2\x80\xa6` does not exist or is not an executable regular file"
 	if got != want {
-		t.Errorf("R11e cut:\n got %q\nwant %q", got, want)
+		t.Errorf("cut:\n got %q\nwant %q", got, want)
 	}
 	if s := strings.Repeat("a", 256); managedShown(s) != s {
 		t.Error("a 256-byte path must be shown whole (claustrum's limit)")

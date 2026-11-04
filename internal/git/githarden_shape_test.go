@@ -729,7 +729,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 		// repository first (build 52d82f0a on git.info and git.status). The listings
 		// of a remove there are claustrum's own, not measured.
 		if runtime.GOOS == "windows" {
-			t.Skip("git on Windows accepts a .git/objects file (row H20)")
+			t.Skip("git on Windows accepts a .git/objects file")
 		}
 		g := newWTFixture(t, false)
 		objects := filepath.Join(g.top, ".git", "objects")

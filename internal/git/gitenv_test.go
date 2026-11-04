@@ -608,34 +608,34 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 		q3 = errFrameOf(pre + "listing the configuration in force: " + start)
 	}
 	rows := []row{
-		{"Q1 git.info N", "git.info", map[string]any{"path": n},
+		{"git.info N", "git.info", map[string]any{"path": n},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrameOf},
-		{"Q2 git.info missing", "git.info", map[string]any{"path": missing},
+		{"git.info missing", "git.info", map[string]any{"path": missing},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrameOf},
 		{"Q3 git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")}, q3, errFrameOf},
-		{"Q4 list_branches N", "git.list_branches", map[string]any{"path": n},
+		{"list_branches N", "git.list_branches", map[string]any{"path": n},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, errFrameOf},
-		{"Q5 list_branches missing", "git.list_branches", map[string]any{"path": missing},
+		{"list_branches missing", "git.list_branches", map[string]any{"path": missing},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, nil},
-		{"Q6 status N base T", "git.status", map[string]any{"path": n, "baseRepo": f.top},
+		{"status N base T", "git.status", map[string]any{"path": n, "baseRepo": f.top},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrameOf},
-		{"Q7 status T base T", "git.status", map[string]any{"path": f.top, "baseRepo": f.top},
+		{"status T base T", "git.status", map[string]any{"path": f.top, "baseRepo": f.top},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrameOf},
-		{"Q8 status missing base T", "git.status", map[string]any{"path": missing, "baseRepo": f.top},
+		{"status missing base T", "git.status", map[string]any{"path": missing, "baseRepo": f.top},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrameOf},
-		{"Q9 create base N", "git.worktree_create", map[string]any{"baseRepo": n, "worktreePath": nLeaf, "branchName": "w1"},
+		{"create base N", "git.worktree_create", map[string]any{"baseRepo": n, "worktreePath": nLeaf, "branchName": "w1"},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`, addFrame},
-		{"Q10 create base missing", "git.worktree_create",
+		{"create base missing", "git.worktree_create",
 			map[string]any{"baseRepo": missing, "worktreePath": filepath.Join(missing, "w1"), "branchName": "w1"},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`, addFrame},
-		{"Q11 create relative path", "git.worktree_create", map[string]any{"baseRepo": f.top, "worktreePath": "rel/w1", "branchName": "w1"},
+		{"create relative path", "git.worktree_create", map[string]any{"baseRepo": f.top, "worktreePath": "rel/w1", "branchName": "w1"},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"refusing to create worktree: rel/w1 is a relative path; choose the session folder by its absolute path, without \"..\"","errorCode":"unsafe_path"}}`,
 			addFrame},
-		{"Q12 remove base N", "git.worktree_remove", map[string]any{"baseRepo": n, "worktreePath": nLeaf},
+		{"remove base N", "git.worktree_remove", map[string]any{"baseRepo": n, "worktreePath": nLeaf},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":true}}`, func(m string) string { return lockFrame(nLeaf, m) }},
-		{"Q13 remove base missing", "git.worktree_remove", map[string]any{"baseRepo": missing, "worktreePath": missLeaf},
+		{"remove base missing", "git.worktree_remove", map[string]any{"baseRepo": missing, "worktreePath": missLeaf},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":true}}`, func(m string) string { return lockFrame(missLeaf, m) }},
-		{"Q14 remove unregistered leaf", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": nope},
+		{"remove unregistered leaf", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": nope},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":true}}`, func(m string) string { return lockFrame(nope, m) }},
 	}
 	for _, phase := range []struct {
@@ -644,8 +644,8 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 		text  string
 	}{
 		{"P0 control", nil, ""},
-		{"P1 letter", []string{"GIT_CONFIG_COUNT=x"}, `inherited GIT_CONFIG_COUNT "x" is not a count`},
-		{"P2 pair 1 missing", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=2"},
+		{"letter", []string{"GIT_CONFIG_COUNT=x"}, `inherited GIT_CONFIG_COUNT "x" is not a count`},
+		{"pair 1 missing", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=2"},
 			"inherited GIT_CONFIG pair 1 is incomplete"},
 	} {
 		t.Run(phase.name, func(t *testing.T) {
@@ -705,11 +705,11 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	})
 }
 
-// TestInheritedCountRefusalRound4 runs further measured cases through gitDispatch, with
+// TestInheritedCountRefusalThroughDispatch runs further measured cases through gitDispatch, with
 // nothing planted and with GIT_CONFIG_COUNT=x. On Windows a row with a
-// worktreeRoot answers the worktreeRoot refusal in both phases (windows R1d to R1g,
-// N2a, N2b).
-func TestInheritedCountRefusalRound4(t *testing.T) {
+// worktreeRoot answers the worktreeRoot refusal in both phases
+// (measured on Windows).
+func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 	f := newWTFixture(t, false)
 	resetUserExcludesCache(t)
 	base, err := filepath.EvalSymlinks(t.TempDir())
@@ -804,7 +804,7 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 		plant []string
 	}{
 		{"P0 control", nil},
-		{"P1 letter", []string{"GIT_CONFIG_COUNT=x"}},
+		{"letter", []string{"GIT_CONFIG_COUNT=x"}},
 	} {
 		t.Run(phase.name, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
@@ -928,7 +928,7 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 		plant         []string
 	}{
 		{"P0 control", `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":true}}`, nil},
-		{"P1 letter", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` +
+		{"letter", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` +
 			jsonString(t, `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`) + `}}`,
 			[]string{"GIT_CONFIG_COUNT=x"}},
 	} {
@@ -1010,7 +1010,7 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 		plant         []string
 	}{
 		{"P0 control", `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":` + branches + `}}`, nil},
-		{"P1 letter", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` +
+		{"letter", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` +
 			jsonString(t, `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`) + `}}`,
 			[]string{"GIT_CONFIG_COUNT=x"}},
 	} {
@@ -1057,7 +1057,7 @@ func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 				want  string
 			}{
 				{"P0 control", nil, cwd.p0},
-				{"P1 letter", []string{"GIT_CONFIG_COUNT=x"}, refused},
+				{"letter", []string{"GIT_CONFIG_COUNT=x"}, refused},
 			} {
 				clearDaemonConfigEnv(t)
 				plantEnv(t, phase.plant...)
@@ -1116,7 +1116,7 @@ func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 		plant []string
 	}{
 		{"P0 control", nil},
-		{"P1 letter", []string{"GIT_CONFIG_COUNT=x"}},
+		{"letter", []string{"GIT_CONFIG_COUNT=x"}},
 	} {
 		t.Run(phase.name, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
@@ -1212,7 +1212,7 @@ func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 		plant []string
 	}{
 		{"P0 control", nil},
-		{"P1 letter", []string{"GIT_CONFIG_COUNT=x"}},
+		{"letter", []string{"GIT_CONFIG_COUNT=x"}},
 	} {
 		t.Run(phase.name, func(t *testing.T) {
 			clearDaemonConfigEnv(t)

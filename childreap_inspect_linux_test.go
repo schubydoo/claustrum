@@ -103,19 +103,19 @@ func TestReapKeepsChildOfDaemonItCannotInspect(t *testing.T) {
 		name  string
 		stage func(t *testing.T, st *inspectStage)
 	}{
-		{"H2a the stat is a folder", func(t *testing.T, st *inspectStage) {
+		{"the stat is a folder", func(t *testing.T, st *inspectStage) {
 			if err := os.MkdirAll(st.path(inspDaemon, "stat"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}},
-		{"H2b the stat has mode 000", func(t *testing.T, st *inspectStage) {
+		{"the stat has mode 000", func(t *testing.T, st *inspectStage) {
 			noReadAsRoot(t)
 			st.mk(inspDaemon, "stat", statLine(inspDaemon, "S", "4194304"))
 			if err := os.Chmod(st.path(inspDaemon, "stat"), 0); err != nil {
 				t.Fatal(err)
 			}
 		}},
-		{"H2c the stat does not parse", func(t *testing.T, st *inspectStage) {
+		{"the stat does not parse", func(t *testing.T, st *inspectStage) {
 			st.mk(inspDaemon, "stat", "x")
 		}},
 	} {

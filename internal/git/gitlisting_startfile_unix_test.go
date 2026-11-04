@@ -16,8 +16,8 @@ func TestStartErrorInRegularFileKeepsFramesOnUnix(t *testing.T) {
 		name string
 		env  []string
 	}{
-		{"CeP0 nothing set", nil},
-		{"CeP3 empty key", brokenPairPhases[0].env},
+		{"nothing set", nil},
+		{"empty key", brokenPairPhases[0].env},
 	} {
 		t.Run(ph.name, func(t *testing.T) {
 			f := newNoRepoFixture(t)

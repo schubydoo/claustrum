@@ -94,17 +94,17 @@ func TestIncludeBackslashOpeningWindows(t *testing.T) {
 		return includeCase{name: name, ignore: bld3Ignore, files: bld3Files, manifest: manifest, want: want}
 	}
 	checkIncludeCases(t, []includeCase{
-		y("O2_anch", "/build/\n*.txt\n", ".bx/d.txt", "build/a.txt"),
-		y("O2_bslash_sep", "sub\\build/\n*.txt\n", ".bx/d.txt", "sub/build/b.txt"),
-		y("O3_sub_esc_b_star", "sub\\\\build/\n*.txt\n", ".bx/d.txt", "sub/build/b.txt"),
-		y("O2_bslash_trail", "build\\\n*.txt\n", ".bx/d.txt", "build/a.txt"),
-		y("O2_bslash_glob", "sub\\b*/\n*.txt\n", ".bx/d.txt", "sub/build/b.txt"),
-		y("O2_bslash_file", "build\\a.txt\n*.txt\n", ".bx/d.txt", "build/a.txt"),
-		y("O2_bslash_axbuild", "a\\x\\build/\n*.txt\n", ".bx/d.txt", "a/x/build/c.txt"),
-		y("O2_bslash_lead", "\\build/\n*.txt\n", ".bx/d.txt"),
-		y("O2_bslash_ds", "**\\build/\n*.txt\n", ".bx/d.txt"),
-		y("O3_bu_esc_ild", "bu\\ild/\n*.txt\n", ".bx/d.txt", "build/a.txt"),
-		{name: "O3_weird_esc_txt", ignore: lines("we[i]rd/", "weird/"), files: []string{"we[i]rd/a.txt", "weird/b.txt"},
+		y("anch", "/build/\n*.txt\n", ".bx/d.txt", "build/a.txt"),
+		y("bslash_sep", "sub\\build/\n*.txt\n", ".bx/d.txt", "sub/build/b.txt"),
+		y("sub_esc_b_star", "sub\\\\build/\n*.txt\n", ".bx/d.txt", "sub/build/b.txt"),
+		y("bslash_trail", "build\\\n*.txt\n", ".bx/d.txt", "build/a.txt"),
+		y("bslash_glob", "sub\\b*/\n*.txt\n", ".bx/d.txt", "sub/build/b.txt"),
+		y("bslash_file", "build\\a.txt\n*.txt\n", ".bx/d.txt", "build/a.txt"),
+		y("bslash_axbuild", "a\\x\\build/\n*.txt\n", ".bx/d.txt", "a/x/build/c.txt"),
+		y("bslash_lead", "\\build/\n*.txt\n", ".bx/d.txt"),
+		y("bslash_ds", "**\\build/\n*.txt\n", ".bx/d.txt"),
+		y("bu_esc_ild", "bu\\ild/\n*.txt\n", ".bx/d.txt", "build/a.txt"),
+		{name: "weird_esc_txt", ignore: lines("we[i]rd/", "weird/"), files: []string{"we[i]rd/a.txt", "weird/b.txt"},
 			manifest: "we\\[i\\]rd/\n*.txt\n", want: []string{"weird/b.txt"}},
 	})
 }
