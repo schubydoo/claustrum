@@ -106,7 +106,9 @@ func gitEntryRefusal(worktreeRoot, d string) (msg, code string) {
 // "" for any other root. The kernel limit counts: filepath.EvalSymlinks follows up to
 // 255 links. 5fd08069 refuses a chain of 45 links and a loop, for a create and for a
 // remove, and nothing is made or removed (measured on Linux). It refuses a link to
-// "/" (measured). The exact link limit is not measured. verb is "create" or "remove".
+// "/" (measured). On Linux 40 links pass and 41 are refused (be1c1ca5 and b3081b51,
+// measured). verb is "create" or "remove".
+// Both verbs show the root in backticks (be1c1ca5 and b3081b51, measured on Linux).
 func locationLinkRefusal(worktreeRoot, verb string) string {
 	prefix := filepath.Clean(worktreeRoot)
 	loop, missing := false, false
@@ -130,7 +132,7 @@ func locationLinkRefusal(worktreeRoot, verb string) string {
 	}
 	if loop || err != nil && isSymlinkLoop(err) {
 		return fmt.Sprintf("refusing to %s worktree: %s passes through too many symbolic links (a loop?)",
-			verb, filepath.Clean(worktreeRoot))
+			verb, tickPath(filepath.Clean(worktreeRoot)))
 	}
 	if err == nil && !missing && homeguard.IsFilesystemRoot(resolved) {
 		return fmt.Sprintf("refusing to %s worktree: %s resolves to the filesystem root; choose the "+

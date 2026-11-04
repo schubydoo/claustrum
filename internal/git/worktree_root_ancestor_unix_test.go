@@ -683,7 +683,7 @@ func TestWorktreeCreateRootAncestorKeepsChainTexts(t *testing.T) {
 				ancLink(t, "L2", f.p("L"))
 				ancLink(t, "L", f.p("L2"))
 			},
-			text: "refusing to create worktree: <B>/L/o passes through too many symbolic links (a loop?)", code: "unsafe_path"},
+			text: "refusing to create worktree: `<B>/L/o` passes through too many symbolic links (a loop?)", code: "unsafe_path"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.root {

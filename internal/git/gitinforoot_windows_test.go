@@ -151,7 +151,7 @@ func TestCreateExistsNamesOnDiskCaseWindows(t *testing.T) {
 	rep := trustCall(t, "git.worktree_create", map[string]any{
 		"baseRepo": base, "worktreePath": strings.ToUpper(leaf), "branchName": "w1"})
 	want, _ := json.Marshal(worktreeResult{Success: false, ErrorCode: "unsafe_path",
-		Error: "refusing to create worktree: " + filepath.VolumeName(base) + leaf[len(filepath.VolumeName(leaf)):] +
-			" already exists, and a new worktree is only ever created in a fresh directory"})
+		Error: "refusing to create worktree: `" + filepath.VolumeName(base) + leaf[len(filepath.VolumeName(leaf)):] +
+			"` already exists, and a new worktree is only ever created in a fresh directory"})
 	wantResult(t, "create", rep, string(want))
 }

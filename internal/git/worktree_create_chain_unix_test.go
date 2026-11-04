@@ -684,8 +684,8 @@ func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 func TestWorktreeCreateExternalSymlinkLoop(t *testing.T) {
 	loop := func(rootRel string) func(f string) (string, string) {
 		return func(f string) (string, string) {
-			return "refusing to create worktree: " + filepath.Join(f, rootRel) +
-				" passes through too many symbolic links (a loop?)", "unsafe_path"
+			return "refusing to create worktree: `" + filepath.Join(f, rootRel) +
+				"` passes through too many symbolic links (a loop?)", "unsafe_path"
 		}
 	}
 	runChainCases(t, []chainCase{
