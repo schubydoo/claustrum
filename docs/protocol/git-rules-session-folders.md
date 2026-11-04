@@ -44,8 +44,8 @@ macOS and Windows), with mode 0700 (measured on Linux and macOS).
 - A file goes to a temp file `.new-<pid>-<ns>` first, and then by one rename to its
   name. A folder at that name fails the write. The folder stays, the temp file goes,
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
-  macOS and Windows). claustrum writes that file at no later start (claustrum's own,
-  not measured).
+  macOS and Windows). Each later spawn in that folder tries the write again and logs
+  the line again (claustrum's own, not measured).
 - The folder keeps at most 2048 record files. After a good write the records with the
   lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS

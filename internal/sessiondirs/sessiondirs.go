@@ -251,7 +251,7 @@ func (s *store) add(p string) {
 // record folder, and with a folder that denies the write). A later entry counts
 // too, and a link entry or an entry in other letter case on macOS does not
 // (claustrum's own, not measured). With no such entry the spawn starts (measured
-// on Linux and macOS). The folder stays in memory,
+// on Linux, and on macOS for an empty folder). The folder stays in memory,
 // and a later spawn tries the write again (measured on Linux and macOS). A failed
 // rename, as for a folder at the name of the record, returns nil (measured on
 // Linux, macOS and Windows). The other folders of the spawn still get their
