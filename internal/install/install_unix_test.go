@@ -235,10 +235,7 @@ func TestRunLddVersionKillsTheGroupAtTheBound(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "sleeper.pid")
 	stub := "#!/bin/sh\necho 'musl libc (x86_64)'\nsleep 30 &\necho $! > " + pidFile + "\nwait\n"
-	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useLddStub(t, dir, stub)
 	noMusl := func(string) ([]string, error) { return nil, nil }
 
 	// 3 s, not less: the stub must write its pid file before the bound fires, and
@@ -277,10 +274,7 @@ func TestRunLddVersionKeepsOutputOfAnLddThatExitedInTime(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	stub := "#!/bin/sh\necho 'musl libc (x86_64)'\nsleep 2\nsleep 10 &\necho $! > " + pidFile + "\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useLddStub(t, dir, stub)
 	noMusl := func(string) ([]string, error) { return nil, nil }
 
 	const bound = 3 * time.Second
