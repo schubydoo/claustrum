@@ -156,3 +156,13 @@ func TestSpawnDuringTheHoldIsRecorded(t *testing.T) {
 		t.Errorf("a spawn with the switch wrote a record: %v", err)
 	}
 }
+
+// Only the exact name `git` is a bare git, also on Windows: `git.exe`, `GIT` and
+// `Git.EXE` run as other commands do.
+func TestBareGitNameIsExact(t *testing.T) {
+	for name, want := range map[string]bool{"git": true, "git.exe": false, "GIT": false, "Git.EXE": false, "/usr/bin/git": false} {
+		if got := bareGitName(name); got != want {
+			t.Errorf("bareGitName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

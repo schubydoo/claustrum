@@ -660,13 +660,13 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-info.md":                  1889, // the sessionFoldersOff row and member rule of b3081b51. 1850: the page rewrite
 	"docs/protocol/git-rules-calls.md":           5535, // the off switch and the cut link. 5522: the link to the session folders. 5513: the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":          2884, // moved from PROTOCOL.md
-	"docs/protocol/git-rules-session-folders.md": 1312, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
+	"docs/protocol/git-rules-session-folders.md": 1337, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 	"docs/protocol/git-rules-settings-copy.md":   3300, // the third run of the call about the repository. the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":           4642, // the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":         997,  // the page rewrite
 	"docs/protocol/git-status.md":                3185, // a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md":       8816, // the folder of a Claude Code session. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
-	"docs/protocol/git-worktree-remove.md":       4369, // macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
+	"docs/protocol/git-worktree-remove.md":       4380, // the colon form of the cannot-run reason. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":          1834, // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
 	"docs/protocol/plugins-prune.md":             1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
 	"docs/protocol/process-kill.md":              931,  // the page template

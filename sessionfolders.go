@@ -3,7 +3,6 @@ package main
 import (
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
@@ -13,14 +12,10 @@ import (
 // Code shape records its folders, and a spawn of a bare command name passes over a
 // git in such a folder.
 
-// bareGitName reports whether command is git by its bare name. On Windows `git.exe`
-// and any letter case count too (claustrum's own, not measured).
-func bareGitName(command string) bool {
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(command, "git") || strings.EqualFold(command, "git.exe")
-	}
-	return command == "git"
-}
+// bareGitName reports whether command is git by its bare name: exactly `git`. On
+// Windows `git.exe`, `GIT` and `Git.EXE` are no bare git, so the git in the session
+// folder runs and the env stays (b3081b51, measured on Windows).
+func bareGitName(command string) bool { return command == "git" }
 
 // bareCommandStart applies the session folders to cmd, a spawn of command with no
 // launcher. A bare git passes over a git in a session folder, and fails to start

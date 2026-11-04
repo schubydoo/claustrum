@@ -61,7 +61,9 @@ and Windows). It logs the second line (measured on Linux and macOS).
 ## A git in a session folder
 
 The git calls of the git methods pass over a git in a session folder. So does a
-`process.spawn` of the bare command `git`. A PATH entry with a link to such a folder
+`process.spawn` of the bare command `git`. Only that exact name counts: on Windows
+`git.exe`, `GIT` and `Git.EXE` run the git in the session folder and keep their env
+(measured on Windows). A PATH entry with a link to such a folder
 counts too. The next git on the PATH of the daemon runs, and the daemon logs the first
 line below (measured on Linux, macOS and Windows). claustrum logs it once for each
 path (not measured). On macOS a PATH entry that names a session folder in other letter

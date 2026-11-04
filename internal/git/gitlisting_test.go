@@ -655,7 +655,7 @@ func TestListingGitCannotRun(t *testing.T) {
 	got := f.fiveMethods(t)
 	create, _ := json.Marshal(worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	remove, _ := json.Marshal(worktreeRemoveResult{Success: false,
-		Error: "failed to remove worktree: could not check whether " + f.wt() + " is locked (" + msg + "); retry"})
+		Error: "failed to remove worktree: could not check whether " + f.wt() + " is locked: " + msg}) // goneLockCheckText
 	for m, want := range map[string]string{
 		"git.info":            errPart(t, msg),
 		"git.list_branches":   errPart(t, msg),
