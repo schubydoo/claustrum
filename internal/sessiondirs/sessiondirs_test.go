@@ -101,7 +101,7 @@ func TestRememberWritesOneRecord(t *testing.T) {
 	}
 	s := t.TempDir()
 	before := time.Now().UnixMilli()
-	Remember(s)
+	_ = Remember(s)
 	sum := sha256.Sum256([]byte(s))
 	name := hex.EncodeToString(sum[:])[:32]
 	if got := names(t, dir); !slices.Equal(got, []string{name, "keep-me"}) && !slices.Equal(got, []string{"keep-me", name}) {
@@ -133,9 +133,26 @@ func TestRememberWritesOneRecord(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, name)); err != nil {
 		t.Fatal(err)
 	}
-	Remember(s)
+	_ = Remember(s)
 	if got := names(t, dir); !slices.Equal(got, []string{"keep-me"}) {
 		t.Errorf("a known folder wrote again: %v", got)
+	}
+}
+
+// A record read at the start counts as written: a spawn in its folder does not
+// write it again.
+func TestRecordReadAtTheStartIsNotWrittenAgain(t *testing.T) {
+	dir := recordDir(t)
+	s := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, RecordName(s)), fmt.Appendf(nil, "1000 1 2\n%s", s), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(UseForTest(dir))
+	if err := Remember(s); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, RecordName(s))); err != nil || !strings.HasPrefix(string(b), "1000 1 2\n") {
+		t.Errorf("the record read at the start holds %q (%v), want it unchanged", b, err)
 	}
 }
 
@@ -145,7 +162,7 @@ func TestRecordsCountAfterARestart(t *testing.T) {
 	dir := recordDir(t)
 	s := t.TempDir()
 	bin := binWithGit(t, s)
-	Remember(s)
+	_ = Remember(s)
 	t.Cleanup(UseForTest(dir))
 	other := binWithGit(t, t.TempDir())
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+other)
@@ -170,7 +187,10 @@ func TestFolderAtTheRecordNameFailsTheWrite(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(planted, "planted.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	Remember(s)
+	// A failed rename refuses no spawn.
+	if err := Remember(s); err != nil {
+		t.Errorf("Remember after a failed rename = %v, want nil", err)
+	}
 	if got := names(t, dir); !slices.Equal(got, []string{RecordName(s)}) {
 		t.Errorf("the record folder holds %v, want the planted folder only", got)
 	}
@@ -191,6 +211,84 @@ func TestFolderAtTheRecordNameFailsTheWrite(t *testing.T) {
 	PickGit(cmd)
 	if !errors.As(cmd.Err, new(NoOtherGitError)) {
 		t.Errorf("after the failed write git is %q (%v), want the refusal", cmd.Path, cmd.Err)
+	}
+}
+
+// A file at the path of the record folder fails the record before the rename.
+// With a PATH entry in the folder, first or empty, Remember returns SaveError, so
+// the spawn starts no child. With no such entry it returns nil. Both keep the
+// folder in memory and log the line of the failure.
+func TestUnsavedRecordRefusesWithAPathEntryInTheFolder(t *testing.T) {
+	if want := "Claude couldn't save its list of session folders to ~/.claude/remote on this host. Free up disk space or fix that folder's permissions"; (SaveError{}).Error() != want {
+		t.Errorf("SaveError = %q, want %q", SaveError{}.Error(), want)
+	}
+	other := t.TempDir()
+	for _, c := range []struct {
+		name   string
+		path   func(s string) string
+		refuse bool
+	}{
+		{"git in the first entry", func(s string) string { return binWithGit(t, s) + string(os.PathListSeparator) + other }, true},
+		{"empty first entry", func(s string) string {
+			bin := filepath.Join(s, "bin")
+			if err := os.Mkdir(bin, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return bin + string(os.PathListSeparator) + other
+		}, true},
+		{"git not on PATH", func(s string) string { binWithGit(t, s); return other }, false},
+		{"empty folder not on PATH", func(string) string { return other }, false},
+	} {
+		dir := filepath.Join(t.TempDir(), RecordFolderName)
+		if err := os.WriteFile(dir, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		restore := UseForTest(dir)
+		buf := captureLog(t)
+		s := t.TempDir()
+		t.Setenv("PATH", c.path(s))
+		err := Remember(s)
+		if got := errors.As(err, new(SaveError)); got != c.refuse || !c.refuse && err != nil {
+			t.Errorf("%s: Remember = %v, want SaveError %v", c.name, err, c.refuse)
+		}
+		if !strings.Contains(buf.String(), "[sessiondirs] cannot write to the record of session folders in "+fmt.Sprintf("%q", filepath.ToSlash(dir))+": ") {
+			t.Errorf("%s: log = %q, want the line of the failed write", c.name, buf.String())
+		}
+		cur := current.Load()
+		if !cur.known[s] {
+			t.Errorf("%s: the folder is not kept in memory", c.name)
+		}
+		restore()
+	}
+}
+
+// A failed save does not count as a record: the next Remember of the folder tries
+// the write again and fails again. After the file at the record folder goes, the
+// write makes the folder with mode 0700 and writes the record.
+func TestUnsavedRecordIsTriedAgain(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), RecordFolderName)
+	if err := os.WriteFile(dir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(UseForTest(dir))
+	s := t.TempDir()
+	t.Setenv("PATH", binWithGit(t, s))
+	for i := range 2 {
+		if err := Remember(s); !errors.As(err, new(SaveError)) {
+			t.Fatalf("Remember %d with a file at the record folder = %v, want SaveError", i+1, err)
+		}
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remember(s); err != nil {
+		t.Fatalf("Remember after the file went = %v", err)
+	}
+	if got := names(t, dir); !slices.Equal(got, []string{RecordName(s)}) {
+		t.Errorf("after the file went the record folder holds %v, want the record of %s", got, s)
+	}
+	if fi, err := os.Stat(dir); runtime.GOOS != "windows" && (err != nil || fi.Mode().Perm() != 0o700) {
+		t.Errorf("the record folder made again: %v %v, want mode 0700", fi, err)
 	}
 }
 
@@ -226,7 +324,7 @@ func TestPruneRemovesTheLowestMsRecords(t *testing.T) {
 	}
 	t.Cleanup(UseForTest(dir))
 	n1 := filepath.Join(base, "n1")
-	Remember(n1)
+	_ = Remember(n1)
 	want := []string{"keep-me", RecordName(planted[1]), RecordName(planted[2]), RecordName(n1)}
 	slices.Sort(want)
 	if got := names(t, dir); !slices.Equal(got, want) {
@@ -243,7 +341,7 @@ func TestPickGitPassesOverASessionGit(t *testing.T) {
 	s := t.TempDir()
 	bin := binWithGit(t, s)
 	other := binWithGit(t, t.TempDir())
-	Remember(s)
+	_ = Remember(s)
 	sep := string(os.PathListSeparator)
 	t.Setenv("PATH", bin+sep+other)
 	cmd := exec.Command("git")
@@ -308,7 +406,7 @@ func TestPickGitPassesOverASessionGit(t *testing.T) {
 func TestCutPathTakesOutSessionEntries(t *testing.T) {
 	t.Cleanup(UseForTest(""))
 	s := t.TempDir()
-	Remember(s)
+	_ = Remember(s)
 	sep := string(os.PathListSeparator)
 	other := t.TempDir()
 	in := filepath.Join(s, "x")
@@ -365,7 +463,7 @@ func TestRememberRecordsDuringTheHold(t *testing.T) {
 	captureLog(t)
 	release := PauseCheck()
 	f := t.TempDir()
-	Remember(f)
+	_ = Remember(f)
 	release()
 	if got := names(t, dir); len(got) != 1 || got[0] != RecordName(f) {
 		t.Errorf("a spawn during the hold wrote %v, want its record", got)
@@ -408,7 +506,7 @@ func TestOpenMakesTheFolderOrKeepsMemory(t *testing.T) {
 		t.Errorf("the record folder mode is %v, want 0700", fi.Mode().Perm())
 	}
 	s := t.TempDir()
-	Remember(s)
+	_ = Remember(s)
 	if _, err := os.Stat(filepath.Join(dir, RecordName(s))); err != nil {
 		t.Errorf("the record: %v", err)
 	}
@@ -420,7 +518,7 @@ func TestOpenMakesTheFolderOrKeepsMemory(t *testing.T) {
 		t.Errorf("log = %q, want %q", buf.String(), line)
 	}
 	s2 := t.TempDir()
-	Remember(s2)
+	_ = Remember(s2)
 	if _, err := os.Stat(filepath.Join(dir, RecordName(s2))); !os.IsNotExist(err) {
 		t.Errorf("a store in memory wrote a record: %v", err)
 	}
@@ -448,7 +546,7 @@ func TestOnAgainLineComesAtTheFirstCheckAfterTheHold(t *testing.T) {
 	s := t.TempDir()
 	bin := binWithGit(t, s)
 	other := binWithGit(t, t.TempDir())
-	Remember(s)
+	_ = Remember(s)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+other)
 	release := PauseCheck()
 	cmd := exec.Command("git")

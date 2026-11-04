@@ -63,6 +63,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32603` | `exec: "<name>": executable file not found in $PATH` | A bare name that the lookup does not find, and on Windows also a path with no extension. On Windows the text ends in `%PATH%`. |
 | `-32603` | `fork/exec <command>: <reason>` | The command is missing, a folder or not executable, or the start fails. On Windows a missing file gives the reason `The system cannot find the file specified.` |
 | `-32603` | `For security, Claude won't use a git inside a folder it works in, and this host has no other git on its PATH. Install git somewhere else, such as /usr/bin` | A bare `git` whose every git on `PATH` lies in a [session folder](git-rules-session-folders.md#with-no-other-git) (`b3081b51`). On Windows the text ends `C:\Program Files\Git`. |
+| `-32603` | `Claude couldn't save its list of session folders to ~/.claude/remote on this host. Free up disk space or fix that folder's permissions` | A [session folder](git-rules-session-folders.md#a-record-that-cannot-be-saved) of the spawn that cannot be saved and holds the first PATH entry of the daemon (`b3081b51`). |
 | `-32005` | `the managed launcher <path> could not be started: <reason>` | The launcher passes the checks and does not start. |
 
 `<cwd>` is the value after the tilde expansion. `<command>` is the path of the start: the value of the request, or for a bare name the path that the lookup found on `PATH`.

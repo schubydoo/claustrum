@@ -21,7 +21,7 @@ A spawn of `sleep` makes none (measured on Linux and macOS). A spawn with the [o
 switch](#the-off-switch) makes none (measured on Windows), and another spawn makes one
 also while such a request runs (measured on Linux). claustrum's own, not
 measured: a spawn with no `cwd` makes none, a relative `--add-dir` folder is taken in
-the `cwd`, and the folder counts from the good start. A `git.worktree_create` records no
+the `cwd`, and the record comes after the `cwd` and command tests and before the start. A `git.worktree_create` records no
 `<repo>/.git` folder (claustrum's own, not measured). `b3081b51` records it (measured on Linux, macOS and Windows).
 
 ## The record
@@ -37,15 +37,15 @@ macOS and Windows), with mode 0700 (measured on Linux and macOS).
   on Linux and macOS).
 - A new daemon reads the files at its start, so the folders of an earlier daemon count
   (measured on Linux, macOS and Windows). Other files in the folder stay.
-- A folder that the daemon knows gets no new file (claustrum's own, not measured).
+- A folder that has a record gets no new file (claustrum's own, not measured).
 
 ### A write and the prune
 
 - A file goes to a temp file `.new-<pid>-<ns>` first, and then by one rename to its
   name. A folder at that name fails the write. The folder stays, the temp file goes,
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
-  macOS and Windows). claustrum writes that file at no later start (claustrum's own,
-  not measured).
+  macOS and Windows). Each later spawn in that folder tries the write again and logs
+  the line again (claustrum's own, not measured).
 - The folder keeps at most 2048 record files. After a good write the records with the
   lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS
@@ -58,6 +58,24 @@ and Windows). It logs the second line (measured on Linux and macOS).
 [sessiondirs] cannot write to the record of session folders in "<dir>": renameat .new-<pid>-<ns> <name>: file exists; they are kept in memory until this helper ends, and written at a later start
 [daemon] socket "<socket>" is not <root>/run/<client>/rpc.sock: session folders are kept in memory only, so the next helper will not know them
 ```
+
+### A record that cannot be saved
+
+- A record that cannot be made or written fails the spawn when the first entry of the
+  daemon PATH lies in that folder (`b3081b51`, measured on Linux). The spawn then gets
+  `-32603` with the reason `other`, and no child starts (measured on Linux, macOS and
+  Windows). That holds for a file at the folder name and a folder that denies the
+  write. Linux and macOS also measured a full disk. The daemon logs the line of the
+  failure and then the failed-start line.
+- The first entry holds a git or is empty (measured on Linux). With no entry in the
+  folder the spawn starts, also with a git or a repository in the folder (measured on
+  Linux, and on macOS for an empty folder). claustrum's own, not measured: a later
+  entry counts too, and an entry that is a link into the folder or names it in other
+  letter case on macOS does not count.
+- The folder stays in memory, so `git.status` and `git.info` still pass over a git in
+  it (measured on Linux and macOS). The next spawn tries the write again. After the
+  file at the folder name goes, the daemon makes the folder and writes the record
+  (measured on Linux and macOS).
 
 ## A git in a session folder
 

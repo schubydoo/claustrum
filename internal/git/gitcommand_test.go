@@ -17,7 +17,7 @@ func TestGitChildEnvCutsSessionFolders(t *testing.T) {
 	t.Cleanup(sessiondirs.UseForTest(""))
 	s := t.TempDir()
 	other := t.TempDir()
-	sessiondirs.Remember(s)
+	_ = sessiondirs.Remember(s)
 	t.Setenv("PATH", filepath.Join(s, "bin")+string(os.PathListSeparator)+other)
 	for name, env := range map[string][]string{"gitChildEnv": gitChildEnv(), "shadowDaemonEnv": shadowDaemonEnv()} {
 		if v, ok := envValue(env, "PATH"); !ok || v != other {
@@ -82,7 +82,7 @@ func TestStartTestWithNoOtherGit(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := filepath.Dir(stub)
-	sessiondirs.Remember(bin)
+	_ = sessiondirs.Remember(bin)
 	t.Setenv("PATH", bin)
 	want := `"message":"git cannot run on this host; git not run: ` + sessiondirs.NoOtherGitError{}.Error() + `"`
 	if runtime.GOOS == "windows" {

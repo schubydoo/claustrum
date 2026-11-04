@@ -86,7 +86,7 @@ func TestBareSpawnInASessionFolder(t *testing.T) {
 	other := linkTestBinary(t, t.TempDir(), "git")
 	t.Setenv("PATH", sessionBin+":"+other)
 	cl := dial(t, startSocketServer(t))
-	sessiondirs.Remember(s)
+	_ = sessiondirs.Remember(s)
 	if out := spawnOut(t, cl, map[string]any{"id": "g1", "command": "git", "args": []string{"ran"},
 		"env": map[string]string{"CLAUSTRUM_TEST_HELPER": "echo"}}); out != "ran\n" {
 		t.Errorf("the next git wrote %q, want ran", out)
@@ -121,7 +121,7 @@ func TestBareGitSpawnPathLosesSessionFolders(t *testing.T) {
 	other := linkTestBinary(t, t.TempDir(), "git")
 	t.Setenv("PATH", other)
 	cl := dial(t, startSocketServer(t))
-	sessiondirs.Remember(s)
+	_ = sessiondirs.Remember(s)
 	given := sessionBin + ":" + other
 	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "printenvs", "PATH": given}
 	if out := spawnOut(t, cl, map[string]any{"id": "g1", "command": "git", "args": []string{"PATH"}, "env": env}); out != "PATH="+other+"\n" {
@@ -147,5 +147,80 @@ func TestBareGitSpawnGetsTheTraceNames(t *testing.T) {
 	}
 	if out := spawnOut(t, cl, map[string]any{"id": "g2", "command": "git", "args": names, "env": env, "sessionFoldersOff": true}); out != "GIT_TRACE2=/nowhere\nGIT_TRACE2_EVENT=\nGIT_TRACE2_PERF=\n" {
 		t.Errorf("with the off switch the trace names = %q", out)
+	}
+}
+
+// cliPathCommand links this test binary as <dir>/ccd-cli/2.0.0, a command of the
+// CLI path.
+func cliPathCommand(t *testing.T) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli := filepath.Join(t.TempDir(), "ccd-cli", "2.0.0")
+	if err := os.MkdirAll(filepath.Dir(cli), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(exe, cli); err != nil {
+		t.Fatal(err)
+	}
+	return cli
+}
+
+// A spawn of the CLI path whose session folder cannot be saved, with the first
+// PATH entry of the daemon in that folder, gets the refusal frame of b3081b51,
+// byte for byte, and starts no child. The log has the line of
+// the record and then the Failed to start line. The control with a record folder
+// that works starts the child.
+func TestUnsavedSessionFolderRefusesTheSpawn(t *testing.T) {
+	cl := dial(t, startSocketServer(t))
+	cli := cliPathCommand(t)
+	_, env := helperCommand(t, "echo")
+	for _, broken := range []bool{false, true} {
+		dir := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+		var err error
+		if broken {
+			err = os.WriteFile(dir, []byte("x"), 0o600)
+		} else {
+			err = os.Mkdir(dir, 0o700)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		restore := sessiondirs.UseForTest(dir)
+		buf := captureLogBuf(t)
+		id := fmt.Sprintf("cc-%v", broken)
+		// The first entry of the daemon PATH lies in the cwd.
+		cwd := t.TempDir()
+		bin := filepath.Join(cwd, "bin")
+		if err := os.Mkdir(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		raw := string(cl.call(rpcLine(t, "process.spawn", map[string]any{"id": id, "command": cli, "args": []string{"hi"}, "cwd": cwd, "env": env})))
+		restore()
+		if !broken {
+			if raw != `{"jsonrpc":"2.0","id":1,"result":{"success":true}}` {
+				t.Fatalf("control spawn = %s", raw)
+			}
+			if out := streamBytes(t, cl.waitExit(id), "stdout"); out != "hi\n" {
+				t.Fatalf("the control child wrote %q, want hi", out)
+			}
+			continue
+		}
+		const text = "Claude couldn't save its list of session folders to ~/.claude/remote on this host. Free up disk space or fix that folder's permissions"
+		if want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"` + text + `","data":{"reason":"other"}}}`; raw != want {
+			t.Errorf("spawn = %s\nwant %s", raw, want)
+		}
+		logs := buf.String()
+		record := strings.Index(logs, "[sessiondirs] cannot write to the record of session folders in "+fmt.Sprintf("%q", filepath.ToSlash(dir))+": ")
+		failed := strings.Index(logs, "[process.Manager] Failed to start process "+id+": "+text+"\n")
+		if record < 0 || failed < record {
+			t.Errorf("log = %q, want the record line and then the Failed to start line", logs)
+		}
+		if strings.Contains(logs, "Process "+id+" started") {
+			t.Errorf("the refused spawn started a child: %q", logs)
+		}
 	}
 }

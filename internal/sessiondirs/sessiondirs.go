@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,17 @@ func (NoOtherGitError) Error() string {
 	return "For security, Claude won't use a git inside a folder it works in, and this host has no other git on its PATH. Install git somewhere else, such as " + installHint
 }
 
+// SaveError is the refusal of a spawn whose new session folder cannot be saved in
+// the record folder. The text is that of b3081b51 (measured on Linux, macOS and
+// Windows).
+// It names ~/.claude/remote also for a record folder outside home (claustrum's
+// own, not measured).
+type SaveError struct{}
+
+func (SaveError) Error() string {
+	return "Claude couldn't save its list of session folders to ~/.claude/remote on this host. Free up disk space or fix that folder's permissions"
+}
+
 // folder is one session folder: the path as recorded and its resolved path, or
 // "" when the resolve failed. On macOS info is its stat, or nil when that failed.
 type folder struct {
@@ -71,6 +83,9 @@ type store struct {
 	dir     string
 	folders []folder
 	known   map[string]bool
+	// saved holds the folders that have a record: read at the start or written
+	// by this daemon.
+	saved map[string]bool
 	// passed holds the git paths that a line already named (claustrum's own).
 	passed map[string]bool
 }
@@ -87,7 +102,7 @@ var (
 )
 
 func newStore(dir string) *store {
-	return &store{dir: dir, known: map[string]bool{}, passed: map[string]bool{}}
+	return &store{dir: dir, known: map[string]bool{}, saved: map[string]bool{}, passed: map[string]bool{}}
 }
 
 // RecordDirFor is the record folder of the socket sock, and false when sock is not
@@ -154,6 +169,7 @@ func (s *store) load() {
 	for _, name := range s.recordNames(root) {
 		if _, p, ok := readRecord(root, name); ok {
 			s.add(p)
+			s.saved[p] = true
 		}
 	}
 }
@@ -206,10 +222,10 @@ func readRecord(root *os.Root, name string) (uint64, string, bool) {
 	return nums[0], p, true
 }
 
-// add puts p in memory. It reports false for a folder that is known already.
-func (s *store) add(p string) bool {
+// add puts p in memory, once.
+func (s *store) add(p string) {
 	if s.known[p] {
-		return false
+		return
 	}
 	s.known[p] = true
 	real, err := filepath.EvalSymlinks(p)
@@ -221,33 +237,70 @@ func (s *store) add(p string) bool {
 		f.info, _ = os.Stat(p)
 	}
 	s.folders = append(s.folders, f)
-	return true
 }
 
 // Remember adds the session folders of one spawn. A new folder gets a record
-// file (measured on Linux, macOS and Windows). A folder that this daemon knows
-// already gets no new record (claustrum's own, not measured). After a good write
+// file (measured on Linux, macOS and Windows). A folder that has a record already
+// gets no new one (claustrum's own, not measured). After a good write
 // the oldest records above the cap go. A spawn that carries the off switch does not
 // call it (process.spawn).
-func Remember(paths ...string) {
+//
+// A record that cannot be made or written returns SaveError when the first entry
+// of the daemon PATH lies in that folder (b3081b51, measured on Linux). The spawn
+// then starts no child (measured on Linux, macOS and Windows with a file at the
+// record folder, and with a folder that denies the write). A later entry counts
+// too, and a link entry or an entry in other letter case on macOS does not
+// (claustrum's own, not measured). With no such entry the spawn starts (measured
+// on Linux, and on macOS for an empty folder). The folder stays in memory,
+// and a later spawn tries the write again (measured on Linux and macOS). A failed
+// rename, as for a folder at the name of the record, returns nil (measured on
+// Linux, macOS and Windows). The other folders of the spawn still get their
+// records (claustrum's own, not measured).
+func Remember(paths ...string) error {
 	s := current.Load()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	wrote := false
+	wrote, refused := false, false
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
-		if err != nil || !s.add(abs) || s.dir == "" {
+		if err != nil {
 			continue
 		}
-		if err := s.write(abs); err != nil {
+		s.add(abs)
+		if s.saved[abs] || s.dir == "" {
+			continue
+		}
+		if renamed, err := s.write(abs); err != nil {
 			logging.Warnf("[sessiondirs] cannot write to the record of session folders in %q: %v; they are kept in memory until this helper ends, and written at a later start", filepath.ToSlash(s.dir), err)
+			refused = refused || !renamed && pathEntryIn(abs)
 			continue
 		}
+		s.saved[abs] = true
 		wrote = true
 	}
 	if wrote {
 		s.prune()
 	}
+	if refused {
+		return SaveError{}
+	}
+	return nil
+}
+
+// pathEntryIn reports whether an absolute entry of the daemon PATH is the folder
+// dir or lies below it, by text or by the resolved path of dir.
+func pathEntryIn(dir string) bool {
+	real, _ := filepath.EvalSymlinks(dir)
+	for _, e := range filepath.SplitList(os.Getenv("PATH")) {
+		if e == "" || !filepath.IsAbs(e) {
+			continue
+		}
+		e = filepath.Clean(e)
+		if under(e, dir) || real != "" && under(e, real) {
+			return true
+		}
+	}
+	return false
 }
 
 // RecordName is the name of the record of the folder p.
@@ -259,11 +312,19 @@ func RecordName(p string) string {
 // write writes the record of p: `<ms since epoch> <dev> <inode>\n<path>`, with no
 // newline at the end, mode 0600 (measured on Linux and macOS). It goes to a new
 // temp file `.new-<pid>-<ns>` first, and then by one rename to its name. A temp
-// file whose step fails goes by one plain remove (measured on Linux).
-func (s *store) write(p string) error {
+// file whose step fails goes by one plain remove (measured on Linux). renamed is
+// true when the step reached the rename.
+func (s *store) write(p string) (renamed bool, err error) {
 	root, err := s.openDir()
+	if errors.Is(err, fs.ErrNotExist) {
+		// A record folder that is gone is made again, with the mode of Open (b3081b51
+		// makes it and writes the record, measured on Linux).
+		if merr := os.Mkdir(s.dir, 0o700); merr == nil || errors.Is(merr, fs.ErrExist) {
+			root, err = s.openDir()
+		}
+	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer root.Close()
 	dev, ino := folderIdentity(p)
@@ -271,13 +332,14 @@ func (s *store) write(p string) error {
 	tmp := fmt.Sprintf(".new-%d-%d", os.Getpid(), time.Now().UnixNano())
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, werr := io.WriteString(f, body)
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
 	name := RecordName(p)
+	renamed = werr == nil
 	if werr == nil {
 		// A folder at the name fails the step with "file exists", as on b3081b51
 		// (measured on Linux, macOS and Windows). The test before the rename is
@@ -291,7 +353,7 @@ func (s *store) write(p string) error {
 	if werr != nil {
 		_ = root.Remove(tmp)
 	}
-	return werr
+	return renamed, werr
 }
 
 // prune removes the oldest record files while the folder holds more than

@@ -103,7 +103,7 @@ func TestSessionFoldersOffStartsTheSessionGit(t *testing.T) {
 	bin := emptyGitIn(t, s)
 	t.Setenv("PATH", bin)
 	cl := dial(t, startSocketServer(t))
-	sessiondirs.Remember(s)
+	_ = sessiondirs.Remember(s)
 	raw := string(cl.call(rpcLine(t, "git.status", map[string]any{"path": s, "baseRepo": s, "sessionFoldersOff": true})))
 	if strings.Contains(raw, "For security") || !strings.Contains(raw, `"error"`) {
 		t.Errorf("git.status with the off switch = %s, want the start error of the session git", raw)

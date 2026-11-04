@@ -18,6 +18,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/metrics"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
@@ -732,13 +733,14 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 // launcher is then the process, and its stream frames are its own. A linkTTL above
 // 0 makes a link-bound process with that unattended time (linkbound.go).
 func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*managedProc, error) {
-	return m.spawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, false)
+	return m.spawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, false, nil)
 }
 
 // spawnWithTempRoot is spawnVia with the cliTempRoot param of process.spawn. When
 // tempRoot is true, the step of clitemproot_linux.go runs after the env is built,
-// and the process keeps its answer in cliTempRoot.
-func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool) (*managedProc, error) {
+// and the process keeps its answer in cliTempRoot. folders are the session folders
+// of the spawn (sessionfolders.go), recorded before the start.
+func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*managedProc, error) {
 	path, argv := command, args
 	if launcher != nil {
 		if err := refuseManagedLauncher(*launcher, command); err != nil {
@@ -840,6 +842,16 @@ func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []stri
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
+	}
+	// The session folders get their records before the start. A record that cannot
+	// be written fails the spawn when the first daemon PATH entry lies in its folder
+	// (b3081b51, measured on Linux). The refusal comes after the line of the record,
+	// and no child starts (measured on Linux, macOS and Windows). The place after
+	// the cwd and command tests and before the supersede is claustrum's own, not
+	// measured.
+	if err := sessiondirs.Remember(folders...); err != nil {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		return nil, err
 	}
 	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_linux.go).
 	// A spawn that does not keep its child gives the folder back. A launched spawn
