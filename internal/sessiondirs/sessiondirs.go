@@ -257,6 +257,17 @@ func (s *store) add(p string) {
 // Linux, macOS and Windows). The other folders of the spawn still get their
 // records (claustrum's own, not measured).
 func Remember(paths ...string) error {
+	return remember(true, paths)
+}
+
+// RememberCreate adds the git directory of a good git.worktree_create, as Remember
+// does, and runs no prune: with 2048 records a create makes 2049 (b3081b51,
+// measured on Linux). It returns the error of Remember.
+func RememberCreate(gitDir string) error {
+	return remember(false, []string{gitDir})
+}
+
+func remember(prune bool, paths []string) error {
 	s := current.Load()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -278,7 +289,7 @@ func Remember(paths ...string) error {
 		s.saved[abs] = true
 		wrote = true
 	}
-	if wrote {
+	if wrote && prune {
 		s.prune()
 	}
 	if refused {
