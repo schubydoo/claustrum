@@ -45,10 +45,34 @@ func runGitLingering(args []string) int {
 		child := exec.Command(exe, orphan)
 		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		child.Stdout = os.Stdout
-		child.Stderr = os.Stderr
+		fail := os.Getenv("CLAUSTRUM_GITSTUB_EXIT0") == "fail"
+		// With CLAUSTRUM_GITSTUB_OUTONLY set, the orphan holds stdout only.
+		if !fail && os.Getenv("CLAUSTRUM_GITSTUB_OUTONLY") == "" {
+			child.Stderr = os.Stderr
+		}
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
+		}
+		if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"); f != "" {
+			appendLine(f, strconv.Itoa(child.Process.Pid))
+		}
+		if fail {
+			// git fails at once, as after a smudge filter that failed. The orphan
+			// holds stdout only. With CLAUSTRUM_GITSTUB_LATEERR set, a second
+			// child holds stderr only, and writes one more line 300 ms later.
+			fmt.Fprint(os.Stderr, "fatal: a.txt: smudge filter x failed\n")
+			if os.Getenv("CLAUSTRUM_GITSTUB_LATEERR") != "" {
+				late := exec.Command(exe)
+				late.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "late-stderr"})
+				late.Stderr = os.Stderr
+				if err := late.Start(); err == nil {
+					if f := os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"); f != "" {
+						appendLine(f, strconv.Itoa(late.Process.Pid))
+					}
+				}
+			}
+			return 128
 		}
 		if os.Getenv("CLAUSTRUM_GITSTUB_EXIT0") == "1" {
 			return 0 // git exits 0; the orphan keeps holding the pipe (git-exit-0 case)
@@ -779,6 +803,12 @@ func runGitHelper(mode string, args []string) (int, bool) {
 		// itself exits 0 (leaving the orphan to hold the pipe) or blocks past the deadline
 		// is chosen by CLAUSTRUM_GITSTUB_EXIT0.
 		return runGitLingering(args), true
+	case "late-stderr":
+		// The second child of a failed git-lingering read-tree. It holds stderr
+		// for 300 ms and then writes one line there.
+		time.Sleep(300 * time.Millisecond)
+		fmt.Fprint(os.Stderr, "fatal: late line of the filter\n")
+		return 0, true
 	case "git-slow":
 		// Stand-in `git` for the git.worktree_create caller-timeout tests. It passes
 		// every call through to the real git and slows one chosen call. See runGitSlow.

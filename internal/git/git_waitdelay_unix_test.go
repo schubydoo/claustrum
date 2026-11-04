@@ -174,3 +174,108 @@ func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 		}
 	})
 }
+
+// measureLingeringSpawn gives the cost of one hardenedGit call against the
+// git-lingering stub, as in TestWorktreeCreateLingeringDescendant.
+func measureLingeringSpawn(t *testing.T) time.Duration {
+	t.Helper()
+	stubLingeringGit(t, true, "0")
+	warm := t.TempDir()
+	hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
+	var spawn2 time.Duration
+	for i := 0; i < 3; i++ {
+		t0 := time.Now()
+		hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
+		spawn2 = max(spawn2, time.Since(t0))
+	}
+	return spawn2
+}
+
+// failedFilterReply is the start of the reply to the failed read-tree call of
+// the git-lingering stub.
+const failedFilterReply = `"error":"git worktree add failed (checkout): fatal: a.txt: smudge filter x failed`
+
+// A read-tree call with a timeoutMs that fails by itself, while a child holds
+// only its stdout, gets the failure of git at once. be1c1ca5 and b3081b51 answer
+// so after a failed smudge filter, with no wait to the drain cap or the deadline
+// (measured on Linux and macOS). The first case puts the deadline inside the
+// drain, where a drain to the cap answers timeout. The second puts it past the
+// drain, where a drain to the cap answers late. In the third a second child
+// holds stderr for 300 ms and writes a line there: the stderr drain still waits
+// for it (claustrum's own, not measured).
+func TestWorktreeCreateFailedCheckoutSkipsStdoutDrain(t *testing.T) {
+	const drainCap = 8 * time.Second
+	setDuration(t, &worktreeCreateDrainCap, drainCap)
+	spawn2 := measureLingeringSpawn(t)
+	tgMs := int((2 * spawn2).Milliseconds())
+	ceiling := 8*spawn2 + drainCap/2
+
+	for _, tc := range []struct {
+		name      string
+		timeoutMs int
+		lateErr   bool
+	}{
+		{"deadline inside the drain", tgMs + 3000, false},
+		{"deadline past the drain", tgMs + 60000, false},
+		{"a child that holds stderr for a short time", tgMs + 3000, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubLingeringGit(t, false, "20")
+			t.Setenv("CLAUSTRUM_GITSTUB_EXIT0", "fail")
+			endHeldDescendant(t)
+			if tc.lateErr {
+				t.Setenv("CLAUSTRUM_GITSTUB_LATEERR", "1")
+			}
+			raw, elapsed := runLingeringCreate(t, t.TempDir(), tc.timeoutMs)
+			if !strings.Contains(raw, failedFilterReply) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+				t.Fatalf("reply = %s, want the failure of git with worktree_add_failed", raw)
+			}
+			if tc.lateErr && !strings.Contains(raw, "fatal: late line of the filter") {
+				t.Errorf("reply = %s, want the late stderr line: the stderr drain did not wait", raw)
+			}
+			if elapsed >= ceiling {
+				t.Errorf("reply after %s (spawn2 %s), want under %s: the reply waited for the stdout drain", elapsed, spawn2, ceiling)
+			}
+		})
+	}
+}
+
+// A failed read-tree call with no timeoutMs keeps the drain of gitDrainWait
+// while a child holds its stdout (claustrum's own, not measured).
+func TestWorktreeCreateFailedCheckoutNoTimeoutKeepsDrain(t *testing.T) {
+	stubLingeringGit(t, false, "20")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT0", "fail")
+	endHeldDescendant(t)
+	raw, elapsed := runLingeringCreate(t, t.TempDir(), 0)
+	if !strings.Contains(raw, failedFilterReply) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Fatalf("reply = %s, want the failure of git with worktree_add_failed", raw)
+	}
+	if elapsed < gitDrainWait {
+		t.Errorf("reply after %s, want at least %s: the stdout drain was skipped", elapsed, gitDrainWait)
+	}
+}
+
+// A read-tree call that the deadline stops keeps the stdout drain, also when the
+// group kill leaves a child that holds stdout (claustrum's own, not measured).
+// The group kill does nothing here, as on Windows. The reply is timeout, and it
+// comes after the drain cap.
+func TestWorktreeCreateKilledCheckoutKeepsStdoutDrain(t *testing.T) {
+	const drainCap = 6 * time.Second
+	setDuration(t, &worktreeCreateDrainCap, drainCap)
+	oldReap := reapCheckoutGroup
+	t.Cleanup(func() { reapCheckoutGroup = oldReap })
+	reapCheckoutGroup = func(*os.Process) {}
+	spawn2 := measureLingeringSpawn(t)
+	timeoutMs := int((2 * spawn2).Milliseconds()) + 1500
+
+	stubLingeringGit(t, false, "20")
+	t.Setenv("CLAUSTRUM_GITSTUB_OUTONLY", "1")
+	endHeldDescendant(t)
+	raw, elapsed := runLingeringCreate(t, t.TempDir(), timeoutMs)
+	if !strings.Contains(raw, `"errorCode":"timeout"`) || !strings.Contains(raw, "deadline expired during the checkout") {
+		t.Fatalf("reply = %s, want timeout during the checkout", raw)
+	}
+	if floor := time.Duration(timeoutMs)*time.Millisecond + drainCap/2; elapsed < floor {
+		t.Errorf("reply after %s, want at least %s: the stdout drain was skipped after the deadline kill", elapsed, floor)
+	}
+}

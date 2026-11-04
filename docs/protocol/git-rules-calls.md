@@ -383,6 +383,13 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
   config read on standard input ends near 31 s (measured on Linux), and `config.worktree`
   reads too (not measured). A holder of stderr alone delays a config listing
   about 2 s and that read 1 to 1.5 s (measured on Linux and macOS).
+- On Linux and macOS, while a child holds only its stdout, a read-tree call with
+  `timeoutMs` that fails by itself gets its failure at once. After a failed smudge
+  filter the reply waits neither for the drain of up to 5 s after git exits nor for
+  the deadline (`b3081b51`, measured on Linux and macOS). Other failures are
+  claustrum's own, not measured. A child that holds stderr for a short time delays
+  the reply until stderr closes (claustrum's own, not measured). Windows keeps the
+  drain (claustrum's own, not measured).
 - The settle call of a create ([The settle step](git-worktree-create.md#the-settle-step)) has its own limit, and its stop stops no later call (claustrum's own).
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s
   bound of the call about the repository (measured on Linux).
