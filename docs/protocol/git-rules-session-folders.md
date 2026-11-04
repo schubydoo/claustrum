@@ -18,7 +18,8 @@ A `process.spawn` of a Claude Code shape with a `cwd` makes the `cwd` a session 
   (claustrum's own, not measured).
 
 A spawn of `sleep` makes none (measured on Linux and macOS). A spawn with the [off
-switch](#the-off-switch) makes none (measured on Windows). claustrum's own, not
+switch](#the-off-switch) makes none (measured on Windows), and another spawn makes one
+also while such a request runs (measured on Linux). claustrum's own, not
 measured: a spawn with no `cwd` makes none, a relative `--add-dir` folder is taken in
 the `cwd`, and the folder counts from the good start.
 
@@ -84,7 +85,8 @@ a bare `git` spawn (measured on Linux, macOS and Windows) and for the calls of
 - `PATH`, also the PATH of the spawn env (measured on Linux and macOS), and
   `GIT_EXEC_PATH` lose each such entry. So do `LD_LIBRARY_PATH` (measured on Linux)
   and `DYLD_LIBRARY_PATH`, `DYLD_FRAMEWORK_PATH` and `DYLD_INSERT_LIBRARIES` (measured
-  on macOS). A list with no entry left goes. A link to
+  on macOS). On macOS a PATH entry that names a session folder in other letter case
+  goes too (measured on macOS). A list with no entry left goes. A link to
   such a folder stays in PATH (measured on Windows).
 - A value of `GIT_SSH`, `GIT_ASKPASS` or `SSH_ASKPASS` in one of them goes.
 - `PYTHONPATH`, `PERL5LIB`, `MANPATH`, `PATHEXT` and other names stay.
@@ -93,7 +95,9 @@ Eight names of the daemon environment go too: `PAGER`, `EDITOR`, `VISUAL`,
 `GIT_PAGER`, `GIT_EDITOR`, `GIT_SEQUENCE_EDITOR`, `GIT_EXTERNAL_DIFF` and
 `GIT_PROXY_COMMAND`. That holds for a bare `git` spawn and each call of `git.status`
 and `git.info`, also when no session folder is known (measured on Linux, macOS and
-Windows). A name in the `env` of the spawn stays. A spawn
+Windows). A name in the `env` of the spawn stays. A spawned bare `git` also gets
+`GIT_TRACE2=0`, `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0` (measured on Linux,
+macOS and Windows), and none with the off switch (measured on Linux and macOS). A spawn
 of `git` by a path keeps them (measured on Linux). The other git methods lose them too
 (claustrum's own, not measured).
 
@@ -121,7 +125,9 @@ macOS and Windows). The session folders
 stay in the variables of the git child (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
 (claustrum's own, not measured). The first such request logs the first line below, and later ones log
-nothing. The next request without the switch logs the second line (measured on Linux).
+nothing. The first check after the last such request logs the second line. The hold is
+global: a request without the switch that runs meanwhile gets no check either
+(measured on Linux).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone

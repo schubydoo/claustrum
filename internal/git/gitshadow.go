@@ -20,6 +20,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // The settings control of the git methods, as 5fd08069 has it. That build keeps
@@ -771,6 +772,11 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// (measured on Linux). A call 10 on a full disk has both lines of git too
 	// (measured). The other calls share this path: not measured.
 	failed := func(verb string, r shadowRun) (string, string) {
+		// With every git on PATH in a session folder the answer is the cannot-run
+		// text with the refusal (b3081b51, measured on Linux).
+		if errors.As(r.err, new(sessiondirs.NoOtherGitError)) {
+			return "", gitCannotRunPrefix + r.err.Error()
+		}
 		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.allLines())
 	}
 	// A failed call of the calls 1 to 5 has the version text at the end of its
@@ -779,6 +785,9 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// calls share this path: claustrum's own, not measured.
 	setupFailed := func(verb string, r shadowRun) (string, string) {
 		_, cause := failed(verb, r)
+		if strings.HasPrefix(cause, gitCannotRunPrefix) {
+			return "", cause
+		}
 		return "", cause + shadowVersionNote(check, plainEnv)
 	}
 

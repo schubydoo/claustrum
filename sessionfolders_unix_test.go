@@ -132,3 +132,20 @@ func TestBareGitSpawnPathLosesSessionFolders(t *testing.T) {
 		t.Errorf("with the off switch the PATH = %q, want %q", out, "PATH="+given)
 	}
 }
+
+// A spawned bare git gets the three trace names of git set to 0, and none with the
+// off switch.
+func TestBareGitSpawnGetsTheTraceNames(t *testing.T) {
+	bin := linkTestBinary(t, t.TempDir(), "git")
+	t.Setenv("PATH", bin)
+	t.Setenv("GIT_TRACE2", "/nowhere")
+	cl := dial(t, startSocketServer(t))
+	names := []string{"GIT_TRACE2", "GIT_TRACE2_EVENT", "GIT_TRACE2_PERF"}
+	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "printenvs"}
+	if out := spawnOut(t, cl, map[string]any{"id": "g1", "command": "git", "args": names, "env": env}); out != "GIT_TRACE2=0\nGIT_TRACE2_EVENT=0\nGIT_TRACE2_PERF=0\n" {
+		t.Errorf("the trace names of the git child = %q", out)
+	}
+	if out := spawnOut(t, cl, map[string]any{"id": "g2", "command": "git", "args": names, "env": env, "sessionFoldersOff": true}); out != "GIT_TRACE2=/nowhere\nGIT_TRACE2_EVENT=\nGIT_TRACE2_PERF=\n" {
+		t.Errorf("with the off switch the trace names = %q", out)
+	}
+}

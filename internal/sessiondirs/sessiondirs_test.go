@@ -282,8 +282,8 @@ func TestPickGitPassesOverASessionGit(t *testing.T) {
 	if strings.Contains(buf.String(), "is on again") {
 		t.Errorf("the on-again line came at the release: %q", buf.String())
 	}
-	NotePlainRequest()
-	NotePlainRequest()
+	on()
+	on()
 	if want := filepath.Join(bin, gitFile()); cmd.Err != nil || cmd.Path != want {
 		t.Errorf("with the off switch git is %q (%v), want %q", cmd.Path, cmd.Err, want)
 	}
@@ -353,21 +353,22 @@ func TestCutPathTakesOutSessionEntries(t *testing.T) {
 	if got := CutPath(env); !slices.Equal(got, env) {
 		t.Errorf("CutPath while off = %q, want the env as given", got)
 	}
+	if got := TraceOff(env); !slices.Equal(got, env) {
+		t.Errorf("TraceOff while off = %q, want the env as given", got)
+	}
 }
 
-// While a request with the off switch runs, a spawn records no folder.
-func TestRememberRecordsNothingWhileOff(t *testing.T) {
+// A spawn without the switch records its folder also while a request with the
+// switch holds the check off.
+func TestRememberRecordsDuringTheHold(t *testing.T) {
 	dir := recordDir(t)
 	captureLog(t)
 	release := PauseCheck()
-	Remember(t.TempDir())
+	f := t.TempDir()
+	Remember(f)
 	release()
-	NotePlainRequest()
-	if got := names(t, dir); len(got) != 0 {
-		t.Errorf("a spawn while off wrote %v", got)
-	}
-	if len(current.Load().folders) != 0 {
-		t.Errorf("a spawn while off was kept in memory")
+	if got := names(t, dir); len(got) != 1 || got[0] != RecordName(f) {
+		t.Errorf("a spawn during the hold wrote %v, want its record", got)
 	}
 }
 
@@ -425,5 +426,44 @@ func TestOpenMakesTheFolderOrKeepsMemory(t *testing.T) {
 	}
 	if !current.Load().holds(filepath.Join(s2, "bin", "git")) {
 		t.Errorf("the store in memory does not hold %s", s2)
+	}
+}
+
+// TraceOff sets the three trace names of git to 0 at the end of env, in place of
+// any earlier entries of those names.
+func TestTraceOffSetsTheTraceNames(t *testing.T) {
+	t.Cleanup(UseForTest(""))
+	got := TraceOff([]string{"A=1", "GIT_TRACE2=/tmp/x", "B=2"})
+	want := []string{"A=1", "B=2", "GIT_TRACE2=0", "GIT_TRACE2_EVENT=0", "GIT_TRACE2_PERF=0"}
+	if !slices.Equal(got, want) {
+		t.Errorf("TraceOff = %q, want %q", got, want)
+	}
+}
+
+// A request that runs during the hold gets no check. After the hold its first
+// check logs the on-again line, and then its passing-over line.
+func TestOnAgainLineComesAtTheFirstCheckAfterTheHold(t *testing.T) {
+	t.Cleanup(UseForTest(""))
+	buf := captureLog(t)
+	s := t.TempDir()
+	bin := binWithGit(t, s)
+	other := binWithGit(t, t.TempDir())
+	Remember(s)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+other)
+	release := PauseCheck()
+	cmd := exec.Command("git")
+	PickGit(cmd)
+	if want := filepath.Join(bin, gitFile()); cmd.Path != want {
+		t.Errorf("during the hold git is %q, want %q", cmd.Path, want)
+	}
+	release()
+	if strings.Contains(buf.String(), "on again") {
+		t.Fatalf("the on-again line came at the release: %q", buf.String())
+	}
+	PickGit(exec.Command("git"))
+	log := buf.String()
+	on, pass := strings.Index(log, "is on again"), strings.Index(log, "passing over")
+	if on < 0 || pass < 0 || on > pass {
+		t.Errorf("log = %q, want the on-again line before the passing-over line", log)
 	}
 }

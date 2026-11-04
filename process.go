@@ -17,7 +17,6 @@ import (
 	"github.com/schubydoo/claustrum/internal/install"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/metrics"
-	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
@@ -1094,9 +1093,6 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// non-destructive: errors are logged, and it never affects the spawn result.
 	// With a launcher, argv0 is the launcher and program is the command.
 	m.recordChild(cmd.Process.Pid, path, program)
-	// The session folders of a Claude Code spawn get their records after the start
-	// (sessionfolders.go).
-	sessiondirs.Remember(sessionFoldersOf(command, args, cwd)...)
 
 	go p.stdinWriter()
 	var wg sync.WaitGroup

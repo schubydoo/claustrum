@@ -93,14 +93,11 @@ func (s *server) route(c *conn, req request) *rpc.Response {
 	// "sessionFoldersOff":true turns the check of session folders off while the
 	// request runs (b3081b51, measured on Linux for each git method and
 	// process.spawn, on macOS and Windows for git.status and process.spawn).
-	// The on-again line comes at the next such request without the switch
-	// (b3081b51, measured on Linux).
-	if ns == "git" || req.Method == "process.spawn" {
-		if sessiondirs.OffSwitchSet(req.Params) {
-			defer sessiondirs.PauseCheck()()
-		} else {
-			sessiondirs.NotePlainRequest()
-		}
+	// The hold is global: a request without the switch that runs during it gets no
+	// check either (b3081b51, measured on Linux). The on-again line comes at the
+	// first check after it (sessiondirs.on).
+	if (ns == "git" || req.Method == "process.spawn") && sessiondirs.OffSwitchSet(req.Params) {
+		defer sessiondirs.PauseCheck()()
 	}
 
 	switch ns {

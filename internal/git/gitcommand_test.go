@@ -2,7 +2,9 @@ package git
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -66,5 +68,43 @@ func TestGitChildEnvDropsTheEditorNames(t *testing.T) {
 		if v, ok := envValue(env, "FOOCTL"); !ok || v != "x" {
 			t.Errorf("%s FOOCTL = %q %v", name, v, ok)
 		}
+	}
+}
+
+// With every git on PATH in a session folder, the start test answers the
+// cannot-run text with the refusal, twice, for each of the read methods.
+func TestStartTestWithNoOtherGit(t *testing.T) {
+	requireGit(t)
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	stub, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Dir(stub)
+	sessiondirs.Remember(bin)
+	t.Setenv("PATH", bin)
+	want := `"message":"git cannot run on this host; git not run: ` + sessiondirs.NoOtherGitError{}.Error() + `"`
+	if runtime.GOOS == "windows" {
+		want = strings.ReplaceAll(want, `\`, `\\`)
+	}
+	for _, method := range []string{"git.info", "git.list_branches", "git.info"} {
+		raw, _ := f.call(t, method, map[string]any{"path": f.repo})
+		if !strings.Contains(raw, want) {
+			t.Errorf("%s = %s\nwant %s", method, raw, want)
+		}
+	}
+}
+
+// The refusal of a remove of a gone worktree puts a cannot-run reason after a
+// colon, and keeps the parentheses for another reason.
+func TestGoneLockCheckText(t *testing.T) {
+	got := goneLockCheckText("/w", gitCannotRunPrefix+"exit status 1")
+	if want := "failed to remove worktree: could not check whether /w is locked: git cannot run on this host; git not run: exit status 1"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	got = goneLockCheckText("/w", "boom")
+	if want := "failed to remove worktree: could not check whether /w is locked (boom); retry"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
 	}
 }

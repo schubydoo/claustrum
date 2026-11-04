@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 func (s *server) handleProcess(c *conn, req *request) rpc.Response {
@@ -98,6 +99,11 @@ func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 			return rpc.ErrResultData(req.ID, sr.code, sr.msg, reason)
 		}
 		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
+	}
+	// The session folders of a Claude Code spawn get their records after the start,
+	// unless the request carries the off switch (sessionfolders.go).
+	if !sessiondirs.OffSwitchSet(req.Params) {
+		sessiondirs.Remember(sessionFoldersOf(p.Command, p.Args, p.Cwd)...)
 	}
 	res := rpc.SpawnResult{Success: true}
 	if p.WantPid {

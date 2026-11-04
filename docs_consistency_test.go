@@ -660,7 +660,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-info.md":                  1889, // the sessionFoldersOff row and member rule of b3081b51. 1850: the page rewrite
 	"docs/protocol/git-rules-calls.md":           5535, // the off switch and the cut link. 5522: the link to the session folders. 5513: the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":          2884, // moved from PROTOCOL.md
-	"docs/protocol/git-rules-session-folders.md": 1234, // the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
+	"docs/protocol/git-rules-session-folders.md": 1312, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 	"docs/protocol/git-rules-settings-copy.md":   3300, // the third run of the call about the repository. the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":           4642, // the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":         997,  // the page rewrite
@@ -673,7 +673,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-killandwait.md":       977,  // the page template
 	"docs/protocol/process-link-bound.md":        740,
 	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
-	"docs/protocol/process-spawn.md":             3548, // the bare git row. 3526: the sessionFoldersOff row. 3508: the temp-folder test of 683cc6a9. 3474: rewrite to the page template
+	"docs/protocol/process-spawn.md":             3615, // the bare git refusal row. 3548: the bare git row. 3526: the sessionFoldersOff row. 3508: the temp-folder test of 683cc6a9. 3474: rewrite to the page template
 	"docs/protocol/process-stdin.md":             929,  // attach
 	"docs/protocol/server.md":                    1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                   584,  // moved from PROTOCOL.md

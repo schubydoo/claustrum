@@ -2725,8 +2725,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Response {
 	refuse := removeRefusal(req)
 	lockCheck := func(reason string) rpc.Response {
-		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath +
-			" is locked (" + reason + "); retry")
+		return refuse(goneLockCheckText(p.WorktreePath, reason))
 	}
 	// The check of the daemon's own GIT_CONFIG_COUNT refuses in both modes. Without
 	// worktreeRoot it comes after a trust refusal and before the "no repository"
@@ -2907,6 +2906,18 @@ func pruneGitDir(repo string) string {
 		}
 	}
 	return filepath.Join(repo, ".git")
+}
+
+// goneLockCheckText is the refusal of a remove of a gone worktree whose lock check
+// failed for reason. A reason of git that cannot run follows a colon, with no
+// "retry": b3081b51 answers `... is locked: git cannot run on this host; git not
+// run: exit status 1` (measured on Linux). Other reasons keep the parentheses.
+func goneLockCheckText(worktreePath, reason string) string {
+	if strings.HasPrefix(reason, gitCannotRunPrefix) {
+		return "failed to remove worktree: could not check whether " + worktreePath + " is locked: " + reason
+	}
+	return "failed to remove worktree: could not check whether " + worktreePath +
+		" is locked (" + reason + "); retry"
 }
 
 // lockCheckRefusal is git.worktree_remove's answer when baseRepo's registrations cannot

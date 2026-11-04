@@ -227,13 +227,9 @@ func (s *store) add(p string) bool {
 // Remember adds the session folders of one spawn. A new folder gets a record
 // file (measured on Linux, macOS and Windows). A folder that this daemon knows
 // already gets no new record (claustrum's own, not measured). After a good write
-// the oldest records above the cap go. While a request with the off switch runs,
-// nothing is recorded, in memory neither (measured on Windows for a spawn that
-// carries the switch, the rest not measured).
+// the oldest records above the cap go. A spawn that carries the off switch does not
+// call it (process.spawn).
 func Remember(paths ...string) {
-	if !on() {
-		return
-	}
 	s := current.Load()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -392,10 +388,22 @@ func under(p, dir string) bool {
 }
 
 // on reports whether the check runs: no request that carries the off switch runs.
+//
+// The first check after the last such request ends logs the on-again line. In
+// b3081b51 the line comes at the next request without the switch, and 3 s with no
+// request write nothing. A request that came during the hold logs it at its first
+// check after the hold, before its passing-over line (measured on Linux).
 func on() bool {
 	offMu.Lock()
 	defer offMu.Unlock()
-	return offHolds == 0
+	if offHolds > 0 {
+		return false
+	}
+	if offLogged {
+		offLogged = false
+		logging.Infof("[sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more")
+	}
+	return true
 }
 
 // PickGit makes cmd, a command of git by its bare name, skip a git in a session
@@ -410,7 +418,7 @@ func PickGit(cmd *exec.Cmd) {
 	s := current.Load()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cmd.Err != nil || len(s.folders) == 0 || !on() || !s.holds(cmd.Path) {
+	if !on() || cmd.Err != nil || len(s.folders) == 0 || !s.holds(cmd.Path) {
 		return
 	}
 	s.passOver(cmd.Path)
@@ -448,7 +456,7 @@ func WarnBareCommand(name, path string) {
 	s := current.Load()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !warnBare || len(s.folders) == 0 || !on() || !s.holds(path) {
+	if !on() || !warnBare || len(s.folders) == 0 || !s.holds(path) {
 		return
 	}
 	logging.Warnf("[sessiondirs] WARNING: starting %q from %q, which is in or reached through a folder that a Claude Code session can write. A sandboxed session could replace it with a program of its own, which would then run outside the sandbox. To prevent this, see that PATH on this host finds %q outside such folders, or, where the command is configured (an MCP server's settings, for one), give the full path of a copy outside them.", name, filepath.ToSlash(path), name)
@@ -502,7 +510,7 @@ func CutPath(env []string) []string {
 	s := current.Load()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.folders) == 0 || !on() {
+	if !on() || len(s.folders) == 0 {
 		return env
 	}
 	var out []string
@@ -553,7 +561,47 @@ func (s *store) holdsText(e string) bool {
 			return true
 		}
 	}
-	return false
+	return matchByIdentity && s.entryByIdentity(e)
+}
+
+// entryByIdentity reports whether the PATH entry e or a folder above it is a
+// session folder by its device and inode, read with Lstat, so a link entry does
+// not match. b3081b51 on macOS cuts an entry that names a session folder in other
+// letter case (measured on macOS). The test by identity is claustrum's own.
+func (s *store) entryByIdentity(e string) bool {
+	for d := e; ; d = filepath.Dir(d) {
+		if fi, err := os.Lstat(d); err == nil {
+			for _, f := range s.folders {
+				if f.info != nil && os.SameFile(fi, f.info) {
+					return true
+				}
+			}
+		}
+		if filepath.Dir(d) == d {
+			return false
+		}
+	}
+}
+
+// TraceOff is env with the trace names of git set to 0 at its end, for a spawn of a
+// bare git: GIT_TRACE2, GIT_TRACE2_EVENT and GIT_TRACE2_PERF. Other entries of
+// these names go. b3081b51 gives a spawned bare git the three entries (measured on
+// Linux, macOS and Windows), and none while a request with the off switch runs
+// (measured on Linux and macOS). Their place and a value in the env of the spawn
+// are not measured.
+func TraceOff(env []string) []string {
+	if !on() {
+		return env
+	}
+	names := []string{"GIT_TRACE2", "GIT_TRACE2_EVENT", "GIT_TRACE2_PERF"}
+	out := slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		name, _, _ := strings.Cut(kv, "=")
+		return envNameIn(name, names)
+	})
+	for _, n := range names {
+		out = append(out, n+"=0")
+	}
+	return out
 }
 
 // OffSwitchSet reports whether params hold "sessionFoldersOff":true. Every other
@@ -586,19 +634,5 @@ func PauseCheck() (release func()) {
 			offHolds--
 			offMu.Unlock()
 		})
-	}
-}
-
-// NotePlainRequest logs the on-again line at the first request without the
-// switch after the OFF line, when no request with the switch runs. b3081b51 writes
-// it at the next request with no switch, and 3 s with no request write nothing
-// (measured on Linux). A request with no switch while one with it runs logs
-// nothing (claustrum's own, not measured).
-func NotePlainRequest() {
-	offMu.Lock()
-	defer offMu.Unlock()
-	if offLogged && offHolds == 0 {
-		offLogged = false
-		logging.Infof("[sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more")
 	}
 }

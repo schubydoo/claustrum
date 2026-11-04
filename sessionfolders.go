@@ -40,7 +40,7 @@ func bareCommandStart(cmd *exec.Cmd, command string, env map[string]string) {
 		}
 		return
 	}
-	cmd.Env = sessiondirs.CutPath(sessiondirs.WithoutEditors(cmd.Env, env))
+	cmd.Env = sessiondirs.TraceOff(sessiondirs.CutPath(sessiondirs.WithoutEditors(cmd.Env, env)))
 	sessiondirs.PickGit(cmd)
 }
 
@@ -54,8 +54,9 @@ func bareCommandStart(cmd *exec.Cmd, command string, env map[string]string) {
 // before a `--` arg (measured on Linux and Windows): the value of `--add-dir=<d>`,
 // and each arg after `--add-dir` up to the next arg that starts with `-`. An empty
 // value is skipped (measured on Linux). A relative --add-dir folder is taken in cwd,
-// and a spawn with no cwd records nothing (claustrum's own, not measured). While a
-// request with the off switch runs, the spawn records nothing (sessiondirs.Remember).
+// and a spawn with no cwd records nothing (claustrum's own, not measured). A spawn
+// that carries the off switch records nothing (measured on Windows). Another spawn
+// records also while such a request runs (measured on Linux).
 func sessionFoldersOf(command string, args []string, cwd string) []string {
 	if cwd == "" {
 		return nil

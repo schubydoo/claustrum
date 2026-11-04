@@ -50,10 +50,16 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
+
+### Start failures
+
+| Code | Text | Cause |
+|---|---|---|
 | `-32603` | `chdir <cwd>: stat <cwd>: no such file or directory` | `cwd` does not exist. |
 | `-32603` | `chdir <cwd>: not a directory` | `cwd` is not a folder. |
 | `-32603` | `exec: "<name>": executable file not found in $PATH` | A bare name that the lookup does not find, and on Windows also a path with no extension. On Windows the text ends in `%PATH%`. |
 | `-32603` | `fork/exec <command>: <reason>` | The command is missing, a folder or not executable, or the start fails. On Windows a missing file gives the reason `The system cannot find the file specified.` |
+| `-32603` | `For security, Claude won't use a git inside a folder it works in, and this host has no other git on its PATH. Install git somewhere else, such as /usr/bin` | A bare `git` whose every git on `PATH` lies in a [session folder](git-rules-session-folders.md#with-no-other-git) (`b3081b51`). On Windows the text ends `C:\Program Files\Git`. |
 | `-32005` | `the managed launcher <path> could not be started: <reason>` | The launcher passes the checks and does not start. |
 
 `<cwd>` is the value after the tilde expansion. `<command>` is the path of the start: the value of the request, or for a bare name the path that the lookup found on `PATH`.

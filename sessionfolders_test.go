@@ -126,3 +126,33 @@ func TestSessionFoldersOffStartsTheSessionGit(t *testing.T) {
 		t.Errorf("the on-again line came %d times, want once at the plain request", n)
 	}
 }
+
+// A Claude Code spawn without the switch gets its record also while a request with
+// the switch holds the check off. A spawn with the switch gets none.
+func TestSpawnDuringTheHoldIsRecorded(t *testing.T) {
+	cl := dial(t, startSocketServer(t))
+	dir := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessiondirs.UseForTest(dir))
+	exe, env := helperCommand(t, "echo")
+	release := sessiondirs.PauseCheck()
+	n := t.TempDir()
+	raw := string(cl.call(rpcLine(t, "process.spawn", map[string]any{"id": "cc", "command": exe, "args": []string{"stream-json"}, "cwd": n, "env": env})))
+	release()
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("spawn = %s", raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, sessiondirs.RecordName(n))); err != nil {
+		t.Errorf("the record of the spawn during the hold: %v", err)
+	}
+	o := t.TempDir()
+	raw = string(cl.call(rpcLine(t, "process.spawn", map[string]any{"id": "co", "command": exe, "args": []string{"stream-json"}, "cwd": o, "env": env, "sessionFoldersOff": true})))
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("spawn = %s", raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, sessiondirs.RecordName(o))); !os.IsNotExist(err) {
+		t.Errorf("a spawn with the switch wrote a record: %v", err)
+	}
+}
