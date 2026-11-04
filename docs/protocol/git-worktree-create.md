@@ -247,7 +247,7 @@ In the state `shadow` the daemon compares files of the new worktree with the com
 - A file passes if its bytes equal the output of the filters of its path. A smudge filter of the user config with the same output at each run passes.
 - A link to a folder outside the repository passes, and so do mode 100755 and a Git LFS pointer with no git-lfs.
 - A file that cannot be read and a name that the commit does not have refuse before the `hash-object` call, and the log line counts 0 files (measured on Windows).
-- On Windows a file that another process holds open with no share mode gives `worktree_verify_retry`, with `The process cannot access the file because it is being used by another process.` (measured on Windows).
+- On Windows a file that another process holds open for writing with no share mode gives `worktree_verify_retry`, with `The process cannot access the file because it is being used by another process.` (measured on Windows).
 - The calls `cat-file commit`, `cat-file tree` and `hash-object --no-filters --stdin-paths` run in `baseRepo` (measured on Linux and macOS).
 - A committed link goes on no `hash-object` list, and the log line counts the other files only (measured on Linux). Its blob is read first and counts as an object (measured on Linux and Windows). A link that the checkout wrote as a regular file is hashed and counted (measured on Windows).
 - `cat-file --filters --path=<f> <blob>` runs in the new worktree, only for a file that differs (measured on Windows).

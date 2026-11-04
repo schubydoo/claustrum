@@ -1,7 +1,7 @@
 # Session folders
 
-The daemon does not start a git that PATH finds in a folder that a Claude Code session
-works in, unless the request turns the check off. Each rule on this page is of build `b3081b51`, and it names its systems.
+The git methods and a bare `git` spawn skip a git on PATH in a session folder: a folder
+that a Claude Code session works in. The request can turn this check off. Each rule on this page is of build `b3081b51`, and it names its systems.
 
 ## Which spawn makes a session folder
 
@@ -21,7 +21,8 @@ A spawn of `sleep` makes none (measured on Linux and macOS). A spawn with the [o
 switch](#the-off-switch) makes none (measured on Windows), and another spawn makes one
 also while such a request runs (measured on Linux). claustrum's own, not
 measured: a spawn with no `cwd` makes none, a relative `--add-dir` folder is taken in
-the `cwd`, and the folder counts from the good start.
+the `cwd`, and the folder counts from the good start. A `git.worktree_create` records no
+`<repo>/.git` folder (claustrum's own, not measured). `b3081b51` records it (measured on Linux, macOS and Windows).
 
 ## The record
 
@@ -66,9 +67,9 @@ The git calls of the git methods pass over a git in a session folder. So does a
 (measured on Windows). A PATH entry with a link to such a folder
 counts too. The next git on the PATH of the daemon runs, and the daemon logs the first
 line below (measured on Linux, macOS and Windows). claustrum logs it once for each
-path (not measured). On macOS a PATH entry that names a session folder in other letter
+path (claustrum's own, not measured). On macOS a PATH entry that names a session folder in other letter
 case is passed over too (measured on macOS). On Windows the paths match in any letter
-case (claustrum's own, not measured).
+case (measured on Windows).
 
 ```text
 [sessiondirs] passing over "<path>": it lies in, or is reached through, a folder that Claude works in. Each file in "<dir>" ends in the path of one such folder; remove the file to have that folder forgotten
