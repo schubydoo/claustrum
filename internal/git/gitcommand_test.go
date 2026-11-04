@@ -108,3 +108,12 @@ func TestGoneLockCheckText(t *testing.T) {
 		t.Errorf("text = %q, want %q", got, want)
 	}
 }
+
+// The settingsControl member goes under "sessionFoldersOff":true alone on macOS and
+// Windows, and stays on Linux.
+func TestSessionOffDropsControlPerSystem(t *testing.T) {
+	want := runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+	if sessionOffDropsControl != want {
+		t.Errorf("sessionOffDropsControl = %v on %s, want %v", sessionOffDropsControl, runtime.GOOS, want)
+	}
+}

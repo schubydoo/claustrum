@@ -137,5 +137,4 @@ global: a request without the switch that runs meanwhile gets no check either
 ```
 
 A `git.info` with the switch and no `"shadowDirOff":true` answers a repository with no
-`settingsControl` member on Windows, and with it on Linux (measured). macOS is not
-measured.
+`settingsControl` member on Windows and macOS, and with it on Linux (measured).

@@ -657,10 +657,10 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-stat.md":                434, // the page rewrite
 	"docs/protocol/files-validate.md":            365,
 	"docs/protocol/flags.md":                     2639, // the prune after a good install. 2633: moved from PROTOCOL.md
-	"docs/protocol/git-info.md":                  1889, // the sessionFoldersOff row and member rule of b3081b51. 1850: the page rewrite
+	"docs/protocol/git-info.md":                  1893, // the macOS member rule of b3081b51. 1889: the sessionFoldersOff row and member rule of b3081b51. 1850: the page rewrite
 	"docs/protocol/git-rules-calls.md":           5535, // the off switch and the cut link. 5522: the link to the session folders. 5513: the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":          2884, // moved from PROTOCOL.md
-	"docs/protocol/git-rules-session-folders.md": 1337, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
+	"docs/protocol/git-rules-session-folders.md": 1335, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 	"docs/protocol/git-rules-settings-copy.md":   3300, // the third run of the call about the repository. the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":           4642, // the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":         997,  // the page rewrite
