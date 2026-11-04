@@ -22,11 +22,14 @@ A `process.spawn` of a Claude Code shape with a `cwd` makes the `cwd` a session 
   (claustrum's own, not measured). A bare `git` with `stream-json` makes none, and a
   git by its full path with it makes one (measured on Linux, macOS and Windows).
 
+### Other spawns
+
 A spawn of `sleep` makes none (measured on Linux and macOS). A spawn with the [off
 switch](#the-off-switch) makes none (measured on Windows), and another spawn makes one
 also while such a request runs (measured on Linux). claustrum's own, not
 measured: a spawn with no `cwd` makes none, a relative `--add-dir` folder is taken in
-the `cwd`, and the record comes after the `cwd` and command tests and before the start.
+the `cwd`, a `launcher` spawn with `stream-json` counts its `--add-dir` folders, the
+name `ccd-cli` matches in its exact letter case, and the record comes after the `cwd` and command tests and before the start.
 
 ### A create
 
@@ -39,6 +42,9 @@ on Linux and macOS). `git.info`, `git.status` and `git.list_branches` make no re
 (`b3081b51`, measured on Linux). For a `baseRepo` that is a linked worktree, the folder
 is the git directory of its main repository (claustrum's own, not measured). A failed
 create and a create with the off switch make none (claustrum's own, not measured).
+The record is written at the good reply, and on Linux and macOS its path has its links
+resolved (claustrum's own, not measured). A create whose trust check names no git
+directory records the folder that git names (claustrum's own, not measured).
 
 ## The record
 
@@ -60,8 +66,8 @@ macOS and Windows), with mode 0700 (measured on Linux and macOS).
 - A file goes to a temp file `.new-<pid>-<ns>` first, and then by one rename to its
   name. A folder at that name fails the write. The folder stays, the temp file goes,
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
-  macOS and Windows). claustrum writes that file at no later start (claustrum's own,
-  not measured).
+  macOS and Windows). Each later spawn in that folder tries the write again and logs
+  the line again (claustrum's own, not measured).
 - After a spawn the folder keeps at most 2048 record files. After a good write the
   records with the lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS
