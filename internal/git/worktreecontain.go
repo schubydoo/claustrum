@@ -119,10 +119,17 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 // such a baseRepo on git.worktree_create (errorCode "nested_base_repo") and
 // git.worktree_remove (no errorCode). git.list_branches ignores a baseRepo member
 // (measured on Linux).
+//
+// The walk runs on the resolved path and on the path as spelled, so a marker
+// above the path as sent counts too (b3081b51 and be1c1ca5, measured on Linux).
+// The spelling walk tests the marker only, not the `.claude/worktrees` name (claustrum's own, not measured).
 func baseRepoUnderManagedWorktrees(repo string) bool {
+	if markerAboveSpelling(repo) {
+		return true
+	}
 	p := pathcanon.Canonical(repo)
 	for {
-		if fi, err := os.Stat(filepath.Join(p, managedWorktreesMarker)); err == nil && !fi.IsDir() {
+		if holdsMarkerEntry(p) {
 			return true
 		}
 		parent := filepath.Dir(p)
@@ -131,6 +138,34 @@ func baseRepoUnderManagedWorktrees(repo string) bool {
 		}
 		if filepath.Base(p) == worktreesSubdir && filepath.Base(parent) == claudeDirName {
 			return true
+		}
+		p = parent
+	}
+}
+
+// holdsMarkerEntry reports whether dir holds a `.claude-managed-worktrees` entry. A
+// link counts when its target exists
+// (claustrum's own, not measured).
+func holdsMarkerEntry(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, managedWorktreesMarker))
+	return err == nil
+}
+
+// markerAboveSpelling reports whether repo, made absolute and cleaned but with no
+// link resolved, or one of its parents holds a marker entry. A ".." is folded by
+// name (claustrum's own, not measured).
+func markerAboveSpelling(repo string) bool {
+	p, err := filepath.Abs(repo)
+	if err != nil {
+		return false
+	}
+	for {
+		if holdsMarkerEntry(p) {
+			return true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return false
 		}
 		p = parent
 	}

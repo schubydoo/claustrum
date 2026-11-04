@@ -53,7 +53,7 @@ Decide by `errorCode` first.
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
 | `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link. |
 | `not_a_repo` | `baseRepo` is not a git repository, as with `refs` 0600 (build `52d82f0a`, Linux and macOS), or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
-| `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
+| `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)), or the daemon does not accept it as a trust root. A marker above the path as sent counts too (`b3081b51`, measured on Linux). |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. Or, with `worktreeRoot`, a git call or a `.git` test failed first. |
 | `worktree_add_failed` | `git worktree add`, the checkout or the `config.worktree` step failed. The text holds the message of git, or a refusal of the daemon before the add. A `git worktree add` that runs 2 minutes is stopped. |
 | `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |

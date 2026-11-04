@@ -662,7 +662,8 @@ func TestWorktreeRemoveExternalSymlinkChainCalls(t *testing.T) {
 
 // Measured on Linux: the HEAD of baseRepo reads "garbage" and its commondir is a
 // dangling symlink. The worktree folder is present. The one git call is the read
-// of the user excludes.
+// of the user excludes. The text is the shape refusal after the words of the lock
+// check (`b3081b51`, measured on Linux and macOS).
 func TestWorktreeRemoveRefusedGitDirReadsExcludes(t *testing.T) {
 	f := newRegFixture(t)
 	writeFile(t, filepath.Join(f.T, ".git", "HEAD"), "garbage\n", 0o644)
@@ -671,10 +672,8 @@ func TestWorktreeRemoveRefusedGitDirReadsExcludes(t *testing.T) {
 	}
 	run := removeCallLog(t, f.root)
 	raw, calls := run("git.worktree_remove", f.removeParams())
-	want := "could not check whether " + f.S + " is locked (its registrations could not be examined); retry"
-	if !strings.Contains(raw, want) {
-		t.Fatalf("frame = %s\nwant %s", raw, want)
-	}
+	wantRemoveError(t, raw, "failed to remove worktree: could not check whether "+f.S+" is locked: "+
+		wantShapeRefusal(filepath.Join(f.T, ".git", "commondir")))
 	if !exists(f.S) {
 		t.Error("the worktree folder was deleted")
 	}

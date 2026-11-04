@@ -757,7 +757,7 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 		return removeFrame("refusing to remove worktree: " + tickPath(p) + " is not inside the repository " + f.top +
 			"; session worktrees are only created and removed under <repository>/.claude/worktrees")
 	}
-	notWorktree := removeFrame("refusing to remove worktree: " + w9 + " is not a worktree of " + missing + " (" + w9 +
+	notWorktree := removeFrame("refusing to remove worktree: " + w9 + " is not a worktree of " + missing + " (" + tickPath(w9) +
 		" has no .git file), so it is left in place; remove it by hand if it is a leftover")
 	unreadRepo := removeFrame("failed to remove worktree: could not check whether " + w9 +
 		" is locked (the repository at " + missing + " could not be read); retry")

@@ -752,9 +752,10 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 		{"base_missing_worktree_holds_a_file", true, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: nope(f), target: f.p0, want: lock(f.p0, nope(f))}
 		}},
+		// This row follows `b3081b51` (measured on Linux): the backticks.
 		{"base_missing_worktree_holds_a_file_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
 			return wrRow{base: nope(f), target: f.p0, want: refusalFrame(t, "refusing to remove worktree: "+f.p0+
-				" is not a worktree of "+nope(f)+" ("+f.p0+" has no .git file), so it is left in place; remove it by hand if it is a leftover")}
+				" is not a worktree of "+nope(f)+" ("+tickPath(f.p0)+" has no .git file), so it is left in place; remove it by hand if it is a leftover")}
 		}},
 		{"base_missing_worktree_empty", true, func(t *testing.T, f *wrFixture) wrRow {
 			leaf := emptyLeaf(t, f)
@@ -989,7 +990,9 @@ func tailArgv(calls []envCall, n int) [][]string {
 // Measured cases (`89cb6289`, measured on Linux). The git directory has a HEAD that reads
 // "garbage". With a dangling relative commondir symlink that stays in `.git`, the trust
 // check refuses it with the shape text. That holds on a remove with worktreeRoot, on
-// git.info and on git.status. A remove without worktreeRoot keeps the lock-check text.
+// git.info and on git.status. A remove without worktreeRoot answers the shape text after
+// the words of the lock check (`b3081b51`, measured on Linux and macOS). `89cb6289` answered the
+// lock-check text there on Linux.
 // With the bad HEAD alone, the remove with worktreeRoot answers "exit status 128". Nothing
 // is deleted. Mutation: trust the dangling symlink before the git-directory test.
 func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
@@ -1022,10 +1025,10 @@ func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 		wantRPCError(t, "status(T,T)", status(t, f.T, f.T), shape)
 	})
 	t.Run("remove_in_repository", func(t *testing.T) {
-		f, inRepo, _ := arm(t, true)
+		f, inRepo, shape := arm(t, true)
 		got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": f.T, "worktreePath": inRepo, "branchName": "w1"}))
-		if want := refusalFrame(t, wantLockCheck(inRepo)); got != want {
+		if want := refusalFrame(t, "failed to remove worktree: could not check whether "+inRepo+" is locked: "+shape); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 		f.kept(t, inRepo, "w1")

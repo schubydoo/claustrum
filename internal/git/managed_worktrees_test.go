@@ -64,3 +64,57 @@ func TestBaseRepoUnderManagedWorktreesRefused(t *testing.T) {
 		t.Errorf("list_branches(normal) = %s, want isRepo:true with the branch", lb)
 	}
 }
+
+// markerLayoutFrames sends git.list_branches, git.worktree_remove of the worktree w2
+// and git.worktree_create of w1 for the baseRepo base, and wants the refusals of
+// b3081b51 and be1c1ca5 (measured on Linux). real is the repository behind base.
+// The worktree w2 and its entry stay, and w1 is not made.
+func markerLayoutFrames(t *testing.T, base, real string) {
+	t.Helper()
+	h := newTestGitDeps()
+	refusal := jsonString(t, managedWorktreesRefusal)
+	if got, want := gitDispatch(t, h, rpcLine(t, "git.list_branches", map[string]any{"path": base})),
+		`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`; got != want {
+		t.Errorf("list_branches(%s) = %s\nwant %s", base, got, want)
+	}
+	w2 := filepath.Join(base, ".claude", "worktrees", "w2")
+	if got, want := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": base, "worktreePath": w2, "branchName": "w2"})),
+		`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":`+refusal+`}}`; got != want {
+		t.Errorf("worktree_remove(%s) = %s\nwant %s", base, got, want)
+	}
+	w1 := filepath.Join(base, ".claude", "worktrees", "w1")
+	if got, want := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": base, "worktreePath": w1, "branchName": "w1"})),
+		`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":`+refusal+`,"errorCode":"nested_base_repo"}}`; got != want {
+		t.Errorf("worktree_create(%s) = %s\nwant %s", base, got, want)
+	}
+	mustExist(t, filepath.Join(real, ".claude", "worktrees", "w2", ".git"))
+	mustExist(t, filepath.Join(real, ".git", "worktrees", "w2"))
+	for _, p := range []string{filepath.Join(real, ".claude", "worktrees", "w1"), filepath.Join(real, ".git", "worktrees", "w1")} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("%s exists (err=%v), want no new worktree", p, err)
+		}
+	}
+}
+
+// markerLayoutRepo makes the repository dir with the linked worktree w2 in
+// dir/.claude/worktrees.
+func markerLayoutRepo(t *testing.T, dir string) {
+	t.Helper()
+	initTrustMain(t, dir)
+	runGit(t, dir, "worktree", "add", "-q", "-b", "w2", filepath.Join(dir, ".claude", "worktrees", "w2"))
+}
+
+// A marker that is a folder refuses a baseRepo below it, as a marker file does
+// (b3081b51 and be1c1ca5, measured on Linux).
+func TestBaseRepoBelowMarkerFolderRefused(t *testing.T) {
+	requireGit(t)
+	m := t.TempDir()
+	if err := os.Mkdir(filepath.Join(m, managedWorktreesMarker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := filepath.Join(m, "R")
+	markerLayoutRepo(t, r)
+	markerLayoutFrames(t, r, r)
+}
