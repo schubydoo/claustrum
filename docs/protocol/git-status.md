@@ -183,7 +183,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 === "Windows"
 
     - With no global excludes file of the user, the status runs. The reference differs ([D16](../DIVERGENCES.md#d16)).
-    - A `baseRepo` with a junction before its last component, or a dangling junction, does not resolve: `"isRepo": false`.
+    - A `baseRepo` with a junction before its last component, or a dangling junction, does not resolve: `"isRepo": false`. A link to a network or device path is refused first ([A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path)).
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
@@ -193,6 +193,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.
     - A gitlink path that is a regular file gives no entry. A junction there gives ` (submodule; could not be inspected)`.
     - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
+    - A `baseRepo` through a link to a network or device path gives `-32603`, and no git call runs on it. [A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path).
 
 ## Rare states
 

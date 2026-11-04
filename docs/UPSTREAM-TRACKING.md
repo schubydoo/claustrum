@@ -616,7 +616,8 @@ the Go source, not measured). These answers rest on that failure:
   `git.worktree_remove` for a junction before the last component of a `baseRepo`
   that exists (measured on Windows).
 - The `"isRepo": false` answer of `git.status` (`baseRepo`) and
-  `git.list_branches` (`path`) for `<dir>\<junction>\T` (from the code).
+  `git.list_branches` (`path`) for `<dir>\<junction>\T` (from the code), except a
+  `git.status` junction to a network or device path.
 - The `git.info` answers for a path with a junction before its last component
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
   pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),

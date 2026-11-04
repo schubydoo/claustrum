@@ -421,6 +421,14 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 - `GIT_OBJECT_DIRECTORY` in the daemon's environment is no refusal. The log gets `[GitHandler] GIT_OBJECT_DIRECTORY from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`. claustrum logs it once (claustrum's own, not measured).
 - A `baseRepo` that resolves through a chain of 31 links passes. A chain of 32 or more links gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.`` `git.info` runs this test on `path` too. The text names the path cleaned, so `C:/x/L32` reads as `C:\x\L32` (measured on Windows).
 
+### A link to a network or device path
+
+On Windows `b3081b51` refuses a repository path through a symbolic link or a junction to a network or device path (measured on Windows). The targets of the rows are a UNC path, `\\.\NUL`, a `\\?\Volume{guid}` path and a `\\?\GLOBALROOT` path. A `\\?\Volume{guid}` or `\\?\GLOBALROOT` target that leads to a local folder is refused too. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository. The text is:
+
+`` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
+
+`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured).
+
 ## A FIFO where the daemon reads a git file
 
 On Linux and macOS the daemon opens three files of its own reads without
