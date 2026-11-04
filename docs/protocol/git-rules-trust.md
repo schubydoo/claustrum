@@ -411,7 +411,7 @@ The daemon reads `<git dir>\objects\info\alternates` and the same file of each f
 | Over 1 MiB, or a folder | `` `<file>` couldn't be read as a regular file of at most 1 MiB, so git wasn't run. Check that file and its permissions. `` |
 | 1000 lines, a chain of 20 folders | `` `<file>` lists more object directories than Claude checks (at most 64 in total, nested at most 6 deep), so git wasn't run. `` and the repack advice |
 
-The repack advice is `To stop depending on that file, run "git repack -a -d" in the repository it belongs to, then delete that file.` A valid line gives the frame of `be1c1ca5`.
+The repack advice is `To stop depending on that file, run "git repack -a -d" in the repository it belongs to, then delete that file.` A valid line gives the frame of `be1c1ca5`. These checks run with `"shadowDirOff":true` too (claustrum's own, not measured).
 
 `git.info`, a create and a remove are measured with Windows line endings and 1000 lines only. claustrum runs only those two tests there (claustrum's own, not measured).
 
