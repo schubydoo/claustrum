@@ -613,6 +613,8 @@ the Go source, not measured). These answers rest on that failure:
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
   pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
   [Git-directory trust check](protocol/git-rules-trust.md#git-directory-trust-check)).
+- The link count of `git.status` and the link test of an alternates line. Both read a
+  junction as `ModeIrregular` (from the code).
 
 With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23
 in `go.mod`, the walk follows the junction. Those answers then flip or move to the
