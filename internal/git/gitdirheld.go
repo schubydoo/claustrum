@@ -25,9 +25,11 @@ import (
 // handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
 // of `repo\.git` passes during a create, except after its calls 7 and 8
 // (measured on Windows). On claustrum it passes at each of the 12 swap points
-// (measured, 3 of 3 runs). After a rename the acts below still go to the held
-// folder, at its new name. Not measured: a rename at the moment when a step
-// has an entry of the folder open.
+// (measured, 3 of 3 runs). On b3081b51 and on claustrum it passes at each of
+// 4 swap points of a later round, in 8 of 8 runs (measured on Windows).
+// After a rename the acts below still go to the held folder, at its new name.
+// Not measured: a rename at the moment when a step has an entry of the folder
+// open.
 //
 //   - The stale registration before the add: dropStaleRegistration on Windows,
 //     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
@@ -70,8 +72,11 @@ import (
 // takes it before the move (adopt). The steps above then act through that
 // folder.
 //
-// No measurement has a swap between the test of a step and one of
-// these acts. In the measured swaps on Windows the folder at the path
+// One measured swap comes between the test of a step and one of these acts:
+// a junction at `.git` right before `rev-parse --absolute-git-dir`, on
+// Windows. The stale step after it removes the old registration of the held
+// folder. b3081b51 removes that of the folder behind the junction (measured
+// on Windows). In the measured swaps on Windows the folder at the path
 // is unchanged on claustrum (measured on Windows).
 
 // removeHeldEntry removes the entry name with its content through root, the

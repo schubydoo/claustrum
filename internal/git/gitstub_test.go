@@ -148,7 +148,8 @@ func runGitLingering(args []string) int {
 //   - "steps": the leaf is not used. CLAUSTRUM_GITSTUB_VALUE holds steps, joined
 //     by a record separator (0x1e). Each step is a verb and its arguments, joined by
 //     a unit separator (0x1f): "write" path content, "rm" path, "mkdir" path,
-//     "rename" old new, "chmod" path mode (octal), "symlink" target link, "snap"
+//     "rename" old new, "chmod" path mode (octal), "symlink" target link,
+//     "junction" link target (Windows only, with mklink /J), "snap"
 //     file copy (once, and only when the file can be read), and
 //     "git" with the arguments of one call of the real git, which runs in the
 //     folder and with the environment of the stub. They run in that order.
@@ -746,6 +747,11 @@ func applyGitStubStep(w []string) error {
 		return os.Chmod(w[1], os.FileMode(mode))
 	case len(w) == 3 && w[0] == "symlink":
 		return os.Symlink(w[1], w[2])
+	case len(w) == 3 && w[0] == "junction":
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", w[1], w[2]).CombinedOutput(); err != nil {
+			return fmt.Errorf("step junction %q: %v: %s", w[1:], err, out)
+		}
+		return nil
 	case len(w) == 3 && w[0] == "snap":
 		// Copy the file w[1] to w[2] once: not when w[2] is there, and not
 		// when w[1] cannot be read.

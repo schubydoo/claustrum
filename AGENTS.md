@@ -229,6 +229,7 @@ It runs after each refusal of the content check after the checkout
   still resolves to the leaf and the parent is still the held parent.
 - **Stale entry.** One `os.Root.RemoveAll` of one stale `worktrees` entry, after
   `homeguard.WipesHomeDir` on its path, through a root at that folder (the held folder when held).
+  On Windows `b3081b51` acts behind a junction put at `.git` right before `rev-parse` (measured on Windows).
   Create removes that entry only if it is the only stale entry and holds no `locked` file.
   Windows keeps an entry with a `locked` file too (`windowsStaleEntryGoes`) and an entry
   whose record names a path that exists (D27). It deletes nothing behind a junction or a

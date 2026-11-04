@@ -705,6 +705,14 @@ func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
 			next = st.u.accepted.replacedAtPath(st.u.accepted.dir)
 		}
 		if next == nil {
+			// On Windows a junction there gets the text of the config, as in
+			// openAddStage. b3081b51 answers it after a junction that came
+			// right before the `worktree add` call (measured on Windows). A
+			// file there keeps the text of 5fd08069. Every other state gets the
+			// text of the junction (not measured).
+			if fi, err := os.Lstat(st.u.gitDir); stagedAddWindowsSteps && (err != nil || !fi.Mode().IsRegular()) {
+				return &addIncomplete{text: repoConfigPrefix + gitDirLinkText(st.u.gitDir)}
+			}
 			return &addIncomplete{text: realDirText(st.u.gitDir)}
 		}
 		st.u.accepted.adopt(next)
@@ -960,7 +968,10 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		return fail(err)
 	}
 	stagedEntryModes(reg, st.git, staging)
-	targetName, ok := registrationTarget(st.git, name)
+	targetName, ok, lastErr := registrationTarget(st.git, name)
+	if !ok && stagedAddWindowsSteps && lastErr != nil {
+		return fail(lastErr)
+	}
 	if !ok {
 		return fail(fmt.Errorf("the repository already has a hundred worktrees called %q; remove some (git worktree prune, git worktree remove)", name))
 	}
@@ -1117,17 +1128,25 @@ func addedNames(before, after []string) []string {
 // name99 that is not there. ok is false when all 100 are there. On 5fd08069 a
 // folder w1 that was made after the add sends the move to w11 (measured). The
 // 100 folders w1 and w11 to w199 fail the create (measured on Windows).
-func registrationTarget(root *os.Root, name string) (string, bool) {
+//
+// lastErr is the error of the Lstat of the last name when ok is false. On
+// Windows the create answers it when it is not nil. b3081b51 answers `statat
+// worktrees\w199: path escapes from parent` after a junction at `worktrees`
+// came right before the `worktree add` call (measured on Windows). Linux and
+// macOS keep the text of the hundred names (not measured).
+func registrationTarget(root *os.Root, name string) (target string, ok bool, lastErr error) {
 	for i := range 100 {
 		next := name
 		if i > 0 {
 			next += strconv.Itoa(i)
 		}
-		if _, err := root.Lstat(filepath.Join(worktreesSubdir, next)); errors.Is(err, fs.ErrNotExist) {
-			return next, true
+		_, err := root.Lstat(filepath.Join(worktreesSubdir, next))
+		if errors.Is(err, fs.ErrNotExist) {
+			return next, true, nil
 		}
+		lastErr = err
 	}
-	return "", false
+	return "", false, lastErr
 }
 
 // copyRegistrationTree copies the entries of the folder rel of src, the root

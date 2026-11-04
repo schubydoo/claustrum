@@ -1478,7 +1478,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// After a call that answered, the path of the git directory must still name
 	// the held folder. On Windows the create is refused here (measured: a
 	// junction that was put at `.git` after the call). The text names the git
-	// directory of the request. Two states get no refusal at this step on
+	// directory of the request. b3081b51 starts it with `cannot add a
+	// worktree: ` (measured on Windows), where 5fd08069 has `git worktree add
+	// failed: `. A symbolic link there is not measured on b3081b51: it gets
+	// the same text. Two states get no refusal at this step on
 	// Windows (answeredElsewhere). On Linux and macOS 5fd08069 makes more calls
 	// before it refuses (measured on macOS): the refusal is at the step of the
 	// add (swapRefusal, worktreeAdd).
@@ -1501,7 +1504,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		case stagedAddWindowsSteps && answeredElsewhere(req.use, gitDir):
 			// No refusal here: the step of the add comes next.
 		case stagedAddWindowsSteps:
-			return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(req.use.gitDir))
+			return refuseAdd("cannot add a worktree: " + listEntriesPrefix + realDirText(req.use.gitDir))
 		default:
 			if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return refuseAdd(gitDirAddWrap + err.Error())
@@ -1606,6 +1609,19 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// The stale step has run before this test. A daemon GIT_COMMON_DIR makes git
 	// register in another folder, so the test does not run then, and git decides
 	// as before (claustrum's own, not measured).
+	//
+	// On Windows a junction at `<git dir>\worktrees` of the held folder refuses
+	// the create first, and the registrations behind it are not read. b3081b51
+	// answers this text after such a junction came right after `rev-parse
+	// --absolute-git-dir` (measured on Windows). A junction that was there
+	// before the request, and a directory symbolic link, are not measured: they
+	// get the same text. A request with no settings copy keeps the test of
+	// worktreeAdd.
+	if stagedAddWindowsSteps && req.use.shadow() {
+		if msg := req.use.worktreesLinkRefusal(); msg != "" {
+			return refuseAdd("cannot add a worktree: " + msg)
+		}
+	}
 	if !daemonCommonDirSet() {
 		regDir := verifyGitDir(repo)
 		if gitAnswered {
