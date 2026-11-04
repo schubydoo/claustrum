@@ -85,11 +85,12 @@ methods and in [PROTOCOL.md](PROTOCOL.md).
 - `server.capabilities` lists six new features, five on Windows (PR 915, measured on
   Linux, macOS and Windows).
 - `launcher.resolve`, `-install` and `-probe-cli` refuse a managed launcher value that is
-  not a string (PR 907, measured on Linux and macOS).
+  not a string (PR 907, measured on Linux, and on macOS for a number).
 - The git methods and a spawn of a bare git pass over a git in a [session
   folder](protocol/git-rules-session-folders.md), with a new refusal text (PR 912). A spawn
   whose session folder record cannot be saved gets `-32603` (PR 925, measured on Linux,
-  macOS and Windows). A `ccd-cli` command and a launcher spawn record their folders too
+  macOS and Windows). That holds when the first entry of the daemon PATH lies in that
+  folder. A `ccd-cli` command and a launcher spawn record their folders too
   (PR 926).
 - After a good checkout `git.worktree_create` compares the config files of the new
   worktree with the commit. A mismatch answers one of five `worktree_verify_*` codes
@@ -103,8 +104,8 @@ methods and in [PROTOCOL.md](PROTOCOL.md).
 
 **Off-wire churn.** The libc probe of `-install` runs `/usr/bin/ldd`, or `/bin/ldd` when
 it is missing, with a fixed environment (PRs 906 and 911, measured on Linux). At a
-shutdown on Linux and macOS a stream-json child gets `SIGTERM` first, and its group gets
-`SIGKILL` 1.5 s later (PR 909). A good `git.worktree_create` records the git directory of
+shutdown on Linux and macOS a stream-json child gets `SIGTERM` first. A child that stays
+gets the group `SIGKILL` 1.5 s later (PR 909). A good `git.worktree_create` records the git directory of
 its repository as a session folder (PR 927, measured on Linux, macOS and Windows).
 
 **Older gaps closed.** The `already exists` and link loop refusals of the worktree methods
