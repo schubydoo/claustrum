@@ -38,6 +38,8 @@ If the daemon cannot examine the path, `error` holds the text of the operating s
 
 The daemon follows a symbolic link. The response then describes the target of the link. A link to a target that does not exist gives `"valid": false`.
 
+On Linux a stat that fails with `too many levels of symbolic links` runs again (`b3081b51`, measured on Linux). It runs up to 4 times in all, about 10 ms apart. A good later try gives the normal response. After 4 failures the text is that of the last try. A later try that fails with another error gives the response of that error (claustrum's own, not measured). On macOS and Windows the daemon tries once (claustrum's own, not measured).
+
 ## Errors
 
 This method has no `errorCode` member. It has one JSON-RPC error.

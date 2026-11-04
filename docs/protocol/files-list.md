@@ -44,6 +44,8 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 The `-32603` texts come from the operating system and hold `path` after the `~` expansion. A request without `path` gets `-32603`: the empty path does not exist.
 
+On Linux an open of `path` that fails with `too many levels of symbolic links` runs again (`b3081b51`, measured on Linux). It runs up to 4 times in all, about 10 ms apart. A good later try gives the normal response. After 4 failures the text is that of the last try. A later try that fails with another error gives the response of that error (claustrum's own, not measured). On macOS and Windows the daemon tries once (claustrum's own, not measured).
+
 ## The list
 
 - The entries are in the byte order of their names.
