@@ -140,11 +140,10 @@ func Resolve(cliPath string) (rpc.ManagedLauncherResult, string) {
 	return res, note
 }
 
-// resolveManagedLauncherIn reads the settings under dir. A refusal of
-// managedSettingsWrapper stands only if no earlier file gave a value, because a
-// later file's wrong-type value left the earlier value in place before b3081b51.
-// On b3081b51 the two-file case is claustrum's own (not measured), and so is a
-// later value that replaces a refusal.
+// resolveManagedLauncherIn reads the settings under dir. A later file's refusal
+// stands only if no earlier file gave a value. A later value replaces an earlier
+// refusal, and a later refusal replaces an earlier one. Measured on Linux against
+// b3081b51 with a base file and one drop-in.
 func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherResult {
 	var value, refused, source string
 	take := func(path string) *rpc.ManagedLauncherResult {
@@ -311,52 +310,59 @@ func decodeManagedSettingsText(b []byte) []byte {
 
 // managedSettingsWrapper is the launcher value of one settings file, or the refusal
 // text of a value that is not a string. Two keys carry it:
-// env.CLAUDE_CODE_PROCESS_WRAPPER and processWrapper. In one file the env key wins,
-// in both key orders. An env value of "" counts as unset.
+// env.CLAUDE_CODE_PROCESS_WRAPPER and processWrapper. In one file a string env
+// value wins, in both key orders. An env value of "" counts as unset.
 //
 // Measured against b3081b51, with one settings file: a processWrapper of 5 and an
-// env value of 5 are refused with managedNotOneString (Linux and macOS), and so is
-// a processWrapper of true, [] or {} (Linux). {"env":"x"} counts as unset (Linux
-// and macOS), and so does a processWrapper of null (Linux). With a string env value
-// the env key wins over a processWrapper of 5 (Linux, launcher.resolve).
-// be1c1ca5 skipped each of these values (Linux, launcher.resolve).
-// Measured before b3081b51: a later file's wrong-type value leaves the earlier
-// value in place. resolveManagedLauncherIn keeps that rule, which is claustrum's
-// own on b3081b51 (not measured).
+// env value of 5 are refused with managedNotOneString (Linux and macOS), and so are
+// a processWrapper of true, [] or {} and an env value of null, true, [] or {}
+// (Linux). {"env":"x"} counts as unset (Linux and macOS), and so does a
+// processWrapper of null (Linux). A string env value wins over a processWrapper of
+// 5, and a string processWrapper wins over an env value of 5 or true (Linux,
+// launcher.resolve). be1c1ca5 skipped each of these values (Linux,
+// launcher.resolve).
 //
-// claustrum's choices (not measured): an env value of null counts as unset, and an
-// env value of another kind than a number gets the same refusal. In one file a
-// refused env value wins over processWrapper. A processWrapper of "" counts as
-// unset too. Each file gives one value, so a later file's processWrapper wins over
-// an earlier file's env key.
+// claustrum's choices (not measured): a processWrapper of "" counts as unset, so
+// a refused env value answers. When both values are refused, the env refusal
+// answers. Each file gives one value, so a later file's processWrapper wins over an
+// earlier file's env key.
 func managedSettingsWrapper(obj map[string]any) (string, string) {
+	envRefused := ""
 	if env, ok := obj["env"].(map[string]any); ok {
-		switch v := env[managedWrapperEnv].(type) {
-		case string:
-			if v != "" {
-				return v, ""
+		if v, set := env[managedWrapperEnv]; set {
+			if s, ok := v.(string); ok {
+				if s != "" {
+					return s, ""
+				}
+			} else {
+				envRefused = managedNotOneString("env."+managedWrapperEnv, v)
 			}
-		case nil:
-		default:
-			return "", managedNotOneString("env."+managedWrapperEnv, v)
 		}
 	}
 	switch v := obj["processWrapper"].(type) {
 	case string:
-		return v, ""
+		if v != "" {
+			return v, ""
+		}
+		return "", envRefused
 	case nil:
-		return "", ""
+		return "", envRefused
 	default:
+		if envRefused != "" {
+			return "", envRefused
+		}
 		return "", managedNotOneString("processWrapper", v)
 	}
 }
 
 // managedNotOneString is the measured refusal text of a launcher value that is not
 // a string. key is the settings key as the text names it. v is a decoded JSON value
-// that is not a string and not null.
+// that is not a string.
 func managedNotOneString(key string, v any) string {
 	kind := "an object"
 	switch v.(type) {
+	case nil:
+		kind = "null"
 	case float64:
 		kind = "a number"
 	case bool:

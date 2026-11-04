@@ -490,7 +490,8 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 
 // TestInstallAndProbeRefuseANonStringValue pins measured rules (b3081b51, one
 // settings file): a processWrapper of 5 and an env value of 5 (Linux and macOS) and
-// a processWrapper of true, [] or {} (Linux) are unusable and run nothing.
+// a processWrapper of true, [] or {} and an env value of null, true, [] or {}
+// (Linux) are unusable and run nothing.
 // {"env":"x"} and {} (Linux and macOS) and a processWrapper of null (Linux) answer
 // none, and the CLI runs.
 func TestInstallAndProbeRefuseANonStringValue(t *testing.T) {
@@ -504,6 +505,10 @@ func TestInstallAndProbeRefuseANonStringValue(t *testing.T) {
 		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array"},
 		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object"},
 		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number"},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null"},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean"},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array"},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object"},
 		{`{"processWrapper":null}`, ""},
 		{`{"env":"x"}`, ""},
 		{`{}`, ""},

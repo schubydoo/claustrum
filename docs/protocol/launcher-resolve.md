@@ -59,7 +59,7 @@ The settings folder ([Platform notes](#platform-notes)) holds the base file `man
 - A drop-in name ends in `.json` in lower case and does not start with a dot. So `.hidden.json`, `x.JSON` and `a.js` are skipped. A folder entry and a FIFO entry are skipped, and the FIFO is not opened.
 - A symbolic link entry is followed, and `source` keeps the link path. A dangling link is skipped. A link to a folder makes the answer unreadable.
 - A regular file named `managed-settings.d` is ignored.
-- A value of the wrong type in a later file is skipped, and the earlier value stays.
+- A value of the wrong type in a later file is skipped, and the earlier value stays (`b3081b51`, measured on Linux). With no earlier value, the refusal of the later file answers. A later value or refusal replaces an earlier refusal (`b3081b51`, measured on Linux).
 - One unreadable file makes the whole answer unreadable, also with a valid base file. The first unreadable file in read order is the one reported (claustrum's own).
 - A UTF-8 byte order mark is dropped. A UTF-16LE mark with UTF-16LE text is read. An invalid byte in the file comes out as U+FFFD.
 
@@ -77,9 +77,9 @@ Any other value is an argv list, not a shell command:
 
 ### A value that is not a string
 
-A `processWrapper` of a number is unusable, and so is an env value of a number (`b3081b51`, measured on Linux and macOS). A `processWrapper` of a boolean, an array or an object is unusable too (`b3081b51`, measured on Linux). An `env` of a string counts as unset (`b3081b51`, measured on Linux and macOS). A `processWrapper` of `null` counts as unset (`b3081b51`, measured on Linux). A string env value wins over a `processWrapper` of a number (`b3081b51`, measured on Linux).
+A `processWrapper` of a number is unusable, and so is an env value of a number (`b3081b51`, measured on Linux and macOS). A `processWrapper` of a boolean, an array or an object is unusable too (`b3081b51`, measured on Linux). An `env` of a string counts as unset (`b3081b51`, measured on Linux and macOS). A `processWrapper` of `null` counts as unset (`b3081b51`, measured on Linux). A string env value wins over a `processWrapper` of a number (`b3081b51`, measured on Linux). An env value of `null`, a boolean, an array or an object is unusable (`b3081b51`, measured on Linux). A string `processWrapper` wins over an env value of a number or a boolean (`b3081b51`, measured on Linux).
 
-The `reason` is `<key> must be one string (the launcher and its arguments), not <kind>`. `<key>` is `processWrapper` or `env.CLAUDE_CODE_PROCESS_WRAPPER`. `<kind>` is `a number`, `a boolean`, `an array` or `an object`.
+The `reason` is `<key> must be one string (the launcher and its arguments), not <kind>`. `<key>` is `processWrapper` or `env.CLAUDE_CODE_PROCESS_WRAPPER`. `<kind>` is `null`, `a number`, `a boolean`, `an array` or `an object` (`b3081b51`, measured on Linux).
 
 ### Unusable reasons
 

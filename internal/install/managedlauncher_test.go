@@ -185,12 +185,12 @@ func TestManagedRunReasonExitStatus(t *testing.T) {
 }
 
 // TestManagedLauncherRefusalAcrossFiles pins how a refusal of a value that is not a
-// string meets the other values. A later file's refusal leaves an earlier value in
-// place (claustrum's own on b3081b51, not measured). A string env value wins over a processWrapper
-// of 5 in one file (b3081b51, measured on Linux). The rest are claustrum's choices
-// (not measured): a later value replaces an earlier refusal, a later refusal
-// replaces an earlier one, and a refused env value wins over processWrapper in one
-// file.
+// string meets the other values (b3081b51, measured on Linux). A later file's
+// refusal leaves an earlier value in place. A later value replaces an earlier
+// refusal, and a later refusal replaces an earlier one. In one file a string value
+// of either key wins over a refused value of the other key. The last two rows are
+// claustrum's choices (not measured): an env refusal wins over a processWrapper
+// refusal, and over a processWrapper of "".
 func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
 	const tail = " must be one string (the launcher and its arguments), not "
 	for _, c := range []struct {
@@ -200,10 +200,13 @@ func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
 	}{
 		{"a later refusal keeps the earlier value", `{"processWrapper":"wrap"}`, `{"processWrapper":5}`, StatusUnusable, managedNotAbsolute, false},
 		{"a later value replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":"wrap"}`, StatusUnusable, managedNotAbsolute, true},
-		{"a later refusal replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":true}`, StatusUnusable, "processWrapper" + tail + "a boolean", true},
+		{"a later refusal replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":[]}`, StatusUnusable, "processWrapper" + tail + "an array", true},
+		{"a later refusal after no value", `{}`, `{"processWrapper":5}`, StatusUnusable, "processWrapper" + tail + "a number", true},
 		{"a string env value wins over a processWrapper of 5", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"wrap"},"processWrapper":5}`, ``, StatusUnusable, managedNotAbsolute, false},
-		{"a refused env value wins in one file", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]},"processWrapper":"wrap"}`, ``, StatusUnusable, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", false},
-		{"an env null counts as unset", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null},"processWrapper":{}}`, ``, StatusUnusable, "processWrapper" + tail + "an object", false},
+		{"a string processWrapper wins over an env value of 5", `{"processWrapper":"wrap","env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, ``, StatusUnusable, managedNotAbsolute, false},
+		{"a string processWrapper wins over an env value of true", `{"processWrapper":"wrap","env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, ``, StatusUnusable, managedNotAbsolute, false},
+		{"an env refusal wins over a processWrapper refusal", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null},"processWrapper":{}}`, ``, StatusUnusable, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null", false},
+		{"an env refusal wins over a processWrapper of empty text", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]},"processWrapper":""}`, ``, StatusUnusable, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", false},
 	} {
 		dir := t.TempDir()
 		base := filepath.Join(dir, managedSettingsBase)

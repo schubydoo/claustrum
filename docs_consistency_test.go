@@ -666,7 +666,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-status.md":              3185, // a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md":     8812, // macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4369, // macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
-	"docs/protocol/launcher-resolve.md":        1738, // the value that is not a string, of b3081b51. 1620: rewrite to the page template
+	"docs/protocol/launcher-resolve.md":        1807, // the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
 	"docs/protocol/process-kill.md":            931,  // the page template
 	"docs/protocol/process-killandwait.md":     977,  // the page template
