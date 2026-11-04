@@ -22,6 +22,9 @@ name: repo-config drift
 
 on:
   pull_request:
+    # The advisory runs on a draft too, because it is cheap. `ready_for_review`
+    # runs it again on the flip to ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:

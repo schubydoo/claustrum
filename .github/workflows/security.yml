@@ -13,6 +13,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `ready_for_review` joins the default types, so the flip of a draft to
+    # ready starts the jobs that the draft skipped, on the current head.
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "37 4 * * 1"
 
@@ -24,8 +27,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A draft pull request runs only `gitleaks` here. Every other job, the
+  # aggregator too, carries `github.event.pull_request.draft != true`. The test is
+  # `!= true`, because the field is null on a push and on the schedule, and so
+  # those runs keep every job. `gitleaks` is cheap and uploads no SARIF, so a
+  # draft still gets a secret scan on each push. GitHub reports a job skipped by
+  # its `if:` as a skipped check run. So `security required checks passed` shows
+  # skipped on a draft and does not wait.
   changes:
     name: detect changes
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -65,6 +76,7 @@ jobs:
 
   codeql:
     name: codeql analyze
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -117,7 +129,9 @@ jobs:
     name: trivy filesystem scan
     needs: changes
     # Skip on PRs that don't touch go.mod/go.sum; always run on push/schedule.
-    if: needs.changes.outputs.deps == 'true' || github.event_name != 'pull_request'
+    if: >-
+      github.event.pull_request.draft != true
+      && (needs.changes.outputs.deps == 'true' || github.event_name != 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -147,7 +161,9 @@ jobs:
     name: workflow audit
     needs: changes
     # Skip on PRs that don't touch workflows; always run on push/schedule.
-    if: needs.changes.outputs.workflows == 'true' || github.event_name != 'pull_request'
+    if: >-
+      github.event.pull_request.draft != true
+      && (needs.changes.outputs.workflows == 'true' || github.event_name != 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -181,7 +197,7 @@ jobs:
   dependency-review:
     name: dependency review
     # Only meaningful on PRs (compares HEAD vs base for new vulnerable deps).
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -203,7 +219,8 @@ jobs:
     # (seen in runs of this repo, the GitHub docs do not say it). A cancelled
     # context does not pass the gate. A failed job in a run that goes on still
     # fails this job. A job stopped by its time limit is not measured here.
-    if: ${{ !cancelled() }}
+    # The draft term skips it on a draft, as it skips most of the jobs that it needs.
+    if: ${{ !cancelled() && github.event.pull_request.draft != true }}
     needs:
       - changes
       - codeql
