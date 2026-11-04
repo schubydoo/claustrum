@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -410,6 +411,13 @@ func runGitSlow(args []string) int {
 	}
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	// CLAUSTRUM_GITSTUB_STDINLOG names a file that gets the stdin of each call
+	// with --stdin-paths, which the real git then reads as it is.
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_STDINLOG"); log != "" && slices.Contains(args, "--stdin-paths") {
+		in, _ := io.ReadAll(os.Stdin)
+		appendLine(log, string(in))
+		cmd.Stdin = bytes.NewReader(in)
+	}
 	code := 0
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError

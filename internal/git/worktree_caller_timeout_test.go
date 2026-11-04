@@ -161,7 +161,7 @@ func installGitSlowStub(t *testing.T, realGit string) {
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)
 	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "IDXMODE", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP", "VALUE", "FAIL_LISTING", "HOLD_MS", "ARGEND", "ARGLAST", "ENVEND", "STAGE", "HOLDPID", "HOLDSELF", "GATE", "STARTED", "TIMELOG", "WAITMS", "NTH", "NTHFILE",
-		"MATCH2", "MODE2", "MS2", "EXIT2", "STDERR2", "ACTION2", "LEAF2", "VALUE2", "AFTER2", "DIR2", "GATE2", "TERMLOG", "TERMEXIT", "HOLDSTDERR", "COPYLOG"} {
+		"MATCH2", "MODE2", "MS2", "EXIT2", "STDERR2", "ACTION2", "LEAF2", "VALUE2", "AFTER2", "DIR2", "GATE2", "TERMLOG", "TERMEXIT", "HOLDSTDERR", "COPYLOG", "STDINLOG"} {
 		t.Setenv("CLAUSTRUM_GITSTUB_"+k, "")
 	}
 	slowGit(t, "", "", 0, "", "")
@@ -602,7 +602,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		raw, _ := f.create(t, h, "w1", "main", 0)
 		// The wording of git's two refusals depends on the git version. The pattern
 		// accepts a text with escaped quotes before each refusal.
-		re := regexp.MustCompile(`"error":"git worktree add failed: (?:[^"\\]|\\.)*a branch named 'w1' already exists \(attaching to the existing branch main was refused first: (?:[^"\\]|\\.)*'main' is already (?:[^"\\]|\\.)*\)","errorCode":"worktree_add_failed"`)
+		re := regexp.MustCompile(`"error":"git worktree add failed: (?:[^"\\]|\\.)*a branch named 'w1' already exists \(attaching to the existing branch \\"main\\" was refused first: (?:[^"\\]|\\.)*'main' is already (?:[^"\\]|\\.)*\)","errorCode":"worktree_add_failed"`)
 		if !re.MatchString(raw) {
 			t.Fatalf("reply = %s, want the two-output add failure", raw)
 		}
@@ -626,7 +626,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
 		t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "fatal: synthetic add failure\n")
 		raw, _ := f.create(t, h, "w1", "ex", lateMs)
-		want := `"error":"git worktree add failed: fatal: synthetic add failure (attaching to the existing branch ex was refused first: fatal: synthetic add failure)","errorCode":"worktree_add_failed"`
+		want := `"error":"git worktree add failed: fatal: synthetic add failure (attaching to the existing branch \"ex\" was refused first: fatal: synthetic add failure)","errorCode":"worktree_add_failed"`
 		if !strings.Contains(raw, want) {
 			t.Fatalf("reply = %s, want %s", raw, want)
 		}
@@ -1089,11 +1089,11 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 	// attach add prints the first payload and the fallback add the second.
 	t.Run("Q3 two-part frame", func(t *testing.T) {
 		for _, tc := range []struct{ name, attach, fallback, want string }{
-			{"ctl", "A\r\nB\tC\x01D\n", "F\rG\tH\x1bI\n", "git worktree add failed: F G H I (attaching to the existing branch ex was refused first: A  B C D)"},
-			{"inval", "att\xffA\xc3(\n", "fb\xe2\x82B\n", "git worktree add failed: fbB (attaching to the existing branch ex was refused first: attA()"},
-			{"empty", "", "", "git worktree add failed: exit status 128 (attaching to the existing branch ex was refused first: exit status 128)"},
+			{"ctl", "A\r\nB\tC\x01D\n", "F\rG\tH\x1bI\n", "git worktree add failed: F G H I (attaching to the existing branch \"ex\" was refused first: A  B C D)"},
+			{"inval", "att\xffA\xc3(\n", "fb\xe2\x82B\n", "git worktree add failed: fbB (attaching to the existing branch \"ex\" was refused first: attA()"},
+			{"empty", "", "", "git worktree add failed: exit status 128 (attaching to the existing branch \"ex\" was refused first: exit status 128)"},
 			{"long", "ATT:" + strings.Repeat("a", 600) + "\n", "FB:" + strings.Repeat("b", 600) + "\n",
-				"git worktree add failed: FB:" + strings.Repeat("b", 509) + " (attaching to the existing branch ex was refused first: ATT:" + strings.Repeat("a", 508) + ")"},
+				"git worktree add failed: FB:" + strings.Repeat("b", 509) + " (attaching to the existing branch \"ex\" was refused first: ATT:" + strings.Repeat("a", 508) + ")"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newWTFixture(t, false)
@@ -1106,6 +1106,21 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				wantError(t, raw, tc.want, "worktree_add_failed")
 			})
 		}
+	})
+
+	// Q3b: the note quotes the name of the branch and cuts it at 100 bytes, with
+	// no mark of the cut (b3081b51, measured on Linux, macOS and Windows).
+	t.Run("Q3b note name cut", func(t *testing.T) {
+		f := newWTFixture(t, false)
+		h := newTestGitDeps()
+		long := "br-" + strings.Repeat("x", 117)
+		runGit(t, f.top, "branch", long)
+		t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
+		stubStderr(t, "A\n", false)
+		stubStderr(t, "B\n", true)
+		slowGit(t, "worktree,add", "fail", 0, "", "")
+		raw, _ := f.create(t, h, "w1", long, 0)
+		wantError(t, raw, "git worktree add failed: B (attaching to the existing branch \""+long[:100]+"\" was refused first: A)", "worktree_add_failed")
 	})
 
 	// Q4: the add-failure and checkout-failure frames. stdout is not quoted.

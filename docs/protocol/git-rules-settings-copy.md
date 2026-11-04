@@ -144,6 +144,8 @@ an open handle with no sharing.
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
   `claude-ssh-worktreeinclude-<n>`. On Linux and macOS the index name is as on
   `89cb6289`. On Windows it is claustrum's own (not measured).
+- In the state `shadow` a create keeps `.readback-objects-<n>` there for its
+  content check (`b3081b51`, measured on Linux).
 - On Windows, if the folder of the daemon denies new folders, a create still works
   with the backup and restore privileges on. With both off it fails at `.s<n>`.
 
@@ -155,6 +157,8 @@ three shapes of the start test:
 The cause is the `mkdir` error of the folder. The same request again gets the same
 line with no git call. On Windows a held copy gets 2 s of retries, then `rename
 <temp file> <copy>: Access is denied.` with full paths.
+
+#### The sweep of git-shadow
 
 The request that makes the folder of the daemon also sweeps `git-shadow` (measured
 on Linux and macOS, and in part on Windows). If the lock file of an entry can be

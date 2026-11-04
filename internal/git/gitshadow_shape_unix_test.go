@@ -155,8 +155,13 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 	t.Helper()
 	argv := c.argv
 	attr := ""
+	// The status call of b3081b51 starts with the lfs folder of its temporary
+	// git folder (gitstatus.go).
+	if len(argv) > 2 && argv[0] == "-c" && strings.HasPrefix(argv[1], "lfs.storage=") && strings.HasPrefix(argv[2], "--attr-source=") {
+		attr, argv = "LFS+", argv[2:]
+	}
 	if len(argv) > 0 && strings.HasPrefix(argv[0], "--attr-source=") && len(argv) > 1 && argv[1] == "-c" {
-		attr, argv = "ATTR+", argv[1:]
+		attr, argv = attr+"ATTR+", argv[1:]
 	}
 	var items []string
 	for len(argv) > 1 && argv[0] == "-c" {
@@ -307,6 +312,15 @@ func statusRows() []shapeRow {
 				argv:   "--git-dir=%s --work-tree=<wt> " + verb.argv,
 				shadow: "{A} {D} {H}" + locks, off: "{A} {G} {H}" + locks, fallback: "{A} {G} {H}" + locks},
 		)
+		if strings.HasPrefix(verb.argv, "status ") {
+			// In the state shadow the status call names the lfs folder of the
+			// temporary git folder (b3081b51).
+			last := len(out) - 1
+			shadow := out[last]
+			shadow.list, shadow.off, shadow.fallback = "LFS+ATTR+P28", "", ""
+			out[last].shadow = ""
+			out = append(out, shadow)
+		}
 	}
 	return out
 }
@@ -352,6 +366,12 @@ func createRows() []shapeRow {
 			{list: "P28", argv: "--git-dir=<repo>/.git --work-tree=<repo> rev-parse --show-toplevel", cwd: "<repo>/.git", shadow: "{A} {D} {H}", off: "{A} {G} {H}"},
 		},
 		addRows("worktree add --no-track --no-checkout -b w1 <leaf>"),
+		// In the state shadow the commit id of the branch for the read-tree call
+		// (b3081b51, methods_git.go).
+		[]shapeRow{
+			{list: "none", argv: "config -z --list", cwd: "<repo>", shadow: "{A2} {D} {W} {L}"},
+			{list: "P21", argv: "rev-parse --verify --quiet refs/heads/w1^{commit}", cwd: "<repo>", shadow: "{A2} {D} {W} {H}"},
+		},
 		[]shapeRow{
 			same("none", "--git-dir=<repo>/.git config -z --list", leaf, "{C} {D} {L}", "{C} {G} {L}"),
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
@@ -361,7 +381,7 @@ func createRows() []shapeRow {
 			{list: "none", argv: `--git-dir=<repo>/.git config -z --get-regexp ^(core\.sshcommand|ssh\.variant)$`, cwd: leaf,
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "lfs.storage=<repo>/.git/lfs+P22", cwd: leaf,
-				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
+				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules <id>",
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "P22", cwd: leaf,
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
@@ -371,7 +391,28 @@ func createRows() []shapeRow {
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
 				shadow: "{C} {D} {H}" + index[true]},
 		},
+		// The content check of b3081b51 (worktreecontent.go), in the state shadow
+		// only. The commit has no file of the check, so no hash-object
+		// --stdin-paths call runs.
+		contentCheckRows("cat-file commit <id>", "hash-object -t commit --literally --no-filters --stdin -w",
+			"cat-file tree <id>", "hash-object -t tree --literally --no-filters --stdin -w"),
 	)
+}
+
+// contentCheckRows are the pairs of the content check in the base repository, in the
+// state shadow. A hash-object call writes into `.readback-objects-<n>`.
+func contentCheckRows(argvs ...string) []shapeRow {
+	var out []shapeRow
+	for _, argv := range argvs {
+		vars := "{A2} {D} {W} {H}"
+		if strings.HasSuffix(argv, " -w") {
+			vars = "{A2} GIT_COMMON_DIR=<R> {W} {H} GIT_OBJECT_DIRECTORY=<S>/.readback-objects-<n>"
+		}
+		out = append(out,
+			shapeRow{list: "none", argv: "config -z --list", cwd: "<repo>", shadow: "{A2} {D} {W} {L}"},
+			shapeRow{list: "P20", argv: argv, cwd: "<repo>", shadow: vars})
+	}
+	return out
 }
 
 // addRows is the pair of a `worktree add` with argv. In the state shadow the

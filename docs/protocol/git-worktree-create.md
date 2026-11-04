@@ -19,7 +19,7 @@ An untagged rule on this page matches the reference as measured on `5fd08069` or
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, or the attach fails, the daemon creates `branchName` instead. |
 | `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path`. |
 | `timeoutMs` | no | A deadline that starts before the first git call. It stops the read-tree call. The daemon tests it after the add and the copy step. The stop of the settle step from that start is measured (`683cc6a9`, Linux). For the other tests that start is claustrum's own, not measured. A wait behind another create of the repository does not count (claustrum's own). No value or `0` sets none. |
-| `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the repository's git config, and the settings copy. Git requests that start meanwhile get the same. A command that starts meanwhile gets no copy (measured on Linux). Other values do nothing. |
+| `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the repository's git config, the settings copy and the content check. Git requests that start meanwhile get the same. A command that starts meanwhile gets no copy (measured on Linux). Other values do nothing. |
 
 Where the worktree can go:
 
@@ -58,6 +58,11 @@ Decide by `errorCode` first.
 | `worktree_add_failed` | `git worktree add`, the checkout or the `config.worktree` step failed. The text holds the message of git, or a refusal of the daemon before the add. A `git worktree add` that runs 2 minutes is stopped. |
 | `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |
 | `timeout` | The deadline of `timeoutMs` expired. |
+| `worktree_verify_content` | A file of [the content check](#the-content-check) does not match the commit. |
+| `worktree_verify_link` | A committed link of the content check leads to the top of the new worktree. |
+| `worktree_verify_retry` | A file of the content check cannot be read. |
+| `worktree_verify_other_writer` | A file of the content check is in the new worktree but not in the commit. |
+| `worktree_verify_repository` | git cannot read an object of the commit for the content check. |
 
 A git config of the repository that the daemon does not accept gives `worktree_add_failed`, and nothing is made. The texts are in [Repository config refusals](git-rules-config.md#repository-config-refusals). Three failures of the settings copy do the same: a failed test of the host git, a failed call about the repository, and no folder for the copy.
 
@@ -115,7 +120,7 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 | ``cannot add a worktree: `<p>` is still registered in this repository as a locked worktree (entry "<name>"); unlock it first (git worktree unlock '<p>', then git worktree prune), or use another folder`` | `errorCode:"worktree_add_failed"`. The `gitdir` record of a locked entry `<name>` names the gone leaf. Windows quotes the hint path with double quotes. No entry and no file is removed. Build `be1c1ca5`, measured on Linux, macOS and Windows. A path over 300 bytes is cut there (not measured). The create refuses before the add, so no branch is made (measured on Linux and macOS). A blank keeps the hint (measured on Linux). With a daemon `GIT_COMMON_DIR` the check is off and git decides (claustrum's own) |
 | ``cannot add a worktree: `<p>` is still registered in this repository as a locked worktree (entry "<name>"); unlock it with git worktree unlock, giving the folder's path (git worktree list shows it), then git worktree prune, or use another folder`` | The same for a path with a `$` (build `be1c1ca5`, measured on Linux, macOS and Windows), or a `'` or a backslash (measured on Linux). A `'` on Windows is not measured |
 | ``cannot add a worktree: `<p>` is still registered in this repository as a worktree (entry "<name>"); clear the stale registration first (git worktree prune), then try again`` | The same for an entry with no `locked` file. It shows for two or more entries, because the stale step removes a single unlocked one first, or for a Windows entry that the step keeps. The first by name counts (not measured). An entry whose folder holds files does not count (claustrum's own). Build `be1c1ca5`, measured on Linux, macOS and Windows |
-| `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap (measured on macOS) |
+| `git worktree add failed: <fallback text> (attaching to the existing branch "<b>" was refused first: <attach text>)` | `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap (measured on macOS). `<b>` is cut at 100 bytes with no mark (`b3081b51`, measured on Linux, macOS and Windows). `be1c1ca5` writes it with no quotes |
 | `git worktree add failed (checkout): <text>` | `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. The text rule and the `hint:` rule apply. With a settings copy a `<text>` that holds `smudge filter lfs failed` after the cut gets `. Claude doesn't use ssh, credential, or proxy settings from this repository's own git config. If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again.` after it. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](git-rules-calls.md#the-branch-step)). In attach mode the attached branch is kept. A failed placement of the index answers this frame too. On Linux and macOS its OS error is `openat <registration name>/index: permission denied` or `open <temporary directory>/index: no such file or directory`, or claustrum's own `the registration <p> is not the folder that was tested after the add` (D24, not measured). On Windows it is `openat index: <cause>`, or claustrum's own `the registration <p> is not the folder that was moved into place` (D24, not measured) |
 | `Claude doesn't run the "<name>" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter "<name>"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.` | `errorCode:"repository_only_filter"`, in the state `shadow`. A quote mark in `<name>` has a backslash before it. Linux and Windows. |
 | `git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts "<first 40 bytes>"); define it in ~/.gitconfig on the remote machine, or rename it` | `errorCode:"worktree_add_failed"`, in the state `shadow`, for such a filter with a name over 200 bytes. It rolls back as a failed checkout. Linux and Windows |
@@ -130,6 +135,19 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | Appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. The texts in braces are measured on Windows only. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch. On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed. In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)`. The text in the parentheses of a registration text can be claustrum's own. No rmdir text joins either one |
 | `<frame>; and the undo could not finish for <leaf>: <branch part>` | Appended when the branch step of the rollback keeps the branch that the call made. After a failed leaf rmdir, the branch part follows the rmdir text after `; `. Some cases also add `"branchKept":true` after `errorCode`. [The branch step](git-rules-calls.md#the-branch-step) gives each `<branch part>` and each case |
 
+### Content check refusals
+
+Each text starts `Claude could not confirm that the new worktree matches its commit, so it did not keep it. `, and the rollback of a failed checkout follows. If an entry of the worktree cannot be removed, ` Removing it could not finish for <leaf>: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>).` follows the text, and all three stay (measured on Windows). The other undo texts (registration, rmdir, branch) take the same form (claustrum's own, not measured). `<c>` is the first 12 hex digits of the commit. Each quoted name and path has Go escapes, so a Windows path has two backslashes for each one. Build `b3081b51`, measured on Linux, macOS and Windows.
+
+| Text after the start | Code and cause |
+|---|---|
+| `Check whether a filter that rewrites "<f>" on checkout gives different output each time it runs: that file in the new worktree didn't match commit <c>. Less often, two committed names that differ only in letter case, or a damaged repository (run "git fsck" in "<repo>" to check), cause this.` | `worktree_verify_content`, for a file `<f>` that changed after the checkout. A smudge filter whose output changes at each run gives it (measured on macOS and Windows). So do two names that differ only in case on a volume that ignores case (measured on macOS and Windows). So does a stopped `cat-file --filters` call (measured on Windows) |
+| `Point the link "<f>", or the link it leads through, at a folder inside the repository instead of its top: everything in the repository could be read through it unchecked (commit <c>).` | `worktree_verify_link`, for a committed link `<f>` to `.`. A link to `../outside` passes |
+| `Try again, and if this repeats check the permissions of the folder the worktree is made in: "<f>" in the new worktree couldn't be read to check it against commit <c> (<OS error>).` | `worktree_verify_retry`. `<OS error>` is `permission denied` on Linux and macOS, and `Access is denied.` on Windows. A file that is gone at the `hash-object --stdin-paths` call gives `no such file or directory` (measured on Linux) |
+| `Check what else writes into the folder the worktree is made in, or run "git fsck" in "<repo>": "<f>" appeared in the new worktree though commit <c> has no such file.` | `worktree_verify_other_writer`, for an `AGENTS.md` that something wrote into the new worktree |
+| `Check what else writes into the folder the worktree is made in, or run "git fsck" in "<repo>": "<f>" in the new worktree isn't what commit <c> has there (it changed while it was being checked).` | `worktree_verify_other_writer`, for a file that a link to `.` replaced during the `hash-object --stdin-paths` call. No `cat-file blob` call follows, and the log line counts 0 files (measured on Linux) |
+| `Run "git fsck" in "<repo>" to check the repository: git couldn't read what it stores for commit <c> (<detail>).` | `worktree_verify_repository`. A `cat-file` call that its limit stopped gives the detail `git took too long: Claude stopped git cat-file after 2 minutes; try again`. |
+
 ### Staged add failures
 
 | Text | Code and cause |
@@ -143,7 +161,7 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 
 ```mermaid
 flowchart TD
-    A["gate"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> G["copy of ignored files"]
+    A["gate"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> H["content check"] --> G["copy of ignored files"]
 ```
 
 ## The held git directory
@@ -221,6 +239,24 @@ In the state `shadow` a good checkout gets one more call: `git diff-files --quie
 - The 1.1 s become 2.2 s if the Lstat of `.git` in the new worktree fails or its mtime has no nanoseconds. The wait ends with the request, and the call limit is at most that of the other calls (claustrum's own, not measured).
 - A git without `--attr-source` gets no call (measured on Linux).
 
+## The content check
+
+In the state `shadow` the daemon compares files of the new worktree with the commit after a good checkout. A mismatch refuses the create ([Content check refusals](#content-check-refusals)). The worktree, its registration and the new branch then go. Build `b3081b51`, measured on Linux, macOS and Windows.
+
+- The files are those under `.claude`, and `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md`, at the top of the commit. `CLAUDE.local.md` is claustrum's own, not measured. A `.claude` folder in another letter case counts (measured on macOS and Windows). Claustrum's own, not measured: no check with `"shadowDirOff":true` or in the state `fallback-git`, `.mcp.json` in any letter case, and the check before the copy step.
+- A file passes if its bytes equal the output of the filters of its path. A smudge filter of the user config with the same output at each run passes.
+- A link to a folder outside the repository passes, and so do mode 100755 and a Git LFS pointer with no git-lfs.
+- A file that cannot be read and a name that the commit does not have refuse before the `hash-object` call, and the log line counts 0 files (measured on Windows).
+- On Windows a file that another process holds open with no share mode gives `worktree_verify_retry`, with `The process cannot access the file because it is being used by another process.` (measured on Windows).
+- The calls `cat-file commit`, `cat-file tree` and `hash-object --no-filters --stdin-paths` run in `baseRepo` (measured on Linux and macOS).
+- A committed link goes on no `hash-object` list, and the log line counts the other files only (measured on Linux). Its blob is read first and counts as an object (measured on Linux and Windows). A link that the checkout wrote as a regular file is hashed and counted (measured on Windows).
+- `cat-file --filters --path=<f> <blob>` runs in the new worktree, only for a file that differs (measured on Windows).
+- Each call stops at 2 minutes, as in [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). The stop goes to the git process alone, and a child of git lives on.
+- A stopped `hash-object --stdin-paths` call stops no other call, and the create succeeds (measured on macOS).
+- The objects that `hash-object -w` writes go to a folder `.readback-objects-<n>` of the folder of the daemon (measured on Linux).
+- The read-tree call names the commit id, where `be1c1ca5` names `refs/heads/<branch>` (measured on Linux and macOS). With no start commit, `-c core.commitGraph=false rev-parse --verify --quiet <ref>^{commit}` gives the id first. If it fails, the read-tree call names the ref and no check runs (claustrum's own, not measured).
+- Each create logs one line: `[GitHandler] worktree_create: checked <N> file(s) under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against <K> objects of commit <c> in <duration>: match`. A refusal ends `: refused: "<hint>"` instead, with no final period in `<hint>`.
+
 ## The copy of ignored files
 
 After the checkout, the daemon copies two sets of files from `baseRepo` into the new worktree:
@@ -254,7 +290,7 @@ After a good add in the state `shadow`, a create removes old staging entries of 
 | `git worktree add` runs and fails (`worktree_add_failed`) | An empty worktree directory goes. Files, a registration and a branch that the failed add made stay. |
 | A test of the new worktree fails after the add. On Linux and macOS the tests come before the checkout and give `unsafe_path`. A worktree directory replaced during the checkout gives `worktree_add_failed`. On Linux and macOS a replacing folder with no `.git` gets the `unsafe_path` text of a gone `.git` file instead (claustrum's own). So does a failed test on Windows, except a `.git` file that names another staged entry. That gives `unsafe_path`. | Everything, except an empty worktree directory. A `.git` file that names another staged entry, or a `.git` that something put in the leaf, leaves nothing: the worktree directory and the branch that the request created go. |
 | The `.git` file of the new worktree is gone after a good checkout (`unsafe_path`, Linux and macOS). This test comes first, and the deadline test of the checkout comes next (claustrum's own, not measured). | The registration and the branch. The worktree directory goes. |
-| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`). Or the text holds `; retry` before any clause of the rollback (Linux and macOS). | The worktree directory, its registration and a branch that this request created go. |
+| The checkout or the `config.worktree` step fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`), or the content check refuses (`worktree_verify_*`). Or the text holds `; retry` before any clause of the rollback (Linux and macOS). | The worktree directory, its registration and a branch that this request created go. |
 
 ??? note "When a rollback leaves something"
 

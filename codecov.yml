@@ -199,6 +199,8 @@ component_management:
         - internal/git/worktreestale_unix.go
         - internal/git/worktreestale_windows.go
         - internal/git/worktreeverify.go
+        # the content check of git.worktree_create after the checkout (b3081b51).
+        - internal/git/worktreecontent.go
         # the settle step after the checkout of git.worktree_create (683cc6a9).
         - internal/git/worktreesettle.go
         # git.worktree_remove's own delete of the worktree and its entry.

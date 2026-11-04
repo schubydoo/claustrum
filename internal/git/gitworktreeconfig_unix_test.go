@@ -241,11 +241,21 @@ type frontKinds struct {
 // checkFront tests the option list of each call of one request. want are the
 // values of the items that the lists must start with. dir is the folder of the
 // daemon.
+// withoutStatusLfs is argv less the first item of the status call of
+// b3081b51 in the state shadow: the lfs folder of its temporary git folder
+// (gitstatus.go).
+func withoutStatusLfs(argv []string) []string {
+	if len(argv) > 2 && argv[0] == "-c" && strings.HasPrefix(argv[1], "lfs.storage=") && slices.Contains(argv, "status") {
+		return argv[2:]
+	}
+	return argv
+}
+
 func checkFront(t *testing.T, what, dir string, calls []envCall, want []string) frontKinds {
 	t.Helper()
 	var k frontKinds
 	for _, c := range calls {
-		values, rest := optionList(c.argv)
+		values, rest := optionList(withoutStatusLfs(c.argv))
 		line := strings.Join(c.argv, " ")
 		switch {
 		case len(values) == 0:
@@ -554,7 +564,7 @@ func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {
 				t.Fatalf("%d reads of a config file and %d calls in the temporary git folder, want %d and 4", len(reads), len(temp), row.reads)
 			}
 			for _, i := range temp {
-				front, values, rest := split(calls[i].argv)
+				front, values, rest := split(withoutStatusLfs(calls[i].argv))
 				if !slices.Equal(front, row.front) || len(values) != len(gitHardenHeavy) {
 					t.Errorf("the call %q starts with the items %q and has %d more\nwant %q and then the %d items", rest, front, len(values), row.front, len(gitHardenHeavy))
 				}
