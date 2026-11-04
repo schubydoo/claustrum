@@ -12,9 +12,9 @@ Per-method wire facts (params, result field order, error texts) live in
 [PROTOCOL.md](PROTOCOL.md) and on the pages under `protocol/`. The history of the
 reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
 
-claustrum follows the reference build `be1c1ca5`, except its [terminal](REFERENCE-BUILDS.md#be1c1ca50b7b27c5f9341e4cbabc2039588fe597-2026-10-19-built). An
+claustrum follows the reference build `b3081b51`, except its [terminal](REFERENCE-BUILDS.md#b3081b512da230f24d74a2082a678246a89685ee-2026-10-30-built). An
 entry names the build of a measurement where the build matters. A measurement of the reference that names no build was made
-on `683cc6a9` or an earlier build. A fact read from
+on `be1c1ca5` or an earlier build. A fact read from
 claustrum's code is marked "from the code".
 
 ## The one hard rule
@@ -612,8 +612,8 @@ have no flag and no key.
   Windows).
 - **Systems and switch.** Windows. On-wire, always on, no switch.
 - **Cost.** In that state the create answers
-  `{"success":false,"error":"git worktree add failed: Preparing worktree (new branch 'b1') fatal: '<repo>/.claude/worktrees/w1' is a missing but already registered worktree; use 'add -f' to override, or 'prune' or 'remove' to clear","errorCode":"worktree_add_failed"}`.
-  The branch `b1` stays, because git makes it before it refuses. No cost where
+  `{"success":true,"path":"<repo>\\.claude\\worktrees\\w1","sourceBranch":"main","branch":"b1"}`
+  and registers `w1` as `.git\worktrees\w11` (measured on Windows). No cost where
   the folder of a stale entry is gone (from the code). A `Lstat` that fails with
   another error than "does not exist" keeps a stale entry too, and then the add
   fails.

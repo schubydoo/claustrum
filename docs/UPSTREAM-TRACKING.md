@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `be1c1ca5`. Its result is in
+baseline, `b3081b51`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -202,7 +202,7 @@ So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends n
 first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
 once, as on the reference
 ([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
-claustrum lacks the terminal of `52d82f0a` and `683cc6a9`, and of the pinned `be1c1ca5`, so `server.capabilities` lacks
+claustrum lacks the terminal of `52d82f0a`, `683cc6a9` and `be1c1ca5`, and of the pinned `b3081b51`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
 (measured on macOS and Windows). Check those
@@ -258,7 +258,7 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `be1c1ca5`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `b3081b51`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names another build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
@@ -337,11 +337,6 @@ the linked pages.
     own, `5fd08069` not measured), and some `filter.` pairs of the call log.
 
   See [Git filters](protocol/git-worktree-create.md#git-filters).
-- The content check of `git.worktree_create` follows `b3081b51`. Against
-  `5fd08069` and `be1c1ca5` the replies with `worktree_verify_content`,
-  `worktree_verify_link`, `worktree_verify_retry`, `worktree_verify_other_writer`
-  and `worktree_verify_repository` are new. See [The content
-  check](protocol/git-worktree-create.md#the-content-check).
 - The refusals of a repository config follow `5fd08069`. Against `89cb6289` the
   texts that start with `this repository's git config cannot be used: ` and
   `a file in this repository's .git directory cannot be used: ` are new, and the
@@ -562,8 +557,8 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `be1c1ca5`, carries a go1.25.14 stamp (`go version` on the binary), as
-`683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
+pinned today, `b3081b51`, carries a go1.25.14 stamp (`go version` on the binary), as
+`be1c1ca5`, `683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
 same escape. `files.read` puts raw file bytes into `content`, so under Go 1.27
 every read of a file with a non-UTF-8 byte diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this

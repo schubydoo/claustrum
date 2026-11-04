@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `b3081b51…` | 2026-10-30 (built) | new `server.capabilities` features, the launcher refusal of a value that is not a string, the session folders, the content check of a new worktree, new Windows git refusals and the `cliTempRoot` member. See below | [PRs 906, 907, 909–915, 920, 921, 923–927](https://github.com/schubydoo/claustrum/pull/927) |
 | `be1c1ca5…` | 2026-10-19 (built) | the staged worktree add on every system, the ssh door of the checkout, new worktree texts, the null-device hook path on Windows, new git child variables, a long socket path, `cliRemoved` and a new feature. See below | [PRs 807–818](https://github.com/schubydoo/claustrum/pull/818) |
 | `683cc6a9…` | 2026-10-14 (built) | the `files.realpath` method, the `real` member of `files.read`, `junctionsAsDirs`, `alreadyComplete`, `linkBound`, a settle step after the checkout, new git trust texts and new features. See below | [PRs 784, 786–793, 796–805](https://github.com/schubydoo/claustrum/pull/805) |
 | `52d82f0a…` | 2026-10-09 (built) | the `end` member, spawn refusal reasons, `includeDotNames`, the kill farewell, Windows jobs, new git trust rules, a third owner probe and new features. See below | [PRs 767, 769, 771–773, 775–781](https://github.com/schubydoo/claustrum/pull/781) |
@@ -41,6 +42,7 @@ release.
 
 | Reference SHA | Divergences opened | Divergences retired | Other divergence notes |
 |---|---|---|---|
+| `b3081b51…` | D28 | | |
 | `be1c1ca5…` | | | D2 and D24 cover the staged add. A D10 cap that fires before the disk fills skips the second prune |
 | `52d82f0a…` | | | CT-2 covers a pending farewell and a killed Windows daemon |
 | `5fd08069…` | D27 | D4, D5, D9, D13, D17, D18, D21, D25 | |
@@ -69,6 +71,61 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `b3081b512da230f24d74a2082a678246a89685ee` — 2026-10-30 (built)
+
+Its `-version` prints
+`claude-ssh b3081b512da230f24d74a2082a678246a89685ee (built 2026-10-30T16:35:57Z)`.
+Issue 896 reported the build, pinned by Claude Desktop 4.16336.0 for Linux. It carries
+a `go1.25.14` stamp (`go version` on the binary). The rules are on the pages of the
+methods and in [PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- `server.capabilities` lists six new features, five on Windows (PR 915, measured on
+  Linux, macOS and Windows).
+- `launcher.resolve`, `-install` and `-probe-cli` refuse a managed launcher value that is
+  not a string (PR 907, measured on Linux, and on macOS for a number).
+- The git methods and a spawn of a bare git pass over a git in a [session
+  folder](protocol/git-rules-session-folders.md), with a new refusal text (PR 912). A spawn
+  whose session folder record cannot be saved gets `-32603` (PR 925, measured on Linux,
+  macOS and Windows). That holds when the first entry of the daemon PATH lies in that
+  folder. A `ccd-cli` command and a launcher spawn record their folders too
+  (PR 926).
+- After a good checkout `git.worktree_create` compares the config files of the new
+  worktree with the commit. A mismatch answers one of five `worktree_verify_*` codes
+  ([The content check](protocol/git-worktree-create.md#the-content-check), PRs 913 and
+  924, measured on Linux, macOS and Windows).
+- On Windows four git methods refuse a faulty `objects/info/alternates` file, and
+  `git.status` and `git.info` refuse a long link chain (PR 910). Three git methods refuse
+  a link to a network or device path (PR 920). Both are measured on Windows.
+- On Linux a `"cliTempRoot":true` spawn can get a private temp folder and a `cliTempRoot`
+  member in its reply (PRs 914 and 921, measured on Linux).
+
+**Off-wire churn.** The libc probe of `-install` runs `/usr/bin/ldd`, or `/bin/ldd` when
+it is missing, with a fixed environment (PRs 906 and 911, measured on Linux). At a
+shutdown on Linux and macOS a stream-json child gets `SIGTERM` first. A child that stays
+gets the group `SIGKILL` 1.5 s later (PR 909). A good `git.worktree_create` records the git directory of
+its repository as a session folder (PR 927, measured on Linux, macOS and Windows).
+
+**Older gaps closed.** The `already exists` and link loop refusals of the worktree methods
+put their path in backticks, as `be1c1ca5` does (PR 923, measured on Linux).
+
+**How it was bounded.** Each item above was measured side by side with `be1c1ca5` on the
+systems named. A whole-build re-check of the final code compared claustrum with `b3081b51`
+on Linux, macOS and Windows. It covered the frames, the git call logs, the divergence
+probes and the native tests.
+
+**Divergences.** D28 opened: at a shutdown claustrum sends no group `SIGKILL` after the
+exit frame of a child that got the `SIGTERM`.
+
+These items stay open:
+
+- claustrum does not build the terminal: the `pty` member of `process.spawn` and the
+  method `process.resize`. The maintainer holds the terminal until a Claude Desktop build
+  calls it.
+- The Windows `server.shutdown` reply.
+- The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `be1c1ca50b7b27c5f9341e4cbabc2039588fe597` — 2026-10-19 (built)
 

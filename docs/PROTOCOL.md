@@ -9,7 +9,7 @@ claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
 the [stream frames](protocol/streams.md), the [flags](protocol/flags.md) and the
 [shared git rules](#shared-rules-of-the-git-methods) have their own pages. The life
 of the daemon off the wire is on [Running the daemon](DAEMON.md). The pinned
-reference build is `be1c1ca5`.
+reference build is `b3081b51`.
 A rule marked "claustrum's own" is not a parity claim: the reference has
 no such rule, or it does something else. A D-number marks a deliberate
 divergence, not the reference. A rule marked "not measured" or "from the code"
