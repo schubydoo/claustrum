@@ -281,6 +281,8 @@ component_management:
         - internal/git/gitnorepo.go
         - internal/git/gitnorepo_unix.go
         - internal/git/gitnorepo_windows.go
+        # the object sources and the chain of links of the git methods on Windows (b3081b51).
+        - internal/git/objectsources.go
         # the daemon's own read of a .git file, a commondir file and a gitdir record.
         - internal/git/gitplainfile_unix.go
         - internal/git/gitplainfile_windows.go

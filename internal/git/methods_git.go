@@ -271,6 +271,11 @@ func gitInfo(req *gitCall) rpc.Response {
 		}
 		return notRepo()
 	}
+	// On Windows the alternates file is checked before the next git call
+	// (alternatesRefusal).
+	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	// The start test and the daemon's own read of the repository's config come
 	// before the listing (settingsGateRefusal). Their place after the count check is
 	// not measured.
@@ -683,6 +688,15 @@ func gitStatus(req *gitCall) rpc.Response {
 	// A baseRepo that does not resolve, or that lies in a managed worktrees tree,
 	// answers before any git call and before the check of the daemon's own
 	// GIT_CONFIG_COUNT (measured).
+	//
+	// On Windows a baseRepo behind a chain of 32 or more links is refused, after the
+	// excludes read. Chains of 64 links and more get the text too, and the system does
+	// not resolve them (measured on Windows). Its place first is claustrum's own, not
+	// measured (statusLinkChainRefusal).
+	if msg := statusLinkChainRefusal(p.BaseRepo); msg != "" {
+		userExcludesFile()
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -712,6 +726,11 @@ func gitStatus(req *gitCall) rpc.Response {
 	// call. On Windows that is a dangling junction (measured).
 	if _, err := os.Stat(p.BaseRepo); err != nil {
 		return notRepo
+	}
+	// On Windows the object sources are checked before the next git call
+	// (statusSourceRefusal).
+	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate).
@@ -989,6 +1008,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+	}
+	// On Windows the alternates file is checked before any git call, and
+	// nothing is created (alternatesRefusal).
+	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate). Nothing is created (measured on Linux).
@@ -2460,6 +2484,13 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		// macOS).
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		// On Windows the alternates file is checked before any git call and any
+		// delete (alternatesRefusal).
+		if verdict == gitDirTrusted {
+			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 		}
 		// The daemon's own read of the repository's config comes before the listing
 		// (repoConfigGate). The worktree stays (measured on Linux). The path is
