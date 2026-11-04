@@ -23,6 +23,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `launcher` | no | An array of strings that names a managed launcher. See [The managed launcher](#the-managed-launcher). Absent or `null` means no launcher. |
 | `linkBound` | no | See [its page](process-link-bound.md). |
 | `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
+| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux. Any other value counts as absent (claustrum's own). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
 ## Response
@@ -34,6 +35,8 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the wall clock of the daemon at the spawn, in epoch seconds.
 
 `startTime` is an opaque token that detects a reused pid, not an OS start time.
+
+With `"cliTempRoot": true` on Linux the result can carry a `cliTempRoot` member after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
 
 After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
 
@@ -119,6 +122,42 @@ The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTR
 ### A temp folder that takes no file (build `683cc6a9`)
 
 On Linux and macOS a daemon value of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` or `TEMP` does not reach a child if its folder cannot take a new file `.claude-ssh-<n>`. For a missing folder the nearest existing parent folder takes the test. A missing folder under a folder that takes the file stays. On Linux a relative value stays too, and spawns at once share one test, which removes the file. `TMP`, the order of the names and the test of the parent are claustrum's own, not measured. So is the wait of at most 2 s per test.
+
+### The private temp folder (build `b3081b51`)
+
+On Linux a spawn with `"cliTempRoot": true` tests the entry `claude-<uid>` in the `TMPDIR` of the child. These rules are measured on Linux:
+
+- With no entry, or an own folder of mode 0700 or 0755, the result has no member and the child gets nothing.
+- An unfit entry gives `refused`: `a link`, `not a folder`, `another account's`, `on another file system` or `not readable by its owner`. The entry stays.
+- The child then gets `CLAUDE_CODE_TMPDIR=<temp dir>/ccd-<12 hex>`, an own folder of mode 0700, and the result names it.
+- The daemon logs `[process.Manager] Claude Code's temp folder is unfit (it is <kind>): Claude Code gets <name> beside it`.
+
+```json
+{"success":true,"cliTempRoot":{"refused":"a link","name":"ccd-a5247ffbe09b"}}
+```
+
+#### When no folder is given
+
+With no folder, `whyNot` takes the place of `name`. The log line then ends `(it is <kind>), but no other was made: <whyNot>`. The spawn still succeeds.
+
+| `whyNot` | Cause |
+|---|---|
+| `the temp dir or a folder above it could not be opened for reading` | A temp dir of mode 0333. This test comes first, so `refused` is absent and no line is logged. |
+| `the temp dir or a folder above it belongs to, or can be written by, another account` | A temp dir of mode 0777. `/tmp` passes. |
+| `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | 8 live spawns have a folder. |
+| `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
+
+In the last case the daemon removes that one new name by one `rmdir` through a handle of the temp dir. A link at the name stays, and the text still says `removed`.
+
+#### The record of the folder
+
+The run dir holds `cli-temp-root-<16 hex>`, mode 0600, with the folder name and no newline. The 16 hex are the first 8 bytes of the SHA-256 of the boot id, `/`, the pid namespace, a NUL and the temp dir. The old file goes by one plain remove before the new one.
+
+- A later spawn, of a new daemon too, gets the folder that the file names again.
+- A folder that another process holds by `flock`, a folder of 25 h, or another content in the file gives a new name. The old folder stays.
+- While a child runs, the daemon holds the folder by `flock` and sets its write time to now, at the hold and every 600 s.
+
+claustrum's own, not measured: random 12 hex, an age bound of 24 h, and the order of the `refused` tests. A missing `TMPDIR` gives `/tmp`. A relative one gives no member, and a folder that does not exist gives the first `whyNot`. The count is per daemon. The hold and the count end at the exit frame. The owner test of the new folder is claustrum's own. On macOS and Windows the flag changes nothing (measured).
 
 ### The managed launcher
 

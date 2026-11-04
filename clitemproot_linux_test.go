@@ -1,0 +1,541 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
+)
+
+// tempRootDir makes a temp dir X of mode 0700 whose chain passes the account test,
+// and a run dir for the registry. With link, X holds claude-<uid> as a link to X/t.
+func tempRootDir(t *testing.T, link bool) (x, runDir string) {
+	t.Helper()
+	base, err := os.MkdirTemp("", "ctr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	// The precondition is tested here on its own, not by the code under test.
+	for d := base; ; d = filepath.Dir(d) {
+		var st unix.Stat_t
+		if err := unix.Stat(d, &st); err != nil {
+			t.Fatal(err)
+		}
+		if (int(st.Uid) != os.Getuid() && st.Uid != 0) || (st.Mode&0o022 != 0 && st.Mode&unix.S_ISVTX == 0) {
+			t.Skipf("the folder %s does not pass the account test on this host", d)
+		}
+		if d == "/" {
+			break
+		}
+	}
+	x, runDir = filepath.Join(base, "X"), filepath.Join(base, "run")
+	for _, d := range []string{x, runDir} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if link {
+		if err := os.Mkdir(filepath.Join(x, "t"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(x, "t"), filepath.Join(x, tempEntryName())); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return x, runDir
+}
+
+func sha256Hex8(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
+}
+
+func tempEntryName() string { return "claude-" + strconv.Itoa(os.Getuid()) }
+
+// cleanTempRoots gives back each folder that a test left, at its end, and fails a
+// test that left a live count.
+func cleanTempRoots(t *testing.T, releases *[]func()) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, r := range *releases {
+			r()
+		}
+		tempRoots.mu.Lock()
+		live, held := tempRoots.live, len(tempRoots.held)
+		tempRoots.mu.Unlock()
+		if live != 0 || held != 0 {
+			t.Errorf("after the test: live %d, held %d, want 0 and 0", live, held)
+		}
+	})
+}
+
+func runTempRoot(t *testing.T, x, runDir string, releases *[]func()) ([]string, *rpc.CLITempRoot) {
+	t.Helper()
+	env, res, release := privateTempRoot([]string{"TMPDIR=" + x}, runDir)
+	*releases = append(*releases, release)
+	return env, res
+}
+
+func ccdFolders(t *testing.T, x string) []string {
+	t.Helper()
+	ents, err := os.ReadDir(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), "ccd-") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+func TestCLITempRootGivesAFolderBesideALink(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	logs := captureLogBuf(t)
+	env, res := runTempRoot(t, x, runDir, &rel)
+	if res == nil || res.Refused != "a link" || !tempRootNameRE.MatchString(res.Name) || res.WhyNot != "" {
+		t.Fatalf("answer %+v, want refused a link and a name", res)
+	}
+	if v := tempEnvValue(env, "CLAUDE_CODE_TMPDIR"); v != filepath.Join(x, res.Name) {
+		t.Errorf("CLAUDE_CODE_TMPDIR %q, want %q", v, filepath.Join(x, res.Name))
+	}
+	if v := tempEnvValue(env, "TMPDIR"); v != x {
+		t.Errorf("TMPDIR %q, want %q", v, x)
+	}
+	fi, err := os.Lstat(filepath.Join(x, res.Name))
+	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("new folder %v %v, want a 0700 folder", fi, err)
+	}
+	reg := filepath.Join(runDir, tempRootRegistryName(x))
+	b, err := os.ReadFile(reg)
+	if err != nil || string(b) != res.Name {
+		t.Fatalf("registry %q %v, want %q with no newline", b, err, res.Name)
+	}
+	if fi, _ := os.Stat(reg); fi == nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("registry mode %v, want 0600", fi)
+	}
+	if fi, err := os.Lstat(filepath.Join(x, tempEntryName())); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link: %v %v, want it to stay", fi, err)
+	}
+	if _, err := os.Stat(filepath.Join(x, "t")); err != nil {
+		t.Errorf("the target of the link: %v", err)
+	}
+	want := "[process.Manager] Claude Code's temp folder is unfit (it is a link): Claude Code gets " + res.Name + " beside it\n"
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("log %q, want the line %q", logs.String(), want)
+	}
+}
+
+// The registry name is the first 8 bytes of the SHA-256 of the boot id, "/", the
+// pid namespace, a NUL and the temp dir as given.
+func TestCLITempRootRegistryName(t *testing.T) {
+	boot, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		t.Skip(err)
+	}
+	ns, err := os.Readlink("/proc/self/ns/pid")
+	if err != nil {
+		t.Skip(err)
+	}
+	got := tempRootRegistryName("/tmp/r/X")
+	if !strings.HasPrefix(got, "cli-temp-root-") || len(got) != len("cli-temp-root-")+16 {
+		t.Fatalf("name %q", got)
+	}
+	// An independent form of the same rule.
+	in := strings.TrimSpace(string(boot)) + "/" + ns + string(rune(0)) + "/tmp/r/X"
+	if want := "cli-temp-root-" + sha256Hex8(in); got != want {
+		t.Errorf("name %q, want %q", got, want)
+	}
+}
+
+func TestCLITempRootReusesItsName(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	_, a := runTempRoot(t, x, runDir, &rel)
+	// A folder that this daemon holds is taken again, even with an old write time,
+	// and its write time is set to now.
+	old := time.Now().Add(-30 * time.Hour)
+	if err := os.Chtimes(filepath.Join(x, a.Name), old, old); err != nil {
+		t.Fatal(err)
+	}
+	_, b := runTempRoot(t, x, runDir, &rel)
+	if b == nil || b.Name != a.Name {
+		t.Fatalf("second answer %+v, want the name %s", b, a.Name)
+	}
+	if fi, _ := os.Stat(filepath.Join(x, a.Name)); fi == nil || time.Since(fi.ModTime()) > time.Hour {
+		t.Errorf("write time %v, want now", fi)
+	}
+	// With nothing held, as in a new daemon, the registry gives the name again.
+	for _, r := range rel {
+		r()
+	}
+	rel = nil
+	_, c := runTempRoot(t, x, runDir, &rel)
+	if c == nil || c.Name != a.Name {
+		t.Fatalf("answer after the hold %+v, want the name %s", c, a.Name)
+	}
+	if got := ccdFolders(t, x); len(got) != 1 {
+		t.Errorf("folders %v, want one", got)
+	}
+}
+
+func TestCLITempRootNewNameForAnOldFolderOrABadRegistry(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	_, a := runTempRoot(t, x, runDir, &rel)
+	rel[0]()
+	old := time.Now().Add(-25 * time.Hour)
+	if err := os.Chtimes(filepath.Join(x, a.Name), old, old); err != nil {
+		t.Fatal(err)
+	}
+	_, b := runTempRoot(t, x, runDir, &rel)
+	if b == nil || b.Name == a.Name || !tempRootNameRE.MatchString(b.Name) {
+		t.Fatalf("answer %+v, want a new name after %s", b, a.Name)
+	}
+	reg := filepath.Join(runDir, tempRootRegistryName(x))
+	if got, _ := os.ReadFile(reg); string(got) != b.Name {
+		t.Errorf("registry %q, want %q", got, b.Name)
+	}
+	if _, err := os.Stat(filepath.Join(x, a.Name)); err != nil {
+		t.Errorf("the old folder: %v, want it to stay", err)
+	}
+	rel[1]()
+	if err := os.WriteFile(reg, []byte("zzz"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, c := runTempRoot(t, x, runDir, &rel)
+	if c == nil || c.Name == b.Name || c.Name == a.Name {
+		t.Fatalf("answer %+v after a bad registry, want a new name", c)
+	}
+	if got := ccdFolders(t, x); len(got) != 3 {
+		t.Errorf("folders %v, want the three", got)
+	}
+}
+
+// A folder that another process holds by flock is not taken. An own open file
+// description stands in for that process.
+func TestCLITempRootSkipsAFolderThatAnotherHolds(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	_, a := runTempRoot(t, x, runDir, &rel)
+	rel[0]()
+	f, err := os.Open(filepath.Join(x, a.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	_, b := runTempRoot(t, x, runDir, &rel)
+	if b == nil || b.Name == a.Name {
+		t.Fatalf("answer %+v, want a new name beside the held %s", b, a.Name)
+	}
+}
+
+func TestCLITempRootCapOfEightLiveSpawns(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	logs := captureLogBuf(t)
+	for i := range tempRootLiveCap {
+		x, runDir := tempRootDir(t, true)
+		if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
+			t.Fatalf("spawn %d: %+v, want a name", i+1, res)
+		}
+	}
+	x, runDir := tempRootDir(t, true)
+	env, res := runTempRoot(t, x, runDir, &rel)
+	b, _ := json.Marshal(res)
+	if want := `{"refused":"a link","whyNot":"too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute"}`; string(b) != want {
+		t.Fatalf("ninth answer %s, want %s", b, want)
+	}
+	if tempEnvValue(env, "CLAUDE_CODE_TMPDIR") != "" || len(ccdFolders(t, x)) != 0 {
+		t.Errorf("the ninth got a folder")
+	}
+	want := "[process.Manager] Claude Code's temp folder is unfit (it is a link), but no other was made: " + tempRootTooMany + "\n"
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("log %q, want %q", logs.String(), want)
+	}
+	rel[0]()
+	if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
+		t.Fatalf("after one ended: %+v, want a name", res)
+	}
+}
+
+func TestCLITempRootEntryKinds(t *testing.T) {
+	uid := 1000
+	dir := func(mode uint32) *unix.Stat_t {
+		return &unix.Stat_t{Mode: unix.S_IFDIR | mode, Uid: uint32(uid), Dev: 7}
+	}
+	other := dir(0o700)
+	other.Uid = 0
+	otherFS := dir(0o700)
+	otherFS.Dev = 8
+	for _, c := range []struct {
+		st   *unix.Stat_t
+		want string
+	}{
+		{&unix.Stat_t{Mode: unix.S_IFLNK | 0o777, Uid: uint32(uid), Dev: 7}, "a link"},
+		{&unix.Stat_t{Mode: unix.S_IFREG | 0o600, Uid: uint32(uid), Dev: 7}, "not a folder"},
+		{other, "another account's"},
+		{otherFS, "on another file system"},
+		{dir(0o300), "not readable by its owner"},
+		{dir(0o700), ""},
+		{dir(0o755), ""},
+	} {
+		if got := tempEntryUnfit(c.st, 7, uid); got != c.want {
+			t.Errorf("mode %o uid %d dev %d: %q, want %q", c.st.Mode, c.st.Uid, c.st.Dev, got, c.want)
+		}
+	}
+}
+
+func TestCLITempRootFitOrMissingEntryAddsNothing(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	for _, mode := range []os.FileMode{0, 0o700, 0o755} {
+		x, runDir := tempRootDir(t, false)
+		if mode != 0 {
+			if err := os.Mkdir(filepath.Join(x, tempEntryName()), mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(filepath.Join(x, tempEntryName()), mode); err != nil {
+				t.Fatal(err)
+			}
+		}
+		env, res := runTempRoot(t, x, runDir, &rel)
+		if res != nil || tempEnvValue(env, "CLAUDE_CODE_TMPDIR") != "" || len(ccdFolders(t, x)) != 0 {
+			t.Errorf("mode %o: answer %+v, want nothing", mode, res)
+		}
+	}
+}
+
+func TestCLITempRootFileAndUnreadableEntry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0300 folder")
+	}
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, false)
+	if err := os.WriteFile(filepath.Join(x, tempEntryName()), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Refused != "not a folder" || res.Name == "" {
+		t.Errorf("a file: %+v", res)
+	}
+	x, runDir = tempRootDir(t, false)
+	e := filepath.Join(x, tempEntryName())
+	if err := os.Mkdir(e, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(e, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(e, 0o700) })
+	if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Refused != "not readable by its owner" || res.Name == "" {
+		t.Errorf("a 0300 folder: %+v", res)
+	}
+}
+
+func TestCLITempRootTempDirOthersCanWrite(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	if err := os.Chmod(x, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	logs := captureLogBuf(t)
+	env, res := runTempRoot(t, x, runDir, &rel)
+	b, _ := json.Marshal(res)
+	if want := `{"refused":"a link","whyNot":"the temp dir or a folder above it belongs to, or can be written by, another account"}`; string(b) != want {
+		t.Fatalf("answer %s, want %s", b, want)
+	}
+	if tempEnvValue(env, "CLAUDE_CODE_TMPDIR") != "" || len(ccdFolders(t, x)) != 0 {
+		t.Errorf("a folder was given")
+	}
+	if want := "[process.Manager] Claude Code's temp folder is unfit (it is a link), but no other was made: " + tempRootOther + "\n"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log %q, want %q", logs.String(), want)
+	}
+	// The sticky bit makes a folder that others can write pass, as /tmp does.
+	if err := os.Chmod(x, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+	if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
+		t.Errorf("sticky temp dir: %+v, want a name", res)
+	}
+}
+
+func TestCLITempRootUnreadableTempDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0333 folder")
+	}
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, false)
+	if err := os.Chmod(x, 0o333); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(x, 0o700) })
+	logs := captureLogBuf(t)
+	_, res := runTempRoot(t, x, runDir, &rel)
+	b, _ := json.Marshal(res)
+	if want := `{"whyNot":"the temp dir or a folder above it could not be opened for reading"}`; string(b) != want {
+		t.Fatalf("answer %s, want %s", b, want)
+	}
+	if strings.Contains(logs.String(), "temp folder") {
+		t.Errorf("log %q, want no line", logs.String())
+	}
+}
+
+// setAfterMkdir runs fn between the mkdir and the test of the new folder.
+func setAfterMkdir(t *testing.T, fn func(dir, name string)) {
+	t.Helper()
+	old := afterTempRootMkdir
+	afterTempRootMkdir = fn
+	t.Cleanup(func() { afterTempRootMkdir = old })
+}
+
+func wantRemovedAnswer(t *testing.T, res *rpc.CLITempRoot) {
+	t.Helper()
+	b, _ := json.Marshal(res)
+	if want := `{"refused":"a link","whyNot":"the new folder was not this account's own with mode 0700, and was removed"}`; string(b) != want {
+		t.Fatalf("answer %s, want %s", b, want)
+	}
+}
+
+func TestCLITempRootNewFolderWithAnotherModeIsRemoved(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	setAfterMkdir(t, func(dir, name string) { _ = os.Chmod(filepath.Join(dir, name), 0o755) })
+	env, res := runTempRoot(t, x, runDir, &rel)
+	wantRemovedAnswer(t, res)
+	if got := ccdFolders(t, x); len(got) != 0 || tempEnvValue(env, "CLAUDE_CODE_TMPDIR") != "" {
+		t.Errorf("folders %v, want the new folder gone and no env", got)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, tempRootRegistryName(x))); !os.IsNotExist(err) {
+		t.Errorf("registry: %v, want none", err)
+	}
+}
+
+// A racer that moved the new folder and put a link at its name: the rmdir fails on
+// the link, and the moved folder and the link stay.
+func TestCLITempRootMovedFolderStays(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	var made string
+	setAfterMkdir(t, func(dir, name string) {
+		made = name
+		_ = os.Rename(filepath.Join(dir, name), filepath.Join(dir, "moved-"+name))
+		_ = os.Symlink(filepath.Join(dir, "t"), filepath.Join(dir, name))
+	})
+	_, res := runTempRoot(t, x, runDir, &rel)
+	wantRemovedAnswer(t, res)
+	if _, err := os.Stat(filepath.Join(x, "moved-"+made)); err != nil {
+		t.Errorf("moved folder: %v, want it to stay", err)
+	}
+	if fi, err := os.Lstat(filepath.Join(x, made)); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("link at the name: %v %v, want it to stay", fi, err)
+	}
+}
+
+// The remove is one rmdir: a new folder that got content stays with it, and the
+// home guard keeps a new folder that is home.
+func TestCLITempRootRemoveIsOneRmdirWithTheHomeGuard(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	setAfterMkdir(t, func(dir, name string) {
+		_ = os.Chmod(filepath.Join(dir, name), 0o755)
+		_ = os.WriteFile(filepath.Join(dir, name, "keep"), nil, 0o600)
+	})
+	_, res := runTempRoot(t, x, runDir, &rel)
+	wantRemovedAnswer(t, res)
+	if got := ccdFolders(t, x); len(got) != 1 {
+		t.Fatalf("folders %v, want the one with content", got)
+	}
+	x2, runDir2 := tempRootDir(t, true)
+	setAfterMkdir(t, func(dir, name string) {
+		_ = os.Chmod(filepath.Join(dir, name), 0o755)
+		t.Setenv("HOME", filepath.Join(dir, name))
+	})
+	_, res = runTempRoot(t, x2, runDir2, &rel)
+	wantRemovedAnswer(t, res)
+	if got := ccdFolders(t, x2); len(got) != 1 {
+		t.Errorf("folders %v, want the folder that is home to stay", got)
+	}
+}
+
+func TestCLITempRootRemoveTakesOnlyItsOwnShape(t *testing.T) {
+	x, _ := tempRootDir(t, false)
+	if err := os.Mkdir(filepath.Join(x, "other"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	removeMadeTempRoot(int(f.Fd()), x, "other")
+	if _, err := os.Stat(filepath.Join(x, "other")); err != nil {
+		t.Errorf("a name of another shape: %v, want it to stay", err)
+	}
+}
+
+func TestCLITempRootRefreshEveryInterval(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := tempRootRefresh
+	tempRootRefresh = 20 * time.Millisecond
+	t.Cleanup(func() { tempRootRefresh = old })
+	x, runDir := tempRootDir(t, true)
+	_, res := runTempRoot(t, x, runDir, &rel)
+	p := filepath.Join(x, res.Name)
+	back := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(p, back, back); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		fi, err := os.Stat(p)
+		if err == nil && time.Since(fi.ModTime()) < time.Minute {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("write time %v, want a refresh", fi.ModTime())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A temp dir that does not exist gives the text of a folder that cannot be opened
+// (claustrum's own, not measured).
+func TestCLITempRootMissingTempDir(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, false)
+	_, res := runTempRoot(t, filepath.Join(x, "gone"), runDir, &rel)
+	if res == nil || res.WhyNot != tempRootNoOpen || res.Refused != "" {
+		t.Fatalf("answer %+v, want the open text alone", res)
+	}
+}

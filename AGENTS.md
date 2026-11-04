@@ -62,6 +62,7 @@ modes and the OS splits is in
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
 | `internal/git/gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` | the deletes in the folder `git-shadow` |
 | `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
+| `clitemproot_linux.go` | the rmdir of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
 | `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
 | `internal/git/gitcommand.go` | the start of every git call, which passes over a git in a session folder |
 
@@ -432,6 +433,16 @@ failed create removes nothing (from the code).
 
 Never widen: Do not make or remove the file in any folder but the inherited folder or its
 nearest existing parent.
+
+### The private temp folder
+
+On Linux a `"cliTempRoot":true` spawn removes the one `ccd-<12 hex>` name that it just made
+and found unfit (`b3081b51`, measured on Linux). That is one rmdir through a handle of the
+temp dir (`removeMadeTempRoot`), after `homeguard.WipesHomeDir`. The temp dir is the
+`TMPDIR` of the child env, which the caller can set. Its registry file in the run dir goes
+by one plain remove before each rewrite.
+
+Never widen: Remove no other name and never a tree.
 
 ### The held git directory
 
