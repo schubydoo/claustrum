@@ -3,6 +3,7 @@ package install
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -180,5 +181,54 @@ func TestManagedRunReasonExitStatus(t *testing.T) {
 	}
 	if got := managedRunReason(r.err); got != "exit status 3" {
 		t.Errorf("reason = %q, want %q", got, "exit status 3")
+	}
+}
+
+// TestManagedLauncherRefusalAcrossFiles pins how a refusal of a value that is not a
+// string meets the other values (b3081b51, measured on Linux). A later file's
+// refusal leaves an earlier value in place. A later value replaces an earlier
+// refusal, and a later refusal replaces an earlier one. In one file a string value
+// of either key wins over a refused value of the other key. In the last two rows an
+// env refusal wins over a processWrapper refusal, and over a processWrapper of ""
+// (b3081b51, measured on Linux).
+func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
+	const tail = " must be one string (the launcher and its arguments), not "
+	for _, c := range []struct {
+		name, base, dropIn string
+		status, reason     string
+		fromDropIn         bool
+	}{
+		{"a later refusal keeps the earlier value", `{"processWrapper":"wrap"}`, `{"processWrapper":5}`, StatusUnusable, managedNotAbsolute, false},
+		{"a later value replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":"wrap"}`, StatusUnusable, managedNotAbsolute, true},
+		{"a later refusal replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":[]}`, StatusUnusable, "processWrapper" + tail + "an array", true},
+		{"a later refusal after no value", `{}`, `{"processWrapper":5}`, StatusUnusable, "processWrapper" + tail + "a number", true},
+		{"a string env value wins over a processWrapper of 5", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"wrap"},"processWrapper":5}`, ``, StatusUnusable, managedNotAbsolute, false},
+		{"a string processWrapper wins over an env value of 5", `{"processWrapper":"wrap","env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, ``, StatusUnusable, managedNotAbsolute, false},
+		{"a string processWrapper wins over an env value of true", `{"processWrapper":"wrap","env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, ``, StatusUnusable, managedNotAbsolute, false},
+		{"an env refusal wins over a processWrapper refusal", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null},"processWrapper":{}}`, ``, StatusUnusable, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null", false},
+		{"an env refusal wins over a processWrapper of empty text", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]},"processWrapper":""}`, ``, StatusUnusable, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", false},
+	} {
+		dir := t.TempDir()
+		base := filepath.Join(dir, managedSettingsBase)
+		if err := os.WriteFile(base, []byte(c.base), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		source := base
+		if c.dropIn != "" {
+			dropDir := filepath.Join(dir, managedSettingsDropIns)
+			if err := os.Mkdir(dropDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dropDir, "10.json"), []byte(c.dropIn), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if c.fromDropIn {
+				source = filepath.Join(dropDir, "10.json")
+			}
+		}
+		got := resolveManagedLauncherIn(dir, "/opt/claude/cli")
+		if got.Status != c.status || got.Reason != c.reason || got.Source != source {
+			t.Errorf("%s: status %q reason %q source %q, want %q %q %q", c.name, got.Status, got.Reason, got.Source, c.status, c.reason, source)
+		}
 	}
 }

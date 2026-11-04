@@ -140,16 +140,22 @@ func Resolve(cliPath string) (rpc.ManagedLauncherResult, string) {
 	return res, note
 }
 
-// resolveManagedLauncherIn reads the settings under dir.
+// resolveManagedLauncherIn reads the settings under dir. A later file's refusal
+// stands only if no earlier file gave a value. A later value replaces an earlier
+// refusal, and a later refusal replaces an earlier one. Measured on Linux against
+// b3081b51 with a base file and one drop-in.
 func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherResult {
-	var value, source string
+	var value, refused, source string
 	take := func(path string) *rpc.ManagedLauncherResult {
-		v, bad := readManagedSettingsValue(path)
+		v, r, bad := readManagedSettingsValue(path)
 		if bad != nil {
 			return bad
 		}
-		if v != "" {
-			value, source = v, path
+		switch {
+		case v != "":
+			value, refused, source = v, "", path
+		case r != "" && value == "":
+			refused, source = r, path
 		}
 		return nil
 	}
@@ -167,6 +173,9 @@ func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherResult {
 	}
 	if source == "" {
 		return rpc.ManagedLauncherResult{Status: managedStatusNone}
+	}
+	if refused != "" {
+		return rpc.ManagedLauncherResult{Status: StatusUnusable, Source: source, Reason: refused}
 	}
 	argv, reason := parseManagedLauncherValue(value)
 	if reason == "" {
@@ -237,49 +246,51 @@ var readManagedSettingsFile = func(path string) ([]byte, error) {
 }
 
 // readManagedSettingsValue reads one settings file and returns its launcher value,
-// or "" when it has none. A missing file (also a dangling symlink) has none. The
+// or "" when it has none. The second result is the refusal text of a value that is
+// not a string (managedNotOneString), or "". A missing file (also a dangling symlink) has none. The
 // checks follow symlinks, so a symlink to a folder is "is a directory".
 //
 // An empty file, or one of JSON whitespace only, has none. A UTF-8 BOM is dropped.
 // A UTF-16LE BOM decodes the rest as UTF-16LE. A UTF-16BE BOM or a raw U+00A0 before
 // the JSON is "not valid JSON" (measured). claustrum's choice (not measured): a
 // trailing odd byte of UTF-16LE text is dropped.
-func readManagedSettingsValue(path string) (string, *rpc.ManagedLauncherResult) {
+func readManagedSettingsValue(path string) (string, string, *rpc.ManagedLauncherResult) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return "", nil
+			return "", "", nil
 		}
-		return "", managedUnreadable(path, managedErrText(err))
+		return "", "", managedUnreadable(path, managedErrText(err))
 	}
 	switch {
 	case fi.IsDir():
-		return "", managedUnreadable(path, managedIsDir)
+		return "", "", managedUnreadable(path, managedIsDir)
 	case !fi.Mode().IsRegular():
-		return "", managedUnreadable(path, managedNotRegular)
+		return "", "", managedUnreadable(path, managedNotRegular)
 	case fi.Size() > managedSettingsMaxBytes:
-		return "", managedUnreadable(path, managedTooLarge)
+		return "", "", managedUnreadable(path, managedTooLarge)
 	}
 	b, err := readManagedSettingsFile(path)
 	if err != nil {
-		return "", managedUnreadable(path, managedErrText(err))
+		return "", "", managedUnreadable(path, managedErrText(err))
 	}
 	if len(b) > managedSettingsMaxBytes {
-		return "", managedUnreadable(path, managedTooLarge)
+		return "", "", managedUnreadable(path, managedTooLarge)
 	}
 	b = decodeManagedSettingsText(b)
 	if len(bytes.Trim(b, " \t\r\n")) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 	var doc any
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return "", managedUnreadable(path, managedInvalidJSON)
+		return "", "", managedUnreadable(path, managedInvalidJSON)
 	}
 	obj, ok := doc.(map[string]any)
 	if !ok {
-		return "", managedUnreadable(path, managedNotObject)
+		return "", "", managedUnreadable(path, managedNotObject)
 	}
-	return managedSettingsWrapper(obj), nil
+	v, refused := managedSettingsWrapper(obj)
+	return v, refused, nil
 }
 
 func decodeManagedSettingsText(b []byte) []byte {
@@ -297,23 +308,69 @@ func decodeManagedSettingsText(b []byte) []byte {
 	return b
 }
 
-// managedSettingsWrapper is the launcher value of one settings file. Two keys carry
-// it: env.CLAUDE_CODE_PROCESS_WRAPPER and processWrapper. In one file the env key
-// wins, in both key orders. An env value of "" counts as unset. A value of the wrong
-// type is skipped (measured: a later file's wrong-type value leaves the earlier
-// value in place).
+// managedSettingsWrapper is the launcher value of one settings file, or the refusal
+// text of a value that is not a string. Two keys carry it:
+// env.CLAUDE_CODE_PROCESS_WRAPPER and processWrapper. In one file a string env
+// value wins, in both key orders. An env value of "" counts as unset.
 //
-// Two of claustrum's choices (not measured) follow. A processWrapper of "" counts
-// as unset too. Each file gives one value, so a later file's processWrapper wins
-// over an earlier file's env key.
-func managedSettingsWrapper(obj map[string]any) string {
+// Measured against b3081b51, with one settings file: a processWrapper of 5 and an
+// env value of 5 are refused with managedNotOneString (Linux and macOS), and so are
+// a processWrapper of true, [] or {} and an env value of null, true, [] or {}
+// (Linux). {"env":"x"} counts as unset (Linux and macOS), and so does a
+// processWrapper of null (Linux). A string env value wins over a processWrapper of
+// 5, and a string processWrapper wins over an env value of 5 or true (Linux,
+// launcher.resolve). be1c1ca5 skipped each of these values (Linux,
+// launcher.resolve).
+//
+// A processWrapper of "" next to a refused env value lets the env refusal answer,
+// and when both values are refused the env refusal answers (b3081b51, measured on
+// Linux). claustrum's choice (not measured): each file gives one value, so a later
+// file's processWrapper wins over an earlier file's env key.
+func managedSettingsWrapper(obj map[string]any) (string, string) {
+	envRefused := ""
 	if env, ok := obj["env"].(map[string]any); ok {
-		if s, ok := env[managedWrapperEnv].(string); ok && s != "" {
-			return s
+		if v, set := env[managedWrapperEnv]; set {
+			if s, ok := v.(string); ok {
+				if s != "" {
+					return s, ""
+				}
+			} else {
+				envRefused = managedNotOneString("env."+managedWrapperEnv, v)
+			}
 		}
 	}
-	s, _ := obj["processWrapper"].(string)
-	return s
+	switch v := obj["processWrapper"].(type) {
+	case string:
+		if v != "" {
+			return v, ""
+		}
+		return "", envRefused
+	case nil:
+		return "", envRefused
+	default:
+		if envRefused != "" {
+			return "", envRefused
+		}
+		return "", managedNotOneString("processWrapper", v)
+	}
+}
+
+// managedNotOneString is the measured refusal text of a launcher value that is not
+// a string. key is the settings key as the text names it. v is a decoded JSON value
+// that is not a string.
+func managedNotOneString(key string, v any) string {
+	kind := "an object"
+	switch v.(type) {
+	case nil:
+		kind = "null"
+	case float64:
+		kind = "a number"
+	case bool:
+		kind = "a boolean"
+	case []any:
+		kind = "an array"
+	}
+	return key + " must be one string (the launcher and its arguments), not " + kind
 }
 
 // parseManagedLauncherValue turns a value into an argv, or into a reason text. A
