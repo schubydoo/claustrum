@@ -4,7 +4,10 @@ package install
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"time"
@@ -24,12 +27,27 @@ const lddKillGrace = 2 * time.Second
 // It wraps context.DeadlineExceeded, which is what detectLibcWith tests for.
 var errLddBound = fmt.Errorf("ldd killed at the bound: %w", context.DeadlineExceeded)
 
-// lddPath is the one ldd that the probe runs. Measured on Linux against b3081b51:
+// lddPath is the first ldd that the probe runs. Measured on Linux against b3081b51:
 // a stub `ldd` first on PATH does not run, and /usr/bin/ldd does. With no
-// /usr/bin/ldd the stub on PATH does not run either, so the output is empty.
-// /bin/ldd is not tried (not measured: on that host /bin is /usr/bin). It is a var
-// only so tests can point it at a stub.
+// /usr/bin/ldd the stub on PATH does not run either. It is a var only so tests can
+// point it at a stub.
 var lddPath = "/usr/bin/ldd"
+
+// lddFallbackPath is the ldd that the probe runs when lddPath is missing. Measured
+// on Linux against b3081b51, with separate /bin and /usr/bin: /bin/ldd runs only
+// when /usr/bin/ldd is missing. With neither, nothing runs and the output is empty.
+// It is a var only so tests can point it at a stub.
+var lddFallbackPath = "/bin/ldd"
+
+// lddToRun returns lddPath, or lddFallbackPath when lddPath is missing. An lddPath
+// that exists but cannot run (no exec bit, or a folder) gets no fallback. Measured on
+// Linux against b3081b51: its exec fails and /bin/ldd does not run.
+func lddToRun() string {
+	if _, err := os.Stat(lddPath); errors.Is(err, fs.ErrNotExist) {
+		return lddFallbackPath
+	}
+	return lddPath
+}
 
 // runLddVersion runs `ldd --version` under ctx. ldd runs in its OWN process
 // group. If ctx expires while ldd runs, the whole group is killed, not only ldd,
@@ -40,7 +58,7 @@ var lddPath = "/usr/bin/ldd"
 // Cancel runs only if ctx expires before Wait sees ldd exit. After ldd exits,
 // WaitDelay alone bounds the drain.
 func runLddVersion(ctx context.Context) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, lddPath, "--version")
+	cmd := exec.CommandContext(ctx, lddToRun(), "--version")
 	// The folder is "/". Measured on Linux against be1c1ca5 and b3081b51: ldd
 	// runs in "/" when -install starts in another folder.
 	cmd.Dir = "/"

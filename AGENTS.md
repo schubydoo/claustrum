@@ -186,7 +186,11 @@ Guards: a leaf that is a symlink or not a directory is refused. A worktree LOCKE
 repository config, git directory file or settings copy that the daemon does not accept
 refuses the remove before any delete. `"shadowDirOff":true` turns that refusal off, and so
 does a remove that starts while such a request runs ([The repository
-checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). On Windows a junction
+checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). On Windows an
+`objects/info/alternates` file of a trusted `baseRepo` with Windows line endings or too many
+object directories refuses it before any delete too, also for a gone worktree folder
+(measured on Windows), and also with
+`"shadowDirOff":true` (claustrum's own, not measured). On Windows a junction
 at any directory between `baseRepo` and the leaf is refused (D19, approved by the maintainer). Without `worktreeRoot`,
 the containment of the reference refuses a home path first, so `homeguard.WipesHomeDir` fires only
 when a repo is an ancestor of home. With `worktreeRoot` it is the active home guard. Both
