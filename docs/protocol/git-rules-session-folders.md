@@ -1,7 +1,7 @@
 # Session folders
 
-The git methods and a bare `git` spawn do not start a git that PATH finds in a folder that a
-Claude Code session works in, unless the request turns the check off. Each rule on this page is of build `b3081b51`, and it names its systems.
+The git methods and a bare `git` spawn skip a git on PATH in a session folder: a folder
+that a Claude Code session works in. The request can turn this check off. Each rule on this page is of build `b3081b51`, and it names its systems.
 
 ## Which spawn makes a session folder
 
