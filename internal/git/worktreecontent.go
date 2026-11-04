@@ -143,8 +143,9 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	}
 	ids, failed := c.worktreeIDs(files)
 	if failed {
-		// A failed hash-object call that no limit stopped runs no cat-file
-		// blob call (measured on Linux). The log line then counts no file.
+		// A failed hash-object call whose files changed kind refuses with no
+		// cat-file blob call (measured on Linux). The log line then counts no
+		// file.
 		if r := c.changedWhileChecked(files); r != nil {
 			return nil, r
 		}

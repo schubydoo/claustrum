@@ -337,6 +337,11 @@ the linked pages.
     own, `5fd08069` not measured), and some `filter.` pairs of the call log.
 
   See [Git filters](protocol/git-worktree-create.md#git-filters).
+- The content check of `git.worktree_create` follows `b3081b51`. Against
+  `5fd08069` and `be1c1ca5` the replies with `worktree_verify_content`,
+  `worktree_verify_link`, `worktree_verify_retry`, `worktree_verify_other_writer`
+  and `worktree_verify_repository` are new. See [The content
+  check](protocol/git-worktree-create.md#the-content-check).
 - The refusals of a repository config follow `5fd08069`. Against `89cb6289` the
   texts that start with `this repository's git config cannot be used: ` and
   `a file in this repository's .git directory cannot be used: ` are new, and the
@@ -367,17 +372,15 @@ the linked pages.
     listing before the `-b` add, and `5fd08069` none.
   - With a git filter or git-lfs, the read-tree of claustrum can carry filter
     items before its list.
-  - In the state `shadow` a create runs the content check of `b3081b51`, and its
-    read-tree call names the commit id ([The content
-    check](protocol/git-worktree-create.md#the-content-check)). The `status` call
-    of git.status carries `lfs.storage` ([What the status
-    reads](protocol/git-status.md#what-the-status-reads)).
+  - In the state `shadow` the read-tree call of a create names the commit id,
+    and the `status` call of git.status carries `lfs.storage` (`b3081b51`, [What
+    the status reads](protocol/git-status.md#what-the-status-reads)).
 
   With `"shadowDirOff":true` the other calls are equal in list, arguments,
   working directory and variables. Without the member these are equal: the
   folder variables and the six heavy values of the light calls of a create. So
   are the `lfs.storage` item of the checkout and the names of the short-lived
-  entries. That is measured
+  entries, except `.readback-objects-<n>`. That is measured
   on Linux and macOS in the state `shadow`. On Windows the variables and the
   names are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
