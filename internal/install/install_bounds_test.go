@@ -389,7 +389,8 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	// The check caps the wait that the run gives the timer at 500ms.
 	// A start call slower than the bound makes it negative, and the timer fires at once.
 	var armed, stopRan atomic.Bool
-	var stopAt, waitNanos atomic.Int64
+	var stopAt atomic.Pointer[time.Time]
+	var waitNanos atomic.Int64
 	oldAfter := afterCLIBound
 	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
 		if armed.CompareAndSwap(false, true) {
@@ -397,7 +398,8 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 		}
 		return oldAfter(d, func() {
 			if stopRan.CompareAndSwap(false, true) {
-				stopAt.Store(time.Now().UnixNano())
+				now := time.Now()
+				stopAt.Store(&now)
 			}
 			stop()
 		})
@@ -410,7 +412,7 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	}
 	if !stopRan.Load() {
 		t.Error("the stop step never ran")
-	} else if d := time.Since(time.Unix(0, stopAt.Load())); d > 10*time.Second {
+	} else if d := time.Since(*stopAt.Load()); d > 10*time.Second {
 		t.Errorf("the run ended %v after the stop step, want right after it: the stub sleeps 20s", d)
 	}
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
