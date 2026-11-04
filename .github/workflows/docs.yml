@@ -21,9 +21,13 @@ permissions:
   contents: read
 
 concurrency:
-  # Serialize Pages deploys; don't cancel an in-flight deploy.
-  group: pages
-  cancel-in-progress: false
+  # A push uses the group `pages`, so Pages deploys run one at a time. A running
+  # deploy is kept, and a newer push can replace a pending one. Every other run
+  # gets its own group by its event and its pull request number or ref, so it
+  # never cancels a deploy of main. A newer push to the same pull request cancels
+  # its older run.
+  group: ${{ github.event_name == 'push' && 'pages' || format('docs-{0}-{1}', github.event_name, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Strict build runs on every push and on every PR that is not a draft. A broken
