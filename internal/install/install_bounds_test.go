@@ -257,6 +257,66 @@ func holdStopUntil(t *testing.T, ready func() bool) *atomic.Bool {
 	return wasReady
 }
 
+// stopStepTimes records the stop step of runCLIVersion for one test. wait is the
+// time that the first run gives its timer, and armedAt is when the run armed it.
+// at is the time of the first step. Both times keep the monotonic reading of
+// time.Now.
+type stopStepTimes struct {
+	armed, ran atomic.Bool
+	wait       atomic.Int64
+	armedAt    atomic.Pointer[time.Time]
+	at         atomic.Pointer[time.Time]
+}
+
+// recordStopStep puts a stopStepTimes behind afterCLIBound for one test. A test
+// then times from the stop step, not from the start of the run. A slow runner can
+// spend seconds on the blob and the first start of a binary.
+func recordStopStep(t *testing.T) *stopStepTimes {
+	t.Helper()
+	s := new(stopStepTimes)
+	old := afterCLIBound
+	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
+		if s.armed.CompareAndSwap(false, true) {
+			now := time.Now()
+			s.armedAt.Store(&now)
+			s.wait.Store(int64(d))
+		}
+		return old(d, func() {
+			if s.ran.CompareAndSwap(false, true) {
+				now := time.Now()
+				s.at.Store(&now)
+			}
+			stop()
+		})
+	}
+	t.Cleanup(func() { afterCLIBound = old })
+	return s
+}
+
+// wantStopAt checks that the run gave its timer bound or less and ended soon after
+// the stop step. A start call slower than the bound makes the wait negative, and
+// the timer fires at once. The stub sleeps 20s, so a run that the step did not end
+// ends late. The step must also run soon after its wait from the arm time. The arm
+// comes after the start call, so a slow start does not count, but a hold of the
+// step does.
+func (s *stopStepTimes) wantStopAt(t *testing.T, row string, bound time.Duration) {
+	t.Helper()
+	w := time.Duration(s.wait.Load())
+	if s.armed.Load() && w > bound {
+		t.Errorf("%s: the stop step waits %v, want the %v bound or less", row, w, bound)
+	}
+	if !s.ran.Load() {
+		t.Errorf("%s: the stop step never ran", row)
+		return
+	}
+	if late := s.at.Load().Sub(*s.armedAt.Load()) - max(w, 0); late > 5*time.Second {
+		t.Errorf("%s: the stop step ran %v after its wait ended, want right then: something held it", row, late)
+	}
+	if d := time.Since(*s.at.Load()); d > 10*time.Second {
+		t.Errorf("%s: the run ended %v after the stop step, want right after it: the stub sleeps 20s", row, d)
+	}
+}
+
 // stubStarted reports whether the stub log holds a START line.
 func (f *stubFixture) stubStarted() bool {
 	b, err := os.ReadFile(f.log)
@@ -298,12 +358,10 @@ func TestInstallStopsAPresentCLIAtTheCacheHitBound(t *testing.T) {
 	// The first-run bound is far away, so a run that takes the wrong bound is not
 	// stopped inside this test's limit.
 	setCLIRunBounds(t, 500*time.Millisecond, time.Minute)
+	stops := recordStopStep(t)
 
-	start := time.Now()
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: blob, cliKeep: 2})
-	if d := time.Since(start); d > 10*time.Second {
-		t.Errorf("the run took %v, want about the 500ms bound", d)
-	}
+	stops.wantStopAt(t, "B04", 500*time.Millisecond)
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
@@ -471,12 +529,9 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 		g.litter(t)
 		stubDelay(t, 20*time.Second)
 		setCLIRunBounds(t, time.Minute, 500*time.Millisecond)
-		start := time.Now()
+		stops := recordStopStep(t)
 		out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliZst: g.stubBlob(t), cliKeep: 2})
-		// A stop hold that outlived L02 waits its full 10 s here.
-		if d := time.Since(start); d > 8*time.Second {
-			t.Errorf("L07: the run took %v, want about the 500ms bound", d)
-		}
+		stops.wantStopAt(t, "L07", 500*time.Millisecond)
 		if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
 			t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
 		}
@@ -705,11 +760,31 @@ func TestInstallDoesNotWaitForAHolderOfTheCLIOutput(t *testing.T) {
 	t.Setenv("CLAUSTRUM_TEST_STUB_CHILD", "hold")
 	setCLIRunBounds(t, 20*time.Second, time.Minute)
 	t.Cleanup(func() { killStubChild(f.childPID) })
+	stops := recordStopStep(t)
+	// The time is taken from the end of the start call, not from the start of the
+	// run. A slow runner can spend seconds on the first start of the stub.
+	var startedAt atomic.Pointer[time.Time]
+	oldStart := startCLIRun
+	startCLIRun = func(cmd *exec.Cmd) error {
+		err := oldStart(cmd)
+		now := time.Now()
+		startedAt.CompareAndSwap(nil, &now)
+		return err
+	}
+	t.Cleanup(func() { startCLIRun = oldStart })
 
-	start := time.Now()
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
-	if d := time.Since(start); d > 10*time.Second {
-		t.Errorf("the run took %v. It waited for the holder of the output (30s)", d)
+	if w := time.Duration(stops.wait.Load()); stops.armed.Load() && w > 20*time.Second {
+		t.Errorf("B14: the stop step waits %v, want the 20s cache-hit bound or less", w)
+	}
+	// A run that waits for the holder of the output (30s) reaches the 20s bound first.
+	if stops.ran.Load() {
+		t.Error("B14: the stop step ran: the run took 20s, for example because it waited for the holder of the output")
+	}
+	if at := startedAt.Load(); at == nil {
+		t.Error("B14: the CLI never started")
+	} else if d := time.Since(*at); d > 10*time.Second {
+		t.Errorf("B14: the run ended %v after the start call. It waited for the holder of the output (30s)", d)
 	}
 	if want := factsHead(t, f.cli) + "true}\n"; out != want {
 		t.Errorf("B14: stdout\n got %q\nwant %q", out, want)
