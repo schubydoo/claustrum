@@ -431,9 +431,10 @@ none with a home folder).
 
 ### The libc probe fills the `libc` fact
 
-- claustrum runs `/usr/bin/ldd` on every probe, with the environment `LC_ALL=C` and
-  `PATH=/usr/bin:/bin` alone. An `ldd` on the PATH of the operator does not run (`b3081b51`,
-  measured on Linux). claustrum never tries `/bin/ldd` (claustrum's own, not measured). The probe runs in `/` (`be1c1ca5` and `b3081b51`, measured on Linux).
+- Each probe runs `/usr/bin/ldd` with the environment `LC_ALL=C` and `PATH=/usr/bin:/bin`
+  alone. If `/usr/bin/ldd` is missing, the probe runs `/bin/ldd` the same way. If `/usr/bin/ldd` exists but cannot run, the probe does not try
+  `/bin/ldd` (`b3081b51`, measured on Linux). An `ldd` on
+  the PATH of the operator does not run (`b3081b51`, measured on Linux). The probe runs in `/` (`be1c1ca5` and `b3081b51`, measured on Linux).
   Its output decides. A "musl" banner
   reports `musl`, and any other output reports `glibc`. The `/lib/ld-musl-*.so.*`
   marker is read only when `ldd` produced no output.
