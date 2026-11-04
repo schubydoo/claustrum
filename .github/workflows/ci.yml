@@ -434,8 +434,8 @@ jobs:
     name: ci required checks passed
     # Not always(). If the run is cancelled, this job ends cancelled, not failed
     # (seen in runs of this repo, the GitHub docs do not say it). A cancelled
-    # context does not pass the gate. A failed or cancelled job in a run that
-    # goes on still fails this job.
+    # context does not pass the gate. A failed job in a run that goes on still
+    # fails this job. A job stopped by its time limit is not measured here.
     if: ${{ !cancelled() }}
     needs: [changes, lint, test, cross-build, coverage]
     runs-on: ubuntu-latest
