@@ -159,8 +159,8 @@ func TestWorktreeExternalTrailingSlash(t *testing.T) {
 		if !strings.Contains(raw, want) {
 			t.Fatalf("first create = %s, want %s", raw, want)
 		}
-		wantError(t, create(wp+"/"), "refusing to create worktree: "+wp+
-			" already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path")
+		wantError(t, create(wp+"/"), "refusing to create worktree: `"+wp+
+			"` already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path")
 	})
 	t.Run("symlinked directory", func(t *testing.T) {
 		outside := filepath.Join(base, "outside")

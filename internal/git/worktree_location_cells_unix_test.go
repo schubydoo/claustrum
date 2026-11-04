@@ -236,7 +236,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 				"(<X>/C/.claude/worktrees/w0 has a .git entry); a worktree location must be outside every checkout, " +
 				"so that no session working in one can reach it — choose a directory that is not part of any repository"},
 		{name: "C-W13", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/q/w2",
-			text: "refusing to create worktree: <B>/cwl/l1/loc passes through too many symbolic links (a loop?)"},
+			text: "refusing to create worktree: `<B>/cwl/l1/loc` passes through too many symbolic links (a loop?)"},
 		{name: "C-W14", setup: func(t *testing.T, c *locCell) {
 			c.file(t, "<X>/F")
 			chmodForTest(t, c.p("<X>/F"), 0o666)
@@ -496,14 +496,14 @@ func TestLocationCellsRemoveRefused(t *testing.T) {
 				"<X>/proj, a worktree of the repository <T>; a worktree location must be outside the repository's checkouts"},
 		{name: "C-S5", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/p/w1",
 			stay: []string{"<X>/R13/loc/p/w1", "<X>/R13/loc/p/keep"},
-			text: "refusing to remove worktree: <B>/cwl/l1/loc passes through too many symbolic links (a loop?)"},
+			text: "refusing to remove worktree: `<B>/cwl/l1/loc` passes through too many symbolic links (a loop?)"},
 		{name: "C-W22", setup: func(t *testing.T, c *locCell) { c.link(t, "<X>", "<B>/LK") },
 			root: "<B>/LK/missing", path: "<B>/LK/missing/p/w1",
 			text: "failed to remove worktree: the worktree location <B>/LK/missing is not reachable (<X>/missing " +
 				"does not exist); nothing was removed — retry once it is available, or remove the worktree by hand"},
 		{name: "C-W23", setup: func(t *testing.T, c *locCell) { c.link(t, "<B>/LP", "<B>/LP") },
 			root: "<B>/LP/loc", path: "<B>/LP/loc/p/w1",
-			text: "refusing to remove worktree: <B>/LP/loc passes through too many symbolic links (a loop?)"},
+			text: "refusing to remove worktree: `<B>/LP/loc` passes through too many symbolic links (a loop?)"},
 		{name: "C-W24", setup: func(t *testing.T, c *locCell) { c.file(t, "<X>/F") },
 			root: "<X>/F/x", path: "<X>/F/x/p/w1",
 			text: "failed to remove worktree: the worktree location <X>/F/x is not reachable (<X>/F: not a " +

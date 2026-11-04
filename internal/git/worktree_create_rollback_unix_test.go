@@ -1016,7 +1016,7 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 		{"T2", "", " carries a .git file naming an admin directory whose own record is of a different worktree"},
 		{"T3", "stale locked", " carries a .git file naming an admin entry other than the one just created for it"},
 		{"T4", "no folder", " was not populated by git worktree add"},
-		{"T9", "leaf exists", " already exists, and a new worktree is only ever created in a fresh directory"},
+		{"T9", "leaf exists", "` already exists, and a new worktree is only ever created in a fresh directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			T, X, oldReg := stageOldRegistrationOfSameName(t)
@@ -1047,8 +1047,12 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 				t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 			}
 			raw := frameWithin(t, "git.worktree_create", createParams(link, sentLeaf, "w1"))
+			shown := realLeaf
+			if tc.stage == "leaf exists" {
+				shown = "`" + realLeaf
+			}
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
-				jsonString(t, "refusing to create worktree: "+realLeaf+tc.text) + `,"errorCode":"unsafe_path"}}`
+				jsonString(t, "refusing to create worktree: "+shown+tc.text) + `,"errorCode":"unsafe_path"}}`
 			if raw != want {
 				t.Errorf("reply = %s\nwant %s", raw, want)
 			}
@@ -1176,8 +1180,8 @@ func TestWorktreeCreateAlreadyExistsSpelling(t *testing.T) {
 			}
 			sent := base + "/.claude/worktrees/w1" + tc.suffix
 			raw := frameWithin(t, "git.worktree_create", createParams(base, sent, "w1"))
-			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: "+realLeaf+
-				" already exists, and a new worktree is only ever created in a fresh directory") + `,"errorCode":"unsafe_path"}}`
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: `"+realLeaf+
+				"` already exists, and a new worktree is only ever created in a fresh directory") + `,"errorCode":"unsafe_path"}}`
 			if raw != want {
 				t.Errorf("reply = %s\nwant %s", raw, want)
 			}
@@ -1233,7 +1237,7 @@ func TestWorktreeCreateRootBehindSymlinkSpelling(t *testing.T) {
 			t.Fatalf("the first create = %s, want success: this fixture does not stage the cell", raw)
 		}
 		writeFile(t, filepath.Join(realCP, "w1", "keep.txt"), "keep\n", 0o644)
-		wantError(t, create(t, repo, link, "w1"), "refusing to create worktree: "+filepath.Join(realCP, "w1")+
-			" already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path")
+		wantError(t, create(t, repo, link, "w1"), "refusing to create worktree: `"+filepath.Join(realCP, "w1")+
+			"` already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path")
 	})
 }

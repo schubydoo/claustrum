@@ -1272,13 +1272,16 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// worktreeRoot (measured on Linux and macOS). On Windows the path with a
 		// worktreeRoot is the cleaned path, and the in-repo path is spelled with the
 		// on-disk letter case of each component that exists (existingPathSpelling).
+		// The path is in backticks (be1c1ca5 and b3081b51, measured on Linux without a
+		// worktreeRoot).
+		// With a worktreeRoot, and on macOS and Windows, that is claustrum's own (not measured).
 		existing := externalPathSpelling(p.WorktreePath)
 		if p.WorktreeRoot == "" {
 			existing = existingPathSpelling(p.WorktreePath)
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{
 			Success:   false,
-			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", existing),
+			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", tickPath(existing)),
 			ErrorCode: "unsafe_path",
 		})
 	}
