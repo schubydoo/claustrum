@@ -644,7 +644,7 @@ var docWordLimits = map[string]int{
 	"docs/EXAMPLES.md":                         1025,
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
-	"docs/INSTALL.md":                          5568, // the not-measured /bin/ldd mark of b3081b51. 5560: the fixed ldd path and environment of b3081b51. 5539: the blob guard of the new prunes. 5531: the measured rows of the prune. 5508: the prune before the fetch of -install. 5307: page rewrite
+	"docs/INSTALL.md":                          5575, // the measured /bin/ldd fallback of b3081b51. 5568: the not-measured /bin/ldd mark of b3081b51. 5560: the fixed ldd path and environment of b3081b51. 5539: the blob guard of the new prunes. 5531: the measured rows of the prune. 5508: the prune before the fetch of -install. 5307: page rewrite
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: one sentence on the close line. one sentence on a failed write. the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200

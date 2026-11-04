@@ -78,21 +78,68 @@ func TestLddRunsInTheRootFolder(t *testing.T) {
 }
 
 // detectLibc's fallback branch: when `ldd` can't be executed, it probes for the
-// musl loader and otherwise reports glibc. An lddPath with no file forces that
-// branch.
+// musl loader and otherwise reports glibc. An lddPath and an lddFallbackPath with no
+// file force that branch.
 func TestDetectLibcLddMissing(t *testing.T) {
-	old := lddPath
-	t.Cleanup(func() { lddPath = old })
-	lddPath = filepath.Join(t.TempDir(), "ldd") // no file there
+	old, oldFallback := lddPath, lddFallbackPath
+	t.Cleanup(func() { lddPath, lddFallbackPath = old, oldFallback })
+	lddPath = filepath.Join(t.TempDir(), "ldd")         // no file there
+	lddFallbackPath = filepath.Join(t.TempDir(), "ldd") // no file there
 	if got := detectLibc(); got != "glibc" && got != "musl" {
 		t.Errorf("detectLibc() with no ldd = %q, want glibc or musl", got)
 	}
 }
 
-// TestLddPathIsUsrBin pins the one ldd that the probe runs.
+// TestLddPathIsUsrBin pins the two ldd paths of the probe.
 func TestLddPathIsUsrBin(t *testing.T) {
 	if lddPath != "/usr/bin/ldd" {
 		t.Errorf("lddPath = %q, want /usr/bin/ldd", lddPath)
+	}
+	if lddFallbackPath != "/bin/ldd" {
+		t.Errorf("lddFallbackPath = %q, want /bin/ldd", lddFallbackPath)
+	}
+}
+
+// TestLddFallsBackWhenLddPathIsMissing runs the probe with a stub at lddFallbackPath.
+// With no file at lddPath the stub runs, by its full path. With a stub at lddPath
+// too, only the stub at lddPath runs.
+func TestLddFallsBackWhenLddPathIsMissing(t *testing.T) {
+	dir, fallbackDir := t.TempDir(), t.TempDir()
+	rec := filepath.Join(dir, "ran")
+	fallback := filepath.Join(fallbackDir, "ldd")
+	script := "#!/bin/sh\necho \"fallback $0\" >> '" + rec + "'\necho 'ldd (GNU libc) 2.39'\n"
+	if err := os.WriteFile(fallback, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, oldFallback := lddPath, lddFallbackPath
+	t.Cleanup(func() { lddPath, lddFallbackPath = old, oldFallback })
+	lddPath = filepath.Join(dir, "missing", "ldd") // no file there
+	lddFallbackPath = fallback
+
+	run := func() string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := runLddVersion(ctx); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(rec); err != nil {
+			t.Fatal(err)
+		}
+		return string(got)
+	}
+
+	if got, want := run(), "fallback "+fallback+"\n"; got != want {
+		t.Errorf("with no ldd at lddPath the stubs wrote %q, want %q", got, want)
+	}
+
+	useLddStub(t, dir, "#!/bin/sh\necho first >> '"+rec+"'\necho 'ldd (GNU libc) 2.39'\n")
+	if got := run(); got != "first\n" {
+		t.Errorf("with an ldd at lddPath the stubs wrote %q, want only the stub at lddPath", got)
 	}
 }
 
