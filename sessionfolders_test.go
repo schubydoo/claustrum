@@ -13,33 +13,45 @@ import (
 )
 
 // The folders that a spawn records: the cwd of a Claude Code shape, and for the
-// CLI path the --add-dir folders before `--`. Another command records nothing,
-// and so does a spawn with no cwd.
+// CLI path the --add-dir folders before `--`. A command named ccd-cli and a spawn
+// with a launcher are the CLI path. A bare git with stream-json, another command
+// and a spawn with no cwd record nothing.
 func TestSessionFoldersOf(t *testing.T) {
 	cwd := t.TempDir()
 	e1, e2, e3 := filepath.Join(cwd, "e1"), filepath.Join(cwd, "e2"), filepath.Join(cwd, "e3")
 	cli := filepath.Join(t.TempDir(), "ccd-cli", "2.0.0")
+	named := filepath.Join(t.TempDir(), "x", "ccd-cli")
+	tool := filepath.Join(t.TempDir(), "y", "tool")
 	for _, c := range []struct {
-		name    string
-		command string
-		args    []string
-		cwd     string
-		want    []string
+		name     string
+		command  string
+		args     []string
+		cwd      string
+		want     []string
+		launched bool
 	}{
-		{"cli path", cli, []string{"--add-dir=" + e1, "--add-dir", e2, "--", "--add-dir=" + e3}, cwd, []string{cwd, e1, e2}},
-		{"relative add-dir", cli, []string{"--add-dir=e1"}, cwd, []string{cwd, e1}},
-		{"several values", cli, []string{"--add-dir", e1, e2, e3}, cwd, []string{cwd, e1, e2, e3}},
-		{"two flags", cli, []string{"--add-dir", e1, "--add-dir", e2}, cwd, []string{cwd, e1, e2}},
-		{"next flag ends", cli, []string{"--add-dir", e1, "-x", e2}, cwd, []string{cwd, e1}},
-		{"equals takes one", cli, []string{"--add-dir=" + e1, e2}, cwd, []string{cwd, e1}},
-		{"empty value", cli, []string{"--add-dir", "", e1}, cwd, []string{cwd, e1}},
-		{"dashes end", cli, []string{"--add-dir", e1, "--", e2}, cwd, []string{cwd, e1}},
-		{"stream-json shape", "/bin/sh", []string{"plainhold.sh", "stream-json", "--add-dir=" + e1}, cwd, []string{cwd}},
-		{"output format", "sh", []string{"--output-format=stream-json"}, cwd, []string{cwd}},
-		{"plain command", "sleep", []string{"300"}, cwd, nil},
-		{"no cwd", cli, []string{"--add-dir=" + e1}, "", nil},
+		{"named ccd-cli", named, []string{"--x"}, cwd, []string{cwd}, false},
+		{"named ccd-cli add-dir", named, []string{"--add-dir", e1, "--"}, cwd, []string{cwd, e1}, false},
+		{"launcher", tool, []string{"--x"}, cwd, []string{cwd}, true},
+		{"launcher add-dir", tool, []string{"--add-dir", e1, "--"}, cwd, []string{cwd, e1}, true},
+		{"bare git stream-json", "git", []string{"--version", "stream-json"}, cwd, nil, false},
+		{"git path stream-json", "/usr/bin/git", []string{"--version", "stream-json"}, cwd, []string{cwd}, false},
+		{"bare git", "git", []string{"--version"}, cwd, nil, false},
+		{"plain path", tool, []string{"--x"}, cwd, nil, false},
+		{"cli path", cli, []string{"--add-dir=" + e1, "--add-dir", e2, "--", "--add-dir=" + e3}, cwd, []string{cwd, e1, e2}, false},
+		{"relative add-dir", cli, []string{"--add-dir=e1"}, cwd, []string{cwd, e1}, false},
+		{"several values", cli, []string{"--add-dir", e1, e2, e3}, cwd, []string{cwd, e1, e2, e3}, false},
+		{"two flags", cli, []string{"--add-dir", e1, "--add-dir", e2}, cwd, []string{cwd, e1, e2}, false},
+		{"next flag ends", cli, []string{"--add-dir", e1, "-x", e2}, cwd, []string{cwd, e1}, false},
+		{"equals takes one", cli, []string{"--add-dir=" + e1, e2}, cwd, []string{cwd, e1}, false},
+		{"empty value", cli, []string{"--add-dir", "", e1}, cwd, []string{cwd, e1}, false},
+		{"dashes end", cli, []string{"--add-dir", e1, "--", e2}, cwd, []string{cwd, e1}, false},
+		{"stream-json shape", "/bin/sh", []string{"plainhold.sh", "stream-json", "--add-dir=" + e1}, cwd, []string{cwd}, false},
+		{"output format", "sh", []string{"--output-format=stream-json"}, cwd, []string{cwd}, false},
+		{"plain command", "sleep", []string{"300"}, cwd, nil, false},
+		{"no cwd", cli, []string{"--add-dir=" + e1}, "", nil, false},
 	} {
-		if got := sessionFoldersOf(c.command, c.args, c.cwd); !slices.Equal(got, c.want) {
+		if got := sessionFoldersOf(c.command, c.args, c.cwd, c.launched); !slices.Equal(got, c.want) {
 			t.Errorf("%s: sessionFoldersOf = %q, want %q", c.name, got, c.want)
 		}
 	}
