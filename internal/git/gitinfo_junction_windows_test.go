@@ -16,7 +16,7 @@ func TestInfoThroughJunctionWindows(t *testing.T) {
 	mixed := infoFrame(t, f.P, "rmain", "p/p", "")
 	// The pin is spelled through the first junction, and the root is git's answer,
 	// which names P (measured).
-	t.Run("B-17k two junctions", func(t *testing.T) {
+	t.Run("two junctions", func(t *testing.T) {
 		p := filepath.Join(f.KP, "J", "sub")
 		if got, want := commonDirPinEnv(p), []string{"GIT_COMMON_DIR=" + dotGitOf(f.KP)}; !slices.Equal(got, want) {
 			t.Errorf("pin = %q, want %q", got, want)
@@ -24,7 +24,7 @@ func TestInfoThroughJunctionWindows(t *testing.T) {
 		wantResult(t, "info", info(t, p), mixed)
 	})
 	// The `..` after the junction is taken by text (measured).
-	t.Run("B-17d dot-dot after the junction", func(t *testing.T) {
+	t.Run("dot-dot after the junction", func(t *testing.T) {
 		p := f.J + `\..\J\sub`
 		if got, want := commonDirPinEnv(p), []string{"GIT_COMMON_DIR=" + dotGitOf(f.P)}; !slices.Equal(got, want) {
 			t.Errorf("pin = %q, want %q", got, want)

@@ -61,7 +61,7 @@ func newNoRepoFixture(t *testing.T) noRepoFixture {
 func (f noRepoFixture) leaf() string     { return filepath.Join(f.n, ".claude", "worktrees", "w1") }
 func (f noRepoFixture) external() string { return filepath.Join(f.r, "cp", "w1") }
 
-// rootCreate is the request of the cells Wf (measured on Windows): a
+// rootCreate is a measured request (on Windows): a
 // git.worktree_create with the plain folder as baseRepo and the empty worktreeRoot R0.
 // A measurement on Linux names the same paths.
 func (f noRepoFixture) rootCreate() map[string]any {
@@ -254,9 +254,9 @@ func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 		name, rootCell string
 		env            []string
 	}{
-		{"P0 nothing set", "Wf-P0-crNroot", nil},
+		{"nothing set", "Wf-P0-crNroot", nil},
 		{"P8 count 0", "", []string{"GIT_CONFIG_COUNT=0"}},
-		{"P9 empty value", "", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s11", "GIT_CONFIG_VALUE_0="}},
+		{"empty value", "", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s11", "GIT_CONFIG_VALUE_0="}},
 		{"P10 open quote in GIT_CONFIG_PARAMETERS", "", []string{"GIT_CONFIG_PARAMETERS='x"}},
 	} {
 		t.Run(ph.name, func(t *testing.T) {
@@ -380,7 +380,7 @@ func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 	raw, calls := f.call(t, "git.info", map[string]any{"path": f.top})
 	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"` + versionFailsText + `"}}`
 	if raw != want {
-		t.Errorf("A-T1 in P11 = %s\nwant %s", raw, want)
+		t.Errorf("in P11 = %s\nwant %s", raw, want)
 	}
 	i := slices.IndexFunc(calls, envCall.version)
 	if i < 1 || !calls[i-1].listing() {
@@ -469,7 +469,7 @@ func TestGitVersionChildGetsNoGlobalConfig(t *testing.T) {
 	text := hooksRefusalPrefix + "exit status 128: " + worktreeGitText(stderr.String(), nil)
 	raw, calls := f.call(t, "git.info", map[string]any{"path": f.n})
 	if want := errFrame(t, text); raw != want {
-		t.Errorf("C-c info N = %s\nwant %s", raw, want)
+		t.Errorf("info N = %s\nwant %s", raw, want)
 	}
 	i := slices.IndexFunc(calls, envCall.version)
 	if i < 1 || !calls[i-1].listing() {
@@ -484,10 +484,10 @@ func TestGitVersionChildGetsNoGlobalConfig(t *testing.T) {
 		}
 	}
 	if got, want := f.frame(t, "git.info", map[string]any{"path": f.top}), errFrame(t, text); got != want {
-		t.Errorf("C-c info T = %s\nwant %s", got, want)
+		t.Errorf("info T = %s\nwant %s", got, want)
 	}
 	create := resultFrame(t, worktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})
 	if got := f.frame(t, "git.worktree_create", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()}); got != create {
-		t.Errorf("C-c create N = %s\nwant %s", got, create)
+		t.Errorf("create N = %s\nwant %s", got, create)
 	}
 }

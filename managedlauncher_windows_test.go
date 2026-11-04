@@ -53,10 +53,10 @@ func TestSpawnLauncherRefusedOnWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := string(cl.call(string(b))); got != `{"jsonrpc":"2.0","id":1,"result":{"success":true}}` {
-		t.Fatalf("SW3 (null launcher): %s", got)
+		t.Fatalf("(null launcher): %s", got)
 	}
 	if got := streamBytes(t, cl.waitExit("p3"), "stdout"); got != "hi\n" {
-		t.Errorf("SW3 stdout %q, want %q", got, "hi\n")
+		t.Errorf("stdout %q, want %q", got, "hi\n")
 	}
 }
 

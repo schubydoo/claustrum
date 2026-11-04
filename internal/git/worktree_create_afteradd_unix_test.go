@@ -117,7 +117,7 @@ func TestWorktreeCreateNoPairAtALinkedWorktrees(t *testing.T) {
 		stage func(t *testing.T, at string)
 		pair  bool
 	}{
-		{"C6 link to an empty folder", func(t *testing.T, at string) {
+		{"link to an empty folder", func(t *testing.T, at string) {
 			target := filepath.Join(resolveTestRoot(t, t.TempDir()), "wtreal")
 			if err := os.Mkdir(target, 0o755); err != nil {
 				t.Fatal(err)
@@ -128,7 +128,7 @@ func TestWorktreeCreateNoPairAtALinkedWorktrees(t *testing.T) {
 			linkAt(t, at, filepath.Join(resolveTestRoot(t, t.TempDir()), "gone"))
 		}, false},
 		{"file", func(t *testing.T, at string) { mustWrite(t, at, "") }, false},
-		{"R-Q2b real folder", nil, true},
+		{"real folder", nil, true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
@@ -327,7 +327,7 @@ func TestWorktreeCreateSpellingCallFails(t *testing.T) {
 }
 
 // TestWorktreeCreateSpellingCallFailsOnOldEntry pins claustrum's own guard of
-// the rollback after a failed spelling call (not measured). The state is that of cell P-c: the daemon has
+// the rollback after a failed spelling call (not measured). The state is a measured one: the daemon has
 // GIT_COMMON_DIR of repository X, git makes the registration in X, and T holds an
 // old entry w1 whose record names another worktree. git fails the `rev-parse
 // --show-toplevel` call. The registrations folder of T has no new name, so the
@@ -513,8 +513,8 @@ func TestStaleRegistryDir(t *testing.T) {
 		commondir string // the text of its commondir file, or "" for none
 		registry  string // the folder that holds the stale entry, below the root
 	}{
-		{"a linked worktree (cell V9)", "main/.git/worktrees/B", "../..\n", "main/.git/worktrees"},
-		{"a separate git directory with no commondir (cell S1)", "sep", "", "sep/worktrees"},
+		{"a linked worktree", "main/.git/worktrees/B", "../..\n", "main/.git/worktrees"},
+		{"a separate git directory with no commondir", "sep", "", "sep/worktrees"},
 		{"a git directory with a commondir whose parent is not worktrees", "mods/sub", ".\n", "mods/sub/worktrees"},
 		{"a folder below worktrees with no commondir", "x/worktrees/sub", "", "x/worktrees/sub/worktrees"},
 	} {
@@ -554,11 +554,11 @@ func TestCompareAdminRecordSpellings(t *testing.T) {
 		want         adminRecord
 	}{
 		{"the path", leaf + "/.git\n", recordNamesLeaf},
-		{"a slash at the end (cell V4)", leaf + "/.git/\n", recordNamesLeaf},
-		{"a blank at the end (cell R1)", leaf + "/.git \n", recordNamesLeaf},
+		{"a slash at the end", leaf + "/.git/\n", recordNamesLeaf},
+		{"a blank at the end", leaf + "/.git \n", recordNamesLeaf},
 		{"a blank at the start", " " + leaf + "/.git\n", recordNamesLeaf},
-		{"a double slash (cell R3)", leaf + "//.git\n", recordNamesLeaf},
-		{"a /./ part (cell R2)", leaf + "/./.git\n", recordNamesLeaf},
+		{"a double slash", leaf + "//.git\n", recordNamesLeaf},
+		{"a /./ part", leaf + "/./.git\n", recordNamesLeaf},
 		{"an x/.. pair", leaf + "/x/../.git\n", recordNamesLeaf},
 		{"another folder", leaf + "x/.git\n", recordOfAnother},
 		{"another folder with a blank at the end", leaf + "x/.git \n", recordOfAnother},

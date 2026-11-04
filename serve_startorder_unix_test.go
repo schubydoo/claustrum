@@ -50,8 +50,8 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 		stale bool
 		want  error
 	}{
-		{"D1a a stale socket file", true, syscall.ECONNREFUSED},
-		{"D1b no socket file", false, syscall.ENOENT},
+		{"a stale socket file", true, syscall.ECONNREFUSED},
+		{"no socket file", false, syscall.ENOENT},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := shortTempDir(t)
@@ -274,8 +274,8 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 	}
 }
 
-// TestLauncherWaitsPastAStaleSocketFile pins the launcher side of that order (Linux
-// row XA): with the stale socket file of a killed daemon on disk, the -serve command
+// TestLauncherWaitsPastAStaleSocketFile pins the launcher side of that order (measured
+// on Linux): with the stale socket file of a killed daemon on disk, the -serve command
 // returns when the new daemon accepts, not at once.
 func TestLauncherWaitsPastAStaleSocketFile(t *testing.T) {
 	dir := shortTempDir(t)

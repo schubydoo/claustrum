@@ -39,8 +39,8 @@ func TestInstallGateReplacesAFileThatIsNoProgram(t *testing.T) {
 		id   string
 		body []byte
 	}{
-		{"L14a hello", []byte("hello\n")},
-		{"L14b ELF of another machine", elfHeaderFor(otherMachine())},
+		{"hello", []byte("hello\n")},
+		{"ELF of another machine", elfHeaderFor(otherMachine())},
 	} {
 		t.Run(c.id, func(t *testing.T) {
 			f := newInstallFixture(t)

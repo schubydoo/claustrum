@@ -791,7 +791,7 @@ func gitDirRegistryDir(gitDir string) string {
 //     populated" text (measured, and on macOS only:
 //     on Linux the add fails). Folder present, no entry of the name: 89cb6289
 //     answers the "does not name" text (measured on Linux and macOS). The old
-//     entry of cell P-p is gone at the reply there. Its record names the .git of
+//     entry of that case is gone at the reply there. Its record names the .git of
 //     the new leaf with a slash at its end, so the step before the add removes it
 //     (dropStaleWorktreeRegistration). Not measured: a worktrees folder that holds
 //     entries of other names and none of this name. claustrum answers the "does
@@ -808,21 +808,21 @@ func gitDirRegistryDir(gitDir string) string {
 //     (offWorktreesRefusal).
 //
 //  4. The gitdir record of that registration can be read as a file. A FIFO, a
-//     folder or no file in its place cannot (measured). Cell P-h has a FIFO as the
-//     commondir file and a record of another worktree, and it gets this text, where
-//     cell P-c gets that of adminRecordRefusal. So test 3 comes before the record,
+//     folder or no file in its place cannot (measured). A case with a FIFO as the
+//     commondir file and a record of another worktree gets this text, where the
+//     same case with a plain commondir gets that of adminRecordRefusal. So test 3 comes before the record,
 //     and a commondir file that cannot be read fails test 3.
 //
 // Tests 1, 3 and 4 answer the "does not name" text. No read waits on a FIFO
-// (readGitPlainFile): 89cb6289 answers cells P-g and P-h in under 1 s. Cells P-g
-// to P-j are those of 89cb6289 on Linux with git 2.43 and macOS with git 2.50. In
-// each of them nothing changes after the add.
+// (readGitPlainFile): 89cb6289 answers both FIFO cases in under 1 s. The cases of a
+// record that cannot be read are measured on Linux with git 2.43 and macOS with git 2.50.
+// In each of them nothing changes after the add.
 //
-// Three more cells start from the state of cell P-c, and 89cb6289 answers the "does
+// Three more cases start from the state with a record of another worktree, and 89cb6289 answers the "does
 // not name" text in each, with nothing changed after the add (Linux with git 2.43,
-// macOS with git 2.50). In cell P-n the commondir file of the old registration is
-// missing, which fails test 3. In cell P-o its gitdir record has mode 0000, which
-// fails test 4. In cell P-q the folder of the old registration has mode 0000. Its
+// macOS with git 2.50). In one the commondir file of the old registration is
+// missing, which fails test 3. In one its gitdir record has mode 0000, which
+// fails test 4. In one the folder of the old registration has mode 0000. Its
 // stat still answers, so test 2 passes, and the commondir read fails test 3.
 //
 // Not measured: a path that fails test 1 and test 2 together (claustrum runs test 1
@@ -964,8 +964,8 @@ func compareAdminRecord(admin, worktreePath string, cleaned bool) adminRecord {
 // rev-parse gave no answer: it is the folder that gets the index of the new worktree.
 // 89cb6289 and f6010b97 refuse such a create on macOS when the request spells the folder in Unicode
 // NFD and git records it in NFC (measured). They run no checkout and roll nothing back. The same
-// request in NFC for an NFD folder succeeds (measured). A measurement is not measured on Linux. Cells
-// P-c, P-f and P-k to P-m measured this test there. On Linux every create of rows CSa to CSd succeeded
+// request in NFC for an NFD folder succeeds (measured). A measurement is not measured on Linux. Other
+// measured cases test this there. On Linux every create of the measured spellings succeeded
 // on both references and on claustrum.
 //
 // The record is that of the entry in the registrations directory of baseRepo, not that of the folder that the .git file
@@ -979,10 +979,10 @@ func compareAdminRecord(admin, worktreePath string, cleaned bool) adminRecord {
 //
 // Three more cases start from that state and get the same refusal, with nothing
 // changed (`89cb6289`, measured on Linux and macOS). In one the old record is the
-// relative path ../../../gone/w1/.git. In another it is an empty file. In cell
-// P-m the old entry also holds a `locked` file. A record that cannot be read as a
-// file gets the other text first (createdRegistrationRefusal, cells P-g, P-i and
-// P-j).
+// relative path ../../../gone/w1/.git. In another it is an empty file. In one
+// more the old entry also holds a `locked` file. A record that cannot be read as a
+// file gets the other text first (createdRegistrationRefusal, measured with a FIFO, a
+// folder and no file).
 //
 // Not measured: the raw bytes of the record (the NFC spelling was read from `git
 // worktree list`), whether the compare is bytewise (inferred from two measured cases

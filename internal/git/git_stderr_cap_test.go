@@ -54,12 +54,12 @@ func TestWorktreeGitText(t *testing.T) {
 		{"inval_end", "abc\xff", errKilled, "abc"},
 		{"killed ctlonly", "\x01\x02\x1b\n", errKilled, "signal: killed"},
 		// The two parts of the attach-fallback frame (measured), each made on its own.
-		{"Q3 ctl attach", "A\r\nB\tC\x01D\n", errExit, "A  B C D"},
-		{"Q3 ctl fallback", "F\rG\tH\x1bI\n", errExit, "F G H I"},
-		{"Q3 inval attach", "att\xffA\xc3(\n", errExit, "attA("},
-		{"Q3 inval fallback", "fb\xe2\x82B\n", errExit, "fbB"},
-		{"Q3 long attach", "ATT:" + strings.Repeat("a", 600) + "\n", errExit, "ATT:" + strings.Repeat("a", 508)},
-		{"Q3 rune fallback", strings.Repeat("b", 510) + "\xe2\x82\xacTAIL-B\n", errExit, strings.Repeat("b", 510)},
+		{"ctl attach", "A\r\nB\tC\x01D\n", errExit, "A  B C D"},
+		{"ctl fallback", "F\rG\tH\x1bI\n", errExit, "F G H I"},
+		{"inval attach", "att\xffA\xc3(\n", errExit, "attA("},
+		{"inval fallback", "fb\xe2\x82B\n", errExit, "fbB"},
+		{"long attach", "ATT:" + strings.Repeat("a", 600) + "\n", errExit, "ATT:" + strings.Repeat("a", 508)},
+		{"rune fallback", strings.Repeat("b", 510) + "\xe2\x82\xacTAIL-B\n", errExit, strings.Repeat("b", 510)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := worktreeGitText(tc.in, tc.err)

@@ -651,7 +651,7 @@ func TestWriteWorktreeConfigGuards(t *testing.T) {
 		mustWrite(t, filepath.Join(placed(f), "f"), "y\n")
 		cause := placeWorktreeConfig(f.u, f.reg, f.leaf, testedRegistration{}, []byte(text), time.Time{})
 		if cause != "removeat config.worktree: directory not empty" {
-			t.Errorf("the cause = %q, want the text of cell C6", cause)
+			t.Errorf("the cause = %q, want the measured text", cause)
 		}
 		if got := mustRead(t, filepath.Join(placed(f), "f")); got != "y\n" {
 			t.Errorf("the file in the folder = %q, want it kept", got)

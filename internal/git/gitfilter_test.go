@@ -123,7 +123,7 @@ func (f filterFixture) assertRetryFails(t *testing.T) {
 	f.wantRefused(t, raw, "m")
 }
 
-// Cell D6. A quote mark in the name has a backslash before it in the text.
+// Measured: a quote mark in the name has a backslash before it in the text.
 func TestWorktreeCreateFilterRefusalQuotesTheName(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=q\"t\n")
 	f.own(t, `filter.q"t.smudge`, f.marker(t, "local"))
@@ -210,7 +210,7 @@ func TestWorktreeCreateRefusesFilterNameWithEquals(t *testing.T) {
 // A process key of the repository beside an outside smudge key, with no
 // settings copy, gets claustrum's own refusal, and no filter runs. That state
 // is claustrum's own, not measured. With a copy the create succeeds, as on
-// 5fd08069 (measured, TestShadowFilterRulesOfRoundTask073).
+// 5fd08069 (measured, TestShadowFilterRules).
 func TestWorktreeCreateRefusesFilterThatNoPairReplaces(t *testing.T) {
 	f := newFilterFixture(t, "t.txt filter=m\n")
 	f.own(t, "filter.m.process", f.marker(t, "local"))

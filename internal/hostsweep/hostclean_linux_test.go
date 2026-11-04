@@ -1253,7 +1253,7 @@ func TestDeriveRoots(t *testing.T) {
 		t.Errorf("roots = %v, want a single root (exe root == socket root)", r.roots)
 	}
 
-	// Exe under the srv of ANOTHER root -> refused. Its root is never added (row KXB).
+	// Exe under the srv of ANOTHER root -> refused. Its root is never added.
 	if r, err := deriveRoots("/opt/claude/run/c0ffee01/rpc.sock", "/home/u/.claude/srv/abc123/server", true); err == nil {
 		t.Errorf("an executable under another root was accepted, roots = %v", r.roots)
 	}

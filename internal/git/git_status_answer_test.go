@@ -118,19 +118,19 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 		want []string
 	}{
 		// Measured: no .git below the gitlink path gives no entry.
-		{"o6d folder with no .git", func(t *testing.T, f statusFixture) {
+		{"folder with no .git", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			if err := os.Mkdir(filepath.Join(f.W, "gl"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}, nil},
-		{"n20e no folder", func(t *testing.T, f statusFixture) { f.commitGitlink(t) }, nil},
+		{"no folder", func(t *testing.T, f statusFixture) { f.commitGitlink(t) }, nil},
 		// Measured: a .git file or folder is "present".
-		{"o6a .git file", func(t *testing.T, f statusFixture) {
+		{".git file", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl", ".git"), "x\n", 0o644)
 		}, []string{subPresent}},
-		{"o6b .git folder", func(t *testing.T, f statusFixture) {
+		{".git folder", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			if err := os.MkdirAll(filepath.Join(f.W, "gl", ".git"), 0o755); err != nil {
 				t.Fatal(err)
@@ -138,12 +138,12 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 		}, []string{subPresent}},
 		// Measured: the gitlink path is a regular file. On Linux that gives the
 		// "could not be inspected" entry. On Windows it gives no entry.
-		{"o4 gitlink path is a file", func(t *testing.T, f statusFixture) {
+		{"gitlink path is a file", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl"), "file\n", 0o644)
 		}, map[bool][]string{false: {subUnread}, true: nil}[runtime.GOOS == "windows"]},
 		// Measured: a staged gitlink gives "change staged".
-		{"o9b staged gitlink", func(t *testing.T, f statusFixture) {
+		{"staged gitlink", func(t *testing.T, f statusFixture) {
 			f.stageGitlink(t, "gl", other)
 			if err := os.Mkdir(filepath.Join(f.W, "gl"), 0o755); err != nil {
 				t.Fatal(err)
@@ -151,19 +151,19 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 		}, []string{subStaged}},
 		// Measured: one gitlink gives both entries, the ls-files one
 		// first.
-		{"o7 present and staged", func(t *testing.T, f statusFixture) {
+		{"present and staged", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl", ".git"), "x\n", 0o644)
 			f.stageGitlink(t, "gl", other)
 		}, []string{subPresent, subStaged}},
 		// Measured: a gitlink removed from the index gives "change
 		// staged".
-		{"o8 gitlink removed from the index", func(t *testing.T, f statusFixture) {
+		{"gitlink removed from the index", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			runGit(t, f.W, "rm", "--cached", "-q", "gl")
 		}, []string{subStaged}},
 		// Measured: one entry for each index stage.
-		{"o12 conflicted gitlink", func(t *testing.T, f statusFixture) {
+		{"conflicted gitlink", func(t *testing.T, f statusFixture) {
 			writeFile(t, filepath.Join(f.W, "gl", ".git"), "x\n", 0o644)
 			id := statusGitOut(t, f.T, "", "rev-parse", "HEAD")
 			statusGitOut(t, f.W, fmt.Sprintf("160000 %s 1\tgl\n160000 %s 2\tgl\n160000 %s 3\tgl\n", other, id, id),

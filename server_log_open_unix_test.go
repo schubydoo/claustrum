@@ -344,7 +344,7 @@ func TestDaemonizeFailsWhenTheLogIsRefused(t *testing.T) {
 		plant func(t *testing.T, dir, logPath string)
 		text  string
 	}{
-		{"E3 folder", func(t *testing.T, _, logPath string) {
+		{"folder", func(t *testing.T, _, logPath string) {
 			if err := os.Mkdir(logPath, 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -362,7 +362,7 @@ func TestDaemonizeFailsWhenTheLogIsRefused(t *testing.T) {
 			startDaemonChild = func(*exec.Cmd) error { started = true; return errStartRefused }
 			t.Cleanup(func() { startDaemonChild = oldStart })
 
-			dir, sock, logPath := logOpenFixture(t, tc.name != "E3 folder")
+			dir, sock, logPath := logOpenFixture(t, tc.name != "folder")
 			tc.plant(t, dir, logPath)
 			var code int
 			var exited bool

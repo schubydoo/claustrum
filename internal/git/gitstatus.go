@@ -563,8 +563,8 @@ var statusIndexSumMaxBytes int64 = 2 << 30
 // steps are claustrum's own, not measured.
 //
 // A hex name that Lstat does not read as a regular file is skipped in the copy and in
-// the sum. On 5fd08069 a 40-hex name that is a symlink passes and is not copied (cells F
-// and G, Linux). A hex FIFO is skipped too, and so is a 64-hex symlink (claustrum's own,
+// the sum. On 5fd08069 a 40-hex name that is a symlink passes and is not copied
+// (measured on Linux). A hex FIFO is skipped too, and so is a 64-hex symlink (claustrum's own,
 // not measured).
 //
 // Any other `sharedindex.` name, as `sharedindex.x` or `sharedindex.ab`, of 1 GiB + 1

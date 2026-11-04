@@ -17,9 +17,9 @@ func staleCaseRecords(leaf string) map[string]string {
 	slashed := filepath.ToSlash(leaf)
 	dir, name := filepath.Dir(slashed), filepath.Base(slashed)
 	return map[string]string{
-		"R-Q4i0 exact case":       slashed + "/.git",
-		"R-Q4i one name":          filepath.ToSlash(dir) + "/" + strings.ToUpper(name) + "/.git",
-		"R-Q4i2 whole path upper": strings.ToUpper(slashed) + "/.git",
+		"exact case":       slashed + "/.git",
+		"one name":         filepath.ToSlash(dir) + "/" + strings.ToUpper(name) + "/.git",
+		"whole path upper": strings.ToUpper(slashed) + "/.git",
 	}
 }
 
@@ -54,10 +54,10 @@ func TestStaleStepIgnoresLetterCase(t *testing.T) {
 // The held form of the step has the same compare (acceptedGitDir.dropStaleRegistration).
 func TestHeldStaleStepIgnoresLetterCase(t *testing.T) {
 	for cell, record := range map[string]func(string) string{
-		"R-Q4i one name": func(leaf string) string {
+		"one name": func(leaf string) string {
 			return filepath.ToSlash(filepath.Dir(leaf)) + "/" + strings.ToUpper(filepath.Base(leaf)) + "/.git"
 		},
-		"R-Q4i2 whole path upper": func(leaf string) string { return strings.ToUpper(filepath.ToSlash(leaf)) + "/.git" },
+		"whole path upper": func(leaf string) string { return strings.ToUpper(filepath.ToSlash(leaf)) + "/.git" },
 	} {
 		t.Run(cell, func(t *testing.T) {
 			f := newHeldFixture(t)

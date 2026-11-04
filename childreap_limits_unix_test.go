@@ -382,21 +382,21 @@ func TestReapRecordLineReasons(t *testing.T) {
 		live   func(lp *liveProc, runDir string)
 		reason string
 	}{
-		{"RP07 not the group leader", nil, func(lp *liveProc, _ string) { lp.pgid = 7 },
+		{"not the group leader", nil, func(lp *liveProc, _ string) { lp.pgid = 7 },
 			"it does not lead its own process group"},
-		{"ED10b another run dir", nil, func(lp *liveProc, _ string) { lp.runDir = "/run/c2" },
+		{"another run dir", nil, func(lp *liveProc, _ string) { lp.runDir = "/run/c2" },
 			"it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one"},
-		{"ED10a no run dir entry", nil, func(lp *liveProc, _ string) { lp.runDir = "" },
+		{"no run dir entry", nil, func(lp *liveProc, _ string) { lp.runDir = "" },
 			"it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it"},
-		{"ED10c the child mark names another pid", nil, func(lp *liveProc, _ string) { lp.childMark = "999:9000" },
+		{"the child mark names another pid", nil, func(lp *liveProc, _ string) { lp.childMark = "999:9000" },
 			"it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)"},
-		{"ED01a another program", func(r *childRecord) { r.Argv0 = "/nonexistent/other" }, nil,
+		{"another program", func(r *childRecord) { r.Argv0 = "/nonexistent/other" }, nil,
 			`it does not run the recorded program "/nonexistent/other"`},
-		{"ED04b another program and a program key", func(r *childRecord) { r.Argv0, r.Program = "/nonexistent/other", "/tmp/e/bin/../bin/target" }, nil,
+		{"another program and a program key", func(r *childRecord) { r.Argv0, r.Program = "/nonexistent/other", "/tmp/e/bin/../bin/target" }, nil,
 			`it does not run the recorded program "/nonexistent/other" and neither runs nor was handed "/tmp/e/bin/../bin/target"`},
-		{"ED02a no program in the record", func(r *childRecord) { r.Argv0 = "" }, nil,
+		{"no program in the record", func(r *childRecord) { r.Argv0 = "" }, nil,
 			"the record names no program to verify against"},
-		{"ED07 another start", func(r *childRecord) { r.Start = "9001" }, nil,
+		{"another start", func(r *childRecord) { r.Start = "9001" }, nil,
 			`it did not start at the recorded "9001": the pid has been reused`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

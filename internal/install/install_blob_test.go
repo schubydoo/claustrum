@@ -62,8 +62,8 @@ func TestInstallURLBodyThatIsNoArchive(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range []struct{ id, checksum string }{
-		{"L15a", sha256Hex(body)},
-		{"L15b", sha256Hex([]byte("other"))},
+		{"the checksum matches", sha256Hex(body)},
+		{"the checksum differs", sha256Hex([]byte("other"))},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			cliDir := filepath.Join(t.TempDir(), "cli")

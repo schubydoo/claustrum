@@ -158,16 +158,16 @@ func TestIncludeVersionExitAndSearch(t *testing.T) {
 		rc            int
 		want          []string
 	}{
-		{"I01_ver_ctl_new", "git version 2.32.0\n", 0, newSet},
-		{"I01_ver_ctl_old", "git version 2.31.0\n", 0, oldSet},
-		{"I01_ver_lead1sp", " git version 2.32.0\n", 0, newSet},
-		{"I01_ver_leadnl", "\ngit version 2.32.0\n", 0, newSet},
-		{"I01_ver_junkfirst", "xx git version 2.32.0\n", 0, newSet},
-		{"I01_ver_bigmajor", "git version 99999999999999999999.0\n", 0, newSet},
-		{"I01_ver_bigminor", "git version 2.99999999999999999999\n", 0, newSet},
-		{"I01_ver_rc1_new", "git version 2.50.0\n", 1, oldSet},
-		{"I01_ver_rc128_new", "git version 2.50.0\n", 128, oldSet},
-		{"I01_ver_rc128_empty", "", 128, oldSet},
+		{"ver_ctl_new", "git version 2.32.0\n", 0, newSet},
+		{"ver_ctl_old", "git version 2.31.0\n", 0, oldSet},
+		{"ver_lead1sp", " git version 2.32.0\n", 0, newSet},
+		{"ver_leadnl", "\ngit version 2.32.0\n", 0, newSet},
+		{"ver_junkfirst", "xx git version 2.32.0\n", 0, newSet},
+		{"ver_bigmajor", "git version 99999999999999999999.0\n", 0, newSet},
+		{"ver_bigminor", "git version 2.99999999999999999999\n", 0, newSet},
+		{"ver_rc1_new", "git version 2.50.0\n", 1, oldSet},
+		{"ver_rc128_new", "git version 2.50.0\n", 128, oldSet},
+		{"ver_rc128_empty", "", 128, oldSet},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stubGit(t, gitStub{version: c.version, versionRC: c.rc})
@@ -223,20 +223,20 @@ func TestIncludeGitErrorArms(t *testing.T) {
 		fail    gitStub
 		want    []string
 	}{
-		{"I11_ctl", v232, gitStub{}, errTreeNew},
-		{"I11_listing_128", v232, gitStub{failWord: "--directory", failRC: 128}, nil},
-		{"I11_listing_128_run", v232, gitStub{failWord: "--directory", failRun: true, failRC: 128}, nil},
+		{"ctl", v232, gitStub{}, errTreeNew},
+		{"listing_128", v232, gitStub{failWord: "--directory", failRC: 128}, nil},
+		{"listing_128_run", v232, gitStub{failWord: "--directory", failRun: true, failRC: 128}, nil},
 		{"file_batch_128", v232, gitStub{failWord: "r.ig", failRC: 128}, []string{"build/a.txt", "sub/build/c.ig"}},
 		{"dir_batch_128", v232, gitStub{failWord: "sub/build", failRC: 128}, []string{"r.ig"}},
 		{"dir_batch_128_run", v232, gitStub{failWord: "sub/build", failRun: true, failRC: 128}, []string{"r.ig"}},
-		{"I11_chk_128", v232, gitStub{failWord: "check-ignore", failRC: 128}, []string{"r.ig"}},
-		{"I11_chk_128_run", v232, gitStub{failWord: "check-ignore", failRun: true, failRC: 128}, []string{"r.ig"}},
-		{"I11_chk_1_run", v232, gitStub{failWord: "check-ignore", failRun: true, failRC: 1}, errTreeNew},
-		{"I11_old_ctl", v231, gitStub{}, errTreeOld},
-		{"I11_old_first_128", v231, gitStub{failWord: "--no-literal-pathspecs", failRC: 128}, nil},
-		{"I11_old_chk_128", v231, gitStub{failWord: "check-ignore", failRC: 128}, nil},
-		{"I11_old_chk_128_run", v231, gitStub{failWord: "check-ignore", failRun: true, failRC: 128}, nil},
-		{"I11_old_stdlist_128", v231, gitStub{failWord: "--exclude-standard", failRC: 128}, errTreeOld},
+		{"chk_128", v232, gitStub{failWord: "check-ignore", failRC: 128}, []string{"r.ig"}},
+		{"chk_128_run", v232, gitStub{failWord: "check-ignore", failRun: true, failRC: 128}, []string{"r.ig"}},
+		{"chk_1_run", v232, gitStub{failWord: "check-ignore", failRun: true, failRC: 1}, errTreeNew},
+		{"old_ctl", v231, gitStub{}, errTreeOld},
+		{"old_first_128", v231, gitStub{failWord: "--no-literal-pathspecs", failRC: 128}, nil},
+		{"old_chk_128", v231, gitStub{failWord: "check-ignore", failRC: 128}, nil},
+		{"old_chk_128_run", v231, gitStub{failWord: "check-ignore", failRun: true, failRC: 128}, nil},
+		{"old_stdlist_128", v231, gitStub{failWord: "--exclude-standard", failRC: 128}, errTreeOld},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s := c.fail
@@ -264,8 +264,8 @@ func TestIncludeMagicLookingNames(t *testing.T) {
 		name, version string
 		want          []string
 	}{
-		{"I16g_magic_name_new", "git version 2.32.0\n", []string{"0.ig", ":!z.ig", "a.ig", "zz.ig"}},
-		{"I16g_magic_name_old", "git version 2.31.0\n", nil},
+		{"magic_name_new", "git version 2.32.0\n", []string{"0.ig", ":!z.ig", "a.ig", "zz.ig"}},
+		{"magic_name_old", "git version 2.31.0\n", nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stubGit(t, gitStub{version: c.version})
@@ -300,10 +300,10 @@ func TestIncludePrefixOpeningCopies(t *testing.T) {
 // `build/a.txt`. It does not open `sub/build` or `a/x/build`.
 func TestIncludeLinuxMeasuredCopies(t *testing.T) {
 	checkIncludeCases(t, []includeCase{
-		{name: "L4_sub_bs_sl_x_alone", ignore: lines("/ab/", "/sub/x/", "/subq/"), tracked: []string{"sub/t.txt"},
+		{name: "sub_bs_sl_x_alone", ignore: lines("/ab/", "/sub/x/", "/subq/"), tracked: []string{"sub/t.txt"},
 			files: []string{"ab/f.txt", "sub/x/f.txt", "subq/f.txt"}, manifest: "sub\\/x/\n",
 			want: []string{"sub/x/f.txt"}},
-		{name: "L3_ds_file_txt", ignore: bld3Ignore, files: bld3Files, manifest: "build//a.txt\n*.txt\n",
+		{name: "ds_file_txt", ignore: bld3Ignore, files: bld3Files, manifest: "build//a.txt\n*.txt\n",
 			want: []string{".bx/d.txt", "build/a.txt"}},
 	})
 }
@@ -337,7 +337,7 @@ func TestIncludeManifestShapeCallShape(t *testing.T) {
 		{"D12_empty_old", "git version 2.31.0\n", emptyFile, []string{"a.i"},
 			[]string{"version", "--no-literal-pathspecs"}},
 		{"D10_symlink", "git version 2.32.0\n", symlink, []string{"a.i"}, nil},
-		{"D11_dir", "git version 2.32.0\n", nil, []string{"a.i", ".worktreeinclude/x"}, nil},
+		{"dir", "git version 2.32.0\n", nil, []string{"a.i", ".worktreeinclude/x"}, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			bin := stubGit(t, gitStub{version: c.version})
@@ -483,15 +483,15 @@ func TestClaudeDirPassCallShape(t *testing.T) {
 		linux bool
 		want  []string
 	}{
-		{"I14a_std", includeCase{files: []string{".claude/worktrees/stale/x.dd", "top.dd"}, ignore: lines("top.dd"),
+		{"std", includeCase{files: []string{".claude/worktrees/stale/x.dd", "top.dd"}, ignore: lines("top.dd"),
 			manifest: "*.dd\n"}, false, nil},
-		{"I14b_claude_whole_ignored", includeCase{ignore: lines(".claude/"),
+		{"claude_whole_ignored", includeCase{ignore: lines(".claude/"),
 			files: []string{".claude/worktrees/stale/x.dd", ".claude/keep.dd", "top.dd"}, manifest: "*.dd\n"},
 			false, []string{".claude/keep.dd"}},
-		{"C01_claude_no_manifest", includeCase{ignore: lines(".claude/settings.local.json", ".claude/checkpoints/"),
+		{"claude_no_manifest", includeCase{ignore: lines(".claude/settings.local.json", ".claude/checkpoints/"),
 			files: []string{".claude/settings.local.json", ".claude/checkpoints/x.json", ".claude/untr.json"}},
 			false, []string{".claude/checkpoints", ".claude/settings.local.json", ".claude/untr.json"}},
-		{"I15d_case_new", includeCase{ignore: lines(".claude/"),
+		{"case_new", includeCase{ignore: lines(".claude/"),
 			files: []string{".claude/Worktrees/x.dd", ".claude/CHECKPOINTS/c.dd", ".claude/k.dd"}, manifest: "*.dd\n"},
 			true, []string{".claude/CHECKPOINTS", ".claude/k.dd"}},
 	} {
@@ -672,35 +672,35 @@ func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 		c             includeCase
 		want          []string
 	}{
-		{"A03_middle_slash", v232, includeCase{ignore: lines("*.i"), files: []string{"sub/a.i", "x/sub/a.i", "a.i"},
+		{"middle_slash", v232, includeCase{ignore: lines("*.i"), files: []string{"sub/a.i", "x/sub/a.i", "a.i"},
 			manifest: "sub/a.i\n", want: []string{"sub/a.i"}}, []string{"batch: a.i sub/a.i x/sub/a.i", "batch: sub"}},
-		{"A04_star", v232, includeCase{ignore: lines("*.i"),
+		{"star", v232, includeCase{ignore: lines("*.i"),
 			files: []string{"s1.i", "sub/s2.i", "sx/y.i", "sub/z.i", "sub/deep/z.i", "q.i"}, manifest: "s*.i\nsub/*.i\n",
 			want: []string{"s1.i", "sub/s2.i", "sub/z.i"}},
 			[]string{"batch: q.i s1.i sub/deep/z.i sub/s2.i sub/z.i sx/y.i", "batch: sub sub/deep sx"}},
-		{"A16_trailing_slash", v232, includeCase{ignore: lines("*.i"),
+		{"trailing_slash", v232, includeCase{ignore: lines("*.i"),
 			files: []string{"cfg/a.i", "sub/cfg/b.i", "cf2.i", "cf3.i/c.i"}, manifest: "cfg/\ncf2.i/\ncf3.i/\n",
 			want: []string{"cf3.i/c.i", "cfg/a.i", "sub/cfg/b.i"}},
 			[]string{"batch: cf2.i cfg/a.i sub/cfg/b.i", "batch: cf3.i cfg sub/cfg", "check-ignore: cf3.i/c.i|"}},
-		{"C02_claude_anydepth", v232, includeCase{ignore: lines(".claude/settings.local.json", ".claude/checkpoints/", "*.json"),
+		{"claude_anydepth", v232, includeCase{ignore: lines(".claude/settings.local.json", ".claude/checkpoints/", "*.json"),
 			files:    []string{".claude/settings.local.json", ".claude/checkpoints/x.json", ".claude/a/b.json", "top.json"},
 			manifest: "*.json\n", want: []string{".claude/a/b.json", ".claude/settings.local.json", "top.json"}},
 			[]string{"batch: .claude/a/b.json .claude/settings.local.json top.json", "batch: <claude>"}},
-		{"C03_claude_whole_ignored_anydepth", v232, includeCase{ignore: lines(".claude/"),
+		{"claude_whole_ignored_anydepth", v232, includeCase{ignore: lines(".claude/"),
 			files: []string{".claude/settings.local.json", ".claude/a/b.json", ".claude/checkpoints/c.json",
 				"sub/.claude/d.json", "sub/.claude/checkpoints/e.json"}, manifest: "*.json\n",
 			want: []string{".claude/a/b.json", ".claude/settings.local.json", "sub/.claude/d.json"}},
 			[]string{"batch: <claude> sub/.claude",
 				"check-ignore: .claude/a/b.json|.claude/settings.local.json|sub/.claude/d.json|"}},
-		{"C04_nested_claude_explicit", v232, includeCase{ignore: lines("sub/.claude/"),
+		{"nested_claude_explicit", v232, includeCase{ignore: lines("sub/.claude/"),
 			files: []string{"sub/.claude/d.json", "sub/.claude/checkpoints/e.json"}, manifest: "sub/.claude/\n",
 			want: []string{"sub/.claude/d.json"}},
 			[]string{"batch: sub sub/.claude", "check-ignore: sub/.claude/d.json|"}},
-		{"C05_claude_explicit_manifest", v232, includeCase{ignore: lines(".claude/"),
+		{"claude_explicit_manifest", v232, includeCase{ignore: lines(".claude/"),
 			files:    []string{".claude/settings.local.json", ".claude/a/b.json", ".claude/mailbox/m.json"},
 			manifest: ".claude/\n", want: []string{".claude/a/b.json", ".claude/settings.local.json"}},
 			[]string{"batch: <claude>", "check-ignore: .claude/a/b.json|.claude/settings.local.json|"}},
-		{"D23_worktrees_dir_pattern", v232, includeCase{ignore: lines(".claude/"),
+		{"worktrees_dir_pattern", v232, includeCase{ignore: lines(".claude/"),
 			files: []string{".claude/k.txt", "other.i"}, manifest: ".claude/worktrees/\n**/*.txt\n",
 			want: []string{".claude/k.txt"}},
 			[]string{"batch: <claude>", "check-ignore: .claude/k.txt|"}},

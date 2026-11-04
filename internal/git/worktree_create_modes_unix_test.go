@@ -75,19 +75,19 @@ func TestWorktreeCreateParentFailureTextsInRepo(t *testing.T) {
 		denied bool
 	}{
 		{
-			name:  "F1_claude_is_a_file",
+			name:  "claude_is_a_file",
 			setup: func(t *testing.T, repo string) { writeFile(t, filepath.Join(repo, ".claude"), "x", 0o644) },
 			text:  func(repo string) string { return filepath.Join(repo, ".claude") + " is not a directory" },
 		},
 		{
-			name:   "F2_repo_unwritable",
+			name:   "repo_unwritable",
 			setup:  func(t *testing.T, repo string) { chmodForTest(t, repo, 0o555) },
 			text:   func(string) string { return "mkdirat .claude: permission denied" },
 			absent: []string{".claude"},
 			denied: true,
 		},
 		{
-			name: "F3_claude_unwritable",
+			name: "claude_unwritable",
 			setup: func(t *testing.T, repo string) {
 				mkdirForTest(t, filepath.Join(repo, ".claude"))
 				chmodForTest(t, filepath.Join(repo, ".claude"), 0o555)
@@ -97,7 +97,7 @@ func TestWorktreeCreateParentFailureTextsInRepo(t *testing.T) {
 			denied: true,
 		},
 		{
-			name: "F4_worktrees_is_a_file",
+			name: "worktrees_is_a_file",
 			setup: func(t *testing.T, repo string) {
 				writeFile(t, filepath.Join(repo, ".claude", "worktrees"), "x", 0o644)
 			},
@@ -143,7 +143,7 @@ func TestWorktreeCreateParentFailureTextsExternal(t *testing.T) {
 		denied bool
 	}{
 		{
-			name:    "F5_root_parent_unwritable",
+			name:    "root_parent_unwritable",
 			rootRel: "p/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "p"))
@@ -154,7 +154,7 @@ func TestWorktreeCreateParentFailureTextsExternal(t *testing.T) {
 			denied: true,
 		},
 		{
-			name:    "F6_root_unwritable",
+			name:    "root_unwritable",
 			rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R"))
@@ -165,19 +165,19 @@ func TestWorktreeCreateParentFailureTextsExternal(t *testing.T) {
 			denied: true,
 		},
 		{
-			name:    "F7_root_is_a_file",
+			name:    "root_is_a_file",
 			rootRel: "R",
 			setup:   func(t *testing.T, f string) { writeFile(t, filepath.Join(f, "R"), "x", 0o644) },
 			text:    func(f string) string { return filepath.Join(f, "R") + ": not a directory" },
 		},
 		{
-			name:    "F11_ancestor_is_a_file",
+			name:    "ancestor_is_a_file",
 			rootRel: "a/b/R",
 			setup:   func(t *testing.T, f string) { writeFile(t, filepath.Join(f, "a"), "x", 0o644) },
 			text:    func(f string) string { return filepath.Join(f, "a") + ": not a directory" },
 		},
 		{
-			name:    "F12_ancestor_unwritable",
+			name:    "ancestor_unwritable",
 			rootRel: "a/b/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a"))

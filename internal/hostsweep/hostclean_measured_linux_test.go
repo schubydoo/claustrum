@@ -590,7 +590,7 @@ func hcSymlinkFixture(t *testing.T) (R, Rl, anc, ancReal string) {
 // 89cb6289. The cleaner is on when the socket path goes through a symlink to the root (measured).
 // It is on when the binary does (measured). It is also on with a symlink one level above the
 // root. The root list of claustrum then holds the root as given and its real path. A binary under
-// the srv of another folder keeps the cleaner off (row KXB). So does a root whose resolution
+// the srv of another folder keeps the cleaner off. So does a root whose resolution
 // fails while the binary sits under the real path.
 //
 // On Linux /proc/self/exe names the real path of the binary. macOS gives the path as it

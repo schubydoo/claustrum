@@ -25,7 +25,7 @@ func TestCreateWithAFolderAtConfigWorktreeOnWindows(t *testing.T) {
 	for _, row := range []struct {
 		cell string
 		file bool
-	}{{"S9 empty", false}, {"S9b with a file", true}} {
+	}{{"empty", false}, {"with a file", true}} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newConfigStepFixture(t, "[core]\n\tfilemode = false\n")
 			s := stepCreate{shadowFixture: f.shadowFixture, leaf: f.leaf}

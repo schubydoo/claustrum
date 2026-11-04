@@ -320,7 +320,7 @@ func TestStdioReadAnswersDarwin(t *testing.T) {
 		completed, answered bool
 		want                bool
 	}{
-		{"row E5: the run did not answer", true, false, false},
+		{"the run did not answer", true, false, false},
 		{"an abandoned run", false, true, true},
 		{"a run with no record for the pid", true, true, true},
 	} {
@@ -410,13 +410,13 @@ func TestHcLockHeldAtDarwin(t *testing.T) {
 		completed, answered, expired bool
 		held, asked                  bool
 	}{
-		{"row C2: another pid holds the file", "p1234\n", true, true, false, true, true},
-		{"row C6: no holder", "", true, true, false, false, true},
-		{"row C3: the run did not start", "", true, false, false, false, false},
-		{"rows D2p and D2f: the run wrote to stderr", "p1234\n", true, false, false, false, false},
-		{"row C4: only this process holds the file", self, true, true, false, false, true},
+		{"another pid holds the file", "p1234\n", true, true, false, true, true},
+		{"no holder", "", true, true, false, false, true},
+		{"the run did not start", "", true, false, false, false, false},
+		{"the run wrote to stderr", "p1234\n", true, false, false, false, false},
+		{"only this process holds the file", self, true, true, false, false, true},
 		{"this process and another pid hold the file", self + "p1234\n", true, true, false, true, true},
-		{"cells L1 and L2: the deadline ended the run", "", true, true, true, false, false},
+		{"the deadline ended the run", "", true, true, true, false, false},
 		{"the deadline ended a run that wrote a pid (not measured)", "p1234\n", true, true, true, false, false},
 		{"an abandoned run is no answer (not measured)", "", false, true, false, false, false},
 	} {
@@ -449,7 +449,7 @@ func TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin(t *testing.T) {
 		completed, expired bool
 		kept               bool
 	}{
-		{"cells L1 and L2: the deadline ended the run", "", true, true, true},
+		{"the deadline ended the run", "", true, true, true},
 		{"the deadline ended a run that wrote a pid", "p1234\n", true, true, true},
 		{"an abandoned run", "", false, false, true},
 		{"control: a completed run with no holder", "", true, false, false},
@@ -663,7 +663,7 @@ func TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin(t *testing.T) {
 		expired bool
 	}{
 		{"control: a completed run with no client record", "", false},
-		{"cell B2: the deadline ended the run", "", true},
+		{"the deadline ended the run", "", true},
 		{"the deadline ended a run that wrote a client record", client, true},
 	} {
 		gone := false
@@ -734,12 +734,12 @@ func TestPeerOfDarwin(t *testing.T) {
 
 // TestHostcleanLivePrimitivesDarwin runs the REAL darwin primitives (sysctl kinfo_proc,
 // KERN_PROCARGS2, lsof, LOCAL_PEERPID) against a real claustrum daemon, on macOS. It is
-// env-gated so it never runs in CI: set CLAUSTRUM_VM_LIVE=1 and CLAUSTRUM_BIN=<daemon path>.
+// env-gated so it never runs in CI: set CLAUSTRUM_LIVE_TEST=1 and CLAUSTRUM_BIN=<daemon path>.
 // It confirms the composed reads (which the seamed unit tests above cannot) match a live
 // process before the destructive judges act on them.
 func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
-	if os.Getenv("CLAUSTRUM_VM_LIVE") != "1" {
-		t.Skip("live VM test; set CLAUSTRUM_VM_LIVE=1 and CLAUSTRUM_BIN")
+	if os.Getenv("CLAUSTRUM_LIVE_TEST") != "1" {
+		t.Skip("live test on macOS; set CLAUSTRUM_LIVE_TEST=1 and CLAUSTRUM_BIN")
 	}
 	bin := os.Getenv("CLAUSTRUM_BIN")
 	if bin == "" {

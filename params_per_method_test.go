@@ -24,21 +24,21 @@ func TestParamsUnreadMemberIgnored(t *testing.T) {
 		base   map[string]any
 		bad    map[string]any
 	}{
-		{"F1", "files.stat", map[string]any{"path": file}, map[string]any{"maxBytes": "{"}},
-		{"F2", "files.list", map[string]any{"path": dir}, map[string]any{"maxBytes": "{"}},
-		{"F3", "files.validate", map[string]any{"path": dir}, map[string]any{"maxBytes": "{"}},
-		{"G1", "git.info", map[string]any{"path": dir}, map[string]any{"timeoutMs": "x"}},
-		{"G2", "git.info", map[string]any{"path": dir}, map[string]any{"baseRepo": 7}},
-		{"G3", "git.list_branches", map[string]any{"path": dir}, map[string]any{"worktreePath": []any{}}},
+		{"stat maxBytes", "files.stat", map[string]any{"path": file}, map[string]any{"maxBytes": "{"}},
+		{"list maxBytes", "files.list", map[string]any{"path": dir}, map[string]any{"maxBytes": "{"}},
+		{"validate maxBytes", "files.validate", map[string]any{"path": dir}, map[string]any{"maxBytes": "{"}},
+		{"info timeoutMs", "git.info", map[string]any{"path": dir}, map[string]any{"timeoutMs": "x"}},
+		{"info baseRepo", "git.info", map[string]any{"path": dir}, map[string]any{"baseRepo": 7}},
+		{"list_branches worktreePath", "git.list_branches", map[string]any{"path": dir}, map[string]any{"worktreePath": []any{}}},
 		{"list_branches baseRepo", "git.list_branches", map[string]any{"path": dir}, map[string]any{"baseRepo": 7}},
-		{"G4b", "git.status", map[string]any{"path": dir, "baseRepo": dir}, map[string]any{"branchName": map[string]any{}}},
+		{"status branchName with baseRepo", "git.status", map[string]any{"path": dir, "baseRepo": dir}, map[string]any{"branchName": map[string]any{}}},
 		{"status worktreePath", "git.status", map[string]any{"path": dir, "baseRepo": dir}, map[string]any{"worktreePath": 5}},
-		{"G4", "git.status", map[string]any{"path": dir}, map[string]any{"branchName": map[string]any{}}},
-		{"G6", "git.worktree_create", map[string]any{"baseRepo": dir, "branchName": "b2", "worktreePath": filepath.Join(dir, "w2")}, map[string]any{"path": 123}},
-		{"G7", "git.worktree_remove", map[string]any{"baseRepo": dir, "branchName": "b1", "worktreePath": filepath.Join(dir, "w1")}, map[string]any{"timeoutMs": "x"}},
-		{"G8", "git.worktree_remove", map[string]any{"baseRepo": dir, "branchName": "b1", "worktreePath": filepath.Join(dir, "w1")}, map[string]any{"path": 123, "existingBranch": 5}},
-		{"P1", "process.spawn", map[string]any{"id": "p1", "command": "/nonexistent_binary_xyz_claustrum"}, map[string]any{"wantPid": "x"}},
-		{"P2", "process.reattach", map[string]any{"id": "p2", "fromSeq": 0}, map[string]any{"wantPid": "x"}},
+		{"status branchName", "git.status", map[string]any{"path": dir}, map[string]any{"branchName": map[string]any{}}},
+		{"worktree_create path", "git.worktree_create", map[string]any{"baseRepo": dir, "branchName": "b2", "worktreePath": filepath.Join(dir, "w2")}, map[string]any{"path": 123}},
+		{"worktree_remove timeoutMs", "git.worktree_remove", map[string]any{"baseRepo": dir, "branchName": "b1", "worktreePath": filepath.Join(dir, "w1")}, map[string]any{"timeoutMs": "x"}},
+		{"worktree_remove path and existingBranch", "git.worktree_remove", map[string]any{"baseRepo": dir, "branchName": "b1", "worktreePath": filepath.Join(dir, "w1")}, map[string]any{"path": 123, "existingBranch": 5}},
+		{"spawn wantPid", "process.spawn", map[string]any{"id": "p1", "command": "/nonexistent_binary_xyz_claustrum"}, map[string]any{"wantPid": "x"}},
+		{"reattach wantPid", "process.reattach", map[string]any{"id": "p2", "fromSeq": 0}, map[string]any{"wantPid": "x"}},
 	} {
 		want := dispatchRaw(t, s, rpcLine(t, tc.method, tc.base))
 		with := map[string]any{}

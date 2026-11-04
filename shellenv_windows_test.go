@@ -97,16 +97,16 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 	sys := `C:\claustrum-daemon-path;` + os.Getenv("PATH")
 	const caller = `C:\x;C:\Windows\system32`
 	cases := []struct {
-		row    string
+		name   string
 		caller map[string]string
 		want   string
 	}{
-		{"R1", nil, "PATH=" + sys},
-		{"R4", map[string]string{"Path": caller}, "PATH=" + sys},
-		{"R3", map[string]string{"PATH": caller}, "PATH=" + caller},
+		{"no PATH of the caller", nil, "PATH=" + sys},
+		{"a Path of the caller", map[string]string{"Path": caller}, "PATH=" + sys},
+		{"a PATH of the caller", map[string]string{"PATH": caller}, "PATH=" + caller},
 	}
 	for _, tc := range cases {
-		t.Run(tc.row, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			origExtractor := shellenv.LoginPATHExtractor
 			t.Cleanup(func() {
 				shellenv.LoginPATHExtractor = origExtractor
@@ -117,9 +117,9 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 			setDaemonPathSpelledPath(t, sys)
 			armLoginPATH()
 
-			got := childPathEntries(t, "path-"+tc.row, tc.caller)
+			got := childPathEntries(t, "path-"+strings.ReplaceAll(tc.name, " ", "-"), tc.caller)
 			if len(got) != 1 || got[0] != tc.want {
-				t.Errorf("row %s: the child path entries are %q, want only %q", tc.row, got, tc.want)
+				t.Errorf("%s: the child path entries are %q, want only %q", tc.name, got, tc.want)
 			}
 		})
 	}

@@ -224,11 +224,11 @@ func TestGitInfoGoneGitFileRunsTheStartTest(t *testing.T) {
 		want            string
 		test            bool
 	}{
-		{"V3 missing path", "gitdir: <DIR>/nowhere/gitdir\n", nowhere, false, noRepoShadow, true},
-		{"V4 missing worktree entry", "gitdir: <GITDIR>/worktrees/n1\n", entry, false, noRepoLine, false},
-		{"V4g missing entry of a missing repository", "gitdir: <DIR>/gone/.git/worktrees/n1\n", entry, false, noRepoShadow, true},
-		{"V2 no gitdir line", "hello\n", "", false, noRepoLine, false},
-		{"V7 with the switch", "gitdir: <DIR>/nowhere/gitdir\n", nowhere, true, noRepoOff, false},
+		{"missing path", "gitdir: <DIR>/nowhere/gitdir\n", nowhere, false, noRepoShadow, true},
+		{"missing worktree entry", "gitdir: <GITDIR>/worktrees/n1\n", entry, false, noRepoLine, false},
+		{"missing entry of a missing repository", "gitdir: <DIR>/gone/.git/worktrees/n1\n", entry, false, noRepoShadow, true},
+		{"no gitdir line", "hello\n", "", false, noRepoLine, false},
+		{"with the switch", "gitdir: <DIR>/nowhere/gitdir\n", nowhere, true, noRepoOff, false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newShadowFixture(t)

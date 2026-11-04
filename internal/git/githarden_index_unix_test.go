@@ -293,8 +293,8 @@ func TestInstallWorktreeIndexCleanPathTexts(t *testing.T) {
 		make       bool
 		want       string
 	}{
-		{"Z10 registration gone", "", false, "openat w1/index: no such file or directory"},
-		{"Z11a registrations directory without search", "repo/.git/worktrees", true, "openat w1/index: permission denied"},
+		{"registration gone", "", false, "openat w1/index: no such file or directory"},
+		{"registrations directory without search", "repo/.git/worktrees", true, "openat w1/index: permission denied"},
 		{"git dir without search", "repo/.git", true, "open <registrations>: permission denied"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -357,14 +357,14 @@ func TestIndexInstallText(t *testing.T) {
 	long := strings.Repeat("s5err-xx\n", 151)
 	x := func(n int) string { return strings.Repeat("x", n) }
 	for _, tc := range []struct{ name, stderr, want string }{
-		{"A14 hints", "hint: a\nhint: b\n", "hint: a hint: b " + text},
-		{"Y2a no final newline", "0035_0040_", "0035_0040_" + text},
-		{"Y2b two final newlines", "0035_0040_\n\n", "0035_0040_  " + text},
-		{"X2 no stderr", "", text},
-		{"Y1b 478 bytes", x(477) + "\n", x(477) + " " + text},
-		{"Y1a 500 bytes", x(499) + "\n", x(499) + " openat w1/in"},
-		{"Y1c 512 bytes", x(511) + "\n", x(511)},
-		{"X3 over the cap", long, strings.ReplaceAll(long[:512], "\n", " ")},
+		{"hints", "hint: a\nhint: b\n", "hint: a hint: b " + text},
+		{"no final newline", "0035_0040_", "0035_0040_" + text},
+		{"two final newlines", "0035_0040_\n\n", "0035_0040_  " + text},
+		{"no stderr", "", text},
+		{"478 bytes", x(477) + "\n", x(477) + " " + text},
+		{"500 bytes", x(499) + "\n", x(499) + " openat w1/in"},
+		{"512 bytes", x(511) + "\n", x(511)},
+		{"over the cap", long, strings.ReplaceAll(long[:512], "\n", " ")},
 	} {
 		if got := indexInstallText(tc.stderr, err); got != tc.want {
 			t.Errorf("%s: indexInstallText = %q, want %q", tc.name, got, tc.want)
@@ -398,7 +398,7 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 		t.Fatalf("create = %s, want success", raw)
 	}
 	if b, _ := os.ReadFile(modeLog); strings.TrimSpace(string(b)) != "0664" {
-		t.Fatalf("git wrote its temporary index with mode %q, want 0664: this fixture does not stage row A13", strings.TrimSpace(string(b)))
+		t.Fatalf("git wrote its temporary index with mode %q, want 0664: this fixture does not stage the measured mode", strings.TrimSpace(string(b)))
 	}
 	if got := permOf(t, filepath.Join(repo, ".git", "worktrees", "wt", "index")); got != 0o644 {
 		t.Errorf("index mode = %#o, want 0644", got)
@@ -467,8 +467,8 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 		lockLeafParent               bool
 	}{
 		{"A14", "", both, "w1", false},
-		{"X5 attach", "ex", attach, "ex", false},
-		{"X11 leaf parent locked", "", both, "w1", true},
+		{"attach", "ex", attach, "ex", false},
+		{"leaf parent locked", "", both, "w1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, h, tmp := indexInstallFixture(t)

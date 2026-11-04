@@ -157,6 +157,6 @@ func TestWorktreeRemoveThroughJunctionDropsEntry(t *testing.T) {
 	}
 	mustBeGone(t, f.wt)
 	if _, err := os.Lstat(f.entry()); !os.IsNotExist(err) {
-		t.Errorf("entry %s is still there (err=%v), want it gone (row J2)", f.entry(), err)
+		t.Errorf("entry %s is still there (err=%v), want it gone", f.entry(), err)
 	}
 }

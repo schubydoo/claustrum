@@ -62,8 +62,8 @@ func TestParseSignal(t *testing.T) {
 // TestSignalToOneProcessGoesThroughItsHandle pins that every signal but SIGKILL goes
 // to the one process through its process handle (sysproc.SignalOne), not through
 // kill(pid).
-// On Linux the handle of a started child sends pidfd_send_signal (89cb6289, rows E,
-// A2 and B1). The seam takes the call, so no signal goes out.
+// On Linux the handle of a started child sends pidfd_send_signal (89cb6289,
+// measured). The seam takes the call, so no signal goes out.
 func TestSignalToOneProcessGoesThroughItsHandle(t *testing.T) {
 	old := sysproc.SignalOne
 	t.Cleanup(func() { sysproc.SignalOne = old })

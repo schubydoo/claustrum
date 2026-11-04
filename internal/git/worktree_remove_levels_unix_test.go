@@ -90,15 +90,15 @@ func TestWorktreeRemoveExternalLevelTexts(t *testing.T) {
 		mode  os.FileMode
 		want  string
 	}{
-		{"B1 root 0600", func(f extFixture) string { return f.root }, 0o600, "statat ."},
-		{"B2 root 0400", func(f extFixture) string { return f.root }, 0o400, "statat ."},
-		{"B8 directory 0600", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o600, "statat ."},
-		{"B9 directory 0400", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o400, "statat ."},
-		{"B10 directory 0300", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o300, "openat proj"},
-		{"B11a directory 0100", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o100, "openat proj"},
-		{"B11b directory 0000", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o000, "openat proj"},
-		{"B13a leaf 0600", func(f extFixture) string { return f.e0 }, 0o600, "statat ."},
-		{"B14a leaf 0300", func(f extFixture) string { return f.e0 }, 0o300, "openat e0"},
+		{"root 0600", func(f extFixture) string { return f.root }, 0o600, "statat ."},
+		{"root 0400", func(f extFixture) string { return f.root }, 0o400, "statat ."},
+		{"directory 0600", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o600, "statat ."},
+		{"directory 0400", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o400, "statat ."},
+		{"directory 0300", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o300, "openat proj"},
+		{"directory 0100", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o100, "openat proj"},
+		{"directory 0000", func(f extFixture) string { return filepath.Dir(f.e0) }, 0o000, "openat proj"},
+		{"leaf 0600", func(f extFixture) string { return f.e0 }, 0o600, "statat ."},
+		{"leaf 0300", func(f extFixture) string { return f.e0 }, 0o300, "openat e0"},
 	} {
 		t.Run(c.row, func(t *testing.T) {
 			f := newExtFixture(t)
@@ -140,10 +140,10 @@ func TestWorktreeRemoveInRepoLevelTexts(t *testing.T) {
 		mode  os.FileMode
 		want  string
 	}{
-		{"B17a .claude 0600", ".claude", 0o600, "statat ."},
-		{"B17b .claude 0300", ".claude", 0o300, "openat .claude"},
-		{"B17c worktrees 0600", filepath.Join(".claude", "worktrees"), 0o600, "statat ."},
-		{"B17d worktrees 0300", filepath.Join(".claude", "worktrees"), 0o300, "openat worktrees"},
+		{".claude 0600", ".claude", 0o600, "statat ."},
+		{".claude 0300", ".claude", 0o300, "openat .claude"},
+		{"worktrees 0600", filepath.Join(".claude", "worktrees"), 0o600, "statat ."},
+		{"worktrees 0300", filepath.Join(".claude", "worktrees"), 0o300, "openat worktrees"},
 	} {
 		t.Run(c.row, func(t *testing.T) {
 			f := newRmFixture(t)

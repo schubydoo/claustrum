@@ -204,84 +204,84 @@ func TestIncludeOpeningRules(t *testing.T) {
 		return includeCase{name: name, ignore: nmIgnore, files: nmFiles, manifest: manifest, want: want}
 	}
 	checkIncludeCases(t, []includeCase{
-		bt("B01_dir_explicit", "build/\n", buildTreeFiles...),
-		bt("B02_file_in_ignored_dir", "build/a.txt\n", "build/a.txt"),
+		bt("dir_explicit", "build/\n", buildTreeFiles...),
+		bt("file_in_ignored_dir", "build/a.txt\n", "build/a.txt"),
 		bt("B03_anydepth_ext", "*.txt\n"),
-		bt("B04_anydepth_basename", "b.txt\n"),
-		bt("B05_dir_doublestar_file", "build/**/c.txt\n", "build/x/y/c.txt"),
-		bt("B06_leading_doublestar", "**/b.txt\n"),
-		bt("B07_deep_path", "build/x/y/c.txt\n", "build/x/y/c.txt"),
-		bt("B08_glob_dir_prefix", "bu*/a.txt\nb?ild/x/b.txt\n[b]uild/x/y/c.txt\n",
+		bt("anydepth_basename", "b.txt\n"),
+		bt("dir_doublestar_file", "build/**/c.txt\n", "build/x/y/c.txt"),
+		bt("leading_doublestar", "**/b.txt\n"),
+		bt("deep_path", "build/x/y/c.txt\n", "build/x/y/c.txt"),
+		bt("glob_dir_prefix", "bu*/a.txt\nb?ild/x/b.txt\n[b]uild/x/y/c.txt\n",
 			"build/a.txt", "build/x/b.txt", "build/x/y/c.txt"),
-		bt("B15_star_matches_dir", "*\n"),
-		bt("B16_doublestar_only", "**\n"),
-		bt("B17_dir_trailing_doublestar", "build/**\n", buildTreeFiles...),
-		bt("B19_wildcard_mid_dir", "build/*/b.txt\n", "build/x/b.txt"),
-		{name: "B11_nested_ignored_in_untracked", ignore: nmIgnore,
+		bt("star_matches_dir", "*\n"),
+		bt("doublestar_only", "**\n"),
+		bt("dir_trailing_doublestar", "build/**\n", buildTreeFiles...),
+		bt("wildcard_mid_dir", "build/*/b.txt\n", "build/x/b.txt"),
+		{name: "nested_ignored_in_untracked", ignore: nmIgnore,
 			files:    []string{"pkg/node_modules/x/cfg.json", "pkg/src.txt", "node_modules/y/cfg.json"},
 			manifest: "pkg/node_modules/x/cfg.json\nnode_modules/\n",
 			want:     []string{"node_modules/y/cfg.json", "pkg/node_modules/x/cfg.json"}},
-		{name: "B12_anydepth_in_nested_ignored", ignore: nmIgnore,
+		{name: "anydepth_in_nested_ignored", ignore: nmIgnore,
 			files:    []string{"pkg/node_modules/x/cfg.json", "node_modules/y/cfg.json", "a/b/c/node_modules/z/cfg.json"},
 			manifest: "cfg.json\n"},
-		{name: "B18_ignored_by_pattern_file_glob", ignore: lines("*.cache/"),
+		{name: "ignored_by_pattern_file_glob", ignore: lines("*.cache/"),
 			files: []string{"a.cache/f.txt", "b.cache/g.txt"}, manifest: "a.cache/\n*.txt\n",
 			want: []string{"a.cache/f.txt"}},
-		nm("X01_nm_trailing_slash", "node_modules/\n", nmFiles...),
-		b2("X02_build_no_slash", "build\n", bld2All...),
-		b2("X03_build_anchored", "/build/\n", "build/a.txt"),
-		nm("X04_star_seg_nm_file", "*/node_modules/x.json\n", "pkg/node_modules/x.json"),
-		nm("X05_dstar_nm_file", "**/node_modules/x.json\n", nmFiles...),
+		nm("nm_trailing_slash", "node_modules/\n", nmFiles...),
+		b2("build_no_slash", "build\n", bld2All...),
+		b2("build_anchored", "/build/\n", "build/a.txt"),
+		nm("star_seg_nm_file", "*/node_modules/x.json\n", "pkg/node_modules/x.json"),
+		nm("dstar_nm_file", "**/node_modules/x.json\n", nmFiles...),
 		b2("X06_neg_only", "!build/\n"),
-		b2("X07_pos_then_neg", "build/\n!build/\n"),
-		bt("X08_subdir_of_ignored", "build/x/\n", "build/x/b.txt", "build/x/y/c.txt"),
-		{name: "X10_glob_first_seg_file", ignore: lines("*.cache/"),
+		b2("pos_then_neg", "build/\n!build/\n"),
+		bt("subdir_of_ignored", "build/x/\n", "build/x/b.txt", "build/x/y/c.txt"),
+		{name: "glob_first_seg_file", ignore: lines("*.cache/"),
 			files: []string{"a.cache/f.txt", "b.cache/g.txt", "sub/c.cache/h.txt"}, manifest: "*.cache/f.txt\n",
 			want: []string{"a.cache/f.txt"}},
-		b2("X11_glob_no_slash", "b*\n", "build/a.txt"),
-		b2("X12_class_dir", "[ab]uild/\n"),
-		b2("X13_dstar_dir", "**/build/\n", bld2All...),
-		b2("X14_mid_dstar_dir", "a/**/build/\n", "a/x/build/c.txt"),
-		b2("X15_nested_explicit", "sub/build/\n", "sub/build/b.txt"),
-		b2("X16_nested_explicit_file", "a/x/build/c.txt\n", "a/x/build/c.txt"),
-		{name: "X17b_escaped_bracket_dir", ignore: lines(`we\[i\]rd/`, "weird/"),
+		b2("glob_no_slash", "b*\n", "build/a.txt"),
+		b2("class_dir", "[ab]uild/\n"),
+		b2("dstar_dir", "**/build/\n", bld2All...),
+		b2("mid_dstar_dir", "a/**/build/\n", "a/x/build/c.txt"),
+		b2("nested_explicit", "sub/build/\n", "sub/build/b.txt"),
+		b2("nested_explicit_file", "a/x/build/c.txt\n", "a/x/build/c.txt"),
+		{name: "escaped_bracket_dir", ignore: lines(`we\[i\]rd/`, "weird/"),
 			files: []string{"we[i]rd/f.txt", "weird/g.txt"}, manifest: `we\[i\]rd/` + "\n",
 			want: []string{"we[i]rd/f.txt"}},
-		{name: "X18_literal_bracket_dir", ignore: lines("we[i]rd/", "weird/"),
+		{name: "literal_bracket_dir", ignore: lines("we[i]rd/", "weird/"),
 			files: []string{"we[i]rd/f.txt", "weird/g.txt"}, manifest: "we[i]rd/\n",
 			want: []string{"weird/g.txt"}},
-		{name: "X26_dotdir_symlink", ignore: lines(".ld", "real/"), files: []string{"real/a.txt"},
+		{name: "dotdir_symlink", ignore: lines(".ld", "real/"), files: []string{"real/a.txt"},
 			manifest: "*.txt\n", posixOnly: true,
 			setup: func(t *testing.T, repo string) {
 				if err := os.Symlink("real", filepath.Join(repo, ".ld")); err != nil {
 					t.Fatal(err)
 				}
 			}},
-		{name: "X27_dotdir_in_ignored_nondot", ignore: lines("build/"),
+		{name: "dotdir_in_ignored_nondot", ignore: lines("build/"),
 			files: []string{"build/.envd/a.txt", "build/b.txt"}, manifest: "*.txt\n"},
-		{name: "X29_dir_ignored_by_star", ignore: lines("*.d"),
+		{name: "dir_ignored_by_star", ignore: lines("*.d"),
 			files: []string{"conf.d/a.txt", "conf.d/s/b.txt"}, manifest: "conf.d/a.txt\n",
 			want: []string{"conf.d/a.txt"}},
-		{name: "X30_dir_ignored_by_star_anydepth", ignore: lines("*.d"),
+		{name: "dir_ignored_by_star_anydepth", ignore: lines("*.d"),
 			files: []string{"conf.d/a.txt", ".conf.d/a.txt"}, manifest: "a.txt\n",
 			want: []string{".conf.d/a.txt"}},
-		{name: "X33_partial_dir_ignore", ignore: lines("keep/*"),
+		{name: "partial_dir_ignore", ignore: lines("keep/*"),
 			files: []string{"keep/a.txt", "keep/s/b.txt"}, manifest: "*.txt\n",
 			want: []string{"keep/a.txt"}},
-		bt("X34_trailing_space_dir", "build/   \n", buildTreeFiles...),
-		bt("X35_crlf_dir", "build/\r\n", buildTreeFiles...),
-		bt("X36_bom_dir", "\ufeffbuild/\n", buildTreeFiles...),
-		bt("X37_comment_dir", "#build/\n"),
+		bt("trailing_space_dir", "build/   \n", buildTreeFiles...),
+		bt("crlf_dir", "build/\r\n", buildTreeFiles...),
+		bt("bom_dir", "\ufeffbuild/\n", buildTreeFiles...),
+		bt("comment_dir", "#build/\n"),
 		bt("X38_dotslash_dir", "./build/\n"),
-		bt("X39_double_slash", "build//a.txt\n"),
-		{name: "X42_escaped_hash_dir", ignore: lines(`\#h/`), files: []string{"#h/a.txt"}, manifest: `\#h/` + "\n"},
-		{name: "X43_negated_dir_pattern_literal", ignore: lines(`\!b/`), files: []string{"!b/a.txt"}, manifest: `\!b/` + "\n"},
-		{name: "X47_listing_ignored_file_in_nondot_dir", ignore: lines("*.log", "build/"),
+		bt("double_slash", "build//a.txt\n"),
+		{name: "escaped_hash_dir", ignore: lines(`\#h/`), files: []string{"#h/a.txt"}, manifest: `\#h/` + "\n"},
+		{name: "negated_dir_pattern_literal", ignore: lines(`\!b/`), files: []string{"!b/a.txt"}, manifest: `\!b/` + "\n"},
+		{name: "listing_ignored_file_in_nondot_dir", ignore: lines("*.log", "build/"),
 			files: []string{"x/y/z.log", "build/b.log"}, manifest: "*.log\n", want: []string{"x/y/z.log"}},
-		{name: "Y40_prefix_vs_glob", ignore: lines("/build/", "/bxyz/", "/sub/bq/", "/bd/"),
+		{name: "prefix_vs_glob", ignore: lines("/build/", "/bxyz/", "/sub/bq/", "/bd/"),
 			files:    []string{"build/a.txt", "bxyz/b.txt", "sub/bq/c.txt", "bd/d.txt"},
 			manifest: "b*d/\n", want: []string{"bd/d.txt", "build/a.txt"}},
-		{name: "Y41_prefix_slash_crossing", ignore: lines("/sub/build/", "/subx/"),
+		{name: "prefix_slash_crossing", ignore: lines("/sub/build/", "/subx/"),
 			files: []string{"sub/build/a.txt", "subx/b.txt"}, manifest: "su*\n",
 			want: []string{"sub/build/a.txt", "subx/b.txt"}},
 	})
@@ -359,17 +359,17 @@ func TestIncludeAnyDepthDotDirs(t *testing.T) {
 	d127, d128, d129 := seqf(127, ".d%03d"), seqf(128, ".d%03d"), seqf(129, ".d%03d")
 
 	f02Names := joinAll(seqf(64, ".d%03d"), seqf(65, "sub/.e%03d"))
-	f02 := includeCase{name: "F02_dotcap_129_nested", manifest: "*.dd\n", files: fdd(f02Names),
+	f02 := includeCase{name: "dotcap_129_nested", manifest: "*.dd\n", files: fdd(f02Names),
 		want: fdd(f02Names[:127])}
 	for _, n := range f02Names {
 		f02.ignore += n + "/\n"
 	}
-	f05 := dotDirs("F05_dotcap_129_plus_nondot", d129, "*.dd\nbuild/\n", append(fdd(d127), "build/f.dd"))
+	f05 := dotDirs("dotcap_129_plus_nondot", d129, "*.dd\nbuild/\n", append(fdd(d127), "build/f.dd"))
 	f05.ignore += "build/\n"
 	f05.files = append(f05.files, "build/f.dd")
-	f06 := dotDirs("F06_dotcap_128_claude_not_ignored", d128, "*.dd\n", fdd(d128))
+	f06 := dotDirs("dotcap_128_claude_not_ignored", d128, "*.dd\n", fdd(d128))
 	f06.noWorktreesLine = true
-	f08 := dotDirs("F08_dotcap_ignored_claude_files", d127, "*.dd\n", append(fdd(d127), ".claude/x.dd"))
+	f08 := dotDirs("dotcap_ignored_claude_files", d127, "*.dd\n", append(fdd(d127), ".claude/x.dd"))
 	f08.ignore = ".claude/\n" + f08.ignore
 	f08.files = append(f08.files, ".claude/x.dd")
 
@@ -385,59 +385,59 @@ func TestIncludeAnyDepthDotDirs(t *testing.T) {
 		".parcel-cache2"}
 
 	checkIncludeCases(t, []includeCase{
-		{name: "B14_dotdir_anydepth", ignore: dotdIgnore,
+		{name: "dotdir_anydepth", ignore: dotdIgnore,
 			files: []string{".envd/a.txt", ".envd/s/b.txt", "sub/.envd/c.txt"}, manifest: "*.txt\n",
 			want: []string{".envd/a.txt", ".envd/s/b.txt", "sub/.envd/c.txt"}},
-		d("X19_star_dotdir", "*\n", dotdFiles...),
-		d("X20_dstar_dotdir", "**\n", dotdFiles...),
-		d("X21_basename_dotdir", "a.txt\n", ".envd/a.txt"),
-		d("X22_lead_dstar_dotdir", "**/b.txt\n", "sub/.envd/b.txt"),
+		d("star_dotdir", "*\n", dotdFiles...),
+		d("dstar_dotdir", "**\n", dotdFiles...),
+		d("basename_dotdir", "a.txt\n", ".envd/a.txt"),
+		d("lead_dstar_dotdir", "**/b.txt\n", "sub/.envd/b.txt"),
 		d("X23_slash_pattern_dotdir", "x/**/a.txt\n"),
 		d("X24_neg_anydepth_dotdir", "!*.txt\n"),
-		d("X25_dotstar_pattern", ".*\n", dotdFiles...),
-		d("X31_dotdir_dstar_suffix", ".envd/**\n", ".envd/a.txt"),
-		d("X32_dotdir_anydepth_pattern_with_dotdir", "**/.envd/\n", dotdFiles...),
-		d("X40_bom_dotdir_anydepth", "\ufeff*.txt\n", dotdFiles...),
-		d("X41_crlf_dotdir_anydepth", "*.txt\r\n", dotdFiles...),
-		d("X45_dotdir_explicit_file", ".envd/a.txt\n", ".envd/a.txt"),
-		{name: "X46_dotdir_opened_but_file_not_ignored_standard", ignore: dotdIgnore,
+		d("dotstar_pattern", ".*\n", dotdFiles...),
+		d("dotdir_dstar_suffix", ".envd/**\n", ".envd/a.txt"),
+		d("dotdir_anydepth_pattern_with_dotdir", "**/.envd/\n", dotdFiles...),
+		d("bom_dotdir_anydepth", "\ufeff*.txt\n", dotdFiles...),
+		d("crlf_dotdir_anydepth", "*.txt\r\n", dotdFiles...),
+		d("dotdir_explicit_file", ".envd/a.txt\n", ".envd/a.txt"),
+		{name: "dotdir_opened_but_file_not_ignored_standard", ignore: dotdIgnore,
 			files: append(slices.Clone(dotdFiles), "plain/u.txt"), manifest: "*.txt\n", want: dotdFiles},
-		{name: "X48_nested_ignored_inside_dotdir", ignore: dotdIgnore,
+		{name: "nested_ignored_inside_dotdir", ignore: dotdIgnore,
 			files:    []string{".envd/node_modules/m.txt", ".envd/.venv/v.txt", ".envd/a.txt"},
 			manifest: "*.txt\n", want: []string{".envd/node_modules/m.txt", ".envd/.venv/v.txt", ".envd/a.txt"}},
-		{name: "X49_dotdir_under_skipped", ignore: lines(".venv/"), files: []string{".venv/.inner/a.txt"},
+		{name: "dotdir_under_skipped", ignore: lines(".venv/"), files: []string{".venv/.inner/a.txt"},
 			manifest: "*.txt\n"},
-		{name: "C03_claude_whole_ignored_anydepth", ignore: lines(".claude/"),
+		{name: "claude_whole_ignored_anydepth", ignore: lines(".claude/"),
 			files: []string{".claude/settings.local.json", ".claude/a/b.json", ".claude/checkpoints/c.json",
 				"sub/.claude/d.json", "sub/.claude/checkpoints/e.json"},
 			manifest: "*.json\n",
 			want:     []string{".claude/a/b.json", ".claude/settings.local.json", "sub/.claude/d.json"}},
-		{name: "Z01_stale_worktree_dir_newgit", ignore: lines("top.txt"),
+		{name: "stale_worktree_dir_newgit", ignore: lines("top.txt"),
 			files:    []string{".claude/worktrees/stale/x.txt", ".claude/worktrees/stale/sub/y.txt", "top.txt"},
 			manifest: "*.txt\n", want: []string{"top.txt"}},
-		{name: "Z03_stale_worktree_explicit", files: []string{".claude/worktrees/stale/x.txt"},
+		{name: "stale_worktree_explicit", files: []string{".claude/worktrees/stale/x.txt"},
 			manifest: ".claude/worktrees/\n.claude/\n"},
 
-		dotDirs("F01_dotcap_127", d127, "*.dd\n", fdd(d127)),
-		dotDirs("F01_dotcap_128", d128, "*.dd\n", fdd(d127)),
-		dotDirs("F01_dotcap_129", d129, "*.dd\n", fdd(d127)),
+		dotDirs("dotcap_127", d127, "*.dd\n", fdd(d127)),
+		dotDirs("dotcap_128", d128, "*.dd\n", fdd(d127)),
+		dotDirs("dotcap_129", d129, "*.dd\n", fdd(d127)),
 		f02,
-		dotDirs("F03_dotcap_128_plus_skipped", joinAll([]string{".venv", ".cache"}, d128), "*.dd\n", fdd(d127)),
-		dotDirs("F04_dotcap_129_explicit_extra", d129, "*.dd\n.d129/\n", append(fdd(d127), ".d129/f.dd")),
+		dotDirs("dotcap_128_plus_skipped", joinAll([]string{".venv", ".cache"}, d128), "*.dd\n", fdd(d127)),
+		dotDirs("dotcap_129_explicit_extra", d129, "*.dd\n.d129/\n", append(fdd(d127), ".d129/f.dd")),
 		f05,
 		f06,
-		dotDirs("F07_dotcap_128_names_before_claude", seqf(128, ".a%03d"), "*.dd\n", fdd(seqf(128, ".a%03d"))),
+		dotDirs("dotcap_128_names_before_claude", seqf(128, ".a%03d"), "*.dd\n", fdd(seqf(128, ".a%03d"))),
 		f08,
-		dotDirs("F11_skip_case_variants", []string{".VENV", ".Cache", ".Parcel-Cache", ".NEXT"}, "*.dd\n", nil),
+		dotDirs("skip_case_variants", []string{".VENV", ".Cache", ".Parcel-Cache", ".NEXT"}, "*.dd\n", nil),
 		dotDirs("skip_list_all_14_odd_case", joinAll(oddCase, []string{".okdir"}), "*.dd\n", []string{".okdir/f.dd"}),
-		{name: "F12_skip_nested", manifest: "*.dd\n",
+		{name: "skip_nested", manifest: "*.dd\n",
 			ignore: lines("sub/.venv/", "sub/.cache/", "sub/.parcel-cache/", "sub/.okdir/"),
 			files:  []string{"sub/.venv/f.dd", "sub/.cache/f.dd", "sub/.parcel-cache/f.dd", "sub/.okdir/f.dd"},
 			want:   []string{"sub/.okdir/f.dd"}},
-		dotDirs("F13_skip_explicit", []string{".venv", ".cache", ".parcel-cache"},
+		dotDirs("skip_explicit", []string{".venv", ".cache", ".parcel-cache"},
 			".venv/\n.cache/f.dd\n.parcel-cache/**\n", []string{".venv/f.dd", ".cache/f.dd", ".parcel-cache/f.dd"}),
-		dotDirs("F14_skip_exact_names_variants", near, "*.dd\n", fdd(near)),
-		dotDirs("F15_nondot_named_like_skip", []string{"venv", "cache", "node_modules"}, "*.dd\n", nil),
+		dotDirs("skip_exact_names_variants", near, "*.dd\n", fdd(near)),
+		dotDirs("nondot_named_like_skip", []string{"venv", "cache", "node_modules"}, "*.dd\n", nil),
 	})
 }
 
@@ -456,7 +456,7 @@ func TestIncludePatternCaps(t *testing.T) {
 	e04 := func(l []string) string {
 		return plain(slices.Insert(slices.Clone(l), 100, "!zzz/"))
 	}
-	e05 := manyDirs("E05_count_257_plus_dotdir", 257,
+	e05 := manyDirs("count_257_plus_dotdir", 257,
 		func(l []string) string { return plain(l) + "*.txt\nok.ig\n" },
 		joinAll(seqf(256, "d%03d/f.txt"), []string{".envd/a.txt", "ok.ig"}))
 	e05.ignore += ".envd/\n*.ig\n"
@@ -472,7 +472,7 @@ func TestIncludePatternCaps(t *testing.T) {
 	}
 	e10 := func(n int) includeCase {
 		p1, p2 := "lg/"+longpat(n-3, "x/"), longpat(n, "x.lf")
-		return includeCase{name: fmt.Sprintf("E10_len_%d", n), ignore: lines("lg/", "*.lf", "okd/"),
+		return includeCase{name: fmt.Sprintf("len_%d", n), ignore: lines("lg/", "*.lf", "okd/"),
 			files:    []string{"lg/ax/f.txt", "ax.lf", "ok.lf", "okd/f.txt"},
 			manifest: lines(p1, p2, "ok.lf", "okd/"),
 			want:     []string{"ax.lf", "lg/ax/f.txt", "ok.lf", "okd/f.txt"}}
@@ -487,7 +487,7 @@ func TestIncludePatternCaps(t *testing.T) {
 		if opens {
 			want = append(want, deep)
 		}
-		return includeCase{name: fmt.Sprintf("E20_seg_%d", n), ignore: lines("deep/", "*.sg", "ok/"),
+		return includeCase{name: fmt.Sprintf("seg_%d", n), ignore: lines("deep/", "*.sg", "ok/"),
 			files: []string{deep, sg, "ok/f.txt"}, manifest: lines(deep, sg, "ok/"), want: want}
 	}
 	deepDir := func(name string, n int, pattern string, opens bool) includeCase {
@@ -510,55 +510,55 @@ func TestIncludePatternCaps(t *testing.T) {
 	s30 := "deep/" + strings.Join(seqf(30, "s%d"), "/")
 
 	checkIncludeCases(t, []includeCase{
-		manyDirs("E01_count_dirs_256", 256, plain, seqf(256, "d%03d/f.txt")),
-		manyDirs("E01_count_dirs_257", 257, plain, seqf(256, "d%03d/f.txt")),
-		{name: "E02_count_files_257", ignore: lines("*.cp"), files: cp(257), manifest: plain(cp(257)), want: cp(257)},
-		manyDirs("E03_count_comments_blank_256", 256,
+		manyDirs("count_dirs_256", 256, plain, seqf(256, "d%03d/f.txt")),
+		manyDirs("count_dirs_257", 257, plain, seqf(256, "d%03d/f.txt")),
+		{name: "count_files_257", ignore: lines("*.cp"), files: cp(257), manifest: plain(cp(257)), want: cp(257)},
+		manyDirs("count_comments_blank_256", 256,
 			func(l []string) string {
 				return strings.Repeat("# c\n", 10) + strings.Repeat("\n", 10) + strings.Repeat("   \n", 5) + plain(l)
 			}, seqf(256, "d%03d/f.txt")),
-		manyDirs("E04_count_negation_at_100", 256, e04, seqf(255, "d%03d/f.txt")),
+		manyDirs("count_negation_at_100", 256, e04, seqf(255, "d%03d/f.txt")),
 		e05,
-		{name: "E06_count_300_filepatterns_then_dir", ignore: lines("*.cp", "build/"),
+		{name: "count_300_filepatterns_then_dir", ignore: lines("*.cp", "build/"),
 			files: append(cp(300), "build/a.txt"), manifest: plain(cp(300)) + "build/\n", want: cp(300)},
-		{name: "E07_count_dir_first_then_300", ignore: lines("*.cp", "build/"),
+		{name: "count_dir_first_then_300", ignore: lines("*.cp", "build/"),
 			files: append(cp(300), "build/a.txt"), manifest: "build/\n" + plain(cp(300)),
 			want: append(cp(300), "build/a.txt")},
-		{name: "E08_300_files_then_anydepth", ignore: lines("*.cp", ".envd/"),
+		{name: "300_files_then_anydepth", ignore: lines("*.cp", ".envd/"),
 			files: append(cp(300), dotdFiles...), manifest: plain(cp(300)) + "*.txt\n",
 			want: append(cp(300), dotdFiles...)},
-		manyDirs("E09_segcap_pattern_counts", 256,
+		manyDirs("segcap_pattern_counts", 256,
 			func(l []string) string { return strings.Join(seqf(33, "q%d"), "/") + "\n" + plain(l) },
 			seqf(256, "d%03d/f.txt")),
-		manyDirs("E42_len_over_counts", 256,
+		manyDirs("len_over_counts", 256,
 			func(l []string) string { return "zz/" + strings.Repeat("q", 1097) + "\n" + plain(l) },
 			seqf(256, "d%03d/f.txt")),
 
 		e10(1025),
-		lg("E11_len_1024_plus_trailing_spaces", "lg/"+longpat(1021, "x/")+"   ", true),
-		lg("E12_len_1024_crlf", "lg/"+longpat(1021, "x/")+"\r", true),
-		lg("E30_len_1100", "lg/"+longpat(1097, "x/"), false),
-		lg("E30_len_65536", "lg/"+longpat(65533, "x/"), false),
-		lg("E31_len_2048_star_pad", "lg/"+strings.Repeat("*", 2045), false),
-		lg("E40_len1seg_1026", "lg/"+longpat(1023, "x/"), false),
-		classsegsCase("E43_len_classsegs_1025", 1025, "", "/", true),
-		classsegsCase("E43_len_classsegs_1026", 1026, "", "/", false),
-		classsegsCase("E44_len_classsegs_notrail_1024", 1024, "", "", true),
-		classsegsCase("E44_len_classsegs_notrail_1025", 1025, "", "", false),
-		classsegsCase("E45_len_classsegs_lead_1026", 1026, "/", "/", true),
-		{name: "E32_len_long_anydepth_dot", ignore: dotdIgnore, files: dotdFiles,
+		lg("len_1024_plus_trailing_spaces", "lg/"+longpat(1021, "x/")+"   ", true),
+		lg("len_1024_crlf", "lg/"+longpat(1021, "x/")+"\r", true),
+		lg("len_1100", "lg/"+longpat(1097, "x/"), false),
+		lg("len_65536", "lg/"+longpat(65533, "x/"), false),
+		lg("len_2048_star_pad", "lg/"+strings.Repeat("*", 2045), false),
+		lg("len1seg_1026", "lg/"+longpat(1023, "x/"), false),
+		classsegsCase("len_classsegs_1025", 1025, "", "/", true),
+		classsegsCase("len_classsegs_1026", 1026, "", "/", false),
+		classsegsCase("len_classsegs_notrail_1024", 1024, "", "", true),
+		classsegsCase("len_classsegs_notrail_1025", 1025, "", "", false),
+		classsegsCase("len_classsegs_lead_1026", 1026, "/", "/", true),
+		{name: "len_long_anydepth_dot", ignore: dotdIgnore, files: dotdFiles,
 			manifest: longpat(4096, "a.txt") + "\n"},
 
 		seg(32, true),
 		seg(33, false),
-		deepDir("E21_seg_33_dir_pattern", 31, s31+"/", true),
-		deepDir("E22_seg_32_dir_pattern", 30, s30+"/", true),
-		deepDir("E23_seg_33_leading_slash", 30, "/"+s30+"/f.txt", true),
-		dstar("E24_seg_33_with_dstar", 31, false),
-		dstar("E25_seg_32_with_dstar", 30, true),
-		{name: "E26_seg_33_double_slashes", ignore: lines("deep/"), files: []string{"deep/s/f.txt"},
+		deepDir("seg_33_dir_pattern", 31, s31+"/", true),
+		deepDir("seg_32_dir_pattern", 30, s30+"/", true),
+		deepDir("seg_33_leading_slash", 30, "/"+s30+"/f.txt", true),
+		dstar("seg_33_with_dstar", 31, false),
+		dstar("seg_32_with_dstar", 30, true),
+		{name: "seg_33_double_slashes", ignore: lines("deep/"), files: []string{"deep/s/f.txt"},
 			manifest: "deep/s" + strings.Repeat("/", 32) + "f.txt\n"},
-		{name: "E27_seg_33_file_pattern_anydepth_dot", ignore: dotdIgnore, files: dotdFiles,
+		{name: "seg_33_file_pattern_anydepth_dot", ignore: dotdIgnore, files: dotdFiles,
 			manifest: strings.Repeat("**/", 32) + "a.txt\n"},
 	})
 }
@@ -567,8 +567,8 @@ func TestIncludePatternCaps(t *testing.T) {
 // gaps D10 (a symlinked manifest) and D16 (a nested repository).
 func TestIncludeManifestAndCopyDetails(t *testing.T) {
 	checkIncludeCases(t, []includeCase{
-		{name: "A00_no_manifest", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "u.txt"}},
-		{name: "A01_basic", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "b.i", "u.txt"},
+		{name: "no_manifest", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "u.txt"}},
+		{name: "basic", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "b.i", "u.txt"},
 			manifest: "a.i\nu.txt\n", want: []string{"a.i", "sub/a.i"}},
 		{name: "D10_manifest_symlink", ignore: lines("*.i"), files: []string{"a.i"}, posixOnly: true,
 			setup: func(t *testing.T, repo string) {
@@ -577,8 +577,8 @@ func TestIncludeManifestAndCopyDetails(t *testing.T) {
 					t.Fatal(err)
 				}
 			}},
-		{name: "D11_manifest_is_dir", ignore: lines("*.i"), files: []string{"a.i", ".worktreeinclude/x"}},
-		{name: "D12_manifest_empty", ignore: lines("*.i"), files: []string{"a.i"},
+		{name: "manifest_is_dir", ignore: lines("*.i"), files: []string{"a.i", ".worktreeinclude/x"}},
+		{name: "manifest_empty", ignore: lines("*.i"), files: []string{"a.i"},
 			setup: func(t *testing.T, repo string) {
 				writeFile(t, filepath.Join(repo, worktreeIncludeFile), "", 0o644)
 			}},
@@ -824,30 +824,30 @@ func TestPlanIncludeScanMatchesReference(t *testing.T) {
 		name, manifest, listing string
 		files, dirs             [][]string
 	}{
-		{"I04_dstar_sub_build", "**/sub/build/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd", "sub/build"}}},                                    // item 4
-		{"I04_lit_more", "**/build/a.txt\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd", "build", "sub/build"}}},                                 // item 4
-		{"I04_lit_dir_more", "**/build/x/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd", "build", "sub/build"}}},                                // item 4
-		{"I04_dstar2_dir", "**/**/build/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd"}}},                                                       // item 4
-		{"I04_dstar_glob_build", "**/*/build/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd"}}},                                                  // item 4
-		{"I05_anch_dir", "/build/\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                      // item 5
-		{"I05_anch_glob_dir", "/b*/\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                    // item 5
-		{"I05_anch_lit", "/build\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                       // item 5
-		{"I05_anch_glob", "/b*\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                         // item 5
-		{"I05_anch_file", "/x.txt\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, nil},                                                                                                        // item 5
-		{"I05_ctl_oneseg", "build/\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{".envd", "build"}}},                                                                            // item 5
-		{"I05_ctl_e27_only", e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, nil},                                                                                                                  // item 5
-		{"I09flag_tab", "\t\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00", nil, nil},                                                                                                                        // item 9
-		{"I09flag_sp_tab", " \t\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00", nil, nil},                                                                                                                    // item 9
-		{"I09flag_spaces_ctl", "   \n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00", nil, nil},                                                                                                                // item 9
-		{"I11_ctl", "build/\n*.ig\nsu*\n", ".claude/\x00.claude/worktrees/\x00build/\x00other/\x00r.ig\x00sub/build/\x00", [][]string{{"r.ig"}}, [][]string{{"build", "sub/build"}}},                                   // item 10
-		{"I16d_negation_star", "build/\n", ".claude/\x00.claude/worktrees/\x00build/a.txt\x00build/x/\x00", [][]string{{"build/a.txt"}}, [][]string{{"build/x"}}},                                                      // item 10
-		{"I16g_magic_name_new", "*.ig\n", ".claude/\x00.claude/worktrees/\x000.ig\x00:!z.ig\x00a.ig\x00zz.ig\x00", [][]string{{"0.ig", ":!z.ig", "a.ig", "zz.ig"}}, nil},                                               // item 10
-		{"I16i_magic_in_opened_dir", "build/\n", ".claude/\x00.claude/worktrees/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                           // item 10
-		{"I16b_nonignored_parent_opened", "su*\n", ".claude/\x00.claude/worktrees/\x00sub/build/\x00", nil, [][]string{{"sub/build"}}},                                                                                 // item 16
-		{"I16f_global_excludes_in_opened_parent", "su*\n", ".claude/\x00.claude/worktrees/\x00sub/build/\x00sub/g.gl\x00", [][]string{{"sub/g.gl"}}, [][]string{{"sub/build"}}},                                        // item 16
-		{"I14c_worktrees_unanchored", "*.dd\nworktrees/\n", ".claude/\x00.claude/worktrees/\x00top.dd\x00", [][]string{{"top.dd"}}, nil},                                                                               // item 14
-		{"I14e_explicit", ".claude/worktrees/\n.claude/worktrees/stale/\n**/x.dd\n", ".claude/\x00.claude/worktrees/\x00top.dd\x00", [][]string{{"top.dd"}}, nil},                                                      // item 14
-		{"I03d_adeep_starlog", "a/**/build/\n*.log\n", ".claude/\x00.claude/worktrees/\x00a/\x00a/other/\x00a/x/\x00a/x/build/\x00a/x/other/\x00", nil, [][]string{{"a", "a/other", "a/x", "a/x/build", "a/x/other"}}}, // item 16
+		{"dstar_sub_build", "**/sub/build/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd", "sub/build"}}},                                   // item 4
+		{"lit_more", "**/build/a.txt\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd", "build", "sub/build"}}},                                // item 4
+		{"lit_dir_more", "**/build/x/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd", "build", "sub/build"}}},                               // item 4
+		{"dstar2_dir", "**/**/build/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd"}}},                                                      // item 4
+		{"dstar_glob_build", "**/*/build/\n", ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00d/\x00other/\x00sub/build/\x00", nil, [][]string{{".envd"}}},                                                 // item 4
+		{"anch_dir", "/build/\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                     // item 5
+		{"anch_glob_dir", "/b*/\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                   // item 5
+		{"anch_lit", "/build\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                      // item 5
+		{"anch_glob", "/b*\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                        // item 5
+		{"anch_file", "/x.txt\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, nil},                                                                                                       // item 5
+		{"ctl_oneseg", "build/\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, [][]string{{".envd", "build"}}},                                                                           // item 5
+		{"ctl_e27_only", e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00build/\x00", nil, nil},                                                                                                                 // item 5
+		{"flag_tab", "\t\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00", nil, nil},                                                                                                                      // item 9
+		{"flag_sp_tab", " \t\n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00", nil, nil},                                                                                                                  // item 9
+		{"flag_spaces_ctl", "   \n" + e27, ".claude/\x00.claude/worktrees/\x00.envd/\x00", nil, nil},                                                                                                              // item 9
+		{"ctl", "build/\n*.ig\nsu*\n", ".claude/\x00.claude/worktrees/\x00build/\x00other/\x00r.ig\x00sub/build/\x00", [][]string{{"r.ig"}}, [][]string{{"build", "sub/build"}}},                                  // item 10
+		{"negation_star", "build/\n", ".claude/\x00.claude/worktrees/\x00build/a.txt\x00build/x/\x00", [][]string{{"build/a.txt"}}, [][]string{{"build/x"}}},                                                      // item 10
+		{"magic_name_new", "*.ig\n", ".claude/\x00.claude/worktrees/\x000.ig\x00:!z.ig\x00a.ig\x00zz.ig\x00", [][]string{{"0.ig", ":!z.ig", "a.ig", "zz.ig"}}, nil},                                               // item 10
+		{"magic_in_opened_dir", "build/\n", ".claude/\x00.claude/worktrees/\x00build/\x00", nil, [][]string{{"build"}}},                                                                                           // item 10
+		{"nonignored_parent_opened", "su*\n", ".claude/\x00.claude/worktrees/\x00sub/build/\x00", nil, [][]string{{"sub/build"}}},                                                                                 // item 16
+		{"global_excludes_in_opened_parent", "su*\n", ".claude/\x00.claude/worktrees/\x00sub/build/\x00sub/g.gl\x00", [][]string{{"sub/g.gl"}}, [][]string{{"sub/build"}}},                                        // item 16
+		{"worktrees_unanchored", "*.dd\nworktrees/\n", ".claude/\x00.claude/worktrees/\x00top.dd\x00", [][]string{{"top.dd"}}, nil},                                                                               // item 14
+		{"explicit", ".claude/worktrees/\n.claude/worktrees/stale/\n**/x.dd\n", ".claude/\x00.claude/worktrees/\x00top.dd\x00", [][]string{{"top.dd"}}, nil},                                                      // item 14
+		{"adeep_starlog", "a/**/build/\n*.log\n", ".claude/\x00.claude/worktrees/\x00a/\x00a/other/\x00a/x/\x00a/x/build/\x00a/x/other/\x00", nil, [][]string{{"a", "a/other", "a/x", "a/x/build", "a/x/other"}}}, // item 16
 	} {
 		p := planIncludeScan([]byte(c.manifest), c.listing, "--exclude-from=/tmp/"+includeTempPrefix+"123456789", nil)
 		if p.fallback || !reflect.DeepEqual(p.fileBatches, c.files) || !reflect.DeepEqual(p.dirBatches, c.dirs) {
@@ -898,21 +898,21 @@ func TestPlanIncludeScanCounts(t *testing.T) {
 		name, manifest, listing string
 		want                    []string
 	}{
-		{"I07_ctl_none", strings.Join(d256, "/\n") + "/\n", dirList(d256), d256},
-		{"I07_dslash", opened("//"), dirList(d256), d256},
-		{"I07_x_dslash", opened("x//"), dirList(d256), d256[:255]},
-		{"I07_a_dslash_b", opened("a//b"), dirList(d256), d256[:255]},
-		{"I07_dslash_x", opened("//x"), dirList(d256), d256[:255]},
-		{"I07_dslash_mid_dir", opened("a//b/"), dirList(d256), d256[:255]},
-		{"I09_tab", opened("\t"), dirList(d256), d256},
-		{"I09_tab_sp", opened("\t "), dirList(d256), d256},
-		{"I09_sp_tab", opened(" \t"), dirList(d256), d256},
-		{"I09_spaces_ctl", opened("   "), dirList(d256), d256},
-		{"I09_esc_space", opened(`\ `), dirList(d256), d256[:255]},
-		{"I12b_explicit_dot_takes_no_place", ".d001/\n*.dd\n", dirList(dot128), dot128},
-		{"I12c_explicit_last_dot", ".d128/\n*.dd\n", dirList(dot128), dot128},
+		{"ctl_none", strings.Join(d256, "/\n") + "/\n", dirList(d256), d256},
+		{"dslash", opened("//"), dirList(d256), d256},
+		{"x_dslash", opened("x//"), dirList(d256), d256[:255]},
+		{"a_dslash_b", opened("a//b"), dirList(d256), d256[:255]},
+		{"dslash_x", opened("//x"), dirList(d256), d256[:255]},
+		{"dslash_mid_dir", opened("a//b/"), dirList(d256), d256[:255]},
+		{"tab", opened("\t"), dirList(d256), d256},
+		{"tab_sp", opened("\t "), dirList(d256), d256},
+		{"sp_tab", opened(" \t"), dirList(d256), d256},
+		{"spaces_ctl", opened("   "), dirList(d256), d256},
+		{"esc_space", opened(`\ `), dirList(d256), d256[:255]},
+		{"explicit_dot_takes_no_place", ".d001/\n*.dd\n", dirList(dot128), dot128},
+		{"explicit_last_dot", ".d128/\n*.dd\n", dirList(dot128), dot128},
 		{"explicit_root_claude_takes_no_place", ".claude/\n*.dd\n", dirList(dot128), dot128},
-		{"F01_dotcap_128", "*.dd\n", dirList(dot128), dot128[:127]},
+		{"dotcap_128", "*.dd\n", dirList(dot128), dot128[:127]},
 	} {
 		p := planIncludeScan([]byte(c.manifest), c.listing, "--exclude-from=/tmp/x", nil)
 		if len(p.dirBatches) != 1 || !slices.Equal(p.dirBatches[0], c.want) {
@@ -932,7 +932,7 @@ func TestPlanIncludeScanCounts(t *testing.T) {
 		got = append(got, b...)
 	}
 	if want := append(slices.Clone(kids), dot128[:127]...); !slices.Equal(got, want) {
-		t.Errorf("F01_dotcap_128 with children: got %d dirs (first %q), want the 3 children then 127 dot dirs",
+		t.Errorf("dotcap_128 with children: got %d dirs (first %q), want the 3 children then 127 dot dirs",
 			len(got), got[:min(4, len(got))])
 	}
 }
@@ -981,29 +981,29 @@ func TestIncludeInterpretationScenarios(t *testing.T) {
 		return includeCase{name: name, ignore: dotdIgnore, files: []string{".envd/a.txt"}, manifest: first + "\n" + e27}
 	}
 	checkIncludeCases(t, []includeCase{
-		d4("I04_dstar_sub_build", "**/sub/build/\n", "sub/build/a.txt"),
-		d4("I04_lit_more", "**/build/a.txt\n", "build/a.txt", "sub/build/a.txt", ".envd/build/a.txt"),
-		d4("I04_dstar2_dir", "**/**/build/\n", ".envd/build/a.txt"),
-		d5("I05_ctl_oneseg", "build/", ".envd/a.txt", "build/a.txt"),
-		d5("I05_anch_dir", "/build/", "build/a.txt"),
-		d5("I05_anch_glob_dir", "/b*/", "build/a.txt"),
-		d5("I05_anch_lit", "/build", "build/a.txt"),
-		d5("I05_anch_glob", "/b*", "build/a.txt"),
-		d5("I05_anch_file", "/x.txt"),
-		many("I07_dslash", "//", 256),
-		many("I07_x_dslash", "x//", 255),
-		many("I09_tab", "\t", 256),
-		many("I09_sp_tab", " \t", 256),
-		many("I09_esc_space", `\ `, 255),
-		flag("I09flag_tab", "\t"),
-		flag("I09flag_sp_tab", " \t"),
-		dots("I12b_explicit_dot_takes_no_place", ".d001/\n*.dd\n"),
-		{name: "I16b_nonignored_parent_opened", ignore: lines("build/"),
+		d4("dstar_sub_build", "**/sub/build/\n", "sub/build/a.txt"),
+		d4("lit_more", "**/build/a.txt\n", "build/a.txt", "sub/build/a.txt", ".envd/build/a.txt"),
+		d4("dstar2_dir", "**/**/build/\n", ".envd/build/a.txt"),
+		d5("ctl_oneseg", "build/", ".envd/a.txt", "build/a.txt"),
+		d5("anch_dir", "/build/", "build/a.txt"),
+		d5("anch_glob_dir", "/b*/", "build/a.txt"),
+		d5("anch_lit", "/build", "build/a.txt"),
+		d5("anch_glob", "/b*", "build/a.txt"),
+		d5("anch_file", "/x.txt"),
+		many("dslash", "//", 256),
+		many("x_dslash", "x//", 255),
+		many("tab", "\t", 256),
+		many("sp_tab", " \t", 256),
+		many("esc_space", `\ `, 255),
+		flag("flag_tab", "\t"),
+		flag("flag_sp_tab", " \t"),
+		dots("explicit_dot_takes_no_place", ".d001/\n*.dd\n"),
+		{name: "nonignored_parent_opened", ignore: lines("build/"),
 			files: []string{"sub/build/c.txt", "sub/u.txt"}, manifest: "su*\n", want: []string{"sub/build/c.txt"}},
-		{name: "I16d_negation_star", ignore: lines("build/*", "!build/keep.txt", "build/*/"),
+		{name: "negation_star", ignore: lines("build/*", "!build/keep.txt", "build/*/"),
 			files: []string{"build/a.txt", "build/keep.txt", "build/x/b.txt"}, manifest: "build/\n",
 			want: []string{"build/a.txt", "build/x/b.txt"}},
-		{name: "I11_ctl", ignore: errTree.ignore, files: errTree.files, manifest: errTree.manifest, want: errTreeNew},
+		{name: "ctl", ignore: errTree.ignore, files: errTree.files, manifest: errTree.manifest, want: errTreeNew},
 	})
 }
 
@@ -1152,117 +1152,117 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"QY_sub_b_q", "sub/b\\q/\n*.txt\n", yTreeDirs, []string{".bx", "sub"}},
 		{"QY_star_b_q", "*/b\\q/\n*.txt\n", yTreeDirs, []string{".bx", "a", "build", "sub"}},
 		// Q1 on Linux: case folds on ext4 too.
-		{"L1c_AB_q", "AB\\q/\n*.txt\n", lcTreeDirs, []string{"ab", "abc"}},
-		{"L1c_AB_q_alone", "AB\\q/\n", lcTreeDirs, []string{"ab", "abc"}},
+		{"AB_q", "AB\\q/\n*.txt\n", lcTreeDirs, []string{"ab", "abc"}},
+		{"AB_q_alone", "AB\\q/\n", lcTreeDirs, []string{"ab", "abc"}},
 		{"L1c_A_q", "A\\q/\n*.txt\n", lcTreeDirs, lcA},
 		{"L1c_B_star", "B*/\n*.txt\n", lcTreeDirs, []string{"bu", "build", "bx"}},
 		{"L1c_BU_qm_ld", "BU?ld/\n*.txt\n", lcTreeDirs, []string{"bu", "build"}},
 		{"L1c_BUILD_lit", "BUILD/\n*.txt\n", lcTreeDirs, []string{"build"}},
-		{"L1c_ctl_ab_q", "ab\\q/\n*.txt\n", lcTreeDirs, []string{"ab", "abc"}},
-		{"L1c_ctl_a_q", "a\\q/\n*.txt\n", lcTreeDirs, lcA},
-		{"L1c_ctl_b_star", "b*/\n*.txt\n", lcTreeDirs, []string{"bu", "build", "bx"}},
-		{"L1c_ctl_bu_qm_ld", "bu?ld/\n*.txt\n", lcTreeDirs, []string{"bu", "build"}},
-		{"L1c_ctl_build_lit", "build/\n*.txt\n", lcTreeDirs, []string{"build"}},
+		{"ctl_ab_q", "ab\\q/\n*.txt\n", lcTreeDirs, []string{"ab", "abc"}},
+		{"ctl_a_q", "a\\q/\n*.txt\n", lcTreeDirs, lcA},
+		{"ctl_b_star", "b*/\n*.txt\n", lcTreeDirs, []string{"bu", "build", "bx"}},
+		{"ctl_bu_qm_ld", "bu?ld/\n*.txt\n", lcTreeDirs, []string{"bu", "build"}},
+		{"ctl_build_lit", "build/\n*.txt\n", lcTreeDirs, []string{"build"}},
 		{"L1c_txt_ctl", "*.txt\n", lcTreeDirs, nil},
 		{"L1m_A_q", "A\\q/\n*.txt\n", mixTreeDirs, []string{"Ab", "ab"}},
 		{"L1m_B_star", "B*/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_b_star", "b*/\n*.txt\n", mixTreeDirs, mixB},
+		{"b_star", "b*/\n*.txt\n", mixTreeDirs, mixB},
 		{"L1m_BU_qm_ld", "BU?ld/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_Bu_qm_ld", "Bu?ld/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_bu_qm_ld", "bu?ld/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_Bu_q", "Bu\\q/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_bu_q", "bu\\q/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_Build_lit", "Build/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
-		{"L1m_build_lit", "build/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
+		{"Bu_qm_ld", "Bu?ld/\n*.txt\n", mixTreeDirs, mixB},
+		{"bu_qm_ld", "bu?ld/\n*.txt\n", mixTreeDirs, mixB},
+		{"Bu_q", "Bu\\q/\n*.txt\n", mixTreeDirs, mixB},
+		{"bu_q", "bu\\q/\n*.txt\n", mixTreeDirs, mixB},
+		{"Build_lit", "Build/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
+		{"build_lit", "build/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
 		{"L1m_BUILD_lit", "BUILD/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
 		{"L1m_txt_ctl", "*.txt\n", mixTreeDirs, nil},
 		{"L5y_SUB_BUILD", "SUB/BUILD/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
-		{"L5y_anch_BUILD", "/BUILD/\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"L5y_Sub_q_star", "SUB\\q/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
-		{"L5a_anch_AB", "/AB/\n*.txt\n", anTreeDirs, []string{"ab"}},
-		{"L5a_anch_Bstar", "/B*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
+		{"anch_BUILD", "/BUILD/\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"Sub_q_star", "SUB\\q/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
+		{"anch_AB", "/AB/\n*.txt\n", anTreeDirs, []string{"ab"}},
+		{"anch_Bstar", "/B*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
 		// Q2 on Linux: one segment after a leading `/` is a glob over the first
 		// segment. It has no prefix rule, and a `\` escapes.
-		{"L2_anch_aqmb", "/a?b/\n*.txt\n", anTreeDirs, []string{"aXb", "a_b"}},
-		{"L2_anch_aqmb_bare", "/a?b\n*.txt\n", anTreeDirs, []string{"aXb", "a_b"}},
-		{"L2_anch_aqmb_alone", "/a?b/\n", anTreeDirs, []string{"aXb", "a_b"}},
-		{"L2_anch_acls", "/a[_]b/\n*.txt\n", anTreeDirs, []string{"a_b"}},
-		{"L2_anch_esc_q", "/ab\\q/\n*.txt\n", anTreeDirs, nil},
-		{"L5a_anch_AqmB", "/A?B/\n*.txt\n", anTreeDirs, []string{"aXb", "a_b"}},
-		{"L2_anch_bstar", "/b*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
-		{"L2_anch_lit_ab", "/ab/\n*.txt\n", anTreeDirs, []string{"ab"}},
-		{"L2_anch_lit_build", "/build/\n*.txt\n", anTreeDirs, []string{"build"}},
-		{"L2_ctl_aqmb", "a?b/\n*.txt\n", anTreeDirs, anA},
-		{"L2_ctl_acls", "a[_]b/\n*.txt\n", anTreeDirs, anA},
-		{"L2_ctl_bstar", "b*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
-		{"L2_ctl_lit_ab", "ab/\n*.txt\n", anTreeDirs, []string{"ab", "sub/ab"}},
+		{"anch_aqmb", "/a?b/\n*.txt\n", anTreeDirs, []string{"aXb", "a_b"}},
+		{"anch_aqmb_bare", "/a?b\n*.txt\n", anTreeDirs, []string{"aXb", "a_b"}},
+		{"anch_aqmb_alone", "/a?b/\n", anTreeDirs, []string{"aXb", "a_b"}},
+		{"anch_acls", "/a[_]b/\n*.txt\n", anTreeDirs, []string{"a_b"}},
+		{"anch_esc_q", "/ab\\q/\n*.txt\n", anTreeDirs, nil},
+		{"anch_AqmB", "/A?B/\n*.txt\n", anTreeDirs, []string{"aXb", "a_b"}},
+		{"anch_bstar", "/b*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
+		{"anch_lit_ab", "/ab/\n*.txt\n", anTreeDirs, []string{"ab"}},
+		{"anch_lit_build", "/build/\n*.txt\n", anTreeDirs, []string{"build"}},
+		{"ctl_aqmb", "a?b/\n*.txt\n", anTreeDirs, anA},
+		{"ctl_acls", "a[_]b/\n*.txt\n", anTreeDirs, anA},
+		{"ctl_bstar", "b*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
+		{"ctl_lit_ab", "ab/\n*.txt\n", anTreeDirs, []string{"ab", "sub/ab"}},
 		{"L2_txt_ctl", "*.txt\n", anTreeDirs, nil},
 		// Q3 on Linux: a `//` keeps an empty segment that matches no name.
-		{"L3_ds_file_txt", "build//a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"L3_ds_file_alone", "build//a.txt\n", yTreeDirs, []string{"build"}},
-		{"L3_ds_dir_txt", "build//\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"L3_ds_dir_alone", "build//\n", yTreeDirs, []string{"build"}},
-		{"L5y_BUILD_ds", "BUILD//\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"L3_ctl_file_txt", "build/a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"L3_ctl_file_alone", "build/a.txt\n", yTreeDirs, []string{"build"}},
+		{"ds_file_txt", "build//a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"ds_file_alone", "build//a.txt\n", yTreeDirs, []string{"build"}},
+		{"ds_dir_txt", "build//\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"ds_dir_alone", "build//\n", yTreeDirs, []string{"build"}},
+		{"BUILD_ds", "BUILD//\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"ctl_file_txt", "build/a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"ctl_file_alone", "build/a.txt\n", yTreeDirs, []string{"build"}},
 		// Q4 on Linux: a segment that ends in a lone `\` matches any name.
-		{"L4_a_bqmc", "a/b?c/\n*.txt\n", pTreeDirs, []string{"a/b1c", "a/bxc"}},
-		{"L4_a_bstar", "a/b*/\n*.txt\n", pTreeDirs, []string{"a/b1c", "a/bc", "a/bxc", "a/bzz"}},
-		{"L4_sub_bstar", "sub/b*/\n*.txt\n", pTreeDirs, []string{"sub/build", "sub/bx"}},
-		{"L4_sustar_build", "su*/build/\n*.txt\n", pTreeDirs,
+		{"a_bqmc", "a/b?c/\n*.txt\n", pTreeDirs, []string{"a/b1c", "a/bxc"}},
+		{"a_bstar", "a/b*/\n*.txt\n", pTreeDirs, []string{"a/b1c", "a/bc", "a/bxc", "a/bzz"}},
+		{"sub_bstar", "sub/b*/\n*.txt\n", pTreeDirs, []string{"sub/build", "sub/bx"}},
+		{"sustar_build", "su*/build/\n*.txt\n", pTreeDirs,
 			[]string{"sub/build", `sub\`, "subq", "subx/build", "suy/build"}},
-		{"L4_a_b_q", "a/b\\q/\n*.txt\n", pTreeDirs, nil},
-		{"L4_sub_q", "sub/\\q/\n*.txt\n", pTreeDirs, nil},
-		{"L4_sub_bs_q", "sub\\q/\n*.txt\n", pTreeDirs, pSub},
-		{"L4_sstar", "s*/\n*.txt\n", pTreeDirs, append(slices.Clone(pSub), "suy/build")},
-		{"L5p_sub_trail_bs", "sub\\/\n*.txt\n", pTreeDirs, pSub},
-		{"L4_sub_bs_sl_x", "sub\\/x/\n*.txt\n", pTreeDirs, []string{"ab", "sub/x", `sub\`, "subq"}},
-		{"L4_sub_bs_sl_x_alone", "sub\\/x/\n", pTreeDirs, []string{"ab", "sub/x", `sub\`, "subq"}},
-		{"L5p_zz_bs_sl_x", "zz\\/x/\n*.txt\n", pTreeDirs, []string{"ab", "sub/x", `sub\`, "subq"}},
-		{"L5p_zz_bs_sl_bstar", "zz\\/b*/\n*.txt\n", pTreeDirs, []string{"a/b1c", "a/bc", "a/bxc", "a/bzz", "ab",
+		{"a_b_q", "a/b\\q/\n*.txt\n", pTreeDirs, nil},
+		{"sub_q", "sub/\\q/\n*.txt\n", pTreeDirs, nil},
+		{"sub_bs_q", "sub\\q/\n*.txt\n", pTreeDirs, pSub},
+		{"sstar", "s*/\n*.txt\n", pTreeDirs, append(slices.Clone(pSub), "suy/build")},
+		{"sub_trail_bs", "sub\\/\n*.txt\n", pTreeDirs, pSub},
+		{"sub_bs_sl_x", "sub\\/x/\n*.txt\n", pTreeDirs, []string{"ab", "sub/x", `sub\`, "subq"}},
+		{"sub_bs_sl_x_alone", "sub\\/x/\n", pTreeDirs, []string{"ab", "sub/x", `sub\`, "subq"}},
+		{"zz_bs_sl_x", "zz\\/x/\n*.txt\n", pTreeDirs, []string{"ab", "sub/x", `sub\`, "subq"}},
+		{"zz_bs_sl_bstar", "zz\\/b*/\n*.txt\n", pTreeDirs, []string{"a/b1c", "a/bc", "a/bxc", "a/bzz", "ab",
 			"sub/build", "sub/bx", `sub\`, "subq", "subx/build", "suy/build"}},
-		{"L5p_a_bs_sl_b1c", "a\\/b1c/\n*.txt\n", pTreeDirs, []string{"a/b1c", "ab", `sub\`, "subq"}},
-		{"L5p_sub_bs_sl_nomatch", "sub\\/nomatch/\n*.txt\n", pTreeDirs, []string{"ab", `sub\`, "subq"}},
-		{"L4_ctl_a_b1c", "a/b1c/\n*.txt\n", pTreeDirs, []string{"a/b1c"}},
-		{"L4_ctl_sub_build", "sub/build/\n*.txt\n", pTreeDirs, []string{"sub/build"}},
-		{"L4_ctl_sub_x", "sub/x/\n*.txt\n", pTreeDirs, []string{"sub/x"}},
-		{"L5p_ctl_zz_x", "zz/x/\n*.txt\n", pTreeDirs, nil},
+		{"a_bs_sl_b1c", "a\\/b1c/\n*.txt\n", pTreeDirs, []string{"a/b1c", "ab", `sub\`, "subq"}},
+		{"sub_bs_sl_nomatch", "sub\\/nomatch/\n*.txt\n", pTreeDirs, []string{"ab", `sub\`, "subq"}},
+		{"ctl_a_b1c", "a/b1c/\n*.txt\n", pTreeDirs, []string{"a/b1c"}},
+		{"ctl_sub_build", "sub/build/\n*.txt\n", pTreeDirs, []string{"sub/build"}},
+		{"ctl_sub_x", "sub/x/\n*.txt\n", pTreeDirs, []string{"sub/x"}},
+		{"ctl_zz_x", "zz/x/\n*.txt\n", pTreeDirs, nil},
 		{"L4_txt_ctl", "*.txt\n", pTreeDirs, nil},
 		// Second Linux probe, Q1: an even run of trailing `\` is a literal `\`.
 		// A run of three acts like a run of one and matches any name.
-		{"LC1_zz_bs2_x_a", `zz\\/x/` + "\n", cTreeDirs, []string{`zz\/x`}},
-		{"LC1_zz_bs2_x_t", `zz\\/x/` + "\n*.txt\n", cTreeDirs, []string{`zz\/x`}},
-		{"LC1_sub_bs2_x_a", `sub\\/x/` + "\n", cTreeDirs, []string{`sub\/x`}},
-		{"LC1_sub_bs2_x_t", `sub\\/x/` + "\n*.txt\n", cTreeDirs, []string{`sub\/x`}},
-		{"LC1_zz_bs3_x_a", `zz\\\/x/` + "\n", cTreeDirs, cAnyX},
-		{"LC1_zz_bs3_x_t", `zz\\\/x/` + "\n*.txt\n", cTreeDirs, cAnyX},
-		{"LC1_sub_bs3_x_a", `sub\\\/x/` + "\n", cTreeDirs, cAnyX},
-		{"LC1_sub_bs3_x_t", `sub\\\/x/` + "\n*.txt\n", cTreeDirs, cAnyX},
-		{"LC1_ctl_zz_bs1_x_a", `zz\/x/` + "\n", cTreeDirs, cAnyX},
-		{"LC1_ctl_zz_x_a", "zz/x/\n", cTreeDirs, []string{"zz"}},
+		{"zz_bs2_x_a", `zz\\/x/` + "\n", cTreeDirs, []string{`zz\/x`}},
+		{"zz_bs2_x_t", `zz\\/x/` + "\n*.txt\n", cTreeDirs, []string{`zz\/x`}},
+		{"sub_bs2_x_a", `sub\\/x/` + "\n", cTreeDirs, []string{`sub\/x`}},
+		{"sub_bs2_x_t", `sub\\/x/` + "\n*.txt\n", cTreeDirs, []string{`sub\/x`}},
+		{"zz_bs3_x_a", `zz\\\/x/` + "\n", cTreeDirs, cAnyX},
+		{"zz_bs3_x_t", `zz\\\/x/` + "\n*.txt\n", cTreeDirs, cAnyX},
+		{"sub_bs3_x_a", `sub\\\/x/` + "\n", cTreeDirs, cAnyX},
+		{"sub_bs3_x_t", `sub\\\/x/` + "\n*.txt\n", cTreeDirs, cAnyX},
+		{"ctl_zz_bs1_x_a", `zz\/x/` + "\n", cTreeDirs, cAnyX},
+		{"ctl_zz_x_a", "zz/x/\n", cTreeDirs, []string{"zz"}},
 		// Q2: a lone trailing `\` in a middle or last segment matches any name.
-		{"LC2_a_zz_bs_x_a", `a/zz\/x/` + "\n", cTreeDirs, []string{"a/q/x", "a/zz/x", `a/zz\/x`}},
-		{"LC2_a_zz_bs_x_t", `a/zz\/x/` + "\n*.txt\n", cTreeDirs, []string{"a/q/x", "a/zz/x", `a/zz\/x`}},
-		{"LC2_sub_x_bs_a", `sub/x\` + "\n", cTreeDirs, cSubAny},
-		{"LC2_sub_x_bs_t", `sub/x\` + "\n*.txt\n", cTreeDirs, cSubAny},
-		{"LC2_sub_x_bs_sl_a", `sub/x\/` + "\n", cTreeDirs, cSubAny},
-		{"LC2_sub_x_bs_sl_t", `sub/x\/` + "\n*.txt\n", cTreeDirs, cSubAny},
-		{"LC2_ctl_a_zz_x_a", "a/zz/x/\n", cTreeDirs, []string{"a/zz/x"}},
-		{"LC2_ctl_sub_x_a", "sub/x/\n", cTreeDirs, []string{"sub/x"}},
+		{"a_zz_bs_x_a", `a/zz\/x/` + "\n", cTreeDirs, []string{"a/q/x", "a/zz/x", `a/zz\/x`}},
+		{"a_zz_bs_x_t", `a/zz\/x/` + "\n*.txt\n", cTreeDirs, []string{"a/q/x", "a/zz/x", `a/zz\/x`}},
+		{"sub_x_bs_a", `sub/x\` + "\n", cTreeDirs, cSubAny},
+		{"sub_x_bs_t", `sub/x\` + "\n*.txt\n", cTreeDirs, cSubAny},
+		{"sub_x_bs_sl_a", `sub/x\/` + "\n", cTreeDirs, cSubAny},
+		{"sub_x_bs_sl_t", `sub/x\/` + "\n*.txt\n", cTreeDirs, cSubAny},
+		{"ctl_a_zz_x_a", "a/zz/x/\n", cTreeDirs, []string{"a/zz/x"}},
+		{"ctl_sub_x_a", "sub/x/\n", cTreeDirs, []string{"sub/x"}},
 		// Q3: a lone `\` behind `**/` opens nothing.
-		{"LC3_ss_zz_bs_x_a", `**/zz\/x/` + "\n", cTreeDirs, nil},
-		{"LC3_ss_zz_bs_x_t", `**/zz\/x/` + "\n*.txt\n", cTreeDirs, nil},
-		{"LC3_ctl_ss_zz_x_a", "**/zz/x/\n", cTreeDirs, []string{"a/zz/x", "zz"}},
+		{"ss_zz_bs_x_a", `**/zz\/x/` + "\n", cTreeDirs, nil},
+		{"ss_zz_bs_x_t", `**/zz\/x/` + "\n*.txt\n", cTreeDirs, nil},
+		{"ctl_ss_zz_x_a", "**/zz/x/\n", cTreeDirs, []string{"a/zz/x", "zz"}},
 		// Q4: an empty segment matches no name.
-		{"LC4d_dsl_x_a", "//x\n", dTreeDirs, nil},
-		{"LC4d_dsl_x_t", "//x\n*.txt\n", dTreeDirs, nil},
-		{"LC4d_dsl_x_sl_a", "//x/\n", dTreeDirs, nil},
-		{"LC4d_dsl_x_sl_t", "//x/\n*.txt\n", dTreeDirs, nil},
+		{"dsl_x_a", "//x\n", dTreeDirs, nil},
+		{"dsl_x_t", "//x\n*.txt\n", dTreeDirs, nil},
+		{"dsl_x_sl_a", "//x/\n", dTreeDirs, nil},
+		{"dsl_x_sl_t", "//x/\n*.txt\n", dTreeDirs, nil},
 		{"LC4d_a_ds_b_a", "a//b\n", dTreeDirs, nil},
 		{"LC4d_a_ds_b_t", "a//b\n*.txt\n", dTreeDirs, nil},
 		{"LC4d_a_ds_b_sl_a", "a//b/\n", dTreeDirs, nil},
 		{"LC4d_a_ds_b_sl_t", "a//b/\n*.txt\n", dTreeDirs, nil},
-		{"LC4d_ctl_anch_x_a", "/x/\n", dTreeDirs, []string{"x"}},
+		{"ctl_anch_x_a", "/x/\n", dTreeDirs, []string{"x"}},
 		{"LC4d_ctl_a_b_a", "a/b/\n", dTreeDirs, []string{"a/b"}},
 		{"LC4w_a_ds_b_a", "a//b\n", dTree2Dirs, []string{"a"}},
 		{"LC4w_a_ds_b_t", "a//b\n*.txt\n", dTree2Dirs, []string{"a"}},
@@ -1270,21 +1270,21 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"LC4w_a_ds_b_sl_t", "a//b/\n*.txt\n", dTree2Dirs, []string{"a"}},
 		{"LC4w_ctl_a_b_a", "a/b/\n", dTree2Dirs, []string{"a"}},
 		// Q5: an anchored glob matches the first segment of each listed entry.
-		{"LC5_anch_star_sl_a", "/*/\n", sTreeDirs, sAll},
-		{"LC5_anch_star_sl_t", "/*/\n*.txt\n", sTreeDirs, sAll},
-		{"LC5_anch_star_a", "/*\n", sTreeDirs, sAll},
-		{"LC5_anch_star_t", "/*\n*.txt\n", sTreeDirs, sAll},
-		{"LC5_anch_qm_sl_a", "/?/\n", sTreeDirs, []string{"x"}},
-		{"LC5_anch_qm_sl_t", "/?/\n*.txt\n", sTreeDirs, []string{".b", ".bx", "sub/.bx", "x"}},
-		{"LC5_anch_dotb_star_a", "/.b*/\n", sTreeDirs, []string{".b", ".bx"}},
-		{"LC5_anch_dotb_star_t", "/.b*/\n*.txt\n", sTreeDirs, []string{".b", ".bx", "sub/.bx"}},
-		{"LC5_ctl_anch_dotbx_a", "/.bx/\n", sTreeDirs, []string{".bx"}},
+		{"anch_star_sl_a", "/*/\n", sTreeDirs, sAll},
+		{"anch_star_sl_t", "/*/\n*.txt\n", sTreeDirs, sAll},
+		{"anch_star_a", "/*\n", sTreeDirs, sAll},
+		{"anch_star_t", "/*\n*.txt\n", sTreeDirs, sAll},
+		{"anch_qm_sl_a", "/?/\n", sTreeDirs, []string{"x"}},
+		{"anch_qm_sl_t", "/?/\n*.txt\n", sTreeDirs, []string{".b", ".bx", "sub/.bx", "x"}},
+		{"anch_dotb_star_a", "/.b*/\n", sTreeDirs, []string{".b", ".bx"}},
+		{"anch_dotb_star_t", "/.b*/\n*.txt\n", sTreeDirs, []string{".b", ".bx", "sub/.bx"}},
+		{"ctl_anch_dotbx_a", "/.bx/\n", sTreeDirs, []string{".bx"}},
 		// Q6: a `//` in a glob line keeps the empty segment.
-		{"LC6_bstar_ds_atxt_a", "b*//a.txt\n", gTreeDirs, []string{"build", "bx"}},
-		{"LC6_bstar_ds_atxt_t", "b*//a.txt\n*.txt\n", gTreeDirs, []string{".bx", "build", "bx"}},
-		{"LC6_star_ds_a", "*//\n", gTreeDirs, []string{".bx", "build", "bx"}},
-		{"LC6_star_ds_t", "*//\n*.txt\n", gTreeDirs, []string{".bx", "build", "bx"}},
-		{"LC6_ctl_build_ds_a", "build//\n", gTreeDirs, []string{"build"}},
+		{"bstar_ds_atxt_a", "b*//a.txt\n", gTreeDirs, []string{"build", "bx"}},
+		{"bstar_ds_atxt_t", "b*//a.txt\n*.txt\n", gTreeDirs, []string{".bx", "build", "bx"}},
+		{"star_ds_a", "*//\n", gTreeDirs, []string{".bx", "build", "bx"}},
+		{"star_ds_t", "*//\n*.txt\n", gTreeDirs, []string{".bx", "build", "bx"}},
+		{"ctl_build_ds_a", "build//\n", gTreeDirs, []string{"build"}},
 	} {
 		got := openIncludeDirs(parseIncludePlan([]byte(c.manifest)), c.dirs, nil)
 		if !slices.Equal(got, c.want) {
@@ -1305,12 +1305,12 @@ func TestClaudeDirPassArgs(t *testing.T) {
 		want  []string
 	}{
 		{"no_claude_dir", nil, nil},
-		{"I14a_only_worktrees", []string{".claude/worktrees/stale/x.dd"}, nil},
-		{"I14b_claude_whole_ignored", []string{".claude/worktrees/stale/x.dd", ".claude/keep.dd"},
+		{"only_worktrees", []string{".claude/worktrees/stale/x.dd"}, nil},
+		{"claude_whole_ignored", []string{".claude/worktrees/stale/x.dd", ".claude/keep.dd"},
 			[]string{".claude/keep.dd"}},
 		{"Cl_nomanifest", []string{".claude/settings.local.json", ".claude/checkpoints/x.json", ".claude/untr.json"},
 			[]string{".claude/checkpoints", ".claude/settings.local.json", ".claude/untr.json"}},
-		{"I15b_nearname", []string{".claude/worktreesX/a.dd", ".claude/worktrees/stale/x.dd", ".claude/k.dd"},
+		{"nearname", []string{".claude/worktreesX/a.dd", ".claude/worktrees/stale/x.dd", ".claude/k.dd"},
 			[]string{".claude/k.dd", ".claude/worktreesX"}},
 	} {
 		repo := t.TempDir()

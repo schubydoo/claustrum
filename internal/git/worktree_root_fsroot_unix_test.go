@@ -34,8 +34,8 @@ func TestWorktreeRootIsFileSystemRootText(t *testing.T) {
 	leaf := fsRootLeaf(t)
 	for _, c := range []struct{ name, root string }{
 		{"R1", "/"},
-		{"R2_double_slash", "//"},
-		{"R3_slash_dot", "/."},
+		{"double_slash", "//"},
+		{"slash_dot", "/."},
 	} {
 		for _, verb := range []string{"create", "remove"} {
 			t.Run(c.name+"_"+verb, func(t *testing.T) {

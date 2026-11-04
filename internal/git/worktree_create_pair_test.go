@@ -80,9 +80,9 @@ func TestCreatePairCases(t *testing.T) {
 	}{
 		{"R-Q2b", false, nil, true},
 		{"50a with the member", true, nil, true},
-		{"R-Q2c a stale entry", false, stale, false},
+		{"a stale entry", false, stale, false},
 		{"no registrations folder", false, noFolder, false},
-		{"R-Q2a with the member and no folder", true, noFolder, false},
+		{"with the member and no folder", true, noFolder, false},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)

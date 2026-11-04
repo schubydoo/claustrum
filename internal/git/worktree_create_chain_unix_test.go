@@ -110,14 +110,14 @@ func parentText(s string) (string, string) {
 func TestWorktreeCreateExternalChain(t *testing.T) {
 	runChainCases(t, []chainCase{
 		{
-			name: "F14_dir_is_a_file", rootRel: "R",
+			name: "dir_is_a_file", rootRel: "R",
 			setup: func(t *testing.T, f string) { writeFile(t, filepath.Join(f, "R", "cp"), "x", 0o644) },
 			want: func(f string) (string, string) {
 				return parentText(filepath.Join(f, "R", "cp") + " is not a directory")
 			},
 		},
 		{
-			name: "F17_root_symlink_dangles", rootRel: "R",
+			name: "root_symlink_dangles", rootRel: "R",
 			setup: func(t *testing.T, f string) { symlinkForTest(t, filepath.Join(f, "nowhere"), filepath.Join(f, "R")) },
 			want: func(f string) (string, string) {
 				return parentText("lstat " + filepath.Join(f, "nowhere") + ": no such file or directory")
@@ -125,7 +125,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			absent: []string{"nowhere"},
 		},
 		{
-			name: "P4_root_symlink_dangles_relative", rootRel: "R",
+			name: "root_symlink_dangles_relative", rootRel: "R",
 			setup: func(t *testing.T, f string) { symlinkForTest(t, "nowhere", filepath.Join(f, "R")) },
 			want: func(f string) (string, string) {
 				return parentText("lstat " + filepath.Join(f, "nowhere") + ": no such file or directory")
@@ -133,7 +133,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			absent: []string{"nowhere"},
 		},
 		{
-			name: "P3_root_symlink_to_a_file", rootRel: "R",
+			name: "root_symlink_to_a_file", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				writeFile(t, filepath.Join(f, "file"), "x", 0o644)
 				symlinkForTest(t, filepath.Join(f, "file"), filepath.Join(f, "R"))
@@ -141,7 +141,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			want: func(f string) (string, string) { return parentText(filepath.Join(f, "file") + ": not a directory") },
 		},
 		{
-			name: "P9_root_not_searchable", rootRel: "R", denied: true,
+			name: "root_not_searchable", rootRel: "R", denied: true,
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R"))
 				chmodForTest(t, filepath.Join(f, "R"), 0o600)
@@ -151,7 +151,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			},
 		},
 		{
-			name: "P10_ancestor_not_searchable", rootRel: "a/b/R", denied: true,
+			name: "ancestor_not_searchable", rootRel: "a/b/R", denied: true,
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a", "b", "R"))
 				chmodForTest(t, filepath.Join(f, "a"), 0o600)
@@ -161,7 +161,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			},
 		},
 		{
-			name: "P11_dir_not_searchable", rootRel: "R", denied: true,
+			name: "dir_not_searchable", rootRel: "R", denied: true,
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R", "cp"))
 				chmodForTest(t, filepath.Join(f, "R"), 0o700)
@@ -170,7 +170,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			want: func(string) (string, string) { return parentText("statat cp/.git: permission denied") },
 		},
 		{
-			name: "P13_marker_cannot_be_made", rootRel: "R", denied: true,
+			name: "marker_cannot_be_made", rootRel: "R", denied: true,
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R", "cp"))
 				chmodForTest(t, filepath.Join(f, "R", "cp"), 0o500)
@@ -183,7 +183,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			kept:   []string{"R/cp"},
 		},
 		{
-			name: "S4_symlinked_root_dir_is_a_file", rootRel: "R",
+			name: "symlinked_root_dir_is_a_file", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				writeFile(t, filepath.Join(f, "real", "cp"), "x", 0o644)
 				symlinkForTest(t, filepath.Join(f, "real"), filepath.Join(f, "R"))
@@ -193,7 +193,7 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 			},
 		},
 		{
-			name: "F16_name_too_long", rootRel: "a/" + strings.Repeat("n", 256) + "/R",
+			name: "name_too_long", rootRel: "a/" + strings.Repeat("n", 256) + "/R",
 			setup: func(*testing.T, string) {},
 			want: func(string) (string, string) {
 				return parentText("mkdirat a/" + strings.Repeat("n", 256) + ": file name too long")
@@ -215,7 +215,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 	}
 	runChainCases(t, []chainCase{
 		{
-			name: "G1_git_five_levels_up", rootRel: "a/b/c/d/e/R",
+			name: "git_five_levels_up", rootRel: "a/b/c/d/e/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a", "b", "c", "d", "e", "R"))
 				mkdirForTest(t, filepath.Join(f, "a", ".git"))
@@ -224,7 +224,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"a/b/c/d/e/R/cp"},
 		},
 		{
-			name: "G2_two_git_dirs_outer_named", rootRel: "a/b/c/R",
+			name: "two_git_dirs_outer_named", rootRel: "a/b/c/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a", "b", "c", "R"))
 				mkdirForTest(t, filepath.Join(f, "a", ".git"))
@@ -234,7 +234,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"a/b/c/R/cp"},
 		},
 		{
-			name: "Q1_root_is_a_repo", rootRel: "R",
+			name: "root_is_a_repo", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R"))
 				runGit(t, filepath.Join(f, "R"), "init", "-q")
@@ -243,13 +243,13 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"R/cp"},
 		},
 		{
-			name: "Q2_root_has_empty_git_dir", rootRel: "R",
+			name: "root_has_empty_git_dir", rootRel: "R",
 			setup:  func(t *testing.T, f string) { mkdirForTest(t, filepath.Join(f, "R", ".git")) },
 			want:   rootRefusal("R", "R"),
 			absent: []string{"R/cp"},
 		},
 		{
-			name: "Q3_root_has_git_file", rootRel: "R",
+			name: "root_has_git_file", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				writeFile(t, filepath.Join(f, "R", ".git"), "gitdir: /nonexistent", 0o644)
 			},
@@ -257,7 +257,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"R/cp"},
 		},
 		{
-			name: "Q4_ancestor_is_a_repo_below_missing", rootRel: "a/b/R",
+			name: "ancestor_is_a_repo_below_missing", rootRel: "a/b/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a"))
 				runGit(t, filepath.Join(f, "a"), "init", "-q")
@@ -266,7 +266,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"a/b"},
 		},
 		{
-			name: "Q5_ancestor_has_empty_git_dir", rootRel: "a/b/R",
+			name: "ancestor_has_empty_git_dir", rootRel: "a/b/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a", ".git"))
 				mkdirForTest(t, filepath.Join(f, "a", "b", "R"))
@@ -275,7 +275,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"a/b/R/cp"},
 		},
 		{
-			name: "Q7_root_has_dangling_git_symlink", rootRel: "R",
+			name: "root_has_dangling_git_symlink", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R"))
 				symlinkForTest(t, filepath.Join(f, "gone"), filepath.Join(f, "R", ".git"))
@@ -284,7 +284,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"R/cp"},
 		},
 		{
-			name: "Q6_dir_has_git", rootRel: "R",
+			name: "dir_has_git", rootRel: "R",
 			setup: func(t *testing.T, f string) { mkdirForTest(t, filepath.Join(f, "R", "cp", ".git")) },
 			want: func(f string) (string, string) {
 				return checkoutDirText(filepath.Join(f, "R", "cp")), "unsafe_path"
@@ -313,7 +313,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"co/.git/wl"},
 		},
 		{
-			name: "Q10_base_dir_is_a_repo_three_levels_up", rootRel: "a/b/R",
+			name: "base_dir_is_a_repo_three_levels_up", rootRel: "a/b/R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "a", "b", "R"))
 				runGit(t, f, "init", "-q")
@@ -322,7 +322,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			absent: []string{"a/b/R/cp"},
 		},
 		{
-			name: "S2_symlinked_root_names_resolved_dir", rootRel: "R",
+			name: "symlinked_root_names_resolved_dir", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "real", ".git"))
 				symlinkForTest(t, filepath.Join(f, "real"), filepath.Join(f, "R"))
@@ -332,7 +332,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			},
 		},
 		{
-			name: "S3_symlinked_root_dir_checkout", rootRel: "R",
+			name: "symlinked_root_dir_checkout", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "real", "cp", ".git"))
 				symlinkForTest(t, filepath.Join(f, "real"), filepath.Join(f, "R"))
@@ -342,7 +342,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			},
 		},
 		{
-			name: "S5_root_sent_with_trailing_slash", rootRel: "R",
+			name: "root_sent_with_trailing_slash", rootRel: "R",
 			rootSent: func(f string) string { return filepath.Join(f, "R") + "/" },
 			setup:    func(t *testing.T, f string) { mkdirForTest(t, filepath.Join(f, "R", ".git")) },
 			want: func(f string) (string, string) {
@@ -350,7 +350,7 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 			},
 		},
 		{
-			name: "S6_root_sent_with_double_slash", rootRel: "R",
+			name: "root_sent_with_double_slash", rootRel: "R",
 			rootSent: func(f string) string { return f + "//R" },
 			setup:    func(t *testing.T, f string) { mkdirForTest(t, filepath.Join(f, "R", ".git")) },
 			want: func(f string) (string, string) {
@@ -373,7 +373,7 @@ func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
 	}
 	runChainCases(t, []chainCase{
 		{
-			name: "K1_link_to_a_file", rootRel: "R",
+			name: "link_to_a_file", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				writeFile(t, filepath.Join(f, "f"), "x", 0o644)
 				linkCp(t, f, filepath.Join(f, "f"))
@@ -381,7 +381,7 @@ func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
 			want: symlinkRefusal,
 		},
 		{
-			name: "K2_link_to_a_checkout", rootRel: "R",
+			name: "link_to_a_checkout", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "co", ".git"))
 				linkCp(t, f, filepath.Join(f, "co"))
@@ -389,7 +389,7 @@ func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
 			want: symlinkRefusal,
 		},
 		{
-			name: "K4_link_to_a_dir_without_search", rootRel: "R", denied: true,
+			name: "link_to_a_dir_without_search", rootRel: "R", denied: true,
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "s"))
 				chmodForTest(t, filepath.Join(f, "s"), 0o600)
@@ -398,7 +398,7 @@ func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
 			want: symlinkRefusal,
 		},
 		{
-			name: "K6_dangling_link", rootRel: "R",
+			name: "dangling_link", rootRel: "R",
 			setup: func(t *testing.T, f string) { linkCp(t, f, filepath.Join(f, "nowhere")) },
 			want:  symlinkRefusal,
 		},
@@ -415,7 +415,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 	}
 	runChainCases(t, []chainCase{
 		{
-			name: "O1_before_writable_root", rootRel: "R",
+			name: "before_writable_root", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				gitInRoot(t, f)
 				chmodForTest(t, filepath.Join(f, "R"), 0o777)
@@ -423,7 +423,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 			want: rootRefusal,
 		},
 		{
-			name: "O6_before_symlinked_dir", rootRel: "R",
+			name: "before_symlinked_dir", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				gitInRoot(t, f)
 				mkdirForTest(t, filepath.Join(f, "elsewhere"))
@@ -432,7 +432,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 			want: rootRefusal,
 		},
 		{
-			name: "O3_before_non_empty_dir", rootRel: "R",
+			name: "before_non_empty_dir", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				gitInRoot(t, f)
 				writeFile(t, filepath.Join(f, "R", "cp", "other"), "x", 0o644)
@@ -440,7 +440,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 			want: rootRefusal,
 		},
 		{
-			name: "O4_before_existing_leaf", rootRel: "R",
+			name: "before_existing_leaf", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				gitInRoot(t, f)
 				mkdirForTest(t, filepath.Join(f, "R", "cp", "w1"))
@@ -448,7 +448,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 			want: rootRefusal,
 		},
 		{
-			name: "O8_dir_checkout_before_existing_leaf", rootRel: "R",
+			name: "dir_checkout_before_existing_leaf", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R", "cp", ".git"))
 				mkdirForTest(t, filepath.Join(f, "R", "cp", "w1"))
@@ -458,7 +458,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 			},
 		},
 		{
-			name: "G7_dir_checkout_with_marker", rootRel: "R",
+			name: "dir_checkout_with_marker", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R", "cp", ".git"))
 				writeFile(t, filepath.Join(f, "R", "cp", managedWorktreesMarker), managedWorktreesMarkerBody, 0o644)
@@ -470,7 +470,7 @@ func TestWorktreeCreateExternalCheckoutOrder(t *testing.T) {
 		{
 			// The text of the writable-root refusal depends on the group of the temp
 			// dir, so the test takes it from worktreeRootShareRefusal.
-			name: "G4_writable_root_before_dir_checkout", rootRel: "R",
+			name: "writable_root_before_dir_checkout", rootRel: "R",
 			setup: func(t *testing.T, f string) {
 				mkdirForTest(t, filepath.Join(f, "R", "cp", ".git"))
 				chmodForTest(t, filepath.Join(f, "R"), 0o777)
@@ -491,7 +491,7 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 		check func(t *testing.T, base, marker string)
 	}{
 		{
-			name:  "P14_directory",
+			name:  "directory",
 			setup: func(t *testing.T, _, m string) { mkdirForTest(t, m) },
 			check: func(t *testing.T, _, m string) {
 				if fi, err := os.Lstat(m); err != nil || !fi.IsDir() {
@@ -500,7 +500,7 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 			},
 		},
 		{
-			name:  "F22_dangling_symlink",
+			name:  "dangling_symlink",
 			setup: func(t *testing.T, b, m string) { symlinkForTest(t, filepath.Join(b, "gone"), m) },
 			check: func(t *testing.T, b, m string) {
 				if got, err := os.Readlink(m); err != nil || got != filepath.Join(b, "gone") {
@@ -510,7 +510,7 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 			},
 		},
 		{
-			name: "P16_symlink_to_a_file",
+			name: "symlink_to_a_file",
 			setup: func(t *testing.T, b, m string) {
 				writeFile(t, filepath.Join(b, "target"), "x\n", 0o644)
 				symlinkForTest(t, filepath.Join(b, "target"), m)
@@ -522,7 +522,7 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 			},
 		},
 		{
-			name:  "P17_file_mode_0",
+			name:  "file_mode_0",
 			setup: func(t *testing.T, _, m string) { writeFile(t, m, "x\n", 0o000) },
 			check: func(t *testing.T, _, m string) {
 				fi, err := os.Lstat(m)
@@ -564,7 +564,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 		text func(repo string) string
 	}{
 		{
-			name: "P7_claude_not_searchable", denied: true,
+			name: "claude_not_searchable", denied: true,
 			setup: func(t *testing.T, repo string) {
 				mkdirForTest(t, filepath.Join(repo, ".claude"))
 				chmodForTest(t, filepath.Join(repo, ".claude"), 0o600)
@@ -572,7 +572,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 			text: func(string) string { return "statat .: permission denied" },
 		},
 		{
-			name: "P8_worktrees_not_searchable", denied: true,
+			name: "worktrees_not_searchable", denied: true,
 			setup: func(t *testing.T, repo string) {
 				mkdirForTest(t, filepath.Join(repo, ".claude", "worktrees"))
 				chmodForTest(t, filepath.Join(repo, ".claude", "worktrees"), 0o600)
@@ -580,7 +580,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 			text: func(string) string { return "statat .: permission denied" },
 		},
 		{
-			name: "F18_claude_not_searchable_worktrees_exists", denied: true,
+			name: "claude_not_searchable_worktrees_exists", denied: true,
 			setup: func(t *testing.T, repo string) {
 				mkdirForTest(t, filepath.Join(repo, ".claude", "worktrees"))
 				chmodForTest(t, filepath.Join(repo, ".claude"), 0o600)
@@ -588,7 +588,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 			text: func(string) string { return "statat .: permission denied" },
 		},
 		{
-			name:  "F20_unclean_path",
+			name:  "unclean_path",
 			setup: func(t *testing.T, repo string) { writeFile(t, filepath.Join(repo, ".claude"), "x", 0o644) },
 			send: func(_, repo string) (string, string) {
 				return repo, repo + "//.claude/worktrees/wt"
@@ -596,7 +596,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 			text: func(repo string) string { return filepath.Join(repo, ".claude") + " is not a directory" },
 		},
 		{
-			name:  "S8_dot_in_path",
+			name:  "dot_in_path",
 			setup: func(t *testing.T, repo string) { writeFile(t, filepath.Join(repo, ".claude"), "x", 0o644) },
 			send: func(_, repo string) (string, string) {
 				return repo, repo + "/./.claude/worktrees/wt"
@@ -604,7 +604,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 			text: func(repo string) string { return filepath.Join(repo, ".claude") + " is not a directory" },
 		},
 		{
-			name: "S7_base_repo_sent_through_a_symlink",
+			name: "base_repo_sent_through_a_symlink",
 			setup: func(t *testing.T, repo string) {
 				writeFile(t, filepath.Join(repo, ".claude"), "x", 0o644)
 				symlinkForTest(t, repo, filepath.Join(filepath.Dir(repo), "link"))
@@ -650,7 +650,7 @@ func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 	old := syscall.Umask(0o277)
 	t.Cleanup(func() { syscall.Umask(old) })
 
-	t.Run("F15_external", func(t *testing.T) {
+	t.Run("external", func(t *testing.T) {
 		requireTempOutsideCheckout(t, base)
 		t.Cleanup(func() { _ = os.Chmod(filepath.Join(f, "a"), 0o755) })
 		root := filepath.Join(f, "a", "b", "R")
@@ -665,7 +665,7 @@ func TestWorktreeCreateKeepsDirsMadeBeforeAFailure(t *testing.T) {
 		}
 	})
 
-	t.Run("F15i_in_repo", func(t *testing.T) {
+	t.Run("in_repo", func(t *testing.T) {
 		t.Cleanup(func() { _ = os.Chmod(filepath.Join(repo, ".claude"), 0o755) })
 		wp := filepath.Join(repo, ".claude", "worktrees", "wt")
 		raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
@@ -690,18 +690,18 @@ func TestWorktreeCreateExternalSymlinkLoop(t *testing.T) {
 	}
 	runChainCases(t, []chainCase{
 		{
-			name: "S1_root_loops", rootRel: "R",
+			name: "root_loops", rootRel: "R",
 			setup:  func(t *testing.T, f string) { symlinkForTest(t, filepath.Join(f, "R"), filepath.Join(f, "R")) },
 			want:   loop("R"),
 			absent: []string{"R/cp"},
 		},
 		{
-			name: "S1b_ancestor_loops", rootRel: "a/b/R",
+			name: "ancestor_loops", rootRel: "a/b/R",
 			setup: func(t *testing.T, f string) { symlinkForTest(t, filepath.Join(f, "a"), filepath.Join(f, "a")) },
 			want:  loop("a/b/R"),
 		},
 		{
-			name: "S1c_two_links_loop", rootRel: "a/R",
+			name: "two_links_loop", rootRel: "a/R",
 			setup: func(t *testing.T, f string) {
 				symlinkForTest(t, filepath.Join(f, "b"), filepath.Join(f, "a"))
 				symlinkForTest(t, filepath.Join(f, "a"), filepath.Join(f, "b"))
@@ -709,7 +709,7 @@ func TestWorktreeCreateExternalSymlinkLoop(t *testing.T) {
 			want: loop("a/R"),
 		},
 		{
-			name: "S1d_root_loops_sent_with_trailing_slash", rootRel: "R",
+			name: "root_loops_sent_with_trailing_slash", rootRel: "R",
 			rootSent: func(f string) string { return filepath.Join(f, "R") + "/" },
 			setup:    func(t *testing.T, f string) { symlinkForTest(t, filepath.Join(f, "R"), filepath.Join(f, "R")) },
 			want:     loop("R"),

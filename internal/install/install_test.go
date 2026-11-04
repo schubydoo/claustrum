@@ -730,7 +730,7 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		f := captureInstallFacts(t, installOpts{
 			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: keepZero})
 		if n := count(t, dir); n != 1 || !isRegularFile(installCLIPath(dir, "9.0.0")) {
-			t.Errorf("keep=0 left %d files, want the new CLI only (cell L5)", n)
+			t.Errorf("keep=0 left %d files, want the new CLI only", n)
 		}
 		if f.CliError != "" || f.CliPath != installCLIPath(dir, "9.0.0") {
 			t.Errorf("cliError %q, cliPath %q: want the result line of a good install", f.CliError, f.CliPath)
