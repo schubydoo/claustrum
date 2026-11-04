@@ -120,20 +120,34 @@ func TestStatusLinkChainFrames(t *testing.T) {
 	if err := os.Symlink(loop, filepath.Join(f.root, "loopB")); err != nil {
 		t.Fatal(err)
 	}
+	// The request sends each path with a trailing slash. The text names it
+	// cleaned, as b3081b51 turns C:/x/L32 into C:\x\L32 (measured on Windows).
 	for _, base := range []string{link(32), link(64), loop} {
-		raw, calls := call("git.status", map[string]any{"path": base, "baseRepo": base})
-		if want := errFrame(t, linkChainText(base)); raw != want {
-			t.Errorf("git.status of %s = %s\nwant %s", filepath.Base(base), raw, want)
-		}
-		for _, c := range calls {
-			if !strings.Contains(c, "|config --includes --path core.excludesFile") {
-				t.Errorf("git.status of %s ran git: %q", filepath.Base(base), calls)
-				break
+		sent := base + "/"
+		for _, req := range []struct {
+			method string
+			params map[string]any
+		}{
+			{"git.status", map[string]any{"path": sent, "baseRepo": sent}},
+			{"git.info", map[string]any{"path": sent}},
+		} {
+			raw, calls := call(req.method, req.params)
+			if want := errFrame(t, linkChainText(base)); raw != want {
+				t.Errorf("%s of %s = %s\nwant %s", req.method, filepath.Base(base), raw, want)
+			}
+			for _, c := range calls {
+				if !strings.Contains(c, "|config --includes --path core.excludesFile") {
+					t.Errorf("%s of %s ran git: %q", req.method, filepath.Base(base), calls)
+					break
+				}
 			}
 		}
 	}
 	// 31 links pass the test and reach git.
 	if raw, _ := call("git.status", map[string]any{"path": link(31), "baseRepo": link(31)}); strings.Contains(raw, "stays on a local drive") {
 		t.Errorf("git.status of 31 links = %s", raw)
+	}
+	if raw, _ := call("git.info", map[string]any{"path": link(31)}); strings.Contains(raw, "stays on a local drive") {
+		t.Errorf("git.info of 31 links = %s", raw)
 	}
 }

@@ -398,7 +398,7 @@ repository gets the class 1 text first: see
 
 ## The object sources on Windows
 
-On Windows `b3081b51` checks the object sources of a trusted repository before its git calls on the repository (measured on Windows). On Linux and macOS the same shapes are no refusal, and git runs (measured on Linux and macOS). Each refusal is `-32603` for `git.status` and `git.info`. A create answers it with `"errorCode":"worktree_add_failed"`. A remove answers `failed to remove worktree: could not check whether <worktreePath> is locked: ` and the text. A create and a remove run no git call. They change nothing (from the code).
+On Windows `b3081b51` checks the object sources of a trusted repository before its git calls on the repository (measured on Windows). On Linux and macOS the same shapes are no refusal, and git runs (measured on Linux and macOS). Each refusal is `-32603` for `git.status` and `git.info`. A create answers it with `"errorCode":"worktree_add_failed"`. A remove answers `failed to remove worktree: could not check whether <worktreePath> is locked: ` and the text. A create and a remove run no git call. A remove deletes nothing, also for a worktree folder that is gone (measured on Windows). A create makes nothing (from the code).
 
 The daemon reads `<git dir>\objects\info\alternates` and the same file of each folder that it lists. `<file>` is the file with the fault. For a chain of folders it is the file 6 levels below the repository's own file.
 
@@ -419,7 +419,7 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 
 - `GIT_ALTERNATE_OBJECT_DIRECTORIES` in the daemon's environment gives `The remote machine's environment sets GIT_ALTERNATE_OBJECT_DIRECTORIES, which Claude can't use on a Windows host, so git wasn't run. Remove it from the environment, then restart the machine.`
 - `GIT_OBJECT_DIRECTORY` in the daemon's environment is no refusal. The log gets `[GitHandler] GIT_OBJECT_DIRECTORY from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`. claustrum logs it once (claustrum's own, not measured).
-- A `baseRepo` that resolves through a chain of 31 links passes. A chain of 32 or more links gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.``
+- A `baseRepo` that resolves through a chain of 31 links passes. A chain of 32 or more links gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.`` `git.info` runs this test on `path` too. The text names the path cleaned, so `C:/x/L32` reads as `C:\x\L32` (measured on Windows).
 
 ## A FIFO where the daemon reads a git file
 

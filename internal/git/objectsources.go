@@ -72,8 +72,10 @@ const alternateEnvText = "The remote machine's environment sets GIT_ALTERNATE_OB
 // environment (measured on Windows).
 const objectDirLine = "[GitHandler] GIT_OBJECT_DIRECTORY from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
 
+// linkChainText names path cleaned, so a forward slash reads as a backslash on
+// Windows (measured on Windows).
 func linkChainText(path string) string {
-	return "Claude couldn't check that `" + path + "` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to."
+	return "Claude couldn't check that `" + filepath.Clean(path) + "` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to."
 }
 
 // objectDirLogged is true once the daemon logged objectDirLine. One line per

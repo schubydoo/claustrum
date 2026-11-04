@@ -180,7 +180,7 @@ A gone worktree directory is no error by itself. After the repository checks, th
     - A folder that the daemon cannot read is not measured.
     - If `<git dir>/worktrees` is a symbolic link, there is no refusal. The registration behind the link that names the worktree goes (from the code).
     - The path compare of a registration ignores letter case and slash direction. An 8.3 short name does not match a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes.
-    - An alternates file with Windows line endings or too many object directories gets the lock-check text, and nothing is deleted (from the code). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
+    - An alternates file with Windows line endings or too many object directories gets `… is locked: <text>`, and nothing is deleted, also for a gone worktree folder (measured on Windows). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
 
 ## Rare states
 

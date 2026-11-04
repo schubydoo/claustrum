@@ -186,7 +186,8 @@ refuses the remove before any delete. `"shadowDirOff":true` turns that refusal o
 does a remove that starts while such a request runs ([The repository
 checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). On Windows an
 `objects/info/alternates` file of a trusted `baseRepo` with Windows line endings or too many
-object directories refuses it before any delete too (from the code), also with
+object directories refuses it before any delete too, also for a gone worktree folder
+(measured on Windows), and also with
 `"shadowDirOff":true` (claustrum's own, not measured). On Windows a junction
 at any directory between `baseRepo` and the leaf is refused (D19, approved by the maintainer). Without `worktreeRoot`,
 the containment of the reference refuses a home path first, so `homeguard.WipesHomeDir` fires only

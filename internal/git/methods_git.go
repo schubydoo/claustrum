@@ -205,6 +205,13 @@ func gitInfo(req *gitCall) rpc.Response {
 	// probed here and discarded. The read comes first, so it also runs before a trust
 	// refusal, as on f6010b97 and 89cb6289 (every trust refusal row).
 	userExcludesFile()
+	// On Windows a path behind a chain of 32 or more links is refused next, as in
+	// git.status (measured on Windows, statusLinkChainRefusal).
+	if p.Path != "" {
+		if msg := statusLinkChainRefusal(p.Path); msg != "" {
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+		}
+	}
 	// notRepo is the "no repository" answer. It carries the settingsControl member
 	// that the request has at that moment (ShadowHost.replyControl): none in a daemon
 	// that has not passed its start test, as for a HEAD that is no ref as the first
@@ -2770,6 +2777,13 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		}
 		if bad {
 			return lockCheck(msg)
+		}
+		// On Windows the alternates file is checked here too, and the registration
+		// and the branch stay (measured on Windows, alternatesRefusal).
+		if t.verdict == gitDirTrusted {
+			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 		}
 		// The daemon's own read of the repository's config refuses here too
 		// (repoConfigGate), with the text of a worktree folder that exists. No

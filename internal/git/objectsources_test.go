@@ -202,6 +202,13 @@ func TestObjectSourceFrames(t *testing.T) {
 	f := newStatusFixture(t)
 	w0 := filepath.Join(f.T, ".claude", "worktrees", "w0")
 	runGit(t, f.T, "worktree", "add", "-q", "-b", "w0", w0)
+	// gone is a worktree whose folder is gone. Its registration and branch stay
+	// (measured on Windows).
+	gone := filepath.Join(f.T, ".claude", "worktrees", "gone")
+	runGit(t, f.T, "worktree", "add", "-q", "-b", "gone", gone)
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
 	alt := alternatesOf(filepath.Join(f.T, ".git", "objects"))
 	writeFile(t, alt, filepath.ToSlash(filepath.Join(f.root, "O", "objects"))+"\r\n", 0o644)
 	text := alternatesCRLFText(alt)
@@ -232,5 +239,16 @@ func TestObjectSourceFrames(t *testing.T) {
 	}
 	if _, err := os.Stat(w0); err != nil {
 		t.Errorf("the remove touched %s: %v", w0, err)
+	}
+	raw = call("git.worktree_remove", map[string]any{"baseRepo": f.T, "worktreePath": gone, "branchName": "gone"})
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+		quotedJSON(t, "failed to remove worktree: could not check whether "+gone+" is locked: "+text) + `}}`; raw != want {
+		t.Errorf("git.worktree_remove of a gone worktree = %s\nwant %s", raw, want)
+	}
+	if _, err := os.Stat(filepath.Join(f.T, ".git", "worktrees", "gone")); err != nil {
+		t.Errorf("the remove of a gone worktree deleted its registration: %v", err)
+	}
+	if out := statusGitOut(t, f.T, "", "branch", "--list", "gone"); out == "" {
+		t.Error("the remove of a gone worktree deleted its branch")
 	}
 }
