@@ -159,7 +159,7 @@ func alternatesRefusal(common string, all bool) string {
 				if hasControlByte(line) {
 					return alternatesControlText(file)
 				}
-				if link := linkBeforeDotDot(objects, line); link != "" {
+				if link := firstLinkBeforeDots(objects, line); link != "" {
 					return alternatesDotDotText(file, link)
 				}
 			}
@@ -208,11 +208,11 @@ func alternateDir(objects, line string) string {
 	return filepath.Join(objects, p)
 }
 
-// linkBeforeDotDot returns the first name before the first ".." of line that is
+// firstLinkBeforeDots returns the first name before the first ".." of line that is
 // a symbolic link or a junction, as a path, or "". Go reports a junction as an
 // irregular file. A relative line starts at objects, and only its own names are
 // tested (claustrum's own, not measured).
-func linkBeforeDotDot(objects, line string) string {
+func firstLinkBeforeDots(objects, line string) string {
 	p := filepath.FromSlash(line)
 	cur := ""
 	if filepath.IsAbs(p) {

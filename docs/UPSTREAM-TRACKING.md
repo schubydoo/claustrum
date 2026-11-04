@@ -380,10 +380,9 @@ the linked pages.
   With `"shadowDirOff":true` the other calls are equal in list, arguments,
   working directory and variables. Without the member these are equal: the
   folder variables and the six heavy values of the light calls of a create. So
-  are the `lfs.storage` item of the checkout and the names of the short-lived
-  entries, except `.readback-objects-<n>`. That is measured
+  is the `lfs.storage` item of the checkout. That is measured
   on Linux and macOS in the state `shadow`. On Windows the variables and the
-  names are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
+  names of the short-lived entries are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
   The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries and the config call of the ssh
   door follow the pin.
@@ -622,7 +621,7 @@ the Go source, not measured). These answers rest on that failure:
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
   pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
   [Git-directory trust check](protocol/git-rules-trust.md#git-directory-trust-check)).
-- The link count of `git.status` and the link test of an alternates line. Both read a
+- The link counts of `git.status` and `git.info`, and the link test of an alternates line. Both read a
   junction as `ModeIrregular` (from the code).
 
 With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23

@@ -378,8 +378,8 @@ func (c *contentCheck) worktreeIDs(files []contentFile) (ids []string, failed bo
 }
 
 // changedWhileChecked tests each file before the hash-object call and after a
-// failed one. On Windows a file that another process holds open with no share
-// mode gives the retry code before that call (measured on Windows). A file
+// failed one. On Windows a file that another process holds open for writing
+// with no share mode gives the retry code before that call (measured on Windows). A file
 // that is no longer of the kind of the commit gives the other_writer code: a
 // regular file that a link to "." replaced during that call does (measured on
 // Linux). A file that cannot be read gives the retry code, and so does a file
