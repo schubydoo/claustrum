@@ -95,7 +95,7 @@ func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 	// unless the request carries the off switch (sessionfolders.go).
 	var folders []string
 	if !sessiondirs.OffSwitchSet(req.Params) {
-		folders = sessionFoldersOf(p.Command, p.Args, p.Cwd)
+		folders = sessionFoldersOf(p.Command, p.Args, p.Cwd, p.Launcher != nil)
 	}
 	mp, err := s.procs.spawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
 	if errors.Is(err, errStartsStopped) {

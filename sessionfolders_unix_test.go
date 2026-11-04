@@ -224,3 +224,41 @@ func TestUnsavedSessionFolderRefusesTheSpawn(t *testing.T) {
 		}
 	}
 }
+
+// A spawn with a launcher and a plain command records its cwd and its --add-dir
+// folder, as the CLI path does. The same spawn with no launcher records nothing.
+func TestLauncherSpawnRecordsItsFolders(t *testing.T) {
+	wrap, exe := wrapLauncherFixture(t)
+	cl := dial(t, startSocketServer(t))
+	for _, launched := range []bool{false, true} {
+		dir := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		restore := sessiondirs.UseForTest(dir)
+		cwd, add := t.TempDir(), t.TempDir()
+		id := fmt.Sprintf("l-%v", launched)
+		params := map[string]any{"id": id, "command": exe, "args": []string{"--add-dir", add, "--"}, "cwd": cwd,
+			"env": map[string]string{"CLAUSTRUM_TEST_HELPER": "wrap", "CLAUSTRUM_TEST_WRAP_NEXT": "echo"}}
+		if launched {
+			params["launcher"] = []string{wrap}
+		} else {
+			params["env"] = map[string]string{"CLAUSTRUM_TEST_HELPER": "echo"}
+		}
+		raw := string(cl.call(launchedSpawnReq(t, params)))
+		restore()
+		if raw != `{"jsonrpc":"2.0","id":1,"result":{"success":true}}` {
+			t.Fatalf("spawn (launcher %v) = %s", launched, raw)
+		}
+		cl.waitExit(id)
+		for _, f := range []string{cwd, add} {
+			_, err := os.Stat(filepath.Join(dir, sessiondirs.RecordName(f)))
+			if launched && err != nil {
+				t.Errorf("the launcher spawn did not record %s: %v", f, err)
+			}
+			if !launched && !os.IsNotExist(err) {
+				t.Errorf("the spawn with no launcher recorded %s: %v", f, err)
+			}
+		}
+	}
+}

@@ -12,17 +12,29 @@ A `process.spawn` of a Claude Code shape with a `cwd` makes the `cwd` a session 
   `<dir>/ccd-cli/2.0.0`. Its `--add-dir` folders before a `--` arg count too
   (measured on Linux and Windows). `--add-dir=<d>` names one folder. `--add-dir a b`
   names each arg up to the next arg that starts with `-`, and an empty arg is skipped
-  (measured on Linux).
+  (measured on Linux). A command named `ccd-cli` counts as the CLI path too (measured on
+  Linux, macOS and Windows), with its `--add-dir` folders (measured on Linux and
+  macOS). On Windows `ccd-cli.exe` makes none (measured). On Linux and macOS a spawn
+  with a `launcher` counts too (measured). Windows refuses a `launcher` with `-32004`
+  (measured).
 - Args with `stream-json`. Their `--add-dir` folders do not count (measured on Linux
   and macOS). `--input-format=stream-json` and `--output-format=stream-json` count too
-  (claustrum's own, not measured).
+  (claustrum's own, not measured). A bare `git` with `stream-json` makes none, and a
+  git by its full path with it makes one (measured on Linux, macOS and Windows).
+
+### Other spawns
 
 A spawn of `sleep` makes none (measured on Linux and macOS). A spawn with the [off
 switch](#the-off-switch) makes none (measured on Windows), and another spawn makes one
 also while such a request runs (measured on Linux). claustrum's own, not
 measured: a spawn with no `cwd` makes none, a relative `--add-dir` folder is taken in
-the `cwd`, and the record comes after the `cwd` and command tests and before the start. A `git.worktree_create` records no
-`<repo>/.git` folder (claustrum's own, not measured). `b3081b51` records it (measured on Linux, macOS and Windows).
+the `cwd`, a `launcher` spawn with `stream-json` counts its `--add-dir` folders, the
+name `ccd-cli` matches in its exact letter case, and the record comes after the `cwd` and command tests and before the start.
+
+### A create
+
+A `git.worktree_create` records no `<repo>/.git` folder (claustrum's own, not measured).
+`b3081b51` records it (measured on Linux, macOS and Windows).
 
 ## The record
 

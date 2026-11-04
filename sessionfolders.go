@@ -40,24 +40,33 @@ func bareCommandStart(cmd *exec.Cmd, command string, env map[string]string) {
 }
 
 // sessionFoldersOf is the list of session folders of a spawn of command with args
-// in cwd, or nil for a spawn that is no Claude Code shape or has no cwd.
+// in cwd, or nil for a spawn that is no Claude Code shape or has no cwd. launched
+// is true for a spawn with the launcher param.
 //
 // A Claude Code shape is a command whose folder is named ccd-cli (the CLI path), or
 // args with a stream-json arg as cliSessionKey reads it. Both record cwd (measured
 // on Linux, macOS and Windows). Of the stream-json args only the bare `stream-json`
-// is measured, and the two `--...-format=stream-json` forms are claustrum's own. The CLI path also records each --add-dir folder
+// is measured, and the two `--...-format=stream-json` forms are claustrum's own.
+// A command named ccd-cli counts as the CLI path (b3081b51, measured on Linux,
+// macOS and Windows), with its --add-dir folders (measured on Linux and macOS).
+// On Linux and macOS a spawn with a launcher counts as the CLI path (measured).
+// A bare git with a stream-json arg records nothing (measured on Linux, macOS
+// and Windows). On Windows ccd-cli.exe records nothing, and a launcher is
+// refused before this step (measured). A launcher refuses a bare git before
+// this step.
+// The CLI path of a ccd-cli folder also records each --add-dir folder
 // before a `--` arg (measured on Linux and Windows): the value of `--add-dir=<d>`,
 // and each arg after `--add-dir` up to the next arg that starts with `-`. An empty
 // value is skipped (measured on Linux). A relative --add-dir folder is taken in cwd,
 // and a spawn with no cwd records nothing (claustrum's own, not measured). A spawn
 // that carries the off switch records nothing (measured on Windows). Another spawn
 // records also while such a request runs (measured on Linux).
-func sessionFoldersOf(command string, args []string, cwd string) []string {
+func sessionFoldersOf(command string, args []string, cwd string, launched bool) []string {
 	if cwd == "" {
 		return nil
 	}
-	cliPath := filepath.Base(filepath.Dir(command)) == "ccd-cli"
-	if !cliPath && !streamJSONArgs(args) {
+	cliPath := launched || filepath.Base(filepath.Dir(command)) == "ccd-cli" || filepath.Base(command) == "ccd-cli"
+	if !cliPath && (bareGitName(command) || !streamJSONArgs(args)) {
 		return nil
 	}
 	folders := []string{cwd}
