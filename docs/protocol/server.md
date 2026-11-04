@@ -140,13 +140,11 @@ If the daemon logs a `[Server] Connection closed: <label>` line, the line comes 
 [Server] cleanup: closed <n> connection(s), ended <n> child process group(s)
 ```
 
-The word `ended` is that of `b3081b51`, where `be1c1ca5` says `killed` (measured on Linux, macOS and Windows). Before it, a stop that sent `SIGTERM` logs this line (`b3081b51`, measured on Linux and macOS):
+The first count includes the connection that sent the request (measured against `5fd08069` on Windows only). The word `ended` is that of `b3081b51`, where `be1c1ca5` says `killed` (measured on Linux, macOS and Windows). Before it, a stop that sent `SIGTERM` logs this line (`b3081b51`, measured on Linux and macOS):
 
 ```
 [process.Manager] KillAll: asked <n> Claude Code process(es) to end: <n> exited, <n> had to be killed, after <duration>
 ```
-
-The first count includes the connection that sent the request (measured against `5fd08069` on Windows only).
 
 A stop by `SIGTERM` first logs `[daemon] received terminated; shutting down (children will be killed)`. Then it logs `[Server] shutdown requested` and the `cleanup:` line. For `SIGINT` the first line names that signal (measured against `5fd08069` on Linux and macOS). With `-keep-children` the first line says `kept` in place of `killed`, and the `cleanup:` line says `ended 0 child process group(s)` (both claustrum's own).
 

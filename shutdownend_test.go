@@ -11,8 +11,8 @@ import (
 
 // TestArgsAskEnd pins the args that make the shutdown sweep ask a child to end
 // first: "stream-json" as one arg, "--input-format=stream-json", and the two args
-// "--output-format" "stream-json" (b3081b51, measured on Linux and macOS). The form
-// "--output-format=stream-json" is claustrum's own (not measured).
+// "--output-format" "stream-json" (b3081b51, measured on Linux and macOS), and the
+// form "--output-format=stream-json" (b3081b51, measured on Linux).
 func TestArgsAskEnd(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
