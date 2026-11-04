@@ -789,6 +789,14 @@ func gitStatus(req *gitCall) rpc.Response {
 		return notRepo
 	}
 	common := filepath.Clean(strings.TrimRight(out, "\r"))
+	// For a linked worktree as baseRepo git prints its registration entry. The request
+	// goes on in the git directory of the main repository, which the trust check
+	// pinned. be1c1ca5 and b3081b51 do so for that worktree and for another linked
+	// worktree as path, also with the off switch (measured on Linux). macOS and
+	// Windows are claustrum's own, not measured.
+	if t.worktreeEntry != "" && sameProbeFolder(common, t.worktreeEntry) {
+		common = t.pinCommonDir
+	}
 	// On Windows the request goes on with the git directory that git printed,
 	// when it is another spelling of the same folder (usePrintedGitDir).
 	if statusFollowsPrintedGitDir {

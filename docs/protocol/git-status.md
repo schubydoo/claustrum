@@ -1,6 +1,6 @@
 # git.status
 
-`git.status` reports the changes in a linked git worktree of a session. If `path` is a linked worktree that `baseRepo` registered, the reply is the status. Every other request that does not fail gets `"isRepo": false`. The daemon runs git on a temporary copy of the git files of the worktree. So the status never rewrites the index and never takes `index.lock`.
+`git.status` reports the changes in a linked git worktree of a session. If `path` is a linked worktree of the repository of `baseRepo`, the reply is the status. Every other request that does not fail gets `"isRepo": false`. The daemon runs git on a temporary copy of the git files of the worktree. So the status never rewrites the index and never takes `index.lock`.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build, measured on Linux, macOS and Windows.
 
@@ -13,7 +13,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build, meas
 | Parameter | Required | Meaning |
 |---|---|---|
 | `path` | no | The linked worktree. Send an absolute path. Without `path`, the daemon looks for a registration of its own working directory (not measured). Send `path`. A relative `path` gives `"isRepo": false` or `-32603 exit status 128`. A `.` works like no `path` (from the code). [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
-| `baseRepo` | yes | The repository that owns the worktree. A linked worktree as `baseRepo` gives `"isRepo": false`. Send the main repository (from the code) (not measured). |
+| `baseRepo` | yes | The repository that owns the worktree. With a linked worktree as `baseRepo`, the daemon goes on in the git directory of the main repository. That worktree as `path` gets the status, also with `"shadowDirOff": true`, and so does another linked worktree of the repository (`be1c1ca5` and `b3081b51`, measured on Linux). macOS and Windows are claustrum's own, not measured. |
 | `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. [Turning the read off](git-rules-config.md#turning-the-read-off). |
 
 ## Response
@@ -28,11 +28,11 @@ An untagged rule on this page matches build `5fd08069` or an earlier build, meas
 
 | Member | Meaning |
 |---|---|
-| `isRepo` | If `path` is a linked worktree of `baseRepo`, `true`. |
+| `isRepo` | If `path` is a linked worktree of the repository of `baseRepo`, `true`. |
 | `clean` | If `changes` is empty, `true`. Else `false`. |
 | `changes` | The entries of the status, in the order of [The changes](#the-changes). If there is no entry, the member is absent. |
 
-If the request does not name a linked worktree of `baseRepo`, the response is not an error. It has both members:
+If the request does not name a linked worktree of the repository of `baseRepo`, the response is not an error. It has both members:
 
 ```json
 {"isRepo": false, "clean": false}
@@ -79,7 +79,7 @@ Failed listings and temporary folders: [Rare states](#rare-states).
 
 ## How the daemon finds the worktree
 
-The daemon does not ask git inside `path`. It reads the registrations of the repository. A registration is the folder `<common>/worktrees/<name>` that git keeps for each linked worktree. `<common>` is the git directory that `git rev-parse --absolute-git-dir` prints in `baseRepo`.
+The daemon does not ask git inside `path`. It reads the registrations of the repository. A registration is the folder `<common>/worktrees/<name>` that git keeps for each linked worktree. `<common>` is the git directory that `git rev-parse --absolute-git-dir` prints in `baseRepo`. For a linked worktree as `baseRepo`, it is the git directory of the main repository (`be1c1ca5` and `b3081b51`, measured on Linux). claustrum takes that git directory from the trust check. If git prints a folder that is not the trusted entry, the answer is `"isRepo": false` (claustrum's own, not measured).
 
 ### `baseRepo`
 
