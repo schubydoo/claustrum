@@ -432,7 +432,11 @@ jobs:
     # Single check for branch protection to gate on. Aggregates every job whose
     # failure should block merging. Add new required jobs by extending `needs`.
     name: ci required checks passed
-    if: always()
+    # Not always(). If the run is cancelled, this job ends cancelled, not failed
+    # (seen in runs of this repo, the GitHub docs do not say it). A cancelled
+    # context does not pass the gate. A failed job in a run that goes on still
+    # fails this job. A job stopped by its time limit is not measured here.
+    if: ${{ !cancelled() }}
     needs: [changes, lint, test, cross-build, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 2
