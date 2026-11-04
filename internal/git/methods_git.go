@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/pathcanon"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // Handle answers a request of the five git methods with the daemon state in d.
@@ -111,7 +111,7 @@ func git(dir string, args ...string) (string, bool) {
 // testable without waiting on a real wedged git. Combined output — see git().
 func gitContext(ctx context.Context, dir string, args ...string) (string, bool) {
 	full := append([]string{"-C", dir}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd := gitCommandContext(ctx, full...)
 	// The GIT_COMMON_DIR pin of the git-directory trust check, when dir's git directory
 	// is trusted (see gitdirtrust.go).
 	if pin := commonDirPinEnv(dir); pin != nil {
@@ -134,7 +134,7 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // "exit status N" and never includes stderr.
 func gitStdoutErr(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
-	out, err := exec.Command("git", full...).Output()
+	out, err := gitCommand(full...).Output()
 	return strings.TrimRight(string(out), "\n"), err
 }
 
@@ -389,6 +389,14 @@ func gitInfo(req *gitCall) rpc.Response {
 			branch = "detached:" + sha
 		}
 	}
+	control := req.shadow.replyControl(req.offLive)
+	// On Windows a git.info with "sessionFoldersOff":true and no
+	// "shadowDirOff":true answers the repository with no settingsControl member
+	// (b3081b51, measured on Windows). Linux keeps the member (measured on Linux).
+	// macOS and the "no repository" answer are not measured, and keep it.
+	if sessionOffDropsControl && !req.offOwn && sessiondirs.OffSwitchSet(req.Params) {
+		control = ""
+	}
 	return rpc.OKResult(req.ID, rpc.GitInfoResult{
 		IsRepo:        true,
 		Repo:          infoRepoName(top),
@@ -397,7 +405,7 @@ func gitInfo(req *gitCall) rpc.Response {
 		RepoSlug:      slug,
 		DefaultBranch: defBranch,
 
-		SettingsControl: req.shadow.replyControl(req.offLive),
+		SettingsControl: control,
 	})
 }
 

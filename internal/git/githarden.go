@@ -339,7 +339,7 @@ func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *
 	} else {
 		hooks = pre.hooks
 	}
-	cmd := exec.CommandContext(ctx, "git", withFront(u.front(dir), hardenedProfileArgs(heavy, args...))...)
+	cmd := gitCommandContext(ctx, withFront(u.front(dir), hardenedProfileArgs(heavy, args...))...)
 	cmd.Dir = dir
 	// The listing before the call was its build, so a folder of the copy that
 	// went since then is not made again here: the start refuses (holdRepoCopy).
@@ -401,7 +401,7 @@ func gitDirWorkTreeToplevelIn(ctx context.Context, sshOff bool, gitDir, workTree
 	userExcludesFile()
 	profile := withSSHOff(profileEnv(true), sshOff)
 	hooks := runListing(ctx, gitDir, gitDir, precursorEnvWith(profile, pin)).hooks()
-	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,
+	cmd := gitCommandContext(ctx, withFront(front, hardenedProfileArgs(true,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = gitDir
 	cmd.Env = hardenedEnvWith(gitChildEnv(), profile, pin, hooks)
@@ -601,7 +601,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		}
 		env = sshDoorEnv(env, door)
 	}
-	cmd := exec.CommandContext(ctx, "git", append(list, hardenedProfileArgs(false, args...)...)...)
+	cmd := gitCommandContext(ctx, append(list, hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf
 	cmd.Env = env
 	// Own process group so the teardown below can SIGKILL the whole group and reap a
@@ -696,7 +696,7 @@ const ownConfigStopText = "git took too long: Claude stopped git config after 30
 // git that the signal ended gives ownConfigStopText. So does a git that exits
 // 1 at the SIGTERM, on both builds (measured on Linux).
 func ownConfigListing(leaf, gitDir string, env []string) string {
-	cmd := exec.Command("git", "--git-dir="+gitDir, "config", "-z", "--list")
+	cmd := gitCommand("--git-dir="+gitDir, "config", "-z", "--list")
 	cmd.Dir = leaf
 	cmd.Env = env
 	cmd.Stdout = io.Discard

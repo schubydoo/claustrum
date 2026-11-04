@@ -26,6 +26,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/metrics"
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/runlock"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sockroute"
 	"github.com/schubydoo/claustrum/internal/tokenfile"
@@ -481,6 +482,11 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// The start test of files.read real, once and before the first connection line.
 	// Its place beside the banner and the cleaner line is claustrum's own, not measured.
 	files.LogReadRealStart()
+	// The session folders: the record folder beside run, with the records of
+	// earlier daemons (internal/sessiondirs). It comes before the first request. Its
+	// place after the lines above is claustrum's own, not measured. Kept in this
+	// shell, so an in-process test boot keeps its own store.
+	sessiondirs.Open(socket)
 	s.run(socket)
 }
 

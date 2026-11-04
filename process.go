@@ -17,6 +17,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/install"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/metrics"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
@@ -807,6 +808,10 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
+	// A bare command name that PATH found in a session folder (sessionfolders.go).
+	if launcher == nil {
+		bareCommandStart(cmd, command, env)
+	}
 	if launcher != nil {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
@@ -1089,6 +1094,9 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// non-destructive: errors are logged, and it never affects the spawn result.
 	// With a launcher, argv0 is the launcher and program is the command.
 	m.recordChild(cmd.Process.Pid, path, program)
+	// The session folders of a Claude Code spawn get their records after the start
+	// (sessionfolders.go).
+	sessiondirs.Remember(sessionFoldersOf(command, args, cwd)...)
 
 	go p.stdinWriter()
 	var wg sync.WaitGroup

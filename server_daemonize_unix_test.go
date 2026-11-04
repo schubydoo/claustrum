@@ -287,6 +287,13 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 		}
 	}
 
+	// The socket is not run-shaped, so the session folders stay in memory, with one
+	// line.
+	memLine := `[daemon] socket "` + sock + `" is not <root>/run/<client>/rpc.sock: session folders are kept in memory only, so the next helper will not know them`
+	if n := strings.Count(string(b), memLine); n != 1 {
+		t.Errorf("the session folders line appears %d times, want 1", n)
+	}
+
 	// Linux logs the start line of files.read real once. The host /proc is real
 	// here, so it is the pass line (claustrum's own place, not measured).
 	if runtime.GOOS == "linux" {

@@ -104,7 +104,7 @@ func listConfigText(ctx context.Context, text []byte, dir string, env []string) 
 // configTextCmd is the listing of one config file on standard input, in dir
 // with env. The end of ctx ends it.
 func configTextCmd(ctx context.Context, dir string, env []string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
+	cmd := gitCommandContext(ctx, "config", "--no-includes", "--file", "-", "--list", "-z")
 	cmd.Dir = dir
 	cmd.Env = env
 	return cmd

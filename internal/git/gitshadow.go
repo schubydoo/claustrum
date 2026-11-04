@@ -606,9 +606,10 @@ var shadowTestDropped = []string{"GIT_DEFAULT_HASH", "GIT_CONFIG_SYSTEM"}
 // own folder, and shadowTestDropped. Which other entries of the daemon
 // 5fd08069 passes is not measured. The first `git version` call of
 // shadowVersionNote and versionAfterFailure do not use it: they get
-// gitVersionEnv(nil). shadowTestEnv cleans it for the test calls.
+// gitVersionEnv(nil). shadowTestEnv cleans it for the test calls. It starts from
+// sessionCutDaemonEnv.
 func shadowDaemonEnv() []string {
-	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
+	env := withoutConfigCountSet(listingEnvOf(sessionCutDaemonEnv()))
 	return slices.DeleteFunc(env, func(kv string) bool {
 		name := envName(kv)
 		return slices.Contains(shadowTestNames, name) || slices.Contains(shadowTestDropped, name)
@@ -687,7 +688,7 @@ func boundedGit(bound time.Duration, dir string, env []string, argv ...string) s
 func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	ctx, cancel := context.WithTimeout(context.Background(), bound)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", argv...)
+	cmd := gitCommandContext(ctx, argv...)
 	cmd.Dir = dir
 	cmd.Env = env
 	if stdin != nil {

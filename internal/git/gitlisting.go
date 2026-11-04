@@ -140,7 +140,7 @@ func runListing(ctx context.Context, dir, gitDir string, env []string) listingRu
 	if gitDir != "" {
 		args = append([]string{"--git-dir=" + gitDir}, args...)
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := gitCommandContext(ctx, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	// Stderr is set before Output, so (*exec.ExitError).Stderr stays empty. Read
@@ -261,7 +261,7 @@ func listingEnvBase() []string {
 }
 
 // listingEnvOf is listingEnvBase with daemon as the daemon's environment.
-// shadowDaemonEnv gives it os.Environ(), with no cleaning.
+// shadowDaemonEnv gives it sessionCutDaemonEnv, with no cleaning.
 func listingEnvOf(daemon []string) []string {
 	env := dropConfigOverrides(daemon)
 	out := env[:0]
@@ -400,7 +400,7 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 // environment have no case. So a lower-case git_config_count or git_config_global
 // of the daemon stays on the call there.
 func gitVersionRun(u gitUse, heavy bool) listingRun {
-	cmd := exec.Command("git", "version")
+	cmd := gitCommand("version")
 	cmd.Dir = gitVersionDir
 	profile := u.profileEnv(heavy)
 	cmd.Env = gitVersionEnv(append(withoutDaemonSSH(listingEnvBase(), profile), profile...))

@@ -123,7 +123,7 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	defer cancel()
 	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(false,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "diff-files", "--quiet", "--ignore-submodules=all"))...)
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := gitCommandContext(ctx, args...)
 	cmd.Dir = leaf
 	cmd.Env = append(hardenedGitEnv(false, pin, nil), "GIT_INDEX_FILE="+indexFile)
 	cmd.Cancel = func() error { return stopGitProcess(cmd.Process) }

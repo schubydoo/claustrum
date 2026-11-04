@@ -14,6 +14,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. The 
 |---|---|---|
 | `path` | no | A folder of the repository. A subfolder gives the same `root`. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
 | `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. See [Turning the read off](git-rules-config.md#turning-the-read-off). |
+| `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md#the-off-switch) while the request runs. |
 
 ## Response
 
@@ -127,6 +128,7 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 - Before a start test of the daemon gave a state, the member is absent. So the first `git.info` of a daemon on a path that does not exist has no member (measured on Linux).
 - After a start test that passed, the "no repository" body has the member too (measured on Linux).
 - A request with `"shadowDirOff":true` gets `"off-switch"`, also as the first request of a daemon (measured on Linux).
+- On Windows a repository answer to a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member (`b3081b51`, measured on Windows).
 - An error reply has no member.
 
 The section [The states and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.

@@ -231,7 +231,7 @@ func branchStdin(recs []branchRecord, target string) string {
 // directory repo, and branchStepEnv with the hooks of the config listing that the
 // caller runs first.
 func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", withFront(u.front(repo), hardenedProfileArgs(false, args...))...)
+	cmd := gitCommandContext(ctx, withFront(u.front(repo), hardenedProfileArgs(false, args...))...)
 	cmd.Dir = repo
 	// As in hardenedGitCmd, the listing before the call was its build: a folder
 	// of the copy that went since then is not made again (from the code).
