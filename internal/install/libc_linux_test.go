@@ -11,7 +11,7 @@ import (
 )
 
 // TestDetectLibcHonoursThePackageVar is the ONE test that drives the production
-// path: detectLibc() itself, resolving a real `ldd` through PATH, with nothing
+// path: detectLibc() itself, running the `ldd` at lddPath, with nothing else
 // injected. Every other ldd-bound test calls detectLibcWith directly and hands it
 // a timeout, so all of them stay green if the single production call site stops
 // reading LddProbeTimeout.
@@ -33,10 +33,7 @@ func TestDetectLibcHonoursThePackageVar(t *testing.T) {
 	// 3ef9370, so exit 0 here is incidental. The bound kills the stub's whole
 	// process group, so the `sleep` child dies with it and nothing leaks.
 	stub := "#!/bin/sh\nsleep 1\necho 'musl libc (x86_64)'\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useLddStub(t, dir, stub)
 
 	old := LddProbeTimeout
 	t.Cleanup(func() { LddProbeTimeout = old })
@@ -62,10 +59,7 @@ func TestLddRunsInTheRootFolder(t *testing.T) {
 	dir := t.TempDir()
 	rec := filepath.Join(dir, "cwd")
 	stub := "#!/bin/sh\npwd > '" + rec + "'\necho 'ldd (GNU libc) 2.39'\n"
-	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useLddStub(t, dir, stub)
 	// Start from a folder other than "/".
 	t.Chdir(dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -79,5 +73,72 @@ func TestLddRunsInTheRootFolder(t *testing.T) {
 	}
 	if string(got) != "/\n" {
 		t.Errorf("ldd ran in %q, want \"/\"", got)
+	}
+}
+
+// detectLibc's fallback branch: when `ldd` can't be executed, it probes for the
+// musl loader and otherwise reports glibc. An lddPath with no file forces that
+// branch.
+func TestDetectLibcLddMissing(t *testing.T) {
+	old := lddPath
+	t.Cleanup(func() { lddPath = old })
+	lddPath = filepath.Join(t.TempDir(), "ldd") // no file there
+	if got := detectLibc(); got != "glibc" && got != "musl" {
+		t.Errorf("detectLibc() with no ldd = %q, want glibc or musl", got)
+	}
+}
+
+// TestLddPathIsUsrBin pins the one ldd that the probe runs.
+func TestLddPathIsUsrBin(t *testing.T) {
+	if lddPath != "/usr/bin/ldd" {
+		t.Errorf("lddPath = %q, want /usr/bin/ldd", lddPath)
+	}
+}
+
+// TestLddRunsLddPathNotPATH runs the probe with one stub at lddPath and another
+// stub named ldd first on PATH. Only the stub at lddPath runs.
+func TestLddRunsLddPathNotPATH(t *testing.T) {
+	dir, pathDir := t.TempDir(), t.TempDir()
+	rec := filepath.Join(dir, "ran")
+	useLddStub(t, dir, "#!/bin/sh\necho fixed >> '"+rec+"'\necho 'ldd (GNU libc) 2.39'\n")
+	onPath := "#!/bin/sh\necho path >> '" + rec + "'\necho 'ldd (GNU libc) 2.39'\n"
+	if err := os.WriteFile(filepath.Join(pathDir, "ldd"), []byte(onPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", pathDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := runLddVersion(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "fixed\n" {
+		t.Errorf("the stubs that ran wrote %q, want only the stub at lddPath", got)
+	}
+}
+
+// TestLddGetsTheFixedEnvironment pins the whole environment of the probe. The stub
+// writes `env | sort`, and the set must be the measured one: LC_ALL=C,
+// PATH=/usr/bin:/bin and the PWD=/ that the shell of the stub adds.
+func TestLddGetsTheFixedEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	rec := filepath.Join(dir, "env")
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+	t.Setenv("CLAUSTRUM_OPERATOR_VAR", "opvalue")
+	useLddStub(t, dir, "#!/bin/sh\nenv | sort > '"+rec+"'\necho 'ldd (GNU libc) 2.39'\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := runLddVersion(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "LC_ALL=C\nPATH=/usr/bin:/bin\nPWD=/\n"; string(got) != want {
+		t.Errorf("ldd saw the environment %q, want %q", got, want)
 	}
 }

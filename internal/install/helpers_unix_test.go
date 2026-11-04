@@ -123,3 +123,15 @@ func captureLogBuf(t *testing.T) *syncBuffer {
 	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
 	return buf
 }
+
+// useLddStub writes script as an executable stub and points the ldd probe at it.
+func useLddStub(t *testing.T, dir, script string) {
+	t.Helper()
+	stub := filepath.Join(dir, "ldd")
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := lddPath
+	t.Cleanup(func() { lddPath = old })
+	lddPath = stub
+}
