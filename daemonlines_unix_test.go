@@ -125,7 +125,7 @@ func TestOrphanExitLines(t *testing.T) {
 	wantLinesInOrder(t, got,
 		"[Server] socket path "+sock+" no longer leads to this daemon; shutting down if that holds for 20ms with nobody connected",
 		"[Server] socket path "+sock+" did not lead back to this daemon (1/2); re-checking before acting")
-	if !regexp.MustCompile(`\[Server\] orphaned for \S+ \(socket path gone or re-bound, 2 self-probes failed, no connections\); shutting down and killing 0 child process\(es\)\n\S+ +\[Server\] shutdown requested\n\S+ +\[Server\] cleanup: closed 0 connection\(s\), killed 0 child process group\(s\)\n$`).MatchString(got) {
+	if !regexp.MustCompile(`\[Server\] orphaned for \S+ \(socket path gone or re-bound, 2 self-probes failed, no connections\); shutting down and killing 0 child process\(es\)\n\S+ +\[Server\] shutdown requested\n\S+ +\[Server\] cleanup: closed 0 connection\(s\), ended 0 child process group\(s\)\n$`).MatchString(got) {
 		t.Errorf("log does not end with the orphaned line, the shutdown line and the cleanup line:\n%s", got)
 	}
 }

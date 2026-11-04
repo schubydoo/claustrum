@@ -269,3 +269,7 @@ func (g *procGroup) close() {
 // logsUnreapedKill is false: Windows logs no line for a child that the kill did not
 // reap in killReapGrace, as before (claustrum's own, not measured).
 const logsUnreapedKill = false
+
+// shutdownAsksEnd is false: the shutdown sweep sends no SIGTERM on Windows, and every
+// child ends at once with the kill of its job (b3081b51, measured on Windows).
+const shutdownAsksEnd = false

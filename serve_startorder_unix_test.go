@@ -262,7 +262,7 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 		"1 orphaned group(s): 0 ended on SIGTERM, 1 on SIGKILL, 0 survived",
 		"[Server] shutdown requested",
 		"remote server listening on "+sock,
-		"[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)",
+		"[Server] cleanup: closed 0 connection(s), ended 0 child process group(s)",
 	)
 	for _, name := range []string{"rpc.sock", "daemon.token"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {

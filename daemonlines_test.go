@@ -128,7 +128,7 @@ func TestShutdownBySignalLines(t *testing.T) {
 	wantLinesInOrder(t, buf.String(),
 		"[daemon] received terminated; shutting down (children will be killed)",
 		"[Server] shutdown requested",
-		"[Server] cleanup: closed 2 connection(s), killed 2 child process group(s)")
+		"[Server] cleanup: closed 2 connection(s), ended 2 child process group(s)")
 	// The kill is real: each child ends.
 	for _, id := range []string{"c1", "c2"} {
 		select {
@@ -203,7 +203,7 @@ func TestShutdownCountLeavesOutAnEndedChild(t *testing.T) {
 	signalServingDaemon(t, s, syscall.SIGTERM)
 	s.closeAll(sock)
 	wantLinesInOrder(t, buf.String(),
-		"[Server] cleanup: closed 2 connection(s), killed 1 child process group(s)")
+		"[Server] cleanup: closed 2 connection(s), ended 1 child process group(s)")
 	select {
 	case <-s.procs.get("c1").done:
 	case <-time.After(10 * time.Second):
@@ -231,7 +231,7 @@ func TestShutdownByRPCLines(t *testing.T) {
 	wantLinesInOrder(t, buf.String(),
 		"[ServerHandler] server.shutdown received over RPC",
 		"[Server] shutdown requested",
-		"[Server] cleanup: closed 3 connection(s), killed 2 child process group(s)")
+		"[Server] cleanup: closed 3 connection(s), ended 2 child process group(s)")
 	// A clean stop ends the children (measured on Linux and Windows).
 	for _, id := range []string{"c1", "c2"} {
 		select {
@@ -277,7 +277,7 @@ func TestShutdownCountKeepsAClosedStopConnection(t *testing.T) {
 	s.closeAll(sock)
 
 	wantLinesInOrder(t, buf.String(),
-		"[Server] cleanup: closed 2 connection(s), killed 0 child process group(s)")
+		"[Server] cleanup: closed 2 connection(s), ended 0 child process group(s)")
 }
 
 // TestShutdownLinesWithNoClient: no connection and no child give zeros (measured).
@@ -289,7 +289,7 @@ func TestShutdownLinesWithNoClient(t *testing.T) {
 	wantLinesInOrder(t, buf.String(),
 		"[daemon] received terminated; shutting down (children will be killed)",
 		"[Server] shutdown requested",
-		"[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)")
+		"[Server] cleanup: closed 0 connection(s), ended 0 child process group(s)")
 }
 
 // TestShutdownLinesKeepChildren: with -keep-children the first line says "kept" and the
@@ -304,7 +304,7 @@ func TestShutdownLinesKeepChildren(t *testing.T) {
 		"[daemon] received terminated; shutting down (children will be kept)",
 		"[Server] shutdown requested",
 		"[Server] -keep-children: leaving 1 running child process(es) alive across shutdown",
-		"[Server] cleanup: closed 1 connection(s), killed 0 child process group(s)")
+		"[Server] cleanup: closed 1 connection(s), ended 0 child process group(s)")
 	p := s.procs.get("c1")
 	if !p.isRunning() {
 		t.Error("the child ended at a -keep-children shutdown")
@@ -401,5 +401,5 @@ func TestShutdownEndsTheLoginPATHRead(t *testing.T) {
 	if got := shellenvLines(buf); got != "" {
 		t.Errorf("the stopped read logged:\n%s", got)
 	}
-	wantLinesInOrder(t, buf.String(), "[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)")
+	wantLinesInOrder(t, buf.String(), "[Server] cleanup: closed 0 connection(s), ended 0 child process group(s)")
 }

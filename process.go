@@ -188,6 +188,9 @@ type managedProc struct {
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
+	// askEnd is set once at spawn: the args of the request ask for stream-json
+	// (argsAskEnd). The shutdown sweep asks such a child to end first (killAllCount).
+	askEnd bool
 	// forgetRecord removes the child's registry record. The exit goroutine calls it
 	// as soon as the wait on the child returns, before the pipe drain, and then
 	// closes recordDone. Both are set once at spawn. A nil value means there is
@@ -613,6 +616,19 @@ func (p *managedProc) killGroupAfterExit() error {
 	return signalGroup(p.group, p.cmd.Process, "KILL")
 }
 
+// killGroupBeforeExitFrame sends SIGKILL to the group of a process whose exit frame is
+// not out yet: a live child, or one in its exit drain. It holds p.mu across the test
+// and the signal, so no group signal goes after running turns false (D28). The end of
+// the shutdown wait of endAsked is its one caller. On Windows the error is ignored.
+func (p *managedProc) killGroupBeforeExitFrame() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.running || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
 // killGroupInDrain sends SIGKILL to the group of a process inside its exit drain:
 // reaped, and its exit frame not out yet. 5fd08069 kills the group at once for a
 // killAndWait with "signal":"KILL" there (measured on Linux and macOS). Another signal
@@ -1008,6 +1024,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		pid:        cmd.Process.Pid,
 		startTime:  startTime,
 		sessionKey: sessionKey,
+		askEnd:     argsAskEnd(args),
 		subs:       map[*conn]struct{}{c: {}},
 		running:    true,
 		stdin:      stdin,
@@ -1812,20 +1829,97 @@ func (m *procManager) runningCount() int {
 
 func (m *procManager) killAll() { m.killAllCount() }
 
-// killAllCount sends the shutdown kill to every live child. It returns how many children
-// got it, for the "cleanup:" line of the shutdown. A child that refused the kill counts
-// too (claustrum's own, not measured).
-func (m *procManager) killAllCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	n := 0
-	for _, p := range m.procs {
-		// Skip exited children — their pgid may already be recycled (see kill).
-		if p.signalIfLive("KILL", "shutdown") {
-			n++
+// shutdownEndGrace is the time from the shutdown SIGTERM of a child that argsAskEnd
+// accepts to the SIGKILL of its group. b3081b51 sends that SIGKILL 1.50 s after the
+// TERM (measured on Linux and macOS). One timer serves every such child. A var so a
+// test can shorten it.
+var shutdownEndGrace = 1500 * time.Millisecond
+
+// argsAskEnd reports whether the args of a spawn request ask for stream-json. At a
+// shutdown b3081b51 sends SIGTERM to a child with the arg "stream-json" or
+// "--input-format=stream-json", also to a bare git (measured on Linux and macOS). A
+// child with no such arg gets the group SIGKILL at once (measured). The form
+// "--output-format=stream-json" counts, as in cliSessionKey (claustrum's own, not
+// measured). With a launcher these are the args of the request, not the launcher argv
+// (claustrum's own, not measured).
+func argsAskEnd(args []string) bool {
+	for _, a := range args {
+		if a == "stream-json" || a == "--input-format=stream-json" || a == "--output-format=stream-json" {
+			return true
 		}
 	}
+	return false
+}
+
+// killAllCount ends every live child at shutdown. It returns how many children got
+// a signal, for the "cleanup:" line. A child that refused the signal counts too
+// (claustrum's own, not measured).
+//
+// On Linux and macOS (shutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
+// to its pid first, and the sweep waits for it (endAsked). Every other child gets the
+// group SIGKILL at once. On Windows every child gets the kill of its job at once
+// (b3081b51, measured on Windows).
+func (m *procManager) killAllCount() int {
+	start := time.Now()
+	m.mu.Lock()
+	n := 0
+	var asked []*managedProc
+	for _, p := range m.procs {
+		sig := "KILL"
+		if shutdownAsksEnd && p.askEnd {
+			sig = "TERM"
+		}
+		// Skip exited children — their pgid may already be recycled (see kill).
+		if p.signalIfLive(sig, "shutdown") {
+			n++
+			if sig == "TERM" {
+				asked = append(asked, p)
+			}
+		}
+	}
+	m.mu.Unlock()
+	if len(asked) > 0 {
+		endAsked(asked, start)
+	}
 	return n
+}
+
+// endAsked waits for the children that the shutdown sweep sent SIGTERM, for at most
+// shutdownEndGrace. A child that is still there at the end of the wait gets the group
+// SIGKILL then (b3081b51, measured on Linux and macOS). That includes a child whose
+// exit drain a member of its group holds open (claustrum's own, not measured). The wait is bounded, so the shutdown
+// takes at most shutdownEndGrace longer. A child counts as ended when its exit frame
+// is out (claustrum's own, not measured). Then it logs one line, whose text is the
+// reference's (measured on Linux and macOS).
+//
+// b3081b51 also sends the group SIGKILL after the exit of an ended child (measured on
+// Linux). claustrum sends no signal to a child whose exit frame is out, and so none
+// in the arms that saw p.done (DIVERGENCES.md D28).
+func endAsked(asked []*managedProc, start time.Time) {
+	timer := time.NewTimer(shutdownEndGrace)
+	defer timer.Stop()
+	exited, killed := 0, 0
+	late := false
+	for _, p := range asked {
+		if !late {
+			select {
+			case <-p.done:
+				exited++
+				continue
+			case <-timer.C:
+				late = true
+			}
+		}
+		select {
+		case <-p.done:
+			exited++
+		default:
+			killed++
+			p.killGroupBeforeExitFrame()
+		}
+	}
+	logging.Infof("[process.Manager] KillAll: asked %d Claude Code process(es) to end: %d exited, %d had to be killed, after %s",
+		len(asked), exited, killed, time.Since(start).Round(time.Millisecond))
 }
 
 // buildEnv merges the caller-supplied env map over the daemon's environment.

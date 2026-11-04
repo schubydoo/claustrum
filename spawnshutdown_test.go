@@ -278,7 +278,7 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 	if len(got) != past+before {
 		t.Errorf("%d spawns returned, want %d", len(got), past+before)
 	}
-	if !strings.Contains(logs.String(), "killed 0 child process group(s)") {
+	if !strings.Contains(logs.String(), "ended 0 child process group(s)") {
 		t.Errorf("the cleanup line counts a child:\n%s", logs.String())
 	}
 	children := filepath.Join(runDir, childrenDirName)
