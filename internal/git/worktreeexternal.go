@@ -585,8 +585,9 @@ func verifyGitDir(baseRepo string) string {
 	return g
 }
 
-// workTreeUnknownPrefix starts every refusal of git.worktree_remove with worktreeRoot
-// that comes before the registration check. See externalWorkTreeRefusal.
+// workTreeUnknownPrefix starts each refusal of git.worktree_remove with worktreeRoot
+// that comes before the registration check, except the one of gitDirUnknownPrefix.
+// See externalWorkTreeRefusal.
 const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the repository's work tree: "
 
 // externalWorkTreeRefusal is the check of git.worktree_remove with worktreeRoot that
@@ -611,7 +612,8 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //     (measured). A work tree whose own repository has core.bare set still passes
 //     (measured).
 //  6. The hardened `git rev-parse --absolute-git-dir` fails in baseRepo. The reason
-//     is the exec error, for example "exit status 128" (measured).
+//     is the exec error, for example "exit status 128" (measured). A failed listing
+//     before it gets its own prefix (gitDirCheckRefusal).
 //
 // A baseRepo that does not exist skips every reason, and no git call runs here. That
 // holds with git on PATH and without it (`89cb6289`, measured on Linux). The removal
@@ -743,10 +745,37 @@ func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) 
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}
-	if err := repositoryCheckError(u, repo, nil); err != nil {
-		return workTreeUnknownPrefix + err.Error(), ""
+	if msg := gitDirCheckRefusal(u, repo); msg != "" {
+		return msg, ""
 	}
 	return "", topLevel
+}
+
+// gitDirUnknownPrefix starts the refusal of git.worktree_remove with worktreeRoot when
+// the listing before `rev-parse --absolute-git-dir` fails (gitDirCheckRefusal).
+const gitDirUnknownPrefix = "failed to remove worktree: cannot determine the repository's git directory: "
+
+// gitDirCheckRefusal is reason 6 of externalWorkTreeRefusal: the heavy listing, then
+// the hardened `rev-parse --absolute-git-dir` in repo, as hardenedGitCmd runs them. It
+// answers "" when the removal goes on. If that listing exits with an error, the answer
+// is gitDirUnknownPrefix and the text of failedListingText, and no rev-parse runs.
+// b3081b51 refuses so on Linux and macOS, also with a `git version` that fails
+// (measured). A listing whose repository folder went and one that says git finds no
+// repository go on to the rev-parse, as before (claustrum's own, not measured). A
+// repo that is not a folder runs no call.
+func gitDirCheckRefusal(u gitUse, repo string) string {
+	if fi, err := os.Stat(repo); err != nil || !fi.IsDir() {
+		return ""
+	}
+	u = u.atCommand()
+	r := hookPrecursor(u.stop.context(), u, repo, true)
+	if r.err != nil && !copyGone(r.err) && !r.saysNoRepository() {
+		return gitDirUnknownPrefix + failedListingText(u, r, true)
+	}
+	if err := repositoryCheckError(u, repo, &configListing{hooks: r.hooks()}); err != nil {
+		return workTreeUnknownPrefix + err.Error()
+	}
+	return ""
 }
 
 // noRepositoryHerePrefix starts the reason of git.worktree_remove with worktreeRoot when
