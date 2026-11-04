@@ -432,7 +432,8 @@ none with a home folder).
 ### The libc probe fills the `libc` fact
 
 - Each probe runs `/usr/bin/ldd` with the environment `LC_ALL=C` and `PATH=/usr/bin:/bin`
-  alone. If `/usr/bin/ldd` is missing, the probe runs `/bin/ldd` the same way (`b3081b51`, measured on Linux). An `ldd` on
+  alone. If `/usr/bin/ldd` is missing, the probe runs `/bin/ldd` the same way. If `/usr/bin/ldd` exists but cannot run, the probe does not try
+  `/bin/ldd` (`b3081b51`, measured on Linux). An `ldd` on
   the PATH of the operator does not run (`b3081b51`, measured on Linux). The probe runs in `/` (`be1c1ca5` and `b3081b51`, measured on Linux).
   Its output decides. A "musl" banner
   reports `musl`, and any other output reports `glibc`. The `/lib/ld-musl-*.so.*`

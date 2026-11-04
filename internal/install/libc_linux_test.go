@@ -143,6 +143,34 @@ func TestLddFallsBackWhenLddPathIsMissing(t *testing.T) {
 	}
 }
 
+// TestLddNoFallbackWhenLddPathCannotRun puts a folder at lddPath and a stub at
+// lddFallbackPath. The exec of lddPath fails and the stub does not run.
+func TestLddNoFallbackWhenLddPathCannotRun(t *testing.T) {
+	dir := t.TempDir()
+	rec := filepath.Join(dir, "ran")
+	fallback := filepath.Join(dir, "fallback-ldd")
+	script := "#!/bin/sh\necho fallback >> '" + rec + "'\necho 'ldd (GNU libc) 2.39'\n"
+	if err := os.WriteFile(fallback, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Join(dir, "ldd")
+	if err := os.Mkdir(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, oldFallback := lddPath, lddFallbackPath
+	t.Cleanup(func() { lddPath, lddFallbackPath = old, oldFallback })
+	lddPath, lddFallbackPath = folder, fallback
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := runLddVersion(ctx); err == nil {
+		t.Error("runLddVersion with a folder at lddPath gave no error")
+	}
+	if _, err := os.Stat(rec); err == nil {
+		t.Error("the stub at lddFallbackPath ran")
+	}
+}
+
 // TestLddRunsLddPathNotPATH runs the probe with one stub at lddPath and another
 // stub named ldd first on PATH. Only the stub at lddPath runs.
 func TestLddRunsLddPathNotPATH(t *testing.T) {

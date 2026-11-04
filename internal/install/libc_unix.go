@@ -40,7 +40,8 @@ var lddPath = "/usr/bin/ldd"
 var lddFallbackPath = "/bin/ldd"
 
 // lddToRun returns lddPath, or lddFallbackPath when lddPath is missing. An lddPath
-// that exists but cannot run gets no fallback (claustrum's own, not measured).
+// that exists but cannot run (no exec bit, or a folder) gets no fallback. Measured on
+// Linux against b3081b51: its exec fails and /bin/ldd does not run.
 func lddToRun() string {
 	if _, err := os.Stat(lddPath); errors.Is(err, fs.ErrNotExist) {
 		return lddFallbackPath
