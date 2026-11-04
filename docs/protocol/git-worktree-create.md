@@ -243,7 +243,7 @@ In the state `shadow` a good checkout gets one more call: `git diff-files --quie
 
 In the state `shadow` the daemon compares files of the new worktree with the commit after a good checkout. A mismatch refuses the create ([Content check refusals](#content-check-refusals)). The worktree, its registration and the new branch then go. Build `b3081b51`, measured on Linux, macOS and Windows.
 
-- The files are those under `.claude`, and `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md`, at the top of the commit. `CLAUDE.local.md` is claustrum's own, not measured. A `.claude` folder in another letter case counts (measured on macOS and Windows). Claustrum's own, not measured: no check with `"shadowDirOff":true`, `.mcp.json` in any letter case, and the check before the copy step.
+- The files are those under `.claude`, and `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md`, at the top of the commit. `CLAUDE.local.md` is claustrum's own, not measured. A `.claude` folder in another letter case counts (measured on macOS and Windows). Claustrum's own, not measured: no check with `"shadowDirOff":true` or in the state `fallback-git`, `.mcp.json` in any letter case, and the check before the copy step.
 - A file passes if its bytes equal the output of the filters of its path. A smudge filter of the user config with the same output at each run passes.
 - A link to a folder outside the repository passes, and so do mode 100755 and a Git LFS pointer with no git-lfs.
 - On Windows a file that another process holds open with no share mode passes.
