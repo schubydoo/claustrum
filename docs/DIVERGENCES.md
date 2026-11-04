@@ -612,8 +612,8 @@ have no flag and no key.
   Windows).
 - **Systems and switch.** Windows. On-wire, always on, no switch.
 - **Cost.** In that state the create answers
-  `{"success":false,"error":"git worktree add failed: Preparing worktree (new branch 'b1') fatal: '<repo>/.claude/worktrees/w1' is a missing but already registered worktree; use 'add -f' to override, or 'prune' or 'remove' to clear","errorCode":"worktree_add_failed"}`.
-  The branch `b1` stays, because git makes it before it refuses. No cost where
+  `{"success":true,"path":"<repo>\\.claude\\worktrees\\w1","sourceBranch":"main","branch":"b1"}`
+  and registers `w1` as `.git\worktrees\w11` (measured on Windows). No cost where
   the folder of a stale entry is gone (from the code). A `Lstat` that fails with
   another error than "does not exist" keeps a stale entry too, and then the add
   fails.

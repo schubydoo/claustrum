@@ -112,8 +112,9 @@ its repository as a session folder (PR 927, measured on Linux, macOS and Windows
 put their path in backticks, as `be1c1ca5` does (PR 923, measured on Linux).
 
 **How it was bounded.** Each item above was measured side by side with `be1c1ca5` on the
-systems named. A validation round on Linux, macOS and Windows compared claustrum with
-`b3081b51`.
+systems named. A whole-build re-check of the final code compared claustrum with `b3081b51`
+on Linux, macOS and Windows. It covered the frames, the git call logs, the divergence
+probes and the native tests.
 
 **Divergences.** D28 opened: at a shutdown claustrum sends no group `SIGKILL` after the
 exit frame of a child that got the `SIGTERM`.

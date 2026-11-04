@@ -642,7 +642,7 @@ var docWordLimits = map[string]int{
 	"SECURITY.md":                                1609, // the ssh door of be1c1ca5. 1553 before
 	"docs/ARCHITECTURE.md":                       2682, // gitsshdoor.go. 2674: socketroute*.go. 2673: the sweep on Linux and macOS of be1c1ca5. 2667 before
 	"docs/DAEMON.md":                             8150, // the cleanup word of b3081b51. 8137: the signals at a long root, measured. 8115: the not-measured parts of a long run root. 8090: the long run root of the host cleaner. 7940: the long socket path. 7616: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
-	"docs/DIVERGENCES.md":                        8200, // D28. 7908: the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
+	"docs/DIVERGENCES.md":                        8169, // the pin of b3081b51: the measured D27 reply. 8200: D28. 7908: the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
 	"docs/EXAMPLES.md":                           1025,
 	"docs/GLOSSARY.md":                           1297,
 	"docs/IMPROVEMENTS.md":                       1590,
