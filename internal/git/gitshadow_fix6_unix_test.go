@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -120,14 +121,19 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 // takes the set-group-ID bit from it. The rows to `0640` are measured rows
 // (`5fd08069`, measured on Linux). A measurement has the row `group` too.
 // The next four rows are measured on Linux. The fourth has nine values in
-// its config. The last eight rows are measured on Linux. The last one has
-// its value in `config.worktree` only. The registration is now staged, and
-// it takes the mode that git gave it in `.s<n>` (stagedEntryModes). For Q10
+// its config. The eight rows to Q10 are measured on Linux. Q10 has its
+// value in `config.worktree` only. The registration is now staged, and it
+// takes the mode that git gave it in `.s<n>` (stagedEntryModes). For Q10
 // that is 2775, where 5fd08069 gives 775 (claustrum's own, not measured on
-// be1c1ca5).
+// be1c1ca5). The last two rows are measured on macOS only. On Linux they
+// hold the modes of claustrum (claustrum's own, not measured). On macOS
+// b3081b51 gives `worktrees` the same modes in all rows, and the
+// registration the same mode with no set-group-ID bit (measured on macOS).
+// There a chmod with that bit fails in a folder whose group the user is not
+// in.
 func TestWorktreesFolderOfASharedRepository(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("the rows are Linux cells")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("the rows are Linux and macOS cells")
 	}
 	const c2Lines = "[core]\n\tsharedrepository\n\tsharedrepository =\n\tsharedrepository = yes\n\tsharedrepository = 1\n" +
 		"\tsharedrepository = 0\n\tsharedrepository = 2\n\tsharedrepository = 660\n\tsharedrepository = TRUE\n\tsharedrepository = 0777\n"
@@ -162,10 +168,23 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 		{"0771", 0o002, 0o2770, 0o2775, "", ""},
 		{"Q10", 0o002, 0o775, 0o2775, "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n",
 			"[core]\n\tsharedRepository = group\n"},
+		{"group", 0o002, 0o2775, 0o2775, "", ""},
+		{"0660", 0o002, 0o2770, 0o2775, "", ""},
 	} {
 		t.Run(row.value+" umask "+strconv.FormatInt(int64(row.umask), 8), func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			dropFixtureWorktree(t, f)
+			if runtime.GOOS == "darwin" && !userHasGroupOf(t, f.gitDir) {
+				const why = "on macOS the git directory takes the group of its parent, and the user is not in that group"
+				if os.Getenv("CI") != "" {
+					t.Fatal(why)
+				}
+				t.Skip(why)
+			}
+			registry := row.registry
+			if !stagedEntryTakesWorktreesGroup {
+				registry &^= 0o2000
+			}
 			switch {
 			case row.lines != "":
 				config := filepath.Join(f.gitDir, "config")
@@ -193,7 +212,7 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 			if raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}); !strings.Contains(raw, `"success":true`) {
 				t.Fatalf("git.worktree_create = %s", raw)
 			}
-			for name, want := range map[string]os.FileMode{worktrees: row.worktrees, filepath.Join(worktrees, "w1"): row.registry} {
+			for name, want := range map[string]os.FileMode{worktrees: row.worktrees, filepath.Join(worktrees, "w1"): registry} {
 				fi, err := os.Lstat(name)
 				if err != nil {
 					t.Fatal(err)
@@ -208,6 +227,22 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 			}
 		})
 	}
+}
+
+// userHasGroupOf reports whether the group of path is one of the groups of
+// the user.
+func userHasGroupOf(t *testing.T, path string) bool {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gid := int(fi.Sys().(*syscall.Stat_t).Gid)
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gid == os.Getegid() || slices.Contains(groups, gid)
 }
 
 // TestProbeFolderOrder: the entries of `.probe` are made in the order `refs`,

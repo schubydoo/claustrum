@@ -500,7 +500,7 @@ copy](docs/protocol/git-worktree-create.md#the-settings-copy)).
 - `<git dir>/worktrees`, made before the add, and by one `os.Root.Mkdir` in a folder that the
   staging step took the hold on. On Linux and macOS a last
   `core.sharedrepository` copy line other than `umask` sets its mode by one `os.Root.Chmod`, with the set-group-ID bit,
-  only on a folder that this call made. macOS is not measured.
+  only on a folder that this call made (`b3081b51`, measured on macOS).
 - The `.git` file of the new worktree (`writeLeafGitFile`), by one exclusive create with
   mode 0666 through a root at the leaf, which must be the folder of the checkpoint. A `.git`
   entry there refuses the create, and nothing is written through it.

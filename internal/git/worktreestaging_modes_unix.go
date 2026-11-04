@@ -25,10 +25,10 @@ const stagedModeBits = fs.ModePerm | fs.ModeSetgid | fs.ModeSticky
 //     `index` the mode 664 with that group, in a `--shared=group`
 //     repository. The staging folder takes the mode of the source folder.
 //     Where `worktrees` has the set-group-ID bit, each entry takes its group.
-//   - On macOS be1c1ca5 gives the new entry `drwxr-xr-x` and the group of
+//   - On macOS be1c1ca5 gives the group of
 //     `.git`, `HEAD` `-rw-rw-r--`, `commondir` and `gitdir` `-rw-r--r--`, and
 //     `refs` `drwxrwsr-x` (measured on macOS). The staging folder keeps the
-//     mode of its mkdir there, and no group changes.
+//     mode of its mkdir there (stagingFolderMode), and no group changes.
 //
 // A repository with no shared modes is not measured. A step that fails logs
 // one line, and the create goes on (claustrum's own).
