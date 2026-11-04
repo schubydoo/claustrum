@@ -1,0 +1,135 @@
+package git
+
+import (
+	"encoding/binary"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf16"
+)
+
+// The test of a repository path that goes through a symbolic link or a junction to
+// a network or device path. claustrum runs it on Windows only, before any git call
+// on the repository, for the baseRepo of git.status and git.worktree_create and the
+// path of git.info (measured on Windows). The test reads the entries of the path
+// only, and it starts no git.
+
+// networkLinkChecks turns the test on. It is true on Windows. The tests set it on
+// every system.
+var networkLinkChecks = gitEnvWindowsForm
+
+// readLinkTarget returns the target of the symbolic link or the junction at path,
+// as its reparse data holds it, and true. It returns false for any other entry
+// and for a read that fails (linkTarget). It is a seam for the tests.
+var readLinkTarget = linkTarget
+
+// networkLinkText names the path cleaned. The rows send clean paths with
+// backslashes, so the cleaning is claustrum's own, not measured.
+func networkLinkText(path string) string {
+	return "Claude doesn't follow `" + filepath.Clean(path) + "` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path."
+}
+
+// networkLinkRefusal is the refusal of a repository path that goes through a link
+// to a network or device path, or "". b3081b51 refuses a link to a UNC path,
+// to \\.\NUL, to a \\?\Volume{guid} path and to a
+// \\?\GLOBALROOT path, also when the link leads to a local folder. A SUBST
+// drive, a mapped drive and a UNC path with no link pass (measured on Windows).
+func networkLinkRefusal(path string) string {
+	if networkLinkChecks && throughNetworkLink(path) {
+		return networkLinkText(path)
+	}
+	return ""
+}
+
+// throughNetworkLink reports whether a name of the absolute path is a link whose
+// target leaves the local drives. The names are tested from the volume down, so
+// a name below a link is read through that link by the system. The target of a
+// local link is not followed further, and a name that cannot be read ends the
+// test with false (claustrum's own, not measured).
+func throughNetworkLink(path string) bool {
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	vol := filepath.VolumeName(p)
+	cur := vol + string(filepath.Separator)
+	for _, name := range strings.FieldsFunc(p[len(vol):], isPathSep) {
+		cur = filepath.Join(cur, name)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return false
+		}
+		if fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) == 0 {
+			continue
+		}
+		if target, ok := readLinkTarget(cur); ok && targetLeavesLocalDrive(target) {
+			return true
+		}
+	}
+	return false
+}
+
+// targetLeavesLocalDrive reports whether a link target names something other than
+// a path on a drive letter. A target in the NT form \??\ or the form \\?\ is local
+// only with a drive letter after the prefix, so UNC\, a device name, Volume{guid}
+// and GLOBALROOT are not. A target that starts with two separators is a UNC path
+// or a \\.\ device path. A relative target stays on the drive of its link. The
+// rows measure \??\UNC\, \??\NUL, \??\Volume{guid} and \??\GLOBALROOT. The other
+// forms are claustrum's own, not measured.
+func targetLeavesLocalDrive(target string) bool {
+	for _, prefix := range []string{`\??\`, `\\?\`} {
+		if strings.HasPrefix(target, prefix) {
+			return !startsWithDrive(target[len(prefix):])
+		}
+	}
+	return len(target) >= 2 && isSlash(target[0]) && isSlash(target[1])
+}
+
+// startsWithDrive reports whether s is a drive letter and a colon, alone or
+// before a separator.
+func startsWithDrive(s string) bool {
+	if len(s) < 2 || s[1] != ':' {
+		return false
+	}
+	c := s[0] | 0x20
+	return c >= 'a' && c <= 'z' && (len(s) == 2 || isSlash(s[2]))
+}
+
+func isSlash(c byte) bool { return c == '\\' || c == '/' }
+
+// The tags of the two kinds of link in the reparse data of Windows.
+const (
+	reparseTagMountPoint = 0xA0000003
+	reparseTagSymlink    = 0xA000000C
+)
+
+// reparseSubstituteName returns the substitute name of the reparse data of a
+// symbolic link or a junction, and true. Any other tag and data that is too
+// short give false. The layout is the one of FSCTL_GET_REPARSE_POINT: the tag,
+// the data length and a reserved word, then the offset and length of the
+// substitute name. A symbolic link has a flags word before its names, and a
+// junction has none.
+func reparseSubstituteName(data []byte) (string, bool) {
+	if len(data) < 16 {
+		return "", false
+	}
+	names := 16
+	switch binary.LittleEndian.Uint32(data) {
+	case reparseTagMountPoint:
+	case reparseTagSymlink:
+		names = 20
+	default:
+		return "", false
+	}
+	off := names + int(binary.LittleEndian.Uint16(data[8:]))
+	n := int(binary.LittleEndian.Uint16(data[10:]))
+	if n%2 != 0 || off+n > len(data) {
+		return "", false
+	}
+	u := make([]uint16, n/2)
+	for i := range u {
+		u[i] = binary.LittleEndian.Uint16(data[off+2*i:])
+	}
+	return string(utf16.Decode(u)), true
+}

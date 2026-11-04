@@ -287,6 +287,10 @@ component_management:
         - internal/git/gitnorepo_windows.go
         # the object sources and the chain of links of the git methods on Windows (b3081b51).
         - internal/git/objectsources.go
+        # the test of a repository path through a link to a network or device path on Windows (b3081b51).
+        - internal/git/networklink.go
+        - internal/git/networklink_unix.go
+        - internal/git/networklink_windows.go
         # the daemon's own read of a .git file, a commondir file and a gitdir record.
         - internal/git/gitplainfile_unix.go
         - internal/git/gitplainfile_windows.go

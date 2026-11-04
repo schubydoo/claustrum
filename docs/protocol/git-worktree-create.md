@@ -312,6 +312,7 @@ After a good add in the state `shadow`, a create removes old staging entries of 
     - The stale registration goes by the same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory. An entry whose record names a path that exists stays ([D27](../DIVERGENCES.md#d27)).
     - A rename of the staging folder that still fails after its retries gives `worktree_add_failed`.
     - An alternates file with Windows line endings or too many object directories gives `worktree_add_failed`, and nothing is made (from the code). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
+    - A `baseRepo` through a link to a network or device path gives `worktree_add_failed`, and no git call runs. [A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path).
 
 ## Rare states
 

@@ -211,6 +211,12 @@ func gitInfo(req *gitCall) rpc.Response {
 		if msg := statusLinkChainRefusal(p.Path); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
+		// On Windows a path through a link to a network or device path is refused
+		// before any git call on it (measured on Windows, networkLinkRefusal). Its
+		// place after the link chain test is claustrum's own, not measured.
+		if msg := networkLinkRefusal(p.Path); msg != "" {
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+		}
 	}
 	// notRepo is the "no repository" answer. It carries the settingsControl member
 	// that the request has at that moment (ShadowHost.replyControl): none in a daemon
@@ -712,6 +718,15 @@ func gitStatus(req *gitCall) rpc.Response {
 		userExcludesFile()
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// On Windows a baseRepo through a link to a network or device path is refused
+	// before any git call on it, also where the system cannot resolve it (measured
+	// on Windows, networkLinkRefusal). The text names baseRepo, not path. The row
+	// sends both through the link, so the test of baseRepo alone and its place after
+	// the link chain test are claustrum's own, not measured.
+	if msg := networkLinkRefusal(p.BaseRepo); msg != "" {
+		userExcludesFile()
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -976,6 +991,13 @@ func gitWorktreeCreate(req *gitCall) rpc.Response {
 }
 
 func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival time.Time) rpc.Response {
+	// On Windows a baseRepo through a link to a network or device path is refused
+	// first, with no git call, and the text is the error of a failed add (measured
+	// on Windows, networkLinkRefusal). No folder and no branch is made (measured on
+	// Windows).
+	if msg := networkLinkRefusal(repo); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	}
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
 	// invalid trust root, before the repo check. Measured against 7d193f89. A
 	// session worktree must be created from a real top-level repo, never from
