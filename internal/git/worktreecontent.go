@@ -110,7 +110,8 @@ func checkWorktreeContent(u gitUse, repo, leaf, commit string) *contentRefusal {
 	return nil
 }
 
-// run is the check. files are the files of the commit that it found.
+// run is the check. files are the files of the commit that it found and
+// hashed, links left out.
 func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	dir, remove, err := c.u.requestDir(shadowReadbackDirPrefix, readbackTempPrefix)
 	if err != nil {
@@ -132,36 +133,50 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
 	}
+	// A link goes on no hash-object list, and the log line counts the other
+	// files only (measured on Linux). hashed are those files.
+	var hashed []contentFile
+	for _, f := range files {
+		if f.mode != "120000" {
+			hashed = append(hashed, f)
+		}
+	}
 	// A link that leads to the top of the new worktree is refused (measured on
 	// Linux, macOS and Windows). A link to a folder outside is not.
 	for _, f := range files {
 		if f.mode == "120000" && leadsToTop(c.leaf, f.path) {
-			return files, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
+			return hashed, &contentRefusal{ErrorCode: "worktree_verify_link", hint: fmt.Sprintf(
 				"Point the link %q, or the link it leads through, at a folder inside the repository instead of its top: everything in the repository could be read through it unchecked (commit %s).",
 				f.path, c.short())}
 		}
 	}
-	ids, failed := c.worktreeIDs(files)
+	ids, failed := c.worktreeIDs(hashed)
 	if failed {
 		// A failed hash-object call whose files changed kind refuses with no
 		// cat-file blob call (measured on Linux). The log line then counts no
 		// file.
-		if r := c.changedWhileChecked(files); r != nil {
+		if r := c.changedWhileChecked(hashed); r != nil {
 			return nil, r
 		}
 	}
-	for i, f := range files {
-		if ids != nil && ids[i] == f.id {
-			continue
+	// A link goes straight to the compare (measured on Linux). n is the index
+	// of a hashed file in ids.
+	n := 0
+	for _, f := range files {
+		if f.mode != "120000" {
+			n++
+			if ids != nil && ids[n-1] == f.id {
+				continue
+			}
 		}
 		if r := c.compare(f); r != nil {
-			return files, r
+			return hashed, r
 		}
 	}
 	if r := c.otherWriter(); r != nil {
-		return files, r
+		return hashed, r
 	}
-	return files, nil
+	return hashed, nil
 }
 
 func (c *contentCheck) short() string {
@@ -339,8 +354,8 @@ func (c *contentCheck) worktreeIDs(files []contentFile) (ids []string, failed bo
 // changedWhileChecked tests each file after a failed hash-object call. A file
 // that is no longer of the kind of the commit gives the other_writer code: a
 // regular file that a link to "." replaced during that call does (measured on
-// Linux). A file that cannot be read gives the retry code. A file that is gone
-// gives the other_writer code too (claustrum's own, not measured). With no such
+// Linux). A file that cannot be read gives the retry code, and so does a file
+// that is gone, with "no such file or directory" (measured on Linux). With no such
 // file the check goes on to the compare (claustrum's own, not measured).
 func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal {
 	for _, f := range files {
@@ -349,7 +364,7 @@ func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal 
 		if err == nil {
 			link := fi.Mode()&fs.ModeSymlink != 0
 			if link != (f.mode == "120000") || (!link && !fi.Mode().IsRegular()) {
-				err = fs.ErrNotExist
+				err = errChangedKind
 			} else if !link {
 				var fh *os.File
 				if fh, err = os.Open(p); err == nil {
@@ -359,7 +374,7 @@ func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal 
 		}
 		switch {
 		case err == nil, readHeldElsewhere != nil && errors.Is(err, readHeldElsewhere):
-		case errors.Is(err, fs.ErrNotExist):
+		case errors.Is(err, errChangedKind):
 			return &contentRefusal{ErrorCode: "worktree_verify_other_writer", hint: fmt.Sprintf(
 				"Check what else writes into the folder the worktree is made in, or run \"git fsck\" in %q: %q in the new worktree isn't what commit %s has there (it changed while it was being checked).",
 				c.repo, f.path, c.short())}
@@ -369,6 +384,9 @@ func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal 
 	}
 	return nil
 }
+
+// errChangedKind marks a file that is no longer of the kind of the commit.
+var errChangedKind = errors.New("the file changed its kind")
 
 // retryRefusal is the retry code for the file f that cannot be read.
 func (c *contentCheck) retryRefusal(f contentFile, err error) *contentRefusal {
