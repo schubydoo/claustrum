@@ -644,11 +644,31 @@ func addFolders(t *testing.T, folder string) []string {
 	return names
 }
 
+// plainAddMakesRefs runs a plain `git worktree add` in a new repository and
+// reports whether git made the folder refs in the new registration.
+func plainAddMakesRefs(t *testing.T) bool {
+	t.Helper()
+	repo := filepath.Join(t.TempDir(), "control")
+	if err := os.Mkdir(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	runGit(t, repo, "worktree", "add", "-q", "-b", "c1", filepath.Join(repo, "c1"))
+	fi, err := os.Lstat(filepath.Join(repo, ".git", "worktrees", "c1", "refs"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+	return err == nil && fi.IsDir()
+}
+
 // TestWorktreeAddStaged runs the staged add with the git of the host, and pins
 // the end state:
 //
 //   - The registration is in `<git directory>/worktrees/w1` with HEAD,
-//     commondir, gitdir and the folder refs.
+//     commondir and gitdir. It holds the empty folder refs exactly when a
+//     plain `git worktree add` with the same git binary makes one in a control
+//     repository. Git 2.47 makes it. Git 2.43 did not, in a run on Linux.
 //   - The `.git` file of the new worktree has the text of worktreeGitFileText.
 //   - `.s<n>` is gone, and no staging folder is left in the git directory.
 //   - The branch is in the repository itself, and git lists the new worktree.
@@ -683,7 +703,9 @@ func TestWorktreeAddStaged(t *testing.T) {
 		"HEAD = ref: refs/heads/w1\n",
 		"commondir = ../..\n",
 		"gitdir = " + filepath.ToSlash(leaf) + "/.git\n",
-		"refs",
+	}
+	if plainAddMakesRefs(t) {
+		want = append(want, "refs")
 	}
 	if got := listTree(t, reg); !slices.Equal(got, want) {
 		t.Errorf("the registration holds %q\nwant %q", got, want)
