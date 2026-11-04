@@ -14,6 +14,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. The 
 |---|---|---|
 | `path` | no | A folder of the repository. A subfolder gives the same `root`. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
 | `shadowDirOff` | no | `true` turns off the daemon's own read of the repository's git config and its settings copy for this request. See [Turning the read off](git-rules-config.md#turning-the-read-off). |
+| `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md#the-off-switch) while the request runs. |
 
 ## Response
 
@@ -61,7 +62,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. [The rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](git-rules-trust.md#git-directory-trust-check). |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](git-rules-calls.md#refusal-texts) and [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment). |
-| `-32603` | `git cannot run on this host; git not run: …` | A config listing, the read of the test repository's config or the call about the repository failed, and then `git version` failed too. [A failed configuration listing](git-rules-trust.md#a-failed-configuration-listing), [The start test](git-rules-settings-copy.md#the-start-test) and [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, a call of the start test or the call about the repository failed, and then `git version` failed too. [A failed configuration listing](git-rules-trust.md#a-failed-configuration-listing), [The start test](git-rules-settings-copy.md#the-start-test) and [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. [Repository config refusals](git-rules-config.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](git-rules-settings-copy.md#the-start-test). |
 | `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
@@ -127,6 +128,7 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 - Before a start test of the daemon gave a state, the member is absent. So the first `git.info` of a daemon on a path that does not exist has no member (measured on Linux).
 - After a start test that passed, the "no repository" body has the member too (measured on Linux).
 - A request with `"shadowDirOff":true` gets `"off-switch"`, also as the first request of a daemon (measured on Linux).
+- On Windows and macOS a repository answer to a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member (`b3081b51`, measured on Windows and macOS).
 - An error reply has no member.
 
 The section [The states and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.

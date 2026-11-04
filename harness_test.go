@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/git"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // updateGolden regenerates the testdata/*.golden.json fixtures from the live
@@ -110,6 +111,8 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 // startSocketServer is newRunningServer for tests that only need the socket path.
 func startSocketServer(t *testing.T) string {
 	t.Helper()
+	// A fresh store of session folders, so that no folder of one test reaches another.
+	t.Cleanup(sessiondirs.UseForTest(""))
 	_, sock := newRunningServer(t)
 	return sock
 }

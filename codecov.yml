@@ -275,6 +275,8 @@ component_management:
         - internal/git/gitchildenv_other.go
         - internal/git/gitchildenv_unix.go
         - internal/git/gitchildenv_windows.go
+        # the start of each git call, with a git in a session folder passed over.
+        - internal/git/gitcommand.go
         - internal/git/gitoutsidecalls.go
         # the git-directory trust check every git.* method runs first (f6010b97).
         - internal/git/gitdirtrust.go
@@ -330,6 +332,14 @@ component_management:
         # folder cannot take a file is not handed on (Linux and macOS).
         - tempfolder_unix.go
         - tempfolder_windows.go
+        # the session folders: the record and its prune, the git skip, the PATH cut.
+        - sessionfolders.go
+        - internal/sessiondirs/sessiondirs.go
+        - internal/sessiondirs/sessiondirs_unix.go
+        - internal/sessiondirs/sessiondirs_windows.go
+        - internal/sessiondirs/fortest.go
+        - internal/sessiondirs/sessiondirs_darwin.go
+        - internal/sessiondirs/sessiondirs_linuxother.go
         # 52d82f0a farewell of process.kill and process.killAndWait: the member rules,
         # the stdin write and the grace before the signal.
         - farewell.go

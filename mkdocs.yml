@@ -122,6 +122,7 @@ nav:
                   - Config refusals: protocol/git-rules-config.md
                   - The settings copy: protocol/git-rules-settings-copy.md
                   - Hardened git calls and time limits: protocol/git-rules-calls.md
+                  - Session folders: protocol/git-rules-session-folders.md
           - launcher.resolve (managed launcher): protocol/launcher-resolve.md
           - Process:
               - process.spawn (start): protocol/process-spawn.md

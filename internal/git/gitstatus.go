@@ -146,7 +146,7 @@ func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
 			return c.refusal
 		}
 	}
-	cmd := exec.Command("git", hardenedProfileArgs(true, "rev-parse", "--absolute-git-dir")...)
+	cmd := gitCommand(hardenedProfileArgs(true, "rev-parse", "--absolute-git-dir")...)
 	cmd.Dir = baseRepo
 	cmd.Env = hardenedGitEnv(true, pin, r.hooks())
 	_ = gitRun(ctx, cmd)
@@ -310,7 +310,7 @@ func statusWorkTreeProbe(s *gitStop, common, workTree string, pin, front []strin
 	if l.err != nil {
 		return "", false, statusRefusal(failedListingText(gitUse{stop: s}, l, true))
 	}
-	cmd := exec.Command("git", withFront(front, hardenedProfileArgs(true,
+	cmd := gitCommand(withFront(front, hardenedProfileArgs(true,
 		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = common
 	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
@@ -951,7 +951,7 @@ func (r *statusRun) emptyTree() string {
 	r.at()
 	r.form.renewCopy()
 	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
-	cmd := exec.Command("git", withFront(r.front, hardenedProfileArgs(true,
+	cmd := gitCommand(withFront(r.front, hardenedProfileArgs(true,
 		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull))...)
 	cmd.Env = hardenedGitEnv(true, r.commonPin, hooks)
 	out, err := gitOutput(r.ctx, cmd)
@@ -1031,7 +1031,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	}
 	full := withFront(front, append(attr, profileArgsWithExcludes(true, excludes,
 		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...))
-	cmd := exec.Command("git", full...)
+	cmd := gitCommand(full...)
 	cmd.Dir = r.path
 	cmd.Env = hardenedGitEnv(true, r.pin, l.hooks())
 	if noLocks {

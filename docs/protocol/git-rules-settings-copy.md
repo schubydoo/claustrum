@@ -85,7 +85,10 @@ worktree: could not check whether <worktreePath> is locked: `, with no `errorCod
 A failed read of the test repository's config is followed by one `git version` call. If it fails
 too, the text is `git cannot run on this host; git not run: <exec error>: <git text>`
 alone, in the same frames. The exec error and the text are those of `git version`. A
-remove deletes nothing there (Linux, macOS and Windows).
+remove deletes nothing there (Linux, macOS and Windows). The same holds for a failed
+call that makes the test repository: if the first `git version` fails too, that text is
+the answer, and the second `version` call does not run (`b3081b51`, measured on Linux,
+claustrum's own on macOS and Windows).
 
 | `<cause>` | When |
 |---|---|

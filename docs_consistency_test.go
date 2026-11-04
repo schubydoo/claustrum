@@ -634,48 +634,49 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                6225, // the rollback after the content check of b3081b51. 6163: the shutdown sweep of b3081b51, D28 and the heading of the caps. 6060: the .git file gone after the checkout of be1c1ca5. 6018: the staged add of be1c1ca5. 5794: the signals at a long root, measured. 5792: the approval of the long-path dials. 5767: the long-path dials of the host cleaner and plugins.prune. 5722: the daemon dial of a long socket path. 5706: the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
-	"CONTRIBUTING.md":                          1071,
-	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
-	"SECURITY.md":                              1609, // the ssh door of be1c1ca5. 1553 before
-	"docs/ARCHITECTURE.md":                     2682, // gitsshdoor.go. 2674: socketroute*.go. 2673: the sweep on Linux and macOS of be1c1ca5. 2667 before
-	"docs/DAEMON.md":                           8150, // the cleanup word of b3081b51. 8137: the signals at a long root, measured. 8115: the not-measured parts of a long run root. 8090: the long run root of the host cleaner. 7940: the long socket path. 7616: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
-	"docs/DIVERGENCES.md":                      8200, // D28. 7908: the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
-	"docs/EXAMPLES.md":                         1025,
-	"docs/GLOSSARY.md":                         1297,
-	"docs/IMPROVEMENTS.md":                     1590,
-	"docs/INSTALL.md":                          5585, // the measured no-fallback rule for an ldd that cannot run. 5573: the measured /bin/ldd fallback of b3081b51. 5568: the not-measured /bin/ldd mark of b3081b51. 5560: the fixed ldd path and environment of b3081b51. 5539: the blob guard of the new prunes. 5531: the measured rows of the prune. 5508: the prune before the fetch of -install. 5307: page rewrite
-	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: one sentence on the close line. one sentence on a failed write. the error texts, stream frames and flags moved to their own pages
-	"docs/STYLE.md":                            1293, // the page rewrite
-	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6404, // the content check of b3081b51 and its commit-id call. 6312: the D28 row. 6285: the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
-	"docs/index.md":                            316,  // the reader router
-	"docs/protocol/errors.md":                  1912, // the .probe text, 41 words of a new row
-	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
-	"docs/protocol/files-list.md":              468,  // the network links of 683cc6a9
-	"docs/protocol/files-read.md":              825,
-	"docs/protocol/files-stat.md":              434, // the page rewrite
-	"docs/protocol/files-validate.md":          365,
-	"docs/protocol/flags.md":                   2639, // the prune after a good install. 2633: moved from PROTOCOL.md
-	"docs/protocol/git-info.md":                1905, // the link chain row of its own (Linux and macOS run no link test). 1889: the link chain of git.info, b3081b51. 1881: the alternates row of b3081b51. 1850: the page rewrite
-	"docs/protocol/git-rules-calls.md":         5513, // the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
-	"docs/protocol/git-rules-config.md":        2884, // moved from PROTOCOL.md
-	"docs/protocol/git-rules-settings-copy.md": 3321, // the .readback-objects-<n> entry of b3081b51 and a heading. 3300: the third run of the call about the repository. the folder .probe, new rules
-	"docs/protocol/git-rules-trust.md":         5254, // the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
-	"docs/protocol/git-list-branches.md":       997,  // the page rewrite
-	"docs/protocol/git-status.md":              3255, // the lfs.storage item of b3081b51. 3185: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     9949, // the Windows rules of the content check (held file, link counts, undo text). 9820: the commit-id call of the content check. 9734: the links and the gone file of the content check. 9694: the content check, its changed-file row and the branch note of b3081b51. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
-	"docs/protocol/git-worktree-remove.md":     4405, // macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
-	"docs/protocol/launcher-resolve.md":        1834, // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
-	"docs/protocol/plugins-prune.md":           1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
-	"docs/protocol/process-kill.md":            931,  // the page template
-	"docs/protocol/process-killandwait.md":     977,  // the page template
-	"docs/protocol/process-link-bound.md":      740,
-	"docs/protocol/process-reattach.md":        1046, // attach, fresh and proof
-	"docs/protocol/process-spawn.md":           3508, // the temp-folder test of 683cc6a9. 3474: rewrite to the page template
-	"docs/protocol/process-stdin.md":           929,  // attach
-	"docs/protocol/server.md":                  1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
-	"docs/protocol/streams.md":                 584,  // moved from PROTOCOL.md
+	"AGENTS.md":                                  6419, // the rollback after the content check of b3081b51. 6398: the gone worktree of the Windows remove, b3081b51. 6197: the alternates refusal of a Windows remove, b3081b51. 6163: the shutdown sweep of b3081b51, D28 and the heading of the caps. 6060: the .git file gone after the checkout of be1c1ca5. 6018: the staged add of be1c1ca5. 5794: the signals at a long root, measured. 5792: the approval of the long-path dials. 5767: the long-path dials of the host cleaner and plugins.prune. 5722: the daemon dial of a long socket path. 5706: the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"CONTRIBUTING.md":                            1071,
+	"README.md":                                  1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
+	"SECURITY.md":                                1609, // the ssh door of be1c1ca5. 1553 before
+	"docs/ARCHITECTURE.md":                       2682, // gitsshdoor.go. 2674: socketroute*.go. 2673: the sweep on Linux and macOS of be1c1ca5. 2667 before
+	"docs/DAEMON.md":                             8150, // the cleanup word of b3081b51. 8137: the signals at a long root, measured. 8115: the not-measured parts of a long run root. 8090: the long run root of the host cleaner. 7940: the long socket path. 7616: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
+	"docs/DIVERGENCES.md":                        8200, // D28. 7908: the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
+	"docs/EXAMPLES.md":                           1025,
+	"docs/GLOSSARY.md":                           1297,
+	"docs/IMPROVEMENTS.md":                       1590,
+	"docs/INSTALL.md":                            5585, // the measured no-fallback rule for an ldd that cannot run. 5573: the measured /bin/ldd fallback of b3081b51. 5568: the not-measured /bin/ldd mark of b3081b51. 5560: the fixed ldd path and environment of b3081b51. 5539: the blob guard of the new prunes. 5531: the measured rows of the prune. 5508: the prune before the fetch of -install. 5307: page rewrite
+	"docs/PROTOCOL.md":                           2835, // the files.realpath row and count. 2826: one sentence on the close line. one sentence on a failed write. the error texts, stream frames and flags moved to their own pages
+	"docs/STYLE.md":                              1293, // the page rewrite
+	"docs/TOUR.md":                               850,  // a new page: its word count plus about 200
+	"docs/UPSTREAM-TRACKING.md":                  6404, // the content check of b3081b51 and its commit-id call. 6335: the junction item of b3081b51. 6312: the D28 row. 6285: the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
+	"docs/index.md":                              316,  // the reader router
+	"docs/protocol/errors.md":                    1957, // the .probe text, 41 words of a new row
+	"docs/protocol/files-extract-tar.md":         2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
+	"docs/protocol/files-list.md":                468,  // the network links of 683cc6a9
+	"docs/protocol/files-read.md":                825,
+	"docs/protocol/files-stat.md":                434, // the page rewrite
+	"docs/protocol/files-validate.md":            365,
+	"docs/protocol/flags.md":                     2639, // the prune after a good install. 2633: moved from PROTOCOL.md
+	"docs/protocol/git-info.md":                  1947, // the link chain row of its own (Linux and macOS run no link test). 1889: the link chain of git.info, b3081b51. 1881: the alternates row of b3081b51. 1850: the page rewrite
+	"docs/protocol/git-rules-calls.md":           5535, // the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
+	"docs/protocol/git-rules-config.md":          2884, // moved from PROTOCOL.md
+	"docs/protocol/git-rules-settings-copy.md":   3363, // the .readback-objects-<n> entry of b3081b51 and a heading. 3340: the start-test cannot-run rule of b3081b51. 3300: the third run of the call about the repository. the folder .probe, new rules
+	"docs/protocol/git-rules-trust.md":           5254, // the gone worktree and the link test of git.info, b3081b51. 5207: the object sources on Windows of b3081b51. 4642: the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
+	"docs/protocol/git-list-branches.md":         995,  // the page rewrite
+	"docs/protocol/git-status.md":                3254, // the lfs.storage item of b3081b51. 3204: the object sources line of b3081b51. 3185: a move between pages, net down in the same PR
+	"docs/protocol/git-worktree-create.md":       9953, // the content check of b3081b51. 8843: the alternates line of b3081b51. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
+	"docs/protocol/git-worktree-remove.md":       4422, // the gone worktree of b3081b51. 4398: the alternates line of b3081b51. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
+	"docs/protocol/launcher-resolve.md":          1834, // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
+	"docs/protocol/plugins-prune.md":             1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
+	"docs/protocol/process-kill.md":              931,  // the page template
+	"docs/protocol/process-killandwait.md":       977,  // the page template
+	"docs/protocol/process-link-bound.md":        740,
+	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
+	"docs/protocol/process-spawn.md":             3615, // the temp-folder test of 683cc6a9. 3474: rewrite to the page template
+	"docs/protocol/process-stdin.md":             929,  // attach
+	"docs/protocol/server.md":                    1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
+	"docs/protocol/streams.md":                   584,  // moved from PROTOCOL.md
+	"docs/protocol/git-rules-session-folders.md": 1335, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 }
 
 // The limits of a document that docWordLimits does not name.

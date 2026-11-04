@@ -62,6 +62,8 @@ modes and the OS splits is in
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
 | `internal/git/gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` | the deletes in the folder `git-shadow` |
 | `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
+| `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
+| `internal/git/gitcommand.go` | the start of every git call, which passes over a git in a session folder |
 
 Every OS serves the same JSON-RPC methods.
 
@@ -388,6 +390,22 @@ entry stays.
 On Linux and macOS the root removes the link `worktrees` of a repository folder and not its
 target (`TestShadowFolderRemovalLeavesLinkTargets`). A new copy is a temp file plus one `os.Root.Rename` in the folder. With `"shadowDirOff":true` the
 short-lived folders are `os.MkdirTemp` folders, and each goes with `os.RemoveAll`.
+
+### The `session-folders` folder
+
+The record of [session folders](docs/protocol/git-rules-session-folders.md) is a
+further delete site, and it is socket-derived like `plugins.prune`. Its folder is
+`<root>/session-folders` for the socket `<root>/run/<client>/rpc.sock`. Each delete is
+one plain `os.Root.Remove` by name, through a root at that one folder
+(`internal/sessiondirs/sessiondirs.go`), so an empty folder swapped in can go too. The
+root must be the real folder at that path, never a link. The sites are the temp file
+`.new-<pid>-<ns>` of a failed write, and the prune of the records with the lowest ms
+field above 2048 (`b3081b51`, measured on Linux, macOS and Windows). A prune name comes
+from a directory read of that folder, matches 32 hex digits and is a regular file that
+holds a record. The `os.Root.Rename` of a write replaces a file at the record name.
+
+Never widen: Never make either remove a tree delete. Never build the name of a remove
+there from a request value, a path or a link target.
 
 ### The extract marker step
 

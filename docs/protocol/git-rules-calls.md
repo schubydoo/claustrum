@@ -111,7 +111,9 @@ inside a value pins nothing. The call gets `hook.enabled=false` and an empty
 
 This section names the variables of the daemon's own environment that reach the
 git calls, and their refusals. A rule
-here holds on Linux, macOS and Windows, unless it names fewer systems.
+here holds on Linux, macOS and Windows, unless it names fewer systems. A git in a
+[session folder](git-rules-session-folders.md) does not run, unless the request turns
+the check off.
 
 ### Variables that the git calls keep or drop
 
@@ -141,7 +143,8 @@ The repository calls are the configuration listings, the hardened calls,
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
       relative path. `SSH_SK_PROVIDER` also needs `internal` or an absolute path on
       macOS and Windows.
-    - Every other entry stays, except the entries named below.
+    - Every other entry stays, except the entries named below and the cuts of
+      [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child).
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The read of config text keeps them
   (claustrum's own, not measured). The names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.

@@ -114,7 +114,7 @@ type sshDoorSettings struct {
 // limit stopped gives that stop to the caller (gitStop.halted). The last value
 // of each key counts, as in git (not measured).
 func readSSHDoorSettings(u gitUse, leaf, gitDir string, env []string) (sshDoorSettings, string) {
-	cmd := exec.Command("git", "--git-dir="+gitDir, "config", "-z", "--get-regexp", sshDoorRegexp)
+	cmd := gitCommand("--git-dir="+gitDir, "config", "-z", "--get-regexp", sshDoorRegexp)
 	cmd.Dir = leaf
 	cmd.Env = env
 	var out bytes.Buffer
