@@ -98,9 +98,22 @@ type ShutdownResult struct {
 // daemon token (epoch seconds), not an OS-comparable start time — see
 // managedProc.startTime.
 type SpawnResult struct {
-	Success   bool    `json:"success"`
-	Pid       int     `json:"pid,omitempty"`
-	StartTime float64 `json:"startTime,omitempty"`
+	Success bool `json:"success"`
+	// CLITempRoot answers a spawn with "cliTempRoot":true on Linux (b3081b51). It is
+	// nil when the daemon has nothing to say, so the frame stays {"success":true}.
+	// Its place before the CT-1 members is claustrum's own.
+	CLITempRoot *CLITempRoot `json:"cliTempRoot,omitempty"`
+	Pid         int          `json:"pid,omitempty"`
+	StartTime   float64      `json:"startTime,omitempty"`
+}
+
+// CLITempRoot is the cliTempRoot member of a spawn reply. Refused names the kind of
+// the unfit claude-<uid> entry. Name is the private folder that the child got, and
+// WhyNot says why no folder was given. Name and WhyNot never come together.
+type CLITempRoot struct {
+	Refused string `json:"refused,omitempty"`
+	Name    string `json:"name,omitempty"`
+	WhyNot  string `json:"whyNot,omitempty"`
 }
 
 type GitInfoResult struct {

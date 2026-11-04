@@ -61,6 +61,10 @@ type spawnParams struct {
 	// only for the refusal below, and a value other than true counts as absent.
 	LinkBound *linkBoundParams   `json:"linkBound"`
 	Pty       rpc.JSONTrueSwitch `json:"pty"`
+	// CLITempRoot asks for the private temp folder step (clitemproot_linux.go). On
+	// macOS and Windows it changes nothing (b3081b51, measured with true, false and
+	// absent). Any other value counts as absent (claustrum's own, not measured).
+	CLITempRoot rpc.JSONTrueSwitch `json:"cliTempRoot"`
 }
 
 func (s *server) processSpawn(c *conn, req *request) rpc.Response {
@@ -87,7 +91,7 @@ func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 		}
 		linkTTL = unattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
-	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL)
+	mp, err := s.procs.spawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot))
 	if errors.Is(err, errStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
 		return rpc.Response{NoFrame: true}
@@ -105,7 +109,7 @@ func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 	if !sessiondirs.OffSwitchSet(req.Params) {
 		sessiondirs.Remember(sessionFoldersOf(p.Command, p.Args, p.Cwd)...)
 	}
-	res := rpc.SpawnResult{Success: true}
+	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.cliTempRoot}
 	if p.WantPid {
 		res.Pid = mp.pid
 		res.StartTime = mp.startTime

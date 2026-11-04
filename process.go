@@ -17,6 +17,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/install"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/metrics"
+	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
@@ -223,6 +224,11 @@ type managedProc struct {
 	link       *conn
 	detachedAt time.Time
 	onExit     func()
+
+	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
+	// releaseTemp gives that folder back after the exit frame (clitemproot_linux.go).
+	cliTempRoot *rpc.CLITempRoot
+	releaseTemp func()
 }
 
 type procManager struct {
@@ -726,6 +732,13 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 // launcher is then the process, and its stream frames are its own. A linkTTL above
 // 0 makes a link-bound process with that unattended time (linkbound.go).
 func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*managedProc, error) {
+	return m.spawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, false)
+}
+
+// spawnWithTempRoot is spawnVia with the cliTempRoot param of process.spawn. When
+// tempRoot is true, the step of clitemproot_linux.go runs after the env is built,
+// and the process keeps its answer in cliTempRoot.
+func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool) (*managedProc, error) {
 	path, argv := command, args
 	if launcher != nil {
 		if err := refuseManagedLauncher(*launcher, command); err != nil {
@@ -828,6 +841,20 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 			return nil, err
 		}
 	}
+	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_linux.go).
+	// A spawn that does not keep its child gives the folder back. The place after
+	// the command tests is claustrum's own, not measured.
+	var tempAnswer *rpc.CLITempRoot
+	releaseTemp := func() {}
+	if tempRoot {
+		cmd.Env, tempAnswer, releaseTemp = privateTempRoot(cmd.Env, m.runDir)
+	}
+	keptTemp := false
+	defer func() {
+		if !keptTemp {
+			releaseTemp()
+		}
+	}()
 	cmd.SysProcAttr = spawnSysProcAttr(m.jobs)
 	// Launch through the exec-child trampoline, on every socket shape, so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
@@ -1037,6 +1064,9 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		group:      group,
 		done:       make(chan struct{}),
 		recordDone: make(chan struct{}),
+
+		cliTempRoot: tempAnswer,
+		releaseTemp: releaseTemp,
 	}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c
@@ -1099,6 +1129,8 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	wg.Add(2)
 	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
 	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
+	// From here the exit of the child gives the folder back.
+	keptTemp = true
 	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
 	return p, nil
 }
@@ -1189,6 +1221,9 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
 		p.onExit()
+	}
+	if p.releaseTemp != nil {
+		p.releaseTemp()
 	}
 	// Signal any killAndWait waiter now the child is fully reaped.
 	close(p.done)
