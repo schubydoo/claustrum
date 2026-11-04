@@ -100,3 +100,23 @@ func TestSpawnCLITempRootStartFailureGivesItBack(t *testing.T) {
 		t.Errorf("folders %v, want one", got)
 	}
 }
+
+// A launched spawn skips the step: the reply has no member, no folder is made and
+// the child gets no CLAUDE_CODE_TMPDIR.
+func TestSpawnCLITempRootSkipsALauncher(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, _ := tempRootDir(t, true)
+	wrap, exe := wrapLauncherFixture(t)
+	_, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "wrap", "CLAUSTRUM_TEST_WRAP_NEXT": "environ", "TMPDIR": x}
+	raw := cl.call(launchedSpawnReq(t, map[string]any{"id": "l1", "command": exe, "env": env, "launcher": []string{wrap}, "cliTempRoot": true}))
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; string(raw) != want {
+		t.Fatalf("reply %s, want %s", raw, want)
+	}
+	out := streamBytes(t, cl.waitExit("l1"), "stdout")
+	if !strings.Contains(out, "TMPDIR="+x+"\n") || strings.Contains(out, "CLAUDE_CODE_TMPDIR=") || len(ccdFolders(t, x)) != 0 {
+		t.Errorf("child env %q, folders %v, want TMPDIR alone and no folder", out, ccdFolders(t, x))
+	}
+}

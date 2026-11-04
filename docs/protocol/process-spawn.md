@@ -125,8 +125,10 @@ On Linux and macOS a daemon value of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` or `T
 
 ### The private temp folder (build `b3081b51`)
 
-On Linux a spawn with `"cliTempRoot": true` tests the entry `claude-<uid>` in the `TMPDIR` of the child. These rules are measured on Linux:
+On Linux a spawn with `"cliTempRoot": true` tests the entry `claude-<uid>` in the temp dir of the child. These rules are measured on Linux:
 
+- The temp dir is the first value that is not empty of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` and `TEMP` in the env of the child. `CLAUDE_CODE_TMPDIR` comes before `TMPDIR`, an empty `TMPDIR` goes on to `TMP`, and `TMP` or `TEMP` alone is taken.
+- A temp dir that does not exist or a relative `TMPDIR` gives no member. So does a spawn with a `launcher`.
 - With no entry, or an own folder of mode 0700 or 0755, the result has no member and the child gets nothing.
 - An unfit entry gives `refused`: `a link`, `not a folder`, `another account's`, `on another file system` or `not readable by its owner`. The entry stays.
 - The child then gets `CLAUDE_CODE_TMPDIR=<temp dir>/ccd-<12 hex>`, an own folder of mode 0700, and the result names it.
@@ -145,6 +147,7 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 | `the temp dir or a folder above it could not be opened for reading` | A temp dir of mode 0333. This test comes first, so `refused` is absent and no line is logged. |
 | `the temp dir or a folder above it belongs to, or can be written by, another account` | A temp dir of mode 0777. `/tmp` passes. |
 | `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | 8 live spawns have a folder. |
+| `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. A folder that the step makes later stays. `refused` is absent. |
 | `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
 
 In the last case the daemon removes that one new name by one `rmdir` through a handle of the temp dir. A link at the name stays, and the text still says `removed`.
@@ -160,7 +163,9 @@ The run dir holds `cli-temp-root-<16 hex>`, mode 0600, with the folder name and 
 claustrum's own, not measured:
 
 - Random 12 hex, an age bound of 24 h, and the order of the `refused` tests.
-- A missing `TMPDIR` gives `/tmp`. A relative one gives no member, and a folder that does not exist gives the first `whyNot`.
+- The rest of the order of the four names. With none of them set, the temp dir is `/tmp`. A relative value of `CLAUDE_CODE_TMPDIR`, `TMP` or `TEMP` gives no member too, and the next name is not tried.
+- The limit is 2 s. After it the step goes on, writes no record and holds no folder. The limit also covers the wait for the step of another spawn, so a spawn can get this text for a temp dir that answers.
+- The reply of the time limit logs no line. A late step can log the refuse line of its own `whyNot`.
 - An entry that cannot be read gives no member. So does a failed mkdir, with no log line.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
 - The owner test of the new folder.

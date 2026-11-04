@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,7 +39,14 @@ const (
 	tempRootOther   = "the temp dir or a folder above it belongs to, or can be written by, another account"
 	tempRootTooMany = "too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute"
 	tempRootRemoved = "the new folder was not this account's own with mode 0700, and was removed"
+	tempRootNoReply = "the temp dir did not answer in time"
 )
+
+// tempRootLimit is the time that the step gets for its answer. After it the reply
+// says tempRootNoReply and the child gets the env as it was. On a stuck NFS mount
+// b3081b51 answered after about 2.1 s (measured on Linux). The bound of 2 s is
+// claustrum's own. A variable for the tests.
+var tempRootLimit = 2 * time.Second
 
 // tempRootLiveCap is the count of live spawns with a private folder. The next spawn
 // gets tempRootTooMany (measured on Linux). The count is of this daemon, and a spawn
@@ -87,21 +95,89 @@ var tempRoots = struct {
 	live int
 }{held: map[string]*heldTempRoot{}}
 
+// tempRootLate decides between the answer of the step and the time limit. A file
+// call that a stuck mount holds cannot be stopped, so the step goes on after the
+// limit. The step keeps its folder only if keep comes before giveUp.
+type tempRootLate struct {
+	mu           sync.Mutex
+	gaveUp, kept bool
+}
+
+func (l *tempRootLate) keep() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.kept = !l.gaveUp
+	return l.kept
+}
+
+func (l *tempRootLate) giveUp() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.gaveUp = !l.kept
+	return l.gaveUp
+}
+
 // privateTempRoot runs the step for the env of one child. It returns the env, the
 // member of the reply (nil for none) and the function that gives the folder back.
+// The step runs in its own goroutine on a copy of the env. After tempRootLimit the
+// spawn goes on with the env as it was. A folder that a late step made stays, with
+// no registry write and no hold (b3081b51, measured on Linux). A late step closes
+// a folder that it took (claustrum's own, not measured).
 func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, func()) {
-	none := func() {}
-	dir := tempEnvValue(env, "TMPDIR")
-	if dir == "" {
-		dir = "/tmp"
+	type answer struct {
+		env     []string
+		res     *rpc.CLITempRoot
+		release func()
 	}
+	late := &tempRootLate{}
+	done := make(chan answer, 1)
+	in := slices.Clone(env)
+	go func() {
+		e, r, rel := tempRootStep(in, runDir, late)
+		done <- answer{e, r, rel}
+	}()
+	t := time.NewTimer(tempRootLimit)
+	defer t.Stop()
+	select {
+	case a := <-done:
+		return a.env, a.res, a.release
+	case <-t.C:
+	}
+	if late.giveUp() {
+		return env, &rpc.CLITempRoot{WhyNot: tempRootNoReply}, func() {}
+	}
+	a := <-done // the step kept its folder right before the limit
+	return a.env, a.res, a.release
+}
+
+// childTempDir is the temp dir of the child: the first value that is not empty of
+// CLAUDE_CODE_TMPDIR, TMPDIR, TMP and TEMP, or /tmp. Measured on Linux:
+// CLAUDE_CODE_TMPDIR comes before TMPDIR, an empty TMPDIR goes on to TMP, and TMP
+// or TEMP alone is taken. The rest of the order and /tmp are claustrum's own, not
+// measured.
+func childTempDir(env []string) string {
+	for _, k := range []string{"CLAUDE_CODE_TMPDIR", "TMPDIR", "TMP", "TEMP"} {
+		if v := tempEnvValue(env, k); v != "" {
+			return v
+		}
+	}
+	return "/tmp"
+}
+
+func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *rpc.CLITempRoot, func()) {
+	none := func() {}
+	dir := childTempDir(env)
 	if !filepath.IsAbs(dir) {
-		return env, nil, none // claustrum's own, not measured
+		return env, nil, none // measured on Linux for TMPDIR
 	}
 	uid := tempRootUID()
-	// A temp dir that does not exist gets the text of a folder that cannot be opened
-	// (claustrum's own, not measured).
-	x, otherAccount, ok := openTempDirChain(dir, uid)
+	// A temp dir that does not exist gives no member (measured on Linux). Another
+	// failed open gives the text of a folder that cannot be opened (claustrum's own,
+	// not measured).
+	x, otherAccount, missing, ok := openTempDirChain(dir, uid)
+	if missing {
+		return env, nil, none
+	}
 	if !ok {
 		return env, &rpc.CLITempRoot{WhyNot: tempRootNoOpen}, none
 	}
@@ -139,7 +215,8 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 		}
 	}
 	reg := tempRootRegistryName(dir)
-	h, name := reuseTempRoot(xfd, dir, root, reg, uid)
+	h, name, fresh := reuseTempRoot(xfd, dir, root, reg, uid)
+	made := false
 	if h == nil {
 		var removed bool
 		h, name, removed = makeTempRoot(xfd, dir, uid)
@@ -149,10 +226,20 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 		if h == nil {
 			return env, nil, none // the mkdir failed (claustrum's own, not measured)
 		}
-		if root != nil {
-			writeTempRootRegistry(root, reg, name)
-		}
 		holdTempRoot(h.f)
+		fresh, made = true, true
+	}
+	if !late.keep() {
+		// The limit came first. The child got the env as it was.
+		if fresh {
+			_ = h.f.Close()
+		}
+		return env, nil, none
+	}
+	if made && root != nil {
+		writeTempRootRegistry(root, reg, name)
+	}
+	if fresh {
 		tempRoots.held[filepath.Join(dir, name)] = h
 		go refreshTempRoot(h, tempRootRefresh)
 	}
@@ -190,33 +277,34 @@ func tempEnvValue(env []string, key string) string {
 }
 
 // openTempDirChain opens the temp dir and each folder above it for reading. ok is
-// false when one of them cannot be opened. otherAccount is true when one of them
+// false when one of them cannot be opened. missing is true when the links of the
+// path do not resolve because a name does not exist. otherAccount is true when one of them
 // belongs to an account other than uid and root, or when group or others can
 // write it without the sticky bit. Measured on Linux: a 0777 temp dir is refused
 // and /tmp passes. The group bit, a sticky temp dir and the links of the path,
 // which are resolved first, are claustrum's own, not measured. The caller closes x.
-func openTempDirChain(dir string, uid int) (x *os.File, otherAccount, ok bool) {
+func openTempDirChain(dir string, uid int) (x *os.File, otherAccount, missing, ok bool) {
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return nil, false, false
+		return nil, false, errors.Is(err, os.ErrNotExist), false
 	}
 	p := "/"
 	rest := strings.Split(strings.TrimPrefix(filepath.Clean(real), "/"), "/")
 	for i := 0; ; i++ {
 		f, err := os.Open(p)
 		if err != nil {
-			return nil, false, false
+			return nil, false, false, false
 		}
 		var st unix.Stat_t
 		if err := unix.Fstat(int(f.Fd()), &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFDIR {
 			_ = f.Close()
-			return nil, false, false
+			return nil, false, false, false
 		}
 		if (int(st.Uid) != uid && st.Uid != 0) || (st.Mode&0o022 != 0 && st.Mode&unix.S_ISVTX == 0) {
 			otherAccount = true
 		}
 		if i == len(rest) || rest[0] == "" {
-			return f, otherAccount, true
+			return f, otherAccount, false, true
 		}
 		_ = f.Close()
 		p = filepath.Join(p, rest[i])
@@ -255,44 +343,42 @@ func tempRootRegistryName(dir string) string {
 
 // reuseTempRoot returns the folder that the registry names when the daemon can take
 // it: one that this daemon holds already, or an own 0700 folder younger than
-// tempRootMaxAge that no other process holds (measured on Linux). The caller holds
-// tempRoots.mu.
-func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int) (*heldTempRoot, string) {
+// tempRootMaxAge that no other process holds (measured on Linux). fresh is true for
+// a folder that this daemon did not hold yet: the caller adds it to tempRoots.held
+// or closes it. The caller holds tempRoots.mu.
+func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int) (h *heldTempRoot, name string, fresh bool) {
 	if root == nil {
-		return nil, ""
+		return nil, "", false
 	}
 	b, err := root.ReadFile(reg)
-	name := string(b)
+	name = string(b)
 	if err != nil || !tempRootNameRE.MatchString(name) {
-		return nil, ""
+		return nil, "", false
 	}
 	var st unix.Stat_t
 	if err := unix.Fstatat(xfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return nil, ""
+		return nil, "", false
 	}
 	if h := tempRoots.held[filepath.Join(dir, name)]; h != nil {
 		if h.dev != st.Dev || h.ino != st.Ino {
-			return nil, "" // the name is no longer the held folder (claustrum's own)
+			return nil, "", false // the name is no longer the held folder (claustrum's own)
 		}
 		holdTempRoot(h.f)
-		return h, name
+		return h, name, false
 	}
 	f, ok := openTempRoot(xfd, name, uid)
 	if !ok {
-		return nil, ""
+		return nil, "", false
 	}
 	fd := int(f.Fd())
 	var fst unix.Stat_t
 	if unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB) != nil || unix.Fstat(fd, &fst) != nil ||
 		time.Since(time.Unix(fst.Mtim.Unix())) >= tempRootMaxAge {
 		_ = f.Close()
-		return nil, ""
+		return nil, "", false
 	}
-	h := &heldTempRoot{f: f, dev: fst.Dev, ino: fst.Ino, stop: make(chan struct{})}
 	holdTempRoot(f)
-	tempRoots.held[filepath.Join(dir, name)] = h
-	go refreshTempRoot(h, tempRootRefresh)
-	return h, name
+	return &heldTempRoot{f: f, dev: fst.Dev, ino: fst.Ino, stop: make(chan struct{})}, name, true
 }
 
 // openTempRoot opens the folder name of the temp dir with no link followed. ok is

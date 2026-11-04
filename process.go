@@ -842,11 +842,12 @@ func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []stri
 		}
 	}
 	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_linux.go).
-	// A spawn that does not keep its child gives the folder back. The place after
-	// the command tests is claustrum's own, not measured.
+	// A spawn that does not keep its child gives the folder back. A launched spawn
+	// skips the step (b3081b51, measured on Linux). The place after the command
+	// tests is claustrum's own, not measured.
 	var tempAnswer *rpc.CLITempRoot
 	releaseTemp := func() {}
-	if tempRoot {
+	if tempRoot && launcher == nil {
 		cmd.Env, tempAnswer, releaseTemp = privateTempRoot(cmd.Env, m.runDir)
 	}
 	keptTemp := false
