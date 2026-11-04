@@ -657,13 +657,13 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-stat.md":                434, // the page rewrite
 	"docs/protocol/files-validate.md":            365,
 	"docs/protocol/flags.md":                     2639, // the prune after a good install. 2633: moved from PROTOCOL.md
-	"docs/protocol/git-info.md":                  1948, // the link chain row of its own (Linux and macOS run no link test). 1889: the link chain of git.info, b3081b51. 1881: the alternates row of b3081b51. 1850: the page rewrite
+	"docs/protocol/git-info.md":                  1947, // the link chain row of its own (Linux and macOS run no link test). 1889: the link chain of git.info, b3081b51. 1881: the alternates row of b3081b51. 1850: the page rewrite
 	"docs/protocol/git-rules-calls.md":           5535, // the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
 	"docs/protocol/git-rules-config.md":          2884, // moved from PROTOCOL.md
-	"docs/protocol/git-rules-settings-copy.md":   3300, // the third run of the call about the repository. the folder .probe, new rules
+	"docs/protocol/git-rules-settings-copy.md":   3340, // the start-test cannot-run rule of b3081b51. 3300: the third run of the call about the repository. the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":           5254, // the gone worktree and the link test of git.info, b3081b51. 5207: the object sources on Windows of b3081b51. 4642: the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
-	"docs/protocol/git-list-branches.md":         997,  // the page rewrite
-	"docs/protocol/git-status.md":                3205, // the object sources line of b3081b51. 3185: a move between pages, net down in the same PR
+	"docs/protocol/git-list-branches.md":         995,  // the page rewrite
+	"docs/protocol/git-status.md":                3204, // the object sources line of b3081b51. 3185: a move between pages, net down in the same PR
 	"docs/protocol/git-worktree-create.md":       8843, // the alternates line of b3081b51. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":       4422, // the gone worktree of b3081b51. 4398: the alternates line of b3081b51. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":          1834, // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
