@@ -513,9 +513,8 @@ Unless an item names another build, the daemon items below are measured against
   `89cb6289` an added `PATH` entry and the new caller keys come after it. So the
   stdout frame of `cmd /c set` differs
   in bytes. That is [D23](DIVERGENCES.md#d23).
-- A child that `process.spawn` starts as a shutdown begins is ended by claustrum.
-  `5fd08069` leaves it running on Linux, macOS and Windows. That is known, not
-  drift. See
+- A child that `process.spawn` starts at shutdown can stay running on Linux and
+  macOS if `be1c1ca5` exits during that start. claustrum ends it. That is not drift. See
   [A spawn during a shutdown](protocol/process-spawn.md#a-spawn-during-a-shutdown).
 - These log and call differences are known and open. They are not drift.
     - On Linux and macOS, the later `SIGKILL` of a gone leader at the reap of a
