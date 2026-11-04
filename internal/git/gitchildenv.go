@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // The cleaning of the daemon's own environment for the git children of the git
@@ -97,9 +99,16 @@ var gitChildProgramNames = []string{
 
 // gitChildEnv is the daemon's own environment as a git child of the git methods
 // gets it, before the names that the call adds. The trace entries of
-// withTraceOff end it.
+// withTraceOff end it. The session folders are cut first (sessiondirs.CutPath),
+// and the names of sessiondirs.EditorNames go.
 func gitChildEnv() []string {
-	return withTraceOff(cleanGitChildEnv(os.Environ(), gitEnvHere), gitEnvHere)
+	return withTraceOff(cleanGitChildEnv(sessionCutDaemonEnv(), gitEnvHere), gitEnvHere)
+}
+
+// sessionCutDaemonEnv is the daemon's own environment with the session folders cut and
+// without sessiondirs.EditorNames.
+func sessionCutDaemonEnv() []string {
+	return sessiondirs.WithoutEditors(sessiondirs.CutPath(os.Environ()), nil)
 }
 
 // gitTraceNames are the trace names of git. A git child gets each one with the

@@ -807,6 +807,10 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
+	// A bare command name that PATH found in a session folder (sessionfolders.go).
+	if launcher == nil {
+		bareCommandStart(cmd, command, env)
+	}
 	if launcher != nil {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come

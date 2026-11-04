@@ -20,6 +20,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // The settings control of the git methods, as 5fd08069 has it. That build keeps
@@ -606,9 +607,10 @@ var shadowTestDropped = []string{"GIT_DEFAULT_HASH", "GIT_CONFIG_SYSTEM"}
 // own folder, and shadowTestDropped. Which other entries of the daemon
 // 5fd08069 passes is not measured. The first `git version` call of
 // shadowVersionNote and versionAfterFailure do not use it: they get
-// gitVersionEnv(nil). shadowTestEnv cleans it for the test calls.
+// gitVersionEnv(nil). shadowTestEnv cleans it for the test calls. It starts from
+// sessionCutDaemonEnv.
 func shadowDaemonEnv() []string {
-	env := withoutConfigCountSet(listingEnvOf(os.Environ()))
+	env := withoutConfigCountSet(listingEnvOf(sessionCutDaemonEnv()))
 	return slices.DeleteFunc(env, func(kv string) bool {
 		name := envName(kv)
 		return slices.Contains(shadowTestNames, name) || slices.Contains(shadowTestDropped, name)
@@ -687,7 +689,7 @@ func boundedGit(bound time.Duration, dir string, env []string, argv ...string) s
 func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	ctx, cancel := context.WithTimeout(context.Background(), bound)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", argv...)
+	cmd := gitCommandContext(ctx, argv...)
 	cmd.Dir = dir
 	cmd.Env = env
 	if stdin != nil {
@@ -770,6 +772,11 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// (measured on Linux). A call 10 on a full disk has both lines of git too
 	// (measured). The other calls share this path: not measured.
 	failed := func(verb string, r shadowRun) (string, string) {
+		// With every git on PATH in a session folder the answer is the cannot-run
+		// text with the refusal (b3081b51, measured on Linux).
+		if errors.As(r.err, new(sessiondirs.NoOtherGitError)) {
+			return "", gitCannotRunPrefix + r.err.Error()
+		}
 		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.allLines())
 	}
 	// A failed call of the calls 1 to 5 has the version text at the end of its
@@ -778,7 +785,17 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// calls share this path: claustrum's own, not measured.
 	setupFailed := func(verb string, r shadowRun) (string, string) {
 		_, cause := failed(verb, r)
-		return "", cause + shadowVersionNote(check, plainEnv)
+		if strings.HasPrefix(cause, gitCannotRunPrefix) {
+			return "", cause
+		}
+		// A first `git version` that fails too makes the answer the cannot-run text
+		// of that call: b3081b51 answers `git cannot run on this host; git not run:
+		// exit status 1` for a git that fails every call (measured on Linux).
+		note, whole := shadowVersionNote(check, plainEnv)
+		if whole != "" {
+			return "", whole
+		}
+		return "", cause + note
 	}
 
 	// Calls 1 to 5 make the repository `real` with one empty commit.
@@ -971,17 +988,23 @@ func readStopText(path string) string {
 // `worktree add`. No record has a failed `config`, `commit-tree` or `update-ref`
 // call of the calls 1 to 5. Those three share the path of `init` and `mktree`:
 // not measured (setupFailed in shadowTestCalls).
-func shadowVersionNote(check string, env []string) string {
+//
+// whole is the cannot-run text when the first call fails, and then no second call
+// runs (b3081b51, measured on Linux).
+func shadowVersionNote(check string, env []string) (note, whole string) {
 	first := shadowGit(gitVersionDir, gitVersionEnv(nil), "version")
+	if first.err != nil {
+		return "", gitCannotRunPrefix + listingRun{stderr: first.stderr, err: first.err}.detail()
+	}
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
 	text := second.out
 	if text == "" {
 		text = first.out
 	}
 	if text == "" {
-		return ""
+		return "", ""
 	}
-	return " (" + text + ")"
+	return " (" + text + ")", ""
 }
 
 // The first texts of the folder `shadow` of the test, and the end of its config

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"maps"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -602,7 +601,7 @@ func (r *filterRule) planFor(pin []byte) {
 // every create there. With ctx done the plan is empty, and the read-tree call
 // cannot start under ctx.
 func (r *filterRule) scopedPlan(ctx context.Context, leaf, gitDir string, pin []string) {
-	cmd := exec.CommandContext(ctx, "git", "--git-dir="+gitDir, "config", "-z", "--list", "--show-scope")
+	cmd := gitCommandContext(ctx, "--git-dir="+gitDir, "config", "-z", "--list", "--show-scope")
 	cmd.Dir = leaf
 	cmd.Env = precursorEnv(false, pin)
 	var errBuf bytes.Buffer

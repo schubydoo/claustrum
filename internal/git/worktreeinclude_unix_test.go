@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // gitStub configures stubGit. A zero value answers `git version` with the
@@ -191,7 +193,9 @@ func TestGitVersionEnvUnchanged(t *testing.T) {
 		t.Fatal("git version 2.32.0 selects the old scan")
 	}
 	var want []string
-	for _, kv := range withTraceOff(os.Environ(), gitEnvHere) {
+	// The daemon's own entries without the editor names, which no git call gets
+	// (sessiondirs.EditorNames).
+	for _, kv := range withTraceOff(sessiondirs.WithoutEditors(os.Environ(), nil), gitEnvHere) {
 		if strings.HasPrefix(kv, "GIT_") {
 			want = append(want, kv)
 		}

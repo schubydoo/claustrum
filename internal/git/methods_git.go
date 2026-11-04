@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/pathcanon"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // Handle answers a request of the five git methods with the daemon state in d.
@@ -111,7 +111,7 @@ func git(dir string, args ...string) (string, bool) {
 // testable without waiting on a real wedged git. Combined output — see git().
 func gitContext(ctx context.Context, dir string, args ...string) (string, bool) {
 	full := append([]string{"-C", dir}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd := gitCommandContext(ctx, full...)
 	// The GIT_COMMON_DIR pin of the git-directory trust check, when dir's git directory
 	// is trusted (see gitdirtrust.go).
 	if pin := commonDirPinEnv(dir); pin != nil {
@@ -134,7 +134,7 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // "exit status N" and never includes stderr.
 func gitStdoutErr(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
-	out, err := exec.Command("git", full...).Output()
+	out, err := gitCommand(full...).Output()
 	return strings.TrimRight(string(out), "\n"), err
 }
 
@@ -401,6 +401,14 @@ func gitInfo(req *gitCall) rpc.Response {
 			branch = "detached:" + sha
 		}
 	}
+	control := req.shadow.replyControl(req.offLive)
+	// On Windows and macOS a git.info with "sessionFoldersOff":true and no
+	// "shadowDirOff":true answers the repository with no settingsControl member
+	// (b3081b51, measured on Windows and macOS). Linux keeps the member (measured on
+	// Linux). The "no repository" answer is not measured, and keeps it.
+	if sessionOffDropsControl && !req.offOwn && sessiondirs.OffSwitchSet(req.Params) {
+		control = ""
+	}
 	return rpc.OKResult(req.ID, rpc.GitInfoResult{
 		IsRepo:        true,
 		Repo:          infoRepoName(top),
@@ -409,7 +417,7 @@ func gitInfo(req *gitCall) rpc.Response {
 		RepoSlug:      slug,
 		DefaultBranch: defBranch,
 
-		SettingsControl: req.shadow.replyControl(req.offLive),
+		SettingsControl: control,
 	})
 }
 
@@ -2755,8 +2763,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Response {
 	refuse := removeRefusal(req)
 	lockCheck := func(reason string) rpc.Response {
-		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath +
-			" is locked (" + reason + "); retry")
+		return refuse(goneLockCheckText(p.WorktreePath, reason))
 	}
 	// The check of the daemon's own GIT_CONFIG_COUNT refuses in both modes. Without
 	// worktreeRoot it comes after a trust refusal and before the "no repository"
@@ -2944,6 +2951,20 @@ func pruneGitDir(repo string) string {
 		}
 	}
 	return filepath.Join(repo, ".git")
+}
+
+// goneLockCheckText is the refusal of a remove of a gone worktree whose lock check
+// failed for reason. A reason of git that cannot run follows a colon, with no
+// "retry": b3081b51 answers `... is locked: git cannot run on this host; git not
+// run: exit status 1` (measured on Linux, for a plain folder and a repository, a
+// gone and an empty leaf). On macOS and Windows the colon form is claustrum's own,
+// not measured. Other reasons keep the parentheses.
+func goneLockCheckText(worktreePath, reason string) string {
+	if strings.HasPrefix(reason, gitCannotRunPrefix) {
+		return "failed to remove worktree: could not check whether " + worktreePath + " is locked: " + reason
+	}
+	return "failed to remove worktree: could not check whether " + worktreePath +
+		" is locked (" + reason + "); retry"
 }
 
 // lockCheckRefusal is git.worktree_remove's answer when baseRepo's registrations cannot

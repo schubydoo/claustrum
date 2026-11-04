@@ -9,6 +9,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // request is one inbound JSON-RPC line.
@@ -87,6 +88,16 @@ func (s *server) route(c *conn, req request) *rpc.Response {
 		// A method without a "namespace.method" shape is a format error, distinct
 		// from a well-formed method naming an unknown namespace (below).
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeMethod, "Invalid method format: "+req.Method))
+	}
+
+	// "sessionFoldersOff":true turns the check of session folders off while the
+	// request runs (b3081b51, measured on Linux for each git method and
+	// process.spawn, on macOS and Windows for git.status and process.spawn).
+	// The hold is global: a request without the switch that runs during it gets no
+	// check either (b3081b51, measured on Linux). The on-again line comes at the
+	// first check after it (sessiondirs.on).
+	if (ns == "git" || req.Method == "process.spawn") && sessiondirs.OffSwitchSet(req.Params) {
+		defer sessiondirs.PauseCheck()()
 	}
 
 	switch ns {

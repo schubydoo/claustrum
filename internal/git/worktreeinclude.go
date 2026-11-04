@@ -146,7 +146,7 @@ func (h *ShadowHost) includeScan() bool {
 // the daemon (gitChildEnv), and no name is added or removed (claustrum's own,
 // not measured).
 func gitVersionCmd(ctx context.Context) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", "version")
+	cmd := gitCommandContext(ctx, "version")
 	cmd.Dir = gitVersionDir
 	cmd.Env = gitChildEnv()
 	return cmd

@@ -22,6 +22,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `disableShellAgentSocket` | no | `true` skips the SSH agent hand-off for this spawn. `null` counts as `false`. |
 | `launcher` | no | An array of strings that names a managed launcher. See [The managed launcher](#the-managed-launcher). Absent or `null` means no launcher. |
 | `linkBound` | no | See [its page](process-link-bound.md). |
+| `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
 ## Response
@@ -49,10 +50,16 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
+
+### Start failures
+
+| Code | Text | Cause |
+|---|---|---|
 | `-32603` | `chdir <cwd>: stat <cwd>: no such file or directory` | `cwd` does not exist. |
 | `-32603` | `chdir <cwd>: not a directory` | `cwd` is not a folder. |
 | `-32603` | `exec: "<name>": executable file not found in $PATH` | A bare name that the lookup does not find, and on Windows also a path with no extension. On Windows the text ends in `%PATH%`. |
 | `-32603` | `fork/exec <command>: <reason>` | The command is missing, a folder or not executable, or the start fails. On Windows a missing file gives the reason `The system cannot find the file specified.` |
+| `-32603` | `For security, Claude won't use a git inside a folder it works in, and this host has no other git on its PATH. Install git somewhere else, such as /usr/bin` | A bare `git` whose every git on `PATH` lies in a [session folder](git-rules-session-folders.md#with-no-other-git) (`b3081b51`). On Windows the text ends `C:\Program Files\Git`. |
 | `-32005` | `the managed launcher <path> could not be started: <reason>` | The launcher passes the checks and does not start. |
 
 `<cwd>` is the value after the tilde expansion. `<command>` is the path of the start: the value of the request, or for a bare name the path that the lookup found on `PATH`.
@@ -104,6 +111,7 @@ The daemon removes these names:
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
 | `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own). |
+| The eight editor names and the session folders | A spawn of the bare command `git`. See [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child) (`b3081b51`). |
 | `CLAUDE_SSH_PEER_CHECK` | The daemon environment, at its start. On Windows that covers any letter case. A value in `env` reaches the child. These three are measured on Linux, macOS and Windows. If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are not measured.
