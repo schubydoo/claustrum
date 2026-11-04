@@ -39,7 +39,8 @@ var lddPath = "/usr/bin/ldd"
 // It is a var only so tests can point it at a stub.
 var lddFallbackPath = "/bin/ldd"
 
-// lddToRun returns lddPath, or lddFallbackPath when lddPath is missing.
+// lddToRun returns lddPath, or lddFallbackPath when lddPath is missing. An lddPath
+// that exists but cannot run gets no fallback (claustrum's own, not measured).
 func lddToRun() string {
 	if _, err := os.Stat(lddPath); errors.Is(err, fs.ErrNotExist) {
 		return lddFallbackPath
