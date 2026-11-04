@@ -54,8 +54,12 @@ func TestCreateRecordsTheRepositoryGitDir(t *testing.T) {
 	if after := records(); len(after) != 1 || after[0] != got[0] {
 		t.Errorf("after the remove the record folder holds %v, want %v", after, got)
 	}
-	// A create from the linked worktree TW records the git directory of T, which
-	// T has already, so the folder still holds one record.
+	// A create from the linked worktree TW records the git directory of T. The
+	// record of T goes first, and a fresh store does not know it.
+	if err := os.Remove(filepath.Join(dir, got[0])); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessiondirs.UseForTest(dir))
 	tw := filepath.Join(r.TW, ".claude", "worktrees", "w2")
 	wantResultPrefix(t, "create from TW", trustCall(t, "git.worktree_create", map[string]any{
 		"baseRepo": r.TW, "worktreePath": tw, "branchName": "w2"}), `{"success":true`)
