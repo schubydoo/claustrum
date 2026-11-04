@@ -47,11 +47,14 @@ func bareCommandStart(cmd *exec.Cmd, command string, env map[string]string) {
 // args with a stream-json arg as cliSessionKey reads it. Both record cwd (measured
 // on Linux, macOS and Windows). Of the stream-json args only the bare `stream-json`
 // is measured, and the two `--...-format=stream-json` forms are claustrum's own.
-// A command named ccd-cli and a spawn with a launcher count as the CLI path, and a
-// bare git with a stream-json arg records nothing (b3081b51, measured on Linux,
-// macOS and Windows). On Windows ccd-cli.exe records nothing, and a launcher is
-// refused before this step (measured). A launcher with a bare git is not measured.
-// The CLI path also records each --add-dir folder
+// A command named ccd-cli counts as the CLI path (b3081b51, measured on Linux,
+// macOS and Windows), with its --add-dir folders (measured on Linux and macOS).
+// On Linux and macOS a spawn with a launcher counts as the CLI path (measured).
+// A bare git with a stream-json arg records nothing (measured on Linux, macOS
+// and Windows). On Windows ccd-cli.exe records nothing, and a launcher is
+// refused before this step (measured). A launcher refuses a bare git before
+// this step.
+// The CLI path of a ccd-cli folder also records each --add-dir folder
 // before a `--` arg (measured on Linux and Windows): the value of `--add-dir=<d>`,
 // and each arg after `--add-dir` up to the next arg that starts with `-`. An empty
 // value is skipped (measured on Linux). A relative --add-dir folder is taken in cwd,

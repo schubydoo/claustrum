@@ -674,11 +674,11 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-killandwait.md":       977,   // the page template
 	"docs/protocol/process-link-bound.md":        740,
 	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
-	"docs/protocol/process-spawn.md":             4467, // the text of a record that cannot be saved. 4420: the relative names and the shared wait of the cliTempRoot step. 4376: the cliTempRoot inputs and time limit of b3081b51. 4255: the private temp folder of b3081b51. 3615: the temp-folder test of 683cc6a9. 3474: rewrite to the page template
+	"docs/protocol/process-spawn.md":             4492, // the late step log of cliTempRoot. 4467: the text of a record that cannot be saved. 4420: the relative names and the shared wait of the cliTempRoot step. 4376: the cliTempRoot inputs and time limit of b3081b51. 4255: the private temp folder of b3081b51. 3615: the temp-folder test of 683cc6a9. 3474: rewrite to the page template
 	"docs/protocol/process-stdin.md":             929,  // attach
 	"docs/protocol/server.md":                    1745, // 1745: the six feature names of b3081b51. 1721: the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                   584,  // moved from PROTOCOL.md
-	"docs/protocol/git-rules-session-folders.md": 1760, // the record of a create, b3081b51. 1659: a heading for the create rule. 1656: the spawn shapes that record, b3081b51. 1582: the record that cannot be saved, b3081b51. 1361: the claims fixes of m-19. 1335: the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
+	"docs/protocol/git-rules-session-folders.md": 1788, // the stack merge. 1760: the record of a create, b3081b51. 1687: the launcher add-dir and letter-case rules, 3 words of a heading. 1666: the retry after a failed rename. 1659: a heading for the create rule. 1656: the spawn shapes that record, b3081b51. 1582: the record that cannot be saved, b3081b51. 1361: the claims fixes of m-19. 1335: the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 }
 
 // The limits of a document that docWordLimits does not name.
