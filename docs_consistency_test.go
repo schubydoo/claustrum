@@ -674,7 +674,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":        1046, // attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3508, // the temp-folder test of 683cc6a9. 3474: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // attach
-	"docs/protocol/server.md":                  1702, // the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
+	"docs/protocol/server.md":                  1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                 584,  // moved from PROTOCOL.md
 }
 
