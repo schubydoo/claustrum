@@ -75,9 +75,18 @@ func cleanTempRoots(t *testing.T, releases *[]func()) {
 		for _, r := range *releases {
 			r()
 		}
-		tempRoots.mu.Lock()
-		live, held := tempRoots.live, len(tempRoots.held)
-		tempRoots.mu.Unlock()
+		// A release can hand its give-back to a goroutine while the lock is busy.
+		deadline := time.Now().Add(2 * time.Second)
+		live, held := 0, 0
+		for {
+			tempRoots.mu.Lock()
+			live, held = tempRoots.live, len(tempRoots.held)
+			tempRoots.mu.Unlock()
+			if (live == 0 && held == 0) || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 		if live != 0 || held != 0 {
 			t.Errorf("after the test: live %d, held %d, want 0 and 0", live, held)
 		}

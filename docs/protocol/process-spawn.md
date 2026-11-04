@@ -170,7 +170,7 @@ claustrum's own, not measured:
 - An entry that cannot be read gives no member. So does a failed mkdir, with no log line.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
 - The owner test of the new folder.
-- The count is per daemon. The hold and the count end at the exit frame.
+- The count is per daemon. The hold and the count end at the exit frame, or, while a step or a refresh holds the lock, once it ends.
 - The step runs after the `cwd`, launcher and session command tests, and before the start.
 - `cliTempRoot` comes before `pid` and `startTime`.
 - A failed registry write is not logged. A failed hold does not stop the spawn.
