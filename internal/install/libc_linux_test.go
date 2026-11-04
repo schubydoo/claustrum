@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -121,8 +122,10 @@ func TestLddRunsLddPathNotPATH(t *testing.T) {
 }
 
 // TestLddGetsTheFixedEnvironment pins the whole environment of the probe. The stub
-// writes `env | sort`, and the set must be the measured one: LC_ALL=C,
-// PATH=/usr/bin:/bin and the PWD=/ that the shell of the stub adds.
+// writes `env | sort`, and the set must be the measured one: LC_ALL=C and
+// PATH=/usr/bin:/bin. The lines that the shell of the stub sets itself (PWD, SHLVL
+// and _ under bash) are left out, so the test does not depend on which shell
+// /bin/sh is.
 func TestLddGetsTheFixedEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	rec := filepath.Join(dir, "env")
@@ -138,7 +141,20 @@ func TestLddGetsTheFixedEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "LC_ALL=C\nPATH=/usr/bin:/bin\nPWD=/\n"; string(got) != want {
-		t.Errorf("ldd saw the environment %q, want %q", got, want)
+	var kept []string
+	for _, line := range strings.Split(strings.TrimSuffix(string(got), "\n"), "\n") {
+		if strings.HasPrefix(line, "PWD=") || strings.HasPrefix(line, "SHLVL=") || strings.HasPrefix(line, "_=") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if got, want := strings.Join(kept, "\n"), "LC_ALL=C\nPATH=/usr/bin:/bin"; got != want {
+		// Name the variables only: their values can hold secrets of the test host.
+		names := make([]string, 0, len(kept))
+		for _, line := range kept {
+			name, _, _ := strings.Cut(line, "=")
+			names = append(names, name)
+		}
+		t.Errorf("ldd saw the variables %q, want exactly LC_ALL=C and PATH=/usr/bin:/bin", names)
 	}
 }
