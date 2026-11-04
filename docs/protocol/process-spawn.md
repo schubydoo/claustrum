@@ -163,8 +163,8 @@ The run dir holds `cli-temp-root-<16 hex>`, mode 0600, with the folder name and 
 claustrum's own, not measured:
 
 - Random 12 hex, an age bound of 24 h, and the order of the `refused` tests.
-- The rest of the order of the four names. With none of them set, the temp dir is `/tmp`.
-- The limit is 2 s. After it the step goes on, writes no record and holds no folder.
+- The rest of the order of the four names. With none of them set, the temp dir is `/tmp`. A relative value of `CLAUDE_CODE_TMPDIR`, `TMP` or `TEMP` gives no member too, and the next name is not tried.
+- The limit is 2 s. After it the step goes on, writes no record and holds no folder. The limit also covers the wait for the step of another spawn, so a spawn can get this text for a temp dir that answers.
 - An entry that cannot be read gives no member. So does a failed mkdir, with no log line.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
 - The owner test of the new folder.
