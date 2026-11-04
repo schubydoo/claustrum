@@ -298,11 +298,6 @@ func TestInstallProgressPrintsOnlyChangedCounts(t *testing.T) {
 			if withTotal != tc.withTotal {
 				t.Errorf("the lines carry a total key: %v, want %v\n%s", withTotal, tc.withTotal, out)
 			}
-			// Not measured on the reference: a tick that prints the full count just
-			// before the last line. claustrum then prints the full count twice.
-			if n := len(counts); n >= 2 && counts[n-1] == counts[n-2] {
-				counts = counts[:n-1]
-			}
 			// The decoder reads the 4 byte checksum at the end of the archive
 			// in a read of its own. A tick can fall right before it.
 			counts = slices.DeleteFunc(counts, func(c int64) bool { return c == int64(len(body))-4 })
@@ -338,9 +333,6 @@ func TestInstallProgressTicksShowNewCounts(t *testing.T) {
 	out := captureInstallOutput(t, installOpts{cliDir: filepath.Join(t.TempDir(), "cli"), cliVersion: "1.0.0",
 		cliURL: srv.URL + "/cli.zst", cliChecksum: hex.EncodeToString(sum[:])})
 	counts, _ := progressCounts(t, out)
-	if n := len(counts); n >= 2 && counts[n-1] == counts[n-2] {
-		counts = counts[:n-1] // see TestInstallProgressPrintsOnlyChangedCounts
-	}
 	if len(counts) < 4 || counts[0] != 0 || counts[len(counts)-1] != int64(len(body)) {
 		t.Fatalf("progress byte counts = %v, want 0 first, %d last and tick lines between", counts, len(body))
 	}
@@ -437,6 +429,11 @@ func TestInstallReportsAnInterruptedDownload(t *testing.T) {
 	if f.Fetch == nil || f.Fetch.Bytes != int64(half) {
 		t.Fatalf("E07: fetch = %+v, want bytes %d", f.Fetch, half)
 	}
+	// A failed read ends the fetch at the error, so ms holds the wait. Only a
+	// good archive stops ms at the last byte.
+	if got := f.Fetch.Ms; got < (pause / 2).Milliseconds() {
+		t.Errorf("E07: ms = %d, want at least %d: the wait before the reset counts on a failure", got, (pause / 2).Milliseconds())
+	}
 	if got := f.Fetch.LongestPauseMs; got < (pause / 2).Milliseconds() {
 		t.Errorf("E07: longestPauseMs = %d, want about %d: the wait for the error counts as a pause", got, pause.Milliseconds())
 	}
@@ -445,6 +442,100 @@ func TestInstallReportsAnInterruptedDownload(t *testing.T) {
 	}
 	if ents, err := os.ReadDir(cliDir); err != nil || len(ents) != 0 {
 		t.Errorf("E07: cli folder entries %v, err %v, want it empty", ents, err)
+	}
+}
+
+// Measured on Linux against b3081b51. A body that ends after 500 bytes with a
+// clean close names the total only when the server sent a Content-Length. A
+// chunked body with no final chunk has no total in the text.
+func TestInstallInterruptedTextNamesTheTotalOnlyWithALength(t *testing.T) {
+	oldProg := installProgressInterval
+	installProgressInterval = time.Hour // only the leading bytes:0 line
+	t.Cleanup(func() { installProgressInterval = oldProg })
+	body := smallBlob(t) // over 1000 bytes
+	const cut = 500
+	for _, tc := range []struct {
+		name string
+		head string
+		part string
+		want string
+	}{
+		{"with a length", "Content-Length: 1000\r\n", string(body[:cut]),
+			"download interrupted after 500/1000 bytes: unexpected EOF"},
+		{"chunked with no final chunk", "Transfer-Encoding: chunked\r\n", strconv.FormatInt(cut, 16) + "\r\n" + string(body[:cut]) + "\r\n",
+			"download interrupted after 500 bytes: unexpected EOF"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				conn, buf, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					return
+				}
+				_, _ = buf.WriteString("HTTP/1.1 200 OK\r\n" + tc.head + "\r\n" + tc.part)
+				_ = buf.Flush()
+				_ = conn.Close()
+			}))
+			defer srv.Close()
+			cliDir := filepath.Join(t.TempDir(), "cli")
+			out := captureInstallOutput(t, installOpts{cliDir: cliDir, cliVersion: "9.9.9", cliURL: srv.URL + "/cli.zst", cliChecksum: "x"})
+			line := out[strings.LastIndex(out, "__INSTALL_RESULT__"):]
+			var f installFacts
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(strings.TrimSpace(line), "__INSTALL_RESULT__")), &f); err != nil {
+				t.Fatalf("facts line %q: %v", line, err)
+			}
+			if f.CliError != tc.want {
+				t.Errorf("cliError %q, want %q", f.CliError, tc.want)
+			}
+			if f.Fetch == nil || f.Fetch.Bytes != cut {
+				t.Errorf("fetch = %+v, want bytes %d", f.Fetch, cut)
+			}
+			if ents, err := os.ReadDir(cliDir); err != nil || len(ents) != 0 {
+				t.Errorf("cli folder entries %v, err %v, want it empty", ents, err)
+			}
+		})
+	}
+}
+
+// Measured on Linux against b3081b51. A chunked server sends the whole archive
+// and holds the final chunk. A tick prints the full count during the hold, so
+// no final line repeats it. Neither ms nor longestPauseMs counts the hold, and
+// the install ends after the final chunk.
+func TestInstallHeldFinalChunkPrintsNoRepeatLine(t *testing.T) {
+	oldProg := installProgressInterval
+	installProgressInterval = 100 * time.Millisecond
+	t.Cleanup(func() { installProgressInterval = oldProg })
+	const hold = 1500 * time.Millisecond
+	body := smallBlob(t)
+	sum := sha256.Sum256(body)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+		w.(http.Flusher).Flush()
+		time.Sleep(hold)
+	}))
+	defer srv.Close()
+	start := time.Now()
+	out := captureInstallOutput(t, installOpts{cliDir: filepath.Join(t.TempDir(), "cli"), cliVersion: "1.0.0",
+		cliURL: srv.URL + "/cli.zst", cliChecksum: hex.EncodeToString(sum[:])})
+	if took := time.Since(start); took < hold {
+		t.Errorf("the install took %v, want it to end after the final chunk (%v)", took, hold)
+	}
+	counts, _ := progressCounts(t, out)
+	// The decoder reads the 4 byte checksum in a read of its own. A tick can
+	// fall right before it.
+	counts = slices.DeleteFunc(counts, func(c int64) bool { return c == int64(len(body))-4 })
+	if !slices.Equal(counts, []int64{0, int64(len(body))}) {
+		t.Errorf("progress byte counts = %v, want [0 %d]: no final line repeats a tick\n%s", counts, len(body), out)
+	}
+	line := out[strings.LastIndex(out, "__INSTALL_RESULT__"):]
+	var f installFacts
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(strings.TrimSpace(line), "__INSTALL_RESULT__")), &f); err != nil {
+		t.Fatalf("facts line %q: %v", line, err)
+	}
+	if f.Fetch == nil || f.Fetch.Bytes != int64(len(body)) || f.Fetch.Ms >= (hold/2).Milliseconds() {
+		t.Errorf("fetch = %+v, want bytes %d and ms below %d: the hold does not count", f.Fetch, len(body), (hold / 2).Milliseconds())
+	}
+	if f.Fetch.LongestPauseMs >= (hold / 2).Milliseconds() {
+		t.Errorf("longestPauseMs = %d, want below %d: the hold does not count", f.Fetch.LongestPauseMs, (hold / 2).Milliseconds())
 	}
 }
 

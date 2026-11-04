@@ -435,7 +435,8 @@ the linked pages.
 - A connection reset in the body answers
   `download interrupted after <got>/<total> bytes: <err>`, as on `f6010b97` and
   `89cb6289` (measured on Linux). Another text there is drift. A body that ends
-  before its length is not measured, so a difference there is no proof of drift.
+  early with a clean close gives `unexpected EOF`, and a chunked body cut before its final chunk has no
+  `/<total>` (`b3081b51`, measured on Linux).
 - A download that is not a zstd archive answers `decompressing: …` with
   `fetch.bytes` 4 and one progress line, with a right and a wrong checksum, as on
   `5fd08069` (measured on Linux). Another count for such a body is drift.

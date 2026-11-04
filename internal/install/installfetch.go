@@ -51,9 +51,10 @@ var lastInstallFinal *progressLine
 // fetchStats is the `fetch` object 4534d86 adds to __INSTALL_RESULT__ whenever a
 // -cli-url download was attempted, even a 0-byte 404. installFacts has its place.
 // Field order bytes, ms, longestPauseMs, all always present. bytes is the total read, ms the
-// download duration, longestPauseMs the largest gap between reads (the ~60s stall
-// gap on an idle abort, and 0 on a clean single-read download). The wait from the
-// last byte to a read error counts as a gap too (measured).
+// download duration (to the last byte of a good archive, see fetchCLI),
+// longestPauseMs the largest gap between reads (the ~60s stall gap on an idle
+// abort, and 0 on a clean single-read download). The wait from the last byte to
+// a read error counts as a gap too (measured).
 type fetchStats struct {
 	Bytes          int64 `json:"bytes"`
 	Ms             int64 `json:"ms"`
@@ -79,6 +80,7 @@ type watchedBody struct {
 	mu      sync.Mutex
 	bytes   int64
 	printed int64 // the byte count of the last progress line
+	byTick  bool  // the last progress line was a tick line
 	longest time.Duration
 	lastAt  time.Time
 	hadRead bool
@@ -182,17 +184,21 @@ func (w *watchedBody) failure() error {
 // prefix. The wait from the last byte to the error is the longestPauseMs.
 // ensureCLI returns it as-is.
 //
-// Not measured: a read error other than a reset, for example a body that ends
-// before its Content-Length. Not measured: an error before the first body byte.
-// Not measured: a body with no length. claustrum prints total 0 for it, as
-// stalledError does.
+// b3081b51 (measured on Linux): a body that ends early with a clean close
+// answers `download interrupted after 500/1000 bytes: unexpected EOF` with a
+// Content-Length. A chunked body with no final chunk answers `download
+// interrupted after 500 bytes: unexpected EOF`, so a body with no length has
+// no total. Not measured: an error before the first body byte.
 type interruptedError struct {
 	got, total int64
 	err        error
 }
 
 func (e *interruptedError) Error() string {
-	return fmt.Sprintf("download interrupted after %d/%d bytes: %v", e.got, e.total, e.err)
+	if e.total > 0 {
+		return fmt.Sprintf("download interrupted after %d/%d bytes: %v", e.got, e.total, e.err)
+	}
+	return fmt.Sprintf("download interrupted after %d bytes: %v", e.got, e.err)
 }
 
 // isDownloadDeadline reports whether a body read error is the opted-in D12
@@ -239,6 +245,14 @@ func (w *watchedBody) stats() fetchStats {
 	}
 }
 
+// lastByteMs is the time from the start of the fetch to the last read that
+// returned a byte.
+func (w *watchedBody) lastByteMs() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lastAt.Sub(w.start).Milliseconds()
+}
+
 func (w *watchedBody) ticker() {
 	defer close(w.tickerDone)
 	t := time.NewTicker(installProgressInterval)
@@ -264,6 +278,7 @@ func (w *watchedBody) emitProgress(tick bool) {
 		return
 	}
 	w.printed = w.bytes
+	w.byTick = tick
 	pl := progressLine{Phase: "download", Bytes: w.bytes}
 	if w.total > 0 {
 		pl.Total = w.total
@@ -272,9 +287,20 @@ func (w *watchedBody) emitProgress(tick bool) {
 	printProgress(pl)
 }
 
-// emitFinalProgress prints lastInstallFinal, if a download completed. Not
-// measured: whether the reference prints this last line when a tick printed the
-// full count already. claustrum always prints it.
+// tickPrinted reports whether the last progress line was a tick line with this
+// byte count. The leading line does not count. Call it after Close, when the
+// ticker prints no more.
+func (w *watchedBody) tickPrinted(n int64) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.byTick && w.printed == n
+}
+
+// emitFinalProgress prints lastInstallFinal, if a download completed. fetchCLI
+// sets it only when a tick did not print the full count already. b3081b51
+// (measured on Linux): a chunked body whose final chunk came 2.5 s after the
+// last byte printed the leading line and one tick line with the full count. A
+// body with a Content-Length is claustrum's own, not measured.
 func emitFinalProgress() {
 	if lastInstallFinal != nil {
 		printProgress(*lastInstallFinal)
