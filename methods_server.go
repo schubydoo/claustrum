@@ -57,6 +57,10 @@ var capabilityMethods = []string{
 // after git.shadow_dir (measured on Linux, macOS and Windows). It also lists
 // process.spawn.link_bound after external_root, on Linux and macOS only (osCapabilityFeatures).
 // be1c1ca5 inserted git.hooks_null_device after git.shadow_dir (measured on Linux, macOS and
+// Windows). b3081b51 inserted git.worktree_create.verified_config and
+// git.worktree_create.verify_error_codes after existingBranch, launcher.non_string_refused
+// after launcher.managed, git.outside_session_folders after server.peer_check and
+// git.status.own_lfs_store after git.hooks_null_device (measured on Linux, macOS and
 // Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
@@ -68,14 +72,19 @@ var capabilityFeatures = append(append([]string{
 	"git.info.discovered_root",
 	"git.worktree_create.timeoutMs",
 	"git.worktree_create.existingBranch",
+	"git.worktree_create.verified_config",
+	"git.worktree_create.verify_error_codes",
 	"git.worktree_remove.unpushedGuard",
 	"process.spawn.shellAgentSocket",
 	"process.spawn.failure_reason",
 	"server.line_end",
 	"launcher.managed",
+	"launcher.non_string_refused",
 	"server.peer_check",
+	"git.outside_session_folders",
 	"git.shadow_dir",
 	"git.hooks_null_device",
+	"git.status.own_lfs_store",
 	filesReadRealFeature,
 }, osCapabilityFeatures...), "server.instance_id")
 

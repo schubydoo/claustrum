@@ -185,6 +185,7 @@ func TestDocsNoPhantomMethod(t *testing.T) {
 	// capabilityFeatures lists these on unix only, and the test must pass on Windows.
 	known["git.worktree.external_root"] = true
 	known["process.spawn.link_bound"] = true
+	known["process.spawn.cli_temp_root"] = true
 	// featuresFor adds this one on a daemon with jobs on (Windows).
 	known[jobFeature] = true
 	for _, f := range docFiles(t) {
@@ -230,7 +231,7 @@ var docGoNotMethods = map[string]string{
 // its first `//` to the end. It reads no other text of a test file, because a
 // test frame may use any method name.
 func TestDocsNoPhantomMethodInGoText(t *testing.T) {
-	known := map[string]bool{"git.worktree.external_root": true, "process.spawn.link_bound": true}
+	known := map[string]bool{"git.worktree.external_root": true, "process.spawn.link_bound": true, "process.spawn.cli_temp_root": true}
 	for _, m := range capabilityMethods {
 		known[m] = true
 	}
@@ -515,8 +516,9 @@ func TestDocsPinnedBuild(t *testing.T) {
 // TestDocsCapabilityFeatures: the features array in the server.capabilities example
 // of the server page under docs/protocol equals capabilityFeatures, name for name and in order. The
 // document shows the unix list. On Windows osCapabilityFeatures is empty, so the
-// test puts git.worktree.external_root and process.spawn.link_bound back where
-// methods_server.go appends them (after the fixed names, before server.instance_id).
+// test puts git.worktree.external_root, process.spawn.link_bound and
+// process.spawn.cli_temp_root back where methods_server.go appends them (after the
+// fixed names, before server.instance_id).
 func TestDocsCapabilityFeatures(t *testing.T) {
 	const ext = "git.worktree.external_root"
 	m := regexp.MustCompile(`"features":\s*\[([^\]]*)\]`).FindStringSubmatch(docRead(t, "docs", "protocol", "server.md"))
@@ -534,7 +536,7 @@ func TestDocsCapabilityFeatures(t *testing.T) {
 	}
 	if !hasExt {
 		last := len(want) - 1
-		want = append(want[:last:last], ext, "process.spawn.link_bound", want[last])
+		want = append(want[:last:last], ext, "process.spawn.link_bound", "process.spawn.cli_temp_root", want[last])
 	}
 	if strings.Join(doc, " ") != strings.Join(want, " ") {
 		t.Errorf("the features array of docs/protocol/server.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities example read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
@@ -674,7 +676,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
 	"docs/protocol/process-spawn.md":             3615, // the temp-folder test of 683cc6a9. 3474: rewrite to the page template
 	"docs/protocol/process-stdin.md":             929,  // attach
-	"docs/protocol/server.md":                    1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
+	"docs/protocol/server.md":                    1745, // 1745: the six feature names of b3081b51. 1721: the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                   584,  // moved from PROTOCOL.md
 	"docs/protocol/git-rules-session-folders.md": 1335, // the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 }

@@ -29,19 +29,15 @@ func wantPeerCheckLine() string {
 	return "WARN  [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all\n"
 }
 
-// wantCapabilityFeatures is the features array in the order of the frame.
-// process.kill.farewell comes directly after process.stdin.offset, and
-// files.list.includeDotNames after files.extract_tar.execBit. server.peer_check and
-// git.shadow_dir come directly after launcher.managed. files.list.junctionsAsDirs
-// comes after files.list.includeDotNames, and files.read.real after git.shadow_dir
-// (683cc6a9), and git.hooks_null_device between them (be1c1ca5). Windows lists no git.worktree.external_root and no
-// process.spawn.link_bound.
+// wantCapabilityFeatures is the features array in the order of the frame. Windows
+// lists no git.worktree.external_root, process.spawn.link_bound or
+// process.spawn.cli_temp_root.
 func wantCapabilityFeatures() string {
-	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","server.line_end","launcher.managed","server.peer_check","git.shadow_dir","git.hooks_null_device","files.read.real",`
+	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","server.line_end","launcher.managed","launcher.non_string_refused","server.peer_check","git.outside_session_folders","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
-	return head + `"git.worktree.external_root","process.spawn.link_bound","server.instance_id"`
+	return head + `"git.worktree.external_root","process.spawn.link_bound","process.spawn.cli_temp_root","server.instance_id"`
 }
 
 // wantCapabilitiesFrame is the whole frame of a test server, byte for byte. by is
