@@ -162,6 +162,9 @@ Each text starts `Claude could not confirm that the new worktree matches its com
 
 ## The main steps
 
+A good create records the git directory of `baseRepo` as a [session
+folder](git-rules-session-folders.md#a-create).
+
 ```mermaid
 flowchart TD
     A["gate"] --> C["git worktree add"] --> E["config.worktree step"] --> F["checkout"] --> H["content check"] --> G["copy of ignored files"]

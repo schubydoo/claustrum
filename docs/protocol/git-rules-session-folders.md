@@ -30,8 +30,15 @@ the `cwd`, and the record comes after the `cwd` and command tests and before the
 
 ### A create
 
-A `git.worktree_create` records no `<repo>/.git` folder (claustrum's own, not measured).
-`b3081b51` records it (measured on Linux, macOS and Windows).
+A good `git.worktree_create` of a plain repository makes `<repo>/.git` a session
+folder (measured on Linux, macOS and Windows). Its record stays after
+`git.worktree_remove` (measured on Linux, macOS and Windows). A create runs no prune,
+so 2048 records become 2049 (`b3081b51`, measured on Linux). A record that cannot be
+saved does not fail the create, and the daemon logs the line of the failure (measured
+on Linux and macOS). `git.info`, `git.status` and `git.list_branches` make no record
+(`b3081b51`, measured on Linux). For a `baseRepo` that is a linked worktree, the folder
+is the git directory of its main repository (claustrum's own, not measured). A failed
+create and a create with the off switch make none (claustrum's own, not measured).
 
 ## The record
 
@@ -55,8 +62,8 @@ macOS and Windows), with mode 0700 (measured on Linux and macOS).
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
   macOS and Windows). claustrum writes that file at no later start (claustrum's own,
   not measured).
-- The folder keeps at most 2048 record files. After a good write the records with the
-  lowest ms field go, each by one plain remove of its name. The file time does not
+- After a spawn the folder keeps at most 2048 record files. After a good write the
+  records with the lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS
   and Windows).
 

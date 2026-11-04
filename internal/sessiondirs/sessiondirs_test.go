@@ -292,6 +292,31 @@ func TestUnsavedRecordIsTriedAgain(t *testing.T) {
 	}
 }
 
+// The record of a create runs no prune: with the folder at the cap, it makes one
+// record more and removes none. A spawn record after it prunes.
+func TestCreateRecordRunsNoPrune(t *testing.T) {
+	dir := recordDir(t)
+	old := recordCap
+	recordCap = 1
+	t.Cleanup(func() { recordCap = old })
+	first := t.TempDir()
+	if err := Remember(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := RememberCreate(filepath.Join(t.TempDir(), ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(t, dir); len(got) != 2 {
+		t.Errorf("after the create record the folder holds %v, want two records", got)
+	}
+	if err := Remember(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(t, dir); len(got) != 1 {
+		t.Errorf("after the spawn record the folder holds %v, want one record", got)
+	}
+}
+
 // Above the cap the records with the lowest ms field go, each by its name, and
 // the file time does not count. A record whose folder is gone stays when it is not
 // among the lowest. Other files stay.
