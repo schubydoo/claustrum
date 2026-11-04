@@ -70,8 +70,8 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 //
 // The gap between the bounds keeps the busy read safe. A merely slow lsof is killed by
 // the deadline and its output pipe closes within the wait delay, so the run COMPLETES
-// with no output well before the abandon bound. So the two empty results really do
-// mean different things, and only the second one reads as busy.
+// with no output well before the abandon bound. So time tells the two empty results
+// apart, and both are no reading (hcBusyRead).
 //
 // The cost of getting this wrong is a whole cleaner pass: retireAbandoned samples
 // hcBusy for up to hcBusyWindow, and on darwin every one of those samples is an lsof
@@ -121,7 +121,7 @@ var (
 	//
 	// ⚠️ A wedged mount therefore leaks one process and one goroutine per abandoned run,
 	// and nothing caps that. It stays uncapped here: a pass runs
-	// every hcPassEvery (24 h) and reaches at most three busy reads per candidate, so
+	// every hcPassEvery (24 h) and gives up on at most one busy read per candidate, so
 	// the accumulation is slow, and a host with a permanently wedged mount has a larger
 	// problem than this daemon.
 	//
@@ -386,22 +386,21 @@ func parseLsofFtn(out string) []lsofRec {
 // record whose name shows a connected peer ("->") is an immediate yes; otherwise more than one
 // unix endpoint means an accepted connection sits alongside the bare listener.
 //
-// An ABANDONED run answers busy. A run that finished and saw nothing and a run that was given
-// up on both produce no output. claustrum keeps them apart, because only the first is evidence.
-// 5fd08069 sends no SIGTERM there either (measured). This arm is reachable only when the read
-// failed outright. A run that did not answer reads as not busy here, and so does a run that the
-// deadline ended. hcBusyCheck tells them apart.
+// A run that finished and saw nothing and a run that was given up on both produce no output.
+// claustrum keeps them apart, because only the first is evidence. Both read as not busy here,
+// and so do a run that did not answer and a run that the deadline ended. hcBusyCheck tells
+// them apart.
 func hcBusy(pid int) bool {
 	busy, _ := hcBusyCheck(pid)
 	return busy
 }
 
-// hcBusyCheck is hcBusy plus whether the answer is a reading at all. An abandoned run is a
-// reading: it answers busy. A run that did not answer is no reading. The retire then
+// hcBusyCheck is hcBusy plus whether the answer is a reading at all. A run that did not
+// answer is no reading. The retire then
 // refuses the daemon, and no SIGTERM goes out. That is
 // what 89cb6289 did on macOS, for a command that did not start (measured) and for a run
-// that wrote to stderr, 3 of 3 each. A run that the deadline ended is no reading either
-// (hcBusyRead).
+// that wrote to stderr, 3 of 3 each. A run that the deadline ended or that was given up on
+// is no reading either (hcBusyRead).
 func hcBusyCheck(pid int) (busy, canRead bool) {
 	busy, canRead, _ = hcBusyRead(pid)
 	return busy, canRead
@@ -412,10 +411,13 @@ func hcBusyCheck(pid int) (busy, canRead bool) {
 // `5fd08069` runs one lsof and sends no signal, for a daemon with one client and with none
 // (measured on macOS). An ended run that wrote records gets the same answer, and so does a
 // run that exits by itself right at the deadline. Both are claustrum's own, not measured.
+// A run that was given up on gets the answer of an ended run too. Under an lsof that
+// SIGKILL cannot end, `be1c1ca5` and `b3081b51` run one lsof, send no SIGTERM and end
+// the pass in 17 s (measured on macOS).
 func hcBusyRead(pid int) (busy, canRead, ended bool) {
 	out, completed, answered, expired := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {
-		return true, true, false
+		return false, false, true
 	}
 	if expired {
 		return false, false, true
@@ -438,10 +440,10 @@ func hcBusyRead(pid int) (busy, canRead, ended bool) {
 
 // hcDaemonFilesUnread reports that the open files of a daemon could not be read. The pass
 // then logs that it leaves the daemon alone (measured). ended says that the deadline ended
-// the read. The pass then logs no such line, and the retire refuses the daemon with no
-// second run. `5fd08069` sends no SIGTERM under an lsof that hangs (measured on macOS), and
-// claustrum gives the same result (measured on macOS). It is a var so a test on either OS
-// can stage the answer.
+// the read or that the run was given up on. The pass then logs no such line, and the retire
+// refuses the daemon with no second run. `5fd08069` sends no SIGTERM under an lsof that
+// hangs (measured on macOS), and claustrum gives the same result (measured on macOS). It is
+// a var so a test on either OS can stage the answer.
 var hcDaemonFilesUnread = func(pid int) (unread, ended bool) {
 	_, canRead, ended := hcBusyRead(pid)
 	return !canRead && !ended, ended

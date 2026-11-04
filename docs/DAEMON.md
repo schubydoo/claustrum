@@ -289,8 +289,8 @@ Each run has a command deadline, and the cleaner gives up on a run that outlives
 | the deadline ends the run | no SIGTERM (`5fd08069`) | kept (`5fd08069`) |
 | the run completes with nothing on stderr | the output decides | the output decides |
 
-The exit code is no rule. When no process holds the file, `lsof` exits 1 with no text, and the dir then goes. claustrum reads every run that writes to stderr as no answer, whatever its exit code and stdout. Of those runs, only exit 1 with no stdout is measured. After a run that it gave up on, claustrum reads the daemon again, so its pass takes longer than the pass of `5fd08069`, with the same signals and folders
-([D17](DIVERGENCES.md#d17), retired).
+The exit code is no rule. When no process holds the file, `lsof` exits 1 with no text, and the dir then goes. claustrum reads every run that writes to stderr as no answer, whatever its exit code and stdout. Of those runs, only exit 1 with no stdout is measured. After a run that it gave up on, claustrum runs no more `lsof` for the daemon. Its pass then ends after one 17 s wait for that daemon, as on `be1c1ca5` and `b3081b51` (measured on macOS,
+[D17](DIVERGENCES.md#d17), retired).
 
 When the busy read of a daemon gets no answer, the pass logs these two lines and
 counts the daemon under `candidates left undecided`. The first line comes before
