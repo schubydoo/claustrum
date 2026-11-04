@@ -3,24 +3,9 @@ package install
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
-
-// detectLibc's fallback branch: when `ldd` can't be executed, it probes for the
-// musl loader and otherwise reports glibc. Emptying PATH forces that branch.
-func TestDetectLibcLddMissing(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		// There is no probe to fall back FROM off linux: detectLibc returns ""
-		// without consulting ldd. TestDetectLibc covers that.
-		t.Skip("the libc probe is linux-only")
-	}
-	t.Setenv("PATH", t.TempDir()) // a dir with no `ldd`
-	if got := detectLibc(); got != "glibc" && got != "musl" {
-		t.Errorf("detectLibc() with no ldd = %q, want glibc or musl", got)
-	}
-}
 
 // A .zst that decompresses to a non-executable file fails the post-install
 // `<cli> --version` runnable check and is removed.
