@@ -322,10 +322,10 @@ func decodeManagedSettingsText(b []byte) []byte {
 // launcher.resolve). be1c1ca5 skipped each of these values (Linux,
 // launcher.resolve).
 //
-// claustrum's choices (not measured): a processWrapper of "" counts as unset, so
-// a refused env value answers. When both values are refused, the env refusal
-// answers. Each file gives one value, so a later file's processWrapper wins over an
-// earlier file's env key.
+// A processWrapper of "" next to a refused env value lets the env refusal answer,
+// and when both values are refused the env refusal answers (b3081b51, measured on
+// Linux). claustrum's choice (not measured): each file gives one value, so a later
+// file's processWrapper wins over an earlier file's env key.
 func managedSettingsWrapper(obj map[string]any) (string, string) {
 	envRefused := ""
 	if env, ok := obj["env"].(map[string]any); ok {

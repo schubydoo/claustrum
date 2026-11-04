@@ -188,9 +188,9 @@ func TestManagedRunReasonExitStatus(t *testing.T) {
 // string meets the other values (b3081b51, measured on Linux). A later file's
 // refusal leaves an earlier value in place. A later value replaces an earlier
 // refusal, and a later refusal replaces an earlier one. In one file a string value
-// of either key wins over a refused value of the other key. The last two rows are
-// claustrum's choices (not measured): an env refusal wins over a processWrapper
-// refusal, and over a processWrapper of "".
+// of either key wins over a refused value of the other key. In the last two rows an
+// env refusal wins over a processWrapper refusal, and over a processWrapper of ""
+// (b3081b51, measured on Linux).
 func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
 	const tail = " must be one string (the launcher and its arguments), not "
 	for _, c := range []struct {
