@@ -37,7 +37,7 @@ func refusingSignals(t *testing.T, err error) *[]string {
 func refusedChild(m *procManager, id string) *managedProc {
 	p := &managedProc{
 		id: id, running: true, group: &procGroup{},
-		cmd: &exec.Cmd{Process: &os.Process{Pid: 1 << 30}}, done: make(chan struct{}),
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
 	}
 	m.procs[id] = p
 	return p

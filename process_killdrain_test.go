@@ -44,7 +44,7 @@ func TestKillAndWaitKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 		mu.Unlock()
 		p := &managedProc{
 			id: "DRAIN", running: true, reaped: true,
-			cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: done,
+			cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: done,
 		}
 		start := time.Now()
 		found, died, alreadyExited, escalated := m.killAndWaitProc(p, tc.signal, tc.grace, true)
