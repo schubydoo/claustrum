@@ -91,7 +91,13 @@ func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 		}
 		linkTTL = unattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
-	mp, err := s.procs.spawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot))
+	// The session folders of a Claude Code spawn get their records in the spawn,
+	// unless the request carries the off switch (sessionfolders.go).
+	var folders []string
+	if !sessiondirs.OffSwitchSet(req.Params) {
+		folders = sessionFoldersOf(p.Command, p.Args, p.Cwd)
+	}
+	mp, err := s.procs.spawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
 	if errors.Is(err, errStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
 		return rpc.Response{NoFrame: true}
@@ -103,11 +109,6 @@ func (s *server) processSpawn(c *conn, req *request) rpc.Response {
 			return rpc.ErrResultData(req.ID, sr.code, sr.msg, reason)
 		}
 		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
-	}
-	// The session folders of a Claude Code spawn get their records after the start,
-	// unless the request carries the off switch (sessionfolders.go).
-	if !sessiondirs.OffSwitchSet(req.Params) {
-		sessiondirs.Remember(sessionFoldersOf(p.Command, p.Args, p.Cwd)...)
 	}
 	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.cliTempRoot}
 	if p.WantPid {

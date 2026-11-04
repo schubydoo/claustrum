@@ -32,7 +32,7 @@ func TestPickGitPassesOverALinkToASessionFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := binWithGit(t, t.TempDir())
-	Remember(s)
+	_ = Remember(s)
 	t.Setenv("PATH", lnk+":"+other)
 	cmd := exec.Command("git")
 	PickGit(cmd)
@@ -57,8 +57,30 @@ func TestNoRecordThroughALinkedFolder(t *testing.T) {
 	}
 	t.Cleanup(UseForTest(dir))
 	captureLog(t)
-	Remember(t.TempDir())
+	_ = Remember(t.TempDir())
 	if got := names(t, target); len(got) != 0 {
 		t.Errorf("the target of the link holds %v", got)
+	}
+}
+
+// A folder given through a link counts when the first PATH entry names its
+// resolved path, so its unsaved record refuses the spawn.
+func TestUnsavedRecordOfALinkedFolderRefuses(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), RecordFolderName)
+	if err := os.WriteFile(dir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(UseForTest(dir))
+	s, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(s, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binWithGit(t, s))
+	if err := Remember(link); err == nil {
+		t.Error("Remember of a link to the folder of the first PATH entry = nil, want SaveError")
 	}
 }
