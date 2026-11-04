@@ -202,6 +202,45 @@ func TestLauncherResolveKeysAndPrecedence(t *testing.T) {
 	}
 }
 
+// TestLauncherResolveRefusesANonString pins measured rows (b3081b51, Linux): a
+// processWrapper of 5, true, [] or {} and an env value of 5 answer unusable with
+// the kind text and log one refusal line. A processWrapper of null and
+// {"env":"x"} answer none with no line. With a string env value the env key wins,
+// and a processWrapper of 5 beside it gets no kind text.
+func TestLauncherResolveRefusesANonString(t *testing.T) {
+	logs := captureLogBuf(t)
+	s := newTestServer(t)
+	dir := tempManagedSettingsDir(t)
+	base := filepath.Join(dir, managedSettingsBase)
+	const tail = " must be one string (the launcher and its arguments), not "
+	for _, c := range []struct{ settings, reason string }{
+		{`{"processWrapper":5}`, "processWrapper" + tail + "a number"},
+		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean"},
+		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array"},
+		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object"},
+		{`{"processWrapper":null}`, ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number"},
+		{`{"env":"x"}`, ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"/w"},"processWrapper":5}`, "launcher `/w` does not exist or is not an executable regular file"},
+	} {
+		writeFileMode(t, base, []byte(c.settings), 0o644)
+		before := len(logs.String())
+		want := noneFrame
+		if c.reason != "" {
+			want = unusableFrame(base, c.reason)
+		}
+		checkResolve(t, s, c.settings, "/opt/claude/cli", want)
+		got := logs.String()[before:]
+		line := "[LauncherHandler] managed launcher from " + base + " refused: " + c.reason + "\n"
+		switch {
+		case c.reason != "" && strings.Count(got, line) != 1:
+			t.Errorf("%s: want one line %q in:\n%s", c.settings, line, got)
+		case c.reason == "" && strings.Contains(got, "[LauncherHandler]"):
+			t.Errorf("%s: want no [LauncherHandler] line, got:\n%s", c.settings, got)
+		}
+	}
+}
+
 // TestLauncherResolveDropIns pins measured rules: drop-ins in name order win over
 // the base file; the name filter; folder and FIFO entries are skipped; symlinks
 // are followed; one unreadable file makes the answer unreadable; a later

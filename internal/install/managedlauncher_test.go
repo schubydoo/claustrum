@@ -3,6 +3,7 @@ package install
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -180,5 +181,51 @@ func TestManagedRunReasonExitStatus(t *testing.T) {
 	}
 	if got := managedRunReason(r.err); got != "exit status 3" {
 		t.Errorf("reason = %q, want %q", got, "exit status 3")
+	}
+}
+
+// TestManagedLauncherRefusalAcrossFiles pins how a refusal of a value that is not a
+// string meets the other values. A later file's refusal leaves an earlier value in
+// place (claustrum's own on b3081b51, not measured). A string env value wins over a processWrapper
+// of 5 in one file (b3081b51, measured on Linux). The rest are claustrum's choices
+// (not measured): a later value replaces an earlier refusal, a later refusal
+// replaces an earlier one, and a refused env value wins over processWrapper in one
+// file.
+func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
+	const tail = " must be one string (the launcher and its arguments), not "
+	for _, c := range []struct {
+		name, base, dropIn string
+		status, reason     string
+		fromDropIn         bool
+	}{
+		{"a later refusal keeps the earlier value", `{"processWrapper":"wrap"}`, `{"processWrapper":5}`, StatusUnusable, managedNotAbsolute, false},
+		{"a later value replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":"wrap"}`, StatusUnusable, managedNotAbsolute, true},
+		{"a later refusal replaces a refusal", `{"processWrapper":5}`, `{"processWrapper":true}`, StatusUnusable, "processWrapper" + tail + "a boolean", true},
+		{"a string env value wins over a processWrapper of 5", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"wrap"},"processWrapper":5}`, ``, StatusUnusable, managedNotAbsolute, false},
+		{"a refused env value wins in one file", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]},"processWrapper":"wrap"}`, ``, StatusUnusable, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", false},
+		{"an env null counts as unset", `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null},"processWrapper":{}}`, ``, StatusUnusable, "processWrapper" + tail + "an object", false},
+	} {
+		dir := t.TempDir()
+		base := filepath.Join(dir, managedSettingsBase)
+		if err := os.WriteFile(base, []byte(c.base), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		source := base
+		if c.dropIn != "" {
+			dropDir := filepath.Join(dir, managedSettingsDropIns)
+			if err := os.Mkdir(dropDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dropDir, "10.json"), []byte(c.dropIn), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if c.fromDropIn {
+				source = filepath.Join(dropDir, "10.json")
+			}
+		}
+		got := resolveManagedLauncherIn(dir, "/opt/claude/cli")
+		if got.Status != c.status || got.Reason != c.reason || got.Source != source {
+			t.Errorf("%s: status %q reason %q source %q, want %q %q %q", c.name, got.Status, got.Reason, got.Source, c.status, c.reason, source)
+		}
 	}
 }

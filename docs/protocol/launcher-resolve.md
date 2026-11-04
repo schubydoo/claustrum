@@ -75,6 +75,12 @@ Any other value is an argv list, not a shell command:
 - Double quotes group words, so a quoted metacharacter is fine. Inside double quotes, `\"` gives `"` and `\\` gives `\`. Any other backslash stays, so `"e\nf"` keeps its two characters.
 - Outside double quotes, a backslash is a plain character, and a `"` after it opens a quote. Single quotes are plain characters.
 
+### A value that is not a string
+
+A `processWrapper` of a number is unusable, and so is an env value of a number (`b3081b51`, measured on Linux and macOS). A `processWrapper` of a boolean, an array or an object is unusable too (`b3081b51`, measured on Linux). An `env` of a string counts as unset (`b3081b51`, measured on Linux and macOS). A `processWrapper` of `null` counts as unset (`b3081b51`, measured on Linux). A string env value wins over a `processWrapper` of a number (`b3081b51`, measured on Linux).
+
+The `reason` is `<key> must be one string (the launcher and its arguments), not <kind>`. `<key>` is `processWrapper` or `env.CLAUDE_CODE_PROCESS_WRAPPER`. `<kind>` is `a number`, `a boolean`, `an array` or `an object`.
+
 ### Unusable reasons
 
 The log line writes these texts raw. The frame escapes them as in [Response](#response).

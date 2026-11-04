@@ -487,3 +487,46 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 		t.Errorf("gate with no settings: stdout %q stderr %q runs %q, want one direct run", o, e, readLog(t, f.cliLog))
 	}
 }
+
+// TestInstallAndProbeRefuseANonStringValue pins measured rules (b3081b51, one
+// settings file): a processWrapper of 5 and an env value of 5 (Linux and macOS) and
+// a processWrapper of true, [] or {} (Linux) are unusable and run nothing.
+// {"env":"x"} and {} (Linux and macOS) and a processWrapper of null (Linux) answer
+// none, and the CLI runs.
+func TestInstallAndProbeRefuseANonStringValue(t *testing.T) {
+	f := newInstallFixture(t)
+	helperMode(t, "cli-log", "")
+	t.Setenv(managedLauncherGateEnv, "1")
+	const tail = " must be one string (the launcher and its arguments), not "
+	for _, c := range []struct{ settings, reason string }{
+		{`{"processWrapper":5}`, "processWrapper" + tail + "a number"},
+		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean"},
+		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array"},
+		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object"},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number"},
+		{`{"processWrapper":null}`, ""},
+		{`{"env":"x"}`, ""},
+		{`{}`, ""},
+	} {
+		_ = os.Remove(f.cliLog)
+		writeFileMode(t, f.base, []byte(c.settings), 0o644)
+		want := `"cliWasPresent":true,"launcherStatus":"none"}` + "\n"
+		if c.reason != "" {
+			want = `"cliWasPresent":true,"launcherStatus":"unusable","launcherSource":"` + f.base + `","launcherReason":"` + c.reason + `"}` + "\n"
+		}
+		if got := f.install(t, ""); got != want {
+			t.Errorf("%s: facts tail\n got %q\nwant %q", c.settings, got, want)
+		}
+		o, e := f.probe(t)
+		wantOut, wantErr := "", ""
+		if c.reason != "" {
+			wantOut, wantErr = "__CLI_LAUNCHER__\n", "claude-ssh: "+f.cli+" was not run: managed launcher unusable: "+c.reason+"\n"
+		}
+		if o != wantOut || e != wantErr {
+			t.Errorf("%s: probe stdout %q stderr %q, want %q and %q", c.settings, o, e, wantOut, wantErr)
+		}
+		if ran := readLog(t, f.cliLog) != ""; ran != (c.reason == "") {
+			t.Errorf("%s: the CLI ran = %v, want %v", c.settings, ran, c.reason == "")
+		}
+	}
+}
