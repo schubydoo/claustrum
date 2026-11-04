@@ -650,7 +650,7 @@ var docWordLimits = map[string]int{
 	"docs/TOUR.md":                               850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                  6335, // the junction item of b3081b51. 6312: the D28 row. 6285: the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                              316,  // the reader router
-	"docs/protocol/errors.md":                    1962, // the .probe text, 41 words of a new row
+	"docs/protocol/errors.md":                    1957, // the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":         2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
 	"docs/protocol/files-list.md":                468,  // the network links of 683cc6a9
 	"docs/protocol/files-read.md":                825,
