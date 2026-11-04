@@ -814,9 +814,10 @@ func gitDirRegistryDir(gitDir string) string {
 //     and a commondir file that cannot be read fails test 3.
 //
 // Tests 1, 3 and 4 answer the "does not name" text. No read waits on a FIFO
-// (readGitPlainFile): 89cb6289 answers both FIFO cases in under 1 s. The cases of a
-// record that cannot be read are measured on Linux with git 2.43 and macOS with git 2.50.
-// In each of them nothing changes after the add.
+// (readGitPlainFile): 89cb6289 answers both FIFO cases in under 1 s. The four cases
+// above (a FIFO, a folder or no file in place of the record, and the FIFO commondir file)
+// are measured on Linux with git 2.43 and macOS with git 2.50. In each of them nothing
+// changes after the add.
 //
 // Three more cases start from the state with a record of another worktree, and 89cb6289 answers the "does
 // not name" text in each, with nothing changed after the add (Linux with git 2.43,

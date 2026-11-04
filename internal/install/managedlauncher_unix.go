@@ -16,7 +16,8 @@ var managedSystemSettingsDir = managedSettingsSystemDir
 // managedSettingsDir is the managed-settings folder. The reference reads the system
 // folder first. When it holds this host's policy, the E2E variable is ignored and
 // the system folder is read (measured on Linux and macOS). The folder holds a policy
-// when it has the base file or a drop-in (measured on Linux). An existing but
+// when it has the base file (measured on Linux and macOS) or a drop-in (measured on
+// Linux). An existing but
 // empty system folder does not count (measured on Linux). With the system folder
 // absent, the variable selects its folder (measured on Linux and macOS). An empty value
 // counts as unset, and the system folder is read (measured on Linux and macOS). A
