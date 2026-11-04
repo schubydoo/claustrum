@@ -157,7 +157,19 @@ The run dir holds `cli-temp-root-<16 hex>`, mode 0600, with the folder name and 
 - A folder that another process holds by `flock`, a folder of 25 h, or another content in the file gives a new name. The old folder stays.
 - While a child runs, the daemon holds the folder by `flock` and sets its write time to now, at the hold and every 600 s.
 
-claustrum's own, not measured: random 12 hex, an age bound of 24 h, and the order of the `refused` tests. A missing `TMPDIR` gives `/tmp`. A relative one gives no member, and a folder that does not exist gives the first `whyNot`. The count is per daemon. The hold and the count end at the exit frame. The owner test of the new folder is claustrum's own. On macOS and Windows the flag changes nothing (measured).
+claustrum's own, not measured:
+
+- Random 12 hex, an age bound of 24 h, and the order of the `refused` tests.
+- A missing `TMPDIR` gives `/tmp`. A relative one gives no member, and a folder that does not exist gives the first `whyNot`.
+- An entry that cannot be read gives no member. So does a failed mkdir, with no log line.
+- The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
+- The owner test of the new folder.
+- The count is per daemon. The hold and the count end at the exit frame.
+- The step runs after the `cwd`, launcher and session command tests, and before the start.
+- `cliTempRoot` comes before `pid` and `startTime`.
+- A failed registry write is not logged. A failed hold does not stop the spawn.
+
+On macOS and Windows the flag changes nothing (measured).
 
 ### The managed launcher
 

@@ -95,4 +95,8 @@ func TestSpawnCLITempRootStartFailureGivesItBack(t *testing.T) {
 		t.Fatalf("reply %s, want an error", raw)
 	}
 	waitTempRootsLive(t, 0)
+	// The step ran before the start, and the folder that it made stays.
+	if got := ccdFolders(t, x); len(got) != 1 {
+		t.Errorf("folders %v, want one", got)
+	}
 }
