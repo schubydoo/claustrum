@@ -253,7 +253,7 @@ In the state `shadow` the daemon compares files of the new worktree with the com
 - Each call stops at 2 minutes, as in [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). The stop goes to the git process alone, and a child of git lives on.
 - A stopped `hash-object --stdin-paths` call stops no other call, and the create succeeds (measured on macOS).
 - The objects that `hash-object -w` writes go to a folder `.readback-objects-<n>` of the folder of the daemon (measured on Linux).
-- The read-tree call names the commit id, where `be1c1ca5` names `refs/heads/<branch>` (measured on Linux and macOS).
+- The read-tree call names the commit id, where `be1c1ca5` names `refs/heads/<branch>` (measured on Linux and macOS). With no start commit, `-c core.commitGraph=false rev-parse --verify --quiet <ref>^{commit}` gives the id first. If it fails, the read-tree call names the ref and no check runs (claustrum's own, not measured).
 - Each create logs one line: `[GitHandler] worktree_create: checked <N> file(s) under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against <K> objects of commit <c> in <duration>: match`. A refusal ends `: refused: "<hint>"` instead, with no final period in `<hint>`.
 
 ## The copy of ignored files

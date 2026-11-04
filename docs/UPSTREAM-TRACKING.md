@@ -373,7 +373,8 @@ the linked pages.
   - With a git filter or git-lfs, the read-tree of claustrum can carry filter
     items before its list.
   - In the state `shadow` the read-tree call of a create names the commit id,
-    and the `status` call of git.status carries `lfs.storage` (`b3081b51`, [What
+    after one `rev-parse --verify --quiet <ref>^{commit}` with no start commit
+    (claustrum's own), and the `status` call of git.status carries `lfs.storage` (`b3081b51`, [What
     the status reads](protocol/git-status.md#what-the-status-reads)).
 
   With `"shadowDirOff":true` the other calls are equal in list, arguments,
