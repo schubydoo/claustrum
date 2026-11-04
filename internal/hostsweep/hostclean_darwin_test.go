@@ -876,7 +876,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 	// publishes atexit_sleep_ms=0 into this process's environment, and without it a
 	// race-built helper sleeps tsan's default second on the way out. Measured on macOS:
 	// the prompt fixture took 1.04s under -race without this, and 0.09s with it. CI
-	// runs -race on macos-latest, so that is a guaranteed red, not a flake.
+	// runs -race on macOS, so that is a guaranteed red, not a flake.
 	withHelper := func(mode string) {
 		hcLsofEnv = append(append([]string{}, oldEnv...),
 			"CLAUSTRUM_TEST_HELPER="+mode, "GORACE="+os.Getenv("GORACE"))
