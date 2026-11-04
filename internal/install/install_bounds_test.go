@@ -562,9 +562,9 @@ func TestInstallOverAFailingFileUsesTheFirstRunBound(t *testing.T) {
 // The clock of the bound starts before the process start call. Measured
 // on Windows against 89cb6289: the wall time of a stopped run is 30.01 to 30.06
 // s whatever the start delay of the CLI is. The seam makes the start call take
-// 3 s. With a 4 s bound the stop comes about 4 s after the call, not 7 s. The
-// real start of the stub counts toward the bound too, so the window leaves 2.9
-// s for it and for the stop.
+// 3 s. With a 4 s bound the timer then gets 1 s or less, not about 4 s. The test
+// reads the wait that the run gives its timer, so a loaded machine that is slow
+// to stop the stub does not fail it.
 func TestRunCLIVersionClockStartsBeforeTheStartCall(t *testing.T) {
 	f := newStubFixture(t)
 	placeStub(t, f.cli)
@@ -575,6 +575,7 @@ func TestRunCLIVersionClockStartsBeforeTheStartCall(t *testing.T) {
 		return old(cmd)
 	}
 	t.Cleanup(func() { startCLIRun = old })
+	stops := recordStopStep(t)
 
 	start := time.Now()
 	got := runCLIVersion(f.cli, 4*time.Second)
@@ -582,9 +583,18 @@ func TestRunCLIVersionClockStartsBeforeTheStartCall(t *testing.T) {
 	if got != cliRunStopped {
 		t.Fatalf("result %d, want cliRunStopped", got)
 	}
-	// A clock that starts after the start call stops at 7.0 s or later.
-	if elapsed < 4*time.Second || elapsed > 6900*time.Millisecond {
-		t.Errorf("the stop came after %v, want about 4s: the start call counts toward the bound", elapsed)
+	// A clock that starts after the start call gives the timer about 4 s.
+	if !stops.armed.Load() {
+		t.Fatal("the run armed no stop timer")
+	}
+	if w := time.Duration(stops.wait.Load()); w > time.Second {
+		t.Errorf("the stop timer waits %v, want 1s or less: the start call counts toward the bound", w)
+	}
+	if !stops.ran.Load() {
+		t.Error("the stop step never ran")
+	}
+	if elapsed < 4*time.Second {
+		t.Errorf("the stop came after %v, want 4s or more", elapsed)
 	}
 }
 

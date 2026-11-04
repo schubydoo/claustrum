@@ -146,27 +146,39 @@ func TestFetchCLIRecordsStatsAndSurvivesSlowProgress(t *testing.T) {
 	installProgressInterval = time.Hour // only the leading bytes:0 line, quiet output
 	t.Cleanup(func() { installIdleTimeout = oldIdle; installProgressInterval = oldProg })
 
-	// Five chunks 250ms apart (total ~1.25s > the 1s idle timeout): each gap is well
-	// under idle (4:1 margin, robust on a loaded CI runner), so every read resets the
-	// clock and the download completes — proving the abort is read-idle, not a total
-	// deadline.
-	blob := zstdOf(t, []byte("a body in five parts"))
-	part := (len(blob) + 4) / 5
+	// Six chunks with five gaps of 250ms (total ~1.25s > the 1s idle timeout). Each
+	// gap is well under idle, so every read resets the clock and the download
+	// completes. That proves the abort is read-idle, not a total deadline. No sleep
+	// follows the last chunk: the decoder ends at the last byte and the fetch then
+	// waits for the end of the body.
+	blob := zstdOf(t, []byte("a body in six parts"))
+	part := (len(blob) + 5) / 6
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 6; i++ {
+			if i > 0 {
+				time.Sleep(250 * time.Millisecond)
+			}
 			_, _ = w.Write(blob[min(i*part, len(blob)):min((i+1)*part, len(blob))])
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
-			time.Sleep(250 * time.Millisecond)
 		}
 	}))
 	defer srv.Close()
 
-	lastInstallFetch = nil
-	_, _, err := fetchCLI(srv.URL, t.TempDir())
-	if err != nil {
-		t.Fatalf("slow-but-progressing download must not abort, got: %v", err)
+	// A loaded runner can hold the client or the server for over 1s. Then the
+	// stall is right: the stats show a pause of the idle bound or more, so the
+	// test tries again. A stall with every pause under the bound is the bug.
+	for attempt := 1; ; attempt++ {
+		lastInstallFetch = nil
+		_, _, err := fetchCLI(srv.URL, t.TempDir())
+		if err == nil {
+			break
+		}
+		if lastInstallFetch == nil || lastInstallFetch.LongestPauseMs < installIdleTimeout.Milliseconds() || attempt == 3 {
+			t.Fatalf("slow-but-progressing download must not abort, got: %v (stats %+v, attempt %d)", err, lastInstallFetch, attempt)
+		}
+		t.Logf("attempt %d: a real pause of %d ms stalled the download, trying again", attempt, lastInstallFetch.LongestPauseMs)
 	}
 	if lastInstallFetch == nil || lastInstallFetch.Bytes != int64(len(blob)) {
 		t.Fatalf("fetch stats = %+v, want bytes=%d", lastInstallFetch, len(blob))
