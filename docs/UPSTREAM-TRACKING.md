@@ -176,6 +176,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
 | [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement (not measured), and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration. On Windows it runs no git call after a `.git` file swap. On Linux and macOS it keeps a branch that git made through a link at `.git` |
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
+| [D28](DIVERGENCES.md#d28) | Always-on, Linux and macOS | No, off the wire | After a shutdown `SIGTERM`, the group of an ended child gets no `SIGKILL` |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
 | [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the static check's `-version` diff | The `claustrum.conf` file |

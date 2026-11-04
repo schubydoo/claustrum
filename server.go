@@ -1445,7 +1445,9 @@ func (s *server) closeAll(socket string) {
 		s.releaseRunDir()
 	}
 	s.procs.close() // end the prune sweep; idempotent
-	logging.Infof("[Server] cleanup: closed %d connection(s), killed %d child process group(s)", closed, killed)
+	// The word "ended" is that of b3081b51, where be1c1ca5 said "killed" (measured on
+	// Linux, macOS and Windows).
+	logging.Infof("[Server] cleanup: closed %d connection(s), ended %d child process group(s)", closed, killed)
 	// Closed last, after every connection is down. Unlike the socket and
 	// daemon.token, the file itself is left in place. It is the artifact the
 	// operator asked for.
@@ -1489,7 +1491,7 @@ func (s *server) dropConns() int {
 // CT-1 pid/startTime. Split out from teardown so the gate is unit-testable
 // without teardown's os.Exit.
 //
-// It returns the number of children that got the kill, for the "cleanup:" line.
+// It returns the number of children that got a signal, for the "cleanup:" line.
 // With -keep-children that number is 0.
 func (s *server) stopChildren() int {
 	if s.keepChildren {

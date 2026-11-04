@@ -112,8 +112,8 @@ These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry 
   unopenable path is fatal. [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md) has the redaction and
   the file mode.
 - `-keep-children` is [CT-2](../DIVERGENCES.md#ct-2), off by default. Without it, a
-  graceful shutdown ends the children: the whole tree, on Windows each
-  [job](process-kill.md#windows-child-trees) (`52d82f0a`). With it, the children stay alive across a restart,
+  graceful shutdown ends the children, on Windows each
+  [job](process-kill.md#windows-child-trees) (`52d82f0a`), except [D28](../DIVERGENCES.md#d28). With it, the children stay alive across a restart,
   and the daemon logs `[Server] -keep-children: leaving <n> running child
   process(es) alive across shutdown`. A survivor loses its stdio. Its stdin
   reaches EOF, and a stdout or stderr write gets SIGPIPE, or EPIPE for a child

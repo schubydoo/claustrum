@@ -389,7 +389,7 @@ func TestServeShutsDownOnSIGTERM(t *testing.T) {
 		"[Server] shutdown requested")
 	// The connection of this test closed before the signal, but the daemon may not have
 	// seen the close yet. The connection count is therefore 0 or 1.
-	if !regexp.MustCompile(`\[Server\] cleanup: closed [01] connection\(s\), killed 0 child process group\(s\)\n`).MatchString(got) {
+	if !regexp.MustCompile(`\[Server\] cleanup: closed [01] connection\(s\), ended 0 child process group\(s\)\n`).MatchString(got) {
 		t.Errorf("log lacks the cleanup line:\n%s", got)
 	}
 }

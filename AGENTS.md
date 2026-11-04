@@ -342,6 +342,15 @@ each signal to a live process (from the code, [guards](docs/DAEMON.md#host-clean
 
 Never widen: Build no run-dir name from a request value or an operator path.
 
+### The shutdown sweep
+
+At a shutdown on Linux and macOS, a child whose args ask for `stream-json` (`argsAskEnd`)
+gets `SIGTERM` to its pid first (`b3081b51`). If it is still there 1.5 s later, its group
+gets `SIGKILL` (`endAsked`). After its exit frame it gets no signal (D28).
+
+Never widen: In the shutdown sweep, send a group `SIGKILL` after the exit of a child only while its exit drain
+is open.
+
 ### The `git-shadow` folder
 
 The folder `git-shadow` of the settings copy is a further recursive delete site, and it is
@@ -555,11 +564,14 @@ the rules, the cost and the reopen trigger of each.
 | [D23](docs/DIVERGENCES.md#d23) | The environment block of a child is in name order | always-on | Windows |
 | [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call. On Linux and macOS a rollback after a link at `.git` during the staged add deletes no branch through it | always-on | all |
 | [D27](docs/DIVERGENCES.md#d27) | The stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists | always-on | Windows |
+| [D28](docs/DIVERGENCES.md#d28) | At a shutdown, send no group `SIGKILL` after the exit frame of a child that got the `SIGTERM` | always-on | Linux, macOS |
 | [CT-1](docs/DIVERGENCES.md#ct-1) | Opt-in `wantPid` adds `pid` and `startTime` on spawn and reattach | off (the caller asks) | all |
 | [CT-2](docs/DIVERGENCES.md#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | all |
 | [CT-3](docs/DIVERGENCES.md#ct-3) | The `claustrum.conf` config file | off (no file) | all |
 | [CT-4](docs/DIVERGENCES.md#ct-4) | Hardened token persistence, a deferred idea | not built | none |
 | [CT-5](docs/DIVERGENCES.md#ct-5) | The `-listen-pipe` named-pipe transport | off | Windows |
+
+### The caps and bounds
 
 The three caps and bounds D3, D10 and D12 default off. That is the parity
 position: a non-off default fails an operation that the reference completes.

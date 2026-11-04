@@ -634,13 +634,13 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                6060, // the .git file gone after the checkout of be1c1ca5. 6018: the staged add of be1c1ca5. 5794: the signals at a long root, measured. 5792: the approval of the long-path dials. 5767: the long-path dials of the host cleaner and plugins.prune. 5722: the daemon dial of a long socket path. 5706: the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
+	"AGENTS.md":                                6163, // the shutdown sweep of b3081b51, D28 and the heading of the caps. 6060: the .git file gone after the checkout of be1c1ca5. 6018: the staged add of be1c1ca5. 5794: the signals at a long root, measured. 5792: the approval of the long-path dials. 5767: the long-path dials of the host cleaner and plugins.prune. 5722: the daemon dial of a long socket path. 5706: the sweep on Linux and macOS of be1c1ca5. 5671: the build of the new prunes. 5670: the prune before the fetch of -install. 5632: the deadline of timeoutMs by the end of the add. 5628: the file that Windows cannot read. 5619: the empty folder that Windows cannot read. 5592: the temp-folder test of 683cc6a9. 5537: the two .synced removes of 683cc6a9
 	"CONTRIBUTING.md":                          1071,
 	"README.md":                                1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                              1609, // the ssh door of be1c1ca5. 1553 before
 	"docs/ARCHITECTURE.md":                     2682, // gitsshdoor.go. 2674: socketroute*.go. 2673: the sweep on Linux and macOS of be1c1ca5. 2667 before
-	"docs/DAEMON.md":                           8137, // the signals at a long root, measured. 8115: the not-measured parts of a long run root. 8090: the long run root of the host cleaner. 7940: the long socket path. 7616: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
-	"docs/DIVERGENCES.md":                      7908, // the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
+	"docs/DAEMON.md":                           8150, // the cleanup word of b3081b51. 8137: the signals at a long root, measured. 8115: the not-measured parts of a long run root. 8090: the long run root of the host cleaner. 7940: the long socket path. 7616: the start-time line. 7541: the temp-folder lines of 683cc6a9. 7493: the new section Lines of connections. 7175: a new page, its words moved from PROTOCOL.md and ARCHITECTURE.md
+	"docs/DIVERGENCES.md":                      8200, // D28. 7908: the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
 	"docs/EXAMPLES.md":                         1025,
 	"docs/GLOSSARY.md":                         1297,
 	"docs/IMPROVEMENTS.md":                     1590,
@@ -648,7 +648,7 @@ var docWordLimits = map[string]int{
 	"docs/PROTOCOL.md":                         2835, // the files.realpath row and count. 2826: one sentence on the close line. one sentence on a failed write. the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                            1293, // the page rewrite
 	"docs/TOUR.md":                             850,  // a new page: its word count plus about 200
-	"docs/UPSTREAM-TRACKING.md":                6285, // the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
+	"docs/UPSTREAM-TRACKING.md":                6312, // the D28 row. 6285: the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                            316,  // the reader router
 	"docs/protocol/errors.md":                  1912, // the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":       2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
@@ -674,7 +674,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":        1046, // attach, fresh and proof
 	"docs/protocol/process-spawn.md":           3508, // the temp-folder test of 683cc6a9. 3474: rewrite to the page template
 	"docs/protocol/process-stdin.md":           929,  // attach
-	"docs/protocol/server.md":                  1548, // the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
+	"docs/protocol/server.md":                  1721, // the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                 584,  // moved from PROTOCOL.md
 }
 
