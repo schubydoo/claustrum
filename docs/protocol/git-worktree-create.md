@@ -137,7 +137,7 @@ Each text is in `error`, unless the row names a JSON-RPC error. The shared texts
 
 ### Content check refusals
 
-Each text starts `Claude could not confirm that the new worktree matches its commit, so it did not keep it. `, and the rollback of a failed checkout follows. If an entry of the worktree cannot be removed, ` Removing it could not finish for <leaf>: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>).` follows the text, and all three stay (measured on Windows). `<c>` is the first 12 hex digits of the commit. Each quoted name and path has Go escapes, so a Windows path has two backslashes for each one. Build `b3081b51`, measured on Linux, macOS and Windows.
+Each text starts `Claude could not confirm that the new worktree matches its commit, so it did not keep it. `, and the rollback of a failed checkout follows. If an entry of the worktree cannot be removed, ` Removing it could not finish for <leaf>: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>).` follows the text, and all three stay (measured on Windows). The other undo texts (registration, rmdir, branch) take the same form (claustrum's own, not measured). `<c>` is the first 12 hex digits of the commit. Each quoted name and path has Go escapes, so a Windows path has two backslashes for each one. Build `b3081b51`, measured on Linux, macOS and Windows.
 
 | Text after the start | Code and cause |
 |---|---|
