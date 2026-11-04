@@ -4,7 +4,7 @@
 
 Treat the socket and the token as shell access. See [`SECURITY.md`](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
-An untagged rule on this page is measured against build `89cb6289`. The removal of `CLAUDE_SSH_PEER_CHECK` and the spawn during a shutdown are measured against build `5fd08069`.
+An untagged rule on this page is measured against build `89cb6289`. The removal of `CLAUDE_SSH_PEER_CHECK` is measured against `5fd08069`, the spawn during a shutdown against `be1c1ca5`.
 
 ## Request
 
@@ -235,7 +235,7 @@ A spawn with the `id` and the session of a running process only replaces it, as 
 
 ### A spawn during a shutdown
 
-A spawn that reaches the start of its child after the shutdown began gets no reply. The daemon ends that child at once, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). The reference leaves it running (measured on Linux, macOS and Windows).
+A spawn whose child starts after the shutdown began gets no reply. The daemon ends that child, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). If the reference exits during that start, the child can stay running (measured on Linux and macOS).
 
 ## Differences from the reference
 
