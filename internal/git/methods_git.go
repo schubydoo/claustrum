@@ -3010,7 +3010,12 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		// (build c8e2f083, measured on Linux). The test covers each white space at the
 		// end, not only a blank (claustrum's own, not measured). A remove with
 		// worktreeRoot, and every other `.git`, delete the registration as before.
-		if p.WorktreeRoot != "" || !baseRepoGitFileEndsInSpace(repo) {
+		// A junction or a directory symbolic link at <git dir>\worktrees keeps the
+		// entry behind it, and the branch step runs. b3081b51 answers success so
+		// (measured on Windows, which refuses worktreeRoot before this step). On
+		// Linux and macOS openRegistrationsFolder refuses a symbolic link there too.
+		linked := removeRegistrationsLinked(filepath.Join(commonDir, worktreesSubdir))
+		if !linked && (p.WorktreeRoot != "" || !baseRepoGitFileEndsInSpace(repo)) {
 			dropWorktreeEntryByPath(commonDir, sp)
 		}
 	}
