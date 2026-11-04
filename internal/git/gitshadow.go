@@ -788,7 +788,14 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 		if strings.HasPrefix(cause, gitCannotRunPrefix) {
 			return "", cause
 		}
-		return "", cause + shadowVersionNote(check, plainEnv)
+		// A first `git version` that fails too makes the answer the cannot-run text
+		// of that call: b3081b51 answers `git cannot run on this host; git not run:
+		// exit status 1` for a git that fails every call (measured on Linux).
+		note, whole := shadowVersionNote(check, plainEnv)
+		if whole != "" {
+			return "", whole
+		}
+		return "", cause + note
 	}
 
 	// Calls 1 to 5 make the repository `real` with one empty commit.
@@ -981,17 +988,23 @@ func readStopText(path string) string {
 // `worktree add`. No record has a failed `config`, `commit-tree` or `update-ref`
 // call of the calls 1 to 5. Those three share the path of `init` and `mktree`:
 // not measured (setupFailed in shadowTestCalls).
-func shadowVersionNote(check string, env []string) string {
+//
+// whole is the cannot-run text when the first call fails, and then no second call
+// runs (b3081b51, measured on Linux).
+func shadowVersionNote(check string, env []string) (note, whole string) {
 	first := shadowGit(gitVersionDir, gitVersionEnv(nil), "version")
+	if first.err != nil {
+		return "", gitCannotRunPrefix + listingRun{stderr: first.stderr, err: first.err}.detail()
+	}
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
 	text := second.out
 	if text == "" {
 		text = first.out
 	}
 	if text == "" {
-		return ""
+		return "", ""
 	}
-	return " (" + text + ")"
+	return " (" + text + ")", ""
 }
 
 // The first texts of the folder `shadow` of the test, and the end of its config

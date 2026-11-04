@@ -415,8 +415,8 @@ func TestGitVersionFailsInPlainFolder(t *testing.T) {
 		{"A-N3", "Wa-crN", "git.worktree_create", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
 			resultFrame(t, worktreeResult{Success: false, Error: versionFailsText, ErrorCode: "worktree_add_failed"})},
 		{"A-N4", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
-			// The colon form of b3081b51 and be1c1ca5 (measured on Linux) replaces the
-			// older form with parentheses (goneLockCheckText).
+			// The colon form of b3081b51 (measured on Linux, claustrum's own on macOS
+			// and Windows) replaces the older form with parentheses (goneLockCheckText).
 			resultFrame(t, worktreeRemoveResult{Success: false, Error: "failed to remove worktree: could not check whether " +
 				f.leaf() + " is locked: " + versionFailsText})},
 	} {

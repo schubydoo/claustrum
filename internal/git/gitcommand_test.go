@@ -117,3 +117,20 @@ func TestSessionOffDropsControlPerSystem(t *testing.T) {
 		t.Errorf("sessionOffDropsControl = %v on %s, want %v", sessionOffDropsControl, runtime.GOOS, want)
 	}
 }
+
+// A git that fails `init` and `git version` in the start test, with no session
+// folder: git.info answers the cannot-run text of the version call.
+func TestStartTestWithAFailingGit(t *testing.T) {
+	requireGit(t)
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	slowGit(t, "version", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "init")
+	t.Setenv("CLAUSTRUM_GITSTUB_MODE2", "fail")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
+	raw, _ := f.call(t, "git.info", map[string]any{"path": f.repo})
+	if want := `"error":{"code":-32603,"message":"git cannot run on this host; git not run: exit status 1"}`; !strings.Contains(raw, want) {
+		t.Errorf("git.info = %s\nwant %s", raw, want)
+	}
+}

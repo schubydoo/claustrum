@@ -2911,7 +2911,9 @@ func pruneGitDir(repo string) string {
 // goneLockCheckText is the refusal of a remove of a gone worktree whose lock check
 // failed for reason. A reason of git that cannot run follows a colon, with no
 // "retry": b3081b51 answers `... is locked: git cannot run on this host; git not
-// run: exit status 1` (measured on Linux). Other reasons keep the parentheses.
+// run: exit status 1` (measured on Linux, for a plain folder and a repository, a
+// gone and an empty leaf). On macOS and Windows the colon form is claustrum's own,
+// not measured. Other reasons keep the parentheses.
 func goneLockCheckText(worktreePath, reason string) string {
 	if strings.HasPrefix(reason, gitCannotRunPrefix) {
 		return "failed to remove worktree: could not check whether " + worktreePath + " is locked: " + reason
