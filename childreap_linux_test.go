@@ -49,57 +49,57 @@ func TestReapOrphansGate(t *testing.T) {
 		t.Skip("nodeID unavailable on this host")
 	}
 
-	const orphanPid = 424242
-	const deadDaemon = 999999
+	const orphanPid = noSuchPid + 424242
+	const deadDaemon = noSuchPid + 999999
 	orphanName := writeRec(t, runDir, childRecord{
 		Pid: orphanPid, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/usr/bin/node", Start: "9000", At: time.Now().UnixMilli(),
 	})
 	mineName := writeRec(t, runDir, childRecord{
-		Pid: 111, Node: ownNode, Host: ownHost, Instance: ownInstance,
+		Pid: noSuchPid + 111, Node: ownNode, Host: ownHost, Instance: ownInstance,
 		DaemonPid: os.Getpid(), Argv0: "/x", Start: "1", At: time.Now().UnixMilli(),
 	})
 	liveOwnerName := writeRec(t, runDir, childRecord{
-		Pid: 222, Node: ownNode, Host: ownHost, Instance: "inst-other",
-		DaemonPid: 333, DaemonStart: "50", Argv0: "/y", Start: "2", At: time.Now().UnixMilli(),
+		Pid: noSuchPid + 222, Node: ownNode, Host: ownHost, Instance: "inst-other",
+		DaemonPid: noSuchPid + 333, DaemonStart: "50", Argv0: "/y", Start: "2", At: time.Now().UnixMilli(),
 	})
 	goneName := writeRec(t, runDir, childRecord{
-		Pid: 444, Node: ownNode, Host: ownHost, Instance: "inst-old",
+		Pid: noSuchPid + 444, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/z", Start: "3", At: time.Now().UnixMilli(),
 	})
 	foreignFreshName := writeRec(t, runDir, childRecord{
-		Pid: 555, Node: "otherboot/ns", Host: "machine-id:other", Instance: "inst-far",
+		Pid: noSuchPid + 555, Node: "otherboot/ns", Host: "machine-id:other", Instance: "inst-far",
 		DaemonPid: 6, Argv0: "/a", Start: "4", At: time.Now().UnixMilli(),
 	})
 	foreignStaleName := writeRec(t, runDir, childRecord{
-		Pid: 666, Node: "otherboot/ns", Host: "machine-id:other", Instance: "inst-far",
+		Pid: noSuchPid + 666, Node: "otherboot/ns", Host: "machine-id:other", Instance: "inst-far",
 		DaemonPid: 6, Argv0: "/b", Start: "5", At: time.Now().Add(-40 * 24 * time.Hour).UnixMilli(),
 	})
 	// A verify-skip orphan: dead owner, same node, but the live process is not its own
 	// group leader, so verifyOrphan returns a skip and the record is forgotten.
 	skipName := writeRec(t, runDir, childRecord{
-		Pid: 777, Node: ownNode, Host: ownHost, Instance: "inst-old",
+		Pid: noSuchPid + 777, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/n", Start: "7", At: time.Now().UnixMilli(),
 	})
 	// A passthrough orphan: the live process disowns this daemon (another namespace), so
 	// the record is kept for a daemon that owns it.
 	passthroughName := writeRec(t, runDir, childRecord{
-		Pid: 888, Node: ownNode, Host: ownHost, Instance: "inst-old",
+		Pid: noSuchPid + 888, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/n", Start: "8", At: time.Now().UnixMilli(),
 	})
 	// An earlier-boot record of THIS machine (same host, different boot id): forgotten.
 	_, ownNS, _ := strings.Cut(ownNode, "/")
 	earlierBootName := writeRec(t, runDir, childRecord{
-		Pid: 990, Node: "oldboot/" + ownNS, Host: ownHost, Instance: "inst-old",
+		Pid: noSuchPid + 990, Node: "oldboot/" + ownNS, Host: ownHost, Instance: "inst-old",
 		DaemonPid: 6, Argv0: "/n", Start: "9", At: time.Now().UnixMilli(),
 	})
 
 	sim := newProcSim(t)
 	sim.live[orphanPid] = &liveProc{state: procAlive, startTicks: "9000", pgid: orphanPid, program: "/usr/bin/node", runDir: runDir, childMark: strconv.Itoa(orphanPid) + ":9000"}
-	sim.live[333] = &liveProc{state: procAlive, startTicks: "50"}                                        // the live owning daemon
-	sim.live[777] = &liveProc{state: procAlive, startTicks: "7", pgid: 5, program: "/n", runDir: runDir} // not group leader -> skip
-	sim.live[888] = &liveProc{state: procNotOurs}                                                        // disowns us -> passthrough
-	// deadDaemon and pid 444 are unlisted, so they read as gone.
+	sim.live[noSuchPid+333] = &liveProc{state: procAlive, startTicks: "50"}                                        // the live owning daemon
+	sim.live[noSuchPid+777] = &liveProc{state: procAlive, startTicks: "7", pgid: 5, program: "/n", runDir: runDir} // not group leader -> skip
+	sim.live[noSuchPid+888] = &liveProc{state: procNotOurs}                                                        // disowns us -> passthrough
+	// deadDaemon and pid noSuchPid+444 are unlisted, so they read as gone.
 	sim.diesOn(orphanPid, syscall.SIGTERM) // the reaped orphan exits to SIGTERM
 
 	summary := captureLog(t, func() { reapOrphans(runDir, ownInstance) })
@@ -139,8 +139,8 @@ func TestReapOrphansGate(t *testing.T) {
 	// ended on SIGTERM, four records dropped, four kept. A mutant that reorders or
 	// mis-labels the numbers fails here.
 	wantLinesInOrder(t, summary,
-		"INFO  [process.Registry] record 777.json: pid 777 is not a child to end (it does not lead its own process group); dropping the record, signalling nothing",
-		`INFO  [process.Registry] ending orphaned process group 424242 recorded by daemon instance "inst-old" (pid 999999): SIGTERM`,
+		"INFO  [process.Registry] record 1073742601.json: pid 1073742601 is not a child to end (it does not lead its own process group); dropping the record, signalling nothing",
+		`INFO  [process.Registry] ending orphaned process group 1074166066 recorded by daemon instance "inst-old" (pid 1074741823): SIGTERM`,
 		"INFO  [daemon] serve: predecessor's children — 1 orphaned group(s): 1 ended on SIGTERM, 0 on SIGKILL, 0 survived; 4 stale record(s) dropped, 4 kept",
 	)
 }
@@ -159,10 +159,10 @@ func TestReapOrphansBatchOverflow(t *testing.T) {
 	}
 	ownHost := "machine-id:" + machineID()
 	table := map[int]liveProc{}
-	for _, pid := range []int{700001, 700002} {
+	for _, pid := range []int{noSuchPid + 700001, noSuchPid + 700002} {
 		writeRec(t, runDir, childRecord{
 			Pid: pid, Node: ownNode, Host: ownHost, Instance: "inst-old",
-			DaemonPid: 999999, DaemonStart: "1", Argv0: "/n", Start: "9", At: time.Now().UnixMilli(),
+			DaemonPid: noSuchPid + 999999, DaemonStart: "1", Argv0: "/n", Start: "9", At: time.Now().UnixMilli(),
 		})
 		table[pid] = liveProc{state: procAlive, startTicks: "9", pgid: pid, program: "/n", runDir: runDir, childMark: strconv.Itoa(pid) + ":9"}
 	}

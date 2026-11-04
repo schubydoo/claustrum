@@ -107,8 +107,8 @@ func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
 		switch sig {
 		case syscall.SIGTERM:
-			if pid == 5339 {
-				_ = os.RemoveAll(filepath.Join(root, "5339")) // the leader ends, a kid stays
+			if pid == noSuchPid+5339 {
+				_ = os.RemoveAll(filepath.Join(root, "1073747163")) // the leader ends, a kid stays
 			}
 		case syscall.SIGKILL:
 			kills = append(kills, pid)
@@ -123,24 +123,24 @@ func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 		}
 		return nil
 	})
-	mk(5338, "stat", hcRunningStat(5338, 1, 5338, "1")) // ignores SIGTERM
-	mk(5339, "stat", hcRunningStat(5339, 1, 5339, "1")) // its leader ends on SIGTERM
+	mk(noSuchPid+5338, "stat", hcRunningStat(noSuchPid+5338, 1, noSuchPid+5338, "1")) // ignores SIGTERM
+	mk(noSuchPid+5339, "stat", hcRunningStat(noSuchPid+5339, 1, noSuchPid+5339, "1")) // its leader ends on SIGTERM
 	buf := captureLogBuf(t)
 
-	endGroupsTwoPhase([]tracked{{pid: 5338, pgid: 5338, startTicks: "1"}, {pid: 5339, pgid: 5339, startTicks: "1"}},
+	endGroupsTwoPhase([]tracked{{pid: noSuchPid + 5338, pgid: noSuchPid + 5338, startTicks: "1"}, {pid: noSuchPid + 5339, pgid: noSuchPid + 5339, startTicks: "1"}},
 		"orphaned process group", "")
 
-	if len(kills) != 2 || kills[0] != 5339 || kills[1] != 5338 {
-		t.Fatalf("SIGKILL = %v, want [5339 5338]", kills)
+	if len(kills) != 2 || kills[0] != noSuchPid+5339 || kills[1] != noSuchPid+5338 {
+		t.Fatalf("SIGKILL = %v, want [1073747163 1073747162]", kills)
 	}
 	if killAt[1] != hcTermGrace {
 		t.Errorf("the SIGKILL of the group that ignores SIGTERM came after %s, want %s", killAt[1], hcTermGrace)
 	}
 	got := buf.String()
-	if want := "[hostclean] group 5338 outlived SIGTERM for 3s: SIGKILL\n"; !strings.Contains(got, want) {
+	if want := "[hostclean] group 1073747162 outlived SIGTERM for 3s: SIGKILL\n"; !strings.Contains(got, want) {
 		t.Errorf("log = %q, want %q", got, want)
 	}
-	if strings.Contains(got, "group 5339 outlived") {
+	if strings.Contains(got, "group 1073747163 outlived") {
 		t.Errorf("log = %q, want no line for the group that the wait ended", got)
 	}
 }
@@ -272,7 +272,7 @@ func TestRetireChecksTheIdentityAfterThePidfdOpen(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
 	socket := "/opt/claude/run/x/rpc.sock"
-	const control, victim = 77, 78
+	const control, victim = noSuchPid + 77, noSuchPid + 78
 	plant := func(pid int) {
 		hcFakeDaemon(t, proot, mk, link, pid, "/opt/claude/srv/a/server",
 			[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")

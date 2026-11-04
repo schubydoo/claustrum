@@ -26,7 +26,7 @@ import (
 // It returns retireAbandoned's answer and every pid that was signalled.
 func retireReuseFixture(t *testing.T, reuse bool) (retired bool, signalled []int) {
 	t.Helper()
-	const pid = 4200
+	const pid = noSuchPid + 4200
 	const socket = "/opt/claude/run/x/rpc.sock"
 
 	proot, mk, link := fakeProc(t)
@@ -80,8 +80,8 @@ func TestRetireAbandonedRefusesAPidReusedDuringSampling(t *testing.T) {
 		if !retired {
 			t.Fatal("an idle, verifiable daemon was not retired")
 		}
-		if len(signalled) != 1 || signalled[0] != 4200 {
-			t.Fatalf("signalled = %v, want [4200]", signalled)
+		if len(signalled) != 1 || signalled[0] != noSuchPid+4200 {
+			t.Fatalf("signalled = %v, want [1073746024]", signalled)
 		}
 	})
 

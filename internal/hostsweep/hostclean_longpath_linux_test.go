@@ -88,7 +88,7 @@ func TestPassAtALongOwnSocketReachesTheOrphanSweep(t *testing.T) {
 		}
 		return f.dial(addr)
 	}
-	orphan := os.Getpid() + 1
+	orphan := noSuchPid + 1
 	hcFakeDaemonUID(t, f.proot, f.mk, f.link, orphan, filepath.Join(base, "ccd-cli", "2.1.0"),
 		[]string{"claude", "--output-format=stream-json"}, true, "1", f.uid)
 	hcPipeStdio(f.link, orphan)

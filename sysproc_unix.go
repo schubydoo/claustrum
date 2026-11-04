@@ -89,8 +89,12 @@ func (*procGroup) close() {}
 //
 // 52d82f0a keeps the split (measured on Linux and macOS): TERM, INT and HUP reach
 // the leader only, and KILL reaches its group but not a process in its own session.
-// It returns the error of the call.
+// It returns the error of the call. A pid below 2 gets the error of
+// sysproc.RefuseSmallPid and no signal (claustrum's own).
 func signalProcessGroup(proc *os.Process, signame string) error {
+	if err := sysproc.RefuseSmallPid(proc.Pid); err != nil {
+		return err
+	}
 	sig := parseSignal(signame)
 	if sig == syscall.SIGKILL {
 		return sysproc.KillChildGroup(proc.Pid)

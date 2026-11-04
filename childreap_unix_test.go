@@ -149,7 +149,7 @@ func TestParsePSLine(t *testing.T) {
 // TestVerifyOrphanEmptyArgv0BeforeProgram pins a measured rule: a record with an empty argv0
 // is refused before its program key is read, also when the live process runs program.
 func TestVerifyOrphanEmptyArgv0BeforeProgram(t *testing.T) {
-	const pid, runDir = 424242, "/run/c1"
+	const pid, runDir = noSuchPid + 424242, "/run/c1"
 	fakeLiveProcs(t, map[int]liveProc{pid: {
 		state: procAlive, startTicks: "9", pgid: pid, program: "/f/bin/sigstub",
 		runDir: runDir, childMark: strconv.Itoa(pid) + ":9",
@@ -369,7 +369,7 @@ func simTarget(t *testing.T) (*procSim, string, reapTarget) {
 		t.Fatal(err)
 	}
 	sim := newProcSim(t)
-	tg := sim.addVerified(1001, "10", runDir)
+	tg := sim.addVerified(noSuchPid+1001, "10", runDir)
 	if err := os.WriteFile(filepath.Join(runDir, "children", tg.name), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func simTarget(t *testing.T) (*procSim, string, reapTarget) {
 // texts are measured too, the unreadable environment among them. A group that still passes gets the SIGKILL
 // at the end of the grace, as the control.
 func TestReapWaitDropsGroupThatNoLongerVerifies(t *testing.T) {
-	const line = "[process.Registry] group 1001 no longer verifies (%s); nothing more is sent to it\n"
+	const line = "[process.Registry] group 1073742825 no longer verifies (%s); nothing more is sent to it\n"
 	for _, tc := range []struct {
 		name    string
 		program string // the program key of the record
@@ -397,8 +397,8 @@ func TestReapWaitDropsGroupThatNoLongerVerifies(t *testing.T) {
 		{"another program, record with a program key", "/f/bin/sigstub", func(lp *liveProc) { lp.program = "/f/bin/ustub" },
 			`it does not run the recorded program "/n" and neither runs nor was handed "/f/bin/sigstub"`},
 		{"the environment of the leader cannot be read", "", func(lp *liveProc) {
-			lp.state, lp.unreadable = procNotOurs, "environment unreadable: open /proc/1001/environ: permission denied"
-		}, "environment unreadable: open /proc/1001/environ: permission denied"},
+			lp.state, lp.unreadable = procNotOurs, "environment unreadable: open /proc/1073742825/environ: permission denied"
+		}, "environment unreadable: open /proc/1073742825/environ: permission denied"},
 		{"the leader cannot be read, with no reference text", "", func(lp *liveProc) { lp.state = procNotOurs },
 			"process is not in this daemon's namespace"},
 		{"the leader lost its run dir entry", "", func(lp *liveProc) { lp.runDir = "" },
@@ -770,7 +770,7 @@ func TestReapOrphansChildrenSymlink(t *testing.T) {
 // pass record returns a reap. A mutant that drops any single guard flips exactly one row.
 func TestVerifyOrphan(t *testing.T) {
 	const runDir = "/run/c0ffee01"
-	const pid = 424242
+	const pid = noSuchPid + 424242
 	// A live process that passes every check, so each case below removes exactly one.
 	pass := liveProc{
 		state:      procAlive,
@@ -827,7 +827,7 @@ func TestVerifyOrphan(t *testing.T) {
 // reports gone when the process exited in the meantime, rather than logging a skip for a
 // process that just raced away.
 func TestSettleThenVerdictReportsGone(t *testing.T) {
-	const pid = 555
+	const pid = noSuchPid + 555
 	calls := 0
 	oldRead, oldSleep := readLiveProc, reapSleep
 	t.Cleanup(func() { readLiveProc, reapSleep = oldRead, oldSleep })
@@ -849,7 +849,7 @@ func TestSettleThenVerdictReportsGone(t *testing.T) {
 // TestSameLeader covers the pre-kill re-check: reused pid, no longer group leader, gone,
 // and still safe to signal.
 func TestSameLeader(t *testing.T) {
-	const pid = 700
+	const pid = noSuchPid + 700
 	cases := []struct {
 		name    string
 		recStrt string
@@ -873,7 +873,7 @@ func TestSameLeader(t *testing.T) {
 
 // TestDaemonAlive covers the owner-liveness gate that decides whether a child is an orphan.
 func TestDaemonAlive(t *testing.T) {
-	const dpid = 800
+	const dpid = noSuchPid + 800
 	const ownPid = 42
 	cases := []struct {
 		name  string
@@ -912,7 +912,7 @@ func TestReapOrphansForgetsBadRecords(t *testing.T) {
 	}
 	// A valid record whose pid does not match its file name (a leftover temp name).
 	tempName := "424242.111.json"
-	if err := os.WriteFile(filepath.Join(dir, tempName), []byte(`{"pid":424242,"start":"1"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, tempName), []byte(`{"pid":1074166066,"start":"1"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// A non-json file is ignored entirely (left in place, never read).
@@ -951,8 +951,8 @@ func TestReapTargetsTwoPhase(t *testing.T) {
 	sim := newProcSim(t)
 	// Each target still passes the whole record test at the end of the grace, so each
 	// one gets the SIGKILL.
-	t1 := sim.addVerified(1001, "10", runDir)
-	t2 := sim.addVerified(1002, "20", runDir)
+	t1 := sim.addVerified(noSuchPid+1001, "10", runDir)
+	t2 := sim.addVerified(noSuchPid+1002, "20", runDir)
 	for _, tt := range []reapTarget{t1, t2} {
 		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
@@ -1014,9 +1014,9 @@ func TestReapTargetsPreKillReuse(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	reused := reapTarget{pid: 2001, start: "10", name: "2001.json"}
-	gone := reapTarget{pid: 2002, start: "20", name: "2002.json"}
-	sigfail := reapTarget{pid: 2003, start: "30", name: "2003.json"}
+	reused := reapTarget{pid: noSuchPid + 2001, start: "10", name: "1073743825.json"}
+	gone := reapTarget{pid: noSuchPid + 2002, start: "20", name: "1073743826.json"}
+	sigfail := reapTarget{pid: noSuchPid + 2003, start: "30", name: "1073743827.json"}
 	for _, tt := range []reapTarget{reused, gone, sigfail} {
 		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
@@ -1082,9 +1082,9 @@ func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	sim := newProcSim(t)
-	staysAlive := sim.addVerified(3001, "10", runDir) // the recorded child throughout
-	reused := reapTarget{pid: 3002, start: "20", name: "3002.json", rec: childRecord{Pid: 3002, Start: "20", Argv0: "/n"}}
-	groupSurvivor := reapTarget{pid: 3003, start: "30", name: "3003.json", rec: childRecord{Pid: 3003, Start: "30", Argv0: "/n"}}
+	staysAlive := sim.addVerified(noSuchPid+3001, "10", runDir) // the recorded child throughout
+	reused := reapTarget{pid: noSuchPid + 3002, start: "20", name: "1073744826.json", rec: childRecord{Pid: noSuchPid + 3002, Start: "20", Argv0: "/n"}}
+	groupSurvivor := reapTarget{pid: noSuchPid + 3003, start: "30", name: "1073744827.json", rec: childRecord{Pid: noSuchPid + 3003, Start: "30", Argv0: "/n"}}
 	for _, tt := range []reapTarget{staysAlive, reused, groupSurvivor} {
 		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
@@ -1134,7 +1134,7 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	tg := reapTarget{pid: 5001, start: "10", name: "5001.json", rec: childRecord{Pid: 5001, Start: "10", Argv0: "/n"}}
+	tg := reapTarget{pid: noSuchPid + 5001, start: "10", name: "1073746825.json", rec: childRecord{Pid: noSuchPid + 5001, Start: "10", Argv0: "/n"}}
 	if err := os.WriteFile(filepath.Join(dir, tg.name), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1170,7 +1170,7 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 	if len(pending) != 0 || counts.reapedGrace != 0 || counts.forgotten != 1 {
 		t.Errorf("pending=%v reapedGrace=%d forgotten=%d, want [], 0 and 1 (a pid that a live process holds is dropped, not reaped)", pending, counts.reapedGrace, counts.forgotten)
 	}
-	if want := `[process.Registry] group 5001 no longer verifies (it did not start at the recorded "10": the pid has been reused); nothing more is sent to it`; !strings.Contains(out, want) {
+	if want := `[process.Registry] group 1073746825 no longer verifies (it did not start at the recorded "10": the pid has been reused); nothing more is sent to it`; !strings.Contains(out, want) {
 		t.Errorf("log = %q\nwant it to hold %q", out, want)
 	}
 	if recordExists(runDir, tg.name) {

@@ -86,7 +86,7 @@ func TestRetireRefusesAStoppedDaemon(t *testing.T) {
 			holds++
 			return func(sig syscall.Signal) error { sent = append(sent, sig); return nil }, func() {}
 		}
-		const pid = 4600
+		const pid = noSuchPid + 4600
 		oldPpid := hcGetppid
 		hcGetppid = func() int { return 1 }
 		t.Cleanup(func() { hcGetppid = oldPpid })
@@ -126,7 +126,7 @@ func TestRetireRefusesAStoppedDaemon(t *testing.T) {
 func TestPassLeavesAStoppedDaemonAlone(t *testing.T) {
 	for _, stopped := range []bool{true, false} {
 		f := hcNewPassFixture(t)
-		pid := os.Getpid() + 1
+		pid := noSuchPid + 1
 		hcSiblingDaemon(t, f, pid, "s1", "1", 40*24*time.Hour)
 		if stopped {
 			f.mk(pid, "stat", hcStoppedStat(pid, "1"))
@@ -168,7 +168,7 @@ func TestBusyReadThatItsDeadlineEndedRefusesTheRetire(t *testing.T) {
 		oldUnread := hcDaemonFilesUnread
 		t.Cleanup(func() { hcDaemonFilesUnread = oldUnread })
 		hcDaemonFilesUnread = func(int) (bool, bool) { return false, ended }
-		sibling := os.Getpid() + 1
+		sibling := noSuchPid + 1
 		hcSiblingDaemon(t, f, sibling, "s1", "1", 40*24*time.Hour)
 		buf := captureLogBuf(t)
 		sum := f.c.Pass()
@@ -190,7 +190,7 @@ func TestBusyReadThatItsDeadlineEndedRefusesTheRetire(t *testing.T) {
 			holds++
 			return func(sig syscall.Signal) error { sent = append(sent, sig); return nil }, func() {}
 		}
-		const pid = 4700
+		const pid = noSuchPid + 4700
 		socket := "/opt/claude/run/x/rpc.sock"
 		exe := "/opt/claude/srv/a/server"
 		hcFakeDaemon(t, proot, mk, link, pid, exe, []string{exe, "--serve", "--socket", socket}, true, "1")
