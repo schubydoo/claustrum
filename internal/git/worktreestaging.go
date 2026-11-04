@@ -436,7 +436,99 @@ func (st *addStage) fill(regs []registrationCopy) error {
 	if err := writeCopyEntries(dir, "", addCopyEntries(head, config, exclude, hasExclude, regs), 0o700, 0o600); err != nil {
 		return err
 	}
+	for _, reg := range regs {
+		if err := copyEntryRefs(st.git, dir, reg.name); err != nil {
+			return err
+		}
+	}
 	return dir.Mkdir(stagedLeafFolder, 0o700)
+}
+
+// refsCopyText starts the text of a create whose copy of the refs of a
+// registration fails. b3081b51 answers it with errorCode worktree_add_failed
+// before the add (measured on Linux and Windows).
+const refsCopyText = "cannot add a worktree: " + repoFilePrefix + "cannot copy the refs in "
+
+// refsCopyError is the error of a copy of the refs of a registration
+// (copyEntryRefs). text follows refsCopyText.
+type refsCopyError struct{ text string }
+
+func (e *refsCopyError) Error() string { return e.text }
+
+// copyEntryRefs copies the `reftable` folder of the registration name of git
+// into the same place of dir, the folder `.s<n>`: `tables.list` and each
+// table that it names. A registration with no `tables.list` there has nothing
+// to copy, also when `reftable` is a regular file. b3081b51 refuses these
+// four faults before the add (measured on Linux, and the last three on Windows), with these
+// causes after `"worktrees/<name>/reftable": `:
+//
+//   - `tables.list` is a FIFO: `"<that path>/tables.list" is not a regular
+//     file` (measured on Linux).
+//   - A named table is a link out of the git directory: `"<table>": is, or is
+//     reached through, a link that Claude does not follow here; …`. A link
+//     inside it is refused the same way (claustrum's own, not measured).
+//   - A named table is missing: `"<table>": ` and the error of the system.
+//   - `reftable` is a link or a junction to a folder outside the git
+//     directory: the open error, `openat worktrees/<name>/reftable/tables.list:
+//     path escapes from parent`, with the separators of the system.
+//
+// A folder or a table in `reftable` that the list does not name and a
+// `reftable` that is a regular file pass (measured on Linux). A named table
+// that is no regular file and no link, a name that is not one path element
+// and a size bound are not measured. claustrum refuses the first two and has
+// no bound. The table files are claustrum's own: b3081b51 makes the folder in
+// `.s<n>` (measured on Linux), and its files are not measured.
+func copyEntryRefs(git, dir *os.Root, name string) error {
+	in := worktreesSubdir + "/" + name + "/reftable"
+	src := filepath.Join(worktreesSubdir, name, "reftable")
+	refused := func(cause string) error {
+		return &refsCopyError{text: quoteOperand(in) + ": " + cause}
+	}
+	f, err := git.OpenFile(filepath.Join(src, "tables.list"), os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	if isGoneErr(err) {
+		return nil
+	}
+	if err != nil {
+		return refused(err.Error())
+	}
+	defer func() { _ = f.Close() }()
+	if fi, err := f.Stat(); err != nil {
+		return refused(err.Error())
+	} else if !fi.Mode().IsRegular() {
+		return refused(quoteOperand(in+"/tables.list") + notRegularTail)
+	}
+	list, err := io.ReadAll(f)
+	if err != nil {
+		return refused(err.Error())
+	}
+	if err := dir.Mkdir(src, 0o700); err != nil {
+		return err
+	}
+	if err := writeRootFile(dir, filepath.Join(src, "tables.list"), list, 0o600); err != nil {
+		return err
+	}
+	for _, table := range strings.Fields(string(list)) {
+		if table == "." || table == ".." || strings.ContainsAny(table, `/\`) {
+			return refused(quoteOperand(table) + ": " + fs.ErrInvalid.Error())
+		}
+		fi, err := git.Lstat(filepath.Join(src, table))
+		switch {
+		case err != nil:
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				err = pe.Err
+			}
+			return refused(quoteOperand(table) + ": " + err.Error())
+		case fi.Mode()&fs.ModeSymlink != 0:
+			return refused(quoteOperand(table) + configLinkTail)
+		case !fi.Mode().IsRegular():
+			return refused(quoteOperand(table) + notRegularTail)
+		}
+		if err := copyRootFile(git, filepath.Join(src, table), dir, filepath.Join(src, table), 0o600); err != nil {
+			return refused(quoteOperand(table) + ": " + err.Error())
+		}
+	}
+	return nil
 }
 
 // writeCopyEntries makes entries below the folder base of root, as new folders
@@ -540,6 +632,10 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 		var dirErr *requestDirError
 		if !stagedAddWindowsSteps && errors.As(err, &dirErr) {
 			return "", &addOwnFiles{text: privateCopyText + dirErr.err.Error()}
+		}
+		var refsErr *refsCopyError
+		if errors.As(err, &refsErr) {
+			return "", &addOwnFiles{text: refsCopyText + refsErr.text}
 		}
 		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error()}
 	}
@@ -1040,7 +1136,9 @@ func registrationTarget(root *os.Root, name string) (string, bool) {
 // content. Every other entry is read as a file through src. On 5fd08069 a file
 // in a sub folder is copied (measured), and a junction fails the move with
 // `openat j: path escapes from parent` (measured on Windows). The target of
-// the junction stays. The bound of a file is claustrum's own.
+// the junction stays. b3081b51 copies an
+// `info/sparse-checkout` of 1 MiB + 1 and of 4 MiB whole (measured on Linux).
+// claustrum has no bound (claustrum's own, not measured above 4 MiB).
 func copyRegistrationTree(src, dst *os.Root, base, rel string) error {
 	names, err := rootDirNames(src, cmp.Or(rel, "."))
 	if err != nil {
@@ -1061,33 +1159,30 @@ func copyRegistrationTree(src, dst *os.Root, base, rel string) error {
 			}
 			continue
 		}
-		data, err := readRegistrationFile(src, path)
-		if err != nil {
-			return err
-		}
-		if err := writeCopyEntries(dst, base, []copyEntry{{path: filepath.ToSlash(path), data: data}}, 0o755, 0o644); err != nil {
+		if err := copyRootFile(src, path, dst, filepath.Join(base, path), 0o644); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// readRegistrationFile reads the file path of root, with at most
-// registrationFileMaxBytes.
-func readRegistrationFile(root *os.Root, path string) ([]byte, error) {
-	f, err := root.Open(path)
+// copyRootFile copies the file from of src into the new file to of dst, with
+// one exclusive create of mode perm. The bytes go through in a stream.
+func copyRootFile(src *os.Root, from string, dst *os.Root, to string, perm fs.FileMode) error {
+	in, err := src.Open(from)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, registrationFileMaxBytes+1))
+	defer func() { _ = in.Close() }()
+	out, err := dst.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if len(data) > registrationFileMaxBytes {
-		return nil, errors.New("the file " + path + " of the new registration is too large")
+	_, err = io.Copy(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
 	}
-	return data, nil
+	return err
 }
 
 // writeLeafGitFile gives leaf a new `.git` file with text: one exclusive

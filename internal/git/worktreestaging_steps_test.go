@@ -269,24 +269,22 @@ func openTestRoot(t *testing.T, dir string) *os.Root {
 	return root
 }
 
-// TestReadRegistrationFile pins the read of one file of the staged
-// registration: a file over registrationFileMaxBytes and a file that is gone
-// fail with their texts, and the bytes of a good file come back.
-func TestReadRegistrationFile(t *testing.T) {
-	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "HEAD"), "ref: refs/heads/w1\n")
-	if err := os.WriteFile(filepath.Join(dir, "big"), make([]byte, registrationFileMaxBytes+1), 0o644); err != nil {
-		t.Fatal(err)
+// TestCopyRootFile pins the copy of one file of the staged registration: the
+// bytes of a good file go into a new file, a file that is gone fails, and a
+// file at the target fails and keeps its bytes.
+func TestCopyRootFile(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	mustWrite(t, filepath.Join(src, "HEAD"), "ref: refs/heads/w1\n")
+	mustWrite(t, filepath.Join(dst, "there"), "k\n")
+	from, to := openTestRoot(t, src), openTestRoot(t, dst)
+	if err := copyRootFile(from, "HEAD", to, "HEAD", 0o644); err != nil || mustRead(t, filepath.Join(dst, "HEAD")) != "ref: refs/heads/w1\n" {
+		t.Errorf("HEAD = %v", err)
 	}
-	root := openTestRoot(t, dir)
-	if b, err := readRegistrationFile(root, "HEAD"); err != nil || string(b) != "ref: refs/heads/w1\n" {
-		t.Errorf("HEAD = %q, %v", b, err)
-	}
-	if _, err := readRegistrationFile(root, "big"); err == nil || err.Error() != "the file big of the new registration is too large" {
-		t.Errorf("big = %v, want the size refusal", err)
-	}
-	if _, err := readRegistrationFile(root, "gone"); !errors.Is(err, os.ErrNotExist) {
+	if err := copyRootFile(from, "gone", to, "gone", 0o644); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("gone = %v, want a missing file", err)
+	}
+	if err := copyRootFile(from, "HEAD", to, "there", 0o644); !errors.Is(err, os.ErrExist) || mustRead(t, filepath.Join(dst, "there")) != "k\n" {
+		t.Errorf("there = %v, want an entry that exists and its bytes kept", err)
 	}
 }
 
