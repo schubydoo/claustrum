@@ -441,7 +441,9 @@ nearest existing parent.
 On Linux a `"cliTempRoot":true` spawn removes the one `ccd-<12 hex>` name that it just made
 and found unfit (`b3081b51`, measured on Linux). That is one rmdir through a handle of the
 temp dir (`removeMadeTempRoot`), after `homeguard.WipesHomeDir`. The temp dir is the
-`TMPDIR` of the child env, which the caller can set. Its registry file in the run dir goes
+first value that is not empty of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` and `TEMP` in the
+child env, which the caller can set. Part of that order is claustrum's own. A folder that a step
+makes after the 2 s limit stays (`b3081b51`, measured on Linux). Its registry file in the run dir goes
 by one plain remove before each rewrite.
 
 Never widen: Remove no other name and never a tree.

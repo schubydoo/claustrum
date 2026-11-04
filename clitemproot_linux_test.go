@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -528,14 +530,127 @@ func TestCLITempRootRefreshEveryInterval(t *testing.T) {
 	}
 }
 
-// A temp dir that does not exist gives the text of a folder that cannot be opened
-// (claustrum's own, not measured).
+// A temp dir that does not exist gives no member.
 func TestCLITempRootMissingTempDir(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	x, runDir := tempRootDir(t, false)
-	_, res := runTempRoot(t, filepath.Join(x, "gone"), runDir, &rel)
-	if res == nil || res.WhyNot != tempRootNoOpen || res.Refused != "" {
-		t.Fatalf("answer %+v, want the open text alone", res)
+	if _, res := runTempRoot(t, filepath.Join(x, "gone"), runDir, &rel); res != nil {
+		t.Fatalf("answer %+v, want none", res)
+	}
+}
+
+// The temp dir is the first value that is not empty of CLAUDE_CODE_TMPDIR, TMPDIR,
+// TMP and TEMP. The child gets the new folder in CLAUDE_CODE_TMPDIR.
+func TestCLITempRootTempDirOrder(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		env    func(x, gone string) []string
+		folder bool
+	}{
+		{"CLAUDE_CODE_TMPDIR missing, TMPDIR fit", func(x, gone string) []string {
+			return []string{"CLAUDE_CODE_TMPDIR=" + gone, "TMPDIR=" + x}
+		}, false},
+		{"CLAUDE_CODE_TMPDIR fit, TMPDIR missing", func(x, gone string) []string {
+			return []string{"TMPDIR=" + gone, "CLAUDE_CODE_TMPDIR=" + x}
+		}, true},
+		{"TMP only", func(x, gone string) []string { return []string{"TMP=" + x} }, true},
+		{"TEMP only", func(x, gone string) []string { return []string{"TEMP=" + x} }, true},
+		{"TMPDIR empty, TMP fit", func(x, gone string) []string { return []string{"TMPDIR=", "TMP=" + x} }, true},
+		{"TMP fit, TEMP missing", func(x, gone string) []string { return []string{"TEMP=" + gone, "TMP=" + x} }, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var rel []func()
+			cleanTempRoots(t, &rel)
+			x, runDir := tempRootDir(t, true)
+			in := c.env(x, filepath.Join(x, "gone"))
+			env, res, release := privateTempRoot(in, runDir)
+			rel = append(rel, release)
+			got := ccdFolders(t, x)
+			if !c.folder {
+				if res != nil || len(got) != 0 || !slices.Equal(env, in) {
+					t.Fatalf("answer %+v, folders %v, env %q, want none and the env as it was", res, got, env)
+				}
+				return
+			}
+			if res == nil || res.Refused != "a link" || len(got) != 1 || res.Name != got[0] {
+				t.Fatalf("answer %+v, folders %v, want one folder and its name", res, got)
+			}
+			if v := tempEnvValue(env, "CLAUDE_CODE_TMPDIR"); v != filepath.Join(x, res.Name) {
+				t.Errorf("CLAUDE_CODE_TMPDIR %q, want %q", v, filepath.Join(x, res.Name))
+			}
+		})
+	}
+}
+
+// After the time limit the reply says so and the child gets the env as it was. A
+// folder that the step made after the limit stays, with no registry, no hold and
+// no count.
+func TestCLITempRootTimeLimit(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := tempRootLimit
+	tempRootLimit = 100 * time.Millisecond
+	t.Cleanup(func() { tempRootLimit = old })
+	x, runDir := tempRootDir(t, true)
+	stuck, free := make(chan string, 1), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(free) }) }
+	t.Cleanup(unblock)
+	setAfterMkdir(t, func(dir, name string) {
+		stuck <- name
+		select {
+		case <-free:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	in := []string{"TMPDIR=" + x}
+	start := time.Now()
+	env, res, release := privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	b, _ := json.Marshal(res)
+	if want := `{"whyNot":"the temp dir did not answer in time"}`; string(b) != want {
+		t.Fatalf("answer %s, want %s", b, want)
+	}
+	if time.Since(start) < tempRootLimit || !slices.Equal(env, in) {
+		t.Errorf("after %v env %q, want the limit and the env as it was", time.Since(start), env)
+	}
+	name := <-stuck
+	if got := ccdFolders(t, x); len(got) != 1 || got[0] != name {
+		t.Fatalf("folders %v, want the one that the step made", got)
+	}
+	unblock()
+	// The step holds tempRoots.mu until it ends, so this lock waits for its end.
+	tempRoots.mu.Lock()
+	live, held := tempRoots.live, len(tempRoots.held)
+	tempRoots.mu.Unlock()
+	if got := ccdFolders(t, x); len(got) != 1 || got[0] != name || live != 0 || held != 0 {
+		t.Fatalf("folders %v, live %d, held %d, want the late folder and no count", got, live, held)
+	}
+	f, err := os.Open(filepath.Join(x, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Errorf("flock of the late folder: %v, want no hold", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, tempRootRegistryName(x))); !os.IsNotExist(err) {
+		t.Errorf("registry: %v, want none", err)
+	}
+	if fi, err := os.Lstat(filepath.Join(x, tempEntryName())); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link: %v %v, want it to stay", fi, err)
+	}
+}
+
+// The gate between the step and the limit: the first of keep and giveUp wins.
+func TestCLITempRootLateGate(t *testing.T) {
+	var kept tempRootLate
+	if !kept.keep() || kept.giveUp() {
+		t.Error("keep then giveUp: want the step to keep its folder")
+	}
+	var late tempRootLate
+	if !late.giveUp() || late.keep() {
+		t.Error("giveUp then keep: want the step to keep nothing")
 	}
 }
