@@ -143,7 +143,8 @@ func TestGitInfoBranchEdges(t *testing.T) {
 // with an orphan branch at 5db5e4a). The two-step create passes --no-track, and on
 // an unborn HEAD git infers --orphan, which cannot be combined with --track — so git
 // worktree add fails and the daemon surfaces that. Measured byte-for-byte against the
-// pinned 7d193f89 reference.
+// pinned 7d193f89 reference. Git 2.47 starts that text with "options " and git 2.43
+// does not, so the test asks for the part that both print.
 func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 	requireGit(t)
 	s := newTestServer(t)
@@ -157,7 +158,7 @@ func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 		"baseRepo": base, "branchName": "newbr", "worktreePath": wt,
 	}))
 	if !strings.Contains(got, `"errorCode":"worktree_add_failed"`) ||
-		!strings.Contains(got, `options '--orphan' and '--track' cannot be used together`) {
+		!strings.Contains(got, `'--orphan' and '--track' cannot be used together`) {
 		t.Errorf("worktree off empty repo = %s, want the --orphan/--track failure", got)
 	}
 }
