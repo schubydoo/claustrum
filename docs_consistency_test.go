@@ -664,7 +664,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-rules-trust.md":         5254, // the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":       997,  // the page rewrite
 	"docs/protocol/git-status.md":              3255, // the lfs.storage item of b3081b51. 3185: a move between pages, net down in the same PR
-	"docs/protocol/git-worktree-create.md":     9820, // the commit-id call of the content check. 9734: the links and the gone file of the content check. 9694: the content check, its changed-file row and the branch note of b3081b51. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
+	"docs/protocol/git-worktree-create.md":     9949, // the Windows rules of the content check (held file, link counts, undo text). 9820: the commit-id call of the content check. 9734: the links and the gone file of the content check. 9694: the content check, its changed-file row and the branch note of b3081b51. 8812: macOS for the containment backticks. 8810: the backticks of the containment refusal of be1c1ca5. 8768: the .git file gone after the checkout of be1c1ca5. 8643: the staged add of be1c1ca5. 7829: the ssh door of be1c1ca5. 7375: the sweep on Linux and macOS of be1c1ca5. 7335: the refusal texts of be1c1ca5. 7018: the start of timeoutMs. 6996: the 2.2 s settle wait (claustrum's own). 6951: rewrite to the page template
 	"docs/protocol/git-worktree-remove.md":     4405, // macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":        1834, // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
 	"docs/protocol/plugins-prune.md":           1199, // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
@@ -759,7 +759,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-rules-settings-copy.md": 3321,
 	"docs/protocol/git-rules-trust.md":         5254,
 	"docs/protocol/git-status.md":              3255, // the object sources line of b3081b51. 414 before
-	"docs/protocol/git-worktree-create.md":     9820, // macOS for the containment backticks. 2509: the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
+	"docs/protocol/git-worktree-create.md":     9949, // the Windows rules of the content check (held file, link counts, undo text). 9820: macOS for the containment backticks. 2509: the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
 	"docs/protocol/git-worktree-remove.md":     4405,
 	"docs/protocol/launcher-resolve.md":        293,
 	"docs/protocol/plugins-prune.md":           258,
