@@ -759,7 +759,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-rules-settings-copy.md": 3321,
 	"docs/protocol/git-rules-trust.md":         5254,
 	"docs/protocol/git-status.md":              3255, // the object sources line of b3081b51. 414 before
-	"docs/protocol/git-worktree-create.md":     9949, // the Windows rules of the content check (held file, link counts, undo text). 9820: macOS for the containment backticks. 2509: the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
+	"docs/protocol/git-worktree-create.md":     2511, // macOS for the containment backticks. 2509: the backticks of the containment refusal of be1c1ca5. 2467: the .git file row of be1c1ca5. 2410: the rows of be1c1ca5. 2389 before
 	"docs/protocol/git-worktree-remove.md":     4405,
 	"docs/protocol/launcher-resolve.md":        293,
 	"docs/protocol/plugins-prune.md":           258,
