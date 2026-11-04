@@ -8,6 +8,9 @@ on:
       - "mkdocs.yml"
       - ".github/workflows/docs.yml"
   pull_request:
+    # `ready_for_review` joins the default types, so the flip of a draft to
+    # ready runs the build that the draft skipped.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "docs/**"
       - "mkdocs.yml"
@@ -23,10 +26,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Strict build runs on every PR and push — a broken doc link or bad nav fails
-  # the check. The Pages artifact is only uploaded for a real deploy (push/main).
+  # Strict build runs on every push and on every PR that is not a draft. A broken
+  # doc link or bad nav fails the check. The Pages artifact is only uploaded for a real deploy (push/main).
   build:
     name: build (mkdocs --strict)
+    # A draft pull request skips the build. The test is `!= true`, because the
+    # field is null on a push and on a manual run, and so those runs build.
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

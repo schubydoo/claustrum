@@ -11,7 +11,9 @@ name: Changeset check
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # The check runs on a draft too, because it is cheap. `ready_for_review` runs
+    # it again on the flip to ready.
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
 permissions:
   contents: read
