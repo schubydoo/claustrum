@@ -140,3 +140,7 @@ const shutdownAsksEnd = true
 // logsUnreapedKill is true: a killAndWait whose SIGKILL did not reap the child in
 // killReapGrace logs one line (52d82f0a, measured on Linux and macOS).
 const logsUnreapedKill = true
+
+// killEndsDrainGroup is true: a process.kill with "signal":"KILL" inside the exit
+// drain kills the group at once (b3081b51, measured on Linux and macOS).
+const killEndsDrainGroup = true

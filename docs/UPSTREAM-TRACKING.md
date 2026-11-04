@@ -196,12 +196,6 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and
 `-metrics-addr` and `-wire-log`
 ([flags.md → Flags of claustrum alone](protocol/flags.md#flags-of-claustrum-alone)).
-So is the skip of the kill signal for a child that already ended
-([process.kill → Differences from the reference](protocol/process-kill.md#differences-from-the-reference)).
-So is a rule of `process.killAndWait`. For a signal other than `KILL` it sends no
-first signal during the exit drain. On Linux and macOS `KILL` goes to the group at
-once, as on the reference
-([A request during the exit drain](protocol/process-killandwait.md#a-request-during-the-exit-drain)).
 claustrum lacks the terminal of `52d82f0a`, `683cc6a9` and `be1c1ca5`, and of the pinned `b3081b51`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command

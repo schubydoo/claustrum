@@ -61,7 +61,7 @@ The `exit` frame waits for the output of the child. If another process holds the
 ## Differences by system
 
 === "Linux and macOS"
-    On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case.
+    On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case, except for `KILL` in the exit drain.
 
 === "Windows"
     The `signal` name is ignored. A kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
@@ -87,10 +87,10 @@ With no job, a process that the child started can hold the output pipes of the c
 ## Rare states
 
 ??? note "A child that already ended"
-    `process.kill` sends no signal to a child that already ended. That holds also before its `exit` frame, while the daemon still collects its last output. The result is `{"success": true}` all the same. After the `exit` frame `52d82f0a` signals no group member either (measured on Linux and macOS).
+    `process.kill` sends no signal to a child that already ended. That holds also before its `exit` frame, while the daemon still collects its last output, with one exception. On Linux and macOS `"signal": "KILL"` then sends `SIGKILL` to the group at once, as `b3081b51` does (measured). So a holder of the output pipe in the group ends, and the `exit` frame comes at once with no `killedBy`. A holder that left the group keeps the frame waiting up to 5 seconds. On Windows that request sends nothing (claustrum's own, not measured). With a valid farewell that request sends nothing on every system (claustrum's own, not measured). The result is `{"success": true}` all the same. After the `exit` frame `52d82f0a` signals no group member either (measured on Linux and macOS).
 
 ## Differences from the reference
 
 No entry of the [divergence catalog](../DIVERGENCES.md) changes this method.
 
-The skip of a child that already ended is a guard (claustrum's own). The operating system can reuse the process id (pid) or the group number of an ended child. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. Whether the reference signals such a child before its `exit` frame is not measured.
+The skip of a child that already ended is a guard. The operating system can reuse the process id (pid) or the group number of an ended child. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. For `KILL` claustrum follows the reference and accepts the risk of a reused group number. Before the `exit` frame a `TERM` of `b3081b51` reaches no process either (measured on Linux). On macOS and for `INT` and `HUP` that skip is claustrum's own, not measured.

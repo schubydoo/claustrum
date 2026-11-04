@@ -63,3 +63,59 @@ func TestKillAndWaitKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// TestKillInsideDrainKillsGroupAtOnce pins a measured case (`b3081b51`, measured on
+// Linux and macOS). Inside the exit drain a process.kill with "signal":"KILL" kills
+// the group at once and stamps no killedBy. TERM sends nothing there, and after the
+// exit frame KILL sends nothing either. Windows sends nothing (claustrum's own, not
+// measured). The seam records each signal.
+func TestKillInsideDrainKillsGroupAtOnce(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	var mu sync.Mutex
+	var signals []string
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		signals = append(signals, name)
+		return nil
+	}
+	m := newTestProcManager(t)
+
+	wantKill := ""
+	if killEndsDrainGroup {
+		wantKill = "KILL"
+	}
+	for _, tc := range []struct {
+		signal  string
+		running bool
+		want    string
+	}{
+		{"KILL", true, wantKill},
+		{"SIGKILL", true, wantKill},
+		{"TERM", true, ""},
+		{"KILL", false, ""},
+	} {
+		mu.Lock()
+		signals = nil
+		mu.Unlock()
+		// The pid is above every pid_max, so a signal that passes the seam finds no process.
+		p := &managedProc{
+			id: "DRAIN", running: tc.running, reaped: true,
+			cmd: &exec.Cmd{Process: &os.Process{Pid: 1 << 30}}, done: make(chan struct{}),
+		}
+		m.procs["DRAIN"] = p
+		if err := m.kill("DRAIN", tc.signal); err != nil {
+			t.Errorf("signal %q, running %v: kill error %v, want nil", tc.signal, tc.running, err)
+		}
+		mu.Lock()
+		got := strings.Join(signals, ",")
+		mu.Unlock()
+		if got != tc.want {
+			t.Errorf("signal %q, running %v: group signals %q, want %q", tc.signal, tc.running, got, tc.want)
+		}
+		if by := killedByOf(p); by != "" {
+			t.Errorf("signal %q, running %v: killedBy %q, want none", tc.signal, tc.running, by)
+		}
+	}
+}
