@@ -815,7 +815,7 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 	workTree := func(reason string) string {
 		return removeFrame("failed to remove worktree: cannot determine the repository's work tree: " + reason)
 	}
-	beneath := removeFrame("refusing to remove worktree: " + y + " is not <worktree location>/<directory>/<name> beneath " + root)
+	beneath := removeFrame("refusing to remove worktree: " + tickPath(y) + " is not <worktree location>/<directory>/<name> beneath " + root)
 	dotdotFrame := removeFrame("refusing to remove worktree: " + dotdot +
 		` contains a ".." component; choose the session folder by its absolute path, without ".."`)
 	external := func(base, wt string) map[string]any {

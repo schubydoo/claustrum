@@ -173,7 +173,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 		"marker); a worktree location must be outside every session's worktree"
 	for _, r := range []locCreateRow{
 		{name: "C-W2", root: "<X>/", path: "<X>/./a/b/c",
-			text: "refusing to create worktree: <X>/./a/b/c is not <worktree location>/<directory>/<name> beneath <X>/"},
+			text: "refusing to create worktree: `<X>/./a/b/c` is not <worktree location>/<directory>/<name> beneath <X>/"},
 		{name: "C-W3", root: "<X>", path: "<X>/.Claude-Managed-Worktrees/w1",
 			text: "refusing to create worktree: <X>/.Claude-Managed-Worktrees/w1 uses the reserved name " +
 				".Claude-Managed-Worktrees for a directory under the worktree location"},

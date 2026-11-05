@@ -175,21 +175,21 @@ func TestWorktreeRemoveRootInRepo(t *testing.T) {
 	const w1 = "<T>/.claude/worktrees/w1"
 	for _, r := range []r0RemoveRow{
 		{name: "Q1", root: "<T>/.claude", wp: w1, leaf: w1,
-			want: "refusing to remove worktree: <T>/.claude is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
 		{name: "Q7", root: "<T>/.claude/", wp: w1, leaf: w1,
-			want: "refusing to remove worktree: <T>/.claude/ is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/.claude/` is the repository <T> or inside it" + r0Tail},
 		{name: "Q8", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: w1,
-			want: "refusing to remove worktree: <T>/.claude is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
 		{name: "Q8b", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
-			want: "refusing to remove worktree: <T>/.claude is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
 		{name: "Q2s", root: "<T>", wp: "<T>/cp/w1", leaf: "<T>/cp/w1",
-			want: "refusing to remove worktree: <T> is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>` is the repository <T> or inside it" + r0Tail},
 		{name: "Q3s", root: "<T>/.claude/worktrees", wp: "<T>/.claude/worktrees/cp/w1", leaf: "<T>/.claude/worktrees/cp/w1",
-			want: "refusing to remove worktree: <T>/.claude/worktrees is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/.claude/worktrees` is the repository <T> or inside it" + r0Tail},
 		{name: "Q4s", root: "<T>/sub", wp: "<T>/sub/cp/w1", leaf: "<T>/sub/cp/w1",
-			want: "refusing to remove worktree: <T>/sub is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/sub` is the repository <T> or inside it" + r0Tail},
 		{name: "Q5s", root: "<T>/missing", wp: "<T>/missing/cp/w1", leaf: w1,
-			want: "refusing to remove worktree: <T>/missing is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/missing` is the repository <T> or inside it" + r0Tail},
 		{name: "Q16", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: w1,
 			setup: func(t *testing.T, f *r0Fixture) {
 				if err := os.MkdirAll(filepath.Join(f.T, ".claude"), 0o755); err != nil {
@@ -199,9 +199,9 @@ func TestWorktreeRemoveRootInRepo(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			want: "refusing to remove worktree: <T>/.claude is the repository <T> or inside it" + r0Tail},
+			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
 		{name: "Q2", root: "<T>", wp: w1, leaf: w1,
-			want: "refusing to remove worktree: <T>/.claude/worktrees/w1 is not <worktree location>/<directory>/<name> beneath <T>"},
+			want: "refusing to remove worktree: `<T>/.claude/worktrees/w1` is not <worktree location>/<directory>/<name> beneath <T>"},
 		{name: "Q10", base: "<T>/sub/..", root: "<T>/.claude", wp: w1, leaf: w1,
 			want: `refusing to remove worktree: <T>/sub/.. contains a ".." component; choose the session folder by its absolute path, without ".."`},
 	} {
@@ -279,11 +279,11 @@ func TestWorktreeCreateRootInRepo(t *testing.T) {
 		created                    bool
 	}{
 		{name: "K1", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
-			want: "refusing to create worktree: <T>/.claude is the repository <T> or inside it" + r0Tail},
+			want: "refusing to create worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
 		{name: "K2", root: "<T>", wp: "<T>/cp/c1",
-			want: "refusing to create worktree: <T> is the repository <T> or inside it" + r0Tail},
+			want: "refusing to create worktree: `<T>` is the repository <T> or inside it" + r0Tail},
 		{name: "K3", root: "<T>/sub", wp: "<T>/sub/cp/c1",
-			want: "refusing to create worktree: <T>/sub is the repository <T> or inside it" + r0Tail},
+			want: "refusing to create worktree: `<T>/sub` is the repository <T> or inside it" + r0Tail},
 		{name: "K4", root: "<B>/L", wp: "<B>/L/cp/c1",
 			want: "refusing to create worktree: <B>/L leads into the repository <T> (at <T>)" + r0Tail},
 		{name: "K8", root: "<B>/L/sub", wp: "<B>/L/sub/cp/c1",

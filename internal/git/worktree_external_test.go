@@ -61,7 +61,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 			map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp, "worktreeRoot": root}))
 		// Match the decoded error so the literal angle brackets and the echoed root
 		// (a backslash path on Windows) compare without any wire-escaping.
-		want := "is not <worktree location>/<directory>/<name> beneath " + root
+		want := "worktree: `" + wp + "` is not <worktree location>/<directory>/<name> beneath " + root
 		if !strings.Contains(raw, `"errorCode":"unsafe_path"`) ||
 			!strings.Contains(worktreeErrorField(t, raw), want) {
 			t.Errorf("create(%s) = %s, want the containment refusal", wp, raw)
@@ -281,7 +281,7 @@ func TestWorktreeRemoveExternalWrongDepth(t *testing.T) {
 	h := newTestGitDeps()
 	raw := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wp, "worktreeRoot": root}))
-	if !strings.Contains(worktreeErrorField(t, raw), "is not <worktree location>/<directory>/<name> beneath "+root) ||
+	if !strings.Contains(worktreeErrorField(t, raw), "worktree: `"+wp+"` is not <worktree location>/<directory>/<name> beneath "+root) ||
 		strings.Contains(raw, `"errorCode"`) {
 		t.Errorf("remove(%s) = %s, want the containment refusal with no errorCode", wp, raw)
 	}
