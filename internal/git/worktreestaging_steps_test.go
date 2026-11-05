@@ -405,3 +405,35 @@ func TestRemoveOwnStagingKeepsAFolderThatHoldsHome(t *testing.T) {
 		t.Errorf("no log line for the refusal: %q", logs.String())
 	}
 }
+
+// TestMoveEndsAtAFailedStagingMkdir: move passes each test before the mkdir
+// of the staging folder, and that mkdir fails in a closed git root. move
+// returns that error as it is. Without its return the open of the staging
+// folder fails next, and move returns an addIncomplete.
+func TestMoveEndsAtAFailedStagingMkdir(t *testing.T) {
+	base := t.TempDir()
+	sDir := filepath.Join(base, ".s1")
+	if err := os.MkdirAll(filepath.Join(sDir, worktreesSubdir, "w1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(sDir, stagedLeafFolder, "w1", ".git"), "gitdir: /x/.s1/worktrees/w1\n")
+	leaf := filepath.Join(base, "wt", "w1")
+	if err := os.MkdirAll(leaf, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitRoot, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = gitRoot.Close()
+	st := &addStage{u: gitUse{gitDir: filepath.Join(base, "repo.git")}, git: gitRoot, dir: sDir, leafName: "w1"}
+	err = st.move(leaf, worktreeCheckpoint{info: info})
+	var incomplete *addIncomplete
+	if !errors.Is(err, os.ErrClosed) || errors.As(err, &incomplete) {
+		t.Errorf("move = %v, want the error of the mkdir", err)
+	}
+}

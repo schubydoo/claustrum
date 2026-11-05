@@ -191,7 +191,7 @@ In the state `shadow` git adds the worktree in a short-lived folder of the daemo
 - Until the entry is complete it holds `locked` with `initializing` and a newline. The daemon writes the `.git` file of the leaf, which names the entry, and then removes `locked`.
 - The `gitdir` record names `<leaf>/.git`, with the links of the path resolved and a trailing blank kept (measured on Linux). claustrum writes it (claustrum's own).
 - The entry has no `logs` folder (measured on Linux and macOS).
-- On Linux, in a `--shared=group` repository with a `worktrees` folder of mode 2775, the entry gets 2775 and the group of `worktrees`. Its files get 664 with that group. On macOS the entry gets `drwxr-xr-x` and the group of `.git`, with no set-group-ID bit. The rule behind both is claustrum's own: each file keeps the mode that git gave it, and on Linux the entry keeps git's mode and takes the group of a set-group-ID `worktrees`.
+- On Linux, in a `--shared=group` repository with a `worktrees` folder of mode 2775, the entry gets 2775 and the group of `worktrees`. Its files get 664 with that group. On macOS the entry gets 755 under umask 022 and 775 under umask 002 (`b3081b51`, measured on macOS). It gets the group of `.git`, with no set-group-ID bit. The rule behind both is claustrum's own: each file keeps the mode that git gave it, and on Linux the entry keeps git's mode and takes the group of a set-group-ID `worktrees`. On macOS the daemon makes the entry with mode 0775 less the umask (claustrum's own, other umasks not measured).
 - On Windows a held staging folder or a held `locked` file gets 2 s of retries, also past `timeoutMs` (claustrum's own). A `locked` file held 1 s passes, and one held 3 s fails (measured on Windows).
 - A failed write of the `.git` file of the leaf, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
 - With `"shadowDirOff": true` and in the state `fallback-git`, git adds the worktree at its own path.
@@ -200,7 +200,7 @@ In the state `shadow` git adds the worktree in a short-lived folder of the daemo
 
 Git calls of the daemon read its copy of the repository's git settings. [The settings copy](git-rules-settings-copy.md#the-settings-copy) has the states, the texts and the folder. For this method:
 
-- A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask. It stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode. macOS is not measured.
+- A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask. It stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode (`b3081b51`, measured on macOS).
 - With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
 - While a `"shadowDirOff": true` request runs, the checkout has its index in `claude-ssh-index-<n>` of the temporary folder.
 - In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status 128`. macOS is not measured.

@@ -217,8 +217,9 @@ func TestStagedCreateWithATrailingBlank(t *testing.T) {
 // and the staging step gives the entry the mode that git gave its source
 // (stagedEntryModes). On macOS be1c1ca5 gives the entry `drwxr-xr-x` with no
 // set-group-ID bit and `HEAD` `-rw-rw-r--` (measured on Linux and macOS).
-// Without stagedEntryModes the entry and `HEAD` keep the modes of their
-// create.
+// On macOS b3081b51 gives the entry 775 (measured on macOS). claustrum's own
+// staging folder has that mode from its mkdir (stagingFolderMode). Without
+// stagedEntryModes the entry and `HEAD` keep the modes of their create.
 func TestStagedEntryModes(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	dropFixtureWorktree(t, f)
@@ -239,7 +240,7 @@ func TestStagedEntryModes(t *testing.T) {
 		return fi.Mode() & (os.ModePerm | os.ModeSetgid)
 	}
 	reg := filepath.Join(f.gitDir, "worktrees", "w1")
-	want := os.FileMode(0o755)
+	want := os.FileMode(0o775)
 	if stagedEntryTakesWorktreesGroup {
 		want = 0o775 | os.ModeSetgid
 	}

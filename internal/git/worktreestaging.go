@@ -919,7 +919,7 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		return err
 	}
 	staging := stagingNamePrefix + hex.EncodeToString(salt[:])
-	if err := st.git.Mkdir(staging, 0o755); err != nil {
+	if err := st.git.Mkdir(staging, stagingFolderMode); err != nil {
 		return err
 	}
 	// The move holds the staging folder open from its mkdir until it returns.
