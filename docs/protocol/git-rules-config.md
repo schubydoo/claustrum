@@ -128,6 +128,8 @@ between them. The file in which a sum passes 8388608 is refused. The counted sec
 are `core`, `remote`, `extensions`, `include`, `branch`, `lfs`, `index`, `url`,
 `filter`, `feature`, `checkout` and `includeif`. The sections `x` and `user` do not
 count. This arithmetic is fitted to the measured bounds (also macOS and Windows).
+An 8 MiB config in `remote` that git lists as about 107 MB gets this text. There
+`b3081b51` uses about 40 MB of memory (measured on Linux and macOS).
 
 ### Class 2: files of the git directory
 
@@ -194,7 +196,8 @@ These rules are from the code and are not measured on `5fd08069`:
   "expands neither" text, with the cut at 100 characters.
 - The listing that the read takes from git for one config file has a bound of 64 MiB.
   The read tests the name bound and the count on the first 64 MiB of a longer
-  listing. If neither refuses, the read gives no verdict.
+  listing. If neither refuses, the read gives no verdict. The read tests them while git
+  writes the listing, and keeps no listing after a refusal.
 - If the read gives no verdict, the method goes on as with no read. A failed git call
   gives none, except for a syntax error, the error lines above and the stop at 30
   seconds ([Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls)). So a git that does

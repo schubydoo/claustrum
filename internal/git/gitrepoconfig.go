@@ -268,22 +268,56 @@ var startBoundDrain = time.Second
 // errListingTooLarge ends a listing that passes repoListingMaxBytes.
 var errListingTooLarge = errors.New("the listing of a config file is over its bound")
 
-// boundedListing is the standard output of one listing of the read. It keeps the
+// boundedListing is the standard output of one listing of the read. It takes the
 // first max bytes. A write that passes max fails, and os/exec then ends its copy
 // from git.
+//
+// With judge set, each whole record goes to judge as it arrives. The first text
+// that judge returns is the refusal. The listing then keeps no more bytes, but
+// it takes them up to max as before, so git runs as long as without judge.
 type boundedListing struct {
 	buf  bytes.Buffer
 	max  int
 	over bool
+
+	judge   func(rec []byte) string
+	refusal string
+	// taken counts the bytes taken, kept or not. judged counts the bytes of buf
+	// that judge has seen.
+	taken, judged int
 }
 
 func (b *boundedListing) Write(p []byte) (int, error) {
-	if room := b.max - b.buf.Len(); len(p) > room {
-		b.over = true
-		n, _ := b.buf.Write(p[:room])
-		return n, errListingTooLarge
+	q := p[:min(len(p), b.max-b.taken)]
+	b.taken += len(q)
+	if b.refusal == "" {
+		b.buf.Write(q)
+		b.judgeRecords()
 	}
-	return b.buf.Write(p)
+	if len(q) < len(p) {
+		b.over = true
+		return len(q), errListingTooLarge
+	}
+	return len(p), nil
+}
+
+// judgeRecords gives judge each whole record of buf that it has not seen.
+func (b *boundedListing) judgeRecords() {
+	if b.judge == nil {
+		return
+	}
+	for {
+		rest := b.buf.Bytes()[b.judged:]
+		end := bytes.IndexByte(rest, 0)
+		if end < 0 {
+			return
+		}
+		if d := b.judge(rest[:end]); d != "" {
+			b.refusal, b.buf = d, bytes.Buffer{}
+			return
+		}
+		b.judged += end + 1
+	}
 }
 
 // listRepoConfigText is listConfigText for the read of the repository config:
@@ -291,18 +325,27 @@ func (b *boundedListing) Write(p []byte) (int, error) {
 // error output of git is returned beside it. A listing over the bound returns
 // errListingTooLarge and the whole settings of its first repoListingMaxBytes
 // bytes.
-func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string) (out, stderr []byte, err error) {
+//
+// judge, when not nil, judges each record while git writes the listing
+// (boundedListing). refusal is its first text. Then out is empty, because the
+// read uses no listing with a refusal. A last record with no NUL goes to judge
+// at the end, unless the listing is over the bound.
+func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string,
+	judge func(rec []byte) string) (out, stderr []byte, refusal string, err error) {
 	cmd := configTextCmd(ctx, dir, env)
-	listing := &boundedListing{max: repoListingMaxBytes}
+	listing := &boundedListing{max: repoListingMaxBytes, judge: judge}
 	errText := &sysproc.CappedText{Max: 1 << 16}
 	cmd.Stdout = listing
 	cmd.Stderr = errText
 	err = runConfigText(ctx, cmd, text)
 	out = listing.buf.Bytes()
 	if listing.over {
-		return out[:bytes.LastIndexByte(out, 0)+1], nil, errListingTooLarge
+		return out[:bytes.LastIndexByte(out, 0)+1], nil, listing.refusal, errListingTooLarge
 	}
-	return out, errText.Kept(), err
+	if judge != nil && listing.refusal == "" && listing.judged < len(out) {
+		listing.refusal = judge(out[listing.judged:])
+	}
+	return out, errText.Kept(), listing.refusal, err
 }
 
 // repoConfigListEnv is the environment of the listing of one config file: the
@@ -602,12 +645,35 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = detail == ""
 		return detail
 	}
-	out, errOut, err := listRepoConfigText(r.ctx, text, gitVersionDir, repoConfigListEnv())
+	cost := &r.includedCost
+	if depth == 0 {
+		cost = new(int)
+	}
+	// The name bound and the count judge the listing while git writes it, so a
+	// listing with one of these refusals is not kept whole in memory. On
+	// b3081b51 an 8 MiB config in `remote` that lists as about 107 MB gets the
+	// "more settings" text and peaks at 37.5 MB of memory on Linux and 43 MB
+	// on macOS (measured).
+	judge := func(rec []byte) string {
+		key, value, _ := bytes.Cut(rec, []byte("\n"))
+		section, _, _ := bytes.Cut(key, []byte("."))
+		if len(key) > repoConfigKeyMaxBytes && repoNameBoundSections[string(section)] {
+			return quoteOperand(path) + " has a setting in section " + strconv.Quote(string(section)) +
+				" whose name is longer than " + strconv.Itoa(repoConfigKeyMaxBytes) + " bytes"
+		}
+		if repoCountedSections[string(section)] {
+			if *cost += len(key) + len(value) + repoSettingCost; *cost > repoSettingsMaxCost {
+				return quoteOperand(path) + " has more settings than Claude reads (8 MiB); remove repeated ones"
+			}
+		}
+		return ""
+	}
+	out, errOut, refusal, err := listRepoConfigText(r.ctx, text, gitVersionDir, repoConfigListEnv(), judge)
 	if errors.Is(err, errReadBound) {
 		return readStopText(path)
 	}
 	// A listing over its bound still gets the name bound and the count of the
-	// settings that the read kept. Those two refusals are the first in the order
+	// settings that the read took. Those two refusals are the first in the order
 	// of the listing, so they are the ones of the whole listing. With neither,
 	// the read has no verdict.
 	over := errors.Is(err, errListingTooLarge)
@@ -636,25 +702,14 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = true
 		return ""
 	}
-	cost := &r.includedCost
-	if depth == 0 {
-		cost = new(int)
+	if refusal != "" {
+		return refusal
 	}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
-		key, value, hasValue := strings.Cut(string(rec), "\n")
-		section, _, _ := strings.Cut(key, ".")
-		if len(key) > repoConfigKeyMaxBytes && repoNameBoundSections[section] {
-			return quoteOperand(path) + " has a setting in section " + strconv.Quote(section) +
-				" whose name is longer than " + strconv.Itoa(repoConfigKeyMaxBytes) + " bytes"
-		}
-		if repoCountedSections[section] {
-			if *cost += len(key) + len(value) + repoSettingCost; *cost > repoSettingsMaxCost {
-				return quoteOperand(path) + " has more settings than Claude reads (8 MiB); remove repeated ones"
-			}
-		}
 		if depth > 0 {
-			continue
+			break
 		}
+		key, value, hasValue := strings.Cut(string(rec), "\n")
 		switch key {
 		case "core.repositoryformatversion":
 			r.version, r.hasVersion = value, true

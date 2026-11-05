@@ -122,15 +122,15 @@ func TestGitDirTrustCommondirUnixKinds(t *testing.T) {
 		{"relative symlink leaving the entry", func(t *testing.T, r trustRepo, cd string) {
 			writeFile(t, filepath.Join(r.entry(), "..", "outside"), "../..\n", 0o644)
 			symlink(t, "../outside", cd)
-		}, "openat commondir: path escapes from parent"},
+		}, "path escapes from parent"},
 		{"absolute symlink to a file inside the entry", func(t *testing.T, r trustRepo, cd string) {
 			real := filepath.Join(r.entry(), "commondir.real")
 			writeFile(t, real, "../..\n", 0o644)
 			symlink(t, real, cd)
-		}, "openat commondir: path escapes from parent"},
+		}, "path escapes from parent"},
 		{"dangling symlink", func(t *testing.T, _ trustRepo, cd string) {
 			symlink(t, "nonexistent-target", cd)
-		}, "openat commondir: no such file or directory"},
+		}, "no such file or directory"},
 		{"FIFO", func(t *testing.T, _ trustRepo, cd string) { mkfifo(t, cd) }, "commondir is not a regular file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestGitDirTrustCommondirUnixKinds(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(cd, 0o644) })
-		wantRPCError(t, "info(TW)", info(t, r.TW), wantM4(cd, "openat commondir: permission denied"))
+		wantRPCError(t, "info(TW)", info(t, r.TW), wantM4(cd, "permission denied"))
 	})
 }
 

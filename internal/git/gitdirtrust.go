@@ -549,8 +549,17 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 		}
 		return refuseMissingCommondir(g)
 	}
-	content, reason, _, _ := readCommondirAt(g)
+	content, reason, _, osErr := readCommondirAt(g)
 	if reason != "" {
+		// The text drops the operation and path of the OS error, as in
+		// judgeStrayCommondir. b3081b51 drops them for a mode-000 file on Linux
+		// and a dangling relative link on Windows (measured), and for "path escapes from
+		// parent" on Linux and macOS (measured, be1c1ca5 too). Other OS errors are
+		// claustrum's own, not measured.
+		var pe *fs.PathError
+		if errors.As(osErr, &pe) {
+			reason = pe.Err.Error()
+		}
 		return refuseUnreadableCommondir(cd, reason)
 	}
 	// A string comparison: no symlink in the value is resolved. On Windows the
