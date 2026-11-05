@@ -93,7 +93,7 @@ component_management:
         - server.go
         - shutdownreply_other.go
         - shutdownreply_windows.go
-        - lineend.go
+        - internal/conn/lineend.go
         - selflocate_linux.go
         - selflocate_other.go
         - internal/tokenfile/tokenpersist.go
@@ -118,9 +118,10 @@ component_management:
         - internal/sockroute/socketroute_windows.go
         - internal/sockroute/fortest_unix.go
         - internal/sockroute/fortest_linux.go
-        - idleconn.go
+        - internal/conn/idleconn.go
         - connlog.go
-        - conn.go
+        - internal/conn/connlog.go
+        - internal/conn/conn.go
         # 4534d86 lifecycle additions: the run-dir lock (daemon.lock + owner record,
         # OS-split machine identity; a no-op on Windows, parity) and the orphan-exit
         # self-probe.

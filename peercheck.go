@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
@@ -246,7 +247,7 @@ func peerRefusalLine(reason string) []byte {
 	})
 	// The refusal is the first line of its connection, so "at" is 0 (build
 	// 52d82f0a, measured on Linux). The check refuses on Linux only.
-	return stampEnd(append(b, '\n'), 0)
+	return conn.StampEnd(append(b, '\n'), 0)
 }
 
 // peerRefusalLogged tells if the refusal number n gets a log line. Refusals 1 to

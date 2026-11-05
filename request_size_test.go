@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -66,7 +67,7 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	// not a happens-before edge). Which request panics is decided inside the
 	// replacement instead, so the second call needs no restore.
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response {
+	dispatchRequest = func(s *server, c *conn.Conn, raw []byte, req request) *rpc.Response {
 		if bytes.Contains(raw, []byte(`"id":7`)) {
 			panic("boom")
 		}
@@ -98,7 +99,7 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 // no reply and the daemon must still serve afterwards.
 func TestShutdownPanicWritesNoFrame(t *testing.T) {
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response {
+	dispatchRequest = func(s *server, c *conn.Conn, raw []byte, req request) *rpc.Response {
 		if bytes.Contains(raw, []byte(`"id":11`)) {
 			panic("boom")
 		}
@@ -130,13 +131,13 @@ func serveConnOnPipe(t *testing.T, write func(net.Conn)) string {
 	s := &server{
 		token:    testToken,
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	cli, srv := net.Pipe()
 	return captureLog(t, func() {
 		done := make(chan struct{})
-		go func() { defer close(done); s.serveConn(&conn{nc: srv}) }()
+		go func() { defer close(done); s.serveConn(conn.New(srv, nil, 0, nil, nil, nil)) }()
 		write(cli)
 		_ = cli.Close()
 		<-done
@@ -226,12 +227,12 @@ func TestServerInitiatedCloseLogsNoScannerError(t *testing.T) {
 	s := &server{
 		token:    testToken,
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	out := captureLog(t, func() {
 		done := make(chan struct{})
-		go func() { defer close(done); s.serveConn(&conn{nc: a.nc}) }()
+		go func() { defer close(done); s.serveConn(conn.New(a.nc, nil, 0, nil, nil, nil)) }()
 		showTokenOn(t, cli)
 		_ = a.nc.Close() // what closeAll does on server.shutdown
 		<-done

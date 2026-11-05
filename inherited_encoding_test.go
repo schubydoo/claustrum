@@ -24,7 +24,7 @@ import (
 // THEY GO THROUGH THE SOCKET, deliberately. An earlier version drove dispatch
 // directly via dispatchRaw, which marshals the response with its OWN
 // json.Marshal call — so it asserted encoding/json's behaviour but never touched
-// conn.writeResponse, and the exact refactor conn.go warns about (swapping
+// conn.Conn.WriteResponse, and the exact refactor internal/conn/conn.go warns about (swapping
 // json.Marshal for an Encoder with SetEscapeHTML(false)) would have kept these
 // green. Running over a real connection makes the asserted bytes the ones a
 // client actually receives.
@@ -83,7 +83,7 @@ func TestInheritedLoneSurrogateBecomesThreeReplacements(t *testing.T) {
 // way to opt out (only an Encoder does, via SetEscapeHTML(false)). Any file
 // holding HTML or shell redirection comes back escaped.
 //
-// This is the assertion that guards conn.writeResponse specifically: it is the
+// This is the assertion that guards conn.Conn.WriteResponse specifically: it is the
 // function the "switch to an Encoder" refactor would change, and the bytes
 // checked here came out of it.
 //

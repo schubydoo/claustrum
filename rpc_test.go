@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -20,7 +21,7 @@ func newTestServer(tb testing.TB) *server {
 	return &server{
 		token:      testToken,
 		procs:      newTestProcManager(tb),
-		conns:      make(map[*conn]struct{}),
+		conns:      make(map[*conn.Conn]struct{}),
 		shutdown:   make(chan struct{}),
 		instanceID: testInstanceID,
 		startedAt:  testStartedAt,

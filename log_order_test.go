@@ -6,6 +6,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // markConn logs a marker line into the captured log just before each Write and
@@ -31,13 +33,13 @@ func serveMarkedConn(t *testing.T, line string, wantReply bool) string {
 	s := &server{
 		token:    testToken,
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	cli, srv := net.Pipe()
 	return captureLog(t, func() {
 		done := make(chan struct{})
-		go func() { defer close(done); s.serveConn(&conn{nc: markConn{srv}}) }()
+		go func() { defer close(done); s.serveConn(conn.New(markConn{srv}, nil, 0, nil, nil, nil)) }()
 		if line != "" {
 			if _, err := cli.Write([]byte(line)); err != nil {
 				t.Errorf("client write: %v", err)
@@ -148,14 +150,14 @@ func TestConnectionLineFormatLengths(t *testing.T) {
 		format string
 		n      int
 	}{
-		{fmtNewConn, 32},
+		{conn.FmtNewConn, 32},
 		{fmtConnClosed, 30},
 		{fmtTokenless, 61},
 		{fmtUnauth, 53},
 		{fmtParseError, 34},
-		{fmtIdleClose, 58},
-		{fmtWriteFailed, 51},
-		{fmtReplyFailed, 37},
+		{conn.FmtIdleClose, 58},
+		{conn.FmtWriteFailed, 51},
+		{conn.FmtReplyFailed, 37},
 		{fmtScannerErr, 32},
 		{fmtProcExited, 50},
 	} {

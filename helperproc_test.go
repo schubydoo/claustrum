@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 )
 
@@ -429,7 +430,7 @@ func runHelper(mode string, args []string) int {
 		if len(args) > 1 && args[1] == "keep" {
 			m.jobs = jobsKeep
 		}
-		p, err := m.spawn(&conn{nc: client}, "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
+		p, err := m.spawn(conn.New(client, nil, 0, nil, nil, nil), "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

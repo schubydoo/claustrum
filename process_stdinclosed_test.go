@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // failingStdin is a child stdin whose reader is gone: each write fails.
@@ -24,7 +26,7 @@ func TestStdinQueueFillsAfterChildClosedStdin(t *testing.T) {
 	defer func() { stdinQueueCap = old }()
 	buf := captureLogBuf(t)
 
-	p := &managedProc{id: "sclosed", subs: map[*conn]struct{}{}, stdin: failingStdin{}}
+	p := &managedProc{id: "sclosed", subs: map[*conn.Conn]struct{}{}, stdin: failingStdin{}}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 	stopStdinWriter(t, p)

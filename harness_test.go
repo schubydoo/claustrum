@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
@@ -22,7 +23,7 @@ import (
 var updateGolden = flag.Bool("update", false, "update golden fixtures in testdata/")
 
 // startSocketServer boots a real AF_UNIX daemon on a temp socket using the
-// production per-connection path (serveConn -> dispatch -> writeJSON / emit)
+// production per-connection path (serveConn -> dispatch -> conn.Conn.WriteResponse / emit)
 // with a test-controlled accept loop. Unlike (*server).run it installs no
 // signal handlers, and its cleanup never calls os.Exit, so it is safe under
 // `go test`. The returned socket path is ready to Dial.
@@ -52,7 +53,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 		token:      testToken,
 		ln:         ln,
 		procs:      newTestProcManager(t),
-		conns:      make(map[*conn]struct{}),
+		conns:      make(map[*conn.Conn]struct{}),
 		shutdown:   make(chan struct{}),
 		instanceID: testInstanceID,
 		startedAt:  testStartedAt,
@@ -76,8 +77,8 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 			// nil ac silently disables every path that claims the deliberate-close
 			// flag: the supersede on reattach, and the idle watcher. A socket test
 			// then asserts against a daemon shape production never has.
-			ac := newActivityConn(nc)
-			c := &conn{nc: ac, ac: ac}
+			ac := conn.NewActivityConn(nc)
+			c := conn.New(ac, ac, 0, nil, nil, nil)
 			s.mu.Lock()
 			s.conns[c] = struct{}{}
 			s.mu.Unlock()
@@ -156,7 +157,7 @@ func dial(t *testing.T, sock string) *testClient {
 // then returns the line without the member, so the goldens and the decoders see
 // the plain frame. The member is not golden data: its len holds the length of
 // every path in the line, which differs by host. TestSocketEndMemberPingSequence and
-// the unit tests of stampEnd pin the member itself. Called with cl.mu held.
+// the unit tests of conn.StampEnd pin the member itself. Called with cl.mu held.
 func (cl *testClient) checkEnd(line []byte) []byte {
 	plain, at, ln, ok := splitEnd(line)
 	switch {

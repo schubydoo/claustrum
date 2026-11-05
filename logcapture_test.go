@@ -11,7 +11,7 @@ import (
 // buffer is also READ by the test goroutine, and daemon goroutines started by
 // OTHER tests can still be logging into the process-global logger at that
 // moment — so the read needs the same lock. Observed once as a -race failure
-// under -shuffle: bytes.Buffer.String raced a writeResponse log line from a
+// under -shuffle: bytes.Buffer.String raced a Conn.WriteResponse log line from a
 // serveConn goroutine that outlived the test which started it.
 type syncBuffer struct {
 	mu  sync.Mutex

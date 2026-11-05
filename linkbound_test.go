@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // linkSpawnReq builds a process.spawn request of a helper mode with extra params.
@@ -197,7 +199,7 @@ func TestLinkBoundGoneAtSpawn(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	exe, env := helperCommand(t, "sleep")
-	p, err := m.spawnVia(&conn{closed: true}, "gone1", exe, []string{"60"}, "", env, false, nil, time.Second)
+	p, err := m.spawnVia(closedConn(conn.New(nil, nil, 0, nil, nil, nil)), "gone1", exe, []string{"60"}, "", env, false, nil, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

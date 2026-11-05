@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/install"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/metrics"
@@ -146,7 +147,7 @@ type managedProc struct {
 	buffer     []streamFrame
 	bufBytes   int64 // sum of f.lineBytes (serialized frame + newline) in buffer
 	bufCap     int64 // per-instance override; 0 means use defaultBufferCap
-	subs       map[*conn]struct{}
+	subs       map[*conn.Conn]struct{}
 	running    bool
 	// reaped is set as soon as cmd.Wait returns — the moment the kernel frees the
 	// pid, and with it the process GROUP id once the last member goes. That is up
@@ -228,7 +229,7 @@ type managedProc struct {
 	// zero while it is there. Read and written under p.mu. onExit runs once after
 	// the exit frame. See linkbound.go.
 	linked     bool
-	link       *conn
+	link       *conn.Conn
 	detachedAt time.Time
 	onExit     func()
 
@@ -694,7 +695,7 @@ func (p *managedProc) emit(f streamFrame) {
 	// json.Marshal, not an Encoder: this is the encode that carries EVERY live
 	// stream frame, and its HTML escaping is inherited wire behaviour — see
 	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on
-	// conn.writeJSON.
+	// conn.Conn.WriteJSON.
 	b, merr := json.Marshal(f)
 	if merr == nil {
 		b = append(b, '\n')
@@ -711,7 +712,7 @@ func (p *managedProc) emit(f streamFrame) {
 		p.bufBytes -= p.buffer[0].lineBytes
 		p.buffer = p.buffer[1:]
 	}
-	subs := make([]*conn, 0, len(p.subs))
+	subs := make([]*conn.Conn, 0, len(p.subs))
 	for c := range p.subs {
 		subs = append(subs, c)
 	}
@@ -723,7 +724,7 @@ func (p *managedProc) emit(f streamFrame) {
 	for _, c := range subs {
 		err := merr
 		if err == nil {
-			err = c.writeLine(b)
+			err = c.WriteLine(b)
 		}
 		if err != nil {
 			logging.Warnf("[frameSink] write failed, detaching: %v", err)
@@ -737,7 +738,7 @@ func (p *managedProc) emit(f streamFrame) {
 // spawn starts a child process in its own process group and begins streaming. It
 // returns the managedProc so the caller can read its (immutable) pid/startTime
 // for the CT-1 opt-in; the wire reply is otherwise unaffected.
-func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool) (*managedProc, error) {
+func (m *procManager) spawn(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool) (*managedProc, error) {
 	return m.spawnVia(c, id, command, args, cwd, env, noShellAgent, nil, 0)
 }
 
@@ -747,7 +748,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 // passes, the child argv is the launcher argv, then the command, then the args. The
 // launcher is then the process, and its stream frames are its own. A linkTTL above
 // 0 makes a link-bound process with that unattended time (linkbound.go).
-func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*managedProc, error) {
+func (m *procManager) spawnVia(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*managedProc, error) {
 	return m.spawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, false, nil)
 }
 
@@ -755,7 +756,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 // tempRoot is true, the step of clitemproot_linux.go runs after the env is built,
 // and the process keeps its answer in cliTempRoot. folders are the session folders
 // of the spawn (sessionfolders.go), recorded before the start.
-func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*managedProc, error) {
+func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*managedProc, error) {
 	path, argv := command, args
 	if launcher != nil {
 		if err := refuseManagedLauncher(*launcher, command); err != nil {
@@ -1085,7 +1086,7 @@ func (m *procManager) spawnWithTempRoot(c *conn, id, command string, args []stri
 		startTime:  startTime,
 		sessionKey: sessionKey,
 		askEnd:     argsAskEnd(args),
-		subs:       map[*conn]struct{}{c: {}},
+		subs:       map[*conn.Conn]struct{}{c: {}},
 		running:    true,
 		stdin:      stdin,
 		cmd:        cmd,
@@ -1761,7 +1762,7 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 // managedProc (nil when not found) so the caller can read its immutable
 // pid/startTime for the CT-1 opt-in, and the process's cumulative stdinApplied so
 // a reconnecting client can resume stdin from the right offset (0 when not found).
-func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedProc, found, running bool, firstSeq, lastSeq, stdinApplied uint64) {
+func (m *procManager) reattach(c *conn.Conn, id string, fromSeq uint64) (p *managedProc, found, running bool, firstSeq, lastSeq, stdinApplied uint64) {
 	p = m.get(id)
 	if p == nil {
 		return nil, false, false, 0, 0, 0
@@ -1771,7 +1772,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// It also comes first because applyStdin nests p.stdinMu over p.mu. No path
 	// holds p.mu or p.stdinMu and then takes a wmu.
 	if c != nil {
-		c.lockWrites()
+		c.LockWrites()
 	}
 	p.mu.Lock()
 	// A reattach TRANSFERS the frame stream to the new connection; it does not
@@ -1796,17 +1797,17 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// with the firstSeq and lastSeq of the link (683cc6a9, measured on Linux). That
 	// the stream stays on the link, that this connection gets the replay and no live
 	// frame, and that the link stays open, is claustrum's own, not measured.
-	var superseded []*conn
+	var superseded []*conn.Conn
 	attached := true
 	if p.takesFrom(c) {
-		superseded = make([]*conn, 0, len(p.subs))
+		superseded = make([]*conn.Conn, 0, len(p.subs))
 		for old := range p.subs {
 			if old != c {
 				superseded = append(superseded, old)
 			}
 		}
 		_, attached = p.subs[c]
-		p.subs = map[*conn]struct{}{c: {}}
+		p.subs = map[*conn.Conn]struct{}{c: {}}
 	}
 	// On 90fca6e6 a reattach inside the exit drain answers running:false
 	// (measured). The process was already waited on, so it is not resumable.
@@ -1830,7 +1831,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// dispatches with no connection takes the old order too.
 	hold := !attached && c != nil
 	if c != nil && !hold {
-		c.unlockWrites()
+		c.UnlockWrites()
 	}
 	afterReplaySnapshot(id)
 	p.stdinMu.Lock()
@@ -1839,20 +1840,20 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	var err error
 	if !hold {
 		for _, old := range superseded {
-			old.supersede("process " + id + " reattached from another connection")
+			old.Supersede("process " + id + " reattached from another connection")
 		}
 		for _, f := range replay {
-			if err = c.writeJSON(f); err != nil {
+			if err = c.WriteJSON(f); err != nil {
 				break
 			}
 		}
 	} else {
 		err = writeFramesLocked(c, replay)
-		c.unlockWrites()
+		c.UnlockWrites()
 		// After the replay, as supersede takes the write lock of the old
 		// connection. The later close is claustrum's own, not measured.
 		for _, old := range superseded {
-			old.supersede("process " + id + " reattached from another connection")
+			old.Supersede("process " + id + " reattached from another connection")
 		}
 	}
 	if err != nil {
@@ -1869,7 +1870,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 // reassigns it.
 var afterReplaySnapshot = func(id string) {}
 
-func (m *procManager) detachConn(c *conn) {
+func (m *procManager) detachConn(c *conn.Conn) {
 	m.mu.Lock()
 	procs := make([]*managedProc, 0, len(m.procs))
 	for _, p := range m.procs {
@@ -2047,15 +2048,15 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 }
 
 // writeFramesLocked writes the replay frames of a reattach on c, with the write
-// lock of c already held, each as writeJSON marshals it. It stops at the first error.
-// It must stay on json.Marshal for the reason in the note on writeJSON.
-func writeFramesLocked(c *conn, frames []streamFrame) error {
+// lock of c already held, each as Conn.WriteJSON marshals it. It stops at the first error.
+// It must stay on json.Marshal for the reason in the note on WriteJSON in internal/conn.
+func writeFramesLocked(c *conn.Conn, frames []streamFrame) error {
 	for _, f := range frames {
 		b, err := json.Marshal(f)
 		if err != nil {
 			return err
 		}
-		if err := c.writeLineLocked(append(b, '\n')); err != nil {
+		if err := c.WriteLineLocked(append(b, '\n')); err != nil {
 			return err
 		}
 	}

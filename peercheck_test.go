@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // The tests of the peerCheck member of server.capabilities and of the
@@ -231,7 +233,7 @@ func TestPeerCheckStateFrames(t *testing.T) {
 func TestPeerRefusalLineBytes(t *testing.T) {
 	for _, reason := range []string{"other_namespace", "unreadable", "lookup_failed"} {
 		want := `{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"` + reason + `"}}}` + "\n"
-		want = string(stampEnd([]byte(want), 0)) // the end member is pinned by TestPeerRefusalLineCarriesEndMember
+		want = string(conn.StampEnd([]byte(want), 0)) // the end member is pinned by TestPeerRefusalLineCarriesEndMember
 		if got := string(peerRefusalLine(reason)); got != want {
 			t.Errorf("refusal line =\n%q\nwant\n%q", got, want)
 		}

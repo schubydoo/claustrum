@@ -3,6 +3,7 @@ package main
 import (
 	"slices"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
@@ -110,7 +111,7 @@ func (s *server) featuresFor() []string {
 	return append(slices.Clip(list), jobFeature)
 }
 
-func (s *server) handleServer(c *conn, req *request) *rpc.Response {
+func (s *server) handleServer(c *conn.Conn, req *request) *rpc.Response {
 	switch req.Method {
 	case "server.ping":
 		return rpc.Ptr(rpc.OKResult(req.ID, rpc.PongResult{Pong: true}))
@@ -141,7 +142,7 @@ func (s *server) handleServer(c *conn, req *request) *rpc.Response {
 		if c != nil {
 			// The cleanup count keeps this connection (dropConns).
 			s.mu.Lock()
-			c.sentStop = true
+			c.SetSentStop()
 			s.mu.Unlock()
 		}
 		s.signalShutdown()

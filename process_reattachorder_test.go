@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds pins a measured case (`5fd08069`,
@@ -17,7 +19,7 @@ import (
 // write lock of the connection.
 func TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds(t *testing.T) {
 	m := newTestProcManager(t)
-	p := &managedProc{id: "r1", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "r1", subs: map[*conn.Conn]struct{}{}, running: true}
 	for range 3 {
 		p.emit(streamFrame{Stream: "stdout", Data: "YQ=="}) // seq 1 to 3
 	}
@@ -62,12 +64,12 @@ func TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds(t *testing.T) {
 func TestReattachNewConnReplayWriteErrorDetaches(t *testing.T) {
 	buf := captureLogBuf(t)
 	m := newTestProcManager(t)
-	p := &managedProc{id: "r3", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "r3", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.emit(streamFrame{Stream: "stdout", Data: "YQ=="}) // seq 1
 	m.procs["r3"] = p
 
 	c, _ := pipeConn(t)
-	_ = c.nc.Close()
+	_ = c.NC().Close()
 	m.reattach(c, "r3", 0)
 
 	p.mu.Lock()
@@ -76,10 +78,9 @@ func TestReattachNewConnReplayWriteErrorDetaches(t *testing.T) {
 	if on {
 		t.Error("a connection whose replay write failed is still attached")
 	}
-	if !c.wmu.TryLock() {
+	if !c.MarkClosedIfFree() {
 		t.Fatal("the write lock of the connection is still held after the reattach")
 	}
-	c.wmu.Unlock()
 	if !strings.Contains(buf.String(), "[frameSink] replay write failed, detaching") {
 		t.Errorf("log %q, want the replay write failed line", buf.String())
 	}
@@ -92,7 +93,7 @@ func TestReattachNewConnReplayWriteErrorDetaches(t *testing.T) {
 // here, in an earlier draft of this fix.
 func TestReattachLargeReplayToSlowReaderAnswers(t *testing.T) {
 	m := newTestProcManager(t)
-	p := &managedProc{id: "big", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "big", subs: map[*conn.Conn]struct{}{}, running: true}
 	data := strings.Repeat("QUFB", 256) // 1 KiB of base64 per frame
 	const stored = 2000
 	for range stored {
@@ -102,7 +103,7 @@ func TestReattachLargeReplayToSlowReaderAnswers(t *testing.T) {
 
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
-	c := &conn{nc: client}
+	c := conn.New(client, nil, 0, nil, nil, nil)
 	var mu sync.Mutex
 	var got []uint64
 	go func() {
@@ -204,18 +205,18 @@ func within(t *testing.T, what string, fns ...func()) {
 // process still return.
 func TestReattachWaitingForAStuckWriterHoldsNoProcessLock(t *testing.T) {
 	m := newTestProcManager(t)
-	p := &managedProc{id: "w1", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "w1", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	p.emit(streamFrame{Stream: "stdout", Data: "YQ=="})
 	m.procs["w1"] = p
-	m.procs["other"] = &managedProc{id: "other", subs: map[*conn]struct{}{}, running: true}
+	m.procs["other"] = &managedProc{id: "other", subs: map[*conn.Conn]struct{}{}, running: true}
 
 	c, _ := pipeConn(t)
-	c.wmu.Lock() // a writer stuck on a full socket
+	c.LockWrites() // a writer stuck on a full socket
 	released := false
 	t.Cleanup(func() {
 		if !released {
-			c.wmu.Unlock()
+			c.UnlockWrites()
 		}
 	})
 	reattached := make(chan struct{})
@@ -228,7 +229,7 @@ func TestReattachWaitingForAStuckWriterHoldsNoProcessLock(t *testing.T) {
 		func() { p.applyStdin([]byte("x"), nil, p.isLive) },
 	)
 	released = true
-	c.wmu.Unlock()
+	c.UnlockWrites()
 	select {
 	case <-reattached:
 	case <-time.After(3 * time.Second):
@@ -245,13 +246,13 @@ func TestReattachWaitingForAStuckWriterHoldsNoProcessLock(t *testing.T) {
 // early return of supersede for a connection with no wrapper.
 func TestReattachPipelinedOnTheSameConnDoesNotDeadlock(t *testing.T) {
 	m := newTestProcManager(t)
-	p := &managedProc{id: "w2", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "w2", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	p.emit(streamFrame{Stream: "stdout", Data: "YQ=="})
 	m.procs["w2"] = p
 
-	c, _ := pipeConn(t)
-	c.ac = newActivityConn(c.nc)
+	c0, _ := pipeConn(t)
+	c := conn.New(c0.NC(), conn.NewActivityConn(c0.NC()), 0, nil, nil, nil)
 	d, _ := pipeConn(t)
 	dDone := make(chan struct{})
 	r2Done := make(chan struct{})

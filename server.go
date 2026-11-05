@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/hostsweep"
@@ -85,7 +86,7 @@ type server struct {
 	startedAt  int64
 
 	mu           sync.Mutex
-	conns        map[*conn]struct{}
+	conns        map[*conn.Conn]struct{}
 	stopsGone    int // connections that sent server.shutdown and left conns, for the cleanup count
 	shutdown     chan struct{}
 	once         sync.Once
@@ -118,7 +119,7 @@ type server struct {
 	managedLog managedLauncherLog
 
 	// idleTimeout closes a connection with no read/write activity for this long.
-	// The reference closes a connection idle for 5 minutes (idleConnTimeout),
+	// The reference closes a connection idle for 5 minutes (conn.IdleConnTimeout),
 	// measured against f6010b97. So this is always-on to match. A test overrides
 	// it to a short value.
 	idleTimeout time.Duration
@@ -450,11 +451,11 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 		ln:            ln,
 		socket:        socket,
 		procs:         procs,
-		conns:         make(map[*conn]struct{}),
+		conns:         make(map[*conn.Conn]struct{}),
 		shutdown:      make(chan struct{}),
 		keepChildren:  keepChildren,
 		wlog:          wlog,
-		idleTimeout:   idleConnTimeout,
+		idleTimeout:   conn.IdleConnTimeout,
 		sockInfo:      sockFI,
 		tokenInfo:     tokenFI,
 		releaseRunDir: claim.Release,
@@ -849,15 +850,15 @@ func (s *server) acceptLoop(ln net.Listener) {
 		}
 		// Wrap in an activity-stamping conn so the idle watcher can see the last
 		// read/write. The reference closes a connection idle for 5 minutes (f6010b97).
-		ac := newActivityConn(nc)
-		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{}), down: s.shutdown}
+		ac := conn.NewActivityConn(nc)
+		c := conn.New(ac, ac, s.connSeq.Add(1), s.wlog, make(chan struct{}), s.shutdown)
 		metrics.Met.Connections.Add(1)
 		// The New connection line waits for the first request that shows the token
-		// (conn.showToken, claustrum's own, not measured).
+		// (conn.Conn.ShowToken, claustrum's own, not measured).
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
 		s.mu.Unlock()
-		go s.closeWhenIdle(ac, c.done)
+		go s.closeWhenIdle(ac, c.Done())
 		go s.serveConn(c)
 	}
 }
@@ -877,35 +878,39 @@ func (p *spokeReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
+// closeWhenIdle runs the idle watcher of one connection with the idle timeout and
+// the shutdown channel of the server (conn.CloseWhenIdle).
+func (s *server) closeWhenIdle(a *conn.ActivityConn, done <-chan struct{}) {
+	conn.CloseWhenIdle(a, s.idleTimeout, s.shutdown, done)
+}
+
 // dispatchRequest is the seam serveConn dispatches through. A var so a test can
 // force a handler panic and prove the per-request recover keeps the daemon alive
 // (the panic path is otherwise unreachable, so it cannot be provoked by input).
 // Production never reassigns it.
-var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response { return s.route(c, req) }
+var dispatchRequest = func(s *server, c *conn.Conn, raw []byte, req request) *rpc.Response { return s.route(c, req) }
 
-func (s *server) serveConn(c *conn) {
+func (s *server) serveConn(c *conn.Conn) {
 	var spoke spokeReader
 	defer func() {
 		// Logged before the close, as the reference does (docs/PROTOCOL.md, Transport).
 		// Claustrum's own: a connection that never showed the token
 		// logs no close line. Its close counts on the sampled close line instead,
 		// but only when it sent a byte (measured on Linux, 683cc6a9).
-		if c.tokenMark().Load() {
-			logging.Infof(fmtConnClosed, c.remoteLabel())
+		if c.TokenMark().Load() {
+			logging.Infof(fmtConnClosed, c.RemoteLabel())
 		} else if spoke.sent {
 			if n := s.tokenlessCl.Add(1); logSampled(n) {
-				logging.Infof(fmtTokenless, n, c.remoteLabel())
+				logging.Infof(fmtTokenless, n, c.RemoteLabel())
 			}
 		}
-		c.wmu.Lock()
-		c.closed = true
-		c.wmu.Unlock()
-		c.nc.Close()
-		if c.done != nil {
-			close(c.done) // stop the idle watcher (nil when a test builds a conn directly)
+		c.MarkClosed()
+		c.NC().Close()
+		if c.Done() != nil {
+			close(c.Done()) // stop the idle watcher (nil when a test builds a conn directly)
 		}
 		s.mu.Lock()
-		if _, ok := s.conns[c]; ok && c.sentStop {
+		if _, ok := s.conns[c]; ok && c.SentStop() {
 			s.stopsGone++
 		}
 		delete(s.conns, c)
@@ -913,7 +918,7 @@ func (s *server) serveConn(c *conn) {
 		s.procs.detachConn(c)
 	}()
 
-	spoke.r = c.nc
+	spoke.r = c.NC()
 	sc := bufio.NewScanner(&spoke)
 	// The reference caps a single request line at 1 MiB: a line up to 1048575
 	// bytes is accepted, 1048576+ closes the connection with no reply
@@ -931,7 +936,7 @@ func (s *server) serveConn(c *conn) {
 		// ORDER. Recording inside handleRequest would order frames by goroutine
 		// scheduling instead, which is exactly the property a capture is used to
 		// study (see the stdin-ticket note above).
-		c.wlog.Record(c.id, "in", raw)
+		c.WireLog().Record(c.ID(), "in", raw)
 		// A line that fails the parse check or the auth check gets its reply
 		// here, on the read path, before the next read. A final newline does
 		// not change this. Measured against f6010b97 and 90fca6e6 on Linux,
@@ -945,7 +950,7 @@ func (s *server) serveConn(c *conn) {
 			// A failed write of this reply ends the read loop and so the
 			// connection. Measured on Linux with c8e2f083. A failed write of
 			// any other reply, which handleRequest writes, keeps it.
-			if c.writeResponse(*resp) {
+			if c.WriteResponse(*resp) {
 				break
 			}
 			continue
@@ -955,7 +960,7 @@ func (s *server) serveConn(c *conn) {
 		ordered := req.Method == "process.stdin"
 		var ticket uint64
 		if ordered {
-			ticket = c.nextStdinTicket()
+			ticket = c.NextStdinTicket()
 		}
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
@@ -980,8 +985,8 @@ func (s *server) serveConn(c *conn) {
 	//
 	// Claustrum's own, not measured: the address and the error are quoted, and no
 	// line is logged for a connection that never showed the token or during the shutdown.
-	if err := sc.Err(); err != nil && !isOurClose(err) && c.tokenMark().Load() && !c.shuttingDown() {
-		logging.Errorf(fmtScannerErr, c.remoteLabel(), err)
+	if err := sc.Err(); err != nil && !isOurClose(err) && c.TokenMark().Load() && !c.ShuttingDown() {
+		logging.Errorf(fmtScannerErr, c.RemoteLabel(), err)
 	}
 }
 
@@ -989,7 +994,7 @@ func (s *server) serveConn(c *conn) {
 // per-request panic recovery and, for process.stdin, the ordering ticket.
 // Extracted from serveConn's read loop so the loop reads as gate -> order ->
 // hand off; behavior is unchanged.
-func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, ticket uint64) {
+func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bool, ticket uint64) {
 	method, id := req.Method, req.ID
 	// Per-request panic isolation: without this a panic in any handler
 	// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
@@ -1009,7 +1014,7 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 	// The stdin ticket covers DISPATCH ONLY, never the response write.
 	// dispatch appends the chunk to the process's existing stdin FIFO
 	// (applyStdin) before it returns, so byte order is already fixed by
-	// then. Holding the ticket across writeResponse would add nothing to
+	// then. Holding the ticket across Conn.WriteResponse would add nothing to
 	// ordering and would couple input admission to response delivery: a
 	// client that stops reading blocks the socket write, and every later
 	// process.stdin on the connection stalls behind it — including input
@@ -1024,7 +1029,7 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 		// deadlock the connection.
 		//
 		// Scoped to dispatch on purpose. Covering the response write too
-		// would let a panic *inside* writeResponse produce a SECOND frame
+		// would let a panic *inside* Conn.WriteResponse produce a SECOND frame
 		// for one id — the one failure mode a wire-contract daemon least
 		// wants from its safety net. The recover only sets resp; the single
 		// write stays below, outside the recovered region.
@@ -1047,8 +1052,8 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 			resp = rpc.Ptr(rpc.ErrResult(id, rpc.CodeInternal, fmt.Sprintf("recovered panic: %v", r)))
 		}()
 		if ordered {
-			c.awaitStdinTurn(ticket)
-			defer c.doneStdinTurn(ticket)
+			c.AwaitStdinTurn(ticket)
+			defer c.DoneStdinTurn(ticket)
 		}
 		resp = dispatchRequest(s, c, raw, req)
 	}()
@@ -1056,7 +1061,7 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 		if awaits, _ := s.shutdownReply(); method == methodShutdown && awaits && isChanClosed(s.shutdown) {
 			s.awaitDropStart()
 		}
-		c.writeResponse(*resp)
+		c.WriteResponse(*resp)
 	}
 }
 
@@ -1307,11 +1312,8 @@ func (s *server) dropConns() int {
 		close(ch)
 	}
 	for c := range s.conns {
-		if c.wmu.TryLock() {
-			c.closed = true
-			c.wmu.Unlock()
-		}
-		c.nc.Close()
+		c.MarkClosedIfFree()
+		c.NC().Close()
 	}
 	return len(s.conns) + s.stopsGone
 }

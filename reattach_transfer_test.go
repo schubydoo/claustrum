@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // process.reattach TRANSFERS the frame stream to the reattaching connection; it
@@ -107,7 +109,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 	for round := 0; round < 100; round++ {
 		oldConn, oldFrames := pipeConn(t)
 		fresh, freshFrames := pipeConn(t)
-		p := &managedProc{id: "r", subs: map[*conn]struct{}{oldConn: {}}}
+		p := &managedProc{id: "r", subs: map[*conn.Conn]struct{}{oldConn: {}}}
 
 		// Drain both sides continuously so no write can ever block.
 		var mu sync.Mutex
@@ -162,7 +164,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		// The swap of p.subs, as reattach performs it, without the write lock.
 		p.mu.Lock()
 		lastSeq := p.seq
-		p.subs = map[*conn]struct{}{fresh: {}}
+		p.subs = map[*conn.Conn]struct{}{fresh: {}}
 		p.mu.Unlock()
 
 		stop.Store(true)
@@ -177,7 +179,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		// drain makes the collector's exit case selectable, so a frame still in
 		// flight could be dropped instead of appended — and a dropped frame is a
 		// MISSED leak, i.e. the test passes when it should fail.
-		if err := oldConn.writeLine(sentinelLine); err != nil {
+		if err := oldConn.WriteLine(sentinelLine); err != nil {
 			t.Fatalf("round %d: sentinel write: %v", round, err)
 		}
 		select {
@@ -206,7 +208,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 const sentinelID = "\x00end-of-frames"
 
 // sentinelLine is that frame already encoded, so the test writes it with the same
-// writeLine path (and therefore the same conn write lock) as a real frame.
+// Conn.WriteLine path (and therefore the same conn write lock) as a real frame.
 var sentinelLine = func() []byte {
 	b, err := json.Marshal(streamFrame{Type: "stream", ProcessID: sentinelID})
 	if err != nil {

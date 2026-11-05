@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // TestStartAcceptLoopsServesBothListeners drives startAcceptLoops with a pipe
@@ -37,7 +39,7 @@ func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
 		ln:       ln,
 		pipeLn:   pln,
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	s.startAcceptLoops()
@@ -87,7 +89,7 @@ func TestAcceptLoopBacksOffOnErrors(t *testing.T) {
 	ln := &erroringListener{}
 	s := &server{
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	done := make(chan struct{})
@@ -135,7 +137,7 @@ func TestAcceptLoopServesAndReturnsOnShutdown(t *testing.T) {
 		token:    testToken,
 		ln:       ln,
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	done := make(chan struct{})

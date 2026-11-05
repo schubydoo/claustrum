@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 const shutdownReplyFrame = `{"jsonrpc":"2.0","id":7,"result":{"ok":true},"end":{"at":0,"len":44}}` + "\n"
@@ -17,7 +19,7 @@ func startShutdownOnPipe(t *testing.T, s *server) net.Conn {
 	t.Helper()
 	srv, client := net.Pipe()
 	t.Cleanup(func() { _ = client.Close() })
-	c := &conn{nc: srv}
+	c := conn.New(srv, nil, 0, nil, nil, nil)
 	s.mu.Lock()
 	s.conns[c] = struct{}{}
 	s.mu.Unlock()
