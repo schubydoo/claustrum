@@ -651,7 +651,7 @@ var docWordLimits = map[string]int{
 	"docs/STYLE.md":                              1293, // the page rewrite
 	"docs/TOUR.md":                               850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                  6313, // the download texts of b3081b51. 6386: the pin of b3081b51: the content check item cut, two pin words added. 6411: the network link exception of b3081b51. 6401: the claims fixes of m-19. 6404: the content check of b3081b51 and its commit-id call. 6335: the junction item of b3081b51. 6312: the D28 row. 6285: the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
-	"docs/index.md":                              316,  // the reader router
+	"docs/index.md":                              325,  // the Go pin item (decision-076). 316: the reader router
 	"docs/protocol/errors.md":                    2015, // the root as sent and the quoting and cut of the link-limit text. 1978: the link-limit backticks. 1957: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":         2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
 	"docs/protocol/files-list.md":                550,  // the ELOOP tries of b3081b51. 468: the network links of 683cc6a9
@@ -751,7 +751,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/PROTOCOL.md":                         627,
 	"docs/STYLE.md":                            343,
 	"docs/UPSTREAM-TRACKING.md":                3000, // the download texts of b3081b51. 3005: the pin of b3081b51: the content check item cut, two pin words added. 6404: the content check of b3081b51 and its commit-id call. 2968: the pin of be1c1ca5: six triage items cut, two pin sentences added. 3169: the staged add of be1c1ca5. 3123: the ssh door of be1c1ca5. 3105: the links of the long-path dials. 3097: the long-path dials of the host cleaner and plugins.prune. 3084: the long socket path. 3061: the sweep on Linux and macOS of be1c1ca5. 3034: the git env bullet. 3005: the worktree texts of be1c1ca5. 2960 before
-	"docs/index.md":                            314,
+	"docs/index.md":                            323,  // the Go pin item (decision-076). 314 before
 	"docs/protocol/errors.md":                  1850,
 	"docs/protocol/files-extract-tar.md":       388,
 	"docs/protocol/flags.md":                   824,
