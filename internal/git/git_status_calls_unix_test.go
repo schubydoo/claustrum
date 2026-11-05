@@ -176,6 +176,39 @@ func TestGitStatusCallOrder(t *testing.T) {
 	wantStatusCalls(t, "K1", calls, want)
 }
 
+// Measured on Linux (b3081b51 and be1c1ca5): with path and baseRepo both the linked
+// worktree, the two calls after `rev-parse --absolute-git-dir` run in the git
+// directory of the main repository, and the status follows. The off switch answers
+// the same frame.
+func TestGitStatusLinkedWorktreeAsBase(t *testing.T) {
+	f := newStatusFixture(t)
+	run := statusCallLog(t, f.root)
+	raw, calls := run(f.W, f.W)
+	if raw != statusClean {
+		t.Fatalf("frame = %s\nwant %s", raw, statusClean)
+	}
+	want := []string{
+		"/|-|config --includes --path core.excludesFile",
+		callRepoConfig,
+		"<fx>/W|A|config -z --list",
+		"<fx>/W|A|rev-parse --absolute-git-dir",
+		"<fx>/T/.git|A|--git-dir=<fx>/T/.git config -z --list",
+		"<fx>/T/.git|A|--git-dir=<fx>/T/.git --work-tree=<fx>/W rev-parse --show-toplevel",
+		"/|-|--attr-source=" + gitEmptyTree + " version",
+	}
+	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callStatus)...)
+	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callLsFiles)...)
+	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callHead)...)
+	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callDiffIndex+"HEAD -- +locks")...)
+	wantStatusCalls(t, "worktree as baseRepo", calls, want)
+
+	off := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.status",
+		map[string]any{"path": f.W, "baseRepo": f.W, "shadowDirOff": true}))
+	if off != statusClean {
+		t.Errorf("shadowDirOff frame = %s\nwant %s", off, statusClean)
+	}
+}
+
 // The rows that stop at the gate, by their calls. The first request of the daemon
 // ran before, so the read of the excludes and the --attr-source probe are not in
 // these lists.
