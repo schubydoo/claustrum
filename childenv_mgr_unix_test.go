@@ -15,7 +15,7 @@ import (
 // that is not run/<id>/rpc.sock (`89cb6289`, measured on Linux and macOS). The run
 // dir is the folder that supervisor.ExecChildRunDir gives for such a socket.
 func TestReapOrphansOnAnotherSocketShape(t *testing.T) {
-	if node, _ := ownReapIdentity(); node == "" {
+	if node, _ := childrec.OwnReapIdentityForTest(); node == "" {
 		t.Skip("no node identity on this host")
 	}
 	runDir := supervisor.ExecChildRunDir(filepath.Join(t.TempDir(), "s.sock"))

@@ -15,9 +15,6 @@ import (
 // every read of a live process and every signal through internal/childrec, so no test
 // here signals a real process.
 
-// ownReapIdentity returns the node and host of this daemon, as the reap reads them.
-func ownReapIdentity() (node, host string) { return childrec.OwnReapIdentityForTest() }
-
 // writeOrphanRec writes the record of a child pid of a gone daemon below runDir and
 // returns the name of the record.
 func writeOrphanRec(t *testing.T, runDir string, pid int, argv0 string) string {

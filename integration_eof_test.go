@@ -286,7 +286,7 @@ func TestSocketEOFUnterminatedAtIdleClose(t *testing.T) {
 				t.Fatal("the daemon did not register the connection")
 			}
 			s.idleTimeout = 300 * time.Millisecond
-			go s.closeWhenIdle(c.AC(), nil)
+			go conn.CloseWhenIdle(c.AC(), s.idleTimeout, s.shutdown, nil)
 			if _, err := io.WriteString(nc, tc.send); err != nil {
 				t.Fatalf("write: %v", err)
 			}
