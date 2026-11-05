@@ -101,10 +101,7 @@ func symlinkedComponent(repo, worktreePath string) string {
 }
 
 // managedWorktreesMarker is the file 7d193f89 uses to tag a directory as holding
-// managed session worktrees. A baseRepo beneath such a directory (or beneath a
-// literal `.claude/worktrees`) is refused as an invalid trust root — a session
-// worktree must be created from a real top-level repository, never from inside
-// another session's worktree tree.
+// managed session worktrees.
 const managedWorktreesMarker = ".claude-managed-worktrees"
 
 // managedWorktreesRefusal is the fixed message 7d193f89 returns when a baseRepo is
@@ -114,8 +111,8 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 	"marker), or could not be validated as a trust root"
 
 // baseRepoUnderManagedWorktrees reports whether repo sits inside a managed
-// worktrees tree: beneath a `.claude/worktrees` directory, or beneath any ancestor
-// directory that holds a `.claude-managed-worktrees` marker file. 7d193f89 refuses
+// worktrees tree: beneath a `.claude/worktrees` directory, or in or beneath a
+// directory that holds a `.claude-managed-worktrees` entry and no `.git`. b3081b51 refuses
 // such a baseRepo on git.worktree_create (errorCode "nested_base_repo") and
 // git.worktree_remove (no errorCode). git.list_branches ignores a baseRepo member
 // (measured on Linux).
@@ -143,12 +140,19 @@ func baseRepoUnderManagedWorktrees(repo string) bool {
 	}
 }
 
-// holdsMarkerEntry reports whether dir holds a `.claude-managed-worktrees` entry. A
-// link counts when its target exists
-// (claustrum's own, not measured).
+// holdsMarkerEntry reports whether dir holds a `.claude-managed-worktrees` entry
+// that counts. A marker beside the `.git` folder of a repository does not count, and
+// the walk goes on to the parent (b3081b51, measured on Linux, macOS and Windows). That
+// holds for a marker inside baseRepo beside its own `.git` too (b3081b51, measured on
+// Linux, macOS and Windows). The stat test, which
+// a `.git` file or link passes too, is claustrum's own, not measured. A link counts when its target
+// exists (claustrum's own, not measured).
 func holdsMarkerEntry(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, managedWorktreesMarker))
-	return err == nil
+	if _, err := os.Stat(filepath.Join(dir, managedWorktreesMarker)); err != nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err != nil
 }
 
 // markerAboveSpelling reports whether repo, made absolute and cleaned but with no
