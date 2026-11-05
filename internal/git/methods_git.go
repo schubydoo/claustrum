@@ -1328,8 +1328,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// such a registration if it is the only one and is not locked
 	// (dropStaleWorktreeRegistration). Windows runs the step later, after
 	// `rev-parse --absolute-git-dir` (staleStepAfterGitDir).
-	// A create that holds its git directory runs the step through the held
-	// folder (gitdirheld.go).
+	// On Linux and macOS a create that holds its git directory runs the step
+	// through the held folder (gitdirheld.go). Windows runs it by the path.
 	staleStep := func() bool {
 		if createStepHook != nil && req.use.accepted != nil {
 			createStepHook("stale")

@@ -236,7 +236,8 @@ func TestHeldIndexPlacement(t *testing.T) {
 	f.otherUntouched(t)
 }
 
-// TestHeldStaleRegistration is the guard test of the step before the leaf.
+// TestHeldStaleRegistration tests the seam acceptedGitDir.dropStaleRegistration,
+// which no create calls now.
 // The held folder and T each hold a registration `old` whose record names the
 // missing leaf. After the swap the delete is asked of the held folder, and T
 // keeps its entry. With a listing or a delete by the path the recorder gets
@@ -283,7 +284,7 @@ func TestHeldWorktreeConfig(t *testing.T) {
 
 // TestHeldFolderSpelling: a baseRepo that the request spells through a link
 // above it is the held folder, by the identity of its `.git` at the hold. The
-// stale step of every system decides with isAt. A spelling that names another
+// stale step on Linux and macOS decides with isAt. A spelling that names another
 // folder at the hold is not the held folder, and neither is the path of T.
 // With a compare of the path texts alone the first test fails.
 func TestHeldFolderSpelling(t *testing.T) {

@@ -601,8 +601,7 @@ have no flag and no key.
 - **Behavior.** On Windows the stale step of `git.worktree_create` compares the
   `gitdir` record of each entry with the new leaf without regard to letter case.
   Before it deletes a matched entry, it tests the path that the record names, as
-  written, with `Lstat`. If that path exists, the entry stays. Both forms of the
-  step have the test: through the held git directory and by the path. Linux and
+  written, with `Lstat`. If that path exists, the entry stays. Linux and
   macOS compare exactly, so the missing leaf already proves the entry stale. In
   the state below claustrum keeps the entry, and `W1` stays on its branch.
 - **Reference.** On Windows a folder `.claude\worktrees` with case sensitivity

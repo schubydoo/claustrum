@@ -19,7 +19,7 @@ import (
 // (acceptedGitDir.root), not through the path. A link, a junction or another
 // folder that is put at the path while the create runs gets none of them,
 // except the directory that the hold moves to (movedTo or replacedAtPath,
-// below).
+// below) and the Windows stale step.
 //
 // The hold stops no rename of the folder by another process. On Windows its
 // handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
@@ -31,8 +31,8 @@ import (
 // Not measured: a rename at the moment when a step has an entry of the folder
 // open.
 //
-//   - The stale registration before the add: dropStaleRegistration on Windows,
-//     and dropStaleWorktreeRegistration with deleteRoot on Linux and macOS.
+//   - The stale registration before the add on Linux and macOS:
+//     dropStaleWorktreeRegistration with deleteRoot.
 //   - The folder `worktrees`: makeWorktreesFolder, openAddStage, and the mkdir
 //     of addStage.finish in a folder that the staging step took the hold on.
 //   - The staging steps: openAddStage, addStage.move with
@@ -54,7 +54,8 @@ import (
 //   - On Linux and macOS, the index in a `worktrees` entry that is a
 //     symbolic link (registrationsRoot). The deletes refuse such a link
 //     (deleteRoot): no delete goes behind it.
-//   - On every system, the stale step and a registrations folder whose
+//   - On Windows, the stale step (the maintainer's exception of 2026-11-05).
+//   - On Linux and macOS, the stale step for a registrations folder whose
 //     folder `worktrees` is not in the held folder, such as a daemon GIT_DIR
 //     of another repository (from the code, not measured).
 //   - The reads of the create that decide a refusal.
@@ -72,15 +73,15 @@ import (
 // takes it before the move (adopt). The steps above then act through that
 // folder.
 //
-// One measured swap comes between the test of a step and one of these acts:
-// a junction at `.git` right before `rev-parse --absolute-git-dir`, on
-// Windows. The stale step after it removes the old registration of the held
-// folder. b3081b51 removes that of the folder behind the junction (measured
-// on Windows). In the measured swaps on Windows the folder at the path
-// is unchanged on claustrum (measured on Windows).
+// After a junction at `.git` right before `rev-parse --absolute-git-dir` on
+// Windows, the stale step goes by the path and removes the old registration
+// of the folder behind the junction, as b3081b51 does (measured on Windows).
+// In the other measured swaps on Windows the folder at the path is unchanged
+// on claustrum (measured on Windows).
 
-// removeHeldEntry removes the entry name with its content through root, the
-// held git directory. A test replaces it. Production never does.
+// removeHeldEntry removes the entry name with its content through root: the
+// held git directory, or on Windows the root of the stale step by the path. A
+// test replaces it. Production never does.
 var removeHeldEntry = func(root *os.Root, name string) error {
 	return root.RemoveAll(name)
 }
@@ -117,9 +118,9 @@ func (a *acceptedGitDir) removeRegistration(name string) {
 	_ = removeHeldEntry(a.root, filepath.Join(worktreesSubdir, name))
 }
 
-// dropStaleRegistration is the Windows step of a create before the add, for a
-// create that holds its git directory. It removes the registration whose
-// `gitdir` record names worktreePath, which the caller found missing. The rule
+// dropStaleRegistration is a test seam, and production never calls it. It is
+// the former held form of the Windows step before the add. It removes the
+// registration whose `gitdir` record names worktreePath. The rule
 // is that of the Windows step (dropStaleWorktreeRegistration): the one entry
 // that names the leaf goes, if it holds no `locked` file. The listing, the
 // read of each record and the delete go through the held root. The folder
