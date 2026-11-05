@@ -317,11 +317,15 @@ func gitInfo(req *gitCall) rpc.Response {
 	// config of the repository of the file (measured on Linux). On Windows
 	// both builds answer the hooks refusal for such a file, with `fork/exec
 	// <git.exe>: The directory name is invalid.` (measured, 2 runs). Not
-	// measured: a folder whose git directory the trust check refuses, and
-	// another kind of file.
+	// measured: a folder whose git directory the trust check refuses.
+	//
+	// On Linux and macOS a FIFO or a device file takes the same steps. As the
+	// first git.info of a daemon on a FIFO or on /dev/null outside any
+	// repository, b3081b51 answers with no member (measured on Linux). macOS,
+	// such a file inside a repository and Windows are not measured.
 	gateTrust, gateDir, gate := t, p.Path, true
 	inFile := false
-	if fi, err := os.Stat(p.Path); err == nil && fi.Mode().IsRegular() && t.verdict == gitDirTrusted && t.pinCommonDir == "" {
+	if fi, err := os.Stat(p.Path); err == nil && (fi.Mode().IsRegular() || (runtime.GOOS != "windows" && !fi.IsDir())) && t.verdict == gitDirTrusted && t.pinCommonDir == "" {
 		ft := requestGitDirTrust(filepath.Dir(p.Path), true)
 		inFile = ft.verdict == gitDirTrusted && ft.pinCommonDir != ""
 		gateTrust, gateDir, gate = ft, filepath.Dir(p.Path), inFile
@@ -772,13 +776,23 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate).
-	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo); msg != "" {
+	//
+	// On Linux and macOS a baseRepo that is a FIFO or a device file outside any
+	// repository gets no gate, as in git.info. As the first git request of a
+	// daemon on a FIFO or on /dev/null, b3081b51 makes 2 calls: the excludes read
+	// and `version` (measured on Linux). A regular file there and macOS are
+	// claustrum's own, not measured.
+	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
+		t.verdict == gitDirTrusted && t.pinCommonDir == "" && !inRepoFolder(filepath.Dir(p.BaseRepo)) {
+		req.use = gitUse{stop: req.stop}
+	} else if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	} else if noRepo {
 		return notRepo
+	} else {
+		// The later git commands follow the off switch (measured on Linux).
+		req.keepLiveForm(bool(p.ShadowDirOff), t, p.BaseRepo)
 	}
-	// The later git commands follow the off switch (measured on Linux).
-	req.keepLiveForm(bool(p.ShadowDirOff), t, p.BaseRepo)
 	// A repo whose config cannot be enumerated is refused with -32603 (measured). The listing runs in
 	// baseRepo as sent and carries the heavy profile (call 2 of the measured call log).
 	c := hostileConfigRefusal(req.use, p.BaseRepo, true)
@@ -850,6 +864,12 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
 	return rpc.OKResult(req.ID, rpc.GitStatusResult{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
+}
+
+// inRepoFolder reports whether the trust check accepts a repository for dir.
+func inRepoFolder(dir string) bool {
+	ft := readGitDirTrust(dir, false)
+	return ft.verdict == gitDirTrusted && ft.pinCommonDir != ""
 }
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.

@@ -37,7 +37,15 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 - A `git.info` on a regular file gets the gate of the repository of its folder.
   Outside any repository it starts no test. As the first git request of a daemon its
   reply then has no member on Linux and macOS. On Windows it is the hooks refusal,
-  with `fork/exec <git.exe>: The directory name is invalid.`
+  with `fork/exec <git.exe>: The directory name is invalid.` On a FIFO or
+  `/dev/null` outside any repository the first `git.info` or `git.status` starts no
+  test (`b3081b51`, measured on Linux). The `git.info` reply has no member, also after
+  such a `git.status` (`b3081b51`, measured on Linux). macOS is not measured. For
+  `git.status` a regular file there is claustrum's own, not measured.
+  On Linux and macOS every file that is not a folder takes the steps of a regular file.
+  These parts are claustrum's own, not measured: a FIFO or a device file inside a
+  repository on `git.info`, the gate of `git.status` on a file inside a repository,
+  and a kind other than a FIFO and `/dev/null`.
 - A request with `"shadowDirOff":true` gets `"off-switch"` also as the first request
   of a daemon, in a "no repository" reply and while a failed test is kept.
   [Turning the read off](git-rules-config.md#turning-the-read-off) has the values that count as the
@@ -96,9 +104,9 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 
 | `<cause>` | When |
 |---|---|
-| `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder |
+| `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder. Each line end is one space. An empty line and the blanks at line ends stay, each blank as one space, except at both ends of the text (`b3081b51`, measured on Linux) |
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS), not the first `config --get`. The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`) |
+| the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`, and for `config`, `commit-tree` and `update-ref` on `b3081b51` on Linux) |
 | `this repository's git config cannot be used: <error lines of git>` | The read of the test repository's config failed, and the plain `git version` after it works |
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
