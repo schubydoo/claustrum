@@ -33,8 +33,18 @@ func refuseWorktree(format string, a ...any) error {
 	return &worktreeRefusal{text: fmt.Sprintf(format, a...)}
 }
 
+// removeHomeRefusal is the home refusal of locateInRepoWorktree. Its text is the
+// whole reply text, as that of worktreeRemoveHomeRefusal.
+type removeHomeRefusal struct{ text string }
+
+func (e *removeHomeRefusal) Error() string { return e.text }
+
 // worktreeRemoveText is the reply text for err.
 func worktreeRemoveText(err error) string {
+	var h *removeHomeRefusal
+	if errors.As(err, &h) {
+		return h.text
+	}
 	var r *worktreeRefusal
 	if errors.As(err, &r) {
 		return "refusing to remove worktree: " + r.text
@@ -74,18 +84,31 @@ func (t removeTarget) close() {
 // below repo is a symbolic link. The spelling in the texts is the resolved repo joined
 // with the rest of worktreePath: a remove under macOS /tmp names /private/tmp
 // (measured). A missing component, or one that is not a directory, gives the zero
-// target.
+// target. repo resolves as the leaf of a create does (leafResolve). On Windows a
+// junction before its last name then leads to the live worktree, and b3081b51
+// removes it (measured on Windows). A parent folder that denies List fails
+// EvalSymlinks too, and the handle path then leads to the live remove (claustrum's
+// own, not measured).
+//
+// The home guard of the caller reads the path as sent. On the handle branch the
+// path that the remove reaches is <handle path of repo>/<rel>, so that path gets the
+// home guard too (D2, claustrum's own, not measured).
 func locateInRepoWorktree(repo, worktreePath string) (removeTarget, error) {
 	rel, err := filepath.Rel(repo, filepath.Clean(worktreePath))
 	if err != nil {
 		return removeTarget{}, err
 	}
-	resolved, err := filepath.EvalSymlinks(filepath.Clean(repo))
+	resolved, byHandle, err := leafResolveHow(filepath.Clean(repo))
 	if err != nil {
 		if isGoneErr(err) {
 			return removeTarget{}, nil
 		}
 		return removeTarget{}, err
+	}
+	if byHandle {
+		if msg := worktreeRemoveHomeRefusal(filepath.Join(resolved, rel)); msg != "" {
+			return removeTarget{}, &removeHomeRefusal{text: msg}
+		}
 	}
 	return openRemoveParent(resolved, filepath.Dir(rel), filepath.Base(rel))
 }

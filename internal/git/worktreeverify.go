@@ -71,7 +71,7 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 		cp.release()
 		return worktreeCheckpoint{}
 	}
-	resolved, err := evalSymlinks(worktreePath)
+	resolved, err := leafResolve(worktreePath)
 	if err != nil {
 		cp.release()
 		return worktreeCheckpoint{}
@@ -104,7 +104,7 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 		return
 	}
 	if cp.info != nil {
-		if resolved, err := filepath.EvalSymlinks(worktreePath); err != nil || resolved != cp.resolved {
+		if resolved, err := leafResolve(worktreePath); err != nil || resolved != cp.resolved {
 			return
 		}
 	}
@@ -238,6 +238,9 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 			heldRegistration = absoluteAdminDir(worktreePath, admin)
 		}
 	default:
+		// A leaf behind a Windows junction finds no match here, because its record
+		// names the leaf with the junction resolved. The registration then stays
+		// (claustrum's own, not measured).
 		registration = createdWorktreeAdminDir(repo, worktreePath)
 	}
 	leafSafe := func() bool { return leafSafeToRemove(worktreePath, cp) }
@@ -747,7 +750,7 @@ func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
 	}
 	// The path must still resolve to the same location; an ancestor swapped for a
 	// symlink would carry it elsewhere.
-	if resolved, err := filepath.EvalSymlinks(worktreePath); err != nil || resolved != cp.resolved {
+	if resolved, err := leafResolve(worktreePath); err != nil || resolved != cp.resolved {
 		return fmt.Sprintf("%s no longer leads to the directory that was created for the worktree", worktreePath)
 	}
 	after, err := os.Stat(worktreePath)

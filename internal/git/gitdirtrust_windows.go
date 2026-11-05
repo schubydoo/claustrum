@@ -141,6 +141,11 @@ var walkStartsAsSpelled = true
 // git.list_branches path test walk the path as sent (spelledWalkFails).
 var baseRepoWalksAsSpelled = true
 
+// leafResolvesByHandle is true on Windows. A leaf of git.worktree_create that
+// filepath.EvalSymlinks cannot resolve, as behind a junction, gets the path of an
+// open handle (leafResolve). b3081b51 creates such a worktree (measured on Windows).
+var leafResolvesByHandle = true
+
 // removeRegistrationsLinked reports whether the registrations folder dir is a
 // junction or a directory symbolic link. Go reports a junction as ModeIrregular.
 // A remove of a worktree folder that exists then deletes nothing and answers

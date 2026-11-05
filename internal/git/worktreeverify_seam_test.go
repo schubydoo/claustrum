@@ -12,7 +12,8 @@ import (
 // fixture that makes the resolve fail also makes the Stat fail, and the run returns
 // from the earlier arm instead (on Windows only a deny-List ACL on the parent would
 // split the two, which this suite does not stage). The failure is injected through
-// the evalSymlinks seam so the later arm is observed rather than assumed.
+// the evalSymlinks seam so the later arm is observed rather than assumed. On Windows
+// leafResolve then takes the path of a handle (finalLeafPath), so that seam fails too.
 //
 // checkpointCreatedWorktree itself only stats and resolves; it deletes nothing, so
 // this test cannot reach a recursive delete. The leaf is a t.TempDir() the test
@@ -30,7 +31,9 @@ func TestCheckpointCreatedWorktreeYieldsEmptyCheckpointWhenResolveFails(t *testi
 		// and both assertions below would fail.
 		return "/decoy/resolved/path", sentinel
 	}
-	t.Cleanup(func() { evalSymlinks = old })
+	oldFinal := finalLeafPath
+	finalLeafPath = func(string) (string, error) { return "/decoy/handle/path", sentinel }
+	t.Cleanup(func() { evalSymlinks, finalLeafPath = old, oldFinal })
 
 	cp := checkpointCreatedWorktree(leaf)
 

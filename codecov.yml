@@ -186,6 +186,7 @@ component_management:
         # per-repo lock, leaf mkdir) + git hardening + the destructive-path guard.
         - internal/git/worktreecontain.go
         - internal/git/worktreewalk.go
+        - internal/git/worktreeleaf.go
         # Windows-only worktree-path spelling guard (trailing dot/space, colon).
         - internal/git/spelling_windows.go
         - internal/git/spelling_other.go

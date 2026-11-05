@@ -71,6 +71,11 @@ var walkStartsAsSpelled = false
 // It is a variable so that a test on Linux can set it.
 var baseRepoWalksAsSpelled = false
 
+// leafResolvesByHandle is false on Linux and macOS. The checkpoint of the leaf of
+// git.worktree_create resolves with filepath.EvalSymlinks there (leafResolve). It is
+// a variable so that a test on Linux can set it.
+var leafResolvesByHandle = false
+
 // removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
 // of a worktree folder that exists refuses such a folder (measured on Linux and
 // macOS).
