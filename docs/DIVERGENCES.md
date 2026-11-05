@@ -175,9 +175,9 @@ have no flag and no key.
     of claustrum's own and their texts.
   - `git.worktree_remove`. Since `7d193f89` the reference first refuses a
     `worktreePath` that is not strictly inside `baseRepo`. So without
-    `worktreeRoot` the guard fires only for a repository that is an ancestor of
-    home. With `worktreeRoot` it is the active home guard. On Windows it also tests
-    the path behind a junction.
+    `worktreeRoot` the guard fires for a repository that is an ancestor of
+    home. With `worktreeRoot` it is the active home guard. Without `worktreeRoot` it
+    tests paths behind Windows junctions too.
   - Each rollback delete of `git.worktree_create`, and from the code its stale
     step before the add. It is defense in depth and emits no frame. The
     exception is the registration delete of a create that holds no git
