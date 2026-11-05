@@ -1765,7 +1765,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// It also comes first because applyStdin nests p.stdinMu over p.mu. No path
 	// holds p.mu or p.stdinMu and then takes a wmu.
 	if c != nil {
-		c.wmu.Lock()
+		c.lockWrites()
 	}
 	p.mu.Lock()
 	// A reattach TRANSFERS the frame stream to the new connection; it does not
@@ -1824,7 +1824,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// dispatches with no connection takes the old order too.
 	hold := !attached && c != nil
 	if c != nil && !hold {
-		c.wmu.Unlock()
+		c.unlockWrites()
 	}
 	afterReplaySnapshot(id)
 	p.stdinMu.Lock()
@@ -1841,8 +1841,8 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 			}
 		}
 	} else {
-		err = c.writeReplayLocked(replay)
-		c.wmu.Unlock()
+		err = writeFramesLocked(c, replay)
+		c.unlockWrites()
 		// After the replay, as supersede takes the write lock of the old
 		// connection. The later close is claustrum's own, not measured.
 		for _, old := range superseded {
@@ -2038,4 +2038,19 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 		base = sysproc.ReplaceOrAppendEnv(base, k, v)
 	}
 	return base
+}
+
+// writeFramesLocked writes the replay frames of a reattach on c, with the write
+// lock of c already held, each as writeJSON marshals it. It stops at the first error.
+func writeFramesLocked(c *conn, frames []streamFrame) error {
+	for _, f := range frames {
+		b, err := json.Marshal(f)
+		if err != nil {
+			return err
+		}
+		if err := c.writeLineLocked(append(b, '\n')); err != nil {
+			return err
+		}
+	}
+	return nil
 }

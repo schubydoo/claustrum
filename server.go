@@ -308,19 +308,18 @@ func (c *conn) writeLine(b []byte) error {
 	return c.writeLineLocked(b)
 }
 
-// writeReplayLocked writes the replay frames of a reattach with c.wmu already
-// held, each as writeJSON marshals it. It stops at the first error.
-func (c *conn) writeReplayLocked(frames []streamFrame) error {
-	for _, f := range frames {
-		b, err := json.Marshal(f)
-		if err != nil {
-			return err
-		}
-		if err := c.writeLineLocked(append(b, '\n')); err != nil {
-			return err
-		}
-	}
-	return nil
+// lockWrites takes the write lock of c. Process code holds it across a
+// reattach and then writes with writeFramesLocked.
+func (c *conn) lockWrites() { c.wmu.Lock() }
+
+// unlockWrites releases the write lock that lockWrites took.
+func (c *conn) unlockWrites() { c.wmu.Unlock() }
+
+// closedNow reports whether c is closed. It takes the write lock of c.
+func (c *conn) closedNow() bool {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	return c.closed
 }
 
 // writeLineLocked is writeLine with c.wmu already held.
