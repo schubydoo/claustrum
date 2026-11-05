@@ -364,6 +364,28 @@ func TestShadowFailedMktreeHasAllLinesAndTheVersion(t *testing.T) {
 	}
 }
 
+// The cause of a failed `mktree` keeps an empty line and the blanks at the ends
+// of each line. Each line end is one space, and the blanks at both ends of the
+// whole text go. b3081b51 answers these three texts for git.info and git.status
+// (measured on Linux).
+func TestShadowFailedMktreeKeepsTheBlanksOfItsLines(t *testing.T) {
+	for _, c := range []struct{ name, stderr, want string }{
+		{"empty line", "line one\n\nline two\n", "line one  line two"},
+		{"blanks", "   padded line   \n\t tab line\t\n", "padded line      tab line"},
+		{"four lines", "l1\nl2\nl3\nl4\n", "l1 l2 l3 l4"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newShadowFixture(t)
+			stageGit(t,
+				stagedCall{Match: []string{"mktree"}, Exit: 1, Stderr: c.stderr},
+				stagedCall{Match: []string{"version"}, Stdout: "git version 2.43.0\n"})
+			raw, calls := f.info(t, f.repo, nil)
+			_, after := startTestCalls(t, calls)
+			wantFailedTest(t, f, raw, after, "mktree", c.want+" (git version 2.43.0)")
+		})
+	}
+}
+
 // The commit-tree call names the tree that mktree printed. After a mktree that
 // prints "garbage" and exits 0, b3081b51 and be1c1ca5 answer the failed
 // commit-tree call with git's text (measured on Linux).
@@ -382,8 +404,8 @@ func TestShadowCommitTreeNamesTheTreeOfMktree(t *testing.T) {
 
 // A failed `config`, `commit-tree` or `update-ref` call of the calls 1 to 5
 // has the cause of a failed `mktree`: its verb, every error line, and the
-// version text after two `version` calls. No cell has such a call. The test
-// pins claustrum's own choice, not a reply of 5fd08069.
+// version text after two `version` calls. For the text `fatal: boom`
+// b3081b51 answers so for all three (measured on Linux).
 func TestShadowFailedSetupCallsShareThePathOfMktree(t *testing.T) {
 	for _, c := range []struct {
 		verb  string

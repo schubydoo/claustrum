@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -542,13 +543,32 @@ type shadowRun struct {
 
 // detail is the text of a failed call with the last line that git wrote to its
 // error output, or the exec error when git wrote none. The cause of a failed
-// start test has every line (allLines). Each caller has a failed run.
+// test call has every line (testCallLines). Each caller has a failed run.
 func (r shadowRun) detail() string {
 	lines := strings.Split(strings.TrimRight(r.stderr, "\r\n"), "\n")
 	if last := strings.TrimRight(lines[len(lines)-1], "\r"); last != "" {
 		return last
 	}
 	return r.err.Error()
+}
+
+// testCallLines is the error output of a failed call of the start test with its
+// blanks at both ends cut and each other blank character as one space, or the
+// exec error when git wrote no text. An empty line and the blanks at the ends of
+// each line stay. For "line one\n\nline two\n" b3081b51 answers `line one  line
+// two`. For "   padded line   \n\t tab line\t\n" it answers `padded line      tab
+// line` (measured on Linux). A carriage return and a tab inside a line are not
+// measured.
+func (r shadowRun) testCallLines() string {
+	if text := strings.TrimSpace(r.stderr); text != "" {
+		return strings.Map(func(c rune) rune {
+			if unicode.IsSpace(c) {
+				return ' '
+			}
+			return c
+		}, text)
+	}
+	return r.detail()
 }
 
 // gitSaidNo reports whether a failed call of the loop of the start test is a
@@ -765,8 +785,8 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	run := func(env []string, args ...string) shadowRun {
 		return shadowGit(check, env, append(shadowTestPrefix(), args...)...)
 	}
-	// The cause of a failed call has every line of its error output, joined by
-	// one space, or the exec error when there is none. For a `mktree` that
+	// The cause of a failed call has every line of its error output
+	// (testCallLines), or the exec error when there is none. For a `mktree` that
 	// writes two lines 5fd08069 answers `git mktree failed under "<S>": error:
 	// first forced line fatal: second forced line (git version 2.43.0)`
 	// (measured on Linux). A call 10 on a full disk has both lines of git too
@@ -777,12 +797,12 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 		if errors.As(r.err, new(sessiondirs.NoOtherGitError)) {
 			return "", gitCannotRunPrefix + r.err.Error()
 		}
-		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.allLines())
+		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.testCallLines())
 	}
 	// A failed call of the calls 1 to 5 has the version text at the end of its
 	// cause, after two `version` calls (shadowVersionNote). That is measured for
 	// `init` and for `mktree`. The `config`, `commit-tree` and `update-ref`
-	// calls share this path: claustrum's own, not measured.
+	// calls share this path (`b3081b51`, measured on Linux).
 	setupFailed := func(verb string, r shadowRun) (string, string) {
 		_, cause := failed(verb, r)
 		if strings.HasPrefix(cause, gitCannotRunPrefix) {
