@@ -90,9 +90,12 @@ type server struct {
 	stopsGone    int // connections that sent server.shutdown and left conns, for the cleanup count
 	shutdown     chan struct{}
 	once         sync.Once
-	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
-	pipeLn       net.Listener // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
-	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown
+	dropOnce     sync.Once          // makes dropping, on first use
+	dropping     chan struct{}      // closed when dropConns starts (see dropStarted)
+	replyRule    *shutdownReplyRule // test seam: nil uses shutdownReplyAwaitsDrop and shutdownReplyWait
+	metricsLn    net.Listener       // optional Prometheus listener; nil unless -metrics-addr set
+	pipeLn       net.Listener       // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
+	keepChildren bool               // -keep-children: leave child processes running on graceful shutdown
 
 	wlog    *wirelog.Log  // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
@@ -1280,7 +1283,58 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 		resp = dispatchRequest(s, c, raw, req)
 	}()
 	if resp != nil {
+		if awaits, _ := s.shutdownReply(); method == methodShutdown && awaits && isChanClosed(s.shutdown) {
+			s.awaitDropStart()
+		}
 		c.writeResponse(*resp)
+	}
+}
+
+// shutdownReplyWait bounds how long the server.shutdown reply waits for the teardown
+// to start dropping connections (claustrum's own, not measured).
+const shutdownReplyWait = 500 * time.Millisecond
+
+// shutdownReplyRule holds the reply rule of one test server, so that a test changes
+// no package value that a request goroutine of another server reads.
+type shutdownReplyRule struct {
+	awaitsDrop bool
+	wait       time.Duration
+}
+
+// shutdownReply returns whether the server.shutdown reply waits for the drop, and
+// for how long at most.
+func (s *server) shutdownReply() (bool, time.Duration) {
+	if r := s.replyRule; r != nil {
+		return r.awaitsDrop, r.wait
+	}
+	return shutdownReplyAwaitsDrop, shutdownReplyWait
+}
+
+// dropStarted returns the channel that dropConns closes when it starts.
+func (s *server) dropStarted() chan struct{} {
+	s.dropOnce.Do(func() { s.dropping = make(chan struct{}) })
+	return s.dropping
+}
+
+// awaitDropStart blocks until dropConns starts, or until shutdownReplyWait passes.
+// Then a reply to a connection that dropConns marked closed writes nothing.
+func (s *server) awaitDropStart() {
+	_, wait := s.shutdownReply()
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-s.dropStarted():
+	case <-t.C:
+	}
+}
+
+// isChanClosed reports whether ch is closed.
+func isChanClosed(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -1408,7 +1462,7 @@ func (s *server) closeAll(socket string) {
 	unlinkOwnSocket(socket, s.sockInfo)
 	// Then drop every client, before the slower cleanup below. The server.shutdown
 	// handler returns its reply as soon as the stop has started, so the reply write
-	// races this close.
+	// races this close. On Windows the write waits for the start of this drop.
 	closed := s.dropConns()
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
@@ -1473,9 +1527,15 @@ func (s *server) closeAll(socket string) {
 // alone only, so the count with another client open there is claustrum's own. A
 // client that closes before it reads the reply can still end its read loop
 // before the mark (claustrum's own, not measured).
+//
+// Before the loop, dropConns closes the dropStarted channel. That releases a
+// server.shutdown reply that waits in awaitDropStart.
 func (s *server) dropConns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if ch := s.dropStarted(); !isChanClosed(ch) {
+		close(ch)
+	}
 	for c := range s.conns {
 		if c.wmu.TryLock() {
 			c.closed = true

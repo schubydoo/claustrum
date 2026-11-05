@@ -127,10 +127,10 @@ func (s *server) handleServer(c *conn, req *request) *rpc.Response {
 	case methodShutdown:
 		// The reply is {"ok":true}, but it reaches the client only when its write
 		// wins a race with the teardown. signalShutdown fires here, and the handler
-		// returns the reply at once for handleRequest to write. It does not wait
-		// for the close of the connections. 5fd08069 answers before the close in
-		// part of the runs (see "The reply races the close" on the server.* page
-		// under docs/protocol/). Under a handler panic no frame is emitted for
+		// returns the reply at once for handleRequest to write. On Windows
+		// handleRequest first waits for the drop of the connections to start
+		// (awaitDropStart). See "The reply races the close" on the server.* page
+		// under docs/protocol/. Under a handler panic no frame is emitted for
 		// shutdown (the recover in handleRequest skips the error frame).
 		//
 		// The two log lines come before the teardown starts, so they precede

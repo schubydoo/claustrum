@@ -107,13 +107,13 @@ A caller that exited before the check gets no line.
 
 ### The reply races the close
 
-The handler starts the stop and returns the reply at once. It does not wait for the connections to close. So the reply write races the close of the connection.
+The handler starts the stop and returns the reply at once. On Windows the reply first waits until the stop starts to close the connections, at most 500 ms (claustrum's own, not measured). So the reply write races the close.
 
 - If the reply wins, the client reads `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}` and then EOF.
 - If the close wins, the client reads EOF with no bytes.
 - Another connection that is idle gets a clean EOF with no bytes.
 
-A client must treat EOF after a shutdown request as a success. The reference often closes with no reply. claustrum sent the reply in each measured run. If both send it, the frame bytes are equal.
+A client must treat EOF after a shutdown request as a success. In one round on Windows `b3081b51` replied in 0 of 60 plain runs and 17 of 60 after a ping (measured on Windows). With a second idle connection it replied in 2 of 60. If claustrum and `b3081b51` both send the reply, the frame bytes are equal.
 
 ### What the stop does
 
