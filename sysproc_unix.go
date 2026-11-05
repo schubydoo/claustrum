@@ -144,3 +144,12 @@ const logsUnreapedKill = true
 // killEndsDrainGroup is true: a process.kill with "signal":"KILL" inside the exit
 // drain kills the group at once (b3081b51, measured on Linux and macOS).
 const killEndsDrainGroup = true
+
+// pidInUse reports whether kill(pid, 0) finds a process at pid: no error, or EPERM for
+// a process of another user. ESRCH and each other error count as no process. It sends
+// no signal. The exit-drain kill of process.kill reads it (claustrum's own, not
+// measured). A var so tests can stand in for it.
+var pidInUse = func(pid int) bool { return pidFound(syscall.Kill(pid, 0)) }
+
+// pidFound is the answer of pidInUse for the error of kill(pid, 0).
+func pidFound(err error) bool { return err == nil || errors.Is(err, syscall.EPERM) }

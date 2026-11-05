@@ -70,8 +70,9 @@ func TestKillAndWaitKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 // exit frame KILL sends nothing either. Windows sends nothing (claustrum's own, not
 // measured). The seam records each signal.
 func TestKillInsideDrainKillsGroupAtOnce(t *testing.T) {
-	oldSignal := signalGroup
-	t.Cleanup(func() { signalGroup = oldSignal })
+	oldSignal, oldInUse := signalGroup, pidInUse
+	t.Cleanup(func() { signalGroup, pidInUse = oldSignal, oldInUse })
+	pidInUse = func(int) bool { return false }
 	var mu sync.Mutex
 	var signals []string
 	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
@@ -117,5 +118,82 @@ func TestKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 		if by := killedByOf(p); by != "" {
 			t.Errorf("signal %q, running %v: killedBy %q, want none", tc.signal, tc.running, by)
 		}
+	}
+}
+
+// TestKillInsideDrainSkipsGroupKillAtALivePid pins the narrowing of the exit-drain kill
+// (claustrum's own, not measured). If pidInUse finds a live process at the pid of the
+// ended child, process.kill sends no group KILL. If it finds none (ESRCH), the KILL goes.
+// killAndWait reads no pidInUse and kills the group in both cases. Both seams are stubs.
+func TestKillInsideDrainSkipsGroupKillAtALivePid(t *testing.T) {
+	oldSignal, oldInUse := signalGroup, pidInUse
+	t.Cleanup(func() { signalGroup, pidInUse = oldSignal, oldInUse })
+	var mu sync.Mutex
+	var signals []string
+	var probes []int
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		signals = append(signals, name)
+		return nil
+	}
+	var inUse bool
+	pidInUse = func(pid int) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		probes = append(probes, pid)
+		return inUse
+	}
+	m := newTestProcManager(t)
+
+	wantKill, wantProbes := "", 0
+	if killEndsDrainGroup {
+		wantKill, wantProbes = "KILL", 1
+	}
+	for _, tc := range []struct {
+		inUse bool
+		want  string
+	}{
+		{true, ""},
+		{false, wantKill},
+	} {
+		mu.Lock()
+		signals, probes, inUse = nil, nil, tc.inUse
+		mu.Unlock()
+		p := &managedProc{
+			id: "DRAIN", running: true, reaped: true,
+			cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
+		}
+		m.procs["DRAIN"] = p
+		if err := m.kill("DRAIN", "KILL"); err != nil {
+			t.Errorf("pid in use %v: kill error %v, want nil", tc.inUse, err)
+		}
+		mu.Lock()
+		got, gotProbes := strings.Join(signals, ","), probes
+		mu.Unlock()
+		if got != tc.want {
+			t.Errorf("pid in use %v: group signals %q, want %q", tc.inUse, got, tc.want)
+		}
+		if len(gotProbes) != wantProbes || (wantProbes == 1 && gotProbes[0] != noSuchPid) {
+			t.Errorf("pid in use %v: probes %v, want %d of pid %d", tc.inUse, gotProbes, wantProbes, noSuchPid)
+		}
+	}
+
+	// killAndWait keeps its group kill when a live process has the pid.
+	mu.Lock()
+	signals, probes, inUse = nil, nil, true
+	mu.Unlock()
+	done := make(chan struct{})
+	close(done)
+	p := &managedProc{
+		id: "DRAIN2", running: true, reaped: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: done,
+	}
+	m.killAndWaitProc(p, "KILL", time.Second, false)
+	mu.Lock()
+	got, gotProbes := strings.Join(signals, ","), len(probes)
+	mu.Unlock()
+	if got != "KILL" || gotProbes != 0 {
+		t.Errorf("killAndWait: group signals %q and %d probes, want one KILL and no probe", got, gotProbes)
 	}
 }

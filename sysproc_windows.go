@@ -277,3 +277,7 @@ const shutdownAsksEnd = false
 // killEndsDrainGroup is false: a process.kill inside the exit drain sends nothing on
 // Windows, as before (claustrum's own, not measured).
 const killEndsDrainGroup = false
+
+// pidInUse is false on Windows. No caller reads it there, because killEndsDrainGroup is
+// false.
+var pidInUse = func(int) bool { return false }

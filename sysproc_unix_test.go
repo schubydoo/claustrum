@@ -227,3 +227,28 @@ func TestProcGroupCloseUnixIsNoOp(t *testing.T) {
 	(*procGroup)(nil).close()
 	(&procGroup{}).close()
 }
+
+// TestPidInUseFindsOnlyALiveProcess: kill(pid, 0) finds the test process itself and no
+// process above the pid limit. Signal 0 delivers nothing. EPERM counts as found, and
+// ESRCH and each other error as not found.
+func TestPidInUseFindsOnlyALiveProcess(t *testing.T) {
+	if !pidInUse(os.Getpid()) {
+		t.Error("pidInUse(own pid) = false, want true")
+	}
+	if pidInUse(noSuchPid) {
+		t.Errorf("pidInUse(%d) = true, want false", noSuchPid)
+	}
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{nil, true},
+		{syscall.EPERM, true},
+		{syscall.ESRCH, false},
+		{syscall.EINVAL, false},
+	} {
+		if got := pidFound(tc.err); got != tc.want {
+			t.Errorf("pidFound(%v) = %v, want %v", tc.err, got, tc.want)
+		}
+	}
+}
