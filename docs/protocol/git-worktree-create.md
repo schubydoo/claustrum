@@ -323,6 +323,7 @@ After a good add in the state `shadow`, a create removes old staging entries of 
     - A rename of the staging folder that still fails after its retries gives `worktree_add_failed`.
     - An alternates file with Windows line endings or too many object directories gives `worktree_add_failed`, and nothing is made (from the code). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
     - A `baseRepo` through a link to a network or device path gives `worktree_add_failed`, and no git call runs. [A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path).
+    - A `\\?\UNC\` `baseRepo`, or one on a missing share, gives `worktree_add_failed`. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Rare states
 

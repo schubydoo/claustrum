@@ -146,6 +146,7 @@ The settings copy can add files to the folder `git-shadow` beside the socket: th
 | An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows). |
 | A `path` behind 32 or more links | No link test (claustrum's own). | `-32603` with the link-chain text (measured on Windows). |
 | A `path` through a link to a network or device path | No link test (claustrum's own). | `-32603`, and no git call runs on it. [A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path). |
+| A `\\?\UNC\` or missing-share `path` | Does not apply. | `-32603`. [UNC refusals](git-rules-trust.md#unc-refusals). |
 | A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""` (measured on Windows). |
 
 ## Differences from the reference

@@ -2,6 +2,7 @@ package git
 
 import (
 	"encoding/binary"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -34,10 +35,58 @@ func networkLinkText(path string) string {
 // to a network or device path, or "". b3081b51 refuses a link to a UNC path,
 // to \\.\NUL, to a \\?\Volume{guid} path and to a
 // \\?\GLOBALROOT path, also when the link leads to a local folder. A SUBST
-// drive, a mapped drive and a UNC path with no link pass (measured on Windows).
+// drive, a mapped drive and a UNC path with no link on a share that answers
+// pass (measured on Windows).
+// The test of unlookablePathRefusal comes first (claustrum's own, not measured).
 func networkLinkRefusal(path string) string {
+	if msg := unlookablePathRefusal(path); msg != "" {
+		return msg
+	}
 	if networkLinkChecks && throughNetworkLink(path) {
 		return networkLinkText(path)
+	}
+	return ""
+}
+
+// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal.
+var lstatPath = os.Lstat
+
+// unlookableShareText and longUNCText name the path cleaned, as networkLinkText
+// does. The rows send clean paths, so the cleaning is claustrum's own, not measured.
+func unlookableShareText(path string) string {
+	return "Claude couldn't look at `" + filepath.Clean(path) + "` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
+}
+
+func longUNCText(path string) string {
+	return "Claude can't check where `" + filepath.Clean(path) + "` leads because it doesn't start with a drive letter (C:\\...) or a share (\\\\server\\share\\...), so git wasn't run. Open the folder again using a path that does."
+}
+
+// unlookablePathRefusal is the refusal of a repository path that the link test
+// cannot look at, or "". It runs only with networkLinkChecks. b3081b51 refuses a
+// \\?\UNC\ path, and a path on a share that does not exist on its host,
+// on git.info, git.status, git.list_branches,
+// git.worktree_create and git.worktree_remove (measured on Windows). A missing
+// folder on a share and a path on a missing drive pass (measured on Windows).
+//
+// claustrum's own, not measured: other \\?\ and \\.\ forms pass, and so does
+// the share root alone. A forward slash counts as a separator. Any failed look
+// other than a missing entry refuses. Go reads a host that cannot be reached
+// (ERROR_BAD_NETPATH) as a missing entry, so that path passes.
+func unlookablePathRefusal(path string) string {
+	if !networkLinkChecks || len(path) < 4 || !isSlash(path[0]) || !isSlash(path[1]) {
+		return ""
+	}
+	if (path[2] == '?' || path[2] == '.') && isSlash(path[3]) {
+		if path[2] == '?' && len(path) >= 8 && strings.EqualFold(path[4:7], "UNC") && isSlash(path[7]) {
+			return longUNCText(path)
+		}
+		return ""
+	}
+	if len(strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })) < 3 {
+		return ""
+	}
+	if _, err := lstatPath(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return unlookableShareText(path)
 	}
 	return ""
 }

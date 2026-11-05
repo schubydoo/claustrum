@@ -73,7 +73,7 @@ A warning of git does not become a branch name. If git warns about a broken ref 
 
 ## Differences by system
 
-On Windows, a `path` with a junction before its last component does not resolve, so the response is `"isRepo": false`. On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`.
+On Windows, a `path` with a junction before its last component does not resolve, so the response is `"isRepo": false`. On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path`, or one on a missing share, gets a `-32603` refusal. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Differences from the reference
 

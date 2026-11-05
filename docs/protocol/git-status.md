@@ -194,6 +194,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A gitlink path that is a regular file gives no entry. A junction there gives ` (submodule; could not be inspected)`.
     - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
     - A `baseRepo` through a link to a network or device path gives `-32603`, and no git call runs on it. [A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path).
+    - A `\\?\UNC\` `baseRepo`, or one on a missing share, gives `-32603`. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Rare states
 

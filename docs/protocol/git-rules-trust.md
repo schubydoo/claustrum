@@ -427,7 +427,17 @@ On Windows `b3081b51` refuses a repository path through a symbolic link or a jun
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured). The place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
+`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured). The place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
+
+### UNC refusals
+
+On Windows `b3081b51` refuses a `\\?\UNC\` path and a path on a missing share. The path is `path` of `git.info` and `git.list_branches`, and `baseRepo` of `git.status`, `git.worktree_create` and `git.worktree_remove`. The texts are:
+
+`` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. ``
+
+`` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. ``
+
+A remove answers `"success":false`, a create `"errorCode":"worktree_add_failed"` and the others `-32603`. A missing folder on a share that answers and a missing drive pass (measured on Windows). Other `\\?\` and `\\.\` forms, a share root alone and a host that cannot be reached pass. Any other failed look at the path refuses with the first text. A forward slash counts as a separator, and `UNC` matches in any letter case. A request with `"shadowDirOff":true` gets the same refusal. These rules and the place of the test are claustrum's own, not measured.
 
 ## A FIFO where the daemon reads a git file
 
