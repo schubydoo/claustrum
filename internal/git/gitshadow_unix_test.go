@@ -281,18 +281,23 @@ func TestShadowAddEndedByASignalFailsTheTest(t *testing.T) {
 	wantLastTestCall(t, test, 11, false, stageAdd...)
 }
 
-// A first `config --get` that the bound ended fails the test, and no other
-// test call runs. That is the rule of every ended test call but call 7. No
-// cell has an ended call 6: not measured.
-func TestShadowEndedFirstGetFailsTheTest(t *testing.T) {
+// A first `config --get` that the bound ended does not stop the test. All ten
+// test calls run and the state is shadow. b3081b51 goes on after a call 6 held
+// for 40 s, past its bound of 30 s (measured on Linux). Only the first match is
+// held. Mutation: fail the test again on an ended call 6.
+func TestShadowEndedFirstGetGoesOn(t *testing.T) {
 	f := newShadowFixture(t)
 	lowerShadowBound(t, 2*time.Second, 100*time.Millisecond)
 	slowGit(t, "config,--get,helper.check", "pre", 60*time.Second, "", "")
 	t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR=/shadow")
+	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
+	t.Setenv("CLAUSTRUM_GITSTUB_NTH", "1")
 	raw, calls := f.info(t, f.repo, nil)
-	test, after := startTestCalls(t, calls)
-	wantFailedTest(t, f, raw, after, "config", "signal: killed")
-	wantLastTestCall(t, test, 6, true, stageGet...)
+	if !strings.HasSuffix(raw, `"settingsControl":"shadow"}}`) {
+		t.Errorf("git.info = %s\nwant the state shadow", raw)
+	}
+	test, _ := startTestCalls(t, calls)
+	wantLastTestCall(t, test, 10, true, stageAdd...)
 }
 
 // A first `config --get` that signal 9 ended fails the test, and no other test
