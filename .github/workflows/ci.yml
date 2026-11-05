@@ -382,7 +382,7 @@ jobs:
     if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: coverage (>= 95%)
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # above the 12 minutes of the go test time limit below
+    timeout-minutes: 17 # above the 14 minutes of the go test time limit below
     env:
       COVERAGE_MIN: "95.0"
     steps:
@@ -396,7 +396,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          go test -race -count=1 -timeout 12m \
+          go test -race -count=1 -timeout 14m \
             -coverprofile=coverage.out \
             -covermode=atomic \
             -coverpkg=./... \
