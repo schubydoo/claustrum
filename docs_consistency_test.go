@@ -661,7 +661,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/flags.md":                     2639,  // the prune after a good install. 2633: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                  1998,  // the \\?\UNC\ and share refusals of b3081b51. 1983: the network link test of b3081b51. 1947: the link chain row of its own (Linux and macOS run no link test). 1889: the link chain of git.info, b3081b51. 1881: the alternates row of b3081b51. 1850: the page rewrite
 	"docs/protocol/git-rules-calls.md":           5724,  // the count of a missing baseRepo below a marker. 5713: the colon form of the count and the start test of a gone remove, b3081b51. 5660: the failed read-tree call of b3081b51 with a child on both pipes past the deadline, Linux and macOS. 5625: the failed read-tree call of b3081b51 with a child on stdout, the drain and a short stderr hold. 5535: the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
-	"docs/protocol/git-rules-config.md":          2929,  // the listing of b3081b51 over 64 MiB and the read while git writes it. 2884: moved from PROTOCOL.md
+	"docs/protocol/git-rules-config.md":          2981,  // the other colons and reserved names as claustrum's own. 2943: the NUL and stream includes of b3081b51. 2929: the listing of b3081b51 over 64 MiB and the read while git writes it. 2884: moved from PROTOCOL.md
 	"docs/protocol/git-rules-settings-copy.md":   3411,  // the tree of mktree in the start test, b3081b51. 3363: the .readback-objects-<n> entry of b3081b51 and a heading. 3340: the start-test cannot-run rule of b3081b51. 3300: the third run of the call about the repository. the folder .probe, new rules
 	"docs/protocol/git-rules-trust.md":           5801,  // the missing daemon GIT_DIR, the .git file to a regular file and the gone worktree with git 2.56, b3081b51. 5720: the \\?\UNC\ and share refusals of b3081b51. 5521: the M4 OS error reason of b3081b51, and the other OS errors of S2 and M4 as claustrum's own. 5494: the order and the cleaned path of the network link text. 5472: the network link test of b3081b51. 5254: the gone worktree and the link test of git.info, b3081b51. 5207: the object sources on Windows of b3081b51. 4642: the 1 MiB commondir reason of be1c1ca5. 4637: the not_a_repo answer of the create. 4601: the unsearchable git directory and the could-not-be-examined text. 4493: moved from PROTOCOL.md
 	"docs/protocol/git-list-branches.md":         1107,  // the \\?\UNC\ and share refusals of b3081b51. 1090: the marker beside a .git folder of b3081b51, also inside the repository. 1047: the marker file or folder and the not-measured edges of the marker walk. 1008: the marker above the path as sent of b3081b51. 1015: the marker folder and the spelling. 995: the page rewrite
@@ -758,7 +758,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/protocol/git-info.md":                1905,
 	"docs/protocol/git-list-branches.md":       371,
 	"docs/protocol/git-rules-calls.md":         830,
-	"docs/protocol/git-rules-config.md":        1007,
+	"docs/protocol/git-rules-config.md":        1021, // the NUL and stream includes of b3081b51. 1007 before
 	"docs/protocol/git-rules-settings-copy.md": 3321,
 	"docs/protocol/git-rules-trust.md":         5254,
 	"docs/protocol/git-status.md":              3255, // the object sources line of b3081b51. 414 before
