@@ -464,21 +464,34 @@ func (e repoExtension) refused() bool {
 
 // repoFileState is the state of one file at the time of a read: what Lstat and
 // Stat gave for its path. A nil value is a path that the call did not answer for,
-// such as a missing file.
+// such as a missing file. With follow false there is no Stat, and target stays nil.
 type repoFileState struct {
 	path         string
+	follow       bool
 	link, target os.FileInfo
 }
 
-func readRepoFileState(path string) repoFileState {
+// readRepoFileState reads the state of path. With follow false it runs Lstat
+// alone, so it opens nothing that a link at path names. On Windows a Stat of a link
+// to a named pipe connects to the pipe, and b3081b51 makes no such connect for a
+// config that is a link (measured on Windows).
+func readRepoFileState(path string, follow bool) repoFileState {
 	s := repoFileState{path: path}
 	if fi, err := os.Lstat(path); err == nil {
 		s.link = fi
 	}
-	if fi, err := os.Stat(path); err == nil {
-		s.target = fi
+	if follow {
+		s.readTarget()
 	}
 	return s
+}
+
+// readTarget adds the Stat of the path to s.
+func (s *repoFileState) readTarget() {
+	s.follow = true
+	if fi, err := os.Stat(s.path); err == nil {
+		s.target = fi
+	}
 }
 
 // sameFileState reports whether a and b show one file in one state: the same
@@ -492,14 +505,23 @@ func sameFileState(a, b os.FileInfo) bool {
 	return os.SameFile(a, b) && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) && a.Mode() == b.Mode()
 }
 
-// unchanged reports whether the file is still in the recorded state.
+// unchanged reports whether the file is still in the recorded state. It tests the
+// state of the link first, and it runs a Stat only for a state with follow. So a
+// path that became a link since the read opens nothing that the link names.
 func (s repoFileState) unchanged() bool {
-	now := readRepoFileState(s.path)
-	return sameFileState(s.link, now.link) && sameFileState(s.target, now.target)
+	now := readRepoFileState(s.path, false)
+	if !sameFileState(s.link, now.link) {
+		return false
+	}
+	if s.follow {
+		now = readRepoFileState(s.path, true)
+	}
+	return sameFileState(s.target, now.target)
 }
 
 // repoReadLog holds what one read of repoConfigGate used: the state of each file
 // that a test named, taken before that test, and whether the read has a verdict.
+// For a config file the state comes from the Lstat of the link test.
 // failed is true when an open or a read of the daemon ended with an error. The
 // verdict of such a read answers its request and is not kept: the error can be
 // one of the daemon itself, such as too many open files. A nil log records
@@ -518,16 +540,46 @@ func (l *repoReadLog) fail() {
 	}
 }
 
-// note records the state of path, once.
-func (l *repoReadLog) note(path string) {
-	if l == nil || l.seen[path] {
+// wants reports whether the log records path: it has no state of it yet.
+func (l *repoReadLog) wants(path string) bool {
+	return l != nil && !l.seen[path]
+}
+
+// add records s, once for its path.
+func (l *repoReadLog) add(s repoFileState) {
+	if !l.wants(s.path) {
 		return
 	}
 	if l.seen == nil {
 		l.seen = map[string]bool{}
 	}
-	l.seen[path] = true
-	l.states = append(l.states, readRepoFileState(path))
+	l.seen[s.path] = true
+	l.states = append(l.states, s)
+}
+
+// note records the state of path, once.
+func (l *repoReadLog) note(path string) {
+	if l.wants(path) {
+		l.add(readRepoFileState(path, true))
+	}
+}
+
+// configLinkTest is configLinkDetail. Tests replace it to act in the gap after
+// the Lstat of noteLinkTest.
+var configLinkTest = configLinkDetail
+
+// noteLinkTest runs the link test of path and records the state of path, once.
+// The test and the state use one Lstat, so a swap after the test leaves a state
+// that the change test sees as changed. A path that the test refused gets no
+// Stat: its state is that of the link alone.
+func (l *repoReadLog) noteLinkTest(path string) string {
+	s := readRepoFileState(path, false)
+	d := configLinkTest(path, s.link)
+	if d == "" && l.wants(path) {
+		s.readTarget()
+	}
+	l.add(s)
+	return d
 }
 
 // repoConfigRead is one read of a repository's config with its included files.
@@ -619,8 +671,7 @@ type repoConfigRead struct {
 // only for the filter rule (repoConfigRead.conditional). A file there that git
 // cannot list is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
-	r.log.note(path)
-	if d := configLinkDetail(path); d != "" {
+	if d := r.log.noteLinkTest(path); d != "" {
 		return d
 	}
 	if depth > 0 {
@@ -857,8 +908,7 @@ func isIncludeIfPath(key string) bool {
 // version `2` in such a file is not refused, and no other content of it ran. An
 // open error there is not measured: claustrum gives no refusal.
 func configFileTests(path string, log *repoReadLog) string {
-	log.note(path)
-	if d := configLinkDetail(path); d != "" {
+	if d := log.noteLinkTest(path); d != "" {
 		return d
 	}
 	f, err := openRepoFile(path)

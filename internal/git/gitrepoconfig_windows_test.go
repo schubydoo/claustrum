@@ -3,11 +3,19 @@
 package git
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // The Windows rules of the config read. 5fd08069 answered these texts on
@@ -194,5 +202,212 @@ func TestWindowsConfigLink(t *testing.T) {
 		"replace the link with what it points to"
 	if got := configDetail(t, gitDir); got != want {
 		t.Errorf("config that is a file link: detail = %q, want %q", got, want)
+	}
+}
+
+// pipeCounter is a named pipe server. It makes the next instance before it
+// handles a connected client, so one instance always waits and a client never
+// finds none or a busy one. It handles clients one at a time, in the order that
+// they connect. It counts each client that writes no byte, also one that left
+// before the server took it. A marker client writes one byte and reads one byte
+// back.
+type pipeCounter struct {
+	name     string
+	waiting  atomic.Int64
+	connects atomic.Int64
+	stop     atomic.Bool
+	done     chan struct{}
+}
+
+var procPeekNamedPipe = windows.NewLazySystemDLL("kernel32.dll").NewProc("PeekNamedPipe")
+
+func startPipeCounter(t *testing.T, name string) *pipeCounter {
+	t.Helper()
+	name16, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &pipeCounter{name: name, done: make(chan struct{})}
+	errs := make(chan error, 1)
+	create := func() (windows.Handle, error) {
+		h, err := windows.CreateNamedPipe(name16, windows.PIPE_ACCESS_DUPLEX,
+			windows.PIPE_TYPE_BYTE|windows.PIPE_READMODE_BYTE|windows.PIPE_WAIT,
+			windows.PIPE_UNLIMITED_INSTANCES, 512, 512, 0, nil)
+		if err == nil {
+			p.waiting.Add(1)
+		}
+		return h, err
+	}
+	cur, err := create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer close(p.done)
+		for {
+			err := windows.ConnectNamedPipe(cur, nil)
+			if p.stop.Load() {
+				_ = windows.CloseHandle(cur)
+				return
+			}
+			// The next instance waits before this one leaves the wait.
+			next, cerr := create()
+			if cerr != nil {
+				errs <- cerr
+				_ = windows.CloseHandle(cur)
+				return
+			}
+			p.waiting.Add(-1)
+			switch {
+			case err == nil || errors.Is(err, windows.ERROR_PIPE_CONNECTED):
+				p.take(cur)
+			case errors.Is(err, windows.ERROR_NO_DATA):
+				p.connects.Add(1)
+			default:
+				errs <- err
+				_ = windows.CloseHandle(cur)
+				_ = windows.CloseHandle(next)
+				return
+			}
+			_ = windows.DisconnectNamedPipe(cur)
+			_ = windows.CloseHandle(cur)
+			cur = next
+		}
+	}()
+	t.Cleanup(func() {
+		p.stop.Store(true)
+		// This client wakes the instance that waits. A client in take ends in 5 s.
+		if f, err := os.OpenFile(name, os.O_RDWR, 0); err == nil {
+			_ = f.Close()
+		}
+		select {
+		case <-p.done:
+		case <-time.After(10 * time.Second):
+			t.Error("the pipe server did not stop in 10 s")
+		}
+		select {
+		case err := <-errs:
+			t.Errorf("pipe server: %v", err)
+		default:
+		}
+	})
+	return p
+}
+
+// take handles one connected client. It waits up to 5 s for one byte, so a
+// client that reads the pipe gets an end. A client that leaves or writes
+// nothing counts as a connect.
+func (p *pipeCounter) take(h windows.Handle) {
+	end := time.Now().Add(5 * time.Second)
+	for time.Now().Before(end) {
+		var avail uint32
+		r, _, _ := procPeekNamedPipe.Call(uintptr(h), 0, 0, 0, uintptr(unsafe.Pointer(&avail)), 0)
+		if r == 0 {
+			break
+		}
+		if avail > 0 {
+			var n uint32
+			b := make([]byte, 1)
+			if windows.ReadFile(h, b, &n, nil) == nil && n == 1 {
+				_ = windows.WriteFile(h, b, &n, nil)
+				_ = windows.FlushFileBuffers(h)
+				return
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	p.connects.Add(1)
+}
+
+// listening waits until the server has an instance that exists and waits for
+// a client. Only the test connects, so the instance waits until the next step.
+func (p *pipeCounter) listening(t *testing.T) {
+	t.Helper()
+	end := time.Now().Add(10 * time.Second)
+	for p.waiting.Load() < 1 {
+		if time.Now().After(end) {
+			t.Fatal("the pipe server has no waiting instance in 10 s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// count connects a marker client and returns the connects before it. The
+// server takes clients in order, so the answer to the marker ends the count.
+func (p *pipeCounter) count(t *testing.T) int64 {
+	t.Helper()
+	p.listening(t)
+	answered := make(chan error, 1)
+	go func() {
+		f, err := os.OpenFile(p.name, os.O_RDWR, 0)
+		if err != nil {
+			answered <- err
+			return
+		}
+		defer func() { _ = f.Close() }()
+		if _, err := f.Write([]byte{1}); err != nil {
+			answered <- err
+			return
+		}
+		_, err = f.Read(make([]byte, 1))
+		answered <- err
+	}()
+	select {
+	case err := <-answered:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the pipe server answered no marker in 10 s")
+	}
+	return p.connects.Load()
+}
+
+// TestWindowsConfigLinkToAPipe pins that two reads of a config that is a link to
+// a named pipe make no connect to the pipe. b3081b51 makes none, and the replies
+// are equal (measured on Windows). Before each step the server has an instance
+// that waits, so a connect of the step reaches it, and a marker connect ends each
+// count. The change test of a state of the regular config before the swap makes
+// no connect either. One Stat of the link is the control: it counts one connect,
+// so the count works. A host that refuses to make a symbolic link skips the test.
+func TestWindowsConfigLinkToAPipe(t *testing.T) {
+	_, gitDir := configRepo(t)
+	config := filepath.Join(gitDir, "config")
+	pipe := fmt.Sprintf(`\\.\pipe\claustrum-config-link-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	p := startPipeCounter(t, pipe)
+	before := readRepoFileState(config, true)
+	if err := os.Remove(config); err != nil {
+		t.Fatal(err)
+	}
+	// mklink makes a file link and opens nothing at its target.
+	if out, err := exec.Command("cmd", "/c", "mklink", config, pipe).CombinedOutput(); err != nil {
+		t.Skipf("this host makes no symbolic link: mklink %s %s: %v\n%s", config, pipe, err, out)
+	}
+	if n := p.count(t); n != 0 {
+		t.Fatalf("connects to the pipe before the reads = %d, want 0", n)
+	}
+	p.listening(t)
+	if before.unchanged() {
+		t.Error("change test of the regular config after the swap to a link: unchanged, want changed")
+	}
+	if n := p.count(t); n != 0 {
+		t.Errorf("connects to the pipe after the change test of the regular config = %d, want 0", n)
+	}
+	want := strconv.Quote(config) + ": is, or is reached through, a link that Claude does not follow here; " +
+		"replace the link with what it points to"
+	for i := range 2 {
+		p.listening(t)
+		if got := configDetail(t, gitDir); got != want {
+			t.Errorf("read %d of a config link to a pipe: detail = %q, want %q", i+1, got, want)
+		}
+	}
+	if n := p.count(t); n != 0 {
+		t.Errorf("connects to the pipe after two reads = %d, want 0", n)
+	}
+	p.listening(t)
+	_, _ = os.Stat(config)
+	if n := p.count(t); n != 1 {
+		t.Errorf("connects to the pipe after one Stat of the link = %d, want 1", n)
 	}
 }

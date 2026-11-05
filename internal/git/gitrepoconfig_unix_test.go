@@ -507,3 +507,92 @@ func TestIncludeLinkBelowRepoWalk(t *testing.T) {
 		}
 	}
 }
+
+// TestRepoFileStateWithoutFollow pins the state of a path that the link test
+// refused: Lstat alone, through the read log and through the change test. A
+// change of the file that the link names keeps that state, and a new link does
+// not. The state with follow is the control: it sees the change of the file. The
+// Windows connect count is in TestWindowsConfigLinkToAPipe.
+func TestRepoFileStateWithoutFollow(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	link := filepath.Join(dir, "config")
+	writeFile(t, target, version0, 0o644)
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	saved := configLinkTest
+	t.Cleanup(func() { configLinkTest = saved })
+	configLinkTest = func(path string, fi os.FileInfo) string {
+		if fi != nil && fi.Mode()&os.ModeSymlink != 0 {
+			return "refused"
+		}
+		return ""
+	}
+	var log repoReadLog
+	if d := log.noteLinkTest(link); d != "refused" {
+		t.Fatalf("link test of a link: detail = %q, want the refusal of the seam", d)
+	}
+	followed := readRepoFileState(link, true)
+	if len(log.states) != 1 || log.states[0].link == nil || log.states[0].target != nil {
+		t.Fatalf("refused path: states = %+v, want one state with the link alone", log.states)
+	}
+	if followed.target == nil {
+		t.Fatal("state with follow has no Stat of the file")
+	}
+	writeFile(t, target, version0+"[x]\n", 0o644)
+	if !log.states[0].unchanged() {
+		t.Error("state without follow: a change of the file behind the link counts as a change")
+	}
+	if followed.unchanged() {
+		t.Error("state with follow: the change of the file behind the link is not seen")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target+"-other", link); err != nil {
+		t.Fatal(err)
+	}
+	if log.states[0].unchanged() {
+		t.Error("state without follow: a new link is not seen")
+	}
+}
+
+// TestNoteLinkTestUsesOneLstat pins that the link test and the recorded state
+// of a config use one Lstat. The seam swaps the regular config for a link to
+// a regular file after the test passed it. The recorded state is then that of
+// the regular file, so the change test sees the link and keeps no verdict.
+func TestNoteLinkTestUsesOneLstat(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config")
+	other := filepath.Join(dir, "other")
+	writeFile(t, config, version0, 0o644)
+	writeFile(t, other, version0, 0o644)
+	saved := configLinkTest
+	t.Cleanup(func() { configLinkTest = saved })
+	configLinkTest = func(path string, fi os.FileInfo) string {
+		if fi == nil || !fi.Mode().IsRegular() {
+			t.Errorf("link test of the regular config: info = %v, want a regular file", fi)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(other, path); err != nil {
+			t.Fatal(err)
+		}
+		return ""
+	}
+	var log repoReadLog
+	if d := log.noteLinkTest(config); d != "" {
+		t.Fatalf("link test: detail = %q, want none", d)
+	}
+	if len(log.states) != 1 || log.states[0].link == nil {
+		t.Fatalf("states = %+v, want one state", log.states)
+	}
+	if log.states[0].link.Mode()&os.ModeSymlink != 0 {
+		t.Error("recorded state is the link of the swap, want the regular file that the link test saw")
+	}
+	if log.states[0].unchanged() {
+		t.Error("change test after a swap to a link: unchanged, want changed")
+	}
+}

@@ -22,6 +22,8 @@ Windows), and an accepted config is read once and again after one of its files
 changes (the change test and the bound of 256 git directories are claustrum's own,
 see [claustrum's own choices](#claustrums-own-choices)). With a config that is a link
 to a pty slave, the daemon stays up after the pty master closes.
+On Windows a config that is a link to a named pipe gets no connect (b3081b51,
+measured on Windows).
 
 A refusal is `<class>: <detail>`, shown as `<text>` in these frames.
 
@@ -210,7 +212,8 @@ These rules are from the code and are not measured on `5fd08069`:
 - On Windows the daemon refuses a link at a config file and at an included file, and a
   junction or a directory symbolic link at the git directory itself. It tests no other
   folder above the config. It also refuses an include value that starts with a slash or
-  a drive.
+  a drive. A link at an included file or at the file of an `includeIf` section gets no
+  connect to a named pipe, and neither does the change test.
 - On Windows a relative include below the repository whose path has another colon, or
   another name that `filepath.IsLocal` takes as a reserved device name (such as `COM1`),
   gets the "is outside" text too (claustrum's own, not measured).
