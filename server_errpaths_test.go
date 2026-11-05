@@ -9,7 +9,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/metrics"
 )
 
-// writeJSON surfaces a marshal failure instead of writing a broken frame; the
+// conn.Conn.WriteJSON surfaces a marshal failure instead of writing a broken frame; the
 // error must come back before any bytes touch the connection (nc stays nil —
 // reaching a write would panic).
 func TestWriteJSONMarshalError(t *testing.T) {

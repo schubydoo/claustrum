@@ -281,7 +281,7 @@ done:
 	}
 }
 
-// writeResponse logs the reference's writeResponse/Failed-to-write lines when the
+// Conn.WriteResponse logs the reference's writeResponse/Failed-to-write lines when the
 // underlying write fails (the client dropped the connection mid-reply).
 func TestWriteResponseLogsOnWriteError(t *testing.T) {
 	buf := captureLogBuf(t)
@@ -369,7 +369,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 	}
 }
 
-// writeResponse's two remaining branches: an unmarshalable value logs
+// conn.Conn.WriteResponse's two remaining branches: an unmarshalable value logs
 // "Failed to write response" without attempting a write, and a closed conn
 // returns early (no write, no panic).
 func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
@@ -834,7 +834,7 @@ func TestSameIDKeepsTheFramesOfTheOldProcess(t *testing.T) {
 	}
 }
 
-// writeJSON short-circuits with net.ErrClosed once the conn is marked closed,
+// conn.Conn.WriteJSON short-circuits with net.ErrClosed once the conn is marked closed,
 // rather than writing to a torn-down socket.
 func TestWriteJSONClosedConn(t *testing.T) {
 	client, server := net.Pipe()
@@ -845,8 +845,8 @@ func TestWriteJSONClosedConn(t *testing.T) {
 	}
 }
 
-// writeLine (the pre-marshaled fan-out path used by emit) honors the same
-// closed-conn short-circuit as writeJSON.
+// conn.Conn.WriteLine (the pre-marshaled fan-out path used by emit) honors the same
+// closed-conn short-circuit as WriteJSON.
 func TestWriteLineClosedConn(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })

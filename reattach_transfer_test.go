@@ -208,7 +208,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 const sentinelID = "\x00end-of-frames"
 
 // sentinelLine is that frame already encoded, so the test writes it with the same
-// writeLine path (and therefore the same conn write lock) as a real frame.
+// Conn.WriteLine path (and therefore the same conn write lock) as a real frame.
 var sentinelLine = func() []byte {
 	b, err := json.Marshal(streamFrame{Type: "stream", ProcessID: sentinelID})
 	if err != nil {

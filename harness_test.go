@@ -23,7 +23,7 @@ import (
 var updateGolden = flag.Bool("update", false, "update golden fixtures in testdata/")
 
 // startSocketServer boots a real AF_UNIX daemon on a temp socket using the
-// production per-connection path (serveConn -> dispatch -> writeJSON / emit)
+// production per-connection path (serveConn -> dispatch -> conn.Conn.WriteResponse / emit)
 // with a test-controlled accept loop. Unlike (*server).run it installs no
 // signal handlers, and its cleanup never calls os.Exit, so it is safe under
 // `go test`. The returned socket path is ready to Dial.
@@ -157,7 +157,7 @@ func dial(t *testing.T, sock string) *testClient {
 // then returns the line without the member, so the goldens and the decoders see
 // the plain frame. The member is not golden data: its len holds the length of
 // every path in the line, which differs by host. TestSocketEndMemberPingSequence and
-// the unit tests of stampEnd pin the member itself. Called with cl.mu held.
+// the unit tests of conn.StampEnd pin the member itself. Called with cl.mu held.
 func (cl *testClient) checkEnd(line []byte) []byte {
 	plain, at, ln, ok := splitEnd(line)
 	switch {

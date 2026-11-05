@@ -1014,7 +1014,7 @@ func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bo
 	// The stdin ticket covers DISPATCH ONLY, never the response write.
 	// dispatch appends the chunk to the process's existing stdin FIFO
 	// (applyStdin) before it returns, so byte order is already fixed by
-	// then. Holding the ticket across writeResponse would add nothing to
+	// then. Holding the ticket across Conn.WriteResponse would add nothing to
 	// ordering and would couple input admission to response delivery: a
 	// client that stops reading blocks the socket write, and every later
 	// process.stdin on the connection stalls behind it — including input
@@ -1029,7 +1029,7 @@ func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bo
 		// deadlock the connection.
 		//
 		// Scoped to dispatch on purpose. Covering the response write too
-		// would let a panic *inside* writeResponse produce a SECOND frame
+		// would let a panic *inside* Conn.WriteResponse produce a SECOND frame
 		// for one id — the one failure mode a wire-contract daemon least
 		// wants from its safety net. The recover only sets resp; the single
 		// write stays below, outside the recovered region.

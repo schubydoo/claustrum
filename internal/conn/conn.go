@@ -26,7 +26,7 @@ type Conn struct {
 	// and gives the "at" of the end member of each line.
 	sent int64
 
-	// bareShown is the token mark of a conn that has no ac (see tokenMark).
+	// bareShown is the token mark of a conn that has no ac (see TokenMark).
 	bareShown atomic.Bool
 	// down is the shutdown channel of the daemon, nil for a conn that a test builds.
 	// A closed channel silences the write and read error lines (claustrum's own, not measured).
@@ -142,7 +142,7 @@ func (c *Conn) Supersede(reason string) {
 		return
 	}
 	// Mark the writer closed whether or not we win the claim. Losing it means the
-	// idle watcher is closing this connection instead, so a later writeLine that
+	// idle watcher is closing this connection instead, so a later WriteLine that
 	// slipped past the closed check would record a frame into a -wire-log capture
 	// that never reaches the wire. (The idle watcher still cannot set this itself:
 	// it holds the ActivityConn, not the conn.)
@@ -208,7 +208,7 @@ func (c *Conn) WriteJSON(v interface{}) error {
 }
 
 // WriteLine writes an already-marshaled, newline-terminated JSON line under the
-// same lock/closed semantics as writeJSON. It lets a frame fanned out to many
+// same lock/closed semantics as WriteJSON. It lets a frame fanned out to many
 // subscribers be marshaled once (see managedProc.emit) instead of once per conn.
 // Write does not mutate b, so the same slice is safe to hand to every conn.
 func (c *Conn) WriteLine(b []byte) error {
@@ -221,7 +221,7 @@ func (c *Conn) WriteLine(b []byte) error {
 // reattach and then writes with writeFramesLocked.
 func (c *Conn) LockWrites() { c.wmu.Lock() }
 
-// UnlockWrites releases the write lock that lockWrites took.
+// UnlockWrites releases the write lock that LockWrites took.
 func (c *Conn) UnlockWrites() { c.wmu.Unlock() }
 
 // ClosedNow reports whether c is closed. It takes the write lock of c.
@@ -231,7 +231,7 @@ func (c *Conn) ClosedNow() bool {
 	return c.closed
 }
 
-// WriteLineLocked is writeLine with c.wmu already held.
+// WriteLineLocked is WriteLine with c.wmu already held.
 func (c *Conn) WriteLineLocked(b []byte) error {
 	if c.closed {
 		return net.ErrClosed
@@ -256,7 +256,7 @@ func (c *Conn) WriteLineLocked(b []byte) error {
 func (c *Conn) WriteResponse(v interface{}) (failed bool) {
 	// json.Marshal, not an Encoder: this is the encode that carries EVERY
 	// JSON-RPC reply, and its HTML escaping is inherited wire behaviour — see
-	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on writeJSON.
+	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on WriteJSON.
 	b, err := json.Marshal(v)
 	if err != nil {
 		if !c.ShuttingDown() {

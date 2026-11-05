@@ -135,7 +135,7 @@ func TestStdinTicketGateAdmitsInOrder(t *testing.T) {
 //
 // dispatch appends the chunk to the process's stdin FIFO before it returns, so
 // byte order is already fixed at that point. Holding the ticket across
-// writeResponse as well couples input admission to response delivery: a client
+// Conn.WriteResponse as well couples input admission to response delivery: a client
 // that stops reading its socket blocks that write, and every LATER
 // process.stdin on the connection stalls behind it — including input for a
 // different process, which has nothing to do with the stalled one.
