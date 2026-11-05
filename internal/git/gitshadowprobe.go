@@ -137,10 +137,12 @@ func (k keptProbe) fresh(root string) bool {
 
 // repoAnswer is what the daemon makes of the answer of git. The zero value is a
 // good answer. noRepo is the answer "this is no repository that git uses", and
-// text is the text of an error.
+// text is the text of an error. notARepo is true for a noRepo answer whose first
+// call exited 128 with a text of notARepoStderr (askGit).
 type repoAnswer struct {
-	noRepo bool
-	text   string
+	noRepo   bool
+	notARepo bool
+	text     string
 }
 
 func (a repoAnswer) bad() bool {
@@ -374,8 +376,11 @@ func probeArgs() []string {
 // `C:/o/w/other/.git` 5fd08069 writes `git finds "C:/o/w/other/.git"`. For
 // the same path with backslashes it writes the backslashes (measured on
 // Windows). The paths of the root and of the daemon keep their backslashes in
-// both rows. A printed path that is not clean, or not absolute, is not
-// measured: it is shown cleaned and from the root.
+// both rows. On Windows an absolute path that is not clean is shown as
+// printed too: `C:/o/R/../OTHER/.git` and `C:/o/R/.git/..` (`b3081b51`,
+// measured on Windows). Linux and macOS show it cleaned (not measured). No
+// output shows the root. A refused path that is not absolute is not measured:
+// it is shown cleaned and from the root.
 func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	root, _ := gitWalkRoot(dir)
 	inGitDir := root == ""
@@ -412,7 +417,9 @@ func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		}
 		if r.err != nil {
 			if exitedWith128(r) {
-				return secondProbe(folder, root, env, r, inGitDir)
+				a := secondProbe(folder, root, env, r, inGitDir)
+				a.notARepo = a.noRepo && notARepoStderr(r.stderr, filepath.ToSlash(filepath.Join(root, ".git")))
+				return a
 			}
 			if whole := cannotRunText(); whole != "" {
 				return repoAnswer{text: whole}
@@ -420,11 +427,12 @@ func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			return repoAnswer{text: repoCheckFailedText(root, r.allLines())}
 		}
 		found = filepath.FromSlash(r.out)
-		if !filepath.IsAbs(found) {
+		abs := filepath.IsAbs(found)
+		if !abs {
 			found = filepath.Join(root, found)
 		}
 		found = filepath.Clean(found)
-		shown = printedProbePath(r.out, found, string(filepath.Separator))
+		shown = printedProbePath(r.out, found, string(filepath.Separator), abs && printedPathAsIs)
 		if found == filepath.Clean(want) || sameProbeFolder(found, want) {
 			// On Linux and macOS a git directory that fails the git-directory
 			// test now is "no repository". 52d82f0a answers so after `refs` got
@@ -560,12 +568,24 @@ func (r shadowRun) allLines() string {
 	return r.detail()
 }
 
+// notARepoStderr reports whether stderr, the error output of a call about the
+// repository that exited 128, says that git cannot open the repository whose
+// git directory is gitDir, written with forward slashes. On Windows b3081b51
+// gets `fatal: not a git repository (or any of the parent directories): .git`
+// where `<baseRepo>\.git\config` has 262 characters, and `fatal: error reading
+// '<gitDir>'` at 267 and 269 (measured on Windows). Every other text is not
+// such an answer.
+func notARepoStderr(stderr, gitDir string) bool {
+	return strings.HasPrefix(stderr, notARepoHead) ||
+		strings.TrimRight(stderr, "\r\n") == "fatal: error reading '"+gitDir+"'"
+}
+
 // printedProbePath is the path of git in the "disagree" text: out, the answer
-// as git printed it, when only the direction of its slashes differs from found,
-// the cleaned path. Every other answer is shown as found. sep is the separator
-// of the system.
-func printedProbePath(out, found, sep string) string {
-	if strings.ReplaceAll(out, "/", sep) == found {
+// as git printed it, when asIs is true or when only the direction of its
+// slashes differs from found, the cleaned path. Every other answer is shown as
+// found. sep is the separator of the system.
+func printedProbePath(out, found, sep string, asIs bool) string {
+	if asIs || strings.ReplaceAll(out, "/", sep) == found {
 		return out
 	}
 	return found

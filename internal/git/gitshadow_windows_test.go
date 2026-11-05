@@ -55,3 +55,19 @@ func TestShadowLockHasNoSharing(t *testing.T) {
 		t.Errorf("a remove after the daemon closed the file: %v", err)
 	}
 }
+
+// TestShadowLockErrorIsTheSystemText pins the cause of a lock file that cannot be
+// made on Windows: the text of the system alone, with no operation and no path.
+// With a deny entry for writes on git-shadow and the backup and restore
+// privileges on, b3081b51 answers `(Access is denied.)` in the start test text
+// (measured on Windows). A missing folder gives the same shape here.
+func TestShadowLockErrorIsTheSystemText(t *testing.T) {
+	lock, err := openShadowLockFile(filepath.Join(t.TempDir(), "gone", shadowLockName))
+	if err == nil {
+		_ = lock.Close()
+		t.Fatal("the lock file was made in a missing folder")
+	}
+	if got, want := err.Error(), "The system cannot find the path specified."; got != want {
+		t.Errorf("the error = %q, want %q", got, want)
+	}
+}

@@ -143,3 +143,13 @@ func linkedLockOpen(path string) error {
 	defer func() { _ = f.Close() }()
 	return flockNoWait(f)
 }
+
+// goneNotARepoKeepsAll is false on Linux and macOS: a remove of a gone
+// worktree whose call about the repository found no repository keeps the
+// lock-check refusal (removeGoneWorktree). Not measured there on b3081b51. A
+// variable, so that a test can run the Windows step.
+var goneNotARepoKeepsAll = false
+
+// printedPathAsIs is false on Linux and macOS: the "disagree" text shows an
+// answer that is not clean as the cleaned path (askGit, not measured).
+const printedPathAsIs = false

@@ -242,3 +242,47 @@ func TestCopyEntryRefsRefusesABadList(t *testing.T) {
 		}
 	})
 }
+
+// TestCreateRefusesAReftableLinkOfTheGitDirectory runs git.worktree_create with
+// the step of Windows on a repository whose `.git/reftable` is a link, a
+// junction on Windows, to a folder outside the git directory. b3081b51 answers
+// the refusal of the copy of the refs, with no `worktree add` call (measured on
+// Windows). Linux and macOS do not take this step (not measured there). No
+// `reftable`, and a `reftable` that is a regular file, pass the step.
+func TestCreateRefusesAReftableLinkOfTheGitDirectory(t *testing.T) {
+	old := mainRefsOpenTest
+	mainRefsOpenTest = true
+	t.Cleanup(func() { mainRefsOpenTest = old })
+	t.Run("a link to a folder outside", func(t *testing.T) {
+		f := newSeededShadowFixture(t)
+		out := filepath.Join(t.TempDir(), "rt-out")
+		if err := os.Mkdir(out, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, filepath.Join(out, "tables.list"), "")
+		linkAt(t, filepath.Join(f.gitDir, "reftable"), out)
+		leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+		raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+		want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+			jsonQuoted(t, refsCopyText+`"reftable": openat `+filepath.Join("reftable", "tables.list")+": path escapes from parent") +
+			`,"errorCode":"worktree_add_failed"}}`
+		if raw != want {
+			t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+		}
+		for _, c := range calls {
+			if i := slices.Index(c.argv, "worktree"); i >= 0 && i+1 < len(c.argv) && c.argv[i+1] == "add" {
+				t.Errorf("a worktree add ran: %v", c.argv)
+			}
+		}
+	})
+	t.Run("no reftable and a regular file", func(t *testing.T) {
+		git := t.TempDir()
+		if err := mainRefsFault(openTestRoot(t, git)); err != nil {
+			t.Errorf("no reftable: %v, want no error", err)
+		}
+		mustWrite(t, filepath.Join(git, "reftable"), "x\n")
+		if err := mainRefsFault(openTestRoot(t, git)); err != nil {
+			t.Errorf("a regular file reftable: %v, want no error", err)
+		}
+	})
+}

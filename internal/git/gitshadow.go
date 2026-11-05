@@ -356,7 +356,8 @@ var shadowHostname = os.Hostname
 // on device` and `open <S>/lock: no space left on device` (measured). On Windows
 // a file named git-shadow gives `mkdir <path>: The system cannot find the path
 // specified.` (measured), which is the text of os.MkdirAll for a path that is no
-// folder.
+// folder. On Windows a lock file that cannot be made gives the text of the
+// system alone (openShadowLockFile).
 //
 // After a lock file that cannot be made, 5fd08069 leaves no folder of the daemon
 // (the tmpfs row with 2 inodes). So the folder that this call made goes again
@@ -1158,7 +1159,7 @@ func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, d
 // that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
 // pass ask false only for a later gate at a call with --git-dir=.
 func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
-	req.gitRefused, req.configRefused, req.goneCopyText = false, false, ""
+	req.gitRefused, req.gitNotARepo, req.configRefused, req.goneCopyText = false, false, false, ""
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
 	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,
 	// the request still gets its copy (daemonCommonDirStays). The gate then
@@ -1188,7 +1189,7 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 	var read *repoVerdict
 	if ask && req.shadow.asksGit(t, bool(off)) {
 		if a := req.shadow.askGit(t, dir); a.bad() {
-			req.gitRefused = true
+			req.gitRefused, req.gitNotARepo = true, a.notARepo
 			return a.text, a.noRepo
 		}
 	}

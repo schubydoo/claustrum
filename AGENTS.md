@@ -189,7 +189,8 @@ refuses the remove before any delete. `"shadowDirOff":true` turns that refusal o
 does a remove that starts while such a request runs ([The repository
 checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). Without
 `worktreeRoot`, on Linux and macOS, in four states a gone worktree gets success there instead, and nothing
-is deleted. Without `worktreeRoot`, on Linux and macOS, a daemon `GIT_DIR` at a missing path
+is deleted. So does a gone Windows worktree whose `.git\config` path is 262, 267 or 269 characters and
+where git finds no repository (`b3081b51`, measured on Windows). The lengths between are claustrum's own. Without `worktreeRoot`, on Linux and macOS, a daemon `GIT_DIR` at a missing path
 makes an existing worktree folder go with its files, with success (macOS not measured with an
 unlocked `.git` folder). A D22 lock of such an entry keeps its refusal, and a `.git` link or file
 in `baseRepo` keeps the refusal of the failed copy (claustrum's own, not measured). On Windows an

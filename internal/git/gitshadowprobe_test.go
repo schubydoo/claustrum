@@ -428,9 +428,15 @@ func TestProbeAnswers(t *testing.T) {
 	// with its backslashes (measured on Windows). No test of the Windows rows
 	// ran on the host of the build.
 	elsewhere := "/elsewhere/.git"
+	// On Windows an absolute answer that is not clean is shown as printed
+	// too. b3081b51 writes `C:/o/R/../OTHER/.git` so (measured on Windows).
+	// Linux and macOS show it cleaned (not measured).
+	unclean, uncleanShown := "/elsewhere/sub/../.git", "/elsewhere/.git"
 	var windowsRows []answer
 	if runtime.GOOS == "windows" {
 		elsewhere = "C:/elsewhere/.git"
+		unclean = "C:/elsewhere/sub/../.git"
+		uncleanShown = unclean
 		windowsRows = []answer{{name: "another path, backslashes", stdout: `C:\elsewhere\.git` + "\n", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
 				strconv.Quote(`C:\elsewhere\.git`) + ", Claude finds %[2]q; try again"}}
@@ -473,6 +479,9 @@ func TestProbeAnswers(t *testing.T) {
 		{name: "another path", stdout: elsewhere + "\n", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
 				strings.ReplaceAll(strconv.Quote(elsewhere), "%", "%%") + ", Claude finds %[2]q; try again"},
+		{name: "another path, not clean", stdout: unclean + "\n", calls: 2,
+			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
+				strings.ReplaceAll(strconv.Quote(uncleanShown), "%", "%%") + ", Claude finds %[2]q; try again"},
 		{name: "no output", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds %[1]q, Claude finds %[2]q; try again"},
 	}, windowsRows...) {
@@ -535,19 +544,27 @@ func TestProbeAnswers(t *testing.T) {
 }
 
 // TestPrintedProbePath pins the path of git in the "disagree" text, with the
-// separator of Windows on every system. The rows are measured on Windows: an
-// answer with forward slashes and one with backslashes are each shown as
-// printed. An answer that is not clean is not measured: it is shown cleaned.
-// Without the compare the first row shows backslashes.
+// separator of Windows on every system. asIs is the rule of Windows: an
+// absolute answer is shown as printed, also when it is not clean (b3081b51,
+// measured on Windows). Without asIs, the rule of Linux and macOS, an answer
+// that is not clean is shown cleaned (not measured). An answer with forward
+// slashes and one with backslashes are each shown as printed in both rules.
 func TestPrintedProbePath(t *testing.T) {
-	for _, row := range []struct{ out, found, want string }{
-		{`C:/o/w/alt/.git`, `C:\o\w\alt\.git`, `C:/o/w/alt/.git`},
-		{`C:\o\w\alt\.git`, `C:\o\w\alt\.git`, `C:\o\w\alt\.git`},
-		{`C:/o/w/x/../alt/.git`, `C:\o\w\alt\.git`, `C:\o\w\alt\.git`},
-		{`.git`, `C:\o\w\repo\.git`, `C:\o\w\repo\.git`},
+	for _, row := range []struct {
+		out, found string
+		asIs       bool
+		want       string
+	}{
+		{`C:/o/w/alt/.git`, `C:\o\w\alt\.git`, false, `C:/o/w/alt/.git`},
+		{`C:\o\w\alt\.git`, `C:\o\w\alt\.git`, false, `C:\o\w\alt\.git`},
+		{`C:/o/R/../OTHER/.git`, `C:\o\OTHER\.git`, true, `C:/o/R/../OTHER/.git`},
+		{`C:/o/R/.git/..`, `C:\o\R`, true, `C:/o/R/.git/..`},
+		{`C:/o/R/../OTHER/.git`, `C:\o\OTHER\.git`, false, `C:\o\OTHER\.git`},
+		{``, `C:\o\R`, false, `C:\o\R`},
+		{`.git`, `C:\o\w\repo\.git`, false, `C:\o\w\repo\.git`},
 	} {
-		if got := printedProbePath(row.out, row.found, `\`); got != row.want {
-			t.Errorf("printedProbePath(%q, %q) = %q, want %q", row.out, row.found, got, row.want)
+		if got := printedProbePath(row.out, row.found, `\`, row.asIs); got != row.want {
+			t.Errorf("printedProbePath(%q, %q, %v) = %q, want %q", row.out, row.found, row.asIs, got, row.want)
 		}
 	}
 }

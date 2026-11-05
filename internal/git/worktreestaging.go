@@ -436,12 +436,35 @@ func (st *addStage) fill(regs []registrationCopy) error {
 	if err := writeCopyEntries(dir, "", addCopyEntries(head, config, exclude, hasExclude, regs), 0o700, 0o600); err != nil {
 		return err
 	}
+	if mainRefsOpenTest {
+		if err := mainRefsFault(st.git); err != nil {
+			return err
+		}
+	}
 	for _, reg := range regs {
 		if err := copyEntryRefs(st.git, dir, reg.name); err != nil {
 			return err
 		}
 	}
 	return dir.Mkdir(stagedLeafFolder, 0o700)
+}
+
+// mainRefsFault opens `reftable/tables.list` of git, the root at the git
+// directory, and closes it. A `reftable` that is a junction to a folder outside
+// the git directory refuses the create before the add. b3081b51 answers
+// refsCopyText and `"reftable": openat reftable\tables.list: path escapes from
+// parent` there (measured on Windows). No `tables.list` passes. Every other fault
+// of that folder, the order before the registrations and the copy of its files
+// are not measured: claustrum refuses an open error alone and copies nothing.
+func mainRefsFault(git *os.Root) error {
+	f, err := git.OpenFile(filepath.Join("reftable", "tables.list"), os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	if isGoneErr(err) {
+		return nil
+	}
+	if err != nil {
+		return &refsCopyError{text: quoteOperand("reftable") + ": " + err.Error()}
+	}
+	return f.Close()
 }
 
 // refsCopyText starts the text of a create whose copy of the refs of a
