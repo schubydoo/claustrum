@@ -141,8 +141,10 @@ var walkStartsAsSpelled = true
 // junction or a directory symbolic link. Go reports a junction as ModeIrregular.
 // A remove of a worktree folder that exists then deletes nothing and answers
 // lockCheckRefusal. b3081b51 answers so for both kinds of link, and the leaf, the
-// entry behind the link and the branch stay (measured on Windows). A gone leaf
-// is not measured. The rules of a create stay those of registrationsLinkRefused.
+// entry behind the link and the branch stay (measured on Windows). A remove of a
+// gone leaf answers success there, deletes the branch and keeps the entry behind
+// the link (measured on Windows, removeGoneWorktree). The rules of a create stay
+// those of registrationsLinkRefused.
 func removeRegistrationsLinked(dir string) bool {
 	fi, err := os.Lstat(dir)
 	return err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0

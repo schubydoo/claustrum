@@ -196,3 +196,43 @@ func TestWorktreeRemoveBehindALinkedRegistrationsFolderDeletesNothing(t *testing
 		})
 	}
 }
+
+// Measured (`b3081b51`, on Windows): the worktree folder is deleted, then
+// `.git\worktrees` is moved to TARGET, and a junction or a directory symbolic
+// link to TARGET takes its place. A remove answers success and deletes the
+// branch. The link and the entry behind it stay. Every path of the fixture is
+// under t.TempDir().
+func TestWorktreeRemoveGoneLeafKeepsTheEntryBehindALinkedRegistrationsFolder(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		link func(t *testing.T, link, target string)
+	}{
+		{"junction", makeJunction},
+		{"directory symbolic link", makeDirSymlink},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRmFixture(t)
+			if err := os.RemoveAll(f.wt); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(f.repo, ".git", "worktrees")
+			target := filepath.Join(filepath.Dir(f.repo), "TARGET")
+			if err := os.Rename(dir, target); err != nil {
+				t.Fatal(err)
+			}
+			c.link(t, dir, target)
+			raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"})
+			if raw != removeOK {
+				t.Errorf("reply = %s, want %s", raw, removeOK)
+			}
+			if fi, err := os.Lstat(dir); err != nil || fi.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
+				t.Errorf("the link %s is not there (err=%v)", dir, err)
+			}
+			mustExist(t, filepath.Join(target, "wt1", "gitdir"))
+			mustExist(t, filepath.Join(target, "wt1", "HEAD"))
+			if f.hasBranch("wt1") {
+				t.Error("branch wt1 is still there, want it deleted")
+			}
+		})
+	}
+}
