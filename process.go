@@ -640,9 +640,11 @@ func (p *managedProc) killGroupBeforeExitFrame() {
 // killGroupInDrain sends SIGKILL to the group of a process inside its exit drain:
 // reaped, and its exit frame not out yet. 5fd08069 kills the group at once for a
 // killAndWait with "signal":"KILL" there (measured on Linux and macOS). Another signal
-// reaches no member of the group there (measured). Not measured: whether 5fd08069 also
-// signals the ended child, the spelling "SIGKILL" and the Windows answer. A process.kill
-// there still sends nothing (not measured). On Windows the error is ignored.
+// reaches no member of the group there (measured). b3081b51 kills the group at once for
+// a process.kill with "signal":"KILL" there too, and for a killAndWait with "SIGKILL"
+// (measured on Linux and macOS). A TERM there sends no signal to the ended child either
+// (measured on Linux). The exit frame of the process.kill case has no killedBy (measured on Linux and macOS),
+// and this stamps none. The Windows answer is not measured. On Windows the error is ignored.
 func (p *managedProc) killGroupInDrain() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1465,7 +1467,9 @@ func (p *managedProc) stdinWriter() {
 // already-exited child is skipped: once cmd.Wait has reaped it, its Unix pgid
 // can be recycled, so a late negative-pid signal could hit an unrelated
 // process group. (Windows is immune: the process handle pins identity.) The skip
-// is OS-level hardening only, and the reply is a success there.
+// is OS-level hardening only, and the reply is a success there. On Linux and macOS a
+// KILL inside the exit drain kills the group at once (killGroupInDrain), as b3081b51
+// does (measured). The spelling "SIGKILL" there is not measured.
 //
 // It returns a *signalFailed when the system refused the signal, and process.kill
 // answers its text (see signalFailed). Each other case returns nil.
@@ -1474,7 +1478,10 @@ func (m *procManager) kill(id, signal string) error {
 	if p == nil {
 		return nil
 	}
-	_, err := p.signalIfLiveErr(signal, "client")
+	live, err := p.signalIfLiveErr(signal, "client")
+	if !live && killEndsDrainGroup && strings.TrimPrefix(signal, "SIG") == "KILL" {
+		p.killGroupInDrain()
+	}
 	return err
 }
 

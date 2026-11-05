@@ -104,8 +104,10 @@ func logFarewellNotSaid(id, rule string) {
 // signalled yet. It stamps killedBy "client" before any signal, so an exit with
 // code 0 after the farewell carries it (measured on Linux and macOS). It returns
 // nil for a record that is gone, in its exit drain, already signalled, or that
-// holds a pending farewell. The caller then sends the plain kill, which cuts the
-// pending farewell, and answers "unsent". A record signalled after a plain kill
+// holds a pending farewell. The caller then signals through signalIfLive for
+// process.kill, or through killAndWaitProc for process.killAndWait, which cuts the
+// pending farewell, and answers "unsent". So a process.kill KILL in the exit drain
+// with a farewell sends nothing (claustrum's own, not measured). A record signalled after a plain kill
 // gives "unsent" (measured on Linux and macOS). A second farewell on a pending one
 // gives "unsent" (claustrum's own, not measured).
 func (p *managedProc) holdFarewell(signal string) *farewellHold {
@@ -151,7 +153,7 @@ func (p *managedProc) cutFarewellLocked() {
 // killWithFarewell is process.kill with a valid farewell. The reply is at once.
 // The farewell goes to the stdin queue, and the signal of the request follows
 // after the grace unless the child ended or another kill cut the farewell. It
-// signals as kill does, through signalIfLive.
+// signals through signalIfLive, so unlike kill it sends no KILL in the exit drain.
 func (m *procManager) killWithFarewell(id, signal string, ask farewellAsk) string {
 	p := m.get(id)
 	if p == nil {

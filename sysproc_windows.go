@@ -273,3 +273,7 @@ const logsUnreapedKill = false
 // shutdownAsksEnd is false: the shutdown sweep sends no SIGTERM on Windows, and every
 // child ends at once with the kill of its job (b3081b51, measured on Windows).
 const shutdownAsksEnd = false
+
+// killEndsDrainGroup is false: a process.kill inside the exit drain sends nothing on
+// Windows, as before (claustrum's own, not measured).
+const killEndsDrainGroup = false

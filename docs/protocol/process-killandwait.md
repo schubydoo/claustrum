@@ -18,7 +18,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 | `escalate` | no | What the daemon does at the end of that time. With `true`, the default, it ends the process by force. With `false`, it leaves the process alone. |
 | `farewell`, `graceMs` | no | See [Farewell](process-farewell.md), also for the `farewellEnd` member of the result. |
 
-The first signal reaches the same processes as a signal of [process.kill](process-kill.md#which-processes-a-signal-reaches), except `KILL` in [the exit drain](#a-request-during-the-exit-drain).
+The first signal reaches the same processes as a signal of [process.kill](process-kill.md#which-processes-a-signal-reaches), except a request with a valid farewell in [the exit drain](#a-request-during-the-exit-drain).
 
 ## Response
 
@@ -76,9 +76,9 @@ For a short time after a child ends, the daemon still collects its last output a
 - On Linux and macOS, `"signal": "KILL"` sends `SIGKILL` to the group at once instead. Windows makes that call too, and it ends nothing (not measured).
 - If the `exit` frame comes inside the wait, the answer is `{"found": true, "died": true}`. If the wait ends first, the request goes on as for a child whose output is not complete.
 
-These answers and the group kill are measured on Linux and macOS, not on Windows. Whether the reference sends a first signal to the ended child is not measured.
+These answers and the group kill are measured on Linux and macOS, not on Windows. For `TERM` `b3081b51` sends no first signal to the ended child either (measured on Linux). On macOS and for `INT` and `HUP` that is claustrum's own, not measured.
 
-For a signal other than `KILL`, that missing first signal is a guard (claustrum's own): the operating system can reuse the process id (pid) of an ended child. For `KILL` claustrum follows the reference and accepts the risk of a reused group number.
+For a signal other than `KILL`, that missing first signal is a guard: the operating system can reuse the process id (pid) of an ended child. For `KILL` claustrum follows the reference and accepts the risk of a reused group number.
 
 ### A refused signal
 

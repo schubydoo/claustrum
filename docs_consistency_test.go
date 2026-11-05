@@ -645,7 +645,7 @@ var docWordLimits = map[string]int{
 	"docs/DIVERGENCES.md":                        8169, // the pin of b3081b51: the measured D27 reply. 8200: D28. 7908: the staged add of be1c1ca5. 7778: the cap that skips the prune after a full disk. 7764: the summary table
 	"docs/EXAMPLES.md":                           1025,
 	"docs/GLOSSARY.md":                           1297,
-	"docs/IMPROVEMENTS.md":                       1590,
+	"docs/IMPROVEMENTS.md":                       1599, // the KILL exception of item 21, b3081b51
 	"docs/INSTALL.md":                            5585, // the measured no-fallback rule for an ldd that cannot run. 5573: the measured /bin/ldd fallback of b3081b51. 5568: the not-measured /bin/ldd mark of b3081b51. 5560: the fixed ldd path and environment of b3081b51. 5539: the blob guard of the new prunes. 5531: the measured rows of the prune. 5508: the prune before the fetch of -install. 5307: page rewrite
 	"docs/PROTOCOL.md":                           2835, // the files.realpath row and count. 2826: one sentence on the close line. one sentence on a failed write. the error texts, stream frames and flags moved to their own pages
 	"docs/STYLE.md":                              1293, // the page rewrite
@@ -670,8 +670,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-worktree-remove.md":       4599,  // the failed git-directory listing of b3081b51. 4479: the links at the registrations folder on Windows, b3081b51. 4438: the claims fixes of m-19. 4422: the gone worktree of b3081b51. 4398: the alternates line of b3081b51. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":          1834,  // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
 	"docs/protocol/plugins-prune.md":             1199,  // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
-	"docs/protocol/process-kill.md":              931,   // the page template
-	"docs/protocol/process-killandwait.md":       977,   // the page template
+	"docs/protocol/process-kill.md":              1042,  // the KILL in the exit drain of b3081b51. 931: the page template
+	"docs/protocol/process-killandwait.md":       994,   // the TERM rule of b3081b51 in the exit drain. 977: the page template
 	"docs/protocol/process-link-bound.md":        740,
 	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
 	"docs/protocol/process-spawn.md":             4492, // the late step log of cliTempRoot. 4467: the text of a record that cannot be saved. 4420: the relative names and the shared wait of the cliTempRoot step. 4376: the cliTempRoot inputs and time limit of b3081b51. 4255: the private temp folder of b3081b51. 3615: the temp-folder test of 683cc6a9. 3474: rewrite to the page template
@@ -746,7 +746,7 @@ var docSectionRunLimits = map[string]int{
 	"docs/ARCHITECTURE.md":                     496,
 	"docs/DAEMON.md":                           909, // the start-time rule of the child records
 	"docs/DIVERGENCES.md":                      709,
-	"docs/IMPROVEMENTS.md":                     1484,
+	"docs/IMPROVEMENTS.md":                     1493, // the KILL exception of item 21, b3081b51
 	"docs/INSTALL.md":                          736,
 	"docs/PROTOCOL.md":                         627,
 	"docs/STYLE.md":                            343,
