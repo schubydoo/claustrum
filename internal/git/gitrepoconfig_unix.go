@@ -14,9 +14,11 @@ const openNoTerminal = syscall.O_NOCTTY
 // link to a regular file is read there (measured on Linux).
 func configLinkDetail(string) string { return "" }
 
-// includeValueDetail and includePlaceDetail have no refusal on Linux and macOS.
-// An absolute include, a `~/` include and a relative include are followed there
-// (measured on Linux).
+// includeValueDetail, includePlaceDetail and includeLinkDetail have no refusal on
+// Linux and macOS. An absolute include, a `~/` include and a relative include are
+// followed there (measured on Linux).
 func includeValueDetail(string, string) string { return "" }
 
 func includePlaceDetail(string, string) string { return "" }
+
+func includeLinkDetail(string, string) string { return "" }

@@ -878,7 +878,9 @@ func configFileTests(path string, log *repoReadLog) string {
 // folder of the daemon. `~user` and `%(prefix)/` are refused (measured with
 // `~root/x` and `%(prefix)/x`). A `~/` value with an unset or relative `HOME` gets
 // the same refusal: the text says so, and no cell ran it. The Windows rules come
-// first (includeValueDetail and includePlaceDetail).
+// first (includeValueDetail and includePlaceDetail). The Windows link test of the
+// folders comes after the place test (includeLinkDetail). The place and link
+// refusals come before the count of 16 files (claustrum's own, not measured).
 //
 // The value in the text is cut to its first 100 characters: a value of 100 is
 // whole, and one of 101 is cut, also with characters of two bytes (measured
@@ -917,7 +919,44 @@ func includeTarget(file, value, gitDir string) (target, detail string) {
 	default:
 		target = folderAsWritten(file) + string(filepath.Separator) + value
 	}
-	return target, includePlaceDetail(target, gitDir)
+	if d := includePlaceDetail(target, gitDir); d != "" {
+		return target, d
+	}
+	return target, includeLinkDetail(target, gitDir)
+}
+
+// linkBelowRepo reports whether a folder on the way from repo to the file target
+// is a link (folderIsLink). It tests each folder below repo, from the top. It
+// does not test repo itself or the last name of target. The walk is on the
+// cleaned path, and it stops at the first folder that it cannot Lstat. A target
+// outside repo gets false.
+func linkBelowRepo(repo, target string) bool {
+	rel, err := filepath.Rel(repo, filepath.Dir(filepath.Clean(target)))
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return false
+	}
+	p := repo
+	for name := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		p = filepath.Join(p, name)
+		fi, err := os.Lstat(p)
+		if err != nil {
+			return false
+		}
+		if folderIsLink(fi.Mode()) {
+			return true
+		}
+	}
+	return false
+}
+
+// folderIsLink reports whether the walk of linkBelowRepo counts an entry with
+// the mode m of its Lstat as a link: a symbolic link, or an irregular entry
+// without the folder bit, such as a Windows junction. Go gives the folder bit
+// and the irregular bit to a Windows folder with a reparse tag that is not a
+// name surrogate. An include below a folder with the tag 0x9000001A is not refused
+// (b3081b51, measured on Windows, with an empty folder and no include file).
+func folderIsLink(m fs.FileMode) bool {
+	return m&fs.ModeSymlink != 0 || m&(fs.ModeIrregular|fs.ModeDir) == fs.ModeIrregular
 }
 
 // folderAsWritten is the folder part of the path file: the text before its last

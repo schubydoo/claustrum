@@ -462,3 +462,48 @@ func TestRepoConfigRefusalWithWorktreeRoot(t *testing.T) {
 	}
 	f.removed(t, f.e0, "e0")
 }
+
+// TestIncludeLinkBelowRepoWalk pins the folder walk of the Windows link test of an
+// included file (linkBelowRepo) with symbolic links. A link at a folder below the
+// repository is found at any depth. A link at the repository folder itself and at
+// the file itself is not. The Windows text is in TestWindowsIncludeThroughAJunction.
+func TestIncludeLinkBelowRepoWalk(t *testing.T) {
+	top := t.TempDir()
+	repo := filepath.Join(top, "repo")
+	gitDir := filepath.Join(repo, ".git")
+	for _, d := range []string{filepath.Join(gitDir, "real", "deep"), filepath.Join(gitDir, "a", "b")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(gitDir, "real", "inc.cfg"), version0, 0o644)
+	for _, l := range []struct{ link, target string }{
+		{filepath.Join(gitDir, "jn"), filepath.Join(gitDir, "real")},
+		{filepath.Join(gitDir, "a", "b", "jn"), filepath.Join(gitDir, "real")},
+		{filepath.Join(gitDir, "file.cfg"), filepath.Join(gitDir, "real", "inc.cfg")},
+		{filepath.Join(top, "repolink"), repo},
+	} {
+		if err := os.Symlink(l.target, l.link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		name, repo, target string
+		want               bool
+	}{
+		{"a link at the git directory entry", repo, gitDir + "/jn/inc.cfg", true},
+		{"a link two folders down", repo, gitDir + "/a/b/jn/deep/inc.cfg", true},
+		{"a link after a .. that the clean takes off", repo, gitDir + "/a/../jn/inc.cfg", true},
+		{"no link", repo, gitDir + "/real/inc.cfg", false},
+		{"a link at the file itself", repo, gitDir + "/file.cfg", false},
+		{"a link at the repository folder", filepath.Join(top, "repolink"), filepath.Join(top, "repolink", ".git", "real", "inc.cfg"), false},
+		{"a file in the repository folder", repo, filepath.Join(repo, "inc.cfg"), false},
+		{"a missing folder", repo, gitDir + "/missing/jn/inc.cfg", false},
+		{"a file outside the repository", repo, filepath.Join(top, "repolink", "x.cfg"), false},
+		{"a file in a repository folder that is a link", filepath.Join(top, "repolink"), filepath.Join(top, "repolink", "inc.cfg"), false},
+	} {
+		if got := linkBelowRepo(c.repo, c.target); got != c.want {
+			t.Errorf("%s: linkBelowRepo(%s, %s) = %v, want %v", c.name, c.repo, c.target, got, c.want)
+		}
+	}
+}

@@ -85,7 +85,7 @@ version and the extensions of an included file are not tested.
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on. This text comes before an extension refusal. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory. `NUL` and a stream such as `a/inc.cfg::$DATA` get it too (b3081b51, measured on Windows) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it also in an `includeIf` section whose condition does not match. `<value>` is cut to its first 300 characters |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Also Windows, on every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config` |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Also Windows, on every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. Windows: an include through a junction in the git directory, with `<file>` as written (b3081b51, measured on Windows on `git.info`, `git.list_branches` and `git.worktree_create`). An include below a folder with the reparse tag `0x9000001A` is followed (b3081b51, measured on Windows) |
 
 No refusal comes from a config that is missing, empty, a dangling symbolic link or a
 symbolic link to a regular file. A NUL byte in a value, an empty `include.path` and
@@ -209,8 +209,13 @@ These rules are from the code and are not measured on `5fd08069`:
   past" text.
 - On Windows the daemon refuses a link at a config file and at an included file, and a
   junction or a directory symbolic link at the git directory itself. It tests no other
-  folder above the file. It also refuses an include value that starts with a slash or
+  folder above the config. It also refuses an include value that starts with a slash or
   a drive.
 - On Windows a relative include below the repository whose path has another colon, or
   another name that `filepath.IsLocal` takes as a reserved device name (such as `COM1`),
   gets the "is outside" text too (claustrum's own, not measured).
+- On Windows the link test of an included file covers each folder below the repository,
+  not only the git directory. A directory symbolic link there gets the link text too,
+  and so does the file of an `includeIf` section, whatever its condition is. The place
+  test and the link test come before the count of 16 files (claustrum's own, not
+  measured).
