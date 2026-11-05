@@ -66,6 +66,11 @@ var nonFolderStartRefuses = false
 // Linux can set it.
 var walkStartsAsSpelled = false
 
+// baseRepoWalksAsSpelled is false on Linux and macOS. The trust-root test of baseRepo and
+// the git.list_branches path test walk with filepath.EvalSymlinks there (linkWalkFails).
+// It is a variable so that a test on Linux can set it.
+var baseRepoWalksAsSpelled = false
+
 // removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
 // of a worktree folder that exists refuses such a folder (measured on Linux and
 // macOS).

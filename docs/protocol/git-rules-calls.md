@@ -332,7 +332,7 @@ git cannot parse it is from the code. "The count" below is the check of
   gone-worktree frame. A worktree directory that is present gets `… is locked (its
   registrations could not be examined); retry`. On Linux and
   macOS a `baseRepo` of `<T>/missing/..`, which does not resolve, gets that frame
-  too. On Windows that `baseRepo` gets the managed-worktrees refusal first.
+  too.
 - Without `worktreeRoot`, in a repository the start test of the settings copy runs
   first and fails under the daemon's pair. Its text is `<text>` (measured on Linux, macOS and Windows).
   Otherwise the count text stays (claustrum's own, not measured).

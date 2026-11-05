@@ -600,12 +600,9 @@ On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the
 last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from
 the Go source, not measured). These answers rest on that failure:
 
-- The trust-root refusal, claustrum's own, of `git.worktree_create` and
-  `git.worktree_remove` for a junction before the last component of a `baseRepo`
-  that exists (measured on Windows).
-- The `"isRepo": false` answer of `git.status` (`baseRepo`) and
-  `git.list_branches` (`path`) for `<dir>\<junction>\T` (from the code), except a
-  `git.status` junction to a network or device path.
+- The `"isRepo": false` answer of `git.status` (`baseRepo`) for
+  `<dir>\<junction>\T` (from the code), except a junction to a network or
+  device path.
 - The `git.info` answers for a path with a junction before its last component
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
   pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),

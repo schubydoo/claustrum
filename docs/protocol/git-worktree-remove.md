@@ -112,7 +112,7 @@ With `worktreeRoot`:
 On both:
 
 - The home guard ([D2](../DIVERGENCES.md#d2)) runs before the delete, with and without `worktreeRoot`.
-- A `baseRepo` inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)) is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`.
+- A `baseRepo` inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)) is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`. On Windows `..` drops the name before it untested, so `<T>\t.txt\..`, `<T>\missing\..` and a junction before `..` pass (`b3081b51`, measured on Windows).
 - If the last component of `worktreePath` is a symbolic link, the text is `refusing to remove worktree: <t> is a symbolic link, not a worktree directory`. If it is not a directory, the text is `refusing to remove worktree: <t> is not a directory`. `<t>` is the path with the symbolic links of `baseRepo`, or of the root, resolved. On macOS a path under `/tmp` therefore reads `/private/tmp/…`.
 - On Windows, a junction at any directory between `baseRepo` and the worktree is refused ([D19](../DIVERGENCES.md#d19)).
 

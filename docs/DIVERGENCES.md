@@ -495,7 +495,7 @@ have no flag and no key.
     Windows)
   - `baseRepo` `<T>/missing/..` with no folder `missing`: it deletes the folder
     of S with `"branchKept":true` (Linux and macOS). This state is not measured
-    on Windows: both sides refuse that `baseRepo` there
+    on Windows
   - the `GIT_DIR` and `GIT_COMMON_DIR` state with the folder of S gone: it
     deletes nothing (Linux, macOS and Windows). claustrum answers a
     gone-worktree lock refusal

@@ -137,6 +137,10 @@ var nonFolderStartRefuses = true
 // (walkStart). It is a variable so that a test can set it.
 var walkStartsAsSpelled = true
 
+// baseRepoWalksAsSpelled is true on Windows. The trust-root test of baseRepo and the
+// git.list_branches path test walk the path as sent (spelledWalkFails).
+var baseRepoWalksAsSpelled = true
+
 // removeRegistrationsLinked reports whether the registrations folder dir is a
 // junction or a directory symbolic link. Go reports a junction as ModeIrregular.
 // A remove of a worktree folder that exists then deletes nothing and answers

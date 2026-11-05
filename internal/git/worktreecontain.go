@@ -180,32 +180,30 @@ func markerAboveSpelling(repo string) bool {
 }
 
 // baseRepoWalkFails is claustrum's own trust-root test for baseRepo. It fails a repo
-// that os.Stat does not report as missing and that the symlink walk of
-// filepath.EvalSymlinks cannot resolve. The test is fitted to the measured rows of
-// f6010b97. There git.worktree_create and git.worktree_remove answer
-// managedWorktreesRefusal with no git call.
+// that os.Stat does not report as missing and whose walk fails (linkWalkFails). The
+// test is fitted to the measured rows of f6010b97. There git.worktree_create and
+// git.worktree_remove answer managedWorktreesRefusal with no git call.
 //
 // On Linux and macOS, measured removes and creates got that refusal. They send
 // <T>/a.txt/.., <T>/loop/.. and a path through a directory with mode 000, where
 // os.Stat fails with ENOTDIR, ELOOP or EACCES. On Windows os.Stat folds ".." by
-// name, so <T>\missing\.. stats while the walk fails at "missing". On Windows, two
-// groups of measured cases got the refusal.
+// name, so <T>\missing\.. stats. f6010b97 refused it there. b3081b51 judges
+// <T>\missing\.. and <T>\t.txt\.. as <T> (measured on Windows), so the walk drops a
+// name before ".." first.
 //
 // A missing path skips the test. That is measured on Linux, macOS and
 // Windows. On Windows, other measured cases stat and walk, and pass.
 // repo is repoDir(): the baseRepo after the ~ expansion, or "." when it is
 // absent.
 //
-// On Windows, after its walk, filepath.EvalSymlinks looks up each component of the
-// resolved path with FindFirstFile, which lists its parent. So a parent that denies List to the
-// daemon can fail EvalSymlinks after os.Stat passed, and claustrum then refuses. No
-// row measured that case.
+// On Windows the walk follows a junction before "..", so <out>\J\..\repo passes and
+// names <out>\repo (b3081b51, measured on Windows). A parent folder that denies List
+// to the daemon no longer refuses (claustrum's own, not measured).
 func baseRepoWalkFails(repo string) bool {
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
-	_, err := evalSymlinks(repo)
-	return err != nil
+	return linkWalkFails(repo, true)
 }
 
 // sessionFolderSpellingRefusal is the refusal of a relative path, an empty one
