@@ -100,6 +100,8 @@ func reservedLocationName(name string) bool {
 // worktreeExternalSpellingRefusal. Callers run worktreeExternalSpellingRefusal first,
 // so worktreePath is absolute and has no ".." component here. The text quotes both
 // members as sent, with a "/./" or a final "/" kept (`5fd08069`, measured on Linux).
+// Both verbs put the path in backticks (tickPath): remove (`b3081b51`, measured on
+// Linux and macOS) and create (`b3081b51`, measured on macOS).
 //
 // Then the <directory> or the <name> of the path is refused when it is a reserved
 // name, with the name as sent. The cells put it at the <directory> (measured). A
@@ -109,7 +111,7 @@ func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) strin
 	wp := filepath.Clean(worktreePath)
 	if filepath.Dir(filepath.Dir(wp)) != root {
 		return fmt.Sprintf("refusing to %s worktree: %s is not "+
-			"<worktree location>/<directory>/<name> beneath %s", verb, worktreePath, worktreeRoot)
+			"<worktree location>/<directory>/<name> beneath %s", verb, tickPath(worktreePath), worktreeRoot)
 	}
 	for _, name := range []string{filepath.Base(filepath.Dir(wp)), filepath.Base(wp)} {
 		if reservedLocationName(name) {
@@ -165,7 +167,9 @@ func repoFolderInWorktreeRefusal(worktreeRoot, worktreePath, baseRepo string, li
 // worktreeRootInRepoRefusal is the refusal of a worktreeRoot that is baseRepo or lies
 // beneath it, or "" when the root passes. The test cleans both paths and compares
 // whole components. It resolves no symlink and runs no git. The text names
-// worktreeRoot and baseRepo as sent. verb is "create" or "remove". f6010b97 and
+// worktreeRoot and baseRepo as sent. Both verbs put the root in backticks
+// (tickPath): remove (`b3081b51`, measured on Linux and macOS) and create
+// (`b3081b51`, measured on macOS). verb is "create" or "remove". f6010b97 and
 // 89cb6289 send the same frames on Linux and macOS:
 //   - Refused: the repository T, T/.claude, T/.claude/ with its slash kept in the
 //     text, T/.claude/worktrees, T/sub and a missing T/missing. These
@@ -178,7 +182,18 @@ func worktreeRootInRepoRefusal(worktreeRoot, baseRepo, verb string) string {
 		return ""
 	}
 	return fmt.Sprintf("refusing to %s worktree: %s is the repository %s or inside it; "+
-		"a worktree location must be outside the repository", verb, worktreeRoot, baseRepo)
+		"a worktree location must be outside the repository", verb, tickPath(worktreeRoot), baseRepo)
+}
+
+// removeTickPath shows p in backticks (tickPath) for the verb "remove" and plain for
+// "create". The Windows "custom worktree location" text uses it. A remove quotes the
+// root there (`b3081b51`, measured on Windows). The plain create text is claustrum's
+// own, not measured.
+func removeTickPath(p, verb string) string {
+	if verb == "remove" {
+		return tickPath(p)
+	}
+	return p
 }
 
 // listedWorktree is one entry of `git worktree list --porcelain`, with or without -z.
