@@ -172,7 +172,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D16](DIVERGENCES.md#d16) | Always-on, Windows | Yes | `git.status` of a linked worktree answers the status, not an error, when the user has no global excludes file |
 | [D19](DIVERGENCES.md#d19) | Always-on, Windows | Maybe | `git.worktree_remove` refuses a junction between `baseRepo` and the leaf |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
-| [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree where `89cb6289` answers success (four states), and with `worktreeRoot` the frame differs in three more |
+| [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree where `89cb6289` answers success (four states, and a missing daemon `GIT_DIR` of `b3081b51`), and with `worktreeRoot` the frame differs in three more |
 | [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
 | [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement (not measured), and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration. On Windows it runs no git call after a `.git` file swap. On Linux and macOS it keeps a branch that git made through a link at `.git` |
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |

@@ -2681,8 +2681,32 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		// that is gone gets the same refusal (removeGoneWorktree). With
 		// worktreeRoot the read is in externalWorkTreeRefusal, with its own text.
 		if msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo); msg != "" || req.goneCopyText != "" {
-			// A failed copy for a missing daemon GIT_DIR keeps its refusal here
-			// (claustrum's own, not measured).
+			// A failed copy for a missing daemon GIT_DIR deletes the worktree folder
+			// with its files and answers success. With no `.git` entry in baseRepo
+			// `b3081b51` does so on Linux and macOS (measured). With an unlocked
+			// `.git` folder it does so too (`b3081b51`, measured on Linux). The guards
+			// above ran first. A failed delete is not measured. Windows sets no
+			// goneCopyText.
+			if req.goneCopyText != "" && noRepo && dotGitAbsentOrFolder(repo) {
+				// A lock in the `.git` folder of baseRepo that names the worktree keeps
+				// the D22 refusal (lockedInBaseRepo). The registrations of the missing
+				// GIT_DIR are not read, so the commonDir is empty.
+				named := ""
+				if namesGitDir {
+					named = gitDir
+				}
+				if msg := baseRepoLockRefusal(repo, "", named, target.path, p.WorktreePath,
+					newWorktreePathSet(target.path, p.WorktreePath), lockedWorktreeRefusal); msg != "" {
+					return refuse(msg)
+				}
+				if err := deleteWorktreeDir(target.parent, target.leaf, target.path); err != nil {
+					return refuse(worktreeRemoveText(err))
+				}
+				return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+			}
+			// A `.git` in baseRepo that is a link, a file or an entry that the lstat
+			// cannot read keeps the refusal of the failed copy (claustrum's own, not
+			// measured).
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg + req.goneCopyText)
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -3180,6 +3204,17 @@ func goneLockCheckText(worktreePath, reason string) string {
 	}
 	return "failed to remove worktree: could not check whether " + worktreePath +
 		" is locked (" + reason + "); retry"
+}
+
+// dotGitAbsentOrFolder reports whether repo holds no `.git` entry, or a `.git` that
+// is a real folder. A link, a file and an entry that the lstat cannot read give
+// false (claustrum's own).
+func dotGitAbsentOrFolder(repo string) bool {
+	fi, err := os.Lstat(filepath.Join(repo, ".git"))
+	if err != nil {
+		return errors.Is(err, fs.ErrNotExist)
+	}
+	return fi.IsDir()
 }
 
 // lockCheckRefusal is git.worktree_remove's answer when baseRepo's registrations cannot

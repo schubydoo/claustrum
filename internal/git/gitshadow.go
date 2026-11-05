@@ -1185,7 +1185,7 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 		// A daemon GIT_DIR that names a missing path gets "no repository" in place of
 		// the refusal (gitDirTrust.goneEnvGitDir). Each failure of the step there
 		// takes it (claustrum's own, not measured). A remove of a worktree that exists
-		// keeps the refusal (goneCopyText).
+		// keeps the refusal (goneCopyText) only with a `.git` that is not absent or a folder.
 		if t.goneEnvGitDir {
 			req.goneCopyText = shadowRepoFailureText(err)
 			return "", true
