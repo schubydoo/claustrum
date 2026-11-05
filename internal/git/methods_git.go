@@ -2142,11 +2142,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// timeout "after the checkout finished" and rolls back. If the deadline has
 			// not expired, the request succeeds. Measured against f6010b97 and
 			// 90fca6e6 on macOS.
-		case rtErr != nil && p.TimeoutMs > 0 && callerTimeoutFired(callerCtx):
+		case rtErr != nil && p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) && !errors.As(rtErr, new(checkoutFailedAlone)):
 			// The caller's deadline killed the checkout. The text after "during the
 			// checkout): " is the killed git's stderr made by worktreeGitText, or the
 			// exec error, for example "signal: killed", when that text is empty.
-			// Measured against f6010b97 and 90fca6e6 on macOS.
+			// Measured against f6010b97 and 90fca6e6 on macOS. A git that failed by
+			// itself before the deadline takes the failure arm below, also when the
+			// deadline expires during the drain of its pipes (b3081b51, measured on
+			// Linux and macOS).
 			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
@@ -2172,10 +2175,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// git failed at a path that uses a filter with the three pairs. The text
 			// names that filter (measured on Linux and Windows). The deadline arm above
 			// comes first. A deadline that expires before git answers gives the timeout
-			// frame (measured). The order of the two arms after a filter failure is not
-			// measured. One name has another answer with no settings copy: the filter
-			// lfs of the outside config, when the repository names a program for
-			// git-lfs (claustrum's own).
+			// frame (measured). After a git that failed by itself, this arm wins over it
+			// (claustrum's own, not measured). One name has another answer with no
+			// settings copy: the filter lfs of the outside config, when the repository
+			// names a program for git-lfs (claustrum's own).
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			if refusedName == lfsFilterName && filters.lfsKey != "" {
 				return rpc.OKResult(req.ID, rpc.WorktreeResult{

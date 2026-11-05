@@ -506,7 +506,8 @@ var reapCheckoutGroup = sysproc.ReapProcessGroup
 //     (runWorktreeCheckout, claustrum's choice, not measured);
 //   - err: the underlying exec error — git's own "signal: killed" *ExitError when the
 //     deadline killed a still-running git, exec.ErrWaitDelay on a drain overrun, or a
-//     non-zero *ExitError otherwise. nil when git exited 0.
+//     non-zero *ExitError otherwise, wrapped in checkoutFailedAlone when it failed by
+//     itself before a deadline. nil when git exited 0.
 //
 // With no timeoutMs the drain ends gitDrainWait after git exited, and the
 // descendant gets no signal. On 5fd08069 the reply comes 2.0 s after the
@@ -638,12 +639,16 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		}
 	}
 	var errBuf bytes.Buffer
+	failedAlone := func(werr error) bool {
+		var exitErr *exec.ExitError
+		return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
+	}
 	err = runHeld(cmd, func() error {
-		return runCheckoutPipes(cmd, &errBuf, func(werr error) bool {
-			var exitErr *exec.ExitError
-			return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
-		})
+		return runCheckoutPipes(cmd, &errBuf, failedAlone)
 	})
+	if failedAlone(err) {
+		err = checkoutFailedAlone{err}
+	}
 	drained = errors.Is(err, exec.ErrWaitDelay)
 	if drained && deadlined {
 		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
@@ -664,12 +669,12 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // failed by itself. A failed smudge filter was measured there. With a child that
 // holds only its stdout for 6 s, be1c1ca5 and b3081b51 answer the failure of git
 // at once. They wait neither to the cap nor to the deadline. Other failures are
-// claustrum's own, not measured. A child that holds stderr delays the reply until
-// stderr closes or the cap ends (claustrum's own, not measured). A child that holds
-// both pipes past the deadline gets timeout, where b3081b51 answers the failure
-// (measured on Linux, a later fix). Also not measured: a failure with no timeoutMs
-// (both pipes keep gitDrainWait), a signal to that child (none is sent), and
-// Windows (it keeps the drain, failedCheckoutSkipsStdoutDrain).
+// claustrum's own, not measured. A child that holds stderr alone delays the reply
+// until stderr closes or the cap ends (claustrum's own, not measured). With a child that
+// holds both pipes past the deadline, the reply is still the failure of git
+// (checkoutFailedAlone, b3081b51, measured on Linux and macOS). Also not measured: a
+// failure with no timeoutMs (both pipes keep gitDrainWait), a signal to that child
+// (none is sent), and Windows (it keeps the drain, failedCheckoutSkipsStdoutDrain).
 func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool) error {
 	outR, outW, err := os.Pipe()
 	if err != nil {
@@ -694,6 +699,7 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	go func() { _, _ = io.Copy(io.Discard, outR); close(outDone) }()
 	go func() { _, _ = io.Copy(errBuf, errR); close(errDone) }()
 	werr := cmd.Wait()
+	checkoutWaited()
 	limit := time.NewTimer(cmd.WaitDelay)
 	defer limit.Stop()
 	overrun := false
@@ -721,6 +727,19 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	}
 	return werr
 }
+
+// checkoutWaited runs right after the wait for the read-tree call. A test sets
+// it to learn that git exited.
+var checkoutWaited = func() {}
+
+// checkoutFailedAlone is the error of a read-tree call with a timeoutMs that
+// failed by itself before the deadline (runCheckoutPipes). The create answers
+// it as a failed checkout, also when the deadline expires during the drain.
+type checkoutFailedAlone struct{ err error }
+
+func (e checkoutFailedAlone) Error() string { return e.err.Error() }
+
+func (e checkoutFailedAlone) Unwrap() error { return e.err }
 
 // checkoutRefusal is a refusal of the checkout before the read-tree call. Its
 // text follows `git worktree add failed (checkout): ` in the frame, and the
