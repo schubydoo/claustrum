@@ -53,6 +53,34 @@ func TestWindowsIncludeTexts(t *testing.T) {
 	}
 }
 
+// TestWindowsIncludeNotLocal pins the "is outside" text of an include below the
+// repository that filepath.IsLocal does not accept. `a/inc.cfg::$DATA` and `NUL`
+// are b3081b51, measured on Windows. `a:b` and `COM1` are claustrum's own, not
+// measured. The other six forms pass on b3081b51 (measured on Windows).
+func TestWindowsIncludeNotLocal(t *testing.T) {
+	const gitDir = `C:\o\w\repo\.git`
+	outside := func(cleaned string) string {
+		return strconv.Quote(cleaned) + ` is outside "C:\\o\\w\\repo", and on Windows Claude reads a repository's ` +
+			`settings only from inside it; if the line that includes it is yours and you trust the file, ` +
+			`put that line into ~/.gitconfig on the remote machine instead`
+	}
+	for _, c := range []struct{ value, cleaned string }{
+		{"a/inc.cfg::$DATA", gitDir + `\a\inc.cfg::$DATA`},
+		{"NUL", gitDir + `\NUL`},
+		{"a:b", gitDir + `\a:b`},
+		{"a/COM1", gitDir + `\a\COM1`},
+	} {
+		if got, want := includePlaceDetail(gitDir+`\`+c.value, gitDir), outside(c.cleaned); got != want {
+			t.Errorf("include %s: detail = %q, want %q", c.value, got, want)
+		}
+	}
+	for _, value := range []string{"a/inc.cfg", "a./inc.cfg", "a /inc.cfg", "a/inc.cfg.", "a/inc.cfg ", "b/../a/inc.cfg"} {
+		if got := includePlaceDetail(gitDir+`\`+value, gitDir); got != "" {
+			t.Errorf("include %s: detail = %q, want none", value, got)
+		}
+	}
+}
+
 // TestWindowsIncludeThroughTheRead runs the two include rules through the read
 // of a real repository.
 func TestWindowsIncludeThroughTheRead(t *testing.T) {
@@ -78,6 +106,22 @@ func TestWindowsIncludeThroughTheRead(t *testing.T) {
 		"if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead"
 	if got := configDetail(t, gitDir); got != want {
 		t.Errorf("absolute include: detail = %q, want %q", got, want)
+	}
+
+	// `NUL` and a stream name get the "is outside" text with the cleaned path, not
+	// the "not a regular file" text (b3081b51, measured on Windows).
+	setIncludeFile(t, gitDir, "inc.cfg", refusedInclude)
+	for _, c := range []struct{ value, cleaned string }{
+		{"NUL", filepath.Join(gitDir, "NUL")},
+		{"inc.cfg::$DATA", filepath.Join(gitDir, "inc.cfg::$DATA")},
+	} {
+		setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+c.value+"\n")
+		want = strconv.Quote(c.cleaned) + " is outside " + strconv.Quote(repo) +
+			", and on Windows Claude reads a repository's settings only from inside it; " +
+			"if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead"
+		if got := configDetail(t, gitDir); got != want {
+			t.Errorf("include %s: detail = %q, want %q", c.value, got, want)
+		}
 	}
 
 	// A relative include inside the git directory is not refused (measured).

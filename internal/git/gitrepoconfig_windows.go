@@ -50,13 +50,17 @@ func includeValueDetail(file, value string) string {
 // directory: a bare repository `bare.git` is measured so (measured on Windows). The
 // test is on the text of the paths, and no link is resolved (not measured). The path
 // in this text is the cleaned one (measured).
+//
+// A path below the repository that filepath.IsLocal does not accept gets this text
+// too. `a/inc.cfg::$DATA` and `NUL` get it (b3081b51, measured on Windows). Another
+// colon and another reserved name, such as `COM1`, are claustrum's own, not measured.
 func includePlaceDetail(target, gitDir string) string {
 	repo := gitDir
 	if strings.EqualFold(filepath.Base(gitDir), ".git") {
 		repo = filepath.Dir(gitDir)
 	}
 	rel, err := filepath.Rel(repo, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, `..\`) || filepath.IsAbs(rel) {
+	if err != nil || !filepath.IsLocal(rel) {
 		return quoteOperand(filepath.Clean(target)) + " is outside " + quoteOperand(repo) +
 			", and on Windows Claude reads a repository's settings only from inside it; " +
 			"if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead"
