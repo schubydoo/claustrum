@@ -25,6 +25,7 @@ New here? Read the [Tour of one session](TOUR.md). It shows the frames of one se
     1. [Divergences](DIVERGENCES.md). Every deliberate [divergence](GLOSSARY.md#divergence) from the reference.
     2. [Docs style guide](STYLE.md). Page templates and limits.
     3. The [contributing guide](https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md).
+    4. The [Go pin](UPSTREAM-TRACKING.md#toolchain-induced-drift-the-go-127-jsonv2-hold). Why the build holds one Go line.
 
 - :material-history: **You track the reference**
     1. [Upstream tracking](UPSTREAM-TRACKING.md). How the project keeps compatibility.
