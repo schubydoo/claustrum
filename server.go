@@ -279,14 +279,15 @@ func (c *conn) doneStdinTurn(t uint64) {
 	c.stdinMu.Unlock()
 }
 
-// writeJSON is ONE OF THREE outbound encodes — see also conn.writeResponse
-// below (every JSON-RPC reply) and managedProc.emit (every live stream frame).
-// This one carries reattach REPLAY frames only, so it is the narrowest of the
-// three; the comment used to call it "the single outbound encode", which would
-// send someone doing an encoder cleanup looking in exactly one place and missing
-// the two that matter more.
+// writeJSON is one of several outbound encodes — see also conn.writeResponse
+// below (every JSON-RPC reply), managedProc.emit (every live stream frame),
+// writeFramesLocked in process.go (the replay of a reattach that holds the write
+// lock) and peerRefusalLine in peercheck.go (the refusal of a peer). This one
+// carries reattach REPLAY frames only; the comment used to call it "the single
+// outbound encode", which would send someone doing an encoder cleanup looking in
+// exactly one place and missing the others.
 //
-// All three must stay on json.Marshal, not an Encoder: Marshal HTML-escapes
+// All of them must stay on json.Marshal, not an Encoder: Marshal HTML-escapes
 // `< > &` with no opt-out, which is what the reference emits, and
 // SetEscapeHTML(false) would look like a cleanup and move the wire — see
 // docs/ARCHITECTURE.md → "Inherited wire bytes".

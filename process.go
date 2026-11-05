@@ -2042,6 +2042,7 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 
 // writeFramesLocked writes the replay frames of a reattach on c, with the write
 // lock of c already held, each as writeJSON marshals it. It stops at the first error.
+// It must stay on json.Marshal for the reason in the note on writeJSON.
 func writeFramesLocked(c *conn, frames []streamFrame) error {
 	for _, f := range frames {
 		b, err := json.Marshal(f)
