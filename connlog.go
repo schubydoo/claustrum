@@ -20,7 +20,6 @@ const (
 	fmtWriteFailed = "[Server] writeResponse: wrote %d/%d bytes, error=%q"
 	fmtReplyFailed = "[Server] Failed to write response: %q"
 	fmtScannerErr  = "[Server] scanner error on %s: %q"
-	fmtProcExited  = "[process.Manager] Process %s exited with code %d%s"
 )
 
 // quotedAddr is the remote address of a connection in %q form.

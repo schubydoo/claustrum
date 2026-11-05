@@ -120,6 +120,7 @@ component_management:
         - internal/sockroute/fortest_linux.go
         - idleconn.go
         - connlog.go
+        - conn.go
         # 4534d86 lifecycle additions: the run-dir lock (daemon.lock + owner record,
         # OS-split machine identity; a no-op on Windows, parity) and the orphan-exit
         # self-probe.
