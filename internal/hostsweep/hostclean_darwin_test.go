@@ -242,7 +242,7 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 }
 
 // TestStdioPipesAndBusyCheckDarwin covers the two darwin reads the orphan and daemon judges
-// use: pipe stdio from lsof's PIPE type, and hcBusyCheck. An abandoned run is a reading there.
+// use: pipe stdio from lsof's PIPE type, and hcBusyCheck.
 func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
@@ -265,8 +265,8 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 		t.Errorf("an abandoned lsof run: pipes=%v canRead=%v, want false false", pipes, canRead)
 	}
 
-	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy,
-	// and both are readings.
+	// hcBusyCheck: a completed run with a connected peer is busy, and it is a reading. An
+	// abandoned run is no reading.
 	runLsof = func(...string) (string, bool, bool, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true, true, false }
 	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
 		t.Errorf("connected peer: busy=%v canRead=%v, want true true", busy, canRead)
@@ -278,8 +278,8 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 		t.Errorf("bare listener: busy=%v canRead=%v, want false true", busy, canRead)
 	}
 	runLsof = func(...string) (string, bool, bool, bool) { return "", false, true, false }
-	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
-		t.Errorf("abandoned run: busy=%v canRead=%v, want true true", busy, canRead)
+	if busy, canRead := hcBusyCheck(1); busy || canRead {
+		t.Errorf("abandoned run: busy=%v canRead=%v, want false false", busy, canRead)
 	}
 }
 
@@ -331,29 +331,88 @@ func TestStdioReadAnswersDarwin(t *testing.T) {
 	}
 }
 
-// TestHcBusyAbandonedRunReadsBusy pins the busy read of an abandoned run.
-//
-// The two arms differ ONLY in the flag: both return no output. A completed run that
-// saw nothing is evidence the pid is idle, and must read as not busy. That arm is
-// the control. An abandoned run is not evidence of anything, and claustrum reads it
-// as busy. Deleting the abandoned arm in hcBusy makes the second assertion fail while
-// the control still passes.
-func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
-	old := runLsof
-	t.Cleanup(func() { runLsof = old })
-
-	// CONTROL: lsof ran, found nothing. Not busy.
-	runLsof = func(...string) (string, bool, bool, bool) { return "", true, true, false }
-	if hcBusy(1) {
-		t.Fatal("a completed run that found nothing read as busy; that is the parity " +
-			"answer and the abandoned arm must not change it")
+// TestAbandonedBusyReadEndsTheReadDarwin follows measured cases (`be1c1ca5` and `b3081b51`,
+// measured on macOS). Under an lsof that SIGKILL cannot end, both run one lsof for the
+// daemon, send no SIGTERM and end the pass in 17 s. The test takes the two busy steps of
+// the pass in order: the pass read marks the daemon, and the retire refuses it. Each
+// abandoned run moves the fake clock by hcLsofAbandon. The control is a completed run with
+// no client: one SIGTERM goes to the seam. The daemon is a fake pid behind the kinfo
+// seams, and the lsof run is a stub.
+func TestAbandonedBusyReadEndsTheReadDarwin(t *testing.T) {
+	const pid = noSuchPid + 4500
+	const exe = "/opt/claude/srv/a/server"
+	const socket = "/opt/claude/run/s1/rpc.sock"
+	seamUID(t, 501)
+	oldK, oldA, oldRun, oldHold := hcKinfoPID, hcProcArgs2, runLsof, hcHoldPid
+	oldClock, oldSleep, oldPpid := hcClock, hcSleep, hcGetppid
+	t.Cleanup(func() {
+		hcKinfoPID, hcProcArgs2, runLsof, hcHoldPid = oldK, oldA, oldRun, oldHold
+		hcClock, hcSleep, hcGetppid = oldClock, oldSleep, oldPpid
+	})
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
+	hcGetppid = func() int { return 1 }
+	hcProcArgs2 = func(int) ([]byte, bool) {
+		return hcProcArgsBuf(exe, []string{exe, "-serve", "-socket", socket}, []string{hcDaemonChildMarker}), true
 	}
+	e := runDirEntry{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
 
-	// The run was abandoned, so nothing is known about the pid.
-	runLsof = func(...string) (string, bool, bool, bool) { return "", false, true, false }
-	if !hcBusy(1) {
-		t.Error("an abandoned run read as not busy; a wedged lsof would then let the " +
-			"cleaner SIGTERM a daemon that is still serving a client")
+	for _, abandoned := range []bool{false, true} {
+		c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
+		gone := false
+		hcKinfoPID = func(int) ([]byte, bool) {
+			if gone {
+				return nil, false
+			}
+			return kinfoBuf(pid, 1, pid, 501, 501, 2, uint64(now.Unix())-3600, 0), true
+		}
+		holds, runs := 0, 0
+		var signals []syscall.Signal
+		hcHoldPid = func(int) (func(syscall.Signal) error, func()) {
+			holds++
+			return func(sig syscall.Signal) error { signals = append(signals, sig); gone = true; return nil }, func() {}
+		}
+		runLsof = func(...string) (string, bool, bool, bool) {
+			runs++
+			if abandoned {
+				now = now.Add(hcLsofAbandon)
+				return "", false, true, false
+			}
+			return "", true, true, false
+		}
+		start := now
+
+		// The pass read, and the mark that Pass sets from its answer.
+		unread, ended := hcDaemonFilesUnread(pid)
+		if ended {
+			c.busyEnded = map[int]bool{pid: true}
+		}
+		retired, reason := c.retireAbandoned(e, pid, 501)
+
+		if !abandoned {
+			if !retired || runs != 2 || len(signals) != 1 || signals[0] != syscall.SIGTERM {
+				t.Fatalf("control: retired=%v reason=%q runs=%d signals=%v, want a retire with one SIGTERM after two runs", retired, reason, runs, signals)
+			}
+			continue
+		}
+		if unread || !ended {
+			t.Errorf("hcDaemonFilesUnread = %v %v, want false true", unread, ended)
+		}
+		if retired || reason != hcRetireBusyReason {
+			t.Errorf("retired=%v reason=%q, want a refusal with %q", retired, reason, hcRetireBusyReason)
+		}
+		if runs != 1 || holds != 0 || len(signals) != 0 {
+			t.Errorf("runs=%d holds=%d signals=%v, want one lsof run, no hold and no signal", runs, holds, signals)
+		}
+		if elapsed := now.Sub(start); elapsed != hcLsofAbandon {
+			t.Errorf("the busy steps took %v, want one wait of %v", elapsed, hcLsofAbandon)
+		}
+		// The retire alone stops at the first abandoned run too, with no mark.
+		c.busyEnded, runs = nil, 0
+		if retired, _ := c.retireAbandoned(e, pid, 501); retired || runs != 1 {
+			t.Errorf("unmarked retire: retired=%v runs=%d, want a refusal after one run", retired, runs)
+		}
 	}
 }
 

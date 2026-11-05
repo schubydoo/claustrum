@@ -109,7 +109,10 @@ gets the group `SIGKILL` 1.5 s later (PR 909). A good `git.worktree_create` reco
 its repository as a session folder (PR 927, measured on Linux, macOS and Windows).
 
 **Older gaps closed.** The `already exists` and link loop refusals of the worktree methods
-put their path in backticks, as `be1c1ca5` does (PR 923, measured on Linux).
+put their path in backticks, as `be1c1ca5` does (PR 923, measured on Linux). After an
+`lsof` run that it gave up on, the macOS host cleaner runs no more `lsof` for the daemon.
+Its pass ends after one 17 s wait for that daemon, as on `be1c1ca5` and `b3081b51`
+(measured on macOS).
 
 **How it was bounded.** Each item above was measured side by side with `be1c1ca5` on the
 systems named. A whole-build re-check of the final code compared claustrum with `b3081b51`
@@ -484,8 +487,8 @@ checked twice.
 
 With an `lsof` run that `SIGKILL` cannot end, the macOS host cleaner is parity in
 the log line, signals and disk (round `tier4-01`, macOS VM). The pass differs:
-`5fd08069` runs `lsof` once and ends in 17 s, claustrum runs it three times and
-ends in 51 s. The cause: claustrum reads a run it gave up on as busy and reads the daemon again until its busy sampling ends (from the code).
+`5fd08069` ran `lsof` once and ended in 17 s, claustrum ran it three times and
+ended in 51 s. The cause: claustrum read a run it gave up on as busy and read the daemon again until its busy sampling ended (from the code).
 
 **Divergences.** D4, D5, D9, D13, D17, D18, D21 and D25 are retired. D27 is new
 (PR 563).
@@ -647,8 +650,8 @@ own.
 
 **Reconciled in.** PRs 387 through 390 are the four implementation slices. PR 391
 corrects claims those four left wrong. PR 392 adds item 7 and puts the host cleaner's
-listener check first. The macOS busy read that it shipped, which reads an `lsof`
-run it gave up on as busy, is parity with `5fd08069` (round `tier4-01`).
+listener check first. The macOS busy read that it shipped read an `lsof`
+run it gave up on as busy.
 This bump follows all six.
 
 ### `19f30c46353dde1606cad1fede73d0e9be222140` — 2026-09-11 (observed)

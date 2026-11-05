@@ -185,9 +185,8 @@ means that a probe which reaches the path shows it. The battery never drives
 
 D1, D4, D5, D7, D9, D11, D13, D14, D17, D18, D21 and D25 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
-entry above covers it. Two things on those paths are claustrum's own and not
-drift: the D13 chmod, clear and rename come after the checksum test, and a D17
-pass takes longer. A difference against `89cb6289` on the D4 paths is
+entry above covers it. One thing on those paths is claustrum's own and not
+drift: the D13 chmod, clear and rename come after the checksum test. A difference against `89cb6289` on the D4 paths is
 expected, and so is the stop of a slow git call (D5). See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries), and the
 `files-read-regular-only` paragraph below.
@@ -448,8 +447,7 @@ the linked pages.
   Claude runtime state names under `.claude/`. `19f30c46` copies eight of them, so
   a file missing from a seeded worktree looks like a regression against that pin. A quiet symbol comparison does not prove
   that nothing changed, so re-check the whole build after the slices merge.
-- On macOS the `lsof` reads of the host cleaner, and the longer pass of claustrum
-  after a run that it gave up on, are not drift. An `lsof` that does not start,
+- On macOS the `lsof` reads of the host cleaner are not drift. An `lsof` that does not start,
   and a run that writes to stderr and exits 1, are parity with `89cb6289`
   (measured on macOS). See [The `lsof` reads](DAEMON.md#the-lsof-reads-macos).
 

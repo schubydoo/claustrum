@@ -805,10 +805,10 @@ before the chmod, the clear and the rename (claustrum's own): see
 The `ldd` probe has the 5 s bound of the reference, always: see
 [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
 
-### D17 · An abandoned `lsof` run reads as busy, not idle (retired) { #d17 }
+### D17 · An abandoned `lsof` run on macOS (retired) { #d17 }
 
 On macOS an idle daemon whose `lsof` run `SIGKILL` cannot end gets no SIGTERM
-and keeps its run dir, as on the reference. Only the time of that pass differs:
+and keeps its run dir, as on the reference. Its pass time matches (measured on macOS):
 see [DAEMON.md → The `lsof` reads](DAEMON.md#the-lsof-reads-macos).
 
 ### D18 · `-cli-version` must not start with `.blob-` (retired) { #d18 }
