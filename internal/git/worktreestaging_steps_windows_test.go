@@ -90,19 +90,45 @@ func TestCreateWithTwoStagedNamesOnWindows(t *testing.T) {
 }
 
 // TestCreateWithALeafOfAnotherEntryOnWindows must match a measured case: a `.git` file
-// of the staged leaf that names another entry of `.s<n>` refuses the create with
-// unsafe_path, and the leaf and the branch go. Without step 2 the create succeeds.
+// of the staged leaf that names another entry fails the create with
+// otherStagedEntryText and worktree_add_failed, and the leaf and the branch go.
+// Both cases are measured (b3081b51): the entry decoy of the git directory,
+// which stays, and an entry of `.s<n>`. Without
+// step 2 the create succeeds. With the unsafe_path answer of claustrum before,
+// the frame differs.
 func TestCreateWithALeafOfAnotherEntryOnWindows(t *testing.T) {
-	f := newStepCreate(t)
-	atStep(t, "staged", func() {
-		staged := filepath.Join(filepath.Dir(f.staged(t)), stagedLeafFolder, "w1", ".git")
-		if err := os.WriteFile(staged, []byte("gitdir: "+filepath.Join(f.staged(t), "w9")+"\n"), 0o644); err != nil {
-			t.Error(err)
-		}
-	})
-	raw, _ := f.create(t)
-	wantFailed(t, raw, otherEntryRefusal(f.leaf), "unsafe_path")
-	f.fullUndo(t)
+	for _, tc := range []struct {
+		name  string
+		decoy bool
+	}{{"staged entry", false}, {"decoy entry", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newStepCreate(t)
+			decoy := filepath.Join(f.gitDir, "worktrees", "decoy")
+			if tc.decoy {
+				mustWrite(t, filepath.Join(decoy, "gitdir"), `C:\nowhere\.git`+"\n")
+				mustWrite(t, filepath.Join(decoy, "HEAD"), "ref: refs/heads/main\n")
+				mustWrite(t, filepath.Join(decoy, "commondir"), `..\..`+"\n")
+			}
+			atStep(t, "staged", func() {
+				named := filepath.Join(f.staged(t), "w9")
+				if tc.decoy {
+					named = decoy
+				}
+				staged := filepath.Join(filepath.Dir(f.staged(t)), stagedLeafFolder, "w1", ".git")
+				if err := os.WriteFile(staged, []byte("gitdir: "+named+"\n"), 0o644); err != nil {
+					t.Error(err)
+				}
+			})
+			raw, _ := f.create(t)
+			wantFailed(t, raw, completingAddPrefix+otherStagedEntryText, "worktree_add_failed")
+			f.fullUndo(t)
+			if tc.decoy {
+				if got := entryNames(t, decoy); !slices.Equal(got, []string{"HEAD", "commondir", "gitdir"}) {
+					t.Errorf("the entry decoy holds %q, want it kept", got)
+				}
+			}
+		})
+	}
 }
 
 // TestCreateCopiesTheStagedTreeOnWindows must match a measured case: a file in a sub

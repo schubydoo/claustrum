@@ -77,10 +77,11 @@ func TestStagedMoveWithTwoNewNames(t *testing.T) {
 	f.nothingMade(t)
 }
 
-// TestStagedMoveWithALeafOfAnotherEntry pins step 2 (measured): a `.git` file
-// of the staged leaf that names another entry of `.s<n>` refuses the move with
-// otherEntryRefusal, before anything is made in the git directory. Without the
-// test the move goes on.
+// TestStagedMoveWithALeafOfAnotherEntry pins step 2 (measured on Windows): a `.git` file
+// of the staged leaf that names another entry of `.s<n>` refuses the move,
+// before anything is made in the git directory. The text is otherEntryRefusal
+// on Linux and macOS and otherStagedEntryText on Windows. Without the test the
+// move goes on.
 func TestStagedMoveWithALeafOfAnotherEntry(t *testing.T) {
 	f := newStepFixture(t)
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
@@ -91,9 +92,13 @@ func TestStagedMoveWithALeafOfAnotherEntry(t *testing.T) {
 		}
 	})
 	_, _, err := stagedAdd(t, f.repoFolderFixture, f.u)
+	want, failedAdd := otherEntryRefusal(leaf), false
+	if stagedAddWindowsSteps {
+		want, failedAdd = otherStagedEntryText, true
+	}
 	var refused *addRefused
-	if !errors.As(err, &refused) || refused.text != otherEntryRefusal(leaf) {
-		t.Errorf("the add = %v, want the refusal %s", err, otherEntryRefusal(leaf))
+	if !errors.As(err, &refused) || refused.text != want || refused.failedAdd != failedAdd {
+		t.Errorf("the add = %v (%+v), want the refusal %s with failedAdd %v", err, refused, want, failedAdd)
 	}
 	f.nothingMade(t)
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,6 +84,49 @@ func TestWindowsCreateSwapTexts(t *testing.T) {
 				t.Errorf("old8 of T: %v, want it kept", err)
 			}
 		})
+	}
+}
+
+// TestWindowsCreateLeafOfAnotherEntry: the staged leaf names the entry decoy
+// of the git directory, as in TestCreateWithALeafOfAnotherEntryOnWindows
+// (b3081b51, measured on Windows). The create answers otherStagedEntryText
+// with worktree_add_failed, the leaf and the branch go, and the worktrees
+// folder keeps its entries. Without the failedAdd arm of the create, or with
+// failedAdd false, the frame has unsafe_path.
+func TestWindowsCreateLeafOfAnotherEntry(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	decoy := filepath.Join(f.gitDir, worktreesSubdir, "decoy")
+	mustWrite(t, filepath.Join(decoy, "gitdir"), "/nowhere/.git\n")
+	before := entryNames(t, filepath.Join(f.gitDir, worktreesSubdir))
+	setStagedAddWindowsSteps(t, true)
+	atStep(t, "staged", func() {
+		folder := daemonFolder(t, f.run)
+		names := addFolders(t, folder)
+		if len(names) != 1 {
+			t.Errorf("the folder of the daemon holds %q, want one .s<n>", names)
+			return
+		}
+		staged := filepath.Join(folder, names[0], stagedLeafFolder, "w1", ".git")
+		if err := os.WriteFile(staged, []byte("gitdir: "+decoy+"\n"), 0o644); err != nil {
+			t.Error(err)
+		}
+	})
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	want := `"result":{"success":false,"error":` + jsonQuoted(t, completingAddPrefix+otherStagedEntryText) + `,"errorCode":"worktree_add_failed"}}`
+	if !strings.HasSuffix(raw, want) {
+		t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	for _, p := range []string{leaf, filepath.Join(f.gitDir, "refs", "heads", "w1")} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("%s: %v, want it gone", p, err)
+		}
+	}
+	if got := entryNames(t, filepath.Join(f.gitDir, worktreesSubdir)); !slices.Equal(got, before) {
+		t.Errorf("the worktrees folder holds %q, want %q", got, before)
 	}
 }
 
