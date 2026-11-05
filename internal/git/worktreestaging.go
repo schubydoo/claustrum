@@ -887,8 +887,8 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 //     (measured).
 //  2. The `.git` file of the staged leaf must name that entry of `.s<n>`.
 //     Else the create is refused (stagedOtherEntryRefusal, measured on Windows).
-//     A create whose staged leaf folder another process holds completes
-//     (b3081b51, measured on Windows).
+//     A create whose staged leaf folder or its parent folder another process
+//     holds completes (b3081b51, measured on Windows).
 //  3. The leaf must hold no `.git` entry. Else the create is refused with
 //     plantedGitFileText (be1c1ca5, measured on Linux). These tests come
 //     before the staging folder is made.
@@ -1103,7 +1103,8 @@ func stagedRecordText(leaf string) string {
 // stagedLeafNamesEntry reports whether the `.git` file of the staged leaf
 // name in dir, the root at `.s<n>`, names the entry entry in the folder
 // addName (stagedGitFileText). On Windows a read through dir that fails
-// because another process holds the staged leaf folder (stagedLeafHeld) reads
+// because another process holds the staged leaf folder or its parent folder
+// `leaf` (stagedLeafHeld) reads
 // the file by its path (readHeldStagedLeafGitFile, claustrum's own, not
 // measured).
 func stagedLeafNamesEntry(dir *os.Root, name, addName, entry, gitDir string) bool {

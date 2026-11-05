@@ -280,27 +280,37 @@ func TestCreateStagingRenameFailsOnWindows(t *testing.T) {
 }
 
 // TestHeldStagedLeafOnWindows (b3081b51, measured on Windows). Another
-// process opens the staged leaf folder with no sharing, so the read of its
-// `.git` through the root at `.s<n>` fails. The `.git` file still names the
-// entry, read by its path. Without the read by path the answer is false.
+// process opens the staged leaf folder, or its parent folder `leaf`, with no
+// sharing, so the read of its `.git` through the root at `.s<n>` fails. The
+// `.git` file still names the entry, read by its path. A hold of `leaf` takes
+// the Lstat branch of readHeldStagedLeafGitFile. Without the read by path the
+// answer is false.
 func TestHeldStagedLeafOnWindows(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".s1")
-	gitFile := filepath.Join(dir, stagedLeafFolder, "w1", ".git")
-	mustWrite(t, gitFile, "gitdir: "+filepath.ToSlash(dir)+"/worktrees/w1\n")
-	p, err := windows.UTF16PtrFromString(filepath.Dir(gitFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := windows.CreateFile(p, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
-	if err != nil {
-		t.Fatalf("the hold of the staged leaf: %v", err)
-	}
-	t.Cleanup(func() { _ = windows.CloseHandle(h) })
-	root := openTestRoot(t, dir)
-	if _, ok := readRootFile(root, filepath.Join(stagedLeafFolder, "w1", ".git"), repointMaxBytes); ok {
-		t.Fatal("the root read the .git file of a held leaf, want a failure")
-	}
-	if !stagedLeafNamesEntry(root, "w1", ".s1", "w1", `C:\g`) {
-		t.Error("the .git file of a held staged leaf does not name the entry")
+	for _, held := range []string{"w1", stagedLeafFolder} {
+		t.Run(held, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), ".s1")
+			gitFile := filepath.Join(dir, stagedLeafFolder, "w1", ".git")
+			mustWrite(t, gitFile, "gitdir: "+filepath.ToSlash(dir)+"/worktrees/w1\n")
+			target := filepath.Dir(gitFile)
+			if held == stagedLeafFolder {
+				target = filepath.Dir(target)
+			}
+			p, err := windows.UTF16PtrFromString(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h, err := windows.CreateFile(p, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+			if err != nil {
+				t.Fatalf("the hold of %s: %v", held, err)
+			}
+			t.Cleanup(func() { _ = windows.CloseHandle(h) })
+			root := openTestRoot(t, dir)
+			if _, ok := readRootFile(root, filepath.Join(stagedLeafFolder, "w1", ".git"), repointMaxBytes); ok {
+				t.Fatalf("the root read the .git file under a held %s, want a failure", held)
+			}
+			if !stagedLeafNamesEntry(root, "w1", ".s1", "w1", `C:\g`) {
+				t.Errorf("the .git file under a held %s does not name the entry", held)
+			}
+		})
 	}
 }
