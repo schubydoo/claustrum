@@ -1200,6 +1200,13 @@ func fetchCLI(url, dir string) (path, sum string, err error) {
 	// Record fetch stats even on a failure: the reference emits the fetch object on
 	// a stall, not only on success.
 	s := wb.stats()
+	// On a good archive, ms ends at the last byte, and the wait for the end of
+	// the body does not count. b3081b51 (measured on Linux): a chunked body whose
+	// final chunk came 2.5 s after the last byte gave ms 15 to 33 and
+	// longestPauseMs 2 to 3, and the install still ended after that final chunk.
+	if decErr == nil {
+		s.Ms = wb.lastByteMs()
+	}
 	lastInstallFetch = &s
 	_ = wb.Close() // stop the progress ticker
 	// A failed body read wins over the decoder's answer, which only saw the
@@ -1217,7 +1224,9 @@ func fetchCLI(url, dir string) (path, sum string, err error) {
 		_ = os.Remove(tmp)
 		return "", "", fail
 	}
-	lastInstallFinal = &progressLine{Phase: "download", Bytes: s.Bytes, Total: total}
+	if !wb.tickPrinted(s.Bytes) {
+		lastInstallFinal = &progressLine{Phase: "download", Bytes: s.Bytes, Total: total}
+	}
 	return tmp, hex.EncodeToString(h.Sum(nil)), nil
 }
 
