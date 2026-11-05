@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestArgsAskEnd pins the args that make the shutdown sweep ask a child to end
@@ -44,13 +46,13 @@ func recordShutdownSignals(t *testing.T, groupKill bool, procs ...*managedProc) 
 	realSignal := signalGroup
 	var mu sync.Mutex
 	sent := map[*os.Process][]string{}
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		for _, p := range procs {
 			if proc == p.cmd.Process {
 				mu.Lock()
 				sent[proc] = append(sent[proc], signame)
 				mu.Unlock()
-				if signame == "KILL" && shutdownAsksEnd && !groupKill {
+				if signame == "KILL" && supervisor.ShutdownAsksEnd && !groupKill {
 					_ = proc.Kill()
 					return nil
 				}
@@ -101,7 +103,7 @@ func TestShutdownSweepSignalsByArgs(t *testing.T) {
 		}
 	}
 	wantAsked := []string{"KILL"}
-	if shutdownAsksEnd {
+	if supervisor.ShutdownAsksEnd {
 		wantAsked = []string{"TERM"}
 	}
 	if got := sent(asked); !slices.Equal(got, wantAsked) {
@@ -113,15 +115,15 @@ func TestShutdownSweepSignalsByArgs(t *testing.T) {
 	// The exit frame names the signal that ended the child: SIGTERM, not a KILL that
 	// came before the exit. Windows names no signal.
 	wantSig := ""
-	if shutdownAsksEnd {
+	if supervisor.ShutdownAsksEnd {
 		wantSig = "SIGTERM"
 	}
 	if got := exitSignalOf(t, framesA); got != wantSig {
 		t.Errorf("exit frame signal of the stream-json child = %q, want %q", got, wantSig)
 	}
 	const line = "[process.Manager] KillAll: asked 1 Claude Code process(es) to end: 1 exited, 0 had to be killed, after "
-	if got := strings.Contains(logs.String(), line); got != shutdownAsksEnd {
-		t.Errorf("log holds %q = %v, want %v\nlog: %q", line, got, shutdownAsksEnd, logs.String())
+	if got := strings.Contains(logs.String(), line); got != supervisor.ShutdownAsksEnd {
+		t.Errorf("log holds %q = %v, want %v\nlog: %q", line, got, supervisor.ShutdownAsksEnd, logs.String())
 	}
 }
 
@@ -200,7 +202,7 @@ func TestShutdownWaitSendsNoKillAfterRunningTurnsFalse(t *testing.T) {
 	realSignal := signalGroup
 	var mu sync.Mutex
 	var sent []string
-	signalGroup = func(_ *procGroup, _ *os.Process, signame string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, _ *os.Process, signame string) error {
 		mu.Lock()
 		sent = append(sent, signame)
 		mu.Unlock()

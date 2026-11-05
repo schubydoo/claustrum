@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // replyLine is the whole reply line of request id with the given result, without
@@ -385,7 +387,7 @@ func TestFarewellSweepAndGraceSignalOnce(t *testing.T) {
 	p := s.procs.get("fo")
 	realSignal := signalGroup
 	var signals atomic.Int32
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc == p.cmd.Process {
 			signals.Add(1)
 			return nil

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // recordSignals wraps the signalGroup seam and records each signal name sent to
@@ -23,7 +24,7 @@ func recordSignals(t *testing.T, pid *atomic.Int64) func() []string {
 	var mu sync.Mutex
 	var got []string
 	real := signalGroup
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		mu.Lock()
 		if int64(proc.Pid) == pid.Load() {
 			got = append(got, signame)

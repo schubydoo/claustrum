@@ -17,6 +17,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/files"
 	cliinstall "github.com/schubydoo/claustrum/internal/install"
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -130,8 +131,8 @@ func main() {
 	// included): when spawned as `<self> --exec-child <execPath> <argv...>` the
 	// daemon re-exec'd itself to stamp a spawned child's identity, and this execs the
 	// real target in place, never returning. A no-op on non-linux and for any other
-	// argv (see execchild_linux.go / execchild_other.go).
-	maybeRunExecChild()
+	// argv (see internal/supervisor/execchild_unix.go and execchild_other.go).
+	supervisor.MaybeRunExecChild()
 	var (
 		serve     = flag.Bool("serve", false, "Self-daemonize and run the RPC server")
 		bridge    = flag.Bool("bridge", false, "Connect stdio to the running server")

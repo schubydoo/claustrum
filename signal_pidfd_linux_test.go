@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/schubydoo/claustrum/internal/procinfo"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // pidfdOf returns the descriptor of this process that is a pid file descriptor of
@@ -59,7 +60,7 @@ func TestChildHandleHoldsAPidfd(t *testing.T) {
 	if fd := pidfdOf(t, cmd.Process.Pid); fd < 0 {
 		t.Fatalf("no pid file descriptor for the child %d in this process", cmd.Process.Pid)
 	}
-	_ = signalProcessGroup(cmd.Process, "TERM")
+	_ = supervisor.SignalProcessGroup(cmd.Process, "TERM")
 	if sig := hcWaitSignal(t, cmd); sig != syscall.SIGTERM {
 		t.Errorf("the helper ended with signal %v, want SIGTERM", sig)
 	}

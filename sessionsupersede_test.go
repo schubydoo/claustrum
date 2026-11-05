@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // sessionArgs are the argv tail that makes a spawn a stream-json session of SESS.
@@ -32,7 +33,7 @@ func countSignalsTo(t *testing.T, p *managedProc) *atomic.Int32 {
 	t.Helper()
 	realSignal := signalGroup
 	var signals atomic.Int32
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc == p.cmd.Process {
 			signals.Add(1)
 		}

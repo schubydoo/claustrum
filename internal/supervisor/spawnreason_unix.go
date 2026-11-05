@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package supervisor
 
 import "golang.org/x/sys/unix"
 

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // killAndWait with escalate:true must send the group SIGKILL at the end of the grace
@@ -89,7 +91,7 @@ func groupKills(t *testing.T, p *managedProc) func() []string {
 	realSignal := signalGroup
 	var mu sync.Mutex
 	var names []string
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc == p.cmd.Process {
 			mu.Lock()
 			names = append(names, signame)

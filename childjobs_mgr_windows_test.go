@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"golang.org/x/sys/windows"
 )
 
@@ -42,16 +43,16 @@ func TestJobEndsTheTree(t *testing.T) {
 	for _, tc := range rows {
 		t.Run(tc.id, func(t *testing.T) {
 			m := newTestProcManager(t)
-			m.jobs = jobsOn
+			m.jobs = supervisor.JobsOn
 			// The helper starts its grandchild at once, with no go-ahead.
 			p, gpid := spawnTree(t, m, tc.id, "tree-stdio")
 			if p.cmd.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
 				t.Errorf("CreationFlags = %#x, want the suspended start of a child with a job", p.cmd.SysProcAttr.CreationFlags)
 			}
-			if p.group == nil || p.group.job == 0 {
+			if p.group == nil || p.group.JobForTest() == 0 {
 				t.Fatal("the child has no job")
 			}
-			if !inJob(t, gpid, p.group.job) {
+			if !inJob(t, gpid, p.group.JobForTest()) {
 				t.Errorf("grandchild %d is not in the job of the child", gpid)
 			}
 			buf := captureLogBuf(t)
@@ -99,7 +100,7 @@ func TestJobChildExitEndsTheRest(t *testing.T) {
 	t.Cleanup(func() { exitDrainGrace = oldDrain })
 	const id = "jt-exit"
 	m := newTestProcManager(t)
-	m.jobs = jobsOn
+	m.jobs = supervisor.JobsOn
 	buf := captureLogBuf(t)
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "exit-leave-kid")
@@ -133,13 +134,13 @@ func TestJobChildExitEndsTheRest(t *testing.T) {
 }
 
 // TestChildReadsJobFlags: a spawned child reads the limit flags of its own job. With
-// jobsOn they are 0x2800 (kill on job close and breakaway allowed), as on 52d82f0a
-// (measured on Windows). With jobsKeep they are 0x800 (claustrum's own).
+// supervisor.JobsOn they are 0x2800 (kill on job close and breakaway allowed), as on 52d82f0a
+// (measured on Windows). With supervisor.JobsKeep they are 0x800 (claustrum's own).
 func TestChildReadsJobFlags(t *testing.T) {
 	for _, tc := range []struct {
-		jobs childJobs
+		jobs supervisor.ChildJobs
 		want string
-	}{{jobsOn, "0x2800"}, {jobsKeep, "0x800"}} {
+	}{{supervisor.JobsOn, "0x2800"}, {supervisor.JobsKeep, "0x800"}} {
 		t.Run(tc.want, func(t *testing.T) {
 			m := newTestProcManager(t)
 			m.jobs = tc.jobs
@@ -180,11 +181,11 @@ func TestChildReadsJobFlags(t *testing.T) {
 func TestJobConfineFailureStillResumes(t *testing.T) {
 	old := confineProc
 	t.Cleanup(func() { confineProc = old })
-	confineProc = func(*os.Process, childJobs) (*procGroup, error) {
+	confineProc = func(*os.Process, supervisor.ChildJobs) (*supervisor.ProcGroup, error) {
 		return nil, errors.New("open process: access is denied")
 	}
 	m := newTestProcManager(t)
-	m.jobs = jobsOn
+	m.jobs = supervisor.JobsOn
 	t.Cleanup(m.killAll)
 	captureLogBuf(t)
 	c, _ := pipeConn(t)
@@ -206,7 +207,7 @@ func TestJobConfineFailureStillResumes(t *testing.T) {
 func TestJobAllowsBreakaway(t *testing.T) {
 	const id = "jt-breakaway"
 	m := newTestProcManager(t)
-	m.jobs = jobsOn
+	m.jobs = supervisor.JobsOn
 	captureLogBuf(t)
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "breakaway-start")
@@ -218,10 +219,10 @@ func TestJobAllowsBreakaway(t *testing.T) {
 	holdOwnPid(t, p.pid)
 	pid := readPIDFile(t, pidFile)
 	holdOwnPid(t, pid)
-	if p.group == nil || p.group.job == 0 {
+	if p.group == nil || p.group.JobForTest() == 0 {
 		t.Fatal("the child has no job")
 	}
-	if inJob(t, pid, p.group.job) {
+	if inJob(t, pid, p.group.JobForTest()) {
 		t.Errorf("the breakaway process %d is in the job of the child", pid)
 	}
 	_ = m.kill(id, "")

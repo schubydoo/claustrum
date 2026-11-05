@@ -17,6 +17,7 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // holdRecordWrite holds the next record write right after its temp file exists. It
@@ -267,7 +268,7 @@ func TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown(t *testing.T) {
 	killReapGrace = 100 * time.Millisecond
 	t.Cleanup(func() { killReapGrace = oldGrace })
 	realSignal := signalGroup
-	signalGroup = func(*procGroup, *os.Process, string) error { return nil }
+	signalGroup = func(*supervisor.ProcGroup, *os.Process, string) error { return nil }
 	t.Cleanup(func() { signalGroup = realSignal })
 
 	s, sock, _ := newTeardownServer(t)

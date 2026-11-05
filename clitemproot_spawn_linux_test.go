@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 func spawnLine(t *testing.T, id, command string, env map[string]string, flag bool) string {
@@ -144,7 +146,7 @@ func TestSpawnCLITempRootExitDoesNotWaitForTheLock(t *testing.T) {
 	p := s.procs.get("kw")
 	realSignal := signalGroup
 	var kills atomic.Int32
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc == p.cmd.Process && signame == "KILL" {
 			kills.Add(1)
 			return nil

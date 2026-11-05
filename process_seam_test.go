@@ -6,6 +6,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestSpawnSurvivesConfinementFailure covers spawn's confinement arm. Unlike the
@@ -16,7 +18,7 @@ import (
 // be registered with whatever group confinement handed back (nil from this seam;
 // see the last paragraph for production). On Unix the
 // call cannot fail at all — the process group came from sysproc.NewSysProcAttr and
-// confineProcess returns a nil error unconditionally — so no fixture reaches the
+// supervisor.ConfineProcess returns a nil error unconditionally — so no fixture reaches the
 // arm on the platform CI runs most.
 //
 // The assertions are on the OUTCOME, not on coverage: spawn must return the
@@ -26,14 +28,14 @@ import (
 // kill handle is missing.
 //
 // The seam returns nil, so p.group is asserted nil HERE. That is the pass-through
-// check, not a claim about production: Windows' confineProcess returns
-// &procGroup{} with a zero handle on every failure path, never nil (its
+// check, not a claim about production: Windows' supervisor.ConfineProcess returns
+// &supervisor.ProcGroup{} with a zero handle on every failure path, never nil (its
 // signal() then falls back to the parent). Both are nil-safe.
 func TestSpawnSurvivesConfinementFailure(t *testing.T) {
 	errConfine := errors.New("open process: access is denied")
 	old := confineProc
 	t.Cleanup(func() { confineProc = old })
-	confineProc = func(*os.Process, childJobs) (*procGroup, error) { return nil, errConfine }
+	confineProc = func(*os.Process, supervisor.ChildJobs) (*supervisor.ProcGroup, error) { return nil, errConfine }
 
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)

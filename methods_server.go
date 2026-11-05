@@ -7,6 +7,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 var capabilityMethods = []string{
@@ -99,13 +100,13 @@ const jobFeature = "process.spawn.job"
 // featuresFor is the features list of this daemon. A daemon that puts each child in a
 // job, which only Windows does, adds process.spawn.job after server.instance_id. With
 // CLAUDE_SSH_NO_JOBS=1 the name is not in the list (`52d82f0a`, measured on Windows).
-// The jobs of -keep-children (jobsKeep) list it too (claustrum's own).
+// The jobs of -keep-children (supervisor.JobsKeep) list it too (claustrum's own).
 func (s *server) featuresFor() []string {
 	list := capabilityFeatures
 	if !files.ReadRealAvailable() {
 		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == filesReadRealFeature })
 	}
-	if s.procs == nil || s.procs.jobs == jobsOff {
+	if s.procs == nil || s.procs.jobs == supervisor.JobsOff {
 		return list
 	}
 	return append(slices.Clip(list), jobFeature)

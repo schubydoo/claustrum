@@ -8,7 +8,7 @@ package childrec
 // reference daemon reports it is not the run-dir lock holder on windows and records no
 // children (a child spawned under a run-shaped socket leaves children/ empty). Claustrum
 // holds no run-dir lock on windows either (its runlock.LockRunFolder is a no-op
-// there), so this stays a no-op. r.RunDir is non-empty on windows too (execChildRunDir
+// there), so this stays a no-op. r.RunDir is non-empty on windows too (supervisor.ExecChildRunDir
 // gives the folder of the socket on every OS), but its only windows consumers are no-ops, so
 // it has no effect.
 func (r *Records) RecordChild(pid int, argv0, program string) {}

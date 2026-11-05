@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package supervisor
 
 import "github.com/schubydoo/claustrum/internal/logging"
 
@@ -12,7 +12,7 @@ const childJobsLine = "[daemon] job objects for child processes as the socket op
 
 // childJobsAtStart logs the job line and gives the job mode of the children. Jobs are
 // on unless the switch is set.
-func childJobsAtStart(off bool, mode childJobs) childJobs {
+func childJobsAtStart(off bool, mode ChildJobs) ChildJobs {
 	logging.Infof(childJobsLine, !off, off)
 	return mode
 }

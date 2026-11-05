@@ -18,6 +18,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/metrics"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // noSuchPid is the pid of a fake process behind the signalGroup seam. It is above the pid
@@ -274,7 +275,7 @@ done:
 			t.Errorf("missing log line %q\n--- captured ---\n%s", want, got)
 		}
 	}
-	// confineProcess succeeded, so the failure warn must NOT fire (a negated
+	// supervisor.ConfineProcess succeeded, so the failure warn must NOT fire (a negated
 	// err guard would log it on every spawn).
 	if strings.Contains(got, "confinement failed") {
 		t.Errorf("spurious confinement-failed warn on a successful spawn\n--- captured ---\n%s", got)
@@ -1108,7 +1109,7 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	oldSignal := signalGroup
 	t.Cleanup(func() { signalGroup = oldSignal })
 	var signals []string
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, _ *os.Process, name string) error {
 		signals = append(signals, name)
 		return nil
 	}
@@ -1167,7 +1168,7 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	t.Cleanup(func() { signalGroup = oldSignal })
 	var mu sync.Mutex
 	signaledPids := map[int]bool{}
-	signalGroup = func(_ *procGroup, proc *os.Process, _ string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, proc *os.Process, _ string) error {
 		mu.Lock()
 		signaledPids[proc.Pid] = true
 		mu.Unlock()
@@ -1216,7 +1217,7 @@ func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 	oldSignal := signalGroup
 	t.Cleanup(func() { signalGroup = oldSignal })
 	var signals []string
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, _ *os.Process, name string) error {
 		signals = append(signals, name)
 		if name == "KILL" {
 			return errors.New("kill refused by the fake")
@@ -1265,7 +1266,7 @@ func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
 	var p *managedProc
 	held := false
 	delivered := false
-	signalGroup = func(*procGroup, *os.Process, string) error {
+	signalGroup = func(*supervisor.ProcGroup, *os.Process, string) error {
 		delivered = true
 		// TryLock succeeds only if the lock is free — i.e. only if the check was
 		// released before the signal.

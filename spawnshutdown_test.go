@@ -15,6 +15,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // newTeardownServer boots a server on <tmp>/run/c1/rpc.sock with the accept wrap of
@@ -38,7 +39,7 @@ func newTeardownServer(t *testing.T) (*server, string, string) {
 	}
 	s := newTestServer(t)
 	s.ln = ln
-	s.procs.RunDir = execChildRunDir(sock)
+	s.procs.RunDir = supervisor.ExecChildRunDir(sock)
 	s.procs.HoldRunDir()
 	s.procs.InstanceID = s.instanceID
 	go func() {

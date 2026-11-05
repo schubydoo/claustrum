@@ -29,6 +29,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sockroute"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
@@ -372,8 +373,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	}()
 	// The run dir (CLAUDE_SSH_RUN_DIR) is the folder of the socket path, on every
 	// socket shape. spawn launches children through the exec-child trampoline (see
-	// execchild.go).
-	procs.RunDir = execChildRunDir(socket)
+	// internal/supervisor/execchild.go).
+	procs.RunDir = supervisor.ExecChildRunDir(socket)
 	// Hold the run dir open from here on, so a child record follows the folder
 	// through a rename (linux and darwin, a no-op on windows).
 	procs.HoldRunDir()
@@ -439,9 +440,9 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for unlinkOwnSocket)
 	// The job mode of the children, with its one line on Windows, before the peer-check
 	// line and the listening line. CLAUDE_SSH_NO_JOBS leaves the daemon environment here
-	// on every system (see childjobs.go). With -keep-children a job does not end its
+	// on every system (see internal/supervisor/childjobs.go). With -keep-children a job does not end its
 	// child when the daemon dies.
-	procs.jobs = startChildJobs(keepChildren)
+	procs.jobs = supervisor.StartChildJobs(keepChildren)
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).
@@ -462,7 +463,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 		stopLateLock:  claim.StopLate,
 		instanceID:    instanceID,
 		startedAt:     startedAt,
-		gitShadow:     git.NewShadowHost(execChildRunDir(socket)),
+		gitShadow:     git.NewShadowHost(supervisor.ExecChildRunDir(socket)),
 
 		peerCheck: gate,
 	}

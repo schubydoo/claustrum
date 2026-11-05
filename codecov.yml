@@ -165,13 +165,13 @@ component_management:
         - internal/git/fortest.go
         - methods_process.go
         # The data.reason member of a refused process.spawn start, with its OS split.
-        - spawnreason.go
-        - spawnreason_unix.go
-        - spawnreason_windows.go
+        - internal/supervisor/spawnreason.go
+        - internal/supervisor/spawnreason_unix.go
+        - internal/supervisor/spawnreason_windows.go
         # 89cb6289 managed launcher: launcher.resolve, the settings reader, the
         # process.spawn launcher checks and the child env strip, with its OS split.
         - methods_launcher.go
-        - spawncheck.go
+        - internal/supervisor/spawncheck.go
         - internal/install/managedsettings.go
         - internal/install/managedlauncher_unix.go
         - internal/install/managedlauncher_windows.go
@@ -338,22 +338,28 @@ component_management:
       name: process supervisor
       paths:
         - process.go
-        - sysproc_unix.go
-        - sysproc_windows.go
+        - internal/supervisor/sysproc_unix.go
+        - internal/supervisor/sysproc_windows.go
+        # The refused-signal error, the live-pid test and the test seams of the package.
+        - internal/supervisor/signalfailed.go
+        - internal/supervisor/pidinuse.go
+        - internal/supervisor/fortest.go
+        - internal/supervisor/fortest_unix.go
+        - internal/supervisor/fortest_windows.go
         # The process group, the reap, the env and close helpers and the capped text.
         - internal/sysproc/sysproc.go
         - internal/sysproc/sysproc_unix.go
         - internal/sysproc/sysproc_windows.go
-        - childjobs.go
-        - childjobs_windows.go
+        - internal/supervisor/childjobs.go
+        - internal/supervisor/childjobs_windows.go
         # 4534d86 exit-frame `signal` name: read from the wait status on unix, always
         # empty on Windows (parity).
         - internal/sysproc/process_signal_unix.go
         - internal/sysproc/process_signal_windows.go
         # 683cc6a9 temp-folder test of a spawn: an inherited temp-folder name whose
         # folder cannot take a file is not handed on (Linux and macOS).
-        - tempfolder_unix.go
-        - tempfolder_windows.go
+        - internal/supervisor/tempfolder_unix.go
+        - internal/supervisor/tempfolder_windows.go
         # the private temp folder of a spawn with cliTempRoot (Linux).
         - clitemproot_linux.go
         - clitemproot_other.go
@@ -379,11 +385,11 @@ component_management:
         # cross-platform (execchild.go); the trampoline is shared across unix
         # (execchild_unix.go) with an OS-specific start-time token (execchild_linux.go =
         # /proc ticks, execchild_darwin.go = ps start-time); windows uses the no-op.
-        - execchild.go
-        - execchild_unix.go
-        - execchild_linux.go
-        - execchild_darwin.go
-        - execchild_other.go
+        - internal/supervisor/execchild.go
+        - internal/supervisor/execchild_unix.go
+        - internal/supervisor/execchild_linux.go
+        - internal/supervisor/execchild_darwin.go
+        - internal/supervisor/execchild_other.go
         # 19f30c46 orphan registry: process.spawn writes <runDir>/children/<pid>.json so a
         # later daemon can reap a child left behind by a since-exited daemon. The record
         # struct + atomic write are cross-platform; the identity gather is OS-specific —

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // Tests for the process-side wire surface added by the reference daemon in
@@ -462,7 +463,7 @@ func TestCapabilitiesListTheJobNameOnlyWithJobs(t *testing.T) {
 		t.Errorf("jobs off: features = %v, want no %s", got, jobFeature)
 	}
 	want := append(slices.Clone(s.featuresFor()), jobFeature)
-	for _, jobs := range []childJobs{jobsOn, jobsKeep} {
+	for _, jobs := range []supervisor.ChildJobs{supervisor.JobsOn, supervisor.JobsKeep} {
 		s.procs.jobs = jobs
 		if got := s.featuresFor(); !slices.Equal(got, want) {
 			t.Errorf("jobs %d: features = %v, want %v", jobs, got, want)

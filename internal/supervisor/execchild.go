@@ -1,4 +1,4 @@
-package main
+package supervisor
 
 import (
 	"errors"
@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 )
 
-// readExecChildError consumes the exec-child trampoline's exec-error pipe after the
+// ReadExecChildError consumes the exec-child trampoline's exec-error pipe after the
 // wrapped command started: any bytes are the target's exec error (surfaced as the
 // spawn error, matching a direct Start failure); EOF — the CLOEXEC close on a
 // successful exec — means the target is running. It always closes the read end. The
 // caller must close its own write end first, or this blocks past EOF. Cross-platform
 // so spawn (in process.go) can call it unconditionally; off linux and darwin the trampoline
 // is a no-op that returns no pipe, so this is never reached there.
-func readExecChildError(r *os.File) error {
+func ReadExecChildError(r *os.File) error {
 	defer r.Close()
 	b, _ := io.ReadAll(r)
 	if len(b) > 0 {
@@ -23,7 +23,7 @@ func readExecChildError(r *os.File) error {
 	return nil
 }
 
-// execChildRunDir derives the run dir of the daemon from its socket path. The run dir
+// ExecChildRunDir derives the run dir of the daemon from its socket path. The run dir
 // is the folder of the socket path, cleaned lexically. It is not made absolute and no
 // symlink is resolved. It is "" only for an empty socket path.
 //
@@ -36,7 +36,7 @@ func readExecChildError(r *os.File) error {
 // A Linux abstract socket name (@name) gives the run dir "." here, with no special
 // case. The start then ends at the chmod of the socket, as on `5fd08069` (measured
 // on Linux).
-func execChildRunDir(socket string) string {
+func ExecChildRunDir(socket string) string {
 	if socket == "" {
 		return ""
 	}

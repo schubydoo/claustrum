@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package supervisor
 
 // cwdUnusable is false on Windows. The second cwd test is not measured there
 // (claustrum's own).

@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // spawnErrorOf sends one process.spawn and returns the raw error member of the
@@ -75,13 +76,6 @@ func TestSpawnRefusalReasons(t *testing.T) {
 	}
 }
 
-// TestSpawnFailureReasonFallback pins the reason of an error that no rule lists.
-func TestSpawnFailureReasonFallback(t *testing.T) {
-	if got := spawnFailureReason(errors.New("x"), ""); got.Reason != "other" {
-		t.Fatalf("reason = %q, want other", got.Reason)
-	}
-}
-
 func statErrText(t *testing.T, p string) string {
 	t.Helper()
 	_, err := os.Stat(p)
@@ -97,10 +91,10 @@ func statErrText(t *testing.T, p string) string {
 func errJSON(t *testing.T, code int, msg, reason string) string {
 	t.Helper()
 	b, err := json.Marshal(struct {
-		Code    int         `json:"code"`
-		Message string      `json:"message"`
-		Data    spawnReason `json:"data"`
-	}{code, msg, spawnReason{reason}})
+		Code    int                    `json:"code"`
+		Message string                 `json:"message"`
+		Data    supervisor.SpawnReason `json:"data"`
+	}{code, msg, supervisor.SpawnReason{Reason: reason}})
 	if err != nil {
 		t.Fatal(err)
 	}

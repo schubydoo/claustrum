@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package main
+package supervisor
 
 import (
 	"os/exec"
@@ -24,7 +24,7 @@ func TestWrapCmdFallsBackWhenNoSelf(t *testing.T) {
 	cmd := exec.Command("/bin/echo", "hi")
 	// Two stale entries: the run dir entry goes to the end and the child marker goes.
 	cmd.Env = []string{"CLAUDE_SSH_RUN_DIR=/stale", "PATH=/usr/bin", "CLAUDE_SSH_CHILD=1:1"}
-	r, w := wrapCmdWithTrampoline(cmd, "/opt/claude/run/c0ffee01")
+	r, w := WrapCmdWithTrampoline(cmd, "/opt/claude/run/c0ffee01")
 
 	if r != nil || w != nil {
 		t.Error("no-self fallback returned an exec-error pipe; want nil,nil (direct spawn)")
@@ -55,13 +55,13 @@ func TestHoldRestoreGoEnvRoundTrip(t *testing.T) {
 		if slices.ContainsFunc(held, func(e string) bool { return strings.HasPrefix(e, name+"=") }) {
 			t.Errorf("after hold, bare %s still present: %v", name, held)
 		}
-		if !slices.Contains(held, heldEnvPrefix+name+"="+goVal(in, name)) {
-			t.Errorf("after hold, %s%s not stashed", heldEnvPrefix, name)
+		if !slices.Contains(held, HeldEnvPrefix+name+"="+goVal(in, name)) {
+			t.Errorf("after hold, %s%s not stashed", HeldEnvPrefix, name)
 		}
 	}
 	got := restoreHeldEnv(held)
 	for _, e := range got {
-		if strings.HasPrefix(e, heldEnvPrefix) {
+		if strings.HasPrefix(e, HeldEnvPrefix) {
 			t.Errorf("restore left a held residue: %q", e)
 		}
 	}
@@ -77,8 +77,8 @@ func TestHoldRestoreGoEnvRoundTrip(t *testing.T) {
 // (greptile P1). The real held Go var is still restored, and its held entry consumed.
 func TestRestoreHeldEnvIgnoresStrayPrefix(t *testing.T) {
 	in := []string{
-		heldEnvPrefix + "GODEBUG=x=1", // a real held Go var -> restored to GODEBUG=x=1
-		heldEnvPrefix + "FOO=evil",    // NOT a held var -> must NOT become FOO=evil
+		HeldEnvPrefix + "GODEBUG=x=1", // a real held Go var -> restored to GODEBUG=x=1
+		HeldEnvPrefix + "FOO=evil",    // NOT a held var -> must NOT become FOO=evil
 		"FOO=legit",
 		"PATH=/usr/bin",
 	}
@@ -87,15 +87,15 @@ func TestRestoreHeldEnvIgnoresStrayPrefix(t *testing.T) {
 		t.Errorf("held Go var GODEBUG not restored: %v", got)
 	}
 	if slices.Contains(got, "FOO=evil") {
-		t.Errorf("stray %sFOO was un-prefixed into FOO=evil (env injection): %v", heldEnvPrefix, got)
+		t.Errorf("stray %sFOO was un-prefixed into FOO=evil (env injection): %v", HeldEnvPrefix, got)
 	}
 	if !slices.Contains(got, "FOO=legit") {
 		t.Errorf("caller's own FOO=legit must survive, not be overridden: %v", got)
 	}
-	if !slices.Contains(got, heldEnvPrefix+"FOO=evil") {
+	if !slices.Contains(got, HeldEnvPrefix+"FOO=evil") {
 		t.Errorf("stray held-prefix entry should pass through untouched: %v", got)
 	}
-	if slices.Contains(got, heldEnvPrefix+"GODEBUG=x=1") {
+	if slices.Contains(got, HeldEnvPrefix+"GODEBUG=x=1") {
 		t.Errorf("recognized held entry should be consumed, not left as residue: %v", got)
 	}
 }
@@ -105,7 +105,7 @@ func TestRestoreHeldEnvIgnoresStrayPrefix(t *testing.T) {
 // CLAUDE_SSH_HELD_GOGC next to a GOGC that the wrap holds. No row measures this. It is
 // claustrum's own choice.
 func TestRestoreHeldEnvLastHeldValueWins(t *testing.T) {
-	got := restoreHeldEnv([]string{heldEnvPrefix + "GOGC=1", "X=y", heldEnvPrefix + "GOGC=2"})
+	got := restoreHeldEnv([]string{HeldEnvPrefix + "GOGC=1", "X=y", HeldEnvPrefix + "GOGC=2"})
 	if want := []string{"GOGC=2", "X=y"}; !slices.Equal(got, want) {
 		t.Errorf("restoreHeldEnv = %v, want %v", got, want)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestLinkBoundGoneAtSpawn: a link whose connection is already gone makes the
@@ -139,7 +140,7 @@ func TestLinkBoundNoEndAfterShutdownBegan(t *testing.T) {
 		t.Fatal(err)
 	}
 	real := signalGroup
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc.Pid == p.pid {
 			mu.Lock()
 			got = append(got, signame)
@@ -219,7 +220,7 @@ func TestPlainSpawnDoesNotReplaceLinkBound(t *testing.T) {
 			mu.Unlock()
 		}
 	}
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		mu.Lock()
 		if signame == "KILL" {
 			kills[proc.Pid]++
