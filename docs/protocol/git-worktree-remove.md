@@ -112,7 +112,7 @@ With `worktreeRoot`:
 On both:
 
 - The home guard ([D2](../DIVERGENCES.md#d2)) runs before the delete, with and without `worktreeRoot`.
-- A `baseRepo` inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)) is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`. On Windows `..` drops the name before it untested, so `<T>\t.txt\..`, `<T>\missing\..` and a junction before `..` pass (`b3081b51`, measured on Windows).
+- A `baseRepo` inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)) is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`. On Windows `..` drops the name before it untested, so `<T>\t.txt\..`, `<T>\missing\..` and a junction before `..` pass (`b3081b51`, measured on Windows). The same walk serves `git.worktree_create` and `git.list_branches`. A parent folder that denies List to the daemon passes it too (claustrum's own, not measured).
 - If the last component of `worktreePath` is a symbolic link, the text is `refusing to remove worktree: <t> is a symbolic link, not a worktree directory`. If it is not a directory, the text is `refusing to remove worktree: <t> is not a directory`. `<t>` is the path with the symbolic links of `baseRepo`, or of the root, resolved. On macOS a path under `/tmp` therefore reads `/private/tmp/…`.
 - On Windows, a junction at any directory between `baseRepo` and the worktree is refused ([D19](../DIVERGENCES.md#d19)).
 
@@ -155,7 +155,7 @@ The steps, in order:
 
 No delete follows a symbolic link out of the worktree directory or out of its parent.
 
-Without `worktreeRoot`, a `baseRepo` that does not exist, such as `<T>/missing/..`, still lets the worktree directory go. Its registration stays. With no `git` on `PATH`, a worktree directory that exists gets the lock-check refusal, and nothing is deleted. A gone one gets success, with `branchKept` when the request names a branch, and its registration stays.
+On Linux and macOS without `worktreeRoot`, a `baseRepo` that does not exist, such as `<T>/missing/..`, still lets the worktree directory go. Its registration stays. With no `git` on `PATH`, a worktree directory that exists gets the lock-check refusal, and nothing is deleted. A gone one gets success, with `branchKept` when the request names a branch, and its registration stays.
 
 With `worktreeRoot`, a directory without a verified registration goes in two cases only: it is empty, or it is a stale worktree of `baseRepo` whose registration is gone. Any other directory is refused and stays: `refusing to remove worktree: <p> is not a worktree of <repo> (<reason>), so it is left in place; remove it by hand if it is a leftover`. For a missing `baseRepo`, the reason `` `<p>` has no .git file `` puts the path in backticks (`b3081b51`, measured on Linux and macOS). Windows is claustrum's own, not measured. For a `baseRepo` that exists the path stays plain (claustrum's own, not measured). A read error there gives `failed to remove worktree: could not verify that <p> is a worktree of <repo> (<detail>); retry`, with the cleaned path as `<p>`. A `baseRepo` that does not exist with no `git` on `PATH` gives the `the repository at <repo> could not be read` text.
 
