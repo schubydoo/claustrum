@@ -21,14 +21,14 @@ func TestStopChildrenKeepsChildAlive(t *testing.T) {
 	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c, "keep", sleep, []string{"60"}, "", env, false); err != nil {
+	if _, err := m.Spawn(c, "keep", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	pid := m.get("keep").pid
+	pid := m.Get("keep").Pid()
 	if pid <= 0 {
 		t.Fatalf("spawned child has no pid (%d)", pid)
 	}
-	t.Cleanup(m.killAll) // never leak the 60s sleeper
+	t.Cleanup(m.KillAll) // never leak the 60s sleeper
 
 	s := &server{procs: m, keepChildren: true}
 	s.stopChildren()
@@ -52,10 +52,10 @@ func TestStopChildrenKillsChildByDefault(t *testing.T) {
 	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c, "kill", sleep, []string{"60"}, "", env, false); err != nil {
+	if _, err := m.Spawn(c, "kill", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	pid := m.get("kill").pid
+	pid := m.Get("kill").Pid()
 
 	s := &server{procs: m, keepChildren: false}
 	s.stopChildren()

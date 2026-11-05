@@ -43,7 +43,7 @@ func TestSocketSpawnWritesChildRecord(t *testing.T) {
 		t.Fatal(merr)
 	}
 	cl.call(string(body))
-	t.Cleanup(func() { s.procs.killAll() }) // reap the sleeper
+	t.Cleanup(func() { s.procs.KillAll() }) // reap the sleeper
 
 	// RecordChild runs synchronously in spawn, so the record exists by the time the
 	// spawn reply returned. Read the sole record in the children dir.

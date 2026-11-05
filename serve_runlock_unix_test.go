@@ -28,7 +28,7 @@ func TestNewServerOnSocketWritesRunLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 
 	lockPath := filepath.Join(dir, runlock.LockName)
 	rec, err := readOwnerRecord(lockPath)
@@ -118,7 +118,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.releaseRunDir(); s.procs.killAll() })
+	t.Cleanup(func() { s.releaseRunDir(); s.procs.KillAll() })
 	if !strings.Contains(buf.String(), runlock.NotHolderLine) {
 		t.Fatalf("log = %q, want the start without the lock", buf.String())
 	}
@@ -187,7 +187,7 @@ func TestLateRunDirLockStopsAtShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.releaseRunDir(); s.procs.killAll() })
+	t.Cleanup(func() { s.releaseRunDir(); s.procs.KillAll() })
 
 	s.signalShutdown()
 	letGo()

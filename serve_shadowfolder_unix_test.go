@@ -60,7 +60,7 @@ func TestServeDaemonRemovesItsShadowFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 	t.Cleanup(func() { _ = s.ln.Close() })
 	line := strings.Replace(rpcLine(t, "git.info", map[string]any{"path": repo}), testToken, "tok", 1)
 	if raw := dispatchRaw(t, s, line); !strings.Contains(raw, `"settingsControl":"shadow"`) {

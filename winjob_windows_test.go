@@ -12,6 +12,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"golang.org/x/sys/windows"
 )
 
@@ -68,7 +69,7 @@ func launchInJob(t *testing.T, job windows.Handle) (int, string) {
 	}
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	launcher := exec.Command(exe, pidFile)
-	launcher.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "detach-launch"})
+	launcher.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "detach-launch"})
 	var stderr strings.Builder
 	launcher.Stderr = &stderr
 	stdin, err := launcher.StdinPipe()
@@ -169,25 +170,25 @@ func TestDaemonChildStartsInAJobWithoutBreakaway(t *testing.T) {
 // the grandchild its own NUL stdio. mode "tree-stdio" lets it inherit the stdout and
 // stderr of the child. The cleanups end the child and the grandchild by their recorded
 // pids, also after a failed assertion: with no job, nothing else ends a grandchild.
-func spawnTree(t *testing.T, m *procManager, id, mode string) (*managedProc, int) {
+func spawnTree(t *testing.T, m *supervisor.Manager, id, mode string) (*supervisor.Proc, int) {
 	t.Helper()
 	return spawnTreeFor(t, t, m, id, mode)
 }
 
 // spawnTreeFor is spawnTree, but the cleanup that ends the grandchild belongs to owner.
 // A row of a test can so leave its grandchild alive for a check of the parent test.
-func spawnTreeFor(t *testing.T, owner testing.TB, m *procManager, id, mode string) (*managedProc, int) {
+func spawnTreeFor(t *testing.T, owner testing.TB, m *supervisor.Manager, id, mode string) (*supervisor.Proc, int) {
 	t.Helper()
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, mode)
 	pidFile := filepath.Join(t.TempDir(), "gpid")
-	p, err := m.spawn(c, id, exe, []string{pidFile}, "", env, true)
+	p, err := m.Spawn(c, id, exe, []string{pidFile}, "", env, true)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	holdOwnPid(t, p.pid)
+	holdOwnPid(t, p.Pid())
 	if mode == "tree" {
-		if !m.writeStdin(id, []byte("g")) { // go-ahead: the helper starts its grandchild now
+		if !m.WriteStdin(id, []byte("g")) { // go-ahead: the helper starts its grandchild now
 			t.Fatal("stdin go-ahead refused")
 		}
 	}
@@ -341,7 +342,7 @@ func TestChildSurvivesAKilledDaemon(t *testing.T) {
 	}
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	daemon := exec.Command(exe, pidFile, "no-job")
-	daemon.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
+	daemon.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
 	if err := daemon.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}

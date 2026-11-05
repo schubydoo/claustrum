@@ -4,6 +4,7 @@ package supervisor
 
 import (
 	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 
@@ -27,6 +28,17 @@ func refusingSignals(t *testing.T, err error) *[]string {
 		return err
 	}
 	return &calls
+}
+
+// refusedChild is a live record that no exit ends. Its pid is above every pid limit,
+// so a signal that misses the seams finds no process.
+func refusedChild(m *Manager, id string) *Proc {
+	p := &Proc{
+		id: id, running: true, group: &ProcGroup{},
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
+	}
+	m.procs[id] = p
+	return p
 }
 
 // SignalProcessGroup refuses pid 0 and pid 1 with an error for every signal name, before

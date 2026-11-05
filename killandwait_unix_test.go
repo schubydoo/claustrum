@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // spawnIgnoreTerm spawns the ignore-term helper (ignores SIGTERM) and blocks until
@@ -38,9 +39,8 @@ func killWait(t *testing.T, cl *testClient, body string) rpc.KillAndWaitResult {
 // process.killAndWait escalates to SIGKILL when the graceful signal is ignored,
 // reporting escalated:true. Unix-only: escalation is a POSIX process-group concern.
 func TestKillAndWaitEscalation(t *testing.T) {
-	old := defaultKillWaitMs
-	defaultKillWaitMs = 300
-	t.Cleanup(func() { defaultKillWaitMs = old })
+	old := supervisor.SetDefaultKillWaitMsForTest(300)
+	t.Cleanup(func() { supervisor.SetDefaultKillWaitMsForTest(old) })
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -58,9 +58,8 @@ func TestKillAndWaitEscalation(t *testing.T) {
 // escalate:false leaves a stubborn (SIGTERM-ignoring) process running after the
 // grace and reports died:false with no escalation.
 func TestKillAndWaitNoEscalate(t *testing.T) {
-	old := defaultKillWaitMs
-	defaultKillWaitMs = 300
-	t.Cleanup(func() { defaultKillWaitMs = old })
+	old := supervisor.SetDefaultKillWaitMsForTest(300)
+	t.Cleanup(func() { supervisor.SetDefaultKillWaitMsForTest(old) })
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -96,7 +95,7 @@ func TestKillAndWaitTimeoutMs(t *testing.T) {
 	}
 }
 
-// The clamp must reach the WAIT, not merely exist. clampKillWaitMs is unit-tested
+// The clamp must reach the WAIT, not merely exist. supervisor.ClampKillWaitMs is unit-tested
 // separately; that says nothing about whether processKillAndWait calls it, and a
 // call site that passed timeoutMs through raw would leave every other test green.
 //
@@ -105,9 +104,8 @@ func TestKillAndWaitTimeoutMs(t *testing.T) {
 // clamped value rather than the requested one. Unix-only, because it needs a
 // process that can ignore SIGTERM.
 func TestKillAndWaitClampReachesTheGrace(t *testing.T) {
-	oldMax := maxKillWaitMs
-	maxKillWaitMs = 250 // stand-in ceiling; the real one is 30s and untestable in CI
-	t.Cleanup(func() { maxKillWaitMs = oldMax })
+	oldMax := supervisor.SetMaxKillWaitMsForTest(250) // stand-in ceiling; the real one is 30s and untestable in CI
+	t.Cleanup(func() { supervisor.SetMaxKillWaitMsForTest(oldMax) })
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)

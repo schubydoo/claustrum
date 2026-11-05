@@ -39,13 +39,13 @@ func holdRecordWrite(t *testing.T) (held <-chan struct{}, release func()) {
 
 // spawnHeldSleeper spawns a 60 s sleeper in a goroutine and waits until its record
 // write is held. The returned channel gives the result of the spawn.
-func spawnHeldSleeper(t *testing.T, s *server, held <-chan struct{}) <-chan *managedProc {
+func spawnHeldSleeper(t *testing.T, s *server, held <-chan struct{}) <-chan *supervisor.Proc {
 	t.Helper()
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "sleep")
-	spawned := make(chan *managedProc, 1)
+	spawned := make(chan *supervisor.Proc, 1)
 	go func() {
-		mp, err := s.procs.spawn(c, "rec", exe, []string{"60"}, "", env, true)
+		mp, err := s.procs.Spawn(c, "rec", exe, []string{"60"}, "", env, true)
 		if err != nil {
 			t.Errorf("spawn: %v", err)
 		}
@@ -61,9 +61,9 @@ func spawnHeldSleeper(t *testing.T, s *server, held <-chan struct{}) <-chan *man
 
 // awaitHeldSpawnEnd waits for the held spawn and then for the end of its child, so
 // the exit line of the child does not land in the log capture of a later test.
-func awaitHeldSpawnEnd(t *testing.T, spawned <-chan *managedProc) {
+func awaitHeldSpawnEnd(t *testing.T, spawned <-chan *supervisor.Proc) {
 	t.Helper()
-	var mp *managedProc
+	var mp *supervisor.Proc
 	select {
 	case mp = <-spawned:
 	case <-time.After(10 * time.Second):
@@ -73,7 +73,7 @@ func awaitHeldSpawnEnd(t *testing.T, spawned <-chan *managedProc) {
 		return
 	}
 	select {
-	case <-mp.done:
+	case <-mp.DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Error("the child of the held spawn did not end in 10 s")
 	}
@@ -203,14 +203,13 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 	var once sync.Once
 	letGo := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(letGo)
-	oldHook := afterChildStart
-	afterChildStart = func(id string, pid int) {
+	oldHook := supervisor.SetAfterChildStartForTest(func(id string, pid int) {
 		if id == "late" {
 			held <- pid
 			<-release
 		}
-	}
-	t.Cleanup(func() { afterChildStart = oldHook })
+	})
+	t.Cleanup(func() { supervisor.SetAfterChildStartForTest(oldHook) })
 
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "sleep")
@@ -250,7 +249,7 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 	if strings.Contains(logs.String(), "Process late started") {
 		t.Error("the log has a start line for the late start")
 	}
-	if p := s.procs.get("late"); p != nil {
+	if p := s.procs.Get("late"); p != nil {
 		endOwnChild(t, p)
 		t.Error("the late start is in the table")
 	}
@@ -264,26 +263,24 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 // after killReapGrace, and the teardown ends. Then the test ends its own child. That
 // pid is not reaped yet, so the signal reaches that child only.
 func TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown(t *testing.T) {
-	oldGrace := killReapGrace
-	killReapGrace = 100 * time.Millisecond
-	t.Cleanup(func() { killReapGrace = oldGrace })
-	realSignal := signalGroup
-	signalGroup = func(*supervisor.ProcGroup, *os.Process, string) error { return nil }
-	t.Cleanup(func() { signalGroup = realSignal })
+	const reapGrace = 100 * time.Millisecond
+	oldGrace := supervisor.SetKillReapGraceForTest(reapGrace)
+	t.Cleanup(func() { supervisor.SetKillReapGraceForTest(oldGrace) })
+	realSignal := supervisor.SetSignalGroupForTest(func(*supervisor.ProcGroup, *os.Process, string) error { return nil })
+	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
 
 	s, sock, _ := newTeardownServer(t)
 	held, release := make(chan int, 1), make(chan struct{})
 	var once sync.Once
 	letGo := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(letGo)
-	oldHook := afterChildStart
-	afterChildStart = func(id string, pid int) {
+	oldHook := supervisor.SetAfterChildStartForTest(func(id string, pid int) {
 		if id == "stuck" {
 			held <- pid
 			<-release
 		}
-	}
-	t.Cleanup(func() { afterChildStart = oldHook })
+	})
+	t.Cleanup(func() { supervisor.SetAfterChildStartForTest(oldHook) })
 
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "sleep")
@@ -319,7 +316,7 @@ func TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown(t *testing.T) {
 			b, _ := json.Marshal(*resp)
 			t.Errorf("the late start got the frame %s, want none", b)
 		}
-	case <-time.After(30 * killReapGrace):
+	case <-time.After(30 * reapGrace):
 		endChild()
 		<-got
 		t.Fatal("the late start did not return within 30 times killReapGrace")

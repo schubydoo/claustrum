@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestBridgeStdoutHidesReadFrom pins that the bridge writer offers no ReadFrom,
@@ -38,7 +40,7 @@ func TestBridgeExitsZeroOnClosedStdout(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(exe)
-	cmd.Env = buildEnv(env)
+	cmd.Env = supervisor.BuildEnv(env)
 	cmd.Stdin, cmd.Stdout = inR, outW
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

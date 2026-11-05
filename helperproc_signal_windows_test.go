@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"golang.org/x/sys/windows"
 )
 
@@ -41,17 +42,17 @@ func breakawayStart(cmd *exec.Cmd) {
 
 // childJobState tells whether the child p is in the job of its group: "in-job" or
 // "no-job". The "spawn-hold" helper writes it for a test that cannot see that job.
-func childJobState(p *managedProc) string {
-	if p.group == nil || p.group.JobForTest() == 0 {
+func childJobState(p *supervisor.Proc) string {
+	if p.GroupForTest() == nil || p.GroupForTest().JobForTest() == 0 {
 		return "no-job"
 	}
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(p.pid))
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(p.Pid()))
 	if err != nil {
 		return "no-job"
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 	var res int32
-	if r, _, _ := procIsProcessInJob.Call(uintptr(h), uintptr(p.group.JobForTest()), uintptr(unsafe.Pointer(&res))); r == 0 || res == 0 {
+	if r, _, _ := procIsProcessInJob.Call(uintptr(h), uintptr(p.GroupForTest().JobForTest()), uintptr(unsafe.Pointer(&res))); r == 0 || res == 0 {
 		return "no-job"
 	}
 	return "in-job"

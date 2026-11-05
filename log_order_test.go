@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // markConn logs a marker line into the captured log just before each Write and
@@ -159,7 +160,7 @@ func TestConnectionLineFormatLengths(t *testing.T) {
 		{conn.FmtWriteFailed, 51},
 		{conn.FmtReplyFailed, 37},
 		{fmtScannerErr, 32},
-		{fmtProcExited, 50},
+		{supervisor.FmtProcExited, 50},
 	} {
 		if len(c.format) != c.n {
 			t.Errorf("%q is %d bytes, want %d", c.format, len(c.format), c.n)

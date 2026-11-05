@@ -159,7 +159,7 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 		return false
 	}
 	logging.Warnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
-		(now - w.orphanedAt).Round(time.Second), w.failedProbes, s.procs.runningCount())
+		(now - w.orphanedAt).Round(time.Second), w.failedProbes, s.procs.RunningCount())
 	logging.Infof("[Server] shutdown requested")
 	s.signalShutdown()
 	return true

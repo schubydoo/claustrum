@@ -29,7 +29,7 @@ func TestLauncherChildRecordNamesProgram(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, sock := newRunningServerAt(t, filepath.Join(runDir, "rpc.sock"))
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 	cl := dial(t, sock)
 	wrap, exe := wrapLauncherFixture(t)
 

@@ -913,7 +913,7 @@ const (
 // Windows: a CLI that answers at 28 s passes, and one that answers at 33 s gives
 // __CLI_HUNG__ at 30.0 s. -probe-cli is a standalone mode Claude Desktop drives to
 // classify a CLI binary, and the reference always bounds it. It is a var, not a
-// const, only so tests can shrink it (same idiom as stdinQueueCap in process.go of package main).
+// const, only so tests can shrink it (same idiom as stdinQueueCap in internal/supervisor/process.go).
 var probeCLITimeout = 30 * time.Second
 
 // probeCLIKillGrace is the WaitDelay the -probe-cli mode puts on the probe. Once the

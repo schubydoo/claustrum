@@ -83,7 +83,7 @@ func TestPipeTransportServesJSONRPC(t *testing.T) {
 	t.Cleanup(func() {
 		_ = pln.Close()
 		removePipeNameFile(sock)
-		s.procs.killAll()
+		s.procs.KillAll()
 	})
 
 	// A client learns the opaque pipe name from rpc.pipe, written beside the socket

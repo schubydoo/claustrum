@@ -178,7 +178,7 @@ func treeFixture(t *testing.T, pidFile string) *exec.Cmd {
 	t.Helper()
 	exe, env := helperCommand(t, "tree")
 	cmd := exec.Command(exe, pidFile)
-	cmd.Env = buildEnv(env)
+	cmd.Env = BuildEnv(env)
 	cmd.Stdin = strings.NewReader("g")
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	return cmd

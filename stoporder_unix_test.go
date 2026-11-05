@@ -39,7 +39,7 @@ func TestCloseAllRemovesSocketBeforeConnections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 	fake := &statAtCloseConn{socket: sock}
 	s.mu.Lock()
 	s.conns[conn.New(fake, nil, 0, nil, nil, nil)] = struct{}{}
@@ -66,8 +66,8 @@ func TestCloseAllKillsChildrenBeforeTokenAndLock(t *testing.T) {
 	token := filepath.Join(dir, tokenfile.Name)
 	// The seam is set before the daemon starts, so no goroutine of the daemon reads
 	// it while the test writes it.
-	realSignal := signalGroup
-	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
+	realSignal := supervisor.SignalGroupForTest()
+	supervisor.SetSignalGroupForTest(func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if signame == "KILL" {
 			kills.Add(1)
 			if _, err := os.Stat(token); err == nil {
@@ -78,14 +78,14 @@ func TestCloseAllKillsChildrenBeforeTokenAndLock(t *testing.T) {
 			}
 		}
 		return realSignal(g, proc, signame)
-	}
-	t.Cleanup(func() { signalGroup = realSignal })
+	})
+	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
 
 	s, err := newServerOnSocket(sock, testToken, "", wirelog.Options{}, false, false)
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 	t.Cleanup(func() { _ = s.ln.Close() })
 	if s.releaseRunDir == nil {
 		t.Fatal("the daemon has no run-dir release")

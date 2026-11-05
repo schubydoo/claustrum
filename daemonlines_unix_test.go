@@ -103,7 +103,7 @@ func TestOrphanExitLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 	s.startAcceptLoops()
 	if err := os.Remove(sock); err != nil {
 		t.Fatal(err)

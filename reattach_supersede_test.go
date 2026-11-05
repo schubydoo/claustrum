@@ -53,11 +53,11 @@ func TestSupersededConnectionIsNotClosedTwice(t *testing.T) {
 
 	old, ac := activityPipeConn(t)
 	exe, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(old, "twice", exe, []string{"30"}, "", env, false); err != nil {
+	if _, err := m.Spawn(old, "twice", exe, []string{"30"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	fresh, _ := activityPipeConn(t)
-	if _, found, _, _, _, _ := m.reattach(fresh, "twice", 0); !found {
+	if _, found, _, _, _, _ := m.Reattach(fresh, "twice", 0); !found {
 		t.Fatal("reattach did not find the live process")
 	}
 

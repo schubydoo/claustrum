@@ -72,7 +72,7 @@ var osExit = os.Exit
 type server struct {
 	token string
 	ln    net.Listener
-	procs *procManager
+	procs *supervisor.Manager
 
 	// socket is the path that ln was bound for. A long path is bound by a shorter
 	// name (sockroute.Listen), so ln.Addr() can differ from it.
@@ -313,7 +313,7 @@ func childToken(tokenFile string) (string, error) {
 		return "", fmt.Errorf("token is empty")
 	}
 	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
-	// Drop our internal re-exec sentinel now that we have consumed it: buildEnv
+	// Drop our internal re-exec sentinel now that we have consumed it: supervisor.BuildEnv
 	// bases process.spawn children on os.Environ(), and the reference daemon's
 	// environ has no CLAUSTRUM_DAEMON_CHILD — leaking it would be a (detectable)
 	// divergence. The reference-parity marker (daemonChildMarker) stays set.
@@ -363,12 +363,12 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// Windows it takes no lock and prints one line (see internal/runlock).
 	instanceID := newDaemonInstanceID()
 	claim := runlock.LockRunFolder(socket, "serve")
-	procs := newProcManager()
+	procs := supervisor.NewManager()
 	defer func() {
 		if !ok {
 			wlog.Close()
 			claim.Release()
-			procs.close()
+			procs.Close()
 		}
 	}()
 	// The run dir (CLAUDE_SSH_RUN_DIR) is the folder of the socket path, on every
@@ -442,7 +442,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// line and the listening line. CLAUDE_SSH_NO_JOBS leaves the daemon environment here
 	// on every system (see internal/supervisor/childjobs.go). With -keep-children a job does not end its
 	// child when the daemon dies.
-	procs.jobs = supervisor.StartChildJobs(keepChildren)
+	procs.Jobs = supervisor.StartChildJobs(keepChildren)
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).
@@ -916,7 +916,7 @@ func (s *server) serveConn(c *conn.Conn) {
 		}
 		delete(s.conns, c)
 		s.mu.Unlock()
-		s.procs.detachConn(c)
+		s.procs.DetachConn(c)
 	}()
 
 	spoke.r = c.NC()
@@ -1014,7 +1014,7 @@ func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bo
 	// recovery".
 	// The stdin ticket covers DISPATCH ONLY, never the response write.
 	// dispatch appends the chunk to the process's existing stdin FIFO
-	// (applyStdin) before it returns, so byte order is already fixed by
+	// (supervisor.Proc.ApplyStdin) before it returns, so byte order is already fixed by
 	// then. Holding the ticket across Conn.WriteResponse would add nothing to
 	// ordering and would couple input admission to response delivery: a
 	// client that stops reading blocks the socket write, and every later
@@ -1115,12 +1115,12 @@ func isChanClosed(ch chan struct{}) bool {
 }
 
 // signalShutdown requests a graceful stop exactly once. From here a spawn that has
-// not passed the check before the start starts no child (refuseStarts). It does not
+// not passed the check before the start starts no child (supervisor.Manager.RefuseStarts). It does not
 // block, so the teardown drops the connections at once.
 func (s *server) signalShutdown() {
 	s.once.Do(func() {
 		if s.procs != nil {
-			s.procs.refuseStarts()
+			s.procs.RefuseStarts()
 		}
 		// No late try of the run-dir lock takes the lock once the shutdown began
 		// (claustrum's own, not measured).
@@ -1246,11 +1246,11 @@ func (s *server) closeAll(socket string) {
 	if s.pipeLn != nil {
 		_ = s.pipeLn.Close()
 	}
-	// Wait for the spawns that passed the check before the start (stopStarts). It
+	// Wait for the spawns that passed the check before the start (supervisor.Manager.StopStarts). It
 	// comes after the drop, so the connections still close at once. Then the kill
 	// below and the record removals of -keep-children see every child whose start
 	// returned before the shutdown began, and no record write is open at the exit.
-	s.procs.stopStarts()
+	s.procs.StopStarts()
 	// The children get the kill before the token removal and the lock release, as on
 	// 5fd08069 (Linux, 3 of 3 runs). macOS runs this code too, and that order is not
 	// measured there.
@@ -1271,16 +1271,16 @@ func (s *server) closeAll(socket string) {
 	// With -keep-children the kept children lose their records while this daemon
 	// still holds the lock. A successor takes the lock only after the release below,
 	// so its reap finds no record of a kept child (linux and darwin, a no-op
-	// elsewhere). claustrum's own rule: see forgetKeptRecords.
+	// elsewhere). claustrum's own rule: see supervisor.Manager.ForgetKeptRecords.
 	if s.keepChildren {
-		s.procs.forgetKeptRecords()
+		s.procs.ForgetKeptRecords()
 	}
 	// Drop the run-dir lock if this daemon holds it: truncate the owner record and
 	// unlock daemon.lock, leaving the file in place.
 	if s.releaseRunDir != nil {
 		s.releaseRunDir()
 	}
-	s.procs.close() // end the prune sweep; idempotent
+	s.procs.Close() // end the prune sweep; idempotent
 	// The word "ended" is that of b3081b51, where be1c1ca5 said "killed" (measured on
 	// Linux, macOS and Windows).
 	logging.Infof("[Server] cleanup: closed %d connection(s), ended %d child process group(s)", closed, killed)
@@ -1334,17 +1334,17 @@ func (s *server) dropConns() int {
 // With -keep-children that number is 0.
 func (s *server) stopChildren() int {
 	if s.keepChildren {
-		s.procs.endPendingFarewells()
-		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.runningCount())
+		s.procs.EndPendingFarewells()
+		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.RunningCount())
 		return 0
 	}
-	killed := s.procs.killAllCount()
+	killed := s.procs.KillAllCount()
 	// Wait for the killed children to end, so the end of each one removes its
 	// registry record before the daemon exits (linux and darwin, a no-op
 	// elsewhere). The wait is bounded by shutdownRecordWait. It does
 	// not cover the exited line of such a child. That line prints only when the exit
 	// goroutine reaches it before the daemon exits (see exitLogSuffix). With
 	// -keep-children the children stay, and this wait does not run.
-	s.procs.awaitRecordsRemoved()
+	s.procs.AwaitRecordsRemoved()
 	return killed
 }

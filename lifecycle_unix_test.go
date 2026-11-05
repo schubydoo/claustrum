@@ -117,7 +117,7 @@ func TestNewServerOnSocketBootAndCloseAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 
 	if fi, err := os.Stat(sock); err != nil {
 		t.Fatalf("socket missing: %v", err)

@@ -58,7 +58,7 @@ func newTeardownServer(t *testing.T) (*server, string, string) {
 	}()
 	t.Cleanup(func() {
 		_ = ln.Close()
-		s.procs.killAll()
+		s.procs.KillAll()
 	})
 	return s, sock, runDir
 }
@@ -73,17 +73,15 @@ func TestNoChildStartsAfterShutdownBegan(t *testing.T) {
 
 	held, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	oldHook := beforeChildStart
-	beforeChildStart = func(string) {
+	oldHook := supervisor.SetBeforeChildStartForTest(func(string) {
 		once.Do(func() { close(held) })
 		<-release
-	}
-	t.Cleanup(func() { beforeChildStart = oldHook })
+	})
+	t.Cleanup(func() { supervisor.SetBeforeChildStartForTest(oldHook) })
 	// The start itself must not run, so the seam after it counts the starts.
 	var started atomic.Int32
-	oldAfter := afterChildStart
-	afterChildStart = func(string, int) { started.Add(1) }
-	t.Cleanup(func() { afterChildStart = oldAfter })
+	oldAfter := supervisor.SetAfterChildStartForTest(func(string, int) { started.Add(1) })
+	t.Cleanup(func() { supervisor.SetAfterChildStartForTest(oldAfter) })
 
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "sleep")
@@ -125,9 +123,9 @@ func TestNoChildStartsAfterShutdownBegan(t *testing.T) {
 	if strings.Contains(logs.String(), "Process late started") {
 		t.Error("the log has a start line for the late spawn")
 	}
-	if p := s.procs.get("late"); p != nil {
+	if p := s.procs.Get("late"); p != nil {
 		endOwnChild(t, p)
-		t.Errorf("a child (pid %d) started after the shutdown began", p.pid)
+		t.Errorf("a child (pid %d) started after the shutdown began", p.Pid())
 	}
 }
 
@@ -147,20 +145,22 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 	letBefore := func() { relBefore.Do(func() { close(releaseBefore) }) }
 	t.Cleanup(letPast)
 	t.Cleanup(letBefore)
-	oldBefore, oldPast := beforeChildStart, pastStartCheck
-	beforeChildStart = func(id string) {
+	oldBefore := supervisor.SetBeforeChildStartForTest(func(id string) {
 		if strings.HasPrefix(id, "b") {
 			reachedBefore <- id
 			<-releaseBefore
 		}
-	}
-	pastStartCheck = func(id string) {
+	})
+	oldPast := supervisor.SetPastStartCheckForTest(func(id string) {
 		if strings.HasPrefix(id, "p") {
 			reachedPast <- id
 			<-releasePast
 		}
-	}
-	t.Cleanup(func() { beforeChildStart, pastStartCheck = oldBefore, oldPast })
+	})
+	t.Cleanup(func() {
+		supervisor.SetBeforeChildStartForTest(oldBefore)
+		supervisor.SetPastStartCheckForTest(oldPast)
+	})
 
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "sleep")
@@ -243,7 +243,7 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 			b, _ := json.Marshal(*resp)
 			t.Errorf("spawn %s got the frame %s, want none", id, b)
 		}
-		if p := s.procs.get(id); p != nil {
+		if p := s.procs.Get(id); p != nil {
 			endOwnChild(t, p)
 			t.Errorf("spawn %s is in the table", id)
 		}

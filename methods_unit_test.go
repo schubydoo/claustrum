@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
@@ -229,7 +228,7 @@ func TestProcessStdinErrors(t *testing.T) {
 	}
 
 	// Registered but NOT running (running:false) → Process not running.
-	s.procs.procs["p1"] = &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, running: false}
+	s.procs.AddFakeProcForTest("p1", false, false)
 	got = dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "p1", "data": goodB64}))
 	if !strings.Contains(got, "Process not running") {
 		t.Errorf("stdin to exited = %s, want not-running error", got)

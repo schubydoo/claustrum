@@ -188,12 +188,12 @@ func (c *Conn) DoneStdinTurn(t uint64) {
 }
 
 // WriteJSON is one of several outbound encodes — see also Conn.WriteResponse
-// below (every JSON-RPC reply), managedProc.emit (every live stream frame),
-// writeFramesLocked in process.go (the replay of a reattach that holds the write
-// lock) and peerRefusalLine in peercheck.go (the refusal of a peer). This one
-// carries reattach REPLAY frames only; the comment used to call it "the single
-// outbound encode", which would send someone doing an encoder cleanup looking in
-// exactly one place and missing the others.
+// below (every JSON-RPC reply), supervisor.Proc.emit (every live stream frame),
+// writeFramesLocked in internal/supervisor/process.go (the replay of a reattach
+// that holds the write lock) and peerRefusalLine in peercheck.go (the refusal of a
+// peer). This one carries reattach REPLAY frames only; the comment used to call it
+// "the single outbound encode", which would send someone doing an encoder cleanup
+// looking in exactly one place and missing the others.
 //
 // All of them must stay on json.Marshal, not an Encoder: Marshal HTML-escapes
 // `< > &` with no opt-out, which is what the reference emits, and
@@ -209,7 +209,7 @@ func (c *Conn) WriteJSON(v interface{}) error {
 
 // WriteLine writes an already-marshaled, newline-terminated JSON line under the
 // same lock/closed semantics as WriteJSON. It lets a frame fanned out to many
-// subscribers be marshaled once (see managedProc.emit) instead of once per conn.
+// subscribers be marshaled once (see supervisor.Proc.emit) instead of once per conn.
 // Write does not mutate b, so the same slice is safe to hand to every conn.
 func (c *Conn) WriteLine(b []byte) error {
 	c.wmu.Lock()

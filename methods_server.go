@@ -106,7 +106,7 @@ func (s *server) featuresFor() []string {
 	if !files.ReadRealAvailable() {
 		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == filesReadRealFeature })
 	}
-	if s.procs == nil || s.procs.jobs == supervisor.JobsOff {
+	if s.procs == nil || s.procs.Jobs == supervisor.JobsOff {
 		return list
 	}
 	return append(slices.Clip(list), jobFeature)

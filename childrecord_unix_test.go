@@ -105,22 +105,22 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 	// starts, so no goroutine of the daemon reads the seam while the test writes it.
 	var firstProc atomic.Pointer[os.Process]
 	var toFirst atomic.Int32
-	realSignal := signalGroup
-	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
+	realSignal := supervisor.SignalGroupForTest()
+	supervisor.SetSignalGroupForTest(func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc == firstProc.Load() {
 			toFirst.Add(1)
 		}
 		return realSignal(g, proc, signame)
-	}
-	t.Cleanup(func() { signalGroup = realSignal })
+	})
+	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
 
 	s, cl, runDir := runShapedServer(t)
 	first := spawnSleeper(t, cl, "c1")
-	old := s.procs.get("c1")
+	old := s.procs.Get("c1")
 	if old == nil {
 		t.Fatal("the first spawn is not in the table")
 	}
-	firstProc.Store(old.cmd.Process)
+	firstProc.Store(old.CmdForTest().Process)
 	// The daemon no longer ends the first child, so the test ends its own child and
 	// waits for its exit line.
 	t.Cleanup(func() { endOwnChild(t, old) })
@@ -161,9 +161,8 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 // went 60 ms after the end of the child and the frame came 5 s later). It also pins
 // the pipe-drain line and its place before the read-error line.
 func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
-	old := exitDrainGrace
-	exitDrainGrace = 4 * time.Second
-	t.Cleanup(func() { exitDrainGrace = old })
+	old := supervisor.SetExitDrainGraceForTest(4 * time.Second)
+	t.Cleanup(func() { supervisor.SetExitDrainGraceForTest(old) })
 	logs := captureLogBuf(t)
 	_, cl, runDir := runShapedServer(t)
 
@@ -284,7 +283,7 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	t.Cleanup(func() { childrec.SetShutdownRecordWaitForTest(old) })
 	s, cl, runDir := runShapedServer(t)
 	s.keepChildren = true
-	t.Cleanup(s.procs.killAll) // the kept children must end with the test
+	t.Cleanup(s.procs.KillAll) // the kept children must end with the test
 	pids := []int{spawnSleeper(t, cl, "c1"), spawnSleeper(t, cl, "c2")}
 	if n := len(childrenNames(t, filepath.Join(runDir, "children"))); n != 2 {
 		t.Fatalf("%d records while the children run, want 2", n)
@@ -304,7 +303,7 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		// End the test's own children, so the wait and the test end.
-		s.procs.killAll()
+		s.procs.KillAll()
 		<-done
 		t.Fatal("the shutdown with -keep-children waited for the records")
 	}

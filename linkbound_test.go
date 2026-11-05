@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // linkSpawnReq builds a process.spawn request of a helper mode with extra params.
@@ -27,10 +29,10 @@ func linkSpawnReq(t *testing.T, id int, procID, mode string, args []string, extr
 }
 
 // framesOf returns the frames of processID that cl got so far.
-func (cl *testClient) framesOf(processID string) []streamFrame {
+func (cl *testClient) framesOf(processID string) []supervisor.StreamFrame {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
-	var out []streamFrame
+	var out []supervisor.StreamFrame
 	for _, f := range cl.fr {
 		if f.ProcessID == processID {
 			out = append(out, f)
@@ -108,7 +110,7 @@ func TestSocketLinkBoundStaysOnLink(t *testing.T) {
 			t.Errorf("B got live frame %+v, want the stream on the link only", f)
 		}
 	}
-	// B ends the process. The exit frame goes to the link first (process.go, the
+	// B ends the process. The exit frame goes to the link first (internal/supervisor/process.go, the
 	// emit of the exit frame), and the record goes right after it, in a separate
 	// step (forgetLinked). So a reattach that lands between the two still finds the
 	// record with running false; the test waits for the drop, then B's reattach
@@ -167,9 +169,8 @@ func TestSocketLinkBoundSpentID(t *testing.T) {
 // TestSocketLinkBoundSpentIDExpires: once the spent age has passed, a spawn of the
 // id starts again. 683cc6a9 starts it 931.8 s after the exit (measured on Linux).
 func TestSocketLinkBoundSpentIDExpires(t *testing.T) {
-	old := linkSpentAge
-	linkSpentAge = 50 * time.Millisecond
-	t.Cleanup(func() { linkSpentAge = old })
+	old := supervisor.SetLinkSpentAgeForTest(50 * time.Millisecond)
+	t.Cleanup(func() { supervisor.SetLinkSpentAgeForTest(old) })
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	cl.call(linkSpawnReq(t, 1, "y", "sleep", []string{"0"}, map[string]any{"linkBound": map[string]any{}}))
@@ -184,41 +185,5 @@ func TestSocketLinkBoundSpentIDExpires(t *testing.T) {
 			t.Fatalf("spawn after the spent age = %s", got)
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-// TestUnattendedTTLAndTick pins the clamp of 683cc6a9 (measured on Linux for each
-// value here but -3) and the tick, which is claustrum's own.
-func TestUnattendedTTLAndTick(t *testing.T) {
-	for _, c := range []struct {
-		n    int64
-		want string
-		tick time.Duration
-	}{
-		{-3, "1m0s", 15 * time.Second},
-		{0, "1m0s", 15 * time.Second},
-		{1, "1s", 250 * time.Millisecond},
-		{2, "2s", 500 * time.Millisecond},
-		{4, "4s", time.Second},
-		{120, "2m0s", 30 * time.Second},
-		{599, "9m59s", time.Minute},
-		{600, "10m0s", time.Minute},
-		{100000, "10m0s", time.Minute},
-	} {
-		ttl := unattendedTTL(c.n)
-		if ttl.String() != c.want {
-			t.Errorf("unattendedTTL(%d) = %s, want %s", c.n, ttl, c.want)
-		}
-		if got := unattendedTick(ttl); got != c.tick {
-			t.Errorf("unattendedTick(%s) = %s, want %s", ttl, got, c.tick)
-		}
-	}
-}
-
-// TestUnattendedEndGraceIsSeven pins the wait between the SIGHUP and the SIGKILL.
-// 683cc6a9 logs the SIGKILL exit about 7 s after the ending line (Linux).
-func TestUnattendedEndGraceIsSeven(t *testing.T) {
-	if unattendedEndGrace != 7*time.Second {
-		t.Errorf("unattendedEndGrace = %s, want 7s", unattendedEndGrace)
 	}
 }

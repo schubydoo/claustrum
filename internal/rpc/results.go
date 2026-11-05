@@ -96,7 +96,7 @@ type ShutdownResult struct {
 // leak into a stdin/kill reply. Both are omitempty, so without the opt-in the
 // frame is byte-identical to the old {"success":true}. startTime is an opaque
 // daemon token (epoch seconds), not an OS-comparable start time — see
-// managedProc.startTime.
+// supervisor.Proc.startTime.
 type SpawnResult struct {
 	Success bool `json:"success"`
 	// CLITempRoot answers a spawn with "cliTempRoot":true on Linux (b3081b51). It is
@@ -222,7 +222,7 @@ type ReattachResult struct {
 	// Pid/StartTime are the CT-1 opt-in fields ("wantPid":true), appended last so
 	// the default reply stays byte-identical. omitempty drops them when the opt-in
 	// is absent (or no process was found). startTime is an opaque daemon token
-	// (epoch seconds), not an OS-comparable start time — see managedProc.startTime.
+	// (epoch seconds), not an OS-comparable start time — see supervisor.Proc.startTime.
 	Pid       int     `json:"pid,omitempty"`
 	StartTime float64 `json:"startTime,omitempty"`
 }

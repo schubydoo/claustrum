@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
-// The tests and helpers of the PATH read that need code of this package: buildEnv,
+// The tests and helpers of the PATH read that need code outside internal/shellenv: supervisor.BuildEnv,
 // a spawn or runServe. The other tests of the read are in internal/shellenv.
 
 // resetLoginPATHForTest ends a read that runs, with no log line, and clears the state
@@ -139,17 +140,17 @@ func shellenvLines(buf *syncBuffer) string {
 	return out.String()
 }
 
-// envValue reads key out of a buildEnv result the way the CHILD will see it,
+// envValue reads key out of a supervisor.BuildEnv result the way the CHILD will see it,
 // which is not the same as the first matching entry.
 //
-// buildEnv appends rather than rewrites when the spellings differ: on Windows
+// supervisor.BuildEnv appends rather than rewrites when the spellings differ: on Windows
 // os.Environ() yields "Path=...", so sysproc.ReplaceOrAppendEnv's "PATH=" prefix test
 // misses and a second, correct "PATH=..." lands at the end. That slice is not
 // what reaches the process. exec.Cmd.environ() runs it through dedupEnv, which
 // on Windows folds keys case-insensitively and keeps the LAST occurrence
 // (os/exec: dedupEnvCase builds its output in reverse "to preserve the last
 // occurrence of each key"). The appended entry therefore wins and the child gets
-// the value buildEnv intended.
+// the value supervisor.BuildEnv intended.
 //
 // So this must scan backwards. Reading forwards returns the stale pre-append
 // entry — a value no child ever sees — and the test then fails on any Windows
@@ -200,7 +201,7 @@ func TestEnvValueMatchesDedupEnvSemantics(t *testing.T) {
 		}
 	})
 
-	// The Windows shape this helper exists for: a stale "Path" that buildEnv could
+	// The Windows shape this helper exists for: a stale "Path" that supervisor.BuildEnv could
 	// not rewrite, followed by the "PATH" it appended. dedupEnv keeps the last.
 	t.Run("the appended entry wins", func(t *testing.T) {
 		if got, _ := envValue([]string{"Path=/stale", "PATH=/appended"}, "PATH"); got != "/appended" {
@@ -221,7 +222,7 @@ func TestLoginPATHSpawnWaitIsBounded(t *testing.T) {
 
 	setSpawnWait(t, 200*time.Millisecond)
 	start := time.Now()
-	got, _ := envValue(buildEnv(nil), "PATH")
+	got, _ := envValue(supervisor.BuildEnv(nil), "PATH")
 	if el := time.Since(start); el < 200*time.Millisecond {
 		t.Errorf("the spawn returned after %v, before its wait of 200ms", el)
 	}
@@ -232,20 +233,20 @@ func TestLoginPATHSpawnWaitIsBounded(t *testing.T) {
 	setSpawnWait(t, 30*time.Second)
 	f.advance(shellenv.SpawnHorizonForTest() - 100*time.Millisecond)
 	start = time.Now()
-	buildEnv(nil)
+	supervisor.BuildEnv(nil)
 	if el := time.Since(start); el < 100*time.Millisecond || el > 10*time.Second {
 		t.Errorf("the spawn at 100ms before the horizon took %v, want about 100ms", el)
 	}
 	f.advance(100 * time.Millisecond)
 	start = time.Now()
-	buildEnv(nil)
+	supervisor.BuildEnv(nil)
 	if el := time.Since(start); el > 10*time.Second {
 		t.Errorf("the spawn at the horizon took %v, want no wait", el)
 	}
 
 	f.answer <- pathAnswer{path: "/login/bin"}
 	awaitReadEnd(t, r)
-	if got, _ := envValue(buildEnv(nil), "PATH"); got != "/login/bin" {
+	if got, _ := envValue(supervisor.BuildEnv(nil), "PATH"); got != "/login/bin" {
 		t.Errorf("PATH after the read = %q, want /login/bin", got)
 	}
 	noReadStarted(t, f, "a spawn after a good read")
@@ -260,10 +261,10 @@ func TestSpawnWithDisableShellAgentSocketStopsTheRead(t *testing.T) {
 	shellenv.WarmAtStart()
 	r := startedRead(t, f)
 	m := newTestProcManager(t)
-	t.Cleanup(m.killAll)
+	t.Cleanup(m.KillAll)
 	c, frames := pipeConn(t)
 	exe, env := helperCommand(t, "printenv")
-	if _, err := m.spawn(c, "flagged", exe, []string{"PATH"}, "", env, true); err != nil {
+	if _, err := m.Spawn(c, "flagged", exe, []string{"PATH"}, "", env, true); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	waitExitFrame(t, frames)

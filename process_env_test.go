@@ -6,14 +6,16 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // The reference daemon's environ contains CLAUDE_SSH_DAEMON_CHILD=1 after the
 // self-daemonize re-exec, and that marker is propagated verbatim into every
 // process.spawn child (observed in the real spawned agent's /proc/<pid>/environ).
 // claustrum sets the same marker (daemonChildMarker) on its re-exec in
-// daemonizeWithToken and buildEnv uses os.Environ() as the base, so it must leak
-// to children too. Pin that behavior: a regression that swapped buildEnv's base
+// daemonizeWithToken and supervisor.BuildEnv uses os.Environ() as the base, so it must leak
+// to children too. Pin that behavior: a regression that swapped supervisor.BuildEnv's base
 // for an empty []string or a curated allow-list — or that dropped the marker
 // when the internal CLAUSTRUM_DAEMON_CHILD sentinel was split out — would diverge
 // silently: no wire frame mentions the marker, but downstream tooling can detect
@@ -23,7 +25,7 @@ func TestBuildEnvMergesOverEnviron(t *testing.T) {
 	t.Setenv("CLAUSTRUM_TEST_KEEP", "base")
 	t.Setenv("CLAUSTRUM_TEST_OVERRIDE", "old")
 
-	env := buildEnv(map[string]string{
+	env := supervisor.BuildEnv(map[string]string{
 		"CLAUSTRUM_TEST_OVERRIDE": "new",
 		"CLAUSTRUM_TEST_ADDED":    "added",
 	})
@@ -47,7 +49,7 @@ func TestBuildEnvMergesOverEnviron(t *testing.T) {
 // AA, then MM, AA, ZZ, then AA, ZZ, MM: the three rotations of the request order. It
 // never gave name order, AA, MM, ZZ, which is not one of them.
 //
-// buildEnv iterates the map that the request decodes into. This test holds what the Go
+// supervisor.BuildEnv iterates the map that the request decodes into. This test holds what the Go
 // 1.26 toolchain does with that map: each order is a rotation of the request order. If
 // a toolchain changes the walk of a small map, this test fails. The rule then needs a
 // new measurement.
@@ -69,7 +71,7 @@ func TestNewCallerKeysComeInARotation(t *testing.T) {
 		if err := json.Unmarshal([]byte(`{"`+request[0]+`":"1","`+request[1]+`":"2","`+request[2]+`":"3"}`), &env); err != nil {
 			t.Fatal(err)
 		}
-		got := buildEnv(env)
+		got := supervisor.BuildEnv(env)
 		var order []string
 		for _, e := range got[len(got)-3:] {
 			k, _, _ := strings.Cut(e, "=")
@@ -90,10 +92,10 @@ func TestNewCallerKeysComeInARotation(t *testing.T) {
 func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
 	m := newTestProcManager(t)
-	t.Cleanup(m.killAll)
+	t.Cleanup(m.KillAll)
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
-	if _, err := m.spawn(c, "envcheck", printenv,
+	if _, err := m.Spawn(c, "envcheck", printenv,
 		[]string{"CLAUDE_SSH_DAEMON_CHILD"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -104,15 +106,15 @@ func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 
 // The reference binary strips CLAUDE_RPC_TOKEN from the env it passes to
 // process.spawn children (probe-verified 2026-06-09 against linux-amd64
-// 8de85faa). buildEnv must filter it out even when the daemon's own process
+// 8de85faa). supervisor.BuildEnv must filter it out even when the daemon's own process
 // environment contains it (e.g. when Desktop sets it for the bridge client).
 func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 	t.Setenv("CLAUDE_RPC_TOKEN", "secret-must-not-leak")
 	m := newTestProcManager(t)
-	t.Cleanup(m.killAll)
+	t.Cleanup(m.KillAll)
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
-	if _, err := m.spawn(c, "tokencheck", printenv,
+	if _, err := m.Spawn(c, "tokencheck", printenv,
 		[]string{"CLAUDE_RPC_TOKEN"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -137,7 +139,7 @@ func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
 			captureLogBuf(t)
 			startPeerCheck()
 			m := newTestProcManager(t)
-			t.Cleanup(m.killAll)
+			t.Cleanup(m.KillAll)
 			cases := []struct{ id, name, param, want string }{
 				{"peer", peerCheckEnv, "", peerCheckEnv + " absent"},
 				{"mark", marker, "", marker + " set 1"},
@@ -149,7 +151,7 @@ func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
 				if tc.param != "" {
 					env[tc.name] = tc.param
 				}
-				if _, err := m.spawn(c, tc.id, exe, []string{tc.name}, "", env, false); err != nil {
+				if _, err := m.Spawn(c, tc.id, exe, []string{tc.name}, "", env, false); err != nil {
 					t.Fatalf("spawn: %v", err)
 				}
 				if got := firstStdout(t, frames); got != tc.want {

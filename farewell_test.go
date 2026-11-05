@@ -22,7 +22,7 @@ func replyLine(id int, result string) string {
 }
 
 // exitFrameOf returns the exit frame of id from frames, as the wire bytes.
-func exitFrameOf(t *testing.T, frames []streamFrame) string {
+func exitFrameOf(t *testing.T, frames []supervisor.StreamFrame) string {
 	t.Helper()
 	for _, f := range frames {
 		if f.Stream == "exit" {
@@ -39,13 +39,11 @@ func exitFrameOf(t *testing.T, frames []streamFrame) string {
 
 // farewellPending reports whether the record id holds a pending farewell.
 func farewellPending(s *server, id string) bool {
-	p := s.procs.get(id)
+	p := s.procs.Get(id)
 	if p == nil {
 		return false
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.farewell != nil
+	return p.FarewellPendingForTest()
 }
 
 // waitFarewellPending polls, with a limit, until the record id holds a farewell.
@@ -57,46 +55,6 @@ func waitFarewellPending(t *testing.T, s *server, id string) {
 			t.Fatalf("no pending farewell on %s", id)
 		}
 		time.Sleep(2 * time.Millisecond)
-	}
-}
-
-// The rule checks of a farewell and their order (measured on Linux, build
-// 52d82f0a). The unit test covers the 30 s cut of graceMs and both sides of the cap.
-func TestReadFarewellRules(t *testing.T) {
-	big := base64.StdEncoding.EncodeToString(make([]byte, farewellMaxBytes))
-	over := base64.StdEncoding.EncodeToString(make([]byte, farewellMaxBytes+1))
-	for _, tc := range []struct {
-		farewell, grace string // raw JSON, "" for absent
-		rule            string
-		ask             bool
-		graceMs         int
-	}{
-		{`"aGkK"`, `2000`, "", true, 2000},
-		{`"aGkK"`, `45000`, "", true, 30000},
-		{`"` + big + `"`, `100`, "", true, 100},
-		{`"` + over + `"`, `100`, "over the cap", false, 0},
-		{`"!!!"`, `100`, "not base64", false, 0},
-		{`"aGkK"`, ``, "a farewell with no graceMs", false, 0},
-		{``, `100`, "graceMs with no farewell", false, 0},
-		{`5`, `100`, "of the wrong type", false, 0},
-		{`"!!!"`, ``, "a farewell with no graceMs", false, 0},
-		{`5`, `"x"`, "of the wrong type", false, 0},
-		{`"!!!"`, `"x"`, "of the wrong type", false, 0},
-		{`"aGkK"`, `-5`, "a farewell with no graceMs", false, 0},
-		{`""`, `0`, "", false, 0},
-		{`null`, `100`, "graceMs with no farewell", false, 0},
-		{`"aGkK"`, `null`, "a farewell with no graceMs", false, 0},
-		{`"aGkK"`, `1.5`, "of the wrong type", false, 0},
-		{``, ``, "", false, 0},
-	} {
-		ask, rule := readFarewell(json.RawMessage(tc.farewell), json.RawMessage(tc.grace))
-		if rule != tc.rule || (ask != nil) != tc.ask {
-			t.Errorf("readFarewell(%.20s, %s) = %v, %q, want ask %v, %q", tc.farewell, tc.grace, ask != nil, rule, tc.ask, tc.rule)
-			continue
-		}
-		if ask != nil && ask.grace != time.Duration(tc.graceMs)*time.Millisecond {
-			t.Errorf("readFarewell(%.20s, %s) grace = %v, want %d ms", tc.farewell, tc.grace, ask.grace, tc.graceMs)
-		}
 	}
 }
 
@@ -157,7 +115,7 @@ func TestFarewellKillInvalidRules(t *testing.T) {
 	logs := captureLogBuf(t)
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	over := base64.StdEncoding.EncodeToString(make([]byte, farewellMaxBytes+1))
+	over := base64.StdEncoding.EncodeToString(make([]byte, supervisor.FarewellMaxBytes+1))
 	for i, tc := range []struct{ members, rule string }{
 		{`"farewell":"!!!","graceMs":100`, "not base64"},
 		{`"farewell":"aGkK"`, "a farewell with no graceMs"},
@@ -194,7 +152,7 @@ func TestFarewellKillInvalidRules(t *testing.T) {
 	}
 }
 
-func exitFrameOfKilledBy(frames []streamFrame) string {
+func exitFrameOfKilledBy(frames []supervisor.StreamFrame) string {
 	for _, f := range frames {
 		if f.Stream == "exit" {
 			return f.KilledBy
@@ -279,9 +237,8 @@ func TestFarewellPlainKillCutsQueued(t *testing.T) {
 // graceMs over 30000 is cut to 30 s (measured on Linux, build 52d82f0a). The seam
 // shrinks the cap, so a graceMs of 45000 signals at the cap.
 func TestFarewellGraceIsCut(t *testing.T) {
-	old := farewellGraceCapMs
-	farewellGraceCapMs = 200
-	t.Cleanup(func() { farewellGraceCapMs = old })
+	old := supervisor.SetFarewellGraceCapMsForTest(200)
+	t.Cleanup(func() { supervisor.SetFarewellGraceCapMsForTest(old) })
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	cl.call(spawnReqArgs(t, 1, "gc", "sleep", "30"))
@@ -346,11 +303,11 @@ func TestFarewellShutdownGivesNoReply(t *testing.T) {
 		}
 		break
 	}
-	if n := s.procs.killAllCount(); n != 1 {
+	if n := s.procs.KillAllCount(); n != 1 {
 		t.Errorf("shutdown kill reached %d children, want 1", n)
 	}
 	select {
-	case <-s.procs.get("fs").done:
+	case <-s.procs.Get("fs").DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Fatal("the shutdown kill did not end the child")
 	}
@@ -369,7 +326,7 @@ func TestFarewellKeepChildrenSendsThePendingKill(t *testing.T) {
 	if kb := exitFrameOfKilledBy(cl.waitExit("fk")); kb != "client" {
 		t.Errorf("exit killedBy = %q, want client", kb)
 	}
-	if !s.procs.get("kept").isRunning() {
+	if !s.procs.Get("kept").IsRunning() {
 		t.Error("-keep-children ended a child with no farewell")
 	}
 }
@@ -384,33 +341,33 @@ func TestFarewellSweepAndGraceSignalOnce(t *testing.T) {
 	cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"fo","signal":"SIGTERM","farewell":"aGkK","graceMs":20000}}`))
 	// The stub counts the signals to the child and delivers none, so the child
 	// lives on and no reap can drop a second signal before it is counted.
-	p := s.procs.get("fo")
-	realSignal := signalGroup
+	p := s.procs.Get("fo")
+	realSignal := supervisor.SignalGroupForTest()
 	var signals atomic.Int32
-	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
-		if proc == p.cmd.Process {
+	supervisor.SetSignalGroupForTest(func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
+		if proc == p.CmdForTest().Process {
 			signals.Add(1)
 			return nil
 		}
 		return realSignal(g, proc, signame)
-	}
-	t.Cleanup(func() { signalGroup = realSignal })
-	farewellSweepHook = func(h *farewellHold) {
-		h.timer.Reset(0)
+	})
+	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
+	supervisor.SetFarewellSweepHookForTest(func(fireTimer func()) {
+		fireTimer()
 		// Give the timer up to 300 ms to signal. With the fix it cannot, because
 		// the sweep holds p.mu here.
 		deadline := time.Now().Add(300 * time.Millisecond)
 		for signals.Load() == 0 && time.Now().Before(deadline) {
 			time.Sleep(2 * time.Millisecond)
 		}
-	}
-	t.Cleanup(func() { farewellSweepHook = nil })
-	s.procs.endPendingFarewells()
+	})
+	t.Cleanup(func() { supervisor.SetFarewellSweepHookForTest(nil) })
+	s.procs.EndPendingFarewells()
 	if n := signals.Load(); n != 1 {
 		t.Errorf("signals to the child = %d, want 1", n)
 	}
-	signalGroup = realSignal
-	_ = realSignal(p.group, p.cmd.Process, "KILL")
+	supervisor.SetSignalGroupForTest(realSignal)
+	_ = realSignal(p.GroupForTest(), p.CmdForTest().Process, "KILL")
 	if kb := exitFrameOfKilledBy(cl.waitExit("fo")); kb != "client" {
 		t.Errorf("exit killedBy = %q, want client", kb)
 	}
@@ -432,12 +389,7 @@ func TestKillAndWaitWithoutFarewellHasNoEnd(t *testing.T) {
 // fillStdinQueue fills the stdin queue of id to its cap. The child does not read
 // stdin, so the writer blocks on the first chunk and the rest stays queued.
 func fillStdinQueue(s *server, id string) {
-	p := s.procs.get(id)
-	p.stdinMu.Lock()
-	p.stdinQ = append(p.stdinQ, make([]byte, 1<<20), make([]byte, stdinQueueCap))
-	p.stdinQBytes += 1<<20 + stdinQueueCap
-	p.stdinCond.Broadcast()
-	p.stdinMu.Unlock()
+	s.procs.Get(id).FillStdinQueueForTest()
 }
 
 // A full stdin queue takes no farewell: the reply is unsent and the signal goes

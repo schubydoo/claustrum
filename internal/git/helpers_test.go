@@ -148,7 +148,7 @@ func helperCommand(t *testing.T, mode string) (string, map[string]string) {
 }
 
 // buildEnv is the environment of a helper child: the environment of this
-// process with env merged over it. The buildEnv of package main also drops
+// process with env merged over it. The supervisor.BuildEnv also drops
 // CLAUDE_RPC_TOKEN and applies the login-shell PATH. No test of this package
 // sets either one.
 func buildEnv(env map[string]string) []string {
