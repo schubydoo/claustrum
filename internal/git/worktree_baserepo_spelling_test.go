@@ -2,9 +2,11 @@ package git
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -345,6 +347,66 @@ func TestBaseRepoMissingDotDotWalk(t *testing.T) {
 	if exists(c1) {
 		t.Errorf("create made %s", c1)
 	}
+}
+
+// git.worktree_create of a baseRepo that does not exist answers not_a_repo, also below a
+// marker or below <T>/.claude/worktrees, and as a dangling link below a marker. Nothing
+// is made (b3081b51, measured on Linux and macOS, row a also on Windows). Row c skips
+// where no link can be made. Each row has its own folder. The rows match the measured
+// rows a, b and c.
+func TestWorktreeCreateMissingBaseRepoSkipsMarker(t *testing.T) {
+	requireGit(t)
+	for _, r := range []struct {
+		row  string
+		base func(t *testing.T, w string) string
+	}{
+		{"a marker", func(t *testing.T, w string) string {
+			writeFile(t, filepath.Join(w, managedWorktreesMarker), "", 0o644)
+			return filepath.Join(w, "sl")
+		}},
+		{"b worktrees", func(t *testing.T, w string) string {
+			tr := filepath.Join(w, "T")
+			initTrustMain(t, tr)
+			return filepath.Join(tr, ".claude", "worktrees", "missing")
+		}},
+		{"c dangling link", func(t *testing.T, w string) string {
+			writeFile(t, filepath.Join(w, managedWorktreesMarker), "", 0o644)
+			sl := filepath.Join(w, "sl")
+			if err := os.Symlink(filepath.Join(w, "nowhere"), sl); err != nil {
+				t.Skipf("cannot make a symbolic link: %v", err)
+			}
+			return sl
+		}},
+	} {
+		t.Run(r.row, func(t *testing.T) {
+			w := t.TempDir()
+			base := r.base(t, w)
+			resetUserExcludesCache(t)
+			clearDaemonConfigEnv(t)
+			before := missingBaseTree(t, w)
+			got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", map[string]any{
+				"baseRepo": base, "branchName": "w1", "worktreePath": filepath.Join(base, ".claude", "worktrees", "w1"), "sourceBranch": "main"}))
+			if want := spellCreateFrame(t, "not a git repository", "not_a_repo"); got != want {
+				t.Errorf("got  %s\nwant %s", got, want)
+			}
+			if after := missingBaseTree(t, w); !slices.Equal(after, before) {
+				t.Errorf("the create changed the folder:\nbefore %v\nafter  %v", before, after)
+			}
+		})
+	}
+}
+
+// missingBaseTree lists every path below dir, links not followed, in walk order.
+func missingBaseTree(t *testing.T, dir string) []string {
+	t.Helper()
+	var names []string
+	if err := filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
+		names = append(names, p)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return names
 }
 
 // A baseRepo that os.Stat does not report as missing, and whose walk fails, gets the

@@ -1029,8 +1029,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// session worktree must be created from a real top-level repo, never from
 	// inside another session's worktree tree. A baseRepo that fails claustrum's own
 	// trust-root test gets the same refusal (baseRepoWalkFails). It comes before
-	// the count check (`f6010b97`, measured on Windows).
-	if baseRepoUnderManagedWorktrees(repo) || baseRepoWalkFails(repo) {
+	// the count check (`f6010b97`, measured on Windows). A baseRepo that does not
+	// exist skips the marker test, answers not_a_repo and makes nothing. That is
+	// b3081b51, measured on Linux and macOS, and on Windows for a missing path below
+	// a marker. Another ErrNotExist, such as <T>/missing/.., is claustrum's own, not measured.
+	if _, err := os.Stat(repo); (!errors.Is(err, fs.ErrNotExist) && baseRepoUnderManagedWorktrees(repo)) || baseRepoWalkFails(repo) {
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{
 			Success:   false,
 			Error:     managedWorktreesRefusal,

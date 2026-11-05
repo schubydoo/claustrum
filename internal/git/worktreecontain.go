@@ -120,6 +120,10 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 // The walk runs on the resolved path and on the path as spelled, so a marker
 // above the path as sent counts too (b3081b51 and be1c1ca5, measured on Linux).
 // The spelling walk tests the marker only, not the `.claude/worktrees` name (claustrum's own, not measured).
+//
+// git.worktree_create skips this test for a baseRepo that does not exist, a dangling link
+// included. It answers not_a_repo then (b3081b51, measured on Linux and macOS, and on
+// Windows for a missing path below a marker).
 func baseRepoUnderManagedWorktrees(repo string) bool {
 	if markerAboveSpelling(repo) {
 		return true
