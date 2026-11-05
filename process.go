@@ -282,6 +282,19 @@ type procManager struct {
 	startsStopped atomic.Bool
 	startGate     sync.RWMutex
 
+	// jobs tells if spawn puts each child in a job of its own (Windows only, see
+	// childJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
+	// once at the start of the daemon. The zero value is off.
+	jobs childJobs
+
+	// runRecords holds the run dir and the child-record state (childrecord*.go,
+	// childreap*.go). Its fields are promoted, so code reads them as fields of the manager.
+	runRecords
+}
+
+// runRecords is the run dir of the daemon and the state of its child records. It is set
+// once at daemon startup (newServerOnSocket) and is read-only after that.
+type runRecords struct {
 	// runDir is the run dir of the daemon (CLAUDE_SSH_RUN_DIR): the folder of its
 	// socket path (execChildRunDir). It is "" only for a manager with no socket, as a
 	// unit test builds one. Set once at daemon startup (newServerOnSocket). When
@@ -298,10 +311,6 @@ type procManager struct {
 	// no child record. That is measured for a held flock (`5fd08069`, measured on
 	// Linux).
 	noRecords bool
-	// jobs tells if spawn puts each child in a job of its own (Windows only, see
-	// childJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
-	// once at the start of the daemon. The zero value is off.
-	jobs childJobs
 
 	// runRoot is the run dir, held open for the child records (linux and darwin, see
 	// childrecord_unix.go). runRootOnce guards the one open. Unused on windows.

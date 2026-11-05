@@ -23,7 +23,7 @@ const simOwnDaemon, simOwnParent, simOwnPgid = 10, 11, 12
 
 // reapOrphans runs the startup reap of a manager on runDir, as the daemon does.
 func reapOrphans(runDir, ownInstance string) {
-	(&procManager{runDir: runDir, instanceID: ownInstance}).reapOrphans()
+	(&procManager{runRecords: runRecords{runDir: runDir, instanceID: ownInstance}}).reapOrphans()
 }
 
 // simCtx is the sweep context of a test that calls reapTargets or reapWait directly.
