@@ -19,8 +19,9 @@ const openNoTerminal = 0
 // mklink). A git directory that is a junction or a directory symbolic link has its own test
 // (gitDirLinkDetail). Another link in a folder above the config is not measured. An included file gets
 // the same test (not measured), and its folders below the repository get includeLinkDetail.
-func configLinkDetail(path string) string {
-	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+// link is the Lstat of path, or nil.
+func configLinkDetail(path string, link os.FileInfo) string {
+	if link != nil && link.Mode()&os.ModeSymlink != 0 {
 		return quoteOperand(path) + configLinkTail
 	}
 	return ""

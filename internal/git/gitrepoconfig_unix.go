@@ -2,7 +2,10 @@
 
 package git
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
 
 // openNoTerminal is added to the open flags of the config read. Without it, an
 // open of a terminal makes that terminal the controlling terminal of a daemon
@@ -12,7 +15,7 @@ const openNoTerminal = syscall.O_NOCTTY
 
 // configLinkDetail has no refusal on Linux and macOS. A config that is a symbolic
 // link to a regular file is read there (measured on Linux).
-func configLinkDetail(string) string { return "" }
+func configLinkDetail(string, os.FileInfo) string { return "" }
 
 // includeValueDetail, includePlaceDetail and includeLinkDetail have no refusal on
 // Linux and macOS. An absolute include, a `~/` include and a relative include are
