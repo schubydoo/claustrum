@@ -183,13 +183,16 @@ and its registration, and runs no `git worktree remove`. Each delete goes throug
 git directory.
 
 Guards: a leaf that is a symlink or not a directory is refused. A worktree LOCKED in the
-`.git` folder of `baseRepo` is refused (D22), with one exception: see Never widen. A
+`.git` folder of `baseRepo` by a lock that counts ([the repository checks](docs/protocol/git-worktree-remove.md#the-repository-checks)) is refused (D22), with one exception: see Never widen. A
 repository config, git directory file or settings copy that the daemon does not accept
 refuses the remove before any delete. `"shadowDirOff":true` turns that refusal off, and so
 does a remove that starts while such a request runs ([The repository
 checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). Without
 `worktreeRoot`, on Linux and macOS, in four states a gone worktree gets success there instead, and nothing
-is deleted. On Windows an
+is deleted. Without `worktreeRoot`, on Linux and macOS, a daemon `GIT_DIR` at a missing path
+makes an existing worktree folder go with its files, with success (macOS not measured with an
+unlocked `.git` folder). A D22 lock of such an entry keeps its refusal, and a `.git` link or file
+in `baseRepo` keeps the refusal of the failed copy (claustrum's own, not measured). On Windows an
 `objects/info/alternates` file of a trusted `baseRepo` with Windows line endings or too many
 object directories refuses it before any delete too, also for a gone worktree folder
 (measured on Windows), and also with
@@ -606,7 +609,7 @@ the rules, the cost and the reopen trigger of each.
 | [D16](docs/DIVERGENCES.md#d16) | `git.status` of a linked worktree returns the status. With no global excludes file of the user, the reference errors there | always-on | Windows |
 | [D19](docs/DIVERGENCES.md#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf | always-on | Windows |
 | [D20](docs/DIVERGENCES.md#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start | always-on | Linux, macOS |
-| [D22](docs/DIVERGENCES.md#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`. Part A names the one exception | always-on | all |
+| [D22](docs/DIVERGENCES.md#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo` by a lock that counts. Part A names the one exception | always-on | all |
 | [D23](docs/DIVERGENCES.md#d23) | The environment block of a child is in name order | always-on | Windows |
 | [D24](docs/DIVERGENCES.md#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. On Windows a rollback after `.git` became a file that names a second repository runs no git call. On Linux and macOS a rollback after a link at `.git` during the staged add deletes no branch through it | always-on | all |
 | [D27](docs/DIVERGENCES.md#d27) | The stale step of `git.worktree_create` keeps an entry whose `gitdir` record names a path that exists | always-on | Windows |

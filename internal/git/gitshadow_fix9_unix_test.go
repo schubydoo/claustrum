@@ -350,10 +350,8 @@ func TestDaemonGitDirToMissingPath(t *testing.T) {
 // TestDaemonGitDirToMissingPathRemoveRefusals: with the GIT_DIR of
 // TestDaemonGitDirToMissingPath, a remove with worktreeRoot outside F gets the
 // class 2 reason with the open error of that path, for a gone and an existing
-// worktree (b3081b51, measured on Linux). Without worktreeRoot an existing
-// worktree keeps the refusal of the failed copy (claustrum's own). No folder
-// changes. Mutations: drop the goneCopyText test in externalWorkTreeRefusal, or
-// at the remove of an existing worktree.
+// worktree (b3081b51, measured on Linux). No folder changes. Mutation: drop the
+// goneCopyText test in externalWorkTreeRefusal.
 func TestDaemonGitDirToMissingPathRemoveRefusals(t *testing.T) {
 	f := newShadowFixture(t)
 	base := t.TempDir()
@@ -373,10 +371,6 @@ func TestDaemonGitDirToMissingPathRemoveRefusals(t *testing.T) {
 		params map[string]any
 		want   string
 	}{
-		{"live", map[string]any{"baseRepo": dir, "branchName": "w1", "worktreePath": live},
-			"failed to remove worktree: could not check whether " + live + " is locked: Claude could not prepare " +
-				"its own files on the remote machine: cannot write its copy of the repository's git config: " +
-				"the HEAD of the repository cannot be read"},
 		{"gone root", map[string]any{"baseRepo": dir, "branchName": "w1", "worktreePath": filepath.Join(root, "d", "w1"),
 			"worktreeRoot": root}, unknown},
 		{"live root", map[string]any{"baseRepo": dir, "branchName": "w2", "worktreePath": rootLive,
