@@ -29,7 +29,7 @@ func startBystander(t *testing.T) *exec.Cmd {
 		t.Fatalf("os.Executable: %v", err)
 	}
 	cmd := exec.Command(exe, "60")
-	cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+	cmd.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start bystander: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestKilledDaemonByMode(t *testing.T) {
 		t.Run(tc.mode, func(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "pid")
 			daemon := exec.Command(exe, pidFile, tc.mode)
-			daemon.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
+			daemon.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
 			if err := daemon.Start(); err != nil {
 				t.Fatalf("start: %v", err)
 			}
@@ -169,8 +169,8 @@ func TestJobLineFollowsTheLockLine(t *testing.T) {
 	buf := captureLogBuf(t)
 	s, sock := bootLineServer(t, false)
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	if s.procs.jobs != supervisor.JobsOn {
-		t.Errorf("jobs = %d, want supervisor.JobsOn", s.procs.jobs)
+	if s.procs.Jobs != supervisor.JobsOn {
+		t.Errorf("jobs = %d, want supervisor.JobsOn", s.procs.Jobs)
 	}
 	wantLinesInOrder(t, buf.String(),
 		runlock.NotHolderLine,
@@ -185,7 +185,7 @@ func TestKeepChildrenServerKeepsJobs(t *testing.T) {
 	captureLogBuf(t)
 	s, sock := bootLineServer(t, true)
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	if s.procs.jobs != supervisor.JobsKeep {
-		t.Errorf("jobs = %d, want supervisor.JobsKeep", s.procs.jobs)
+	if s.procs.Jobs != supervisor.JobsKeep {
+		t.Errorf("jobs = %d, want supervisor.JobsKeep", s.procs.Jobs)
 	}
 }

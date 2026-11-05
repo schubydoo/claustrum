@@ -143,21 +143,20 @@ func TestSpawnCLITempRootExitDoesNotWaitForTheLock(t *testing.T) {
 		t.Fatalf("spawn reply %s, want a folder", raw)
 	}
 	// The stub counts each group SIGKILL to the child and delivers none.
-	p := s.procs.get("kw")
-	realSignal := signalGroup
+	p := s.procs.Get("kw")
+	realSignal := supervisor.SignalGroupForTest()
 	var kills atomic.Int32
-	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
-		if proc == p.cmd.Process && signame == "KILL" {
+	supervisor.SetSignalGroupForTest(func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
+		if proc == p.CmdForTest().Process && signame == "KILL" {
 			kills.Add(1)
 			return nil
 		}
 		return realSignal(g, proc, signame)
-	}
-	t.Cleanup(func() { signalGroup = realSignal })
+	})
+	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
 	// A short reap bound makes a wait that misses the exit answer died:false at once.
-	oldReap := killReapGrace
-	killReapGrace = 100 * time.Millisecond
-	t.Cleanup(func() { killReapGrace = oldReap })
+	oldReap := supervisor.SetKillReapGraceForTest(100 * time.Millisecond)
+	t.Cleanup(func() { supervisor.SetKillReapGraceForTest(oldReap) })
 	var unlock sync.Once
 	tempRoots.mu.Lock()
 	free := func() { unlock.Do(tempRoots.mu.Unlock) }

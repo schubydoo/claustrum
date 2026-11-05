@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // process.stdin is the one method whose ARRIVAL ORDER is part of its meaning:
@@ -164,23 +165,19 @@ func TestStdinTicketDoesNotSpanTheResponseWrite(t *testing.T) {
 	}
 	send(spawnReqArgs(t, 1, id, "cat"))
 
-	var mp *managedProc
+	var mp *supervisor.Proc
 	for i := 0; i < 200 && mp == nil; i++ {
-		mp = s.procs.get(id)
+		mp = s.procs.Get(id)
 		time.Sleep(10 * time.Millisecond)
 	}
 	if mp == nil {
 		t.Fatal("process never spawned")
 	}
 
-	// stdinMu, NOT mu: stdinApplied is guarded by the stdin mutex (see its
-	// declaration in process.go). Reading it under the wrong lock is a data race
-	// the -race build catches and an ordinary run does not.
-	applied := func() uint64 {
-		mp.stdinMu.Lock()
-		defer mp.stdinMu.Unlock()
-		return mp.stdinApplied
-	}
+	// StdinAppliedForTest takes stdinMu, NOT mu: stdinApplied is guarded by the stdin
+	// mutex (see its declaration in internal/supervisor/process.go). Reading it under
+	// the wrong lock is a data race the -race build catches and an ordinary run does not.
+	applied := mp.StdinAppliedForTest
 	waitApplied := func(want uint64, what string) {
 		t.Helper()
 		for i := 0; i < 300; i++ {

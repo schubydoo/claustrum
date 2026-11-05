@@ -62,7 +62,7 @@ func startConfinedTreeJobs(t *testing.T, jobs supervisor.ChildJobs) (*exec.Cmd, 
 	}
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	cmd := exec.Command(exe, pidFile)
-	cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "tree"})
+	cmd.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "tree"})
 	cmd.SysProcAttr = supervisor.SpawnSysProcAttr(jobs)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -203,7 +203,7 @@ func TestSignalFallsBackWithoutHandle(t *testing.T) {
 				t.Fatalf("os.Executable: %v", err)
 			}
 			cmd := exec.Command(exe, "60")
-			cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+			cmd.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 			cmd.SysProcAttr = sysproc.NewSysProcAttr()
 			if err := cmd.Start(); err != nil {
 				t.Fatalf("start: %v", err)

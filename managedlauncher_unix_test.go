@@ -684,7 +684,7 @@ func spawnErrFrame(code, msg, reason string) string {
 	return `{"jsonrpc":"2.0","id":1,"error":{"code":` + code + `,"message":"` + msg + `","data":{"reason":"` + reason + `"}}}`
 }
 
-func exitCodeOf(frames []streamFrame) int {
+func exitCodeOf(frames []supervisor.StreamFrame) int {
 	for _, f := range frames {
 		if f.Stream == "exit" && f.ExitCode != nil {
 			return *f.ExitCode

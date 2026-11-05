@@ -1,0 +1,95 @@
+package supervisor
+
+import (
+	"errors"
+	"os"
+	"strings"
+	"syscall"
+	"testing"
+)
+
+// TestSpawnSurvivesConfinementFailure covers spawn's confinement arm. Unlike the
+// pipe seams next door this arm is deliberately NON-fatal: on Windows — the only
+// OS where it can fail — a failed confinement costs the kill handle and
+// kill falls back to proc.Kill, not the spawn (on Unix the process group
+// from sysproc.NewSysProcAttr is signalled whatever the handle), so the process must still
+// be registered with whatever group confinement handed back (nil from this seam;
+// see the last paragraph for production). On Unix the
+// call cannot fail at all — the process group came from sysproc.NewSysProcAttr and
+// ConfineProcess returns a nil error unconditionally — so no fixture reaches the
+// arm on the platform CI runs most.
+//
+// The assertions are on the OUTCOME, not on coverage: spawn must return the
+// process and no error, p.group must be whatever confinement handed back rather
+// than a handle spawn fabricated, and the warning must name the process and the
+// reason — on Windows that log line is the only signal an operator gets that the
+// kill handle is missing.
+//
+// The seam returns nil, so p.group is asserted nil HERE. That is the pass-through
+// check, not a claim about production: Windows' ConfineProcess returns
+// &ProcGroup{} with a zero handle on every failure path, never nil (its
+// signal() then falls back to the parent). Both are nil-safe.
+func TestSpawnSurvivesConfinementFailure(t *testing.T) {
+	errConfine := errors.New("open process: access is denied")
+	old := confineProc
+	t.Cleanup(func() { confineProc = old })
+	confineProc = func(*os.Process, ChildJobs) (*ProcGroup, error) { return nil, errConfine }
+
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	c, _ := pipeConn(t)
+	echo, env := helperCommand(t, "echo")
+
+	var p *Proc
+	out := captureLog(t, func() {
+		var err error
+		if p, err = m.Spawn(c, "confine", echo, []string{"hi"}, "", env, false); err != nil {
+			t.Fatalf("spawn = %v, want success: a confinement failure is not fatal", err)
+		}
+	})
+	if p == nil {
+		t.Fatal("spawn returned a nil process despite reporting success")
+	}
+	if p.group != nil {
+		t.Errorf("p.group = %v, want nil (the handle the seam returned)", p.group)
+	}
+	if want := "process-group confinement failed for confine: " + errConfine.Error(); !strings.Contains(out, want) {
+		t.Errorf("missing warning %q\n--- captured ---\n%s", want, out)
+	}
+}
+
+// TestSpawnEndsTheChildWhenTheResumeFails pins the arm of spawn after a failed resume:
+// the spawn answers the error, logs the Failed to start line and keeps no record
+// (claustrum's own, not measured).
+func TestSpawnEndsTheChildWhenTheResumeFails(t *testing.T) {
+	errResume := errors.New("boom")
+	old := resumeProc
+	t.Cleanup(func() { resumeProc = old })
+	var started *os.Process
+	resumeProc = func(proc *os.Process, _ *syscall.SysProcAttr) error {
+		started = proc
+		return errResume
+	}
+
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	c, _ := pipeConn(t)
+	sleeper, env := helperCommand(t, "sleep")
+
+	var err error
+	out := captureLog(t, func() {
+		_, err = m.Spawn(c, "resume", sleeper, []string{"30"}, "", env, false)
+	})
+	if err == nil || !errors.Is(err, errResume) || !strings.Contains(err.Error(), "resume after the job join") {
+		t.Fatalf("spawn error = %v, want the wrapped resume error", err)
+	}
+	if want := "Failed to start process resume: resume after the job join: boom"; !strings.Contains(out, want) {
+		t.Errorf("missing log line %q\n--- captured ---\n%s", want, out)
+	}
+	if m.Get("resume") != nil {
+		t.Error("the table holds a record for the child that the spawn ended")
+	}
+	if started == nil {
+		t.Fatal("the seam saw no process")
+	}
+}

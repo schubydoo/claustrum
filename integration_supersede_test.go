@@ -11,7 +11,7 @@ import (
 )
 
 // TestSocketReattachSupersedesPreviousConnection drives the supersede through a
-// real socket, so it covers the wiring and not just procManager.reattach.
+// real socket, so it covers the wiring and not just supervisor.Manager.Reattach.
 //
 // The unit tests in reattach_supersede_test.go build their conns by hand, which
 // means they cannot notice the accept loop failing to give a connection its

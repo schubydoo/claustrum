@@ -337,7 +337,7 @@ component_management:
     - component_id: process
       name: process supervisor
       paths:
-        - process.go
+        - internal/supervisor/process.go
         - internal/supervisor/sysproc_unix.go
         - internal/supervisor/sysproc_windows.go
         # The refused-signal error, the live-pid test and the test seams of the package.
@@ -346,6 +346,10 @@ component_management:
         - internal/supervisor/fortest.go
         - internal/supervisor/fortest_unix.go
         - internal/supervisor/fortest_windows.go
+        - internal/supervisor/fortest_mgr.go
+        # The two spawn steps of package main that the spawn runs, and their setter.
+        - internal/supervisor/spawnsteps.go
+        - spawnsteps.go
         # The process group, the reap, the env and close helpers and the capped text.
         - internal/sysproc/sysproc.go
         - internal/sysproc/sysproc_unix.go
@@ -373,12 +377,12 @@ component_management:
         - internal/sessiondirs/sessiondirs_linuxother.go
         # 52d82f0a farewell of process.kill and process.killAndWait: the member rules,
         # the stdin write and the grace before the signal.
-        - farewell.go
+        - internal/supervisor/farewell.go
         # 683cc6a9 link-bound processes: the link, the unattended end and the spent ids.
-        - linkbound.go
+        - internal/supervisor/linkbound.go
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
         # per-key spawn lock, and the eviction of the prior same-session process.
-        - sessionsupersede.go
+        - internal/supervisor/sessionsupersede.go
         # 19f30c46 exec-child trampoline: process.spawn re-execs the daemon to stamp a
         # spawned child's identity (CLAUDE_SSH_CHILD/CLAUDE_SSH_RUN_DIR) — a stable,
         # pid-reuse-safe marker in the child's environment. Run-dir derivation is
@@ -400,7 +404,7 @@ component_management:
         # by linux and darwin (childrecord_unix.go). The record state of the manager is
         # Records (records.go), and the linux start ticks are in starttick_linux.go. The
         # fortest files hold the seams that the tests of package main swap. The two
-        # shutdown steps that read the process table stay in the daemon (procrecords_*.go).
+        # shutdown steps that read the process table are in internal/supervisor (procrecords_*.go).
         - internal/childrec/records.go
         - internal/childrec/childrecord.go
         - internal/childrec/childrecord_unix.go
@@ -411,8 +415,8 @@ component_management:
         - internal/childrec/fortest_unix.go
         - internal/childrec/fortest_linux.go
         - internal/childrec/fortest_darwin.go
-        - procrecords_unix.go
-        - procrecords_other.go
+        - internal/supervisor/procrecords_unix.go
+        - internal/supervisor/procrecords_other.go
         # 19f30c46 orphan reap: at -serve startup the daemon ends the process groups of
         # children a since-exited predecessor daemon of this run dir left orphaned, after
         # verifying each is still that recorded child. The decision logic is shared

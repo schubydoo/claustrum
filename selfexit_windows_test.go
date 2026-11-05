@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // In a measurement on Windows, a daemon whose socket file was deleted wrote no
@@ -32,7 +33,7 @@ func TestSelfExitOffOnWindows(t *testing.T) {
 	s := &server{
 		conns:      make(map[*conn.Conn]struct{}),
 		shutdown:   make(chan struct{}),
-		procs:      newProcManager(),
+		procs:      supervisor.NewManager(),
 		sockInfo:   fi,
 		instanceID: "0123456789abcdef0123456789abcdef",
 	}

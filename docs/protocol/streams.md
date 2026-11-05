@@ -27,7 +27,7 @@ later replay.
   `SIGTERM` or `SIGKILL`. It is omitted always on
   Windows (measured on Windows). `killedBy` names who asked the daemon to kill the
   process: `client` for `process.kill` and `process.killAndWait`, and `shutdown`
-  for the shutdown and `killAll` sweep. It is emitted on every OS. A refused signal sets none (`52d82f0a`, Linux and macOS). Signal names
+  for the shutdown and `KillAll` sweep. It is emitted on every OS. A refused signal sets none (`52d82f0a`, Linux and macOS). Signal names
   other than `SIGTERM` and `SIGKILL` are not measured. The shutdown sweep sets
   `shutdown` only on a `process.killAndWait` that still waits. Linux measured it in the log. Another kill
   keeps `client` (not measured).

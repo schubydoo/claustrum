@@ -1,0 +1,2040 @@
+package supervisor
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/schubydoo/claustrum/internal/childrec"
+	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/install"
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/metrics"
+	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
+	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/sysproc"
+)
+
+// The format text of the process exit line, claustrum's own, not measured. A
+// test checks its byte length.
+const (
+	FmtProcExited = "[process.Manager] Process %s exited with code %d%s"
+)
+
+// StreamFrame is an id-less notification pushed to attached clients.
+// ExitCode is a pointer so a legitimate 0 is emitted while stdout/stderr frames
+// omit it entirely; Data is omitted on exit frames.
+type StreamFrame struct {
+	Type      string `json:"type"`
+	ProcessID string `json:"processId"`
+	Stream    string `json:"stream"` // stdout | stderr | exit
+	Seq       uint64 `json:"seq"`
+	Data      string `json:"data,omitempty"`
+	ExitCode  *int   `json:"exitCode,omitempty"`
+	// Signal and KilledBy were added by the reference daemon in 4534d86 and appear on
+	// an exit frame only. Signal is the SIG-prefixed name of the terminating signal
+	// (omitted on a normal exit and always on Windows, which has no signal on the
+	// wait path). KilledBy names who requested the kill: "client" for process.kill /
+	// process.killAndWait, "shutdown" for the shutdown/killAll sweep. Both omitempty,
+	// so a normal exit stays byte-identical to the pre-4534d86 frame. Provenance: the
+	// "client" values and the SIGTERM/SIGKILL names are live-measured against
+	// 4534d86. Other mapped signal names are not individually measured. The Windows
+	// signal-omission is measured. The "shutdown" label of a waiting kill is measured
+	// on Linux in the log only, because the shutdown exit frame races connection
+	// teardown and is not client-observable.
+	Signal   string `json:"signal,omitempty"`
+	KilledBy string `json:"killedBy,omitempty"`
+
+	// lineBytes is the length of this frame AS SERIALIZED, including the
+	// trailing newline — the unit the replay buffer accounts in. Unexported, so
+	// encoding/json ignores it and no frame on the wire changes shape.
+	lineBytes int64
+}
+
+// defaultBufferCap caps the total SERIALIZED FRAME BYTES — each frame's JSON
+// line including its trailing newline — held in each per-process replay buffer. A long-running, high-throughput process would otherwise grow
+// the buffer without bound for the daemon's entire lifetime (the buffer is never
+// reclaimed while the Manager holds the entry).
+//
+// 16 MiB is the REFERENCE's value, not a tuning choice — do not change it
+// without re-measuring. Driving 70 MiB through both daemons and calling
+// reattach{fromSeq:0} showed the reference retaining ≈15.85 MiB across 1,915
+// frames where claustrum's then-50 MiB retained ≈49.99 MiB across 5,718.
+// firstSeq is wire-visible via reattach, so this bound is observable contract.
+//
+// CORRECTION, 2026-08-02: that measurement also concluded "the accounting method
+// already matched — base64 length", and only the constant was changed. The unit
+// was wrong too. The reference's retained-frame counts match a 16 MiB bound
+// measured in the bytes a subscriber receives — the serialized frame plus its
+// newline — where claustrum counted len(f.Data), the base64 payload alone. See
+// bufBytes/emit below.
+//
+// The reason it read as matching is worth more than the bug. That run used
+// ~8.7 KB frames, where the ~80-byte JSON envelope is under 1% — inside the noise
+// of where a trim boundary lands. Re-measured at ~600-byte frames, where the
+// envelope is ~12%, driving 27 MiB through each:
+//
+//	frame size   retained frames, reference   claustrum (before)
+//	  ~8700 B                       1,438       1,447    control — 0.6% apart
+//	   ~600 B                      19,195      20,962    9.2% apart
+//
+// The arithmetic identifies the ENVELOPE, and only the envelope. A 600-byte
+// payload is 800 bytes of base64: 16 MiB / 800 = 20,971 ≈ claustrum's 20,962,
+// while 16 MiB / (800 + ~80) = 19,065 and with the newline 19,043 — both within
+// the slop of a ≈ against 19,195, so this division cannot tell you whether the
+// trailing newline is counted. What settles the newline is the post-fix run:
+// counting frame+newline puts both binaries on the SAME retained count exactly
+// (19,194 each), where omitting it would leave claustrum ~22 frames adrift.
+//
+// Those figures are one frame apart between runs (19,195 then 19,194 for the
+// reference) because frame boundaries depend on pipe scheduling and are not
+// deterministic — see the note on frame boundaries in docs/protocol/streams.md →
+// "Stream notifications". The
+// exact-agreement claim is about a single run comparing both binaries, not about
+// a number that reproduces across runs.
+//
+// Be honest about how much that carries: the run-to-run spread is inferred from
+// TWO observations, so "~22 frames adrift would be visible" rests on a weakly
+// established noise floor. The load-bearing evidence is the SECOND arm — the
+// ~8.7 KB control landing exactly (1,438 / 1,438) after the fix. Two independent
+// arms agreeing exactly is much harder to get by luck than one, and that is what
+// settles the trailing newline, not the 22-frame margin.
+//
+// A fixture can make a real divergence unmeasurable purely by choosing the wrong
+// magnitude, and nothing about the earlier run looked wrong.
+const defaultBufferCap int64 = 16 * 1024 * 1024
+
+// stdinQueueCap bounds the per-process async stdin queue. A producer that outruns
+// a slow or non-reading child gets a -32002 "stdin backpressure: queue full" error
+// once this much data is queued, rather than letting the daemon's memory grow
+// without bound. This is a WIRE contract, not a log edge: the reference returns
+// that error frame (measured against 4534d86: the reject fires once the queue
+// exceeds 16 MiB). The cap is 16 MiB to match. var so tests can shrink it.
+var stdinQueueCap = 16 * 1024 * 1024
+
+type Proc struct {
+	id string
+	// pid and startTime are captured once at spawn and never mutated, so they are
+	// safe to read without p.mu. They back the CT-1 opt-in (process.spawn /
+	// process.reattach with "wantPid":true).
+	//
+	// startTime is the daemon's wall clock (epoch seconds) captured at spawn,
+	// returned identically on spawn and reattach for the same process. It is an
+	// OPAQUE TOKEN for PID-reuse detection: a client compares a persisted
+	// daemon value against a later daemon value for the same id. Do NOT compare it
+	// against an independently-read OS process start time (e.g. psutil
+	// create_time) — the daemon's spawn-moment wall clock differs from the kernel's
+	// process-creation time by the fork→time.Now() delta and a different clock
+	// derivation, so an equality check would spuriously fail.
+	pid       int
+	startTime float64
+	// sessionKey is the CLI session id this process belongs to (cliSessionKey of its
+	// argv), or "" for a non-session spawn. Set once at spawn and never mutated, so
+	// it is safe to read without p.mu. supersedeSession keys on it to terminate a
+	// prior process of the same session when a new one spawns (4534d86 parity).
+	sessionKey string
+	mu         sync.Mutex
+	seq        uint64
+	buffer     []StreamFrame
+	bufBytes   int64 // sum of f.lineBytes (serialized frame + newline) in buffer
+	bufCap     int64 // per-instance override; 0 means use defaultBufferCap
+	subs       map[*conn.Conn]struct{}
+	running    bool
+	// reaped is set as soon as cmd.Wait returns — the moment the kernel frees the
+	// pid, and with it the process GROUP id once the last member goes. That is up
+	// to exitDrainGrace before running clears, which is why the two fields exist
+	// separately: running is the client's view, reaped is signal safety. The gap
+	// is reachable exactly when a grandchild holds the pipe open, and a
+	// grandchild that calls setsid() (which is what daemonizing means) leaves the
+	// group, so the group really can empty and its id be reused mid-drain. Read
+	// only under p.mu, by signalIfLive, by IsLive, and by reattach.
+	reaped bool
+	// exitedAt is stamped alongside running=false, so it dates the exit frame
+	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
+	// the process is alive. Read only by pruneExited, under p.mu like running.
+	exitedAt time.Time
+	// killedBy records who asked the daemon to kill this process ("client" for
+	// process.kill / process.killAndWait, "shutdown" for the killAll sweep). It is
+	// stamped by signalIfLive, and only when the signal is actually delivered to a
+	// still-live process, then read once in waitReapAndDrain to populate the exit
+	// frame's killedBy field. Empty when the process exited on its own, was
+	// signalled from outside the daemon, or was already reaped when the kill
+	// arrived — a late kill inside the exit-drain window changed nothing, so it
+	// claims nothing (measured against 4534d86: a natural exit killed inside the
+	// drain window carries no killedBy on the reference). The first reason wins, except
+	// that the shutdown sweep replaces an earlier reason while killAndWaitProc still
+	// waits for the exit (waiting). After a plain process.kill, or after a
+	// killAndWait that returned, the first reason stays (claustrum's own, not measured).
+	// Provenance for the value set is split at the KilledBy field comment above:
+	// "client" is live-measured, "shutdown" is measured on Linux only in the log.
+	// Read and written under p.mu.
+	killedBy string
+	// waiting counts the killAndWaitProc calls that wait for the exit of this
+	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
+	// A count, so one call that returns leaves another call's wait marked.
+	waiting int
+	// signalled is set when signalIfLive delivers a signal. A farewell on a
+	// signalled record is not said (see holdFarewell). farewell is the pending
+	// farewell, or nil. Both are read and written under p.mu.
+	signalled bool
+	farewell  *farewellHold
+	stdin     io.WriteCloser
+	// cmd is set once in spawn's composite literal and never reassigned, so it is
+	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
+	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
+	// this write-once pointer.
+	cmd   *exec.Cmd
+	group *ProcGroup // OS kill handle (the process group on Unix, the job or the direct child on Windows)
+	// done is closed once by the exit goroutine after the child is reaped, so
+	// killAndWait can block until the process is actually gone.
+	done chan struct{}
+	// askEnd is set once at spawn: the args of the request ask for stream-json
+	// (argsAskEnd). The shutdown sweep asks such a child to end first (KillAllCount).
+	askEnd bool
+	// forgetRecord removes the child's registry record. The exit goroutine calls it
+	// as soon as the wait on the child returns, before the pipe drain, and then
+	// closes recordDone. Both are set once at spawn. A nil value means there is
+	// nothing to do.
+	forgetRecord func()
+	recordDone   chan struct{}
+
+	// Async stdin: process.stdin enqueues here and returns immediately, while a
+	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
+	// keeps a slow or non-reading child from blocking the dispatch goroutine on a
+	// synchronous pipe write — matching the reference, which returns success before
+	// the child has read the data. Guarded by stdinMu (separate from mu).
+	stdinMu     sync.Mutex
+	stdinCond   *sync.Cond
+	stdinQ      [][]byte
+	stdinQBytes int
+	stdinDone   bool
+	stdinWarned bool
+	// stdinApplied is the cumulative count of stdin bytes accepted for delivery,
+	// the high-water mark that backs the stdin-offset idempotency contract (see
+	// ApplyStdin). Guarded by stdinMu; surfaced on the wire as process.stdin's
+	// "applied" and process.reattach's "stdinApplied".
+	stdinApplied uint64
+
+	// linked marks a link-bound spawn, and link is its connection. Both are set
+	// once at spawn and never mutated. detachedAt is the moment the link went, and
+	// zero while it is there. Read and written under p.mu. onExit runs once after
+	// the exit frame. See linkbound.go.
+	linked     bool
+	link       *conn.Conn
+	detachedAt time.Time
+	onExit     func()
+
+	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
+	// releaseTemp gives that folder back after the exit frame (clitemproot_linux.go).
+	cliTempRoot *rpc.CLITempRoot
+	releaseTemp func()
+}
+
+type Manager struct {
+	mu    sync.Mutex
+	procs map[string]*Proc
+	// stop ends the background prune sweep; stopOnce keeps close() idempotent so
+	// a double shutdown cannot panic on a second close of the channel.
+	stop     chan struct{}
+	stopOnce sync.Once
+	// pruneAge/pruneInterval are COPIED from the package vars at construction
+	// rather than read live by the sweep. A sweep goroutine outlives its test
+	// whenever a manager is built without a teardown, so reading the vars from
+	// inside the loop makes any later test that shrinks them a data race — which
+	// is exactly what -race caught. Copying confines each var to the constructing
+	// goroutine.
+	pruneAge      time.Duration
+	pruneInterval time.Duration
+	// supersedeGrace is how long a session supersede waits after SIGTERM before the
+	// SIGKILL: the default grace of killAndWait (defaultKillWaitMs). It is copied at
+	// construction for the same reason as the two values above: a spawn request
+	// outlives its test.
+	supersedeGrace time.Duration
+	// spent holds the exit time of each link-bound process whose id is spent, and
+	// spentAge is linkSpentAge, copied at construction. Guarded by mu.
+	spent    map[string]time.Time
+	spentAge time.Duration
+	// linkStarting holds the id of each link-bound spawn from its id test until
+	// spawnVia returns, so no other spawn of that id starts. Guarded by mu.
+	linkStarting map[string]struct{}
+
+	// spawnLocks holds a per-session-key mutex so concurrent spawns of the SAME CLI
+	// session serialize (a new session process must fully register before the next
+	// same-key spawn supersedes it). Ref-counted and dropped at zero, so the map does
+	// not grow unbounded. Guarded by spawnMu.
+	spawnMu    sync.Mutex
+	spawnLocks map[string]*sessionSpawnLock
+
+	// startsStopped is set at the start of the shutdown. A spawn reads it with no
+	// lock and gives up before it starts a child. startGate orders the start of a
+	// child against the teardown. A spawn holds it for reading from its check
+	// before the start to its return, so its child and its record are done before
+	// StopStarts returns.
+	startsStopped atomic.Bool
+	startGate     sync.RWMutex
+
+	// Jobs tells if spawn puts each child in a job of its own (Windows only, see
+	// ChildJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
+	// once at the start of the daemon. The zero value is off.
+	Jobs ChildJobs
+
+	// Records holds the run dir and the child-record state (internal/childrec). Its
+	// fields are promoted, so code reads them as fields of the manager.
+	childrec.Records
+}
+
+// sessionSpawnLock is one per-session-key mutex plus a reference count, so the
+// entry can be removed from Manager.spawnLocks once no spawn holds or awaits it.
+type sessionSpawnLock struct {
+	mu  sync.Mutex
+	ref int
+}
+
+// procPruneAge is how long a process stays reachable after it exits. Past this,
+// process.reattach reports found:false and the id is free again.
+//
+// Provenance, which used to be labelled "probe-measured" as a whole and is not:
+//
+//	probe (5db5e4a)  an entry is still reachable 45s after its process exited,
+//	                 and gone 960s after. That brackets the age to (45s, 960s].
+//	                 It does NOT single out 900s, and no black-box observable
+//	                 can. Both ends are observations, not inferences: the lower
+//	                 one is a reattach answering found:true at 45s, re-measured
+//	                 2026-08-02 because the bracket previously published a 20s
+//	                 lower bound that nothing stated beside it supported.
+//	claustrum        900s is claustrum's own choice inside that bracket. It is
+//	                 not probe-measured.
+//
+// Copied into the manager at construction. var so tests can shrink it.
+var procPruneAge = 15 * time.Minute
+
+// procPruneInterval is the sweep period of the background prune. The sweep runs
+// on top of the inline call in spawn, so an idle daemon prunes too, with no spawn
+// to trigger it.
+//
+// The 60s period is claustrum's own value. It is NOT probe-measured, and it cannot
+// become probe-measured. The only wire effect of the sweep is that an aged-out id
+// answers found:false. An aged-out id answers that way whatever schedule noticed
+// it. No observable distinguishes a 60s sweep from a 30s or 120s one. The probe
+// DOES support the "idle daemon prunes too" half. On the reference, an entry
+// disappears with no intervening process.spawn to trigger an inline call.
+//
+// Copied into the manager at construction, so a test must set it before
+// NewManager. var so tests can shrink it.
+var procPruneInterval = time.Minute
+
+func NewManager() *Manager {
+	m := &Manager{
+		procs:          make(map[string]*Proc),
+		stop:           make(chan struct{}),
+		pruneAge:       procPruneAge,
+		pruneInterval:  procPruneInterval,
+		supersedeGrace: time.Duration(defaultKillWaitMs) * time.Millisecond,
+		spawnLocks:     make(map[string]*sessionSpawnLock),
+		spent:          make(map[string]time.Time),
+		spentAge:       linkSpentAge,
+		linkStarting:   make(map[string]struct{}),
+	}
+	go m.pruneLoop()
+	return m
+}
+
+// pruneLoop sweeps long-exited processes out of the table on a timer. The
+// reference also prunes an idle daemon, which is probe-measured. Without this loop
+// an idle daemon keeps every dead process forever. The inline sweep in spawn
+// prunes only when new work arrives.
+func (m *Manager) pruneLoop() {
+	t := time.NewTicker(m.pruneInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			m.pruneExited()
+		case <-m.stop:
+			return
+		}
+	}
+}
+
+// ErrStartsStopped is the error of a spawn that reached the start of its child
+// after the shutdown began. processSpawn sends no frame for it.
+var ErrStartsStopped = errors.New("no child starts after the shutdown began")
+
+// beforeChildStart runs in spawnVia just before the spawn takes startGate,
+// pastStartCheck right after its check of startsStopped before the start, and
+// afterChildStart right after the start. They are seams for a test that holds a
+// spawn there. Production never reassigns them.
+var (
+	beforeChildStart = func(id string) {}
+	pastStartCheck   = func(id string) {}
+	afterChildStart  = func(id string, pid int) {}
+)
+
+// RefuseStarts makes each spawn that has not passed the check before the start give
+// up before it starts a child. It does not block. signalShutdown calls it at the
+// start of the shutdown.
+func (m *Manager) RefuseStarts() { m.startsStopped.Store(true) }
+
+// StopStarts refuses new starts and waits for the spawns that passed the check
+// before the start. The teardown calls it after it dropped the connections and
+// before it kills the children. Such a spawn holds startGate. If its start returned
+// before the shutdown began, this waits until its child is in the table and has its
+// record, so the kill of the teardown reaches that child. If not, the spawn ends
+// the child itself. No temp file of a record stays. Idempotent.
+func (m *Manager) StopStarts() {
+	m.RefuseStarts()
+	m.startGate.Lock()
+	m.startGate.Unlock() //nolint:staticcheck // the empty section waits for the read holders
+}
+
+// Close ends the prune sweep. Idempotent, and safe to call on a manager whose
+// sweep never started.
+func (m *Manager) Close() {
+	m.stopOnce.Do(func() { close(m.stop) })
+}
+
+// pruneExited drops every process that has been exited for longer than
+// procPruneAge, freeing its replay buffer with it. A RUNNING process is immune
+// at any age — probe-measured: a sleeper spawned 960s earlier is still
+// found:true,running:true while a process that exited at the same moment is
+// gone. After pruning, the id behaves exactly like one that never existed:
+// reattach reports found:false and kill reports success:true, so no caller sees
+// a new error.
+func (m *Manager) pruneExited() {
+	now := time.Now()
+	cutoff := now.Add(-m.pruneAge)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pruneSpentLocked(now)
+	for id, p := range m.procs {
+		p.mu.Lock()
+		// exitedAt is zero until the exit frame goes out, which covers both a
+		// running process and the brief window while one is being reaped.
+		stale := !p.running && !p.exitedAt.IsZero() && p.exitedAt.Before(cutoff)
+		p.mu.Unlock()
+		if stale {
+			// Safe to delete during range — Go defines this, and an entry removed
+			// mid-iteration is simply not produced.
+			delete(m.procs, id)
+			logging.Debugf("[process.Manager] Pruned exited process %s", id)
+		}
+	}
+}
+
+func (m *Manager) Get(id string) *Proc {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.procs[id]
+}
+
+// LiveArgv returns the argv of every process the manager still considers running,
+// as clients see it (running true). plugins.prune scans these for plugin-dir
+// references so a plugin an active session loaded (via a --plugin-dir path) is kept
+// regardless of age — matching the reference, which keeps a plugin whose hash
+// appears in a live child's argv. cmd is write-once so it is safe to read without p.mu; running
+// is read under p.mu like everywhere else.
+func (m *Manager) LiveArgv() [][]string {
+	m.mu.Lock()
+	procs := make([]*Proc, 0, len(m.procs))
+	for _, p := range m.procs {
+		procs = append(procs, p)
+	}
+	m.mu.Unlock()
+	var out [][]string
+	for _, p := range procs {
+		p.mu.Lock()
+		live := p.running
+		p.mu.Unlock()
+		if live && p.cmd != nil {
+			out = append(out, p.cmd.Args)
+		}
+	}
+	return out
+}
+
+// IsRunning reports the process's state as the EXIT FRAME sees it: true until
+// that frame is emitted. During the bounded exit drain that is a window in which
+// the process has already been reaped but still reports running — deliberately,
+// to match the reference. 90fca6e6's reaped narrowing moved process.reattach and
+// process.stdin to IsLive below, so neither reads this any more. One client-visible
+// field still does: killAndWaitProc answers alreadyExited from it, so inside the
+// drain a killAndWait answers alreadyExited:false and waits, rather than reporting
+// an already-exited process. It delivers no FIRST signal either: signalIfLive's
+// reaped guard suppresses that. The one exception is "signal":"KILL", which kills
+// the group at once (killGroupInDrain). With escalate true and the drain still
+// pending at the end of the grace, killGroupAfterExit still sends the group SIGKILL.
+// 5fd08069 answers the same (measured on Linux and macOS). The other callers are
+// internal (the session supersede, the shutdown log line). Use signalIfLive, which
+// holds p.mu across the reaped check and the delivery, to decide whether it is safe
+// to signal.
+func (p *Proc) IsRunning() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running
+}
+
+// IsLive is IsRunning narrowed by the reap: running AND not yet reaped. The two
+// differ only inside the exit drain, the window that opens when cmd.Wait returns
+// and closes when the exit frame goes out. A process in that window has no pipe
+// left to write to and no session left to resume, so 90fca6e6 answers "not
+// running" for it on both process.stdin and process.reattach. IsRunning stays for
+// the paths that report the client's view of the process, such as the exit frame.
+func (p *Proc) IsLive() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running && !p.reaped
+}
+
+// Pid, StartTime and CLITempRoot give the values that spawn set once, for the
+// replies of process.spawn and process.reattach. They take no lock.
+func (p *Proc) Pid() int                      { return p.pid }
+func (p *Proc) StartTime() float64            { return p.startTime }
+func (p *Proc) CLITempRoot() *rpc.CLITempRoot { return p.cliTempRoot }
+
+// signalGroup is a seam over ProcGroup.Signal so the "do not signal a reaped
+// process" guards are testable without actually delivering a signal to whatever
+// now owns a recycled pgid — which is precisely the accident being guarded
+// against. Production never reassigns it.
+var signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+	return g.Signal(proc, signame)
+}
+
+// signalIfLive delivers signame as SignalProcessGroup does unless the process has
+// already been reaped, and — only when it actually delivers — records who asked
+// for the kill in p.killedBy. Coupling the stamp to the delivery under one lock
+// is deliberate: a kill that lands on an already-reaped process changed nothing,
+// so it must not claim the exit on the wire. The reference emits no killedBy for
+// a process that exited on its own before the signal could reach it (measured
+// against 4534d86: a natural exit killed inside the drain window carries no
+// killedBy). Pass killedBy "" to signal without claiming attribution. The first
+// reason wins, except that the shutdown sweep replaces an earlier reason while
+// killAndWaitProc still waits for the exit (measured on Linux in the log). Any other
+// earlier reason stays (claustrum's own, not measured).
+//
+// p.mu is held across the check, the stamp and the delivery: a reaped check that
+// returns before the signal leaves a gap for the exit goroutine to reap in
+// between, which is the very race the check exists to prevent. Every signal site
+// goes through here for that reason, except killGroupAfterExit, killGroupInDrain and
+// killGroupBeforeExitFrame.
+//
+// One window remains and cannot be closed at this layer: the kernel frees the
+// pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
+// reaped. A signal to the group goes by pid, and a signal by pid on POSIX is racy by
+// construction: a pidfd cannot address a process GROUP. The signal to the one
+// process goes through its handle (see SignalProcessGroup), which has no such
+// window on a Linux kernel with pidfd.
+//
+// This guard is a claustrum-only judgement, not a measured parity claim. The
+// comment used to read "the reference has no guard here at all", which asserts
+// an ABSENCE — no black-box probe can establish that, and it kept getting sent
+// back for re-measurement it can never satisfy. What is defensible: the guard
+// can only ever suppress a signal, so claustrum's behaviour here is at most
+// narrower than the reference's, never wider.
+//
+// It reports whether the process was live.
+func (p *Proc) signalIfLive(signame, killedBy string) bool {
+	live, _ := p.signalIfLiveErr(signame, killedBy)
+	return live
+}
+
+// signalIfLiveErr is signalIfLive that also returns a *SignalFailed of the delivery.
+func (p *Proc) signalIfLiveErr(signame, killedBy string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.signalIfLiveLocked(signame, killedBy)
+}
+
+// signalIfLiveLocked is signalIfLiveErr for a caller that holds p.mu. A delivery
+// that failed with a *SignalFailed stamps no killedBy: 52d82f0a gives such a child
+// no killedBy at its later exit (measured on Linux and macOS). It sets no signalled
+// either, and a refused shutdown KILL stamps no "shutdown" (claustrum's own, not
+// measured). Every other error of signalGroup counts as
+// a delivery, as before. Only Linux and macOS make a *SignalFailed.
+func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
+	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
+		return false, nil
+	}
+	var failed *SignalFailed
+	if err := signalGroup(p.group, p.cmd.Process, signame); errors.As(err, &failed) {
+		// A refused signal leaves a pending farewell and its timer as they are
+		// (claustrum's own, not measured).
+		return true, failed
+	}
+	// A signal cuts a pending farewell (measured on Linux and macOS).
+	p.cutFarewellLocked()
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
+		p.killedBy = killedBy
+	}
+	p.signalled = true
+	return true, nil
+}
+
+// killGroupAfterExit SIGKILLs the process group once the managed process itself
+// has already exited, sweeping up any child it left behind. Deliberately does
+// NOT take the reaped guard signalIfLive applies: by construction it runs after
+// the reap, so that guard would make it a no-op and the orphans would survive.
+//
+// With killGroupInDrain and killGroupBeforeExitFrame it is one of three places where claustrum knowingly signals
+// a pgid whose leader is gone. Its one caller is the escalation of killAndWaitProc,
+// after the grace ran out.
+// There the leader has often ended, and a group member that holds its pipes keeps
+// the exit drain pending.
+//
+// What is measured is the OUTCOME, not the absence of a guard: 89cb6289 sends the
+// group SIGKILL at the end of the grace in that state (measured on Linux). It
+// sends none after a process that ended within the grace (measured on Linux), and
+// killAndWaitProc sends none there either.
+//
+// It returns the error of the kill. On Unix that is a *SignalFailed or nil. On Windows
+// it is the error of TerminateJobObject on the job, or of TerminateProcess on a
+// direct child with no job.
+func (p *Proc) killGroupAfterExit() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil || p.cmd.Process == nil {
+		return nil
+	}
+	return signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
+// killGroupBeforeExitFrame sends SIGKILL to the group of a process whose exit frame is
+// not out yet: a live child, or one in its exit drain. It holds p.mu across the test
+// and the signal, so no group signal goes after running turns false (D28). The end of
+// the shutdown wait of endAsked is its one caller. On Windows the error is ignored.
+func (p *Proc) killGroupBeforeExitFrame() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.running || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
+// killGroupInDrain sends SIGKILL to the group of a process inside its exit drain:
+// reaped, and its exit frame not out yet. 5fd08069 kills the group at once for a
+// killAndWait with "signal":"KILL" there (measured on Linux and macOS). Another signal
+// reaches no member of the group there (measured). b3081b51 kills the group at once for
+// a process.kill with "signal":"KILL" there too, and for a killAndWait with "SIGKILL"
+// (measured on Linux and macOS). A TERM there sends no signal to the ended child either
+// (measured on Linux). The exit frame of the process.kill case has no killedBy (measured on Linux and macOS),
+// and this stamps none. The Windows answer is not measured. On Windows the error is ignored.
+//
+// With skipLivePid true it sends nothing if pidInUse finds a live process at the pid of
+// the ended child, because the group number is that pid (claustrum's own, not measured).
+// process.kill passes true and killAndWait passes false.
+func (p *Proc) killGroupInDrain(skipLivePid bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.running || !p.reaped || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	if skipLivePid && PidInUse(p.cmd.Process.Pid) {
+		return
+	}
+	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
+// emit assigns the next per-process seq, buffers the frame, and fans it out to
+// every attached client. The buffer retains frames for later reattach, capped
+// at defaultBufferCap (or the per-instance bufCap): the oldest frames are
+// dropped, and firstSeq advances, when
+// the cap is exceeded, matching the reattach contract on the wire.
+func (p *Proc) emit(f StreamFrame) {
+	p.mu.Lock()
+	p.seq++
+	f.Seq = p.seq
+	f.Type = "stream"
+	f.ProcessID = p.id
+	// Marshal HERE, under the lock, because the accounting unit is the serialized
+	// line and the seq that goes into it is assigned here. The same bytes are
+	// reused for the fan-out below, so this is not an extra marshal — it moved.
+	//
+	// The COUNT is unchanged; the lock hold is not. p.mu is now held across a
+	// marshal of up to ~44 KB of base64 per frame, where it was released first.
+	// That is the same lock reattach takes to swap the subscriber set and the one
+	// the stdout and stderr readers contend on, so under a high-throughput process
+	// the two emitters now serialize on marshal time as well as on bookkeeping.
+	// Unavoidable as written — the seq that goes into the bytes is assigned under
+	// the lock — and stated here so anyone profiling emit finds it rather than
+	// discovering it.
+	//
+	// json.Marshal, not an Encoder: this is the encode that carries EVERY live
+	// stream frame, and its HTML escaping is inherited wire behaviour — see
+	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on
+	// conn.Conn.WriteJSON.
+	b, merr := json.Marshal(f)
+	if merr == nil {
+		b = append(b, '\n')
+	}
+	f.lineBytes = int64(len(b))
+	p.buffer = append(p.buffer, f)
+	p.bufBytes += f.lineBytes
+	cap := p.bufCap
+	if cap == 0 {
+		cap = defaultBufferCap
+	}
+	// Trim oldest frames while over cap, keeping at least the frame just added.
+	for len(p.buffer) > 1 && p.bufBytes > cap {
+		p.bufBytes -= p.buffer[0].lineBytes
+		p.buffer = p.buffer[1:]
+	}
+	subs := make([]*conn.Conn, 0, len(p.subs))
+	for c := range p.subs {
+		subs = append(subs, c)
+	}
+	p.mu.Unlock()
+	// The frames are identical per conn, so one marshal serves every subscriber.
+	// json.Marshal of a StreamFrame cannot realistically fail (strings + ints);
+	// if it somehow does, every subscriber would have failed the same way, so
+	// mirror the old per-conn behavior: log + detach each.
+	for _, c := range subs {
+		err := merr
+		if err == nil {
+			err = c.WriteLine(b)
+		}
+		if err != nil {
+			logging.Warnf("[frameSink] write failed, detaching: %v", err)
+			p.mu.Lock()
+			delete(p.subs, c)
+			p.mu.Unlock()
+		}
+	}
+}
+
+// Spawn starts a child process in its own process group and begins streaming. It
+// returns the Proc so the caller can read its (immutable) pid/startTime
+// for the CT-1 opt-in; the wire reply is otherwise unaffected.
+func (m *Manager) Spawn(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool) (*Proc, error) {
+	return m.spawnVia(c, id, command, args, cwd, env, noShellAgent, nil, 0)
+}
+
+// spawnVia is spawn with the process.spawn launcher param (89cb6289). A nil launcher
+// (the param absent or null) spawns the command itself. A non-nil launcher, an
+// empty one too, goes through RefuseManagedLauncher before anything else. When it
+// passes, the child argv is the launcher argv, then the command, then the args. The
+// launcher is then the process, and its stream frames are its own. A linkTTL above
+// 0 makes a link-bound process with that unattended time (linkbound.go).
+func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*Proc, error) {
+	return m.SpawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, false, nil)
+}
+
+// SpawnWithTempRoot is spawnVia with the cliTempRoot param of process.spawn. When
+// tempRoot is true, the step of clitemproot_linux.go runs after the env is built,
+// and the process keeps its answer in cliTempRoot. folders are the session folders
+// of the spawn (sessionfolders.go), recorded before the start.
+func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*Proc, error) {
+	path, argv := command, args
+	if launcher != nil {
+		if err := RefuseManagedLauncher(*launcher, command); err != nil {
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+		path = (*launcher)[0]
+		argv = append(append(append([]string{}, (*launcher)[1:]...), command), args...)
+	}
+	// Read the drain cap ONCE, here in the caller's goroutine, rather than from
+	// inside the exit waiter. The waiter outlives the request — and outlives the
+	// test that spawned it — so reading the package var there races any later
+	// test that shrinks it. macOS CI caught exactly that; the same confinement is
+	// why Manager copies its prune tunables at construction.
+	grace := exitDrainGrace
+	endGrace := unattendedEndGrace
+	// A stream-json session spawn serializes against other spawns of the same
+	// session (so a new session process fully registers before the next same-key
+	// spawn supersedes it). Before it starts its process, it ends the prior process
+	// of that session below. Empty key (the common case) does neither. (4534d86.)
+	sessionKey := cliSessionKey(args)
+	if sessionKey != "" {
+		unlock := m.lockSessionSpawn(sessionKey)
+		defer unlock()
+	}
+	// claustrum prunes inline here as well as on its timer, so a busy daemon sheds
+	// long-dead entries without waiting for the next sweep.
+	m.pruneExited()
+	// The command of a spent id does not run (683cc6a9, measured on Linux). The
+	// place of this test after the launcher tests and before the cwd test is
+	// claustrum's own, not measured. So is the Failed to start line. A link-bound
+	// spawn holds its id in linkStarting until its table entry is there.
+	m.mu.Lock()
+	taken := m.idTakenLocked(id)
+	if !taken && linkTTL > 0 {
+		m.linkStarting[id] = struct{}{}
+		defer func() {
+			m.mu.Lock()
+			delete(m.linkStarting, id)
+			m.mu.Unlock()
+		}()
+	}
+	m.mu.Unlock()
+	if taken {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		return nil, errSpentID
+	}
+	cmd := exec.Command(path, argv...)
+	if cwd != "" {
+		// Stat the cwd before exec so an unusable one names the directory at
+		// fault, as the reference does, instead of Go's `fork/exec <command>:
+		// …` which names the command. The two failures have DIFFERENT shapes —
+		// probe-measured against the reference at 5db5e4a, 2026-07-30:
+		//
+		//	missing dir   -> "chdir <p>: stat <p>: no such file or directory"
+		//	cwd is a file -> "chdir <p>: not a directory"   (no "stat <p>:" part)
+		//
+		// so the stat error is wrapped but the not-a-directory case is its own
+		// message rather than a wrapped ENOTDIR.
+		//
+		// The reference logs each of the two with its Failed to start line, and the
+		// text after the id is the frame message. Measured on Linux and on Windows.
+		fi, err := os.Stat(cwd)
+		if err != nil {
+			err = &CwdError{Err: fmt.Errorf("chdir %s: %w", cwd, err)}
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+		if !fi.IsDir() {
+			err = &CwdError{Err: fmt.Errorf("chdir %s: not a directory", cwd)}
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+		cmd.Dir = cwd
+	}
+	// The launcher variables are stripped after the caller's env is merged, so the
+	// strip covers the spawn env param as well as the daemon env.
+	cmd.Env = install.StripEnv(buildSpawnEnv(env, noShellAgent), launcher != nil)
+	// After the caller's env and before the trampoline adds its markers, so an
+	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
+	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
+	// A bare command name that PATH found in a session folder (sessionfolders.go).
+	if launcher == nil {
+		bareCommandStart(cmd, command, env)
+	}
+	if launcher != nil {
+		// The command has to be runnable before the launcher starts. This comes
+		// after the env is built, as the reference's two [shellenv] lines come
+		// before this failure (measured log order).
+		if err := LaunchedCommandError(command); err != nil {
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+	} else if sessionKey != "" {
+		// The pre-check of a session spawn: a command that does not exist fails here,
+		// before the supersede below, so the prior process of the session gets no
+		// signal (`89cb6289`, measured on Linux). A launched spawn has its own check above.
+		if err := missingCommandError(cmd); err != nil {
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+	}
+	// The session folders get their records before the start. A record that cannot
+	// be written fails the spawn when the first daemon PATH entry lies in its folder
+	// (b3081b51, measured on Linux). The refusal comes after the line of the record,
+	// and no child starts (measured on Linux, macOS and Windows). The place after
+	// the cwd and command tests and before the supersede is claustrum's own, not
+	// measured.
+	if err := sessiondirs.Remember(folders...); err != nil {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		return nil, err
+	}
+	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_linux.go).
+	// A spawn that does not keep its child gives the folder back. A launched spawn
+	// skips the step (b3081b51, measured on Linux). The place after the command
+	// tests is claustrum's own, not measured.
+	var tempAnswer *rpc.CLITempRoot
+	releaseTemp := func() {}
+	if tempRoot && launcher == nil {
+		cmd.Env, tempAnswer, releaseTemp = privateTempRoot(cmd.Env, m.RunDir)
+	}
+	keptTemp := false
+	defer func() {
+		if !keptTemp {
+			releaseTemp()
+		}
+	}()
+	cmd.SysProcAttr = SpawnSysProcAttr(m.Jobs)
+	// Launch through the exec-child trampoline, on every socket shape, so the
+	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
+	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
+	// its error frame is unchanged). Applied after BuildEnv/SysProcAttr so it can rewrite
+	// the resolved argv and hold the Go-runtime env. When the trampoline itself does
+	// not start, the command is started directly below.
+	// The path, argv and env before the wrap are kept for the direct start below.
+	// The env is a copy, because the wrap edits the env slice in place.
+	directPath, directArgs, directEnv := cmd.Path, cmd.Args, slices.Clone(cmd.Env)
+	execErrR, execErrW := WrapCmdWithTrampoline(cmd, m.RunDir)
+	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
+	// below; a no-op (both ends nil) when the spawn was not trampolined.
+	closeExecErr := func() {
+		if execErrR != nil {
+			_ = execErrR.Close()
+			_ = execErrW.Close()
+		}
+	}
+
+	// Deliberately os.Pipe rather than cmd.StdoutPipe/StderrPipe. cmd.Wait closes
+	// the pipes it creates itself, which forces the "drain fully, then Wait"
+	// order and leaves no way to learn the moment the process exited — the exact
+	// thing the bounded drain below needs. Handing exec a plain *os.File instead
+	// passes the descriptor straight to the child: cmd.Wait then returns at
+	// process exit and leaves these read ends alone, so their lifetime is ours.
+	stdoutR, stdoutW, err := osPipe()
+	if err != nil {
+		closeExecErr()
+		return nil, err
+	}
+	stderrR, stderrW, err := osPipe()
+	if err != nil {
+		sysproc.CloseAll(stdoutR, stdoutW)
+		closeExecErr()
+		return nil, err
+	}
+	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
+	stdin, err := cmdStdinPipe(cmd)
+	if err != nil {
+		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
+		closeExecErr()
+		return nil, err
+	}
+	// dropUnstarted releases what a spawn made for a child that does not start.
+	dropUnstarted := func() {
+		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
+		closeExecErr()
+		_ = stdin.Close()
+		if f, ok := cmd.Stdin.(*os.File); ok {
+			_ = f.Close()
+		}
+	}
+	// A spawn after the start of the shutdown also supersedes nothing, so it
+	// sends no signal to the prior process of its session. This check is
+	// claustrum's own and not measured. The lock is not held over the supersede.
+	if m.startsStopped.Load() {
+		dropUnstarted()
+		return nil, ErrStartsStopped
+	}
+	// End the prior process of the same session and wait for its end, before the new
+	// process starts (`89cb6289`, measured). Non-session spawns (empty key) skip
+	// this. The step comes after the pre-check above and before the start: a command
+	// that does not exist supersedes nothing (measured). A command that exists and
+	// does not start supersedes first, and its error comes after (measured on Linux).
+	m.supersedeSession(sessionKey, id)
+	// Once the shutdown began, no new child starts. The read lock is held to the
+	// return, so the teardown waits for a child that starts here and for its record.
+	beforeChildStart(id)
+	m.startGate.RLock()
+	defer m.startGate.RUnlock()
+	if m.startsStopped.Load() {
+		dropUnstarted()
+		return nil, ErrStartsStopped
+	}
+	pastStartCheck(id)
+	err = cmd.Start()
+	if err != nil && execErrR != nil {
+		// The start of the trampoline itself failed, so nothing ran. The reference
+		// logs that and starts the command directly, and the frame then holds the
+		// error of the direct start. Measured on Linux with a cwd of mode 000: the
+		// frame names the command, not /proc/self/exe. The text of the line is the
+		// reference's. Not measured: a direct start that then works. claustrum gives
+		// that child the run dir entry and no CLAUDE_SSH_CHILD entry, as the direct
+		// start for a daemon with no re-executable binary does.
+		logging.Warnf("[process.Manager] exec trampoline failed for %s (%v); starting it directly — a successor daemon will not be able to reap it", id, err)
+		closeExecErr()
+		execErrR, execErrW = nil, nil
+		// exec.Cmd.Start closed the failed command's stdin pipe. The stdout and
+		// stderr write ends are plain files of ours, so they are still open.
+		cmd = &exec.Cmd{
+			Path:        directPath,
+			Args:        directArgs,
+			Env:         TrampolineFallbackEnv(directEnv, m.RunDir),
+			Dir:         cmd.Dir,
+			SysProcAttr: cmd.SysProcAttr,
+			Stdout:      stdoutW,
+			Stderr:      stderrW,
+		}
+		if stdin, err = cmdStdinPipe(cmd); err == nil {
+			err = cmd.Start()
+		}
+	}
+	if err != nil {
+		if launcher != nil {
+			err = ManagedLauncherStartError(path, err)
+		}
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
+		closeExecErr()
+		return nil, err
+	}
+	// The child holds its own copies now. Drop ours, or the read ends never see
+	// EOF even after every process in the tree has exited.
+	sysproc.CloseAll(stdoutW, stderrW)
+	// When wrapped by the exec-child trampoline, cmd.Start's own exec-error pipe only
+	// saw the trampoline exec; the target exec happens in the trampoline. Read its
+	// outcome here: any bytes are the target's exec failure — surface it exactly as a
+	// direct Start failure (a missing/non-executable target then yields the same
+	// -32603 fork/exec frame, not a spurious success) — while a clean EOF means the
+	// target is running.
+	if execErrR != nil {
+		_ = execErrW.Close() // drop the parent's write end so the read below terminates
+		if execErr := ReadExecChildError(execErrR); execErr != nil {
+			if launcher != nil {
+				execErr = ManagedLauncherStartError(path, execErr)
+			}
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, execErr)
+			_ = cmd.Wait() // reap the trampoline, which reported the error and exited
+			sysproc.CloseAll(stdoutR, stderrR)
+			return nil, execErr
+		}
+	}
+	// Stamp the start time the instant the child exists, so the CT-1 startTime is
+	// the process's birth moment (within ms), not a later bookkeeping point.
+	startTime := float64(time.Now().UnixNano()) / 1e9
+	afterChildStart(id, cmd.Process.Pid)
+	// Take the kill handle of the child. On Unix this is the process group from
+	// sysproc.NewSysProcAttr, so a kill can end the whole tree. On Windows it is a process
+	// handle of the direct child, and with m.jobs the job that the child joins here. A
+	// failure here is non-fatal: kill falls back to the parent. It comes before the
+	// check below, which needs the handle.
+	group, err := confineProc(cmd.Process, m.Jobs)
+	if err != nil {
+		logging.Warnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
+	}
+	// endUnstarted ends a started child that the spawn does not keep, and reaps it. The
+	// wait is bounded by killReapGrace. This spawn holds the start gate, and
+	// StopStarts waits for it. A child that the kill cannot reap must not hold the
+	// gate and the teardown forever. After the bound the spawn goes on, and the
+	// goroutine reaps the child later. Nothing below touches cmd, and the pipe read
+	// ends and the group handle are not used by the wait.
+	endUnstarted := func() {
+		_ = signalGroup(group, cmd.Process, "KILL")
+		reaped := make(chan struct{})
+		go func() {
+			_ = cmd.Wait()
+			close(reaped)
+		}()
+		bound := time.NewTimer(killReapGrace)
+		select {
+		case <-reaped:
+		case <-bound.C:
+		}
+		bound.Stop()
+		group.Close()
+		sysproc.CloseAll(stdoutR, stderrR)
+		_ = stdin.Close()
+	}
+	// A Windows child with a job started suspended. It runs only now, after the join,
+	// so it starts no process before it joins its job. A no-op otherwise. If the resume
+	// fails, the spawn ends the child and answers the error, with its Failed to start
+	// line (claustrum's own, not measured).
+	if err := resumeProc(cmd.Process, cmd.SysProcAttr); err != nil {
+		err = fmt.Errorf("resume after the job join: %w", err)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		endUnstarted()
+		return nil, err
+	}
+	// A start that returns after the shutdown began leaves no start line, no
+	// count, no table entry and no record. The kill here ends the child at once,
+	// also with -keep-children, and the wait reaps it.
+	if m.startsStopped.Load() {
+		endUnstarted()
+		return nil, ErrStartsStopped
+	}
+	// With a launcher the line names the launcher's argv[0] only (measured).
+	program := ""
+	if launcher != nil {
+		program = command
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
+	} else {
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+	}
+	metrics.Met.Spawns.Add(1)
+
+	p := &Proc{
+		id:         id,
+		pid:        cmd.Process.Pid,
+		startTime:  startTime,
+		sessionKey: sessionKey,
+		askEnd:     argsAskEnd(args),
+		subs:       map[*conn.Conn]struct{}{c: {}},
+		running:    true,
+		stdin:      stdin,
+		cmd:        cmd,
+		group:      group,
+		done:       make(chan struct{}),
+		recordDone: make(chan struct{}),
+
+		cliTempRoot: tempAnswer,
+		releaseTemp: releaseTemp,
+	}
+	if linkTTL > 0 {
+		p.linked, p.link = true, c
+		p.bufCap = linkReplayCap
+		p.onExit = func() { m.forgetLinked(p) }
+	}
+	// The end of the child removes its registry record (linux and darwin, a no-op
+	// on windows). The pid is copied here, so the exit goroutine needs no lock.
+	childPid := cmd.Process.Pid
+	p.forgetRecord = func() { m.RemoveChildRecord(childPid) }
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	m.mu.Lock()
+	// A spawn with the id of a process that still runs replaces the table entry, and
+	// both spawns succeed. The old process gets no signal and keeps its record.
+	// Measured against 89cb6289 on Linux and macOS, and on Windows with no job. kill,
+	// stdin and reattach then name the new process. -stop and server.shutdown end
+	// only the processes of the table, so the old process outlives the daemon there.
+	// On Linux and macOS its record stays, and the next start of a daemon reaps it. On
+	// Windows with jobs on and no -keep-children the old process ends with its job at
+	// the exit of the daemon (claustrum's own, not measured).
+	//
+	// The old process keeps its subscribers. Its stream frames and its exit frame
+	// still reach its own connection, under the same processId (89cb6289, Linux:
+	// frames seq 2 to 9 and the exit frame seq 10 of the first process came on
+	// connection 1 after the replace). Its seq numbers go on from its own count.
+	//
+	// A link-bound record, or a spent id, is not replaced. A spawn that passed the
+	// id test before a link-bound spawn of that id put its record here ends its own
+	// child and gets the spent-id refusal (claustrum's own, not measured).
+	if old := m.procs[id]; (old != nil && old != p && old.linked) || m.spentLocked(id) {
+		m.mu.Unlock()
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		endUnstarted()
+		return nil, errSpentID
+	}
+	m.procs[id] = p
+	m.mu.Unlock()
+	// A link whose connection is already gone makes the process detached at once,
+	// so its clock starts at the spawn. DetachConn runs after the connection is
+	// marked closed, so one of the two marks it.
+	if linkTTL > 0 {
+		if connGone(c) {
+			p.mu.Lock()
+			p.markDetachedLocked(time.Now())
+			p.mu.Unlock()
+		}
+		go m.watchUnattended(p, linkTTL, unattendedTick(linkTTL), endGrace)
+	}
+
+	// Record the spawned child in the orphan registry, so a later daemon can reap it if
+	// this daemon exits leaving it behind. That holds on linux and darwin, on every
+	// socket shape. It is a no-op on windows/other. The end of the child removes the record again (waitReapAndDrain). Done AFTER the child is in m.procs, so a concurrent server.shutdown /
+	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
+	// non-destructive: errors are logged, and it never affects the spawn result.
+	// With a launcher, argv0 is the launcher and program is the command.
+	m.RecordChild(cmd.Process.Pid, path, program)
+
+	go p.stdinWriter()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
+	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
+	// From here the exit of the child gives the folder back.
+	keptTemp = true
+	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
+	return p, nil
+}
+
+// waitReapAndDrain runs after spawn in its own goroutine: it waits for the child
+// to exit and reap, runs the bounded stdout/stderr drain, flips running to false,
+// tears down stdin and the OS group handle, then emits the exit frame. Extracted
+// from spawn so the lifecycle reads as one-level steps; behavior is unchanged.
+func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, grace time.Duration) {
+	// cmd.Wait returns the moment the process itself exits — it no longer
+	// waits on the pipes, because they are ours now.
+	err := p.cmd.Wait()
+	code := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode() // -1 when terminated by signal
+		} else {
+			code = -1
+		}
+	}
+	// The pid is now free for the kernel to reuse, and the pgid will be too
+	// once the last group member goes. Record that BEFORE the drain window
+	// opens, so no signal path can target a recycled id while we wait.
+	p.mu.Lock()
+	p.reaped = true
+	p.mu.Unlock()
+	// The child has ended, so its registry record goes now, before the drain wait
+	// below. Measured on Linux: the record of the reference is gone 60 ms after the
+	// end of a child whose grandchild holds the pipes, and the exit frame comes 5 s
+	// later. A failed removal logs its line here, before the exit line (measured).
+	if p.forgetRecord != nil {
+		p.forgetRecord()
+	}
+	if p.recordDone != nil {
+		close(p.recordDone)
+	}
+	// On Windows a child in a job takes the rest of its job with it. So a process
+	// that it started and that holds its pipes ends here, and the drain below ends at
+	// once. A no-op on Unix and for a child with no job.
+	p.group.EndRest()
+	// A child can leave a grandchild holding the same stdout — `npm run dev &`,
+	// anything that daemonizes. The pipes then stay open long after the process
+	// we spawned is gone. On the reference the exit frame lands 5 seconds after
+	// the exit and the grandchild's next write fails with EPIPE (measured at
+	// 5db5e4a). Waiting for EOF instead (what claustrum did) means the exit frame
+	// is delayed for as long as the grandchild lives, which for a dev server is
+	// "never".
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(grace):
+		// The text is the reference's, and it comes before the two read-error lines
+		// that the close below causes (measured on Linux).
+		logging.Warnf("[process.Manager] Process %s: pipe drain grace expired (grandchild holding stdio?); force-closing", p.id)
+		sysproc.CloseAll(stdoutR, stderrR)
+	}
+	// Both pumps have returned by here: either they hit EOF on their own, or
+	// the close above turned their blocked Read into ErrClosed. That barrier
+	// is what keeps an output frame from overtaking the exit frame — no flag
+	// on the frame path required, and no seq number burnt on a dropped frame.
+	<-drained
+	sysproc.CloseAll(stdoutR, stderrR) // no-op on the drained path; idempotent
+	// running flips only now, not when cmd.Wait returned. Probe-measured at
+	// 19f30c46: the reference still reported running:true two seconds into the
+	// drain window and false only once the exit frame was out. 90fca6e6 narrowed
+	// the flag it REPORTS, not this one: reattach answers p.running && !p.reaped
+	// (see IsLive), so the field below keeps its old timing and no client reads
+	// it directly any more.
+	p.mu.Lock()
+	p.running = false
+	p.exitedAt = time.Now() // starts the procPruneAge clock
+	killedBy := p.killedBy
+	p.mu.Unlock()
+	// Stop the stdin writer and wake it if it is parked on an empty queue; the
+	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
+	p.stdinMu.Lock()
+	p.stdinDone = true
+	p.stdinCond.Broadcast()
+	p.stdinMu.Unlock()
+	// Release the OS group handle now the child is gone. On Windows this closes
+	// the kill handle of the direct child and the handle of its job. endRest emptied
+	// that job, so the close ends nothing.
+	p.group.Close()
+	sigName := sysproc.ExitSignalName(err)
+	logging.Infof(FmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
+	metrics.Met.ProcessExits.Add(1)
+	p.emit(StreamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
+	if p.onExit != nil {
+		p.onExit()
+	}
+	if p.releaseTemp != nil {
+		p.releaseTemp()
+	}
+	// Signal any killAndWait waiter now the child is fully reaped.
+	close(p.done)
+}
+
+// exitLogSuffix is the tail of the exited line. It holds the same two facts as the
+// exit frame: sigName is the frame's signal member and killedBy is its killedBy
+// member. It now gives ", asked to end by this daemon (<killedBy>)", as build
+// 52d82f0a does for the label client (measured on Linux and macOS). A child that
+// ends with code 0 after a farewell gets that part alone. Other labels get the same
+// wording (claustrum's own, not measured). Build c8e2f083 gave ", signalled by this
+// daemon (<killedBy>)" (measured on Linux). The older text, measured on Linux
+// against 89cb6289, follows. A process.kill or a
+// process.killAndWait that ends a child with exit code 0 gives ", signalled at
+// client request" (measured). A SIGKILL from outside the daemon gives ", terminated
+// by SIGKILL" (measured). A plain exit gives no suffix (measured). A line with both
+// parts has the signal first: 89cb6289 printed ", terminated by SIGKILL, signalled
+// at shutdown request" in a measurement, a server.shutdown request with two children.
+//
+// That shutdown line is a race on the reference, not a rule. 89cb6289 printed it in
+// that measurement, and printed no exited line in two runs. claustrum prints it when the
+// exit goroutine reaches the line before the daemon exits. The shutdown wait
+// (shutdownRecordWait) ends earlier, at the removal of the record.
+func exitLogSuffix(sigName, killedBy string) string {
+	suffix := ""
+	if sigName != "" {
+		suffix += ", terminated by " + sigName
+	}
+	if killedBy != "" {
+		// Build 52d82f0a (measured on Linux and macOS). c8e2f083 printed ", signalled
+		// by this daemon (<label>)", 5fd08069 and 89cb6289 ", signalled at <label> request".
+		suffix += ", asked to end by this daemon (" + killedBy + ")"
+	}
+	return suffix
+}
+
+func pumpStream(p *Proc, name string, r io.Reader) {
+	logging.Debugf("[process.Manager] Starting %s streaming for process %s", name, p.id)
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			metrics.Met.StreamBytes.Add(int64(n))
+			p.emit(StreamFrame{
+				Stream: name,
+				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
+			})
+		}
+		if err != nil {
+			// EOF is the normal end of a stream and says nothing. Anything else —
+			// a closed pipe forced by the drain cap, an I/O error — is why the
+			// output stopped, and without it a truncated stream looks identical to
+			// a clean one.
+			if !errors.Is(err, io.EOF) {
+				logging.Warnf("[process.Manager] %s read error for process %s: %v", name, p.id, err)
+			}
+			return
+		}
+	}
+}
+
+// WriteStdin enqueues data for asynchronous delivery to the child's stdin and
+// returns true when the write was accepted: the process exists, has a stdin pipe,
+// and the async queue had room. It returns false for an unknown process, one
+// without stdin, or when the queue is already full (backpressure) — in which case
+// nothing is enqueued and no bytes are counted, mirroring the -32002 the RPC path
+// (ApplyStdin) surfaces. The actual pipe write happens on the stdinWriter
+// goroutine, so a slow/non-reading child never blocks the caller (matching the
+// reference's async stdin).
+func (m *Manager) WriteStdin(id string, data []byte) bool {
+	p := m.Get(id)
+	if p == nil || p.stdin == nil {
+		return false
+	}
+	if p.enqueueStdin(data) {
+		return false // queue full (backpressure): nothing was enqueued
+	}
+	metrics.Met.StdinBytes.Add(int64(len(data)))
+	return true
+}
+
+// enqueueStdin appends data to the async stdin queue and returns immediately. It
+// returns full=true when the queue is already at capacity, so the caller can
+// surface the reference's -32002 "stdin backpressure: queue full" error instead
+// of enqueuing. A single write larger than the cap is still accepted when the
+// queue is empty, so a lone over-cap write is never rejected.
+func (p *Proc) enqueueStdin(data []byte) (full bool) {
+	p.stdinMu.Lock()
+	full = p.enqueueStdinLocked(data)
+	p.stdinMu.Unlock()
+	return full
+}
+
+// enqueueStdinLocked is enqueueStdin's body with p.stdinMu already held, so the
+// stdin-offset path (ApplyStdin) can decide the offset and enqueue atomically
+// under a single lock. It does not block: when the queue is already non-empty and
+// this write would push it past the cap, it returns full=true and enqueues
+// nothing (the reference returns -32002 here rather than parking the request).
+// The stdinQBytes>0 conjunct exempts a lone over-cap write on an empty queue, so
+// it is always accepted. A write after the process exited (stdinDone) is dropped,
+// not reported as full. That kept the pre-90fca6e6 exit-drain wart intact, where
+// stdin acked during the drain was dropped and the high-water mark still
+// advanced. claustrum now refuses stdin inside the drain before the enqueue, so this arm
+// is reached only by a write racing the writer's own shutdown, and the shape of
+// the answer (drop, not -32002) is what it still pins.
+func (p *Proc) enqueueStdinLocked(data []byte) (full bool) {
+	if !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
+		if !p.stdinWarned {
+			logging.Warnf("[process.Manager] stdin backpressure: queue full for %s", p.id)
+			p.stdinWarned = true
+		}
+		return true
+	}
+	// An empty write queues nothing, so empty requests do not pile up in a queue
+	// that no longer drains.
+	if p.stdinDone || len(data) == 0 {
+		return false
+	}
+	p.stdinQ = append(p.stdinQ, data)
+	p.stdinQBytes += len(data)
+	p.stdinCond.Broadcast()
+	return false
+}
+
+// ApplyStdin implements the stdin-offset idempotency contract (advertised as the
+// "process.stdin.offset" capability). offset is the byte position the caller
+// believes this data starts at; nil means "append at the current high-water"
+// (the legacy, offset-less behavior). It returns the new cumulative applied byte
+// count, plus:
+//   - duplicate=true when the data is wholly at-or-before what's already applied,
+//     or is empty at offset == applied. Nothing new is enqueued, and applied is unchanged.
+//   - gap=true when offset is ahead of applied (a hole that would drop input —
+//     the caller must resend from `applied`; nothing is enqueued).
+//
+// A partial overlap (offset < applied < offset+len) enqueues only the fresh tail
+// data[applied-offset:] and advances applied to offset+len. The decision and the
+// enqueue happen under one stdinMu hold so concurrent stdin calls can't interleave
+// against a stale counter.
+//
+// The idempotency verdict (gap / wholly-duplicate) is a pure function of offset
+// vs applied and is answered BEFORE the running check, matching the reference: on
+// an exited process a gap still returns gap=true and a wholly-duplicate write
+// still returns duplicate=true. Only a write that would enqueue FRESH bytes needs
+// a live process — for that case running() is consulted and notRunning=true is
+// returned when it is false. running is passed in (mp.IsRunning) so the verdict
+// and the running check stay under one stdinMu hold; no path nests mu inside
+// stdinMu the other way, so the ordering is deadlock-free. On that same
+// fresh-enqueue path a queue already at the cap returns full=true and enqueues
+// nothing (the reference returns -32002 rather than parking the request).
+//
+// The call site passes mp.IsLive, not mp.IsRunning: 90fca6e6 refuses a write inside
+// the exit drain (measured on Linux).
+func (p *Proc) ApplyStdin(data []byte, offset *uint64, running func() bool) (applied uint64, duplicate, gap, full, notRunning bool) {
+	p.stdinMu.Lock()
+	cur := p.stdinApplied
+	if offset != nil {
+		off := *offset
+		if off > cur {
+			p.stdinMu.Unlock()
+			return cur, false, true, false, false
+		}
+		// An offset equal to applied with no bytes is a duplicate too, also on an
+		// exited process (`5fd08069`, measured on Linux and macOS).
+		skip := cur - off
+		if skip >= uint64(len(data)) {
+			p.stdinMu.Unlock()
+			return cur, true, false, false, false
+		}
+		data = data[skip:]
+	}
+	if !running() {
+		p.stdinMu.Unlock()
+		return cur, false, false, false, true
+	}
+	if p.enqueueStdinLocked(data) {
+		// Queue full: enqueue nothing and leave stdinApplied unchanged so the
+		// client can resend from the same offset once space frees.
+		p.stdinMu.Unlock()
+		return cur, false, false, true, false
+	}
+	p.stdinApplied += uint64(len(data))
+	applied = p.stdinApplied
+	p.stdinMu.Unlock()
+	metrics.Met.StdinBytes.Add(int64(len(data)))
+	return applied, false, false, false, false
+}
+
+// stdinWriter drains the async queue to the child's stdin in FIFO order for the
+// life of the process. stdinDone (set when the process exits) stops it and
+// discards any unsent data. After a write error (the child closed its stdin) it
+// writes no more, and the queue keeps taking bytes until it is full. 5fd08069 does
+// the same (measured on Linux and macOS).
+func (p *Proc) stdinWriter() {
+	broken := false
+	p.stdinMu.Lock()
+	for {
+		for (broken || len(p.stdinQ) == 0) && !p.stdinDone {
+			p.stdinCond.Wait()
+		}
+		if p.stdinDone {
+			p.stdinQ, p.stdinQBytes = nil, 0
+			p.stdinCond.Broadcast()
+			p.stdinMu.Unlock()
+			return
+		}
+		chunk := p.stdinQ[0]
+		p.stdinQ = p.stdinQ[1:]
+		p.stdinQBytes -= len(chunk)
+		p.stdinCond.Broadcast() // wake the exit path / any writer waiting on the queue
+		p.stdinMu.Unlock()
+
+		_, err := p.stdin.Write(chunk)
+
+		p.stdinMu.Lock()
+		if err != nil {
+			// The child never sees the queued bytes, nor any that come later.
+			// Silently dropping them left no trace at all.
+			logging.Warnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
+			broken = true
+		}
+	}
+}
+
+// Kill signals the child: on Unix KILL to its group and each other signal to the
+// child alone (see SignalProcessGroup). An
+// already-exited child is skipped: once cmd.Wait has reaped it, its Unix pgid
+// can be recycled, so a late negative-pid signal could hit an unrelated
+// process group. (Windows is immune: the process handle pins identity.) The skip
+// is OS-level hardening only, and the reply is a success there. On Linux and macOS a
+// KILL inside the exit drain kills the group at once (killGroupInDrain), as b3081b51
+// does (measured). The spelling "SIGKILL" there is not measured. A live process at
+// the pid of the ended child skips that kill (claustrum's own, not measured).
+//
+// It returns a *SignalFailed when the system refused the signal, and process.kill
+// answers its text (see SignalFailed). Each other case returns nil.
+func (m *Manager) Kill(id, signal string) error {
+	p := m.Get(id)
+	if p == nil {
+		return nil
+	}
+	live, err := p.signalIfLiveErr(signal, "client")
+	if !live && KillEndsDrainGroup && strings.TrimPrefix(signal, "SIG") == "KILL" {
+		p.killGroupInDrain(true)
+	}
+	return err
+}
+
+// defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
+// sends no timeoutMs (or a non-positive one).
+//
+// Probe-measured at 3000ms against the reference — and re-measured 2026-08-02
+// against the PIN, `5db5e4a`, because the original run used `7c2f88d` and the
+// comment did not say so. Omitting timeoutMs entirely against a SIGTERM-ignoring
+// child answers at 3.4s, where an explicit timeoutMs:1000 answers at 1.4s; the
+// same ~0.4s harness overhead in both rows is what makes the pair readable, and
+// the 1000ms row is the control proving the harness can separate two graces at
+// all. var so tests can shrink it.
+var defaultKillWaitMs = 3000
+
+// maxKillWaitMs is the ceiling killAndWait clamps a caller's timeoutMs to. This
+// is REFERENCE-REACHABLE and was wrong: a caller asking for 45s got 45s here and
+// 30s there, so the exit frame arrived 15s late.
+//
+// CORRECTION, 2026-08-02: this shipped at 600000 with a comment saying the
+// reference's "exact ceiling is above the ~90s we could observe, so this generous
+// cap only bites on adversarial input, never a real client". Both halves were
+// wrong — the ceiling is 30s, well inside what a real client sends, and it was
+// observable all along. An earlier sweep had also filed this finding as disproved
+// without recording the observation behind the dismissal, which is why it
+// survived: a dismissal needs its evidence written down as much as a
+// confirmation does.
+//
+// Measured against 5db5e4a with a SIGTERM-ignoring child, so the grace must run
+// out in full. Elapsed to the killAndWait reply, ~0.4s of spawn+reply overhead
+// included:
+//
+//	timeoutMs   reference   claustrum (before)
+//	     2000       2.4s       2.4s     (control — both honour it)
+//	    29500      29.9s      29.9s     (below the ceiling)
+//	    30500      30.0s      30.9s     (reference stops; claustrum does not)
+//	    45000      30.0s      45.4s     (constant, not proportional)
+//
+// For a child that NEVER exits the observable is elapsed time alone, so no golden
+// or battery id can catch a regression there: the reply is
+// {"found":true,"died":true,"escalated":true} whatever the ceiling is. Only a
+// differential probe against the reference can see this at all.
+//
+// The body is NOT always identical, though, and the first probe here could not
+// see that — its fixture excluded the only window where it matters. A child that
+// ignores SIGTERM and then self-exits BETWEEN the clamp and the requested grace
+// takes a different branch: with escalate:true the omitempty `escalated` key
+// appears, and with escalate:false `died` flips true→false. Measured against
+// 5db5e4a with a child exiting at 35s and timeoutMs:45000 — the reference
+// escalates at 30s and claustrum now matches on both arms, with sub-clamp arms as
+// the control.
+//
+// Honest bound: black-box timing places the ceiling in (29500, 30500] and cannot
+// resolve it further, because ~0.4s of overhead swamps a finer bracket. 30000 is
+// the only round value in that interval. An earlier audit reached the same value
+// the same way, from a WIDER bracket — that is agreement, not independent
+// confirmation, and borrowing confidence from it would be the mistake this
+// comment exists to avoid. Do not restate this as "measured exactly 30000ms".
+// var, not const, for the same reason defaultKillWaitMs is one: a test has to be
+// able to shrink it to prove the clamp reaches the actual wait. Production never
+// assigns it.
+var maxKillWaitMs = 30000 // 30s
+
+// killReapGrace bounds the wait for a SIGKILL'd process to be reaped after
+// escalation. It is deliberately independent of the caller's grace — NOT
+// necessarily larger than it, as this said until 2026-08-02: a caller may send
+// any timeoutMs up to the 30s ceiling, so "larger than" was false for anything
+// over 5s and was false before that change too. The two never interact: the reap
+// bound runs strictly after the grace, sequentially.
+//
+// It is small because SIGKILL is uncatchable and the reap is near-instant, so it
+// only guards against a pathological unreapable child (e.g. stuck in
+// uninterruptible sleep) wedging the dispatch goroutine. var so tests can shrink
+// it.
+//
+// SEVEN seconds, matching the reference — MEASURED 2026-08-06, black-box, not
+// inferred. Observing it needs a child SIGKILL cannot reap, which a
+// pipe-holding grandchild does NOT produce: the exit drain ends at 5s on both
+// binaries and the reply lands at 5.01s either way, so that route
+// proves nothing. The fixture that works is real uninterruptible sleep — a read
+// against a dm-delay device on Linux. With timeoutMs 500:
+//
+//	reference        : reply at 7.51s  -> 7s grace
+//	claustrum (was)  : reply at 5.51s  -> 5s grace
+//	claustrum (this) : reply at 7.51s  -> 7s grace, re-measured on the same fixture
+//	control          : an ordinary sleeper, 0.00s on both
+//
+// The reply JSON is the same shape on both ({"found":true,"died":false,
+// "escalated":true}); what differed was when it arrived — and, for a child that
+// IS reaped between 5s and 7s, whether "died" is false or true.
+var killReapGrace = 7 * time.Second
+
+// exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach
+// EOF after the spawned process itself has exited. Only a grandchild that
+// inherited the pipe can hold them open that long. Measured against 5db5e4a,
+// the reference also emits the exit frame after 5s. var so tests can shrink it.
+var exitDrainGrace = 5 * time.Second
+
+// osPipe and cmdStdinPipe are seams over the three pipe constructions in spawn.
+// Each fails only on fd exhaustion, so their cleanup paths — which must close the
+// pipes already made, or spawn leaks descriptors on every failure — are otherwise
+// unreachable in a test. Production never reassigns either.
+var (
+	osPipe       = os.Pipe
+	cmdStdinPipe = (*exec.Cmd).StdinPipe
+)
+
+// resumeProc is ResumeChild behind a seam. The resume cannot fail on Unix, where it
+// does nothing, and on Windows only when a thread of the child cannot be resumed. So
+// the arm of spawn that ends the child and answers the error is unreachable without
+// the seam. Production never reassigns it.
+var resumeProc = ResumeChild
+
+// confineProc is ConfineProcess behind a seam. Confinement cannot fail on Unix: the
+// process group is already set by sysproc.NewSysProcAttr, so the call returns a nil error. On
+// Windows it fails when the OpenProcess it needs fails, or when the job of the child
+// cannot be made or joined. The warn-and-continue arm
+// of spawn is therefore unreachable without the seam. That arm warns, keeps the group
+// that came back and does not abort the spawn. Production never reassigns it.
+var confineProc = ConfineProcess
+
+// ClampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
+// waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
+// otherwise the value verbatim up to maxKillWaitMs.
+func ClampKillWaitMs(ms int) int {
+	if ms <= 0 {
+		return defaultKillWaitMs
+	}
+	if ms > maxKillWaitMs {
+		return maxKillWaitMs
+	}
+	return ms
+}
+
+// KillAndWait signals the process (default SIGTERM) and blocks until it is gone,
+// waiting up to grace for the graceful signal to take effect. If it is still alive
+// after grace and escalate is true, it force-kills with SIGKILL and reports
+// escalated; if escalate is false, it leaves the process running and reports
+// died:false. It reports:
+//   - found:         the id was known
+//   - died:          the process is now gone
+//   - alreadyExited: it had already exited before we signalled (no kill needed)
+//   - escalated:     it ignored the graceful signal and had to be SIGKILL'd
+//
+// The wire result is rpc.KillAndWaitResult; an unknown id is (false,false,false,false).
+func (m *Manager) KillAndWait(id, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	p := m.Get(id)
+	if p == nil {
+		return false, false, false, false
+	}
+	return m.killAndWaitProc(p, signal, grace, escalate)
+}
+
+// killAndWaitProc is killAndWait targeting a specific process IDENTITY rather than
+// re-resolving a client-visible id. supersedeSession captures the victim
+// *Proc under the same lock as its scan and kills THAT process, so a
+// concurrent spawn that reuses the id (which replaces m.procs[id] and sends the
+// original no signal) cannot redirect the kill
+// onto the innocent replacement. Do NOT re-resolve p by id here.
+func (m *Manager) killAndWaitProc(p *Proc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	return m.killAndWaitAs(p, signal, "client", grace, escalate)
+}
+
+// killAndWaitAs is killAndWaitProc with the killedBy label of the signal.
+func (m *Manager) killAndWaitAs(p *Proc, signal, label string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	if !p.IsRunning() {
+		return true, true, true, false
+	}
+	// The count stays raised for every wait below and drops on each return.
+	p.mu.Lock()
+	p.waiting++
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.waiting--
+		p.mu.Unlock()
+	}()
+	return m.signalAndWaitAs(p, signal, label, grace, escalate)
+}
+
+// signalAndWait is the signal and the wait of killAndWaitProc. The caller holds
+// the waiting count. KillAndWaitFarewell runs it at the end of the grace.
+func (m *Manager) signalAndWait(p *Proc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	return m.signalAndWaitAs(p, signal, "client", grace, escalate)
+}
+
+// signalAndWaitAs is signalAndWait with the killedBy label of the signal.
+func (m *Manager) signalAndWaitAs(p *Proc, signal, label string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	live, err := p.signalIfLiveErr(signal, label)
+	var failed *SignalFailed
+	if errors.As(err, &failed) {
+		// The wait and the force go on (52d82f0a, measured on Linux and macOS).
+		logging.Warnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.Name, err)
+	}
+	if !live && strings.TrimPrefix(signal, "SIG") == "KILL" {
+		p.killGroupInDrain(false)
+	}
+	select {
+	case <-p.done:
+		// The process ended within the grace. Its group gets no SIGKILL here, with
+		// escalate true or false, except the KILL in the drain above. Measured on Linux with strace against 89cb6289: the
+		// child exits on SIGTERM, and a kid in its group has its own stdio. For
+		// process.killAndWait with the default (measured, 3 of 3 runs) and for the session supersede (measured, 4 of 4
+		// runs), 89cb6289 sent the SIGTERM to the one process and made no other call. The kid was alive 5 s later.
+		// Measurements show no group SIGKILL either.
+		//
+		// Build ac5cadb of claustrum sent a group SIGKILL here, and that ended the kid.
+		// That sweep came from a run against 5db5e4a with a child that backgrounds a
+		// sleeper. Whether that sleeper held the pipes of the child is not recorded.
+		// Measurements on macOS give the same on both. Windows has no such case: there
+		// is no group, and the call ended nothing.
+		return true, true, false, false
+	case <-time.After(grace):
+	}
+	// Still alive after the grace window. With escalate:false the caller wants a
+	// best-effort graceful kill only — leave the process running and report it.
+	if !escalate {
+		return true, false, false, false
+	}
+	// The graceful signal did not finish the job within the grace — force-kill the
+	// group. 89cb6289 sends kill(-<pid>, SIGKILL) at the end of the grace when the
+	// process does not end (measured on Linux), and when it ended and a kid in its
+	// group holds its pipes (measured on Linux). In a measurement, the holder of the
+	// pipes is in another group, and the call answers ESRCH.
+	//
+	// signalIfLive is deliberately NOT used here. By this point the child is very
+	// often already reaped: the graceful signal worked, but a grandchild still
+	// holding the stdout pipe keeps p.done pending until the exit drain gives up.
+	// signalIfLive's reaped guard would then make the escalation a silent no-op,
+	// which is precisely how claustrum came to leave grandchildren running where
+	// the reference kills them. Measured: killAndWait with escalate:true left the
+	// backgrounded sleeper alive on claustrum and dead on the reference.
+	//
+	// On Windows with no job the kill ends the direct child only, and here that child
+	// has ended already. TerminateProcess then fails, and the line below is the
+	// reference's. With a job the kill ends the job, which endRest emptied, and no line
+	// prints (claustrum's own, not measured).
+	// Measured on Windows against 89cb6289, with kids of the child holding its stdout
+	// and stderr. The line was "KillAndWait c1: group kill failed: TerminateProcess:
+	// Access is denied.". On Linux and macOS a refused SIGKILL prints "group kill
+	// failed: operation not permitted" (52d82f0a, measured). A group that is gone
+	// (ESRCH) prints no line there, as before (claustrum's own, not measured).
+	if err := p.killGroupAfterExit(); err != nil {
+		logging.Warnf("[process.Manager] KillAndWait %s: group kill failed: %v", p.id, err)
+	}
+	select {
+	case <-p.done:
+		return true, true, false, true
+	case <-time.After(killReapGrace):
+		// A SIGKILL that hasn't reaped (e.g. uninterruptible sleep) — don't wedge
+		// the dispatch goroutine forever; report not-yet-dead. 52d82f0a logs the
+		// line below on Linux and macOS (measured, after a refused SIGKILL). Windows
+		// logs none (claustrum's own, not measured).
+		if LogsUnreapedKill {
+			logging.Warnf("[process.Manager] KillAndWait %s: still running 7s after SIGKILL (D-state?)", p.id)
+		}
+		return true, false, false, true
+	}
+}
+
+// Reattach replays buffered frames with seq > fromSeq to c, (re)subscribes c for
+// future frames, and reports the buffer/running state. It also returns the
+// Proc (nil when not found) so the caller can read its immutable
+// pid/startTime for the CT-1 opt-in, and the process's cumulative stdinApplied so
+// a reconnecting client can resume stdin from the right offset (0 when not found).
+func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, found, running bool, firstSeq, lastSeq, stdinApplied uint64) {
+	p = m.Get(id)
+	if p == nil {
+		return nil, false, false, 0, 0, 0
+	}
+	metrics.Met.Reattaches.Add(1)
+	// The write lock of c comes first, so no wait on a socket write holds p.mu.
+	// It also comes first because ApplyStdin nests p.stdinMu over p.mu. No path
+	// holds p.mu or p.stdinMu and then takes a wmu.
+	if c != nil {
+		c.LockWrites()
+	}
+	p.mu.Lock()
+	// A reattach TRANSFERS the frame stream to the new connection; it does not
+	// add a second listener. Measured at 5db5e4a: after a reattach, output
+	// produced by the process reaches only the reattaching connection, while the
+	// previously attached one stops receiving. claustrum fanned out to both, so
+	// a resumed session double-delivered every frame to whichever old connection
+	// was still open — and the replay the new connection just received made those
+	// duplicates overlap.
+	//
+	// The map is replaced rather than cleared entry-by-entry so the old set is
+	// dropped atomically under p.mu, with no window where a frame could reach a
+	// half-emptied set.
+	//
+	// 90fca6e6 goes further than the transfer: the connection that WAS attached is
+	// closed, so a client that lost the session learns its old connection is
+	// finished instead of holding one that will never carry another frame. The
+	// superseded set is collected here and acted on after p.mu is dropped, because
+	// supersede logs and closes a socket and neither belongs under this lock.
+	//
+	// A reattach of a link-bound process from another connection gets found true
+	// with the firstSeq and lastSeq of the link (683cc6a9, measured on Linux). That
+	// the stream stays on the link, that this connection gets the replay and no live
+	// frame, and that the link stays open, is claustrum's own, not measured.
+	var superseded []*conn.Conn
+	attached := true
+	if p.TakesFrom(c) {
+		superseded = make([]*conn.Conn, 0, len(p.subs))
+		for old := range p.subs {
+			if old != c {
+				superseded = append(superseded, old)
+			}
+		}
+		_, attached = p.subs[c]
+		p.subs = map[*conn.Conn]struct{}{c: {}}
+	}
+	// On 90fca6e6 a reattach inside the exit drain answers running:false
+	// (measured). The process was already waited on, so it is not resumable.
+	running = p.running && !p.reaped
+	var replay []StreamFrame
+	for _, f := range p.buffer {
+		if f.Seq > fromSeq {
+			replay = append(replay, f)
+		}
+	}
+	if len(p.buffer) > 0 {
+		firstSeq = p.buffer[0].Seq
+		lastSeq = p.buffer[len(p.buffer)-1].Seq
+	}
+	p.mu.Unlock()
+	// A new connection gets no live frame before its replay ends. The reattach
+	// keeps the write lock of c until the replay is written, so a live emit to c
+	// waits for it. 5fd08069 sends no frame above lastSeq before the stored frames
+	// end (measured on Linux and macOS). A reattach on a connection that is
+	// already attached keeps the old order, as on 5fd08069 (measured). A test that
+	// dispatches with no connection takes the old order too.
+	hold := !attached && c != nil
+	if c != nil && !hold {
+		c.UnlockWrites()
+	}
+	afterReplaySnapshot(id)
+	p.stdinMu.Lock()
+	stdinApplied = p.stdinApplied
+	p.stdinMu.Unlock()
+	var err error
+	if !hold {
+		for _, old := range superseded {
+			old.Supersede("process " + id + " reattached from another connection")
+		}
+		for _, f := range replay {
+			if err = c.WriteJSON(f); err != nil {
+				break
+			}
+		}
+	} else {
+		err = writeFramesLocked(c, replay)
+		c.UnlockWrites()
+		// After the replay, as supersede takes the write lock of the old
+		// connection. The later close is claustrum's own, not measured.
+		for _, old := range superseded {
+			old.Supersede("process " + id + " reattached from another connection")
+		}
+	}
+	if err != nil {
+		logging.Warnf("[frameSink] replay write failed, detaching: %v", err)
+		p.mu.Lock()
+		delete(p.subs, c)
+		p.mu.Unlock()
+	}
+	return p, true, running, firstSeq, lastSeq, stdinApplied
+}
+
+// afterReplaySnapshot runs in reattach after p.mu goes and before the replay is
+// written. It is a seam for a test that emits a live frame there. Production never
+// reassigns it.
+var afterReplaySnapshot = func(id string) {}
+
+func (m *Manager) DetachConn(c *conn.Conn) {
+	m.mu.Lock()
+	procs := make([]*Proc, 0, len(m.procs))
+	for _, p := range m.procs {
+		procs = append(procs, p)
+	}
+	m.mu.Unlock()
+	now := time.Now()
+	for _, p := range procs {
+		p.mu.Lock()
+		delete(p.subs, c)
+		if p.linked && p.link == c {
+			p.markDetachedLocked(now)
+		}
+		p.mu.Unlock()
+	}
+}
+
+// RunningCount reports how many managed processes are still alive — used for the
+// honest -keep-children shutdown log line. Same m→p lock order as killAll.
+func (m *Manager) RunningCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, p := range m.procs {
+		if p.IsRunning() {
+			n++
+		}
+	}
+	return n
+}
+
+func (m *Manager) KillAll() { m.KillAllCount() }
+
+// shutdownEndGrace is the time from the shutdown SIGTERM of a child that argsAskEnd
+// accepts to the SIGKILL of its group. b3081b51 sends that SIGKILL 1.50 s after the
+// TERM (measured on Linux and macOS). One timer serves every such child. A var so a
+// test can shorten it.
+var shutdownEndGrace = 1500 * time.Millisecond
+
+// argsAskEnd reports whether the args of a spawn request ask for stream-json. At a
+// shutdown b3081b51 sends SIGTERM to a child with the arg "stream-json" or
+// "--input-format=stream-json", also to a bare git (measured on Linux and macOS), and
+// to one with "--output-format=stream-json" (measured on Linux). With a launcher the
+// args of the request decide (measured on Linux). A child with no such arg, or with
+// "stream-jsonx", gets the group SIGKILL at once (measured).
+func argsAskEnd(args []string) bool {
+	for _, a := range args {
+		if a == "stream-json" || a == "--input-format=stream-json" || a == "--output-format=stream-json" {
+			return true
+		}
+	}
+	return false
+}
+
+// KillAllCount ends every live child at shutdown. It returns how many children got
+// a signal, for the "cleanup:" line. A child that refused the signal counts too
+// (claustrum's own, not measured).
+//
+// On Linux and macOS (ShutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
+// to its pid first, and the sweep waits for it (endAsked). Every other child gets the
+// group SIGKILL at once. On Windows every child gets the kill of its job at once
+// (b3081b51, measured on Windows).
+func (m *Manager) KillAllCount() int {
+	start := time.Now()
+	m.mu.Lock()
+	n := 0
+	var asked []*Proc
+	for _, p := range m.procs {
+		sig := "KILL"
+		if ShutdownAsksEnd && p.askEnd {
+			sig = "TERM"
+		}
+		// Skip exited children — their pgid may already be recycled (see kill).
+		if p.signalIfLive(sig, "shutdown") {
+			n++
+			if sig == "TERM" {
+				asked = append(asked, p)
+			}
+		}
+	}
+	m.mu.Unlock()
+	if len(asked) > 0 {
+		endAsked(asked, start)
+	}
+	return n
+}
+
+// endAsked waits for the children that the shutdown sweep sent SIGTERM, for at most
+// shutdownEndGrace. A child that is still there at the end of the wait gets the group
+// SIGKILL then (b3081b51, measured on Linux and macOS). That includes a child whose
+// exit drain a member of its group holds open (claustrum's own, not measured). The wait is bounded, so the shutdown
+// takes at most shutdownEndGrace longer. A child counts as ended when its exit frame
+// is out (claustrum's own, not measured). Then it logs one line, whose text is the
+// reference's (measured on Linux and macOS).
+//
+// b3081b51 also sends the group SIGKILL after the exit of an ended child (measured on
+// Linux). claustrum sends no signal to a child whose exit frame is out, and so none
+// in the arms that saw p.done (DIVERGENCES.md D28).
+func endAsked(asked []*Proc, start time.Time) {
+	timer := time.NewTimer(shutdownEndGrace)
+	defer timer.Stop()
+	exited, killed := 0, 0
+	late := false
+	for _, p := range asked {
+		if !late {
+			select {
+			case <-p.done:
+				exited++
+				continue
+			case <-timer.C:
+				late = true
+			}
+		}
+		select {
+		case <-p.done:
+			exited++
+		default:
+			killed++
+			p.killGroupBeforeExitFrame()
+		}
+	}
+	logging.Infof("[process.Manager] KillAll: asked %d Claude Code process(es) to end: %d exited, %d had to be killed, after %s",
+		len(asked), exited, killed, time.Since(start).Round(time.Millisecond))
+}
+
+// BuildEnv merges the caller-supplied env map over the daemon's environment.
+// CLAUDE_RPC_TOKEN is stripped from the base: the reference binary does not
+// propagate the auth token to spawned children (probe-verified 2026-06-09).
+func BuildEnv(env map[string]string) []string { return buildSpawnEnv(env, false) }
+
+// buildSpawnEnv is BuildEnv for a spawn. noShellAgent is the disableShellAgentSocket
+// of the request, which ends a read of the login-shell PATH that still runs.
+func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
+	// A spawn starts a read of the login-shell PATH that is due, and waits for a
+	// running read within its bounds (internal/shellenv/shellenv.go). A no-op after a good read, and
+	// when the read is not armed (a test server).
+	shellenv.AwaitLoginPATH(noShellAgent)
+	base := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	// An inherited temp-folder name whose folder cannot take a file is not handed
+	// on (internal/supervisor/tempfolder_unix.go). A caller key of that name still reaches the child
+	// (claustrum's own, not measured).
+	base = DropUnusableTempVars(base)
+	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
+	// environment at its start (startPeerCheck). A caller key of that name passes.
+	// The login-shell PATH is applied HERE, to the child's environment, rather
+	// than being installed into the daemon's own — see loginPATHs in internal/shellenv/shellenv.go.
+	// Applied before the caller's env so an explicit PATH in the spawn request
+	// still wins. On Windows the value is the daemon's own PATH, and the exact name
+	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
+	// the later PATH entry (measured on Windows against 89cb6289). With a daemon
+	// entry named Path, a caller key named exactly Path replaces it and still loses to
+	// the later PATH.
+	if lp := shellenv.CurrentLoginPATH(); lp != "" {
+		base = sysproc.ReplaceOrAppendEnv(base, "PATH", lp)
+	}
+	// A caller key that the base holds replaces that entry in place. A new caller key
+	// goes to the end. Measured on Linux and macOS against 89cb6289.
+	//
+	// Two or more new caller keys have no fixed order on 89cb6289. Measured on Linux, 20
+	// spawns per row. For the request order ZZ, AA, MM it gave ZZ, AA, MM 16 times,
+	// AA, MM, ZZ 3 times and MM, ZZ, AA once (measured). For the request order ZZ, MM,
+	// AA it gave ZZ, MM, AA 16 times, MM, AA, ZZ 3 times and AA, ZZ, MM once (measured).
+	// Each order in the two rows is a rotation of the request order. Name order is not
+	// one of the three orders, and 89cb6289 never gave it there.
+	//
+	// claustrum iterates the decoded map and builds no order of its own. That gave a
+	// rotation of the request order in each of the 20 spawns of a row (measured on Linux
+	// and macOS). TestNewCallerKeysComeInARotation holds that. A request with more keys is
+	// not measured on Linux and macOS. On Windows Go sorts the whole block by name, so no
+	// order built here is observable there (DIVERGENCES.md D23).
+	for k, v := range env {
+		base = sysproc.ReplaceOrAppendEnv(base, k, v)
+	}
+	return base
+}
+
+// writeFramesLocked writes the replay frames of a reattach on c, with the write
+// lock of c already held, each as Conn.WriteJSON marshals it. It stops at the first error.
+// It must stay on json.Marshal for the reason in the note on WriteJSON in internal/conn.
+func writeFramesLocked(c *conn.Conn, frames []StreamFrame) error {
+	for _, f := range frames {
+		b, err := json.Marshal(f)
+		if err != nil {
+			return err
+		}
+		if err := c.WriteLineLocked(append(b, '\n')); err != nil {
+			return err
+		}
+	}
+	return nil
+}

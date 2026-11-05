@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // The fixtures of the host cleaner tests that tests of package main use too. The host
@@ -18,7 +20,7 @@ func hcStartSleeper(t *testing.T) *exec.Cmd {
 	t.Helper()
 	exe, env := helperCommand(t, "sleep")
 	cmd := exec.Command(exe, "60")
-	cmd.Env = buildEnv(env)
+	cmd.Env = supervisor.BuildEnv(env)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("helper: %v", err)
 	}

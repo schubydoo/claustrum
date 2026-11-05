@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 	// matter how trivial the fixture is. The suite spawns dozens of them
 	// (TestWorktreeCreateLingeringDescendant alone spawns ~30 stub gits), which
 	// measured as 48s of the 109s `go test -race ./...` run. Publishing the knob
-	// here hands it to every child through buildEnv's os.Environ() base, and
+	// here hands it to every child through supervisor.BuildEnv's os.Environ() base, and
 	// leaves the parent's own tsan settings untouched (tsan parses GORACE at
 	// startup, and we are already past it). The children run a dozen lines of
 	// fixture code and hold no threads at exit, so the sleep buys no detection.
@@ -271,7 +271,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, "60")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -297,7 +297,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, "60")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		child.Stdout = os.Stdout
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -318,7 +318,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, "60")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		child.Stdout = os.Stdout
 		child.Stderr = os.Stderr
 		if err := child.Start(); err != nil {
@@ -342,7 +342,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, args[0])
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		child.Stdout = os.Stdout
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -360,7 +360,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, "60")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		child.Stdout = os.Stdout
 		child.Stderr = os.Stderr
 		if err := child.Start(); err != nil {
@@ -401,7 +401,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, "60")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		child.SysProcAttr = detachSysProcAttr()
 		if err := startDetached(child); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -424,14 +424,14 @@ func runHelper(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		m := newProcManager()
+		m := supervisor.NewManager()
 		if len(args) > 1 && args[1] == "job" {
-			m.jobs = supervisor.JobsOn
+			m.Jobs = supervisor.JobsOn
 		}
 		if len(args) > 1 && args[1] == "keep" {
-			m.jobs = supervisor.JobsKeep
+			m.Jobs = supervisor.JobsKeep
 		}
-		p, err := m.spawn(conn.New(client, nil, 0, nil, nil, nil), "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
+		p, err := m.Spawn(conn.New(client, nil, 0, nil, nil, nil), "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -440,7 +440,7 @@ func runHelper(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		if err := os.WriteFile(args[0], []byte(strconv.Itoa(p.pid)), 0o644); err != nil {
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(p.Pid())), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -455,7 +455,7 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		child := exec.Command(exe, "60")
-		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
 		breakawayStart(child)
 		if err := child.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)

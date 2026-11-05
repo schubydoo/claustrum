@@ -22,37 +22,36 @@ import (
 // answers {"found":true,"died":true} in 21 ms. No process of the tree is left, and a
 // process outside the daemon stays.
 func TestJobEndsTheTree(t *testing.T) {
-	oldDrain := exitDrainGrace
-	exitDrainGrace = 30 * time.Second
-	t.Cleanup(func() { exitDrainGrace = oldDrain })
+	oldDrain := supervisor.SetExitDrainGraceForTest(30 * time.Second)
+	t.Cleanup(func() { supervisor.SetExitDrainGraceForTest(oldDrain) })
 	type result struct{ found, died, already, escalated bool }
 	rows := []struct {
 		id      string
-		act     func(m *procManager, id string) result
+		act     func(m *supervisor.Manager, id string) result
 		wantLog string
 	}{
-		{"jt-kill", func(m *procManager, id string) result { _ = m.kill(id, ""); return result{} },
+		{"jt-kill", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, ""); return result{} },
 			", asked to end by this daemon (client)"},
-		{"jt-killAndWait", func(m *procManager, id string) result {
-			f, d, a, e := m.killAndWait(id, "", 3*time.Second, true)
+		{"jt-killAndWait", func(m *supervisor.Manager, id string) result {
+			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
-		{"jt-clean-stop", func(m *procManager, _ string) result { m.killAll(); return result{} }, ""},
+		{"jt-clean-stop", func(m *supervisor.Manager, _ string) result { m.KillAll(); return result{} }, ""},
 	}
 	bystander := startBystander(t)
 	for _, tc := range rows {
 		t.Run(tc.id, func(t *testing.T) {
 			m := newTestProcManager(t)
-			m.jobs = supervisor.JobsOn
+			m.Jobs = supervisor.JobsOn
 			// The helper starts its grandchild at once, with no go-ahead.
 			p, gpid := spawnTree(t, m, tc.id, "tree-stdio")
-			if p.cmd.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
-				t.Errorf("CreationFlags = %#x, want the suspended start of a child with a job", p.cmd.SysProcAttr.CreationFlags)
+			if p.CmdForTest().SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
+				t.Errorf("CreationFlags = %#x, want the suspended start of a child with a job", p.CmdForTest().SysProcAttr.CreationFlags)
 			}
-			if p.group == nil || p.group.JobForTest() == 0 {
+			if p.GroupForTest() == nil || p.GroupForTest().JobForTest() == 0 {
 				t.Fatal("the child has no job")
 			}
-			if !inJob(t, gpid, p.group.JobForTest()) {
+			if !inJob(t, gpid, p.GroupForTest().JobForTest()) {
 				t.Errorf("grandchild %d is not in the job of the child", gpid)
 			}
 			buf := captureLogBuf(t)
@@ -60,11 +59,11 @@ func TestJobEndsTheTree(t *testing.T) {
 			start := time.Now()
 			got := tc.act(m, tc.id)
 			select {
-			case <-p.done:
+			case <-p.DoneForTest():
 			case <-time.After(10 * time.Second):
 				t.Fatal("no exit of the managed process")
 			}
-			if took := time.Since(start); took >= exitDrainGrace {
+			if took := time.Since(start); took >= supervisor.ExitDrainGraceForTest() {
 				t.Errorf("the exit came after %s, want it before the drain grace", took)
 			}
 			if tc.id == "jt-killAndWait" && got != (result{found: true, died: true}) {
@@ -95,30 +94,29 @@ func TestJobEndsTheTree(t *testing.T) {
 // frame at 123 ms. No ping is left. With CLAUDE_SSH_NO_JOBS=1 the frame comes after the
 // 5 s drain grace, and the ping runs on.
 func TestJobChildExitEndsTheRest(t *testing.T) {
-	oldDrain := exitDrainGrace
-	exitDrainGrace = 30 * time.Second
-	t.Cleanup(func() { exitDrainGrace = oldDrain })
+	oldDrain := supervisor.SetExitDrainGraceForTest(30 * time.Second)
+	t.Cleanup(func() { supervisor.SetExitDrainGraceForTest(oldDrain) })
 	const id = "jt-exit"
 	m := newTestProcManager(t)
-	m.jobs = supervisor.JobsOn
+	m.Jobs = supervisor.JobsOn
 	buf := captureLogBuf(t)
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "exit-leave-kid")
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	start := time.Now()
-	p, err := m.spawn(c, id, exe, []string{pidFile}, "", env, true)
+	p, err := m.Spawn(c, id, exe, []string{pidFile}, "", env, true)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	holdOwnPid(t, p.pid)
+	holdOwnPid(t, p.Pid())
 	gpid := readPIDFile(t, pidFile)
 	holdOwnPid(t, gpid)
 	select {
-	case <-p.done:
+	case <-p.DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Fatal("no exit of the managed process")
 	}
-	if took := time.Since(start); took >= exitDrainGrace {
+	if took := time.Since(start); took >= supervisor.ExitDrainGraceForTest() {
 		t.Errorf("the exit came after %s, want it before the drain grace", took)
 	}
 	if !waitProcessGone(gpid, 5*time.Second) {
@@ -143,12 +141,12 @@ func TestChildReadsJobFlags(t *testing.T) {
 	}{{supervisor.JobsOn, "0x2800"}, {supervisor.JobsKeep, "0x800"}} {
 		t.Run(tc.want, func(t *testing.T) {
 			m := newTestProcManager(t)
-			m.jobs = tc.jobs
-			t.Cleanup(m.killAll)
+			m.Jobs = tc.jobs
+			t.Cleanup(m.KillAll)
 			captureLogBuf(t)
 			c, frames := pipeConn(t)
 			exe, env := helperCommand(t, "job-flags")
-			if _, err := m.spawn(c, "jt-flags", exe, nil, "", env, false); err != nil {
+			if _, err := m.Spawn(c, "jt-flags", exe, nil, "", env, false); err != nil {
 				t.Fatalf("spawn: %v", err)
 			}
 			// The first stdout frame of a new helper can take more than the 3 s of
@@ -179,23 +177,22 @@ func TestChildReadsJobFlags(t *testing.T) {
 // TestJobConfineFailureStillResumes: with jobs on and a failed confinement, the child
 // that started suspended still resumes and runs to its end (claustrum's own).
 func TestJobConfineFailureStillResumes(t *testing.T) {
-	old := confineProc
-	t.Cleanup(func() { confineProc = old })
-	confineProc = func(*os.Process, supervisor.ChildJobs) (*supervisor.ProcGroup, error) {
+	old := supervisor.SetConfineProcForTest(func(*os.Process, supervisor.ChildJobs) (*supervisor.ProcGroup, error) {
 		return nil, errors.New("open process: access is denied")
-	}
+	})
+	t.Cleanup(func() { supervisor.SetConfineProcForTest(old) })
 	m := newTestProcManager(t)
-	m.jobs = supervisor.JobsOn
-	t.Cleanup(m.killAll)
+	m.Jobs = supervisor.JobsOn
+	t.Cleanup(m.KillAll)
 	captureLogBuf(t)
 	c, _ := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
-	p, err := m.spawn(c, "jt-confine", echo, []string{"hi"}, "", env, false)
+	p, err := m.Spawn(c, "jt-confine", echo, []string{"hi"}, "", env, false)
 	if err != nil {
 		t.Fatalf("spawn = %v, want success: a confinement failure is not fatal", err)
 	}
 	select {
-	case <-p.done:
+	case <-p.DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Fatal("the child never ran to its end: it was not resumed")
 	}
@@ -207,27 +204,27 @@ func TestJobConfineFailureStillResumes(t *testing.T) {
 func TestJobAllowsBreakaway(t *testing.T) {
 	const id = "jt-breakaway"
 	m := newTestProcManager(t)
-	m.jobs = supervisor.JobsOn
+	m.Jobs = supervisor.JobsOn
 	captureLogBuf(t)
 	c, _ := pipeConn(t)
 	exe, env := helperCommand(t, "breakaway-start")
 	pidFile := filepath.Join(t.TempDir(), "pid")
-	p, err := m.spawn(c, id, exe, []string{pidFile}, "", env, true)
+	p, err := m.Spawn(c, id, exe, []string{pidFile}, "", env, true)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	holdOwnPid(t, p.pid)
+	holdOwnPid(t, p.Pid())
 	pid := readPIDFile(t, pidFile)
 	holdOwnPid(t, pid)
-	if p.group == nil || p.group.JobForTest() == 0 {
+	if p.GroupForTest() == nil || p.GroupForTest().JobForTest() == 0 {
 		t.Fatal("the child has no job")
 	}
-	if inJob(t, pid, p.group.JobForTest()) {
+	if inJob(t, pid, p.GroupForTest().JobForTest()) {
 		t.Errorf("the breakaway process %d is in the job of the child", pid)
 	}
-	_ = m.kill(id, "")
+	_ = m.Kill(id, "")
 	select {
-	case <-p.done:
+	case <-p.DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Fatal("no exit of the managed process")
 	}

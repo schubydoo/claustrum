@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -417,17 +416,11 @@ func TestPluginsPruneSweepsRealRoot(t *testing.T) {
 	mk(legacyRoot, legacyOld, old)
 
 	s := &server{ln: ln, procs: newTestProcManager(t)}
-	// Inject a running child whose argv references the live plugin dir. liveArgv
+	// Inject a running child whose argv references the live plugin dir. LiveArgv
 	// reads only p.running and p.cmd.Args, so a never-started exec.Cmd is enough and
 	// is deterministic (no real process to race or reap). The command name carries
 	// no 16-hex run, so the live hash is the only one livePluginRefs can find.
-	s.procs.mu.Lock()
-	s.procs.procs["live"] = &managedProc{
-		id:      "live",
-		running: true,
-		cmd:     exec.Command("claude-cli", "--plugin-dir", filepath.Join(perInstall, liveHash)),
-	}
-	s.procs.mu.Unlock()
+	s.procs.AddFakeProcForTest("live", true, false, "claude-cli", "--plugin-dir", filepath.Join(perInstall, liveHash))
 
 	resp := s.pluginsPrune(&request{ID: 1, Params: json.RawMessage(`{"minAgeDays":30}`)})
 	if resp.Error != nil {

@@ -264,7 +264,7 @@ func (s *server) livePluginRefs() map[string]bool {
 	if s.procs == nil {
 		return set
 	}
-	for _, argv := range s.procs.liveArgv() {
+	for _, argv := range s.procs.LiveArgv() {
 		for _, arg := range argv {
 			for _, tok := range strings.FieldsFunc(arg, notHexDigit) {
 				if len(tok) == 16 {

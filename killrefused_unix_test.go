@@ -4,7 +4,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
@@ -12,6 +11,12 @@ import (
 	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
+
+// noSuchPid is the base of the fake pids of the tests. It is above the pid limit of
+// Linux and macOS, so it names no process and no group. Tests that need more than
+// one fake pid use noSuchPid plus a small number. A fake pid of 1 would turn a group
+// signal into kill(-1), which signals every process of the user.
+const noSuchPid = 1 << 30
 
 // refusingSignals makes every signal of a child fail with err. Both seams take the
 // call, so no signal goes out: sysproc.SignalOne for TERM, INT and HUP, and
@@ -34,13 +39,8 @@ func refusingSignals(t *testing.T, err error) *[]string {
 
 // refusedChild is a live record that no exit ends. Its pid is above every pid limit,
 // so a signal that misses the seams finds no process.
-func refusedChild(m *procManager, id string) *managedProc {
-	p := &managedProc{
-		id: id, running: true, group: &supervisor.ProcGroup{},
-		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
-	}
-	m.procs[id] = p
-	return p
+func refusedChild(m *supervisor.Manager, id string) *supervisor.Proc {
+	return m.AddRefusedChildForTest(id, noSuchPid)
 }
 
 // A signal that the system refuses answers -32603 with the text of the error, for
@@ -60,7 +60,7 @@ func TestKillAnswersARefusedSignal(t *testing.T) {
 	if strings.Join(*calls, ",") != "one terminated,group" {
 		t.Errorf("signal calls = %v, want the leader TERM and the group KILL", *calls)
 	}
-	if got := killedByOf(p); got != "" {
+	if got := p.KilledByForTest(); got != "" {
 		t.Errorf("a refused kill stamped killedBy=%q, want empty", got)
 	}
 }
@@ -76,7 +76,7 @@ func TestKillOfAGoneProcessStaysASuccess(t *testing.T) {
 		if want := `{"jsonrpc":"2.0","id":4,"result":{"success":true}}`; got != want {
 			t.Errorf("process.kill with %v = %s, want %s", err, got, want)
 		}
-		if got := killedByOf(p); got != "client" {
+		if got := p.KilledByForTest(); got != "client" {
 			t.Errorf("a kill with %v stamped killedBy=%q, want client", err, got)
 		}
 	}

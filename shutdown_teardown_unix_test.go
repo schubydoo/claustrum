@@ -57,7 +57,7 @@ func TestShutdownTeardownClosesConnsBeforeCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 	// A failed run still stops the accept loop.
 	t.Cleanup(func() { _ = s.ln.Close() })
 	s.startAcceptLoops()
@@ -103,7 +103,7 @@ func TestShutdownReplyRacesTeardown(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newServerOnSocket: %v", err)
 		}
-		t.Cleanup(func() { s.procs.killAll() })
+		t.Cleanup(func() { s.procs.KillAll() })
 		s.startAcceptLoops()
 		torn := make(chan struct{})
 		go func() {

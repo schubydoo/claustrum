@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestIgnoreSigpipeSurvivesClosedStdout exercises the REAL ignoreSigpipeDefault (not
@@ -24,7 +26,7 @@ func TestIgnoreSigpipeSurvivesClosedStdout(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(exe)
-	cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sigpipe"})
+	cmd.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sigpipe"})
 	cmd.Stdout = w
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

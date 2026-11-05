@@ -542,7 +542,7 @@ have no flag and no key.
   on Go 1.26. Go 1.26.9 fixed standard library advisories of go1.25.14, one in
   the folder handles of the Windows file guards (GO-2026-6604).
 - **Reopen trigger.** The reference moves to Go 1.26 or newer.
-- **Pointers.** `process.go`.
+- **Pointers.** `internal/supervisor/process.go`.
 
 ### D24 · In the create rollback, keep a folder that replaced the new registration and run no git call after a `.git` file swap { #d24 }
 
@@ -650,7 +650,7 @@ have no flag and no key.
 - **Reopen trigger.** A client needs such a group member ended at a shutdown. Or a
   measurement shows that the reference sends no `SIGKILL` there.
 - **Pointers.** [server.shutdown](protocol/server.md#what-the-stop-does) and
-  `process.go` (`endAsked`).
+  `internal/supervisor/process.go` (`endAsked`).
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

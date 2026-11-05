@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestKillEndsOnlyTheDirectChild: process.kill, process.killAndWait and the kill of a
@@ -22,26 +24,26 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 	// add a matching exit line. The row id is the child id.
 	actions := []struct {
 		id      string
-		act     func(m *procManager, id string) result
+		act     func(m *supervisor.Manager, id string) result
 		wantLog string
 	}{
-		{"kd-kill-default", func(m *procManager, id string) result { _ = m.kill(id, ""); return result{} },
+		{"kd-kill-default", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, ""); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-kill-term", func(m *procManager, id string) result { _ = m.kill(id, "TERM"); return result{} },
+		{"kd-kill-term", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "TERM"); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-kill-kill", func(m *procManager, id string) result { _ = m.kill(id, "KILL"); return result{} },
+		{"kd-kill-kill", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "KILL"); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-killAndWait-default", func(m *procManager, id string) result {
-			f, d, a, e := m.killAndWait(id, "", 3*time.Second, true)
+		{"kd-killAndWait-default", func(m *supervisor.Manager, id string) result {
+			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
-		{"kd-killAndWait-no-escalate", func(m *procManager, id string) result {
-			f, d, a, e := m.killAndWait(id, "", 3*time.Second, false)
+		{"kd-killAndWait-no-escalate", func(m *supervisor.Manager, id string) result {
+			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, false)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
 		// The exit line of a clean stop is not measured on Windows. Only the code is, so
 		// the empty wantLog checks the code alone.
-		{"kd-clean-stop", func(m *procManager, _ string) result { m.killAll(); return result{} }, ""},
+		{"kd-clean-stop", func(m *supervisor.Manager, _ string) result { m.KillAll(); return result{} }, ""},
 	}
 	// The grandchild of each row, by its child id. The parent test ends each one at its
 	// end, so a grandchild lives past its row until the check below.
@@ -56,7 +58,7 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 
 			got := tc.act(m, tc.id)
 			select {
-			case <-p.done:
+			case <-p.DoneForTest():
 			case <-time.After(10 * time.Second):
 				t.Fatal("the direct child did not end")
 			}
@@ -101,9 +103,8 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 // CLAUDE_SSH_NO_JOBS=1, 52d82f0a logs the drain line too when the child exits by itself
 // (measured).
 func TestKillWithKidsHoldingThePipes(t *testing.T) {
-	oldDrain := exitDrainGrace
-	exitDrainGrace = 1500 * time.Millisecond
-	t.Cleanup(func() { exitDrainGrace = oldDrain })
+	oldDrain := supervisor.SetExitDrainGraceForTest(1500 * time.Millisecond)
+	t.Cleanup(func() { supervisor.SetExitDrainGraceForTest(oldDrain) })
 
 	t.Run("killAndWait", func(t *testing.T) {
 		const id = "kp-killAndWait"
@@ -112,14 +113,14 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		buf := captureLogBuf(t)
 
 		start := time.Now()
-		found, died, already, escalated := m.killAndWait(id, "", 300*time.Millisecond, true)
+		found, died, already, escalated := m.KillAndWait(id, "", 300*time.Millisecond, true)
 		took := time.Since(start)
 
 		if !found || !died || already || !escalated {
 			t.Errorf("killAndWait = found %v died %v alreadyExited %v escalated %v, want true true false true", found, died, already, escalated)
 		}
-		if took < exitDrainGrace {
-			t.Errorf("killAndWait answered after %s, want it to wait for the drain grace of %s", took, exitDrainGrace)
+		if took < supervisor.ExitDrainGraceForTest() {
+			t.Errorf("killAndWait answered after %s, want it to wait for the drain grace of %s", took, supervisor.ExitDrainGraceForTest())
 		}
 		log := buf.String()
 		wantLinesInOrder(t, log,
@@ -151,17 +152,17 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		buf := captureLogBuf(t)
 
 		start := time.Now()
-		_ = m.kill(id, "")
+		_ = m.Kill(id, "")
 		if replied := time.Since(start); replied > 500*time.Millisecond {
 			t.Errorf("kill returned after %s, want at once", replied)
 		}
 		select {
-		case <-p.done:
+		case <-p.DoneForTest():
 		case <-time.After(10 * time.Second):
 			t.Fatal("no exit of the managed process")
 		}
-		if took := time.Since(start); took < exitDrainGrace {
-			t.Errorf("the exit came after %s, want it after the drain grace of %s", took, exitDrainGrace)
+		if took := time.Since(start); took < supervisor.ExitDrainGraceForTest() {
+			t.Errorf("the exit came after %s, want it after the drain grace of %s", took, supervisor.ExitDrainGraceForTest())
 		}
 		log := buf.String()
 		if strings.Contains(log, "group kill failed") {

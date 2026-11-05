@@ -34,7 +34,7 @@ func bootLineServer(t *testing.T, keepChildren bool) (*server, string) {
 	if err != nil {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
-	t.Cleanup(func() { s.procs.killAll() }) // a failed run leaves no helper behind
+	t.Cleanup(func() { s.procs.KillAll() }) // a failed run leaves no helper behind
 	t.Cleanup(func() { _ = s.ln.Close() })
 	s.startAcceptLoops()
 	return s, sock
@@ -132,7 +132,7 @@ func TestShutdownBySignalLines(t *testing.T) {
 	// The kill is real: each child ends.
 	for _, id := range []string{"c1", "c2"} {
 		select {
-		case <-s.procs.get(id).done:
+		case <-s.procs.Get(id).DoneForTest():
 		case <-time.After(10 * time.Second):
 			t.Errorf("child %s did not end after the shutdown kill", id)
 		}
@@ -195,7 +195,7 @@ func TestShutdownCountLeavesOutAnEndedChild(t *testing.T) {
 		t.Fatalf("spawn e1 = %s", reply)
 	}
 	select {
-	case <-s.procs.get("e1").done:
+	case <-s.procs.Get("e1").DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Fatal("the echo helper did not end within 10 s")
 	}
@@ -205,7 +205,7 @@ func TestShutdownCountLeavesOutAnEndedChild(t *testing.T) {
 	wantLinesInOrder(t, buf.String(),
 		"[Server] cleanup: closed 2 connection(s), ended 1 child process group(s)")
 	select {
-	case <-s.procs.get("c1").done:
+	case <-s.procs.Get("c1").DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Error("child c1 did not end after the shutdown kill")
 	}
@@ -235,7 +235,7 @@ func TestShutdownByRPCLines(t *testing.T) {
 	// A clean stop ends the children (measured on Linux and Windows).
 	for _, id := range []string{"c1", "c2"} {
 		select {
-		case <-s.procs.get(id).done:
+		case <-s.procs.Get(id).DoneForTest():
 		case <-time.After(10 * time.Second):
 			t.Errorf("child %s did not end after the clean stop", id)
 		}
@@ -305,15 +305,15 @@ func TestShutdownLinesKeepChildren(t *testing.T) {
 		"[Server] shutdown requested",
 		"[Server] -keep-children: leaving 1 running child process(es) alive across shutdown",
 		"[Server] cleanup: closed 1 connection(s), ended 0 child process group(s)")
-	p := s.procs.get("c1")
-	if !p.isRunning() {
+	p := s.procs.Get("c1")
+	if !p.IsRunning() {
 		t.Error("the child ended at a -keep-children shutdown")
 	}
 	// End the kept child here and wait for its exit. Its exit line then does not land in
 	// the log buffer of a later test.
-	_ = s.procs.kill("c1", "KILL")
+	_ = s.procs.Kill("c1", "KILL")
 	select {
-	case <-p.done:
+	case <-p.DoneForTest():
 	case <-time.After(10 * time.Second):
 		t.Error("the kept child did not end within 10 s of the kill")
 	}

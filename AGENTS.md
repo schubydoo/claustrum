@@ -48,7 +48,7 @@ modes and the OS splits is in
 | `rpc.go` | `request`, `gate` (read loop), `route` (`dispatchRequest`) |
 | `internal/rpc/` | error codes, reply types, result structs with fields in the order of the reference. Never a map |
 | `methods_*.go`, `internal/{files,git}/` | the 21 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
-| `process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
+| `internal/supervisor/process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
 | `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
 | `internal/homeguard/homeguard.go` | `WipesHomeDir`, the home guard each RPC path to a recursive delete owes |
 | `internal/files/methods_files.go` | the wipe of `destDir` and the `.synced` marker of `files.extract_tar` |
@@ -71,7 +71,7 @@ Every OS serves the same JSON-RPC methods.
 ## Conventions
 
 - Byte-identical wire frames are the contract. Results are ordered structs,
-  not maps. Any change to `rpc.go`, `methods_*.go`, `process.go`,
+  not maps. Any change to `rpc.go`, `methods_*.go`, `internal/supervisor/process.go`,
   `internal/rpc/`, `internal/files/`, `internal/git/` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
   divergence owes two things. Give it an entry with its decision rules in

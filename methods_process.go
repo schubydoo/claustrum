@@ -57,12 +57,12 @@ type spawnParams struct {
 	// decodes to an empty arg (all measured).
 	Launcher *[]string `json:"launcher"`
 	// LinkBound binds the process to the connection of the spawn (683cc6a9, see
-	// linkbound.go). A pointer, so absent or null is a plain spawn. A value that is
+	// internal/supervisor/linkbound.go). A pointer, so absent or null is a plain spawn. A value that is
 	// no object, or an unattendedSeconds that is no integer, gets Invalid params
 	// (claustrum's own, not measured: before, the member was ignored). Pty is read
 	// only for the refusal below, and a value other than true counts as absent.
-	LinkBound *linkBoundParams   `json:"linkBound"`
-	Pty       rpc.JSONTrueSwitch `json:"pty"`
+	LinkBound *supervisor.LinkBoundParams `json:"linkBound"`
+	Pty       rpc.JSONTrueSwitch          `json:"pty"`
 	// CLITempRoot asks for the private temp folder step (clitemproot_linux.go). On
 	// macOS and Windows it changes nothing (b3081b51, measured with true, false and
 	// absent). Any other value counts as absent (claustrum's own, not measured).
@@ -91,7 +91,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		if p.Pty {
 			return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 		}
-		linkTTL = unattendedTTL(p.LinkBound.UnattendedSeconds)
+		linkTTL = supervisor.UnattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
 	// The session folders of a Claude Code spawn get their records in the spawn,
 	// unless the request carries the off switch (sessionfolders.go).
@@ -99,8 +99,8 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if !sessiondirs.OffSwitchSet(req.Params) {
 		folders = sessionFoldersOf(p.Command, p.Args, p.Cwd, p.Launcher != nil)
 	}
-	mp, err := s.procs.spawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
-	if errors.Is(err, errStartsStopped) {
+	mp, err := s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
+	if errors.Is(err, supervisor.ErrStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
 		return rpc.Response{NoFrame: true}
 	}
@@ -112,10 +112,10 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		}
 		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
 	}
-	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.cliTempRoot}
+	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.CLITempRoot()}
 	if p.WantPid {
-		res.Pid = mp.pid
-		res.StartTime = mp.startTime
+		res.Pid = mp.Pid()
+		res.StartTime = mp.StartTime()
 	}
 	return rpc.OKResult(req.ID, res)
 }
@@ -126,7 +126,7 @@ type stdinParams struct {
 	// Offset is the byte position this data starts at, for the stdin-offset
 	// idempotency contract (advertised as "process.stdin.offset"). A pointer so an
 	// absent field ("append here", the legacy behavior) is distinct from offset:0
-	// (which, once anything has been applied, is a duplicate). See applyStdin.
+	// (which, once anything has been applied, is a duplicate). See supervisor.Proc.ApplyStdin.
 	Offset *uint64 `json:"offset"`
 	// Attach is an optional member. A pointer so null and an absent member are alike,
 	// and 0 counts as present. Every process of claustrum answers a present attach as
@@ -161,13 +161,13 @@ func (s *server) processStdin(c *conn.Conn, req *request) rpc.Response {
 	// and ends the request.
 	// A link-bound process takes stdin from its link only. Another connection gets
 	// "Process not found" (683cc6a9, measured on Linux).
-	mp := s.procs.get(p.ID)
-	if mp == nil || p.Attach != nil || !mp.takesFrom(c) {
+	mp := s.procs.Get(p.ID)
+	if mp == nil || p.Attach != nil || !mp.TakesFrom(c) {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process not found")
 	}
-	// isLive, not isRunning: 90fca6e6 refuses a write inside the exit drain, after
+	// IsLive, not IsRunning: 90fca6e6 refuses a write inside the exit drain, after
 	// the child exits and before its exit frame goes out (measured on Linux).
-	applied, duplicate, gap, full, notRunning := mp.applyStdin(data, p.Offset, mp.isLive)
+	applied, duplicate, gap, full, notRunning := mp.ApplyStdin(data, p.Offset, mp.IsLive)
 	if gap {
 		return rpc.ErrResult(req.ID, rpc.CodeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
 	}
@@ -183,7 +183,7 @@ func (s *server) processStdin(c *conn.Conn, req *request) rpc.Response {
 type killParams struct {
 	ID     string `json:"id"`
 	Signal string `json:"signal"`
-	// Farewell and GraceMs ask for a farewell (see farewell.go). They stay raw, so
+	// Farewell and GraceMs ask for a farewell (see internal/supervisor/farewell.go). They stay raw, so
 	// a value of the wrong type gets "invalid", not Invalid params (measured).
 	Farewell json.RawMessage `json:"farewell"`
 	GraceMs  json.RawMessage `json:"graceMs"`
@@ -194,21 +194,21 @@ func (s *server) processKill(req *request) rpc.Response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	ask, rule := readFarewell(p.Farewell, p.GraceMs)
+	ask, rule := supervisor.ReadFarewell(p.Farewell, p.GraceMs)
 	switch {
 	case rule != "":
 		// The rule test comes before the id test, so an unknown id with a bad
 		// farewell gets "invalid" (claustrum's own, not measured).
-		logFarewellNotSaid(p.ID, rule)
-		_ = s.procs.kill(p.ID, p.Signal)
-		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: farewellInvalid})
+		supervisor.LogFarewellNotSaid(p.ID, rule)
+		_ = s.procs.Kill(p.ID, p.Signal)
+		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: supervisor.FarewellInvalid})
 	case ask != nil:
-		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: s.procs.killWithFarewell(p.ID, p.Signal, *ask)})
+		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: s.procs.KillWithFarewell(p.ID, p.Signal, *ask)})
 	}
 	// A signal that the system refused answers its text (52d82f0a, measured on Linux
 	// and macOS). The case of a bad farewell above keeps its success (claustrum's
 	// own, not measured).
-	if err := s.procs.kill(p.ID, p.Signal); err != nil {
+	if err := s.procs.Kill(p.ID, p.Signal); err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
 	return rpc.OKResult(req.ID, rpc.KillResult{Success: true})
@@ -217,7 +217,7 @@ func (s *server) processKill(req *request) rpc.Response {
 // killAndWaitParams is distinct from killParams: process.killAndWait accepts a
 // caller-supplied grace and an escalate toggle on top of id/signal (added in
 // 7c2f88d). Both are pointers so an absent field takes the reference default —
-// timeoutMs → 3000ms (see clampKillWaitMs), escalate → true.
+// timeoutMs → 3000ms (see supervisor.ClampKillWaitMs), escalate → true.
 type killAndWaitParams struct {
 	ID        string `json:"id"`
 	Signal    string `json:"signal"`
@@ -246,25 +246,25 @@ func (s *server) processKillAndWait(req *request) rpc.Response {
 	if p.TimeoutMs != nil {
 		ms = *p.TimeoutMs
 	}
-	grace := time.Duration(clampKillWaitMs(ms)) * time.Millisecond
+	grace := time.Duration(supervisor.ClampKillWaitMs(ms)) * time.Millisecond
 	escalate := true
 	if p.Escalate != nil {
 		escalate = *p.Escalate
 	}
 	// The farewell rules come after the id test, so the error reply stays as it was.
-	ask, rule := readFarewell(p.Farewell, p.GraceMs)
+	ask, rule := supervisor.ReadFarewell(p.Farewell, p.GraceMs)
 	if ask != nil {
-		return rpc.OKResult(req.ID, s.procs.killAndWaitFarewell(p.ID, p.Signal, grace, escalate, *ask))
+		return rpc.OKResult(req.ID, s.procs.KillAndWaitFarewell(p.ID, p.Signal, grace, escalate, *ask))
 	}
 	if rule != "" {
 		// The plain kill path at once, as process.kill does (claustrum's own, not
 		// measured for process.killAndWait).
-		logFarewellNotSaid(p.ID, rule)
+		supervisor.LogFarewellNotSaid(p.ID, rule)
 	}
-	found, died, alreadyExited, escalated := s.procs.killAndWait(p.ID, p.Signal, grace, escalate)
+	found, died, alreadyExited, escalated := s.procs.KillAndWait(p.ID, p.Signal, grace, escalate)
 	end := ""
 	if rule != "" {
-		end = farewellInvalid
+		end = supervisor.FarewellInvalid
 	}
 	return rpc.OKResult(req.ID, rpc.KillAndWaitResult{
 		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated, FarewellEnd: end,
@@ -302,14 +302,14 @@ func (s *server) processReattach(c *conn.Conn, req *request) rpc.Response {
 	if p.Proof != "" {
 		return rpc.OKResult(req.ID, rpc.ReattachResult{})
 	}
-	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.reattach(c, p.ID, p.FromSeq)
+	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.Reattach(c, p.ID, p.FromSeq)
 	res := rpc.ReattachResult{
 		Found: found, Running: running, FirstSeq: firstSeq, LastSeq: lastSeq,
 		StdinApplied: stdinApplied,
 	}
 	if p.WantPid && mp != nil {
-		res.Pid = mp.pid
-		res.StartTime = mp.startTime
+		res.Pid = mp.Pid()
+		res.StartTime = mp.StartTime()
 	}
 	return rpc.OKResult(req.ID, res)
 }

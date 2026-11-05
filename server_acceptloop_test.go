@@ -47,7 +47,7 @@ func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
 		s.signalShutdown()
 		_ = ln.Close()
 		_ = pln.Close()
-		s.procs.killAll()
+		s.procs.KillAll()
 	})
 
 	for _, sk := range []string{sock, pipe} {
@@ -142,7 +142,7 @@ func TestAcceptLoopServesAndReturnsOnShutdown(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { s.acceptLoop(s.ln); close(done) }()
-	t.Cleanup(func() { s.procs.killAll() })
+	t.Cleanup(func() { s.procs.KillAll() })
 
 	// A ping must round-trip through the real acceptLoop.
 	cl := dial(t, sock)

@@ -3,56 +3,41 @@
 package supervisor
 
 import (
-	"bytes"
-	"log"
 	"os"
-	"sync"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 	"testing"
 )
 
-// noSuchPid is the base of the fake pids of the tests of this package. It is above
-// the pid limit of Linux and macOS, so it names no process and no group. If a change
-// skips a seam, the signal finds nothing.
-const noSuchPid = 1 << 30
+// managedSettingsDirEnv is the env name of the managed settings folder of the
+// end-to-end tests of package main. A test sets it in the env of the daemon.
+const managedSettingsDirEnv = "CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR"
 
-// helperCommand returns this test binary's path plus the env overlay that makes a
-// child run it in the given helper mode.
-func helperCommand(t *testing.T, mode string) (string, map[string]string) {
+// resolveTestRoot gives a t.TempDir() root with its links resolved, as the daemon
+// reports a path below it. That matters on macOS, where /var is a link to
+// /private/var. It changes nothing on Linux.
+func resolveTestRoot(t *testing.T, p string) string {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
 	}
-	return exe, map[string]string{"CLAUSTRUM_TEST_HELPER": mode}
+	return p
 }
 
-// syncBuffer is the sink of captureLogBuf. The test goroutine reads it while other
-// goroutines can still log, so every access takes the lock.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
+// ignoreSigterm makes the helper child ignore SIGTERM (the "ignore-term" mode).
+func ignoreSigterm() { signal.Ignore(syscall.SIGTERM) }
 
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
+// ignoreSighup makes the helper child ignore SIGHUP (the "ignore-hup" mode).
+func ignoreSighup() { signal.Ignore(syscall.SIGHUP) }
 
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-// captureLogBuf points the default logger at a locked buffer, with no timestamp,
-// until the test ends, and returns the buffer.
-func captureLogBuf(t *testing.T) *syncBuffer {
-	t.Helper()
-	buf := &syncBuffer{}
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
-	return buf
+// exitZeroOnSigterm makes the helper child exit with code 0 when SIGTERM comes (the
+// "term-exit0" mode).
+func exitZeroOnSigterm() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM)
+	go func() {
+		<-ch
+		os.Exit(0)
+	}()
 }

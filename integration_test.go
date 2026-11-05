@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // These tests exercise the *real* AF_UNIX wire path end to end — listener, per-connection
@@ -367,7 +368,7 @@ func TestSocketProcessWantPid(t *testing.T) {
 	assertGolden(t, "socket_process_wantpid.golden.json", encodeGolden(t, golden))
 }
 
-func lastExit(t *testing.T, frames []streamFrame) streamFrame {
+func lastExit(t *testing.T, frames []supervisor.StreamFrame) supervisor.StreamFrame {
 	t.Helper()
 	for i := len(frames) - 1; i >= 0; i-- {
 		if frames[i].Stream == "exit" {
@@ -375,10 +376,10 @@ func lastExit(t *testing.T, frames []streamFrame) streamFrame {
 		}
 	}
 	t.Fatal("no exit frame")
-	return streamFrame{}
+	return supervisor.StreamFrame{}
 }
 
-func assertSeqMonotonic(t *testing.T, frames []streamFrame) {
+func assertSeqMonotonic(t *testing.T, frames []supervisor.StreamFrame) {
 	t.Helper()
 	for i, f := range frames {
 		if f.Seq != uint64(i+1) {
@@ -442,9 +443,8 @@ func assertGolden(t *testing.T, name string, got []byte) {
 // var is registered BEFORE startSocketServer so the LIFO cleanup order shuts the
 // daemon down first — otherwise a live waiter goroutine reads it as it changes.
 func TestSocketExitFrameBoundsTheDrain(t *testing.T) {
-	old := exitDrainGrace
-	exitDrainGrace = 300 * time.Millisecond
-	t.Cleanup(func() { exitDrainGrace = old })
+	old := supervisor.SetExitDrainGraceForTest(300 * time.Millisecond)
+	t.Cleanup(func() { supervisor.SetExitDrainGraceForTest(old) })
 
 	s, sock := newRunningServer(t)
 	cl := dial(t, sock)
@@ -561,9 +561,9 @@ func TestSocketResponseIDCanonicalization(t *testing.T) {
 // startSocketServer because pruneLoop reads the interval once at start, and the
 // restore is registered first so the LIFO cleanup stops the daemon before it.
 func TestSocketPrunesLongExitedProcesses(t *testing.T) {
-	oldAge, oldInterval := procPruneAge, procPruneInterval
-	t.Cleanup(func() { procPruneAge, procPruneInterval = oldAge, oldInterval })
-	procPruneAge, procPruneInterval = 100*time.Millisecond, 20*time.Millisecond
+	const age, interval = 100 * time.Millisecond, 20 * time.Millisecond
+	oldAge, oldInterval := supervisor.SetProcPruneForTest(age, interval)
+	t.Cleanup(func() { supervisor.SetProcPruneForTest(oldAge, oldInterval) })
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -585,7 +585,7 @@ func TestSocketPrunesLongExitedProcesses(t *testing.T) {
 	cl.waitExit("OLD")
 
 	// Past the retention window, with NO further spawn: only the ticker can act.
-	time.Sleep(procPruneAge + 10*procPruneInterval)
+	time.Sleep(age + 10*interval)
 
 	var got struct {
 		Result struct {

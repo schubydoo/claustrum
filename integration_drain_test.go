@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestSocketReapedInDrainIsNotRunning drives the 90fca6e6 drain refusal through a real
@@ -27,11 +29,8 @@ func waitForDrainWindow(t *testing.T, s *server, processID string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if p := s.procs.get(processID); p != nil {
-			p.mu.Lock()
-			inWindow := p.reaped && p.running
-			p.mu.Unlock()
-			if inWindow {
+		if p := s.procs.Get(processID); p != nil {
+			if p.InDrainForTest() {
 				return
 			}
 		}
@@ -53,8 +52,8 @@ func waitForDrainWindow(t *testing.T, s *server, processID string) {
 func killFixtureGroup(t *testing.T, s *server, processID string) {
 	t.Helper()
 	t.Cleanup(func() {
-		if p := s.procs.get(processID); p != nil {
-			_ = p.killGroupAfterExit()
+		if p := s.procs.Get(processID); p != nil {
+			_ = p.KillGroupAfterExitForTest()
 		}
 	})
 }
@@ -63,23 +62,19 @@ func killFixtureGroup(t *testing.T, s *server, processID string) {
 // window. Called after the in-window assertions, it says they were made inside it.
 func mustStillBeInDrainWindow(t *testing.T, s *server, processID string) {
 	t.Helper()
-	p := s.procs.get(processID)
+	p := s.procs.Get(processID)
 	if p == nil {
 		t.Fatalf("process %s disappeared before the window could be rechecked", processID)
 	}
-	p.mu.Lock()
-	inWindow := p.reaped && p.running
-	p.mu.Unlock()
-	if !inWindow {
+	if !p.InDrainForTest() {
 		t.Fatal("the drain window closed during the assertions above, so they were " +
 			"answered by the ordinary post-exit path and prove nothing")
 	}
 }
 
 func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
-	old := exitDrainGrace
-	exitDrainGrace = 3 * time.Second
-	t.Cleanup(func() { exitDrainGrace = old })
+	old := supervisor.SetExitDrainGraceForTest(3 * time.Second)
+	t.Cleanup(func() { supervisor.SetExitDrainGraceForTest(old) })
 
 	s, sock := newRunningServer(t)
 	cl := dial(t, sock)

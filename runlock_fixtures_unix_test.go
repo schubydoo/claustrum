@@ -12,6 +12,7 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/runlock"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // The lock-holder fixtures of the tests of package main that drive -stop and the
@@ -144,7 +145,7 @@ func startLockHolder(t *testing.T, lockPath, termMode, nodeOverride string) *exe
 	exe, env := helperCommand(t, "runlock-hold")
 	ready := lockPath + ".ready"
 	cmd := exec.Command(exe, lockPath, termMode, ready, nodeOverride)
-	cmd.Env = buildEnv(env)
+	cmd.Env = supervisor.BuildEnv(env)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start lock holder: %v", err)
@@ -171,7 +172,7 @@ func startEmptyLockHolder(t *testing.T, lockPath string) (letGo func()) {
 	exe, env := helperCommand(t, "runlock-hold-empty")
 	ready, goFile := lockPath+".ready", lockPath+".go"
 	cmd := exec.Command(exe, lockPath, ready, goFile)
-	cmd.Env = buildEnv(env)
+	cmd.Env = supervisor.BuildEnv(env)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start lock holder: %v", err)

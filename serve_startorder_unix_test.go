@@ -302,3 +302,16 @@ func TestLauncherWaitsPastAStaleSocketFile(t *testing.T) {
 		t.Errorf("the wait took %v, want %v or more: it returned on the stale socket file", took, bindAfter)
 	}
 }
+
+// wantLogOrder asserts that logged holds each part, in that order.
+func wantLogOrder(t *testing.T, logged string, parts ...string) {
+	t.Helper()
+	at := 0
+	for _, part := range parts {
+		i := strings.Index(logged[at:], part)
+		if i < 0 {
+			t.Fatalf("log has no %q after place %d:\n%s", part, at, logged)
+		}
+		at += i + len(part)
+	}
+}

@@ -18,8 +18,8 @@ func TestSpawnDoesNotInheritNoJobsSwitch(t *testing.T) {
 	captureLogBuf(t)
 	s, sock := bootLineServer(t, false)
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	if s.procs.jobs != supervisor.JobsOff {
-		t.Errorf("jobs = %d with the switch, want supervisor.JobsOff", s.procs.jobs)
+	if s.procs.Jobs != supervisor.JobsOff {
+		t.Errorf("jobs = %d with the switch, want supervisor.JobsOff", s.procs.Jobs)
 	}
 	cases := []struct{ id, name, param, want string }{
 		{"nojobs", supervisor.ChildJobsOffEnv, "", supervisor.ChildJobsOffEnv + " absent"},
@@ -32,7 +32,7 @@ func TestSpawnDoesNotInheritNoJobsSwitch(t *testing.T) {
 		if tc.param != "" {
 			env[tc.name] = tc.param
 		}
-		if _, err := s.procs.spawn(c, tc.id, exe, []string{tc.name}, "", env, false); err != nil {
+		if _, err := s.procs.Spawn(c, tc.id, exe, []string{tc.name}, "", env, false); err != nil {
 			t.Fatalf("spawn: %v", err)
 		}
 		if got := firstStdout(t, frames); got != tc.want {

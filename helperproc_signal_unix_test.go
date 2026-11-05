@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -68,7 +69,7 @@ func exitZeroOnSigterm() {
 func breakawayStart(*exec.Cmd) {}
 
 // childJobState is empty off Windows, which has no jobs.
-func childJobState(*managedProc) string { return "" }
+func childJobState(*supervisor.Proc) string { return "" }
 
 // ownJobFlags is empty off Windows, which has no jobs.
 func ownJobFlags() string { return "" }

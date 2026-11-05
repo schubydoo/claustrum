@@ -272,7 +272,7 @@ func runPeerNetns() (peerNetnsResult, error) {
 	if err != nil {
 		return res, err
 	}
-	defer s.procs.killAll()
+	defer s.procs.KillAll()
 	defer func() { _ = s.ln.Close() }()
 	defer func() { s.signalShutdown(); s.closeAll(sock) }()
 	s.startAcceptLoops()

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // realLoginPATHExtractor is the extractor of production. The package initializes
@@ -52,13 +53,13 @@ func setDaemonPathSpelledPath(t *testing.T, val string) {
 func childPathEntries(t *testing.T, id string, caller map[string]string) []string {
 	t.Helper()
 	m := newTestProcManager(t)
-	t.Cleanup(m.killAll)
+	t.Cleanup(m.KillAll)
 	c, frames := pipeConn(t)
 	exe, env := helperCommand(t, "environ")
 	for k, v := range caller {
 		env[k] = v
 	}
-	if _, err := m.spawn(c, id, exe, nil, "", env, false); err != nil {
+	if _, err := m.Spawn(c, id, exe, nil, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	var out strings.Builder
@@ -140,7 +141,7 @@ func TestNoDaemonPATHGivesNoChildPATHOnWindows(t *testing.T) {
 	_ = os.Unsetenv("PATH")
 	armLoginPATH()
 
-	for _, e := range buildEnv(nil) {
+	for _, e := range supervisor.BuildEnv(nil) {
 		if k, _, ok := strings.Cut(e, "="); ok && strings.EqualFold(k, "PATH") {
 			t.Errorf("the child environment holds %q, want no path entry", e)
 		}

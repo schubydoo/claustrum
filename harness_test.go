@@ -103,7 +103,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	t.Cleanup(func() {
 		close(stop)
 		ln.Close()
-		s.procs.killAll()
+		s.procs.KillAll()
 		// Closes the lock file and removes the folder of this daemon below git-shadow.
 		s.gitShadow.Close()
 	})
@@ -128,7 +128,7 @@ type testClient struct {
 	nc   net.Conn
 	mu   sync.Mutex
 	resp []json.RawMessage
-	fr   []streamFrame
+	fr   []supervisor.StreamFrame
 	// read counts the bytes of the lines read so far. endErr holds the first
 	// end member that does not match the real byte count. See checkEnd.
 	read   int64
@@ -192,7 +192,7 @@ func (cl *testClient) readLoop() {
 		cl.mu.Lock()
 		line = cl.checkEnd(line)
 		if probe.Type == "stream" {
-			var f streamFrame
+			var f supervisor.StreamFrame
 			if json.Unmarshal(line, &f) == nil {
 				cl.fr = append(cl.fr, f)
 			}
@@ -259,7 +259,7 @@ func (cl *testClient) waitResponses(n int) []json.RawMessage {
 
 // waitExit blocks until an "exit" frame for processID arrives, then returns all
 // frames for that process in arrival order.
-func (cl *testClient) waitExit(processID string) []streamFrame {
+func (cl *testClient) waitExit(processID string) []supervisor.StreamFrame {
 	cl.wait(func() bool {
 		for _, f := range cl.fr {
 			if f.ProcessID == processID && f.Stream == "exit" {
@@ -270,7 +270,7 @@ func (cl *testClient) waitExit(processID string) []streamFrame {
 	})
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
-	var out []streamFrame
+	var out []supervisor.StreamFrame
 	for _, f := range cl.fr {
 		if f.ProcessID == processID {
 			out = append(out, f)
@@ -282,7 +282,7 @@ func (cl *testClient) waitExit(processID string) []streamFrame {
 // streamBytes concatenates (by seq) the base64-decoded data of every frame on
 // the given stream, yielding the child's full stdout/stderr regardless of how
 // the daemon chunked it into frames.
-func streamBytes(t *testing.T, frames []streamFrame, stream string) string {
+func streamBytes(t *testing.T, frames []supervisor.StreamFrame, stream string) string {
 	t.Helper()
 	var sb []byte
 	for _, f := range frames {
@@ -298,18 +298,18 @@ func streamBytes(t *testing.T, frames []streamFrame, stream string) string {
 	return string(sb)
 }
 
-// newTestProcManager builds a procManager whose background prune sweep is shut
+// newTestProcManager builds a supervisor.Manager whose background prune sweep is shut
 // down when the test ends.
 //
-// newProcManager starts that sweep unconditionally. In the daemon the server's
+// supervisor.NewManager starts that sweep unconditionally. In the daemon the server's
 // teardown closes it. A test that builds a manager directly has no such teardown.
 // Without this helper, every such test leaks a goroutine and a ticker for the life
 // of the test binary. Tests use this
-// instead of calling newProcManager, so the ownership is not something each new
+// instead of calling supervisor.NewManager, so the ownership is not something each new
 // test has to remember.
-func newTestProcManager(tb testing.TB) *procManager {
+func newTestProcManager(tb testing.TB) *supervisor.Manager {
 	tb.Helper()
-	m := newProcManager()
-	tb.Cleanup(m.close)
+	m := supervisor.NewManager()
+	tb.Cleanup(m.Close)
 	return m
 }

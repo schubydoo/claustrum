@@ -57,7 +57,7 @@ A change that breaks one of these is wrong. Passing tests do not make it right:
 
 1. Byte-identical JSON-RPC frames. Result structs declare fields in the exact order
    the reference emits, and are never a map. Maps sort keys and diverge. Some changes
-   under `rpc.go`, `methods_*.go`, `process.go`, `internal/rpc/`, `internal/files/` or `internal/git/` can move a byte. For
+   under `rpc.go`, `methods_*.go`, `internal/supervisor/process.go`, `internal/rpc/`, `internal/files/` or `internal/git/` can move a byte. For
    such a change, the PR must say how it was measured.
 2. An intentional divergence must be documented: an entry in `docs/DIVERGENCES.md`,
    its frames in `docs/PROTOCOL.md` or on the page of its method under

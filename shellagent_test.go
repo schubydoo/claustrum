@@ -9,6 +9,7 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // stubShellAgentSocket replaces the login-shell lookup for one test and counts
@@ -33,7 +34,7 @@ func unsetForTest(t *testing.T, key string) {
 
 // waitExitFrame reads frames until the exit frame, so the child's exit log line
 // is written inside this test and not into the next test's log capture.
-func waitExitFrame(t *testing.T, frames <-chan streamFrame) {
+func waitExitFrame(t *testing.T, frames <-chan supervisor.StreamFrame) {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {
