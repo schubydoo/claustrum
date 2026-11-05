@@ -97,7 +97,7 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 | `<cause>` | When |
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder |
-| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS). The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
+| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS), not the first `config --get`. The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
 | the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`) |
 | `this repository's git config cannot be used: <error lines of git>` | The read of the test repository's config failed, and the plain `git version` after it works |
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
@@ -107,6 +107,8 @@ If git refuses the copy and the same call works without it, the state is
 `fallback-git` and not a failure. A test call that works and answers wrongly gives
 it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
+A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
+does not fail the test. The test goes on (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure for 10 seconds from the end of the failed test, also
 after its cause is gone. A request in that time gets the kept text with no git call.

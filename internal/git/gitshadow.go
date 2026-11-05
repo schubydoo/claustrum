@@ -833,14 +833,16 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// shadow (measured). Another failure of a call 6 that exited by itself goes
 	// on too. So does a call 6 that works with a text that is neither `real`
 	// nor `shadow`. Both are claustrum's own, not measured. A call 6 that the
-	// bound ended fails the test, as every ended test call but call 7. So does
-	// a call 6 that a signal ended, or that did not start. Both are claustrum's
-	// own, not measured. On Windows a call that another process killed reads as
-	// an exit, so it goes on there. Between call 6 and call 8 the daemon lists
-	// the config of `real` from standard input, as it does for a repository.
+	// bound ended goes on too. b3081b51 then makes the same 34 git calls as
+	// after a quick call 6, and the state is shadow (measured on Linux). A call
+	// 6 that another signal ended, or that did not start, fails the test
+	// (claustrum's own, not measured). On Windows a call that another process
+	// killed reads as an exit, so it goes on there. Between call 6 and call 8
+	// the daemon lists the config of `real` from standard input, as it does for
+	// a repository.
 	get := []string{"config", "--get", "helper.check"}
 	first := run(shadowEnv, get...)
-	if first.err != nil && (first.ended || !first.exited()) {
+	if first.err != nil && !first.ended && !first.exited() {
 		return failed("config", first)
 	}
 	if first.err == nil && first.out == "real" {
