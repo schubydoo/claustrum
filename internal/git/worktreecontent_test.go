@@ -238,7 +238,9 @@ func TestContentCheckLinks(t *testing.T) {
 // no object (measured on Linux).
 func TestContentCheckStoppedCall(t *testing.T) {
 	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
-	shortGitLimit(t, 500*time.Millisecond)
+	// The limit is that of every call of the create. 5 s is far over a fast
+	// call on a loaded runner and far under the hold of the stub.
+	shortGitLimit(t, 5*time.Second)
 	setDuration(t, &gitStopGrace, 200*time.Millisecond)
 	slowGit(t, "cat-file,commit", "fail", 60*time.Second, "", "")
 	logs := captureLogBuf(t)
@@ -264,7 +266,10 @@ func TestContentCheckStoppedCall(t *testing.T) {
 // create succeeds (measured on macOS).
 func TestContentCheckStoppedHashGoesOn(t *testing.T) {
 	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
-	shortGitLimit(t, 500*time.Millisecond)
+	// The limit is that of every call of the create. At 500 ms a loaded
+	// Windows runner stopped the rev-parse call before the add. 5 s is far
+	// over a fast call and far under the hold of the stub.
+	shortGitLimit(t, 5*time.Second)
 	setDuration(t, &gitStopGrace, 200*time.Millisecond)
 	slowGit(t, "hash-object,--stdin-paths", "fail", 60*time.Second, "", "")
 	logs := captureLogBuf(t)
