@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -433,9 +434,9 @@ const (
 )
 
 // worktreeCreateDrainCap bounds the post-exit pipe drain of git.worktree_create's
-// read-tree checkout. Measured against 4534d86: when the checkout leaves a descendant
-// (a smudge/hook filter, or something it backgrounds) holding one of the daemon's
-// output pipes, the reference caps the drain at a FIXED ~5.0s from the checkout git's
+// read-tree checkout. Measured against 4534d86: when the checkout exits 0 and leaves a
+// descendant (a smudge/hook filter, or something it backgrounds) holding one of the
+// daemon's output pipes, the reference caps the drain at a FIXED ~5.0s from the checkout git's
 // OWN exit — independent of the caller timeoutMs (measured 5.004 / 5.007 / 5.009s) —
 // then reaps the descendant (so the reply arrives at ~5s, not at the descendant's
 // lifetime), and only then gates the reply on timeoutMs (measured against 4534d86).
@@ -444,6 +445,10 @@ const (
 // pipe-drain overrun starts when the process itself exits — so the cap is measured
 // from git-exit, matching the reference. (var, not const, so tests can shrink it.)
 var worktreeCreateDrainCap = 5 * time.Second
+
+// reapCheckoutGroup is the group kill of a read-tree call that the deadline stops
+// (hardenedGitCheckout). A test replaces it.
+var reapCheckoutGroup = sysproc.ReapProcessGroup
 
 // hardenedGitCheckout runs the read-tree checkout of git.worktree_create under the
 // hardening profile, in its OWN process group, with the post-exit output-pipe drain
@@ -489,7 +494,8 @@ var worktreeCreateDrainCap = 5 * time.Second
 //
 // It returns:
 //   - stderr: stderr only, untrimmed. The failure frames quote it (worktreeGitText).
-//     stdout goes to its own pipe, which the drain cap also covers, and is not kept.
+//     stdout goes to its own pipe, which the drain cap also covers unless
+//     runCheckoutPipes skips it, and is not kept.
 //   - drained: git EXITED 0 but a descendant held a pipe past the drain cap. Go
 //     surfaces this as exec.ErrWaitDelay. The caller routes it to the timeoutMs
 //     verdict (success if timeoutMs exceeded the drain, else timeout + rollback with
@@ -609,6 +615,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	// descendant reap.
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	_, deadlined := ctx.Deadline()
+	var cancelled atomic.Bool
 	if !deadlined {
 		cmd.WaitDelay = gitDrainWait
 	} else {
@@ -623,15 +630,19 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// post-kill pipe drain. Returning nil marks the interrupt as successful; Wait still
 		// prefers git's own "signal: killed" *ExitError, so the wire suffix is unchanged.
 		cmd.Cancel = func() error {
-			sysproc.ReapProcessGroup(cmd.Process)
+			cancelled.Store(true)
+			reapCheckoutGroup(cmd.Process)
 			_ = cmd.Process.Kill()
 			return nil
 		}
 	}
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	err = runHeld(cmd, cmd.Run)
+	var errBuf bytes.Buffer
+	err = runHeld(cmd, func() error {
+		return runCheckoutPipes(cmd, &errBuf, func(werr error) bool {
+			var exitErr *exec.ExitError
+			return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
+		})
+	})
 	drained = errors.Is(err, exec.ErrWaitDelay)
 	if drained && deadlined {
 		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
@@ -640,6 +651,74 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		sysproc.ReapProcessGroup(cmd.Process)
 	}
 	return errBuf.String(), drained, err
+}
+
+// runCheckoutPipes runs the read-tree call with two output pipes of its own, so
+// that Wait returns when git exits. stdout is read and dropped. stderr goes to
+// errBuf. After the exit each pipe drains for at most cmd.WaitDelay, as
+// exec.Cmd.WaitDelay does. An overrun after an exit 0 gives exec.ErrWaitDelay.
+//
+// If skipOut answers true for the error of Wait, the stdout pipe gets no drain.
+// On Linux and macOS that is the case of a read-tree call with a timeoutMs that
+// failed by itself. A failed smudge filter was measured there. With a child that
+// holds only its stdout for 6 s, be1c1ca5 and b3081b51 answer the failure of git
+// at once. They wait neither to the cap nor to the deadline. Other failures are
+// claustrum's own, not measured. A child that holds stderr delays the reply until
+// stderr closes or the cap ends (claustrum's own, not measured). A child that holds
+// both pipes past the deadline gets timeout, where b3081b51 answers the failure
+// (measured on Linux, a later fix). Also not measured: a failure with no timeoutMs
+// (both pipes keep gitDrainWait), a signal to that child (none is sent), and
+// Windows (it keeps the drain, failedCheckoutSkipsStdoutDrain).
+func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool) error {
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		_ = outR.Close()
+		_ = outW.Close()
+		return err
+	}
+	cmd.Stdout, cmd.Stderr = outW, errW
+	startErr := cmd.Start()
+	_ = outW.Close()
+	_ = errW.Close()
+	if startErr != nil {
+		_ = outR.Close()
+		_ = errR.Close()
+		return startErr
+	}
+	outDone, errDone := make(chan struct{}), make(chan struct{})
+	go func() { _, _ = io.Copy(io.Discard, outR); close(outDone) }()
+	go func() { _, _ = io.Copy(errBuf, errR); close(errDone) }()
+	werr := cmd.Wait()
+	limit := time.NewTimer(cmd.WaitDelay)
+	defer limit.Stop()
+	overrun := false
+	waitFor := func(done <-chan struct{}) {
+		if overrun {
+			return
+		}
+		select {
+		case <-done:
+		case <-limit.C:
+			overrun = true
+		}
+	}
+	waitFor(errDone)
+	if !skipOut(werr) {
+		waitFor(outDone)
+	}
+	// Closing the read ends ends both copies, as exec.Cmd.WaitDelay does.
+	_ = outR.Close()
+	_ = errR.Close()
+	<-outDone
+	<-errDone
+	if werr == nil && overrun {
+		return exec.ErrWaitDelay
+	}
+	return werr
 }
 
 // checkoutRefusal is a refusal of the checkout before the read-tree call. Its

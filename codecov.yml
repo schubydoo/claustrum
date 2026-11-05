@@ -229,6 +229,9 @@ component_management:
         # the index file of a new worktree and the registration step of the create rollback (89cb6289).
         - internal/git/githarden_index_unix.go
         - internal/git/githarden_index_windows.go
+        # the stdout drain after a failed read-tree call of the create (b3081b51).
+        - internal/git/githarden_drain_unix.go
+        - internal/git/githarden_drain_windows.go
         # the configuration listing before each hardened call and its hook pins (89cb6289).
         - internal/git/gitlisting.go
         # the filter rule of the git.worktree_create checkout (5fd08069).
