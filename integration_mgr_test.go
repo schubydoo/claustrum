@@ -5,11 +5,12 @@ import (
 	"time"
 )
 
-// TestPruneExitedSkipsRunning is the deterministic half of the rule above: no
-// timers, no sockets, just the predicate. A process still marked running is kept
+// TestPruneExitedSkipsRunning is the deterministic half of the retention rule
+// of TestSocketPrunesLongExitedProcesses (integration_test.go): no timers, no
+// sockets, just the predicate. A process still marked running is kept
 // however old its exitedAt looks, and one that exited inside the window is kept
 // too — so a regression that prunes on age alone, or that ignores the window,
-// fails here rather than showing up as a flake in the socket test.
+// fails here rather than showing up as a flake in that socket test.
 func TestPruneExitedSkipsRunning(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.close)
