@@ -299,7 +299,8 @@ folder gets the refusal, and nothing changes on disk.
 Both refusals start with `config-defined hooks could not be pinned off; git not
 run: `, and each method answers them in one frame. A refusal of the git-directory
 trust check comes first, with the trust text in the frame. A remove of a present
-worktree gets the lock-check text instead. For the count, the trust-check order
+worktree gets the lock-check text instead, except for the stray `commondir`
+refusals of [The repository checks](git-worktree-remove.md#the-repository-checks). For the count, the trust-check order
 is measured on Linux and macOS, in a remove only for a gone worktree without
 `worktreeRoot` or a `baseRepo` that exists with it. On Windows it is measured in
 `git.info`, `git.status` and the remove of a gone worktree. For a listing that
