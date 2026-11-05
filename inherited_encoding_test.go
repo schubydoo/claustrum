@@ -24,7 +24,7 @@ import (
 // THEY GO THROUGH THE SOCKET, deliberately. An earlier version drove dispatch
 // directly via dispatchRaw, which marshals the response with its OWN
 // json.Marshal call — so it asserted encoding/json's behaviour but never touched
-// conn.writeResponse, and the exact refactor server.go warns about (swapping
+// conn.writeResponse, and the exact refactor conn.go warns about (swapping
 // json.Marshal for an Encoder with SetEscapeHTML(false)) would have kept these
 // green. Running over a real connection makes the asserted bytes the ones a
 // client actually receives.
