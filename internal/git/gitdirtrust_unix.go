@@ -65,3 +65,10 @@ var nonFolderStartRefuses = false
 // cannot resolve starts no walk there (walkStart). It is a variable so that a test on
 // Linux can set it.
 var walkStartsAsSpelled = false
+
+// removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
+// of a worktree folder that exists refuses such a folder (measured on Linux and
+// macOS).
+func removeRegistrationsLinked(dir string) bool {
+	return registrationsLinked(dir)
+}

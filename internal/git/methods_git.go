@@ -2688,8 +2688,9 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	// A registrations folder that is a symbolic link refuses the remove, and
 	// nothing is deleted (registrationsLinked). The test comes before the lock
 	// tests: with a locked entry behind the link, and with worktreeRoot,
-	// 5fd08069 answers this refusal too (measured on Linux).
-	if registrationsLinked(filepath.Join(commonDir, worktreesSubdir)) {
+	// 5fd08069 answers this refusal too (measured on Linux). On Windows a junction
+	// there is refused too (removeRegistrationsLinked).
+	if removeRegistrationsLinked(filepath.Join(commonDir, worktreesSubdir)) {
 		return refuse(lockCheckRefusal(p.WorktreePath))
 	}
 	sp := newWorktreePathSet(target.path, p.WorktreePath)

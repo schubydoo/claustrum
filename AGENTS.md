@@ -192,7 +192,8 @@ checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). On Windows
 object directories refuses it before any delete too, also for a gone worktree folder
 (measured on Windows), and also with
 `"shadowDirOff":true` (claustrum's own, not measured). On Windows a junction
-at any directory between `baseRepo` and the leaf is refused (D19, approved by the maintainer). Without `worktreeRoot`,
+at any directory between `baseRepo` and the leaf is refused (D19, approved by the maintainer). On Windows a junction or a
+directory link at `<git dir>\worktrees` refuses the remove of a live worktree (`b3081b51`, measured on Windows). Without `worktreeRoot`,
 the containment of the reference refuses a home path first, so `homeguard.WipesHomeDir` fires only
 when a repo is an ancestor of home. With `worktreeRoot` it is the active home guard. Both
 branches run it before the delete. The location refusals of `worktreeRoot` delete nothing.

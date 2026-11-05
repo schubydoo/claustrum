@@ -364,6 +364,22 @@ func TestShadowFailedMktreeHasAllLinesAndTheVersion(t *testing.T) {
 	}
 }
 
+// The commit-tree call names the tree that mktree printed. After a mktree that
+// prints "garbage" and exits 0, b3081b51 and be1c1ca5 answer the failed
+// commit-tree call with git's text (measured on Linux).
+func TestShadowCommitTreeNamesTheTreeOfMktree(t *testing.T) {
+	f := newShadowFixture(t)
+	stageGit(t,
+		stagedCall{Match: []string{"mktree"}, Stdout: "garbage\n"},
+		stagedCall{Match: []string{"version"}, Stdout: "git version 2.43.0\n"})
+	raw, calls := f.info(t, f.repo, nil)
+	test, after := startTestCalls(t, calls)
+	wantFailedTest(t, f, raw, after, "commit-tree", "fatal: not a valid object name garbage (git version 2.43.0)")
+	if len(test) < 4 || !slices.Equal(test[3].argv, append(shadowTestPrefix(), "commit-tree", "-m", "c", "garbage")) {
+		t.Errorf("the test calls = %v, want the fourth to be commit-tree of garbage", test)
+	}
+}
+
 // A failed `config`, `commit-tree` or `update-ref` call of the calls 1 to 5
 // has the cause of a failed `mktree`: its verb, every error line, and the
 // version text after two `version` calls. No cell has such a call. The test

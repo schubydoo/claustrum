@@ -17,8 +17,8 @@ const openNonBlocking = 0
 // trusted and pinned to itself.
 const nonDirGitDirIsNoRepo = false
 
-// registrationsLinkRefused is false on Windows: the rules of a registrations folder
-// that is a link are those of Linux (measured), and Windows is not measured.
+// registrationsLinkRefused is false on Windows. It governs the create and
+// openRegistrationsFolder there. The remove of a live worktree uses removeRegistrationsLinked.
 const registrationsLinkRefused = false
 
 // entryLinkRefusedLate is false on Windows (that rule is measured on Linux only).
@@ -136,3 +136,14 @@ var nonFolderStartRefuses = true
 // resolve starts the walk of the trust check and of the git.info root as it is spelled
 // (walkStart). It is a variable so that a test can set it.
 var walkStartsAsSpelled = true
+
+// removeRegistrationsLinked reports whether the registrations folder dir is a
+// junction or a directory symbolic link. Go reports a junction as ModeIrregular.
+// A remove of a worktree folder that exists then deletes nothing and answers
+// lockCheckRefusal. b3081b51 answers so for both kinds of link, and the leaf, the
+// entry behind the link and the branch stay (measured on Windows). A gone leaf
+// is not measured. The rules of a create stay those of registrationsLinkRefused.
+func removeRegistrationsLinked(dir string) bool {
+	fi, err := os.Lstat(dir)
+	return err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0
+}

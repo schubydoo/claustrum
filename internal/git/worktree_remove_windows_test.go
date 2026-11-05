@@ -160,3 +160,39 @@ func TestWorktreeRemoveThroughJunctionDropsEntry(t *testing.T) {
 		t.Errorf("entry %s is still there (err=%v), want it gone", f.entry(), err)
 	}
 }
+
+// Measured (`b3081b51`, on Windows): `.git\worktrees` is moved to TARGET, and a
+// junction or a directory symbolic link to TARGET takes its place. A remove of
+// the live worktree deletes nothing and answers the lock-check refusal. The
+// leaf, the entry behind the link and the branch stay. Every path of the
+// fixture is under t.TempDir().
+func TestWorktreeRemoveBehindALinkedRegistrationsFolderDeletesNothing(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		link func(t *testing.T, link, target string)
+	}{
+		{"junction", makeJunction},
+		{"directory symbolic link", makeDirSymlink},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRmFixture(t)
+			dir := filepath.Join(f.repo, ".git", "worktrees")
+			target := filepath.Join(filepath.Dir(f.repo), "TARGET")
+			if err := os.Rename(dir, target); err != nil {
+				t.Fatal(err)
+			}
+			c.link(t, dir, target)
+			raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"})
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+				jsonQuoted(t, lockCheckRefusal(f.wt)) + `}}`
+			if raw != want {
+				t.Errorf("reply = %s\nwant %s", raw, want)
+			}
+			mustExist(t, filepath.Join(f.wt, ".git"))
+			mustExist(t, filepath.Join(target, "wt1", "gitdir"))
+			if !f.hasBranch("wt1") {
+				t.Error("branch wt1 is gone, want it kept")
+			}
+		})
+	}
+}
