@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // The Windows side of the staged `worktree add` and of git.status through a
@@ -274,5 +276,31 @@ func TestCreateStagingRenameFailsOnWindows(t *testing.T) {
 				t.Errorf("the failed move logged %q, want no line about it", got)
 			}
 		})
+	}
+}
+
+// TestHeldStagedLeafOnWindows (b3081b51, measured on Windows). Another
+// process opens the staged leaf folder with no sharing, so the read of its
+// `.git` through the root at `.s<n>` fails. The `.git` file still names the
+// entry, read by its path. Without the read by path the answer is false.
+func TestHeldStagedLeafOnWindows(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".s1")
+	gitFile := filepath.Join(dir, stagedLeafFolder, "w1", ".git")
+	mustWrite(t, gitFile, "gitdir: "+filepath.ToSlash(dir)+"/worktrees/w1\n")
+	p, err := windows.UTF16PtrFromString(filepath.Dir(gitFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(p, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatalf("the hold of the staged leaf: %v", err)
+	}
+	t.Cleanup(func() { _ = windows.CloseHandle(h) })
+	root := openTestRoot(t, dir)
+	if _, ok := readRootFile(root, filepath.Join(stagedLeafFolder, "w1", ".git"), repointMaxBytes); ok {
+		t.Fatal("the root read the .git file of a held leaf, want a failure")
+	}
+	if !stagedLeafNamesEntry(root, "w1", ".s1", "w1", `C:\g`) {
+		t.Error("the .git file of a held staged leaf does not name the entry")
 	}
 }

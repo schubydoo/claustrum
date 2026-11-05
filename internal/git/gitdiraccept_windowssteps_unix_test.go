@@ -4,6 +4,7 @@ package git
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,6 +128,143 @@ func TestWindowsCreateLeafOfAnotherEntry(t *testing.T) {
 	}
 	if got := entryNames(t, filepath.Join(f.gitDir, worktreesSubdir)); !slices.Equal(got, before) {
 		t.Errorf("the worktrees folder holds %q, want %q", got, before)
+	}
+}
+
+// TestWindowsCreateHeldStagedLeaf (b3081b51, measured on Windows). Another
+// process holds the staged leaf folder or `leaf`, so the read of its `.git`
+// through the root at `.s<n>` fails. Mode 0o100 on the held folder stands in
+// for the hold: the root open fails with EACCES, and a read by path works.
+// Cases a and f1 complete the create. Cases b, c1, c3, d, e, f2 and f3 refuse
+// it with otherStagedEntryText: a `.git` that names another entry, a failure
+// that is no hold, an open of `leaf` that fails for no hold, a `.git` that is
+// a link or too big, a staged leaf that is a link and a `leaf` that is a
+// link. Case c2, a create without the Windows steps, gets the unsafe_path
+// refusal of Linux and macOS.
+func TestWindowsCreateHeldStagedLeaf(t *testing.T) {
+	skipIfRoot(t)
+	type stage struct{ folder, leaf, gitFile string }
+	for _, tc := range []struct {
+		name    string
+		steps   bool
+		parent  bool
+		held    func(error) bool
+		prepare func(t *testing.T, s stage)
+		ok      bool
+	}{
+		{name: "a a held leaf", steps: true, ok: true},
+		{name: "b a held leaf of another entry", steps: true, prepare: func(t *testing.T, s stage) {
+			if err := os.WriteFile(s.gitFile, []byte("gitdir: /nowhere/.s9/worktrees/w1\n"), 0o644); err != nil {
+				t.Error(err)
+			}
+		}},
+		{name: "c1 a failure that is no hold", steps: true, held: func(error) bool { return false }},
+		{name: "c2 no Windows steps", steps: false},
+		{name: "c3 an open of leaf that fails for no hold", steps: true, parent: true, held: func(err error) bool {
+			var pe *fs.PathError
+			return errors.Is(err, os.ErrPermission) && (!errors.As(err, &pe) || pe.Path != stagedLeafFolder)
+		}},
+		{name: "d1 a link at .git", steps: true, prepare: func(t *testing.T, s stage) {
+			moveAside(t, s.gitFile, filepath.Join(s.leaf, "real.git"))
+			linkAt(t, s.gitFile, "real.git")
+		}},
+		{name: "d2 a .git over the bound", steps: true, prepare: func(t *testing.T, s stage) {
+			if err := os.WriteFile(s.gitFile, []byte("gitdir: /"+strings.Repeat("x", repointMaxBytes)+"/"+filepath.Base(s.folder)+"/worktrees/w1\n"), 0o644); err != nil {
+				t.Error(err)
+			}
+		}},
+		{name: "e a link at the staged leaf", steps: true, prepare: func(t *testing.T, s stage) {
+			moveAside(t, s.leaf, s.leaf+"-real")
+			linkAt(t, s.leaf, "w1-real")
+		}},
+		{name: "f1 a held leaf folder", steps: true, parent: true, ok: true},
+		{name: "f2 a held leaf folder with a link at the staged leaf", steps: true, parent: true, prepare: func(t *testing.T, s stage) {
+			moveAside(t, s.leaf, s.leaf+"-real")
+			linkAt(t, s.leaf, "w1-real")
+		}},
+		{name: "f3 a held leaf folder that is a link", steps: true, parent: true, prepare: func(t *testing.T, s stage) {
+			moveAside(t, filepath.Dir(s.leaf), filepath.Dir(s.leaf)+"-real")
+			linkAt(t, filepath.Dir(s.leaf), stagedLeafFolder+"-real")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			setStagedAddWindowsSteps(t, tc.steps)
+			held := tc.held
+			if held == nil {
+				held = func(err error) bool { return errors.Is(err, os.ErrPermission) }
+			}
+			old := stagedLeafHeld
+			t.Cleanup(func() { stagedLeafHeld = old })
+			stagedLeafHeld = held
+			atStep(t, "staged", func() {
+				folder := daemonFolder(t, f.run)
+				names := addFolders(t, folder)
+				if len(names) != 1 {
+					t.Errorf("the folder of the daemon holds %q, want one .s<n>", names)
+					return
+				}
+				s := stage{folder: filepath.Join(folder, names[0])}
+				s.leaf = filepath.Join(s.folder, stagedLeafFolder, "w1")
+				s.gitFile = filepath.Join(s.leaf, ".git")
+				if tc.prepare != nil {
+					tc.prepare(t, s)
+				}
+				hold := s.leaf
+				if tc.parent {
+					hold = filepath.Dir(s.leaf)
+				}
+				if fi, err := os.Lstat(hold); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+					hold += "-real"
+				}
+				if err := os.Chmod(hold, 0o100); err != nil {
+					t.Error(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(hold, 0o755) })
+			})
+			raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			reg := filepath.Join(f.gitDir, worktreesSubdir, "w1")
+			if !tc.ok {
+				want := `"result":{"success":false,"error":` + jsonQuoted(t, completingAddPrefix+otherStagedEntryText) + `,"errorCode":"worktree_add_failed"}}`
+				if !tc.steps {
+					want = `,"errorCode":"unsafe_path"}}`
+				}
+				if !strings.HasSuffix(raw, want) || !strings.Contains(raw, `"success":false`) {
+					t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+				}
+				for _, p := range []string{leaf, reg, filepath.Join(f.gitDir, "refs", "heads", "w1")} {
+					if _, err := os.Lstat(p); !os.IsNotExist(err) {
+						t.Errorf("%s: %v, want it gone", p, err)
+					}
+				}
+				return
+			}
+			want := `"result":{"success":true,"path":` + jsonQuoted(t, leaf) + `,"sourceBranch":"main","branch":"w1"}}`
+			if !strings.HasSuffix(raw, want) {
+				t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+			}
+			if got, err := os.ReadFile(filepath.Join(leaf, ".git")); err != nil || string(got) != worktreeGitFileText(f.gitDir, "w1") {
+				t.Errorf("the .git file of the leaf = %q, %v", got, err)
+			}
+			if got, err := os.ReadFile(filepath.Join(reg, "gitdir")); err != nil || string(got) != stagedRecordText(leaf) {
+				t.Errorf("the gitdir record = %q, %v, want %q", got, err, stagedRecordText(leaf))
+			}
+			if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); err != nil {
+				t.Errorf("the branch w1: %v", err)
+			}
+		})
+	}
+}
+
+// moveAside renames from to to, for a step of a test.
+func moveAside(t *testing.T, from, to string) {
+	t.Helper()
+	if err := os.Rename(from, to); err != nil {
+		t.Error(err)
 	}
 }
 

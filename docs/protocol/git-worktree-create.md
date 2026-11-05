@@ -193,6 +193,7 @@ In the state `shadow` git adds the worktree in a short-lived folder of the daemo
 - The entry has no `logs` folder (measured on Linux and macOS).
 - On Linux, in a `--shared=group` repository with a `worktrees` folder of mode 2775, the entry gets 2775 and the group of `worktrees`. Its files get 664 with that group. On macOS the entry gets 755 under umask 022 and 775 under umask 002 (`b3081b51`, measured on macOS). It gets the group of `.git`, with no set-group-ID bit. The rule behind both is claustrum's own: each file keeps the mode that git gave it, and on Linux the entry keeps git's mode and takes the group of a set-group-ID `worktrees`. On macOS the daemon makes the entry with mode 0775 less the umask (claustrum's own, other umasks not measured).
 - On Windows a held staging folder or a held `locked` file gets 2 s of retries, also past `timeoutMs` (claustrum's own). A `locked` file held 1 s passes, and one held 3 s fails (measured on Windows).
+- On Windows a create whose staged leaf folder or its parent folder another process holds open completes (`b3081b51`, measured on Windows).
 - A failed write of the `.git` file of the leaf, and a rollback, remove the moved registration by its name. `config.worktree` and the index are new files there.
 - With `"shadowDirOff": true` and in the state `fallback-git`, git adds the worktree at its own path.
 
