@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // The Windows side of the staged `worktree add` and of git.status through a
@@ -272,6 +274,42 @@ func TestCreateStagingRenameFailsOnWindows(t *testing.T) {
 			}
 			if got := logs.String(); strings.Contains(got, "registration of the new worktree") || strings.Contains(got, "staging folder") {
 				t.Errorf("the failed move logged %q, want no line about it", got)
+			}
+		})
+	}
+}
+
+// TestHeldStagedLeafOnWindows (b3081b51, measured on Windows). Another
+// process opens the staged leaf folder, or its parent folder `leaf`, with no
+// sharing, so the read of its `.git` through the root at `.s<n>` fails. The
+// `.git` file still names the entry, read by its path. A hold of `leaf` takes
+// the Lstat branch of readHeldStagedLeafGitFile. Without the read by path the
+// answer is false.
+func TestHeldStagedLeafOnWindows(t *testing.T) {
+	for _, held := range []string{"w1", stagedLeafFolder} {
+		t.Run(held, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), ".s1")
+			gitFile := filepath.Join(dir, stagedLeafFolder, "w1", ".git")
+			mustWrite(t, gitFile, "gitdir: "+filepath.ToSlash(dir)+"/worktrees/w1\n")
+			target := filepath.Dir(gitFile)
+			if held == stagedLeafFolder {
+				target = filepath.Dir(target)
+			}
+			p, err := windows.UTF16PtrFromString(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h, err := windows.CreateFile(p, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+			if err != nil {
+				t.Fatalf("the hold of %s: %v", held, err)
+			}
+			t.Cleanup(func() { _ = windows.CloseHandle(h) })
+			root := openTestRoot(t, dir)
+			if _, ok := readRootFile(root, filepath.Join(stagedLeafFolder, "w1", ".git"), repointMaxBytes); ok {
+				t.Fatalf("the root read the .git file under a held %s, want a failure", held)
+			}
+			if !stagedLeafNamesEntry(root, "w1", ".s1", "w1", `C:\g`) {
+				t.Errorf("the .git file under a held %s does not name the entry", held)
 			}
 		})
 	}

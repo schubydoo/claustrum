@@ -887,6 +887,8 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 //     (measured).
 //  2. The `.git` file of the staged leaf must name that entry of `.s<n>`.
 //     Else the create is refused (stagedOtherEntryRefusal, measured on Windows).
+//     A create whose staged leaf folder or its parent folder another process
+//     holds completes (b3081b51, measured on Windows).
 //  3. The leaf must hold no `.git` entry. Else the create is refused with
 //     plantedGitFileText (be1c1ca5, measured on Linux). These tests come
 //     before the staging folder is made.
@@ -1100,14 +1102,82 @@ func stagedRecordText(leaf string) string {
 
 // stagedLeafNamesEntry reports whether the `.git` file of the staged leaf
 // name in dir, the root at `.s<n>`, names the entry entry in the folder
-// addName (stagedGitFileText).
+// addName (stagedGitFileText). On Windows a read through dir that fails
+// because another process holds the staged leaf folder or its parent folder
+// `leaf` (stagedLeafHeld) reads
+// the file by its path (readHeldStagedLeafGitFile, claustrum's own, not
+// measured).
 func stagedLeafNamesEntry(dir *os.Root, name, addName, entry, gitDir string) bool {
-	old, ok := readRootFile(dir, filepath.Join(stagedLeafFolder, name, ".git"), repointMaxBytes)
+	path := filepath.Join(stagedLeafFolder, name, ".git")
+	old, ok := readRootFile(dir, path, repointMaxBytes)
+	if !ok && stagedAddWindowsSteps {
+		if _, err := dir.Lstat(path); err != nil && stagedLeafHeld(err) {
+			old, ok = readHeldStagedLeafGitFile(dir, name)
+		}
+	}
 	if !ok {
 		return false
 	}
 	_, ok = stagedGitFileText(string(old), addName, entry, gitDir)
 	return ok
+}
+
+// stagedLeafHeld reports whether a read through the root at `.s<n>` failed
+// because another process holds a folder of the path. It is renameretry.Held,
+// which matches access denied too (claustrum's own, not measured). A test
+// replaces it.
+var stagedLeafHeld = renameretry.Held
+
+// readHeldStagedLeafGitFile reads the `.git` file of the staged leaf name by
+// its path, for a leaf folder that another process holds. The listing of
+// `leaf` through dir must show name as a real folder, not a link or a
+// junction (claustrum's own, not measured). If another process holds `leaf`
+// itself, a Lstat of `leaf` and of the leaf folder by its path must each show
+// a real folder (claustrum's own, not measured). The `.git` file must be a
+// regular file of at most repointMaxBytes, and the opened file must be the
+// file of its Lstat (claustrum's own, not measured). Nothing is written,
+// renamed or removed.
+func readHeldStagedLeafGitFile(dir *os.Root, name string) ([]byte, bool) {
+	var entries []fs.DirEntry
+	d, err := dir.Open(stagedLeafFolder)
+	if err == nil {
+		entries, err = d.ReadDir(-1)
+		_ = d.Close()
+	}
+	switch {
+	case err == nil:
+		i := slices.IndexFunc(entries, func(e fs.DirEntry) bool { return e.Name() == name })
+		if i < 0 || entries[i].Type() != fs.ModeDir {
+			return nil, false
+		}
+	case stagedLeafHeld(err):
+		for _, p := range []string{stagedLeafFolder, filepath.Join(stagedLeafFolder, name)} {
+			fi, err := os.Lstat(filepath.Join(dir.Name(), p))
+			if err != nil || fi.Mode().Type() != fs.ModeDir {
+				return nil, false
+			}
+		}
+	default:
+		return nil, false
+	}
+	path := filepath.Join(dir.Name(), stagedLeafFolder, name, ".git")
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() > repointMaxBytes {
+		return nil, false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = f.Close() }()
+	if opened, err := f.Stat(); err != nil || !os.SameFile(fi, opened) {
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, repointMaxBytes+1))
+	if err != nil || int64(len(data)) > repointMaxBytes {
+		return nil, false
+	}
+	return data, true
 }
 
 // leafHoldsNoGitFile tests that leaf is still the folder of the checkpoint cp
