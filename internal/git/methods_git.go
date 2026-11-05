@@ -863,6 +863,12 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if bad != nil {
 		return *bad
 	}
+	// On Windows a \\?\UNC\ path and a path on a share that cannot be found are
+	// refused (measured on Windows, unlookablePathRefusal). No git call runs (from
+	// the code). Its place first is claustrum's own, not measured.
+	if msg := unlookablePathRefusal(p.Path); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	// A path inside a managed worktrees tree, and a non-empty path that does not
 	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
 	// and before the check of the daemon's own GIT_CONFIG_COUNT.
@@ -2387,6 +2393,13 @@ func removeRefusal(req *gitCall) func(msg string) rpc.Response {
 
 func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Response {
 	refuse := removeRefusal(req)
+	// On Windows a \\?\UNC\ baseRepo and a baseRepo on a share that cannot be found
+	// are refused (measured on Windows, unlookablePathRefusal). No git call and no
+	// delete run (from the code). Its place first and the test of baseRepo alone
+	// are claustrum's own, not measured: the rows send worktreePath below baseRepo.
+	if msg := unlookablePathRefusal(repo); msg != "" {
+		return refuse(msg)
+	}
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
 	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
 	// The reference was measured on macOS (`f6010b97`, measured).

@@ -182,6 +182,7 @@ A gone worktree directory is no error by itself. After the repository checks, th
     - If `<git dir>\worktrees` is a junction or a directory symbolic link, a worktree that exists gets the lock-check refusal. The leaf, the registration behind the link and the branch stay (`b3081b51`, measured on Windows). With `"shadowDirOff":true` the refusal holds too (claustrum's own, not measured). A gone worktree whose entry is not locked gets success, and its branch goes. The registration behind the link stays (`b3081b51`, measured on Windows). A gone worktree with a locked entry behind the link gets the locked refusal, and nothing is deleted (claustrum's own, not measured).
     - The path compare of a registration ignores letter case and slash direction. An 8.3 short name does not match a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes.
     - An alternates file with Windows line endings or too many object directories gets `… is locked: <text>`, and nothing is deleted, also for a gone worktree folder (measured on Windows). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
+    - A `\\?\UNC\` `baseRepo`, or one on a missing share, gets `"success":false`. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Rare states
 

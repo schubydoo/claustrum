@@ -3,6 +3,7 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,5 +104,70 @@ func TestNetworkLinkFramesShadowDirOff(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(f.T, ".claude", "worktrees", "w1")); !os.IsNotExist(err) {
 		t.Errorf("the worktree folder: %v", err)
+	}
+}
+
+// The frames of the five git methods for a path on a share that cannot be found
+// and for a \\?\UNC\ path, byte for byte against the frames of b3081b51 on Windows
+// (measured on Windows), with the id 1. No git call runs on the repository. This
+// test turns the Windows test on and fakes the look at the share path.
+func TestUnlookablePathFrames(t *testing.T) {
+	f := newStatusFixture(t)
+	call := removeCallLog(t, f.root)
+	share, long := `\\127.0.0.1\nosuchshare\repo`, `\\?\UNC\localhost\c$\repo\R`
+	fakeLstat(t, map[string]error{share: errors.New("network name not found")})
+	const bt = "`"
+	for _, c := range []struct{ repo, msg string }{
+		{share, `Claude couldn't look at ` + bt + `\\\\127.0.0.1\\nosuchshare\\repo` + bt + ` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again.`},
+		{long, `Claude can't check where ` + bt + `\\\\?\\UNC\\localhost\\c$\\repo\\R` + bt + ` leads because it doesn't start with a drive letter (C:\\...) or a share (\\\\server\\share\\...), so git wasn't run. Open the folder again using a path that does.`},
+	} {
+		worktree := c.repo + `\.claude\worktrees\w1`
+		errReply := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"` + c.msg + `"}}`
+		for _, m := range []struct {
+			method string
+			params map[string]any
+			want   string
+		}{
+			{"git.info", map[string]any{"path": c.repo}, errReply},
+			{"git.list_branches", map[string]any{"path": c.repo}, errReply},
+			{"git.status", map[string]any{"path": c.repo, "baseRepo": c.repo}, errReply},
+			{"git.worktree_remove", map[string]any{"baseRepo": c.repo, "worktreePath": worktree, "branchName": "w1"},
+				`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + c.msg + `"}}`},
+			{"git.worktree_create", map[string]any{"baseRepo": c.repo, "branchName": "w1", "worktreePath": worktree},
+				`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + c.msg + `","errorCode":"worktree_add_failed"}}`},
+		} {
+			raw, calls := call(m.method, m.params)
+			if raw != m.want {
+				t.Errorf("%s of %s = %s\nwant %s", m.method, c.repo, raw, m.want)
+			}
+			for _, l := range calls {
+				if !strings.Contains(l, "|config --includes --path core.excludesFile") {
+					t.Errorf("%s of %s ran git: %q", m.method, c.repo, calls)
+					break
+				}
+			}
+		}
+	}
+	// A refused remove deletes nothing (from the code). On Linux and macOS the
+	// share form //<repo> names the real repository, so the worktree can go.
+	leaf := filepath.Join(f.T, ".claude", "worktrees", "w1")
+	runGit(t, f.T, "worktree", "add", "-q", "-b", "w1", leaf)
+	slashed := "/" + f.T
+	fakeLstat(t, map[string]error{slashed: errors.New("network name not found")})
+	params := map[string]any{"baseRepo": slashed, "worktreePath": "/" + leaf, "branchName": "w1"}
+	want := resultFrame(t, rpc.WorktreeRemoveResult{Success: false, Error: unlookableShareText(slashed)})
+	if raw, _ := call("git.worktree_remove", params); raw != want {
+		t.Errorf("git.worktree_remove of %s = %s\nwant %s", slashed, raw, want)
+	}
+	if fi, err := os.Lstat(leaf); err != nil || !fi.IsDir() {
+		t.Errorf("the worktree folder after the refused remove: %v", err)
+	}
+	// The same remove by the plain path deletes the folder: the test can see a delete.
+	params["baseRepo"], params["worktreePath"] = f.T, leaf
+	if raw, _ := call("git.worktree_remove", params); !strings.Contains(raw, `"success":true`) {
+		t.Errorf("git.worktree_remove of %s = %s", f.T, raw)
+	}
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the worktree folder after the plain remove: %v", err)
 	}
 }

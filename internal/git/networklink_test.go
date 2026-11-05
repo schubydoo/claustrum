@@ -2,6 +2,8 @@ package git
 
 import (
 	"encoding/binary"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -150,6 +152,70 @@ func TestNetworkLinkRefusalWalk(t *testing.T) {
 	}
 	networkLinkChecks = false
 	if got := networkLinkRefusal(filepath.Join(unc, "R")); got != "" {
+		t.Errorf("test off: got %q", got)
+	}
+}
+
+// fakeLstat turns the network link test on and makes lstatPath fail for each path
+// in failed with its error. It counts the looks.
+func fakeLstat(t *testing.T, failed map[string]error) *int {
+	t.Helper()
+	oldLstat, oldOn := lstatPath, networkLinkChecks
+	looks := new(int)
+	lstatPath = func(path string) (fs.FileInfo, error) {
+		*looks++
+		if err, ok := failed[path]; ok {
+			return nil, &fs.PathError{Op: "CreateFile", Path: path, Err: err}
+		}
+		return os.Lstat(os.DevNull)
+	}
+	networkLinkChecks = true
+	t.Cleanup(func() { lstatPath, networkLinkChecks = oldLstat, oldOn })
+	return looks
+}
+
+// A \\?\UNC\ path and a path on a share that cannot be found are refused. A
+// missing folder on a share, a missing drive and a share that answers pass, as on
+// b3081b51 (measured on Windows). The other \\?\ and \\.\ forms, the share
+// root alone, a forward slash and the letter case of UNC are claustrum's own, not
+// measured.
+func TestUnlookablePathRefusal(t *testing.T) {
+	share, gone := `\\127.0.0.1\nosuchshare\repo`, `\\localhost\c$\repo\nope\R`
+	looks := fakeLstat(t, map[string]error{
+		share:                          errors.New("network name not found"),
+		gone:                           fs.ErrNotExist,
+		`//127.0.0.1/nosuchshare/repo`: errors.New("network name not found"),
+	})
+	long := `\\?\UNC\localhost\c$\repo\R`
+	for _, c := range []struct {
+		path, want string
+		looks      int
+	}{
+		{share, unlookableShareText(share), 1},
+		{`//127.0.0.1/nosuchshare/repo`, unlookableShareText(`//127.0.0.1/nosuchshare/repo`), 1},
+		{gone, "", 1},
+		{`\\localhost\c$\repo\R`, "", 1},
+		{`\\127.0.0.1\nosuchshare`, "", 0},
+		{long, longUNCText(long), 0},
+		{`\\?\unc\localhost\c$\R`, longUNCText(`\\?\unc\localhost\c$\R`), 0},
+		{`\\?\C:\repo\R`, "", 0},
+		{`\\?\UNCX\h\s\R`, "", 0},
+		{`\\.\UNC\localhost\c$\R`, "", 0},
+		{`\\.\C:\R`, "", 0},
+		{`Q:\nope\repo`, "", 0},
+		{``, "", 0},
+	} {
+		*looks = 0
+		if got := unlookablePathRefusal(c.path); got != c.want || *looks != c.looks {
+			t.Errorf("%s: got %q and %d looks, want %q and %d", c.path, got, *looks, c.want, c.looks)
+		}
+	}
+	// networkLinkRefusal runs the test first.
+	if got := networkLinkRefusal(share); got != unlookableShareText(share) {
+		t.Errorf("networkLinkRefusal: got %q", got)
+	}
+	networkLinkChecks = false
+	if got := unlookablePathRefusal(share) + unlookablePathRefusal(long); got != "" {
 		t.Errorf("test off: got %q", got)
 	}
 }

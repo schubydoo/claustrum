@@ -3,6 +3,7 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,5 +71,43 @@ func TestNetworkLinkJunctions(t *testing.T) {
 	path := filepath.Join(unc, "R")
 	if raw, want := gitDispatch(t, h, rpcLine(t, "git.info", map[string]any{"path": path})), errFrame(t, networkLinkText(path)); raw != want {
 		t.Errorf("git.info = %s\nwant %s", raw, want)
+	}
+}
+
+// The frames of the five git methods for a path on a share that cannot be found
+// and for a \\?\UNC\ path, byte for byte against the frames of b3081b51 on
+// Windows (measured on Windows), with the id 1. The look at the share path is
+// faked and the link chain test is off, so no request reaches the network.
+func TestUnlookablePathFramesWindows(t *testing.T) {
+	old := objectSourceChecks
+	objectSourceChecks = false
+	t.Cleanup(func() { objectSourceChecks = old })
+	share, long := `\\127.0.0.1\nosuchshare\repo`, `\\?\UNC\localhost\c$\repo\R`
+	fakeLstat(t, map[string]error{share: errors.New("network name not found")})
+	h := newTestGitDeps()
+	const bt = "`"
+	for _, c := range []struct{ repo, msg string }{
+		{share, `Claude couldn't look at ` + bt + `\\\\127.0.0.1\\nosuchshare\\repo` + bt + ` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again.`},
+		{long, `Claude can't check where ` + bt + `\\\\?\\UNC\\localhost\\c$\\repo\\R` + bt + ` leads because it doesn't start with a drive letter (C:\\...) or a share (\\\\server\\share\\...), so git wasn't run. Open the folder again using a path that does.`},
+	} {
+		worktree := c.repo + `\.claude\worktrees\w1`
+		errReply := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"` + c.msg + `"}}`
+		for _, m := range []struct {
+			method string
+			params map[string]any
+			want   string
+		}{
+			{"git.info", map[string]any{"path": c.repo}, errReply},
+			{"git.list_branches", map[string]any{"path": c.repo}, errReply},
+			{"git.status", map[string]any{"path": c.repo, "baseRepo": c.repo}, errReply},
+			{"git.worktree_remove", map[string]any{"baseRepo": c.repo, "worktreePath": worktree, "branchName": "w1"},
+				`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + c.msg + `"}}`},
+			{"git.worktree_create", map[string]any{"baseRepo": c.repo, "branchName": "w1", "worktreePath": worktree},
+				`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + c.msg + `","errorCode":"worktree_add_failed"}}`},
+		} {
+			if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); raw != m.want {
+				t.Errorf("%s of %s = %s\nwant %s", m.method, c.repo, raw, m.want)
+			}
+		}
 	}
 }
