@@ -17,8 +17,8 @@ const openNoTerminal = 0
 
 // configLinkDetail refuses a config file that is a symbolic link (measured with a file link made with
 // mklink). A git directory that is a junction or a directory symbolic link has its own test
-// (gitDirLinkDetail). Another link in a folder above the file is not measured, and claustrum does not
-// test for it. An included file gets the same test (not measured).
+// (gitDirLinkDetail). Another link in a folder above the config is not measured. An included file gets
+// the same test (not measured), and its folders below the repository get includeLinkDetail.
 func configLinkDetail(path string) string {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return quoteOperand(path) + configLinkTail
@@ -55,15 +55,34 @@ func includeValueDetail(file, value string) string {
 // too. `a/inc.cfg::$DATA` and `NUL` get it (b3081b51, measured on Windows). Another
 // colon and another reserved name, such as `COM1`, are claustrum's own, not measured.
 func includePlaceDetail(target, gitDir string) string {
-	repo := gitDir
-	if strings.EqualFold(filepath.Base(gitDir), ".git") {
-		repo = filepath.Dir(gitDir)
-	}
+	repo := includeRepoFolder(gitDir)
 	rel, err := filepath.Rel(repo, target)
 	if err != nil || !filepath.IsLocal(rel) {
 		return quoteOperand(filepath.Clean(target)) + " is outside " + quoteOperand(repo) +
 			", and on Windows Claude reads a repository's settings only from inside it; " +
 			"if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead"
+	}
+	return ""
+}
+
+// includeRepoFolder is the repository of the place test: the folder that holds a
+// git directory named `.git`, or else the git directory itself.
+func includeRepoFolder(gitDir string) string {
+	if strings.EqualFold(filepath.Base(gitDir), ".git") {
+		return filepath.Dir(gitDir)
+	}
+	return gitDir
+}
+
+// includeLinkDetail refuses an included file that the daemon reaches through a link
+// in a folder below the repository, with the path as written. A junction in the git
+// directory, at `<git dir>\jn`, gets it for `jn/inc.cfg` (b3081b51, measured on
+// Windows). Another link below the repository, such as a directory symbolic link,
+// is claustrum's own, not measured. So is the file of an
+// `includeIf` section. A link at the repository folder itself is not tested here.
+func includeLinkDetail(target, gitDir string) string {
+	if linkBelowRepo(includeRepoFolder(gitDir), target) {
+		return quoteOperand(target) + configLinkTail
 	}
 	return ""
 }

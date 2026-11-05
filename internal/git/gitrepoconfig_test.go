@@ -1430,3 +1430,25 @@ func listingConfig(section, subsection string) string {
 	}
 	return b.String()
 }
+
+// TestFolderIsLink pins which mode the include walk counts as a link. A junction
+// is an irregular entry without the folder bit for Go on Windows. A folder with a
+// reparse tag that is not a link keeps the folder bit, and b3081b51 follows an
+// include below it (measured on Windows).
+func TestFolderIsLink(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		mode fs.FileMode
+		want bool
+	}{
+		{"a folder", fs.ModeDir | 0o755, false},
+		{"a symbolic link", fs.ModeSymlink | 0o777, true},
+		{"a directory symbolic link", fs.ModeDir | fs.ModeSymlink, true},
+		{"a junction", fs.ModeIrregular, true},
+		{"a folder with a reparse tag that is not a link", fs.ModeDir | fs.ModeIrregular, false},
+	} {
+		if got := folderIsLink(row.mode); got != row.want {
+			t.Errorf("%s: folderIsLink = %v, want %v", row.name, got, row.want)
+		}
+	}
+}

@@ -147,6 +147,37 @@ func TestWindowsIncludeThroughTheRead(t *testing.T) {
 	}
 }
 
+// TestWindowsIncludeThroughAJunction pins the link text of an include whose folder
+// is a junction, with the path as written (b3081b51, measured on Windows). The
+// directory symbolic link is claustrum's own, not measured. The same file by its
+// real folder is followed.
+func TestWindowsIncludeThroughAJunction(t *testing.T) {
+	_, gitDir := configRepo(t)
+	realDir := filepath.Join(gitDir, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	setIncludeFile(t, gitDir, filepath.Join("real", "inc.cfg"), markerInclude)
+	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = real/inc.cfg\n")
+	if got, want := configDetail(t, gitDir), markerDetail(gitDir+`\real/inc.cfg`); got != want {
+		t.Errorf("include by the real folder: detail = %q, want %q", got, want)
+	}
+	through := func(name string) {
+		t.Helper()
+		setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+name+"/inc.cfg\n")
+		want := strconv.Quote(gitDir+`\`+name+`/inc.cfg`) + ": is, or is reached through, a link that Claude does not follow here; " +
+			"replace the link with what it points to"
+		if got := configDetail(t, gitDir); got != want {
+			t.Errorf("include through %s: detail = %q, want %q", name, got, want)
+		}
+	}
+	makeJunction(t, filepath.Join(gitDir, "jn"), realDir)
+	through("jn")
+	// makeDirSymlink skips the rest of the test on a host that makes no such link.
+	makeDirSymlink(t, filepath.Join(gitDir, "sl"), realDir)
+	through("sl")
+}
+
 // TestWindowsConfigLink pins the refusal of a config that is a file link
 // (measured). A host that refuses to make a symbolic link skips the test.
 func TestWindowsConfigLink(t *testing.T) {
