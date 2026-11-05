@@ -22,7 +22,7 @@ the same JSON-RPC methods.
 | Process | `process.go`, `internal/sysproc/`, `*sysproc*.go`, `childjobs*.go`, `execchild*.go`, `sessionsupersede.go`, `internal/shellenv/` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
 | Git | `internal/git/` | See [The git subsystem](#the-git-subsystem). |
 | Install | `internal/install/` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher, its settings reader and the child env strip. |
-| Host and lock | `internal/runlock/`, `internal/tokenfile/`, `childrecord*.go`, `childreap*.go`, `internal/hostsweep/`, `internal/procinfo/`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
+| Host and lock | `internal/runlock/`, `internal/tokenfile/`, `internal/childrec/`, `procrecords_*.go`, `internal/hostsweep/`, `internal/procinfo/`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
 | Logs | `internal/logging/`, `internal/metrics/`, `internal/wirelog/` | The leveled stderr logger. The opt-in `/metrics` counters. The opt-in `-wire-log` capture. |
 | Shared | `internal/renameretry/`, `internal/pathcanon/` | The Windows rename retry. The canonical form and `~` expansion of a path. |
 
@@ -116,10 +116,9 @@ flowchart TD
   source in `execchild_linux.go` and `execchild_darwin.go`. The target's Go-runtime
   env is held and restored across the re-exec. See
   [process.spawn](protocol/process-spawn.md#the-identity-markers-linux-and-macos).
-- **Child records and the reap.** `childrecord.go`, `childrecord_unix.go` and
-  `childrecord_linux.go` / `childrecord_darwin.go` write and remove the records.
-  `childreap.go`, with the live-process read in `childreap_linux.go` /
-  `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
+- **Child records and the reap.** The `childrecord*.go` files of `internal/childrec/`
+  write and remove the records. `childreap.go`, with the live-process read in
+  `childreap_linux.go` / `childreap_darwin.go`, reaps them at the start. Both act through the run dir that
   the daemon holds open, so no write or read follows a symlink out of it. The kill
   and every live-process read sit behind package-var seams, so tests exercise the decision and end no real process. See
   [Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos).

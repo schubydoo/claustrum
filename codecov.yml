@@ -391,22 +391,32 @@ component_management:
         # UUID, hostname, ps start-time) each have their own, and the remaining targets use
         # the no-op (childrecord_other.go); windows lands in the windows track. The handle on
         # the run dir, the record log lines and the removal at the end of a child are shared
-        # by linux and darwin (childrecord_unix.go).
-        - childrecord.go
-        - childrecord_unix.go
-        - childrecord_linux.go
-        - childrecord_darwin.go
-        - childrecord_other.go
+        # by linux and darwin (childrecord_unix.go). The record state of the manager is
+        # Records (records.go), and the linux start ticks are in starttick_linux.go. The
+        # fortest files hold the seams that the tests of package main swap. The two
+        # shutdown steps that read the process table stay in the daemon (procrecords_*.go).
+        - internal/childrec/records.go
+        - internal/childrec/childrecord.go
+        - internal/childrec/childrecord_unix.go
+        - internal/childrec/childrecord_linux.go
+        - internal/childrec/childrecord_darwin.go
+        - internal/childrec/childrecord_other.go
+        - internal/childrec/starttick_linux.go
+        - internal/childrec/fortest_unix.go
+        - internal/childrec/fortest_linux.go
+        - internal/childrec/fortest_darwin.go
+        - procrecords_unix.go
+        - procrecords_other.go
         # 19f30c46 orphan reap: at -serve startup the daemon ends the process groups of
         # children a since-exited predecessor daemon of this run dir left orphaned, after
         # verifying each is still that recorded child. The decision logic is shared
         # (childreap.go, linux||darwin); the live-process read is OS-specific — /proc on
         # linux, ps on darwin — and windows uses the no-op (childreap_other.go). Every kill
         # and process read is seamed so tests never touch a real process.
-        - childreap.go
-        - childreap_linux.go
-        - childreap_darwin.go
-        - childreap_other.go
+        - internal/childrec/childreap.go
+        - internal/childrec/childreap_linux.go
+        - internal/childrec/childreap_darwin.go
+        - internal/childrec/childreap_other.go
         # 19f30c46 host cleaner: a periodic -serve background sweep that ends
         # orphaned Claude Code process groups under this install's roots, retires abandoned
         # daemons and tidies their stale run dirs. The shared decision layer (hostclean.go, linux||darwin) drives

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
@@ -134,7 +135,7 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 	if n := toFirst.Load(); n != 0 {
 		t.Fatalf("the second spawn sent %d signal(s) to the first child, want none", n)
 	}
-	if readLiveProc(first, false).state != procAlive {
+	if !childrec.ReadsAliveForTest(first) {
 		t.Fatalf("the first child %d is not alive after the second spawn", first)
 	}
 
@@ -148,7 +149,7 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 	if n := toFirst.Load(); n != 0 {
 		t.Errorf("the kill of the id sent %d signal(s) to the first child, want none", n)
 	}
-	if readLiveProc(first, false).state != procAlive {
+	if !childrec.ReadsAliveForTest(first) {
 		t.Errorf("the first child %d is not alive after the kill of the id", first)
 	}
 }
@@ -254,9 +255,8 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 func TestShutdownRemovesChildRecords(t *testing.T) {
 	// The wait ends as soon as both children are reaped. A wide bound keeps a slow
 	// runner from ending it first.
-	old := shutdownRecordWait
-	shutdownRecordWait = 30 * time.Second
-	t.Cleanup(func() { shutdownRecordWait = old })
+	old := childrec.SetShutdownRecordWaitForTest(30 * time.Second)
+	t.Cleanup(func() { childrec.SetShutdownRecordWaitForTest(old) })
 	s, cl, runDir := runShapedServer(t)
 	spawnSleeper(t, cl, "c1")
 	spawnSleeper(t, cl, "c2")
@@ -279,9 +279,8 @@ func TestShutdownRemovesChildRecords(t *testing.T) {
 // finds none of them. The reap below reads the real processes, and only its signal
 // is seamed.
 func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
-	old := shutdownRecordWait
-	shutdownRecordWait = 30 * time.Second
-	t.Cleanup(func() { shutdownRecordWait = old })
+	old := childrec.SetShutdownRecordWaitForTest(30 * time.Second)
+	t.Cleanup(func() { childrec.SetShutdownRecordWaitForTest(old) })
 	s, cl, runDir := runShapedServer(t)
 	s.keepChildren = true
 	t.Cleanup(s.procs.killAll) // the kept children must end with the test
@@ -325,15 +324,16 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 
 	// The next daemon on this socket: its reap must send nothing. The signal is
 	// seamed, so a reap that finds a record ends no child of this test.
-	oldKill, oldSleep := procinfo.KillGroupForTest(), reapSleep
-	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill); reapSleep = oldSleep })
-	var kills []killRec
+	oldKill := procinfo.KillGroupForTest()
+	var oldSleep func(time.Duration)
+	t.Cleanup(func() { procinfo.SetKillGroupForTest(oldKill); childrec.SetReapSleepForTest(oldSleep) })
+	var kills []childrec.GroupSignalForTest
 	procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
-		kills = append(kills, killRec{pid, sig})
+		kills = append(kills, childrec.GroupSignalForTest{Pid: pid, Sig: sig})
 		return nil
 	})
-	reapSleep = func(time.Duration) {}
-	reapOrphans(runDir, "inst-next")
+	oldSleep = childrec.SetReapSleepForTest(func(time.Duration) {})
+	(&childrec.Records{RunDir: runDir, InstanceID: "inst-next"}).ReapOrphans()
 	if len(kills) != 0 {
 		t.Errorf("the reap of the next start signalled kept children: %v", kills)
 	}

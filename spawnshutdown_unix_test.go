@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -26,12 +27,11 @@ func holdRecordWrite(t *testing.T) (held <-chan struct{}, release func()) {
 	h, r := make(chan struct{}), make(chan struct{})
 	var once, releaseOnce sync.Once
 	release = func() { releaseOnce.Do(func() { close(r) }) }
-	oldHook := recordTempMade
-	recordTempMade = func() {
+	oldHook := childrec.SetRecordTempMadeForTest(func() {
 		once.Do(func() { close(h) })
 		<-r
-	}
-	t.Cleanup(func() { recordTempMade = oldHook })
+	})
+	t.Cleanup(func() { childrec.SetRecordTempMadeForTest(oldHook) })
 	t.Cleanup(release)
 	return h, release
 }
@@ -96,14 +96,14 @@ func TestShutdownLeavesNoRecordTempFile(t *testing.T) {
 		s.requestShutdown()
 		s.closeAll(sock)
 	}()
-	children := filepath.Join(runDir, childrenDirName)
+	children := filepath.Join(runDir, childrec.ChildrenDirName)
 	select {
 	case <-done:
 		names := childrenNames(t, children)
 		release()
 		awaitHeldSpawnEnd(t, spawned)
 		t.Fatalf("the shutdown ended while the record write was open, children/ held %v", names)
-	case <-time.After(3*shutdownRecordWait + time.Second):
+	case <-time.After(3*childrec.ShutdownRecordWaitForTest() + time.Second):
 	}
 	release()
 	awaitHeldSpawnEnd(t, spawned)
@@ -253,7 +253,7 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 		endOwnChild(t, p)
 		t.Error("the late start is in the table")
 	}
-	if ents, err := os.ReadDir(filepath.Join(runDir, childrenDirName)); err == nil && len(ents) != 0 {
+	if ents, err := os.ReadDir(filepath.Join(runDir, childrec.ChildrenDirName)); err == nil && len(ents) != 0 {
 		t.Errorf("children/ after the late start holds %d entries, want none", len(ents))
 	}
 }

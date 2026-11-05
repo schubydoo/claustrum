@@ -4,9 +4,10 @@ package main
 
 import (
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/childrec"
 )
 
 // TestReapOrphansOnAnotherSocketShape pins that the reap of a start runs on a socket
@@ -21,15 +22,12 @@ func TestReapOrphansOnAnotherSocketShape(t *testing.T) {
 		t.Fatal("no run dir for a socket of another shape")
 	}
 	const pid = 800000101
-	writeRec(t, runDir, orphanRecord(pid, "/f/bin/sigstub", ""))
-	sim := newProcSim(t)
-	sim.live[pid] = &liveProc{state: procAlive, startTicks: "9000", pgid: pid,
-		program: "/f/bin/sigstub", runDir: runDir, childMark: strconv.Itoa(pid) + ":9000"}
-	sim.diesOn(pid, syscall.SIGTERM)
+	writeOrphanRec(t, runDir, pid, "/f/bin/sigstub")
+	sim := newOrphanSim(t, pid, "/f/bin/sigstub", runDir, syscall.SIGTERM)
 
-	reapOrphans(runDir, "inst-self")
+	(&childrec.Records{RunDir: runDir, InstanceID: "inst-self"}).ReapOrphans()
 
 	if sim.sigCount(syscall.SIGTERM) != 1 || !sim.signaled(pid) {
-		t.Errorf("kills = %v, want one SIGTERM to group %d", sim.kills, pid)
+		t.Errorf("kills = %v, want one SIGTERM to group %d", sim.kills(), pid)
 	}
 }

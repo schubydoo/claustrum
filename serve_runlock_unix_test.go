@@ -146,7 +146,7 @@ func TestLateRunDirLockAfterHolderLetsGo(t *testing.T) {
 	if !lockIsHeld(t, lockPath) {
 		t.Error("the daemon does not hold daemon.lock after the late line")
 	}
-	if !s.procs.noRecords {
+	if !s.procs.NoRecords {
 		t.Error("a late lock changed the decision of the start about child records")
 	}
 

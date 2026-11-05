@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/childrec"
 )
 
 // TestSocketSpawnTrampolineMarkers is the end-to-end proof: a daemon on a
@@ -36,8 +38,8 @@ func TestSocketSpawnTrampolineMarkers(t *testing.T) {
 	}
 	sock := filepath.Join(runDir, "rpc.sock")
 	s, _ := newRunningServerAt(t, sock)
-	if s.procs.runDir != runDir {
-		t.Fatalf("procs.runDir = %q, want %q (trampoline would not engage)", s.procs.runDir, runDir)
+	if s.procs.RunDir != runDir {
+		t.Fatalf("procs.RunDir = %q, want %q (trampoline would not engage)", s.procs.RunDir, runDir)
 	}
 	cl := dial(t, sock)
 
@@ -132,7 +134,7 @@ func TestSocketSpawnTrampolineEdgeCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, sock := newRunningServerAt(t, filepath.Join(runDir, "rpc.sock"))
-	if s.procs.runDir == "" {
+	if s.procs.RunDir == "" {
 		t.Fatal("runDir empty; trampoline would not engage")
 	}
 	cl := dial(t, sock)
@@ -290,7 +292,7 @@ func TestChildIdentity(t *testing.T) {
 	if pid, _, _ := strings.Cut(id, ":"); pid != strconv.Itoa(os.Getpid()) {
 		t.Errorf("childIdentity pid = %s, want %d", pid, os.Getpid())
 	}
-	if ownStartTicks() <= 0 {
-		t.Error("ownStartTicks() should be > 0")
+	if childrec.OwnStartTicks() <= 0 {
+		t.Error("childrec.OwnStartTicks() should be > 0")
 	}
 }

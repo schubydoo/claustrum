@@ -117,7 +117,7 @@ func TestSessionSpawnOfAMissingCommandSupersedesNothing(t *testing.T) {
 			t.Cleanup(m.killAll)
 			// A run dir, as under a daemon. On Linux and macOS the trampoline then
 			// wraps the command, and the pre-check runs before that wrap.
-			m.runDir = t.TempDir()
+			m.RunDir = t.TempDir()
 			c1, _ := pipeConn(t)
 			cat, env := helperCommand(t, "cat")
 			first, err := m.spawn(c1, "s1", cat, sessionArgs, "", env, false)

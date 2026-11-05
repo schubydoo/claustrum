@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/wirelog"
@@ -61,11 +62,8 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 				staleSocketFile(t, sock)
 			}
 			const pid = 800000301
-			name := writeRec(t, dir, orphanRecord(pid, "/f/bin/sigstub", ""))
-			sim := newProcSim(t)
-			sim.live[pid] = &liveProc{state: procAlive, startTicks: "9000", pgid: pid,
-				program: "/f/bin/sigstub", runDir: dir, childMark: strconv.Itoa(pid) + ":9000"}
-			sim.diesOn(pid, syscall.SIGKILL)
+			name := writeOrphanRec(t, dir, pid, "/f/bin/sigstub")
+			sim := newOrphanSim(t, pid, "/f/bin/sigstub", dir, syscall.SIGKILL)
 
 			// The first sleep of the reap is inside its wait for the group.
 			var probed bool
@@ -73,8 +71,8 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 			var lockInWait []byte
 			var recordInWait bool
 			var waitedAt int64
-			simSleep := reapSleep
-			reapSleep = func(d time.Duration) {
+			var simSleep func(time.Duration)
+			simSleep = childrec.SetReapSleepForTest(func(d time.Duration) {
 				if !probed {
 					probed = true
 					c, err := net.Dial("unix", sock)
@@ -90,7 +88,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 					waitedAt = time.Now().UnixMilli()
 				}
 				simSleep(d)
-			}
+			})
 
 			s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
 			if err != nil {
@@ -112,7 +110,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 				t.Error("the record of the signalled child was gone in the wait")
 			}
 			if sim.sigCount(syscall.SIGTERM) != 1 || sim.sigCount(syscall.SIGKILL) != 1 {
-				t.Errorf("kills = %v, want SIGTERM and then SIGKILL to the group", sim.kills)
+				t.Errorf("kills = %v, want SIGTERM and then SIGKILL to the group", sim.kills())
 			}
 
 			rec, err := readOwnerRecord(lock)
@@ -155,11 +153,8 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	const pid = 800000401
-	writeRec(t, dir, orphanRecord(pid, "/f/bin/sigstub", ""))
-	sim := newProcSim(t)
-	sim.live[pid] = &liveProc{state: procAlive, startTicks: "9000", pgid: pid,
-		program: "/f/bin/sigstub", runDir: dir, childMark: strconv.Itoa(pid) + ":9000"}
-	sim.diesOn(pid, syscall.SIGKILL)
+	writeOrphanRec(t, dir, pid, "/f/bin/sigstub")
+	sim := newOrphanSim(t, pid, "/f/bin/sigstub", dir, syscall.SIGKILL)
 
 	// The log and the listening line go to one pipe, so one text holds their order.
 	r, w, err := os.Pipe()
@@ -192,8 +187,8 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 	const received = "[daemon] received terminated; shutting down (children will be killed)"
 	var sent, noHandler, noLine bool
 	var dialErr error
-	simSleep := reapSleep
-	reapSleep = func(d time.Duration) {
+	var simSleep func(time.Duration)
+	simSleep = childrec.SetReapSleepForTest(func(d time.Duration) {
 		if !sent {
 			sent = true
 			if sigc == nil {
@@ -217,7 +212,7 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 			dialErr = err
 		}
 		simSleep(d)
-	}
+	})
 
 	// A daemon that does not stop after the signal gets a server.shutdown request, so a
 	// broken build fails this test and does not hang it.
@@ -253,7 +248,7 @@ func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
 		t.Errorf("daemon exit: exited=%v code=%d, want exit 0", exited, code)
 	}
 	if sim.sigCount(syscall.SIGTERM) != 1 || sim.sigCount(syscall.SIGKILL) != 1 {
-		t.Errorf("kills = %v, want SIGTERM and then SIGKILL to the group", sim.kills)
+		t.Errorf("kills = %v, want SIGTERM and then SIGKILL to the group", sim.kills())
 	}
 	wantLogOrder(t, all.String(),
 		"[process.Registry] ending orphaned process group "+strconv.Itoa(pid),

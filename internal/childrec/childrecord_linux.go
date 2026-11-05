@@ -1,0 +1,87 @@
+//go:build linux
+
+package childrec
+
+import (
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/procinfo"
+)
+
+// machineIDPaths are the files machineID reads, in order (/etc/machine-id, then
+// /var/lib/dbus/machine-id). A var so a test can point it at
+// temp files and exercise the fallback without depending on the host's real id.
+var machineIDPaths = []string{"/etc/machine-id", "/var/lib/dbus/machine-id"}
+
+// RecordChild writes the orphan-registry record for a just-spawned child (reference
+// build 19f30c46), on every socket shape (`89cb6289`, measured on Linux). Best-effort
+// and non-destructive: a failure is logged, never fatal. It is a no-op when the
+// manager has no run dir (no socket), when pid < 2, or when the child's start-time
+// cannot be read. Without a pid-reuse-safe start-time, the record cannot identify the
+// child later. With no usable /proc it logs one line and makes no children folder
+// (be1c1ca5, measured on Linux). A start time that cannot be read while /proc works
+// logs nothing, as before: that case is not measured. The record's identity (node,
+// host, instance, the daemon's pid and start-time) is what a later daemon uses to
+// decide whether a leftover child of a since-exited daemon is an orphan to reap.
+// Reaping itself is a separate slice.
+func (r *Records) RecordChild(pid int, argv0, program string) {
+	if r.RunDir == "" || pid < 2 || r.NoRecords {
+		return
+	}
+	start := procStartTicks(pid)
+	if start == 0 {
+		if !procUsable() {
+			logging.Warnf("[process.Manager] cannot read the start time of pid %d (no /proc and no ps on this platform): a successor daemon will not be able to reap it", pid)
+		}
+		return
+	}
+	r.writeRecord(childRecord{
+		Pid:         pid,
+		Node:        procinfo.NodeID(),
+		Host:        "machine-id:" + machineID(),
+		Instance:    r.InstanceID,
+		DaemonPid:   os.Getpid(),
+		DaemonStart: strconv.FormatInt(OwnStartTicks(), 10),
+		Argv0:       argv0,
+		Program:     program,
+		Start:       strconv.FormatInt(start, 10),
+		At:          time.Now().UnixMilli(),
+	})
+}
+
+// machineID returns the host machine id (/etc/machine-id, falling back to
+// /var/lib/dbus/machine-id), trimmed, or "" when neither is readable.
+func machineID() string {
+	for _, p := range machineIDPaths {
+		if b, err := os.ReadFile(p); err == nil {
+			if id := strings.TrimSpace(string(b)); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+// procStartTicks returns pid's start-time in clock ticks since boot — field 22 of
+// /proc/<pid>/stat, the pid-reuse-safe value the child's CLAUDE_SSH_CHILD marker also
+// carries. It is the generalization of OwnStartTicks (which reads /proc/self/stat) and
+// shares its field-22 parser. Returns 0 when the process is gone or stat cannot be
+// parsed.
+func procStartTicks(pid int) int64 {
+	b, err := os.ReadFile(procinfo.Root() + "/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return 0
+	}
+	return parseStartTicks(string(b))
+}
+
+// procUsable reports whether procinfo.Root answers for this process. A /proc with no
+// self/stat counts as no /proc (from the code).
+func procUsable() bool {
+	_, err := os.Stat(procinfo.Root() + "/self/stat")
+	return err == nil
+}
