@@ -1551,7 +1551,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// A refusal of the staging step (addRefused) answers unsafe_path with the
 	// same rollback. On 5fd08069 the leaf and the new branch are gone
 	// (measured on Windows), and so are they on be1c1ca5 after a `.git`
-	// planted in the leaf (measured on Linux).
+	// planted in the leaf (measured on Linux). A refusal with failedAdd gets
+	// the text and the code of addIncomplete instead.
 	incompleteAdd := func(err error, branch string) (rpc.Response, bool) {
 		var incomplete *addIncomplete
 		var refused *addRefused
@@ -1559,6 +1560,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		switch {
 		case errors.As(err, &incomplete):
 			text = completingAddPrefix + incomplete.text
+		case errors.As(err, &refused) && refused.failedAdd:
+			text = completingAddPrefix + refused.text
 		case errors.As(err, &refused):
 			text, code = refused.text, "unsafe_path"
 		default:

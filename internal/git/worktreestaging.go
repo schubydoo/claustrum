@@ -573,10 +573,31 @@ func (e *addIncomplete) Error() string { return e.text }
 // new worktree the daemon refuses before the staging folder is made, or after
 // the move when the move removed the moved registration again. The create
 // answers it with unsafe_path, and its rollback
-// removes the leaf and the branch and no registration.
-type addRefused struct{ text string }
+// removes the leaf and the branch and no registration. failedAdd marks a
+// refusal that the create answers as addIncomplete does, with
+// completingAddPrefix and worktree_add_failed. The rollback stays the same.
+type addRefused struct {
+	text      string
+	failedAdd bool
+}
 
 func (e *addRefused) Error() string { return e.text }
+
+// otherStagedEntryText is the text of step 2 of addStage.move on Windows.
+const otherStagedEntryText = "git's new worktree names a different entry from the one it registered; try again"
+
+// stagedOtherEntryRefusal is the error of step 2 of addStage.move. On Windows
+// b3081b51 answers otherStagedEntryText with completingAddPrefix and
+// worktree_add_failed. The leaf and the branch are gone, as with the
+// refusal of claustrum before (measured on Windows for an entry of the git
+// directory and for an entry of .s<n>). Linux and macOS keep
+// otherEntryRefusal (not measured there for b3081b51).
+func stagedOtherEntryRefusal(leaf string) *addRefused {
+	if stagedAddWindowsSteps {
+		return &addRefused{text: otherStagedEntryText, failedAdd: true}
+	}
+	return &addRefused{text: otherEntryRefusal(leaf)}
+}
 
 // addNotPrepared is the error of a `worktree add` call that did not run,
 // because a step before it failed (openAddStage). A create in attach mode then
@@ -865,7 +886,7 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 //     registered <n> worktrees where one was expected; try again`
 //     (measured).
 //  2. The `.git` file of the staged leaf must name that entry of `.s<n>`.
-//     Else the create is refused with otherEntryRefusal (measured).
+//     Else the create is refused (stagedOtherEntryRefusal, measured on Windows).
 //  3. The leaf must hold no `.git` entry. Else the create is refused with
 //     plantedGitFileText (be1c1ca5, measured on Linux). These tests come
 //     before the staging folder is made.
@@ -907,7 +928,7 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		return errors.New("git left no single new registration")
 	}
 	if !stagedLeafNamesEntry(dir, st.leafName, filepath.Base(st.dir), name, st.u.gitDir) {
-		return &addRefused{text: otherEntryRefusal(leaf)}
+		return stagedOtherEntryRefusal(leaf)
 	}
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
 		return err
