@@ -334,6 +334,29 @@ func TestGitDirShallowKinds(t *testing.T) {
 	}
 }
 
+// TestGitDirShallowLinkRefusalComesFirst: a link test that refuses `shallow` gives its
+// text, and the kind test of the file does not run. The seam stands in for the Windows
+// link test, which refuses nothing on Linux and macOS. shallow is a FIFO, so without
+// the link test the answer is the not-a-regular-file text.
+func TestGitDirShallowLinkRefusalComesFirst(t *testing.T) {
+	f := newRefusalFixture(t)
+	path := filepath.Join(f.gitDir, "shallow")
+	mustMkfifo(t, path)
+	defer releaseFifoReader(path)
+	const refusal = "refused by the link test"
+	saved := configLinkTest
+	t.Cleanup(func() { configLinkTest = saved })
+	configLinkTest = func(p string, fi os.FileInfo) string {
+		if p == path {
+			return refusal
+		}
+		return saved(p, fi)
+	}
+	if got := gitDirFilesDetail(f.gitDir, nil); got != refusal {
+		t.Errorf("shallow refused by the link test: detail = %q, want %q", got, refusal)
+	}
+}
+
 // TestRepoConfigIncludeNotExpanded pins the refusal of `~user` and `%(prefix)`
 // (measured). The text names the file that holds the line.
 func TestRepoConfigIncludeNotExpanded(t *testing.T) {

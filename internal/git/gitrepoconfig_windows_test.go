@@ -206,8 +206,9 @@ func TestWindowsConfigLink(t *testing.T) {
 }
 
 // pipeCounter is a named pipe server. It makes the next instance before it
-// handles a connected client, so one instance always waits and a client never
-// finds none or a busy one. It handles clients one at a time, in the order that
+// handles a connected client. Between a connect and that next instance, a
+// client finds all instances busy, so a marker client opens with
+// openMarker. It handles clients one at a time, in the order that
 // they connect. It counts each client that writes no byte, also one that left
 // before the server took it. A marker client writes one byte and reads one byte
 // back.
@@ -333,6 +334,20 @@ func (p *pipeCounter) listening(t *testing.T) {
 	}
 }
 
+// openMarker opens the pipe for a marker client. A busy pipe or one with no
+// instance makes no connect, so it tries again for up to 5 s.
+func (p *pipeCounter) openMarker() (*os.File, error) {
+	end := time.Now().Add(5 * time.Second)
+	for {
+		f, err := os.OpenFile(p.name, os.O_RDWR, 0)
+		gap := errors.Is(err, windows.ERROR_PIPE_BUSY) || errors.Is(err, windows.ERROR_FILE_NOT_FOUND)
+		if !gap || time.Now().After(end) {
+			return f, err
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // count connects a marker client and returns the connects before it. The
 // server takes clients in order, so the answer to the marker ends the count.
 func (p *pipeCounter) count(t *testing.T) int64 {
@@ -340,7 +355,7 @@ func (p *pipeCounter) count(t *testing.T) int64 {
 	p.listening(t)
 	answered := make(chan error, 1)
 	go func() {
-		f, err := os.OpenFile(p.name, os.O_RDWR, 0)
+		f, err := p.openMarker()
 		if err != nil {
 			answered <- err
 			return
@@ -409,5 +424,66 @@ func TestWindowsConfigLinkToAPipe(t *testing.T) {
 	_, _ = os.Stat(config)
 	if n := p.count(t); n != 1 {
 		t.Errorf("connects to the pipe after one Stat of the link = %d, want 1", n)
+	}
+}
+
+// shallowLinkDetail is the link refusal of the file `shallow` of gitDir.
+func shallowLinkDetail(gitDir string) string {
+	return strconv.Quote(filepath.Join(gitDir, "shallow")) + ": is, or is reached through, a link that Claude does not follow here; " +
+		"replace the link with what it points to"
+}
+
+// TestWindowsShallowLinkToAPipe pins that a `shallow` that is a link to a named
+// pipe gets the link refusal and makes no connect to the pipe. b3081b51 answers
+// so and makes 0 connects (measured on Windows). One Stat of the link is the
+// control: it counts one connect, so the count works. A host that refuses to make
+// a symbolic link skips the test.
+func TestWindowsShallowLinkToAPipe(t *testing.T) {
+	_, gitDir := configRepo(t)
+	shallow := filepath.Join(gitDir, "shallow")
+	pipe := fmt.Sprintf(`\\.\pipe\claustrum-shallow-link-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	p := startPipeCounter(t, pipe)
+	// mklink makes a file link and opens nothing at its target.
+	if out, err := exec.Command("cmd", "/c", "mklink", shallow, pipe).CombinedOutput(); err != nil {
+		t.Skipf("this host makes no symbolic link: mklink %s %s: %v\n%s", shallow, pipe, err, out)
+	}
+	if n := p.count(t); n != 0 {
+		t.Fatalf("connects to the pipe before the tests = %d, want 0", n)
+	}
+	for i := range 2 {
+		p.listening(t)
+		if got, want := gitDirFilesDetail(gitDir, nil), shallowLinkDetail(gitDir); got != want {
+			t.Errorf("test %d of a shallow link to a pipe: detail = %q, want %q", i+1, got, want)
+		}
+	}
+	if n := p.count(t); n != 0 {
+		t.Errorf("connects to the pipe after two tests = %d, want 0", n)
+	}
+	p.listening(t)
+	_, _ = os.Stat(shallow)
+	if n := p.count(t); n != 1 {
+		t.Errorf("connects to the pipe after one Stat of the link = %d, want 1", n)
+	}
+}
+
+// TestWindowsShallowLinkAndFile pins that a `shallow` that is a link to NUL gets
+// the link refusal, and a regular `shallow` with one object id passes. b3081b51
+// answers so (measured on Windows). A host that refuses to make a symbolic link
+// skips the link half.
+func TestWindowsShallowLinkAndFile(t *testing.T) {
+	_, gitDir := configRepo(t)
+	shallow := filepath.Join(gitDir, "shallow")
+	writeFile(t, shallow, strings.Repeat("a", 40)+"\n", 0o644)
+	if got := gitDirFilesDetail(gitDir, nil); got != "" {
+		t.Errorf("a regular shallow: detail = %q, want none", got)
+	}
+	if err := os.Remove(shallow); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("NUL", shallow); err != nil {
+		t.Skipf("this host makes no symbolic link: %v", err)
+	}
+	if got, want := gitDirFilesDetail(gitDir, nil), shallowLinkDetail(gitDir); got != want {
+		t.Errorf("a shallow link to NUL: detail = %q, want %q", got, want)
 	}
 }

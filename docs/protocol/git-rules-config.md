@@ -141,7 +141,8 @@ itself. The daemon tests them in each request.
 
 | Detail | When |
 |---|---|
-| `"<file>" is not a regular file` | `info/attributes` or `info/exclude` is a FIFO or a directory. A symbolic link there passes, also one to the null device. `shallow` is a FIFO, a directory or a symbolic link to the null device. The daemon does not wait on a FIFO |
+| `"<file>" is not a regular file` | `info/attributes` or `info/exclude` is a FIFO or a directory. A symbolic link there passes, also one to the null device. `shallow` is a FIFO, a directory or, on Linux and macOS, a symbolic link to the null device. The daemon does not wait on a FIFO |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: `shallow` is a file symbolic link to a listening pipe, a file on a share or `NUL`. The daemon makes no connect to the pipe (`b3081b51`, measured on Windows). Every other symbolic link there gets it too (claustrum's own, not measured). That includes a link to a local file or a folder, and a dangling link |
 | `"<file>": it is larger than 4 MiB` | `info/attributes` or `info/exclude` has more than 4194304 bytes |
 | `"<file>" is larger than 4 MiB` | `shallow` has more than 4194304 bytes |
 | `open <git dir>: not a directory` | Windows: a daemon `GIT_DIR=.git` names the `.git` file of a linked worktree, on the five methods |

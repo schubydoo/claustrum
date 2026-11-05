@@ -1191,18 +1191,25 @@ func worktreeConfigFileDetail(path string, log *repoReadLog) string {
 // git.info, git.status, git.list_branches and git.worktree_create (measured).
 // git.worktree_remove gives it in its lock-check text (measured). Other systems
 // are not measured.
+//
+// On Windows a `shallow` that is a symbolic link gets the link refusal of the
+// config after one Lstat, and nothing is opened. b3081b51 answers so for a link
+// to a listening pipe, to a file on a share and to NUL (measured on Windows).
+// Every other symbolic link gets it too, also a link to a local file or a folder
+// and a dangling link (claustrum's own, not measured).
 func gitDirFilesDetail(gitDir string, log *repoReadLog) string {
 	if d := gitDirNotFolderDetail(gitDir); d != "" {
 		return d
 	}
 	path := filepath.Join(gitDir, "shallow")
-	log.note(path)
+	if d := log.noteLinkTest(path); d != "" {
+		return d
+	}
 	if d := shallowFileDetail(path, log); d != "" {
 		return d
 	}
 	for _, name := range []string{"attributes", "exclude"} {
 		path := filepath.Join(gitDir, "info", name)
-		log.note(path)
 		if d := infoFileDetail(path); d != "" {
 			return d
 		}
@@ -1251,11 +1258,12 @@ func infoFileDetail(path string) string {
 	return ""
 }
 
-// shallowFileDetail tests the `shallow` file at path. The daemon opens it and
-// follows a link: a FIFO, a directory and a link to the null device are refused
+// shallowFileDetail tests the `shallow` file at path. The daemon opens it and,
+// on Linux and macOS, follows a link: a FIFO, a directory and a link to the null device are refused
 // as not regular (measured). A file of mode 000 gets the error text of the
 // open, with no quotes (measured), and so does a socket. Another open error
-// gets the same form (not measured). A dangling link and a missing file pass.
+// gets the same form (not measured). A missing file passes, and so does a
+// dangling link on Linux and macOS.
 // The size text has no `: it` (measured). The file holds object ids and nothing
 // else (holdsObjectIDs).
 func shallowFileDetail(path string, log *repoReadLog) string {
