@@ -4,6 +4,47 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.18.0 (2026-11-05)
+
+[Compare with 1.17.0](https://github.com/schubydoo/claustrum/compare/v1.17.0...v1.18.0)
+
+### Features
+
+- `server.capabilities` lists the new feature names of the reference: five on every system, and `process.spawn.cli_temp_root` on Linux and macOS. ([#915](https://github.com/schubydoo/claustrum/pull/915))
+- On Linux a process.spawn with cliTempRoot gives Claude Code a private temp folder when its claude-<uid> entry is unfit, and the reply says why. ([#914](https://github.com/schubydoo/claustrum/pull/914))
+- The managed launcher refuses a processWrapper or env.CLAUDE_CODE_PROCESS_WRAPPER value that is not a string as unusable, with a reason that names its kind. ([#907](https://github.com/schubydoo/claustrum/pull/907))
+- On Linux the libc probe of -install runs /usr/bin/ldd with only LC_ALL=C and PATH=/usr/bin:/bin in its environment, never an ldd from the PATH of the operator. ([#906](https://github.com/schubydoo/claustrum/pull/906))
+- A good git.worktree_create records the git directory of its repository as a session folder, and that record stays after git.worktree_remove. ([#927](https://github.com/schubydoo/claustrum/pull/927))
+- A process.spawn of Claude Code fails and starts no child when its session folder holds the first daemon PATH entry and cannot be saved, and the next spawn tries the save again. ([#925](https://github.com/schubydoo/claustrum/pull/925))
+- A process.spawn of a command named ccd-cli records its session folders, and so does a spawn with a launcher on Linux and macOS. A bare git with stream-json records none. ([#926](https://github.com/schubydoo/claustrum/pull/926))
+- The git methods and a bare `git` spawn no longer start a git that PATH finds in a folder a Claude Code session works in. The request can turn this check off. ([#912](https://github.com/schubydoo/claustrum/pull/912))
+- On Linux and macOS a shutdown sends SIGTERM to a stream-json child, and the group SIGKILL if it is still there after 1.5 s. The cleanup line says ended. ([#909](https://github.com/schubydoo/claustrum/pull/909))
+- On Windows git.status, git.info and git.worktree_create refuse a repository path through a link to a network or device path, before any git call. ([#920](https://github.com/schubydoo/claustrum/pull/920))
+- On Windows four git methods refuse an objects/info/alternates file with Windows line endings or too many object directories before their git calls on the repository. git.status also refuses more alternates shapes and GIT_ALTERNATE_OBJECT_DIRECTORIES, and git.status and git.info refuse a path behind 32 or more links. ([#910](https://github.com/schubydoo/claustrum/pull/910))
+- git.worktree_create checks the config files of a new worktree against its commit after the checkout, and refuses and undoes the worktree with a worktree_verify code on a mismatch. ([#913](https://github.com/schubydoo/claustrum/pull/913))
+- On Linux and macOS git.worktree_create refuses an executable file that lost its execute bit, and a committed link in a circle or through /proc or /dev/fd. ([#924](https://github.com/schubydoo/claustrum/pull/924))
+
+### Fixes
+
+- On Linux a killAndWait of a cliTempRoot child answers at its exit, also while the folder refresh hangs on a stuck mount. ([#934](https://github.com/schubydoo/claustrum/pull/934))
+- On Linux a process.spawn with cliTempRoot reads CLAUDE_CODE_TMPDIR, TMPDIR, TMP and TEMP, skips a launched spawn and answers within 2 s. ([#921](https://github.com/schubydoo/claustrum/pull/921))
+- git.worktree_create puts the path of its already exists refusal in backticks, and both worktree methods quote the root of their link-limit refusal. ([#923](https://github.com/schubydoo/claustrum/pull/923))
+- `git.worktree_create` copies a large `info/sparse-checkout` of a new worktree, and refuses a broken `reftable` folder of a registration before the add. ([#943](https://github.com/schubydoo/claustrum/pull/943))
+- On Linux and macOS git.worktree_create answers a registrations folder that it cannot search with an examine text, and its rollback deletes nothing there. ([#941](https://github.com/schubydoo/claustrum/pull/941))
+- On Linux and macOS, `git.worktree_create` with `timeoutMs` answers a failed smudge filter in the checkout at once while a child of git holds only its stdout. ([#942](https://github.com/schubydoo/claustrum/pull/942))
+- On Linux `files.stat`, `files.list` and `files.validate` try a path again after a link-loop error, up to 4 tries in all, about 10 ms apart. ([#936](https://github.com/schubydoo/claustrum/pull/936))
+- On macOS the host cleaner now stops reading a daemon after an `lsof` run that it gave up on, so its pass ends after one 17 s wait for that daemon instead of three. ([#946](https://github.com/schubydoo/claustrum/pull/946))
+- A -cli-url body cut before its final chunk names no total, and a tick that printed the full count adds no repeated progress line. ([#944](https://github.com/schubydoo/claustrum/pull/944))
+- On Linux and macOS process.kill KILL after the child ended, before its exit frame, kills the group at once, so a process of its group that holds output ends. ([#933](https://github.com/schubydoo/claustrum/pull/933))
+- On Linux the libc probe of -install runs /bin/ldd when /usr/bin/ldd is missing. ([#911](https://github.com/schubydoo/claustrum/pull/911))
+- git.worktree_create, git.worktree_remove and git.list_branches refuse a baseRepo below a marker folder, or one whose path as sent lies below a marker. Two remove texts follow the reference on Linux and macOS. ([#940](https://github.com/schubydoo/claustrum/pull/940))
+- `git.worktree_remove` with `worktreeRoot` refuses and deletes nothing when the configuration listing before its git-directory call fails for a reason other than a missing repository. ([#932](https://github.com/schubydoo/claustrum/pull/932))
+- On Windows `git.worktree_remove` of a gone worktree keeps the registration behind a junction or a directory link at the registrations folder, and still deletes the branch. ([#939](https://github.com/schubydoo/claustrum/pull/939))
+- `git.worktree_remove` deletes nothing after a `mktree` answer that is no tree. On Windows it deletes nothing for a worktree that exists behind a junction or a directory link at the registrations folder. ([#931](https://github.com/schubydoo/claustrum/pull/931))
+- On macOS the registration folder of a new worktree gets the group write bit under umask 002, as the reference gives it. ([#945](https://github.com/schubydoo/claustrum/pull/945))
+- `git.status` gives the status when `path` and `baseRepo` both name a linked worktree, in place of `isRepo` false. ([#935](https://github.com/schubydoo/claustrum/pull/935))
+- On Windows git.worktree_create answers the texts of the reference when a junction takes the place of the git directory or of its worktrees folder at four swap points. ([#947](https://github.com/schubydoo/claustrum/pull/947))
+
 ## 1.17.0 (2026-11-02)
 
 [Compare with 1.16.0](https://github.com/schubydoo/claustrum/compare/v1.16.0...v1.17.0)
