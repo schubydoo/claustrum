@@ -14,8 +14,9 @@ const shadowLinksWorktrees = true
 
 // stagedAddWindowsSteps is false on Linux and macOS. An add that names the copy
 // is staged there too, as be1c1ca5 does, but after the steps of worktreeAdd
-// before the add, and with the texts of Linux and macOS (runAddStaged).
-const stagedAddWindowsSteps = false
+// before the add, and with the texts of Linux and macOS (runAddStaged). It is
+// a variable so that a test can switch the steps of Windows on.
+var stagedAddWindowsSteps = false
 
 // gitDirMustBeReal is true on Linux and macOS. A create holds the git directory
 // that its gate accepted, and tests at its steps that the path still names it

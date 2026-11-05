@@ -96,6 +96,36 @@ func atStep(t *testing.T, step string, do func()) {
 	}
 }
 
+// stubStepsAt makes the git stub run steps at the first call with the words of
+// match after the create reached step, one time. The mode "pre" runs them
+// right before git runs, and "post" right after git ended.
+func stubStepsAt(t *testing.T, step, match, mode string, steps ...[]string) {
+	t.Helper()
+	joined := make([]string, len(steps))
+	for i, s := range steps {
+		joined[i] = strings.Join(s, "\x1f")
+	}
+	vars := map[string]string{
+		"CLAUSTRUM_GITSTUB_MATCH":   match,
+		"CLAUSTRUM_GITSTUB_MODE":    mode,
+		"CLAUSTRUM_GITSTUB_MS":      "0",
+		"CLAUSTRUM_GITSTUB_ACTION":  "steps",
+		"CLAUSTRUM_GITSTUB_VALUE":   strings.Join(joined, "\x1e"),
+		"CLAUSTRUM_GITSTUB_NTHFILE": filepath.Join(t.TempDir(), "nth"),
+		"CLAUSTRUM_GITSTUB_NTH":     "1",
+	}
+	for k := range vars {
+		t.Setenv(k, "")
+	}
+	atStep(t, step, func() {
+		for k, v := range vars {
+			if err := os.Setenv(k, v); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+}
+
 // TestAcceptGitDir: the create holds a real directory, and the path stands as
 // long as it names that folder. A link at the path and another real directory
 // at the path do not stand, and neither is accepted with the identity of the
@@ -317,7 +347,13 @@ func TestStagedAddWithASwappedGitDir(t *testing.T) {
 		swapAt(t, "staged", f.gitDir, f.target.dir)
 		_, stderr, err := stagedAdd(t, f.repoFolderFixture, f.u)
 		var incomplete *addIncomplete
-		const want = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+		want := `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+		if stagedAddWindowsSteps {
+			// On Windows b3081b51 answers the text of the config behind a
+			// junction (measured on Windows).
+			want = "this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
+				": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
+		}
 		if !errors.As(err, &incomplete) || incomplete.text != want {
 			t.Errorf("the add = %v, %q\nwant the error %s", err, stderr, want)
 		}

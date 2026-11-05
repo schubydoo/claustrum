@@ -349,7 +349,8 @@ func plainAddRefusal(gitDir string, named bool) string {
 // worktrees directory: "<git directory>/worktrees" is not a directory`. It runs
 // no `worktree add`, and no leaf and no branch stay (measured on Linux, 3 of 3
 // runs). The test is where the daemon makes that folder, so it runs in the
-// state shadow on Linux and macOS only. The other states are not measured. In
+// state shadow on Linux and macOS only. On Windows worktreesLinkRefusal gives
+// its text before the add. The other states are not measured. In
 // attach mode 5fd08069 answers the same text one time (measured on Linux): the
 // caller makes no second add (addNotPrepared).
 //
@@ -369,6 +370,20 @@ func (u gitUse) worktreesFolderRefusal() string {
 		return ""
 	}
 	return prepareWorktreesPrefix + fmt.Sprintf("%q is not a directory", filepath.Join(u.heldGitDir(), worktreesSubdir))
+}
+
+// worktreesLinkRefusal is the text of worktreesFolderRefusal for a link or a
+// junction at `worktrees` of the held git directory, by its Lstat through the
+// held root. It is "" for a request that holds no git directory, and for a
+// file there, whose text 5fd08069 gives at the add (measured on Windows).
+func (u gitUse) worktreesLinkRefusal() string {
+	if u.accepted == nil {
+		return ""
+	}
+	if fi, err := u.accepted.root.Lstat(worktreesSubdir); err != nil || fi.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
+		return ""
+	}
+	return u.worktreesFolderRefusal()
 }
 
 // worktreesOpenRefusal is the error of a `worktree add` that does not run,

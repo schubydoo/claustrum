@@ -806,26 +806,48 @@ func TestRegistrationTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	if got, ok := registrationTarget(root, "w1"); got != "w1" || !ok {
+	if got, ok, _ := registrationTarget(root, "w1"); got != "w1" || !ok {
 		t.Errorf("registrationTarget in an empty folder = %q, %v, want w1", got, ok)
 	}
 	for _, n := range []string{"w1", "w11", "w12"} {
 		mustWrite(t, filepath.Join(dir, "worktrees", n), "x\n")
 	}
-	if got, ok := registrationTarget(root, "w1"); got != "w13" || !ok {
+	if got, ok, _ := registrationTarget(root, "w1"); got != "w13" || !ok {
 		t.Errorf("registrationTarget = %q, %v, want w13", got, ok)
 	}
 	for i := 3; i < 100; i++ {
 		mustWrite(t, filepath.Join(dir, "worktrees", "w1"+strconv.Itoa(i)), "x\n")
 	}
-	if got, ok := registrationTarget(root, "w1"); ok {
-		t.Errorf("registrationTarget with 100 names = %q, want none", got)
+	if got, ok, last := registrationTarget(root, "w1"); ok || last != nil {
+		t.Errorf("registrationTarget with 100 names = %q, %v, want none and no error", got, last)
 	}
 	if err := os.Remove(filepath.Join(dir, "worktrees", "w199")); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := registrationTarget(root, "w1"); got != "w199" || !ok {
+	if got, ok, _ := registrationTarget(root, "w1"); got != "w199" || !ok {
 		t.Errorf("registrationTarget = %q, %v, want w199", got, ok)
+	}
+}
+
+// TestRegistrationTargetBehindALink: with a link at `worktrees` to a folder
+// outside the root, each Lstat fails, and registrationTarget gives the error
+// of the last name. On Windows the create answers it (measured on Windows
+// with a junction). Without lastErr the error is nil.
+func TestRegistrationTargetBehindALink(t *testing.T) {
+	dir := t.TempDir()
+	symlinkOrSkip(t, t.TempDir(), filepath.Join(dir, "worktrees"))
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	_, want := root.Lstat(filepath.Join("worktrees", "w199"))
+	if want == nil || errors.Is(want, fs.ErrNotExist) {
+		t.Fatalf("the Lstat of w199 behind the link: %v, want another error", want)
+	}
+	got, ok, last := registrationTarget(root, "w1")
+	if ok || last == nil || last.Error() != want.Error() {
+		t.Errorf("registrationTarget behind the link = %q, %v, %v, want none and the error %v", got, ok, last, want)
 	}
 }
 

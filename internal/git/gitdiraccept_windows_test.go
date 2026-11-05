@@ -60,7 +60,8 @@ func copyGitDir(t *testing.T, from, to string) {
 // `.claude-new-worktree-x`, its marker and one more file. At one step of the
 // create, `repo\.git` goes to `repo\.git-real` and a junction to T takes its
 // place. 5fd08069 then refuses the create with the text of the row, removes
-// nothing in T and makes nothing in T.
+// nothing in T and makes nothing in T. Rows X1c-06 and X1c-10 have the texts
+// of b3081b51, which changed both (measured on Windows).
 //
 // The last two rows are points 11 and 13 of 5fd08069 (measured): the junction
 // comes while the first listing of the checkout runs, and after the read-tree
@@ -81,14 +82,14 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 			return "git worktree add failed: cannot locate the repository's git directory: " + link
 		}},
 		{"X1c-06", "answered", func(string, string) string {
-			return "git worktree add failed: cannot list the repository's worktree entries: " + realDir
+			return "cannot add a worktree: cannot list the repository's worktree entries: " + realDir
 		}},
 		{"X1c-05", "add", func(link, _ string) string { return "git worktree add failed: " + link }},
 		{"X1c-09", "prepare", func(link, _ string) string {
 			return "git worktree add failed: cannot prepare the repository's worktrees directory: " + link
 		}},
 		{"X1c-10", "staged", func(link, leaf string) string {
-			return "git worktree add failed (completing the new worktree's git files): " + realDir +
+			return "git worktree add failed (completing the new worktree's git files): " + link +
 				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
 				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
 				"this branch name: could not check whether another branch or remote-tracking ref reaches its commits (" + link + ")"
@@ -273,14 +274,17 @@ func TestSymbolicLinkAtTheGitDirOnWindows(t *testing.T) {
 // `rev-parse --absolute-git-dir`, the file before the add and at the
 // listing of the add, and the directory symbolic link after the first call
 // and after `rev-parse --absolute-git-dir`. The three other rows have no
-// row of 5fd08069: their texts are those of the measured junction rows.
+// row of 5fd08069: their texts are those of the measured junction rows. The
+// text of noEntries starts as b3081b51 does with a junction after the gitdir
+// call (measured on Windows). A symbolic link there is not measured on
+// b3081b51.
 func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
 	notPrepared := func(string) string {
 		return "git worktree add failed: cannot prepare the repository's worktrees directory: " + realDir
 	}
 	noEntries := func(string) string {
-		return "git worktree add failed: cannot list the repository's worktree entries: " + realDir
+		return "cannot add a worktree: cannot list the repository's worktree entries: " + realDir
 	}
 	for _, row := range []struct {
 		name, step, entry string
@@ -590,4 +594,174 @@ func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCreateStepsOfAHeldGitDirOnWindows is the Windows form of
+// TestCreateStepsOfAHeldGitDir. The real git directory has an old
+// registration old8 whose record names the leaf. T is a copy of it with the
+// same old8 and a marker file. The rows are of b3081b51 (measured on Windows).
+//
+//   - B: `.git` goes to `.git-real` and a junction to T takes its place right
+//     before `rev-parse --absolute-git-dir`. The stale step removes old8 of
+//     the held folder, now `.git-real`. b3081b51 removes old8 of T there
+//     (measured on Windows). The reply is equal.
+//   - A: no swap, and old8 of the git directory goes.
+//   - C and F: the same junction at `.git`, or a junction at `.git\worktrees`
+//     to `T\worktrees`, right after that call. Nothing goes.
+//   - H: the junction at `.git\worktrees` right before the `worktree add`
+//     call.
+//
+// The removal of the held steps is a recorder in each row but A and H. A
+// with the recorder is the control: it shows that the recorder sees the
+// delete. No row tests the number of git calls.
+func TestCreateStepsOfAHeldGitDirOnWindows(t *testing.T) {
+	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+	type fixture struct {
+		shadowFixture
+		leaf, other string
+		removals    *[]string
+	}
+	prepare := func(t *testing.T, record bool) fixture {
+		t.Helper()
+		f := newSeededShadowFixture(t)
+		if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+			t.Fatalf("git.info = %s", raw)
+		}
+		leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+		mustWrite(t, filepath.Join(f.gitDir, "worktrees", "old8", "gitdir"), filepath.Join(leaf, ".git")+"\n")
+		other := filepath.Join(resolveTestRoot(t, t.TempDir()), "T")
+		copyGitDir(t, f.gitDir, other)
+		mustWrite(t, filepath.Join(other, "marker-OTHER.txt"), "other folder")
+		var removals *[]string
+		if record {
+			held, err := os.Stat(f.gitDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The identity is read now, before any swap (gitDirIdentity).
+			os.SameFile(held, held)
+			removals = recordHeldRemovals(t, held)
+		}
+		return fixture{shadowFixture: f, leaf: leaf, other: other, removals: removals}
+	}
+	create := func(t *testing.T, f fixture) (raw string, success bool, text, code string) {
+		t.Helper()
+		raw, _ = f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": f.leaf})
+		var reply struct {
+			Result struct {
+				Success   bool
+				Error     string
+				ErrorCode string
+			}
+		}
+		if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+			t.Fatalf("the reply %s: %v", raw, err)
+		}
+		return raw, reply.Result.Success, reply.Result.Error, reply.Result.ErrorCode
+	}
+	removed := func(t *testing.T, f fixture, want string) {
+		t.Helper()
+		if got := strings.Join(*f.removals, ","); got != want {
+			t.Errorf("the create asked to remove %q, want %q", got, want)
+		}
+	}
+	untouched := func(t *testing.T, f fixture, dirs ...string) {
+		t.Helper()
+		if text := mustRead(t, filepath.Join(f.other, "marker-OTHER.txt")); text != "other folder" {
+			t.Errorf("the marker of T = %q", text)
+		}
+		if _, err := os.Lstat(filepath.Join(f.other, "worktrees", "old8", "gitdir")); err != nil {
+			t.Errorf("old8 of T: %v, want it kept", err)
+		}
+		if _, err := os.Lstat(f.leaf); !os.IsNotExist(err) {
+			t.Errorf("the leaf: %v, want it gone", err)
+		}
+		for _, dir := range append(dirs, f.other) {
+			for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+					t.Errorf("%s in %s: %v, want none", name, dir, err)
+				}
+			}
+		}
+	}
+	gitDirSwap := func(f fixture) [][]string {
+		return [][]string{{"rename", f.gitDir, f.gitDir + "-real"}, {"junction", f.gitDir, f.other}}
+	}
+	worktreesSwap := func(f fixture) [][]string {
+		wt := filepath.Join(f.gitDir, "worktrees")
+		return [][]string{{"rename", wt, wt + "-real"}, {"junction", wt, filepath.Join(f.other, "worktrees")}}
+	}
+
+	t.Run("A control with the recorder", func(t *testing.T) {
+		f := prepare(t, true)
+		_, _, _, _ = create(t, f)
+		removed(t, f, "worktrees/old8 held")
+	})
+	t.Run("A", func(t *testing.T) {
+		f := prepare(t, false)
+		if raw, ok, _, _ := create(t, f); !ok {
+			t.Errorf("git.worktree_create = %s, want success", raw)
+		}
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "old8")); !os.IsNotExist(err) {
+			t.Errorf("old8 of the git directory: %v, want it gone", err)
+		}
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees", "w1")); err != nil {
+			t.Errorf("the registration w1: %v", err)
+		}
+	})
+	t.Run("B a junction at .git before the gitdir call", func(t *testing.T) {
+		f := prepare(t, true)
+		stubStepsAt(t, "gitdir", "rev-parse,--absolute-git-dir", "pre", gitDirSwap(f)...)
+		raw, ok, text, code := create(t, f)
+		want := "git worktree add failed: this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
+			": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
+		if ok || text != want || code != "worktree_add_failed" {
+			t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+		}
+		// b3081b51 removes old8 of T here (measured on Windows). claustrum
+		// removes old8 of the held folder, as row A does.
+		removed(t, f, "worktrees/old8 held")
+		untouched(t, f, f.gitDir+"-real")
+	})
+	t.Run("C a junction at .git after the gitdir call", func(t *testing.T) {
+		f := prepare(t, true)
+		stubStepsAt(t, "gitdir", "rev-parse,--absolute-git-dir", "post", gitDirSwap(f)...)
+		raw, ok, text, code := create(t, f)
+		want := "cannot add a worktree: cannot list the repository's worktree entries: " + realDir
+		if ok || text != want || code != "worktree_add_failed" {
+			t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+		}
+		removed(t, f, "")
+		untouched(t, f, f.gitDir+"-real")
+	})
+	t.Run("F a junction at worktrees after the gitdir call", func(t *testing.T) {
+		f := prepare(t, true)
+		stubStepsAt(t, "gitdir", "rev-parse,--absolute-git-dir", "post", worktreesSwap(f)...)
+		raw, ok, text, code := create(t, f)
+		want := "cannot add a worktree: cannot prepare the repository's worktrees directory: " +
+			quoteOperand(filepath.Join(f.gitDir, "worktrees")) + " is not a directory"
+		if ok || text != want || code != "worktree_add_failed" {
+			t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+		}
+		removed(t, f, "")
+		untouched(t, f, f.gitDir)
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees-real", "old8", "gitdir")); err != nil {
+			t.Errorf("old8 of the git directory: %v, want it kept", err)
+		}
+	})
+	t.Run("H a junction at worktrees before the add", func(t *testing.T) {
+		f := prepare(t, false)
+		stubStepsAt(t, "add", "worktree,add", "pre", worktreesSwap(f)...)
+		raw, ok, text, code := create(t, f)
+		want := completingAddPrefix + "statat " + filepath.Join("worktrees", "w199") + ": path escapes from parent"
+		if ok || text != want || code != "worktree_add_failed" {
+			t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+		}
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "worktrees-real", "old8")); !os.IsNotExist(err) {
+			t.Errorf("old8 of the git directory: %v, want it gone before the swap", err)
+		}
+		if _, err := os.Lstat(filepath.Join(f.other, "worktrees", "old8", "gitdir")); err != nil {
+			t.Errorf("old8 of T: %v, want it kept", err)
+		}
+	})
 }
