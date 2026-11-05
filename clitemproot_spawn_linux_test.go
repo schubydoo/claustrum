@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -119,4 +122,59 @@ func TestSpawnCLITempRootSkipsALauncher(t *testing.T) {
 	if !strings.Contains(out, "TMPDIR="+x+"\n") || strings.Contains(out, "CLAUDE_CODE_TMPDIR=") || len(ccdFolders(t, x)) != 0 {
 		t.Errorf("child env %q, folders %v, want TMPDIR alone and no folder", out, ccdFolders(t, x))
 	}
+}
+
+// A step or a refresh that holds tempRoots.mu across a stuck file call does not hold
+// the exit of a child with a folder. killAndWait answers died:true at the exit and
+// sends no group SIGKILL (b3081b51, measured on Linux). The test holds the lock in
+// place of the stuck call. The folder goes back once the lock is free.
+func TestSpawnCLITempRootExitDoesNotWaitForTheLock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, _ := tempRootDir(t, true)
+	s, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	exe, env := helperCommand(t, "cat")
+	env["TMPDIR"] = x
+	raw := cl.call(spawnLine(t, "kw", exe, env, true))
+	if !strings.Contains(string(raw), `"name":"ccd-`) {
+		t.Fatalf("spawn reply %s, want a folder", raw)
+	}
+	// The stub counts each group SIGKILL to the child and delivers none.
+	p := s.procs.get("kw")
+	realSignal := signalGroup
+	var kills atomic.Int32
+	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+		if proc == p.cmd.Process && signame == "KILL" {
+			kills.Add(1)
+			return nil
+		}
+		return realSignal(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = realSignal })
+	// A short reap bound makes a wait that misses the exit answer died:false at once.
+	oldReap := killReapGrace
+	killReapGrace = 100 * time.Millisecond
+	t.Cleanup(func() { killReapGrace = oldReap })
+	var unlock sync.Once
+	tempRoots.mu.Lock()
+	free := func() { unlock.Do(tempRoots.mu.Unlock) }
+	t.Cleanup(free)
+	start := time.Now()
+	got := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"kw","signal":"SIGTERM","timeoutMs":3000,"escalate":true}}`)))
+	took := time.Since(start)
+	if want := replyLine(2, `{"found":true,"died":true}`); got != want {
+		t.Errorf("killAndWait reply %s after %v, want %s", got, took, want)
+	}
+	if took > 2*time.Second {
+		t.Errorf("killAndWait took %v, want an answer at the exit", took)
+	}
+	if n := kills.Load(); n != 0 {
+		t.Errorf("group SIGKILLs to the child: %d, want 0", n)
+	}
+	if n := tempRoots.live; n != 1 { // the test holds tempRoots.mu
+		t.Errorf("live count %d while the lock is held, want 1", n)
+	}
+	free()
+	waitTempRootsLive(t, 0)
 }

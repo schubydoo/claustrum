@@ -50,7 +50,8 @@ var tempRootLimit = 2 * time.Second
 
 // tempRootLiveCap is the count of live spawns with a private folder. The next spawn
 // gets tempRootTooMany (measured on Linux). The count is of this daemon, and a spawn
-// gives its place back at its exit frame (claustrum's own, not measured).
+// gives its place back at its exit frame, or, while a step or a refresh holds the lock,
+// once it ends (claustrum's own, not measured).
 const tempRootLiveCap = 8
 
 // tempRootMaxAge is the age of a folder that a later daemon no longer takes. A
@@ -247,20 +248,34 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	tempRoots.live++
 	logging.Infof("[process.Manager] Claude Code's temp folder is unfit (it is %s): Claude Code gets %s beside it", kind, name)
 	env = sysproc.ReplaceOrAppendEnv(env, "CLAUDE_CODE_TMPDIR", filepath.Join(dir, name))
+	giveBack := func() { // the caller holds tempRoots.mu
+		defer tempRoots.mu.Unlock()
+		tempRoots.live--
+		h.users--
+		if h.users == 0 {
+			close(h.stop)
+			_ = h.f.Close()
+			if tempRoots.held[filepath.Join(dir, name)] == h {
+				delete(tempRoots.held, filepath.Join(dir, name))
+			}
+		}
+	}
+	// The release runs before the exit of the child ends a killAndWait wait. A step
+	// or a refresh can hold tempRoots.mu across a file call that a stuck mount does
+	// not answer. The release then gives the folder back in a goroutine once the lock
+	// is free, so the wait ends at the exit (b3081b51 answers died:true there,
+	// measured on Linux).
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
-			tempRoots.mu.Lock()
-			defer tempRoots.mu.Unlock()
-			tempRoots.live--
-			h.users--
-			if h.users == 0 {
-				close(h.stop)
-				_ = h.f.Close()
-				if tempRoots.held[filepath.Join(dir, name)] == h {
-					delete(tempRoots.held, filepath.Join(dir, name))
-				}
+			if tempRoots.mu.TryLock() {
+				giveBack()
+				return
 			}
+			go func() {
+				tempRoots.mu.Lock()
+				giveBack()
+			}()
 		})
 	}
 	return env, &rpc.CLITempRoot{Refused: kind, Name: name}, release
