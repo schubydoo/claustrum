@@ -118,3 +118,90 @@ func TestBaseRepoBelowMarkerFolderRefused(t *testing.T) {
 	markerLayoutRepo(t, r)
 	markerLayoutFrames(t, r, r)
 }
+
+// A marker in a folder that holds a .git does not count, and the walk goes on to
+// the parent (b3081b51, measured on Linux, macOS and Windows). The frames are those of
+// b3081b51. The remove deletes the leaf w2, its registration and its branch, and the
+// rest stays.
+func TestBaseRepoMarkerBesideGitAccepted(t *testing.T) {
+	requireGit(t)
+	m := t.TempDir()
+	writeFile(t, filepath.Join(m, managedWorktreesMarker), "", 0o644)
+	runGit(t, m, "init", "-q")
+	r := filepath.Join(m, "R")
+	markerLayoutRepo(t, r)
+	markerAcceptFrames(t, r)
+	mustExist(t, filepath.Join(m, managedWorktreesMarker))
+	mustExist(t, filepath.Join(m, ".git"))
+	// Control: the same marker with no .git beside it refuses (b3081b51, measured
+	// on Linux, macOS and Windows).
+	c := t.TempDir()
+	writeFile(t, filepath.Join(c, managedWorktreesMarker), "", 0o644)
+	cr := filepath.Join(c, "R")
+	markerLayoutRepo(t, cr)
+	markerLayoutFrames(t, cr, cr)
+
+	// A marker beside a .git one level up and a plain marker two levels up: the walk
+	// goes on past the first and refuses at the second (b3081b51, measured on Linux,
+	// macOS and Windows). It guards the walk: it passes with the fix reverted too.
+	t.Run("walk goes on to a plain marker above", func(t *testing.T) {
+		top := t.TempDir()
+		writeFile(t, filepath.Join(top, managedWorktreesMarker), "", 0o644)
+		p := filepath.Join(top, "P")
+		if err := os.Mkdir(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(p, managedWorktreesMarker), "", 0o644)
+		runGit(t, p, "init", "-q")
+		r := filepath.Join(p, "R")
+		markerLayoutRepo(t, r)
+		markerLayoutFrames(t, r, r)
+	})
+
+	// A marker inside baseRepo beside its own .git does not count either (b3081b51,
+	// measured on Linux, macOS and Windows).
+	t.Run("marker inside baseRepo", func(t *testing.T) {
+		r := filepath.Join(t.TempDir(), "R")
+		markerLayoutRepo(t, r)
+		writeFile(t, filepath.Join(r, managedWorktreesMarker), "", 0o644)
+		markerAcceptFrames(t, r)
+		mustExist(t, filepath.Join(r, managedWorktreesMarker))
+	})
+}
+
+// markerAcceptFrames sends git.list_branches, git.worktree_remove of the worktree w2
+// and git.worktree_create of w1 for the repository r, and wants the success frames
+// of b3081b51. The remove deletes w2, its registration and its branch only.
+func markerAcceptFrames(t *testing.T, r string) {
+	t.Helper()
+	h := newTestGitDeps()
+	if got, want := gitDispatch(t, h, rpcLine(t, "git.list_branches", map[string]any{"path": r})),
+		`{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["main","w2"]}}`; got != want {
+		t.Errorf("list_branches = %s\nwant %s", got, want)
+	}
+	w2 := filepath.Join(r, ".claude", "worktrees", "w2")
+	if got, want := gitDispatch(t, h, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": r, "worktreePath": w2, "branchName": "w2"})),
+		`{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
+		t.Errorf("worktree_remove = %s\nwant %s", got, want)
+	}
+	mustBeGone(t, w2)
+	mustBeGone(t, filepath.Join(r, ".git", "worktrees", "w2"))
+	if got := gitOut(t, r, "branch", "--list", "w2"); got != "" {
+		t.Errorf("branch w2 = %q, want it deleted", got)
+	}
+	for _, p := range []string{filepath.Join(r, ".git", "HEAD"), filepath.Join(r, ".gitignore"), filepath.Join(r, ".claude", "worktrees")} {
+		mustExist(t, p)
+	}
+	if got := gitOut(t, r, "branch", "--list", "main"); got == "" {
+		t.Error("branch main is gone, want it kept")
+	}
+	w1 := filepath.Join(r, ".claude", "worktrees", "w1")
+	if got, want := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": r, "worktreePath": w1, "branchName": "w1", "sourceBranch": "main"})),
+		`{"jsonrpc":"2.0","id":1,"result":{"success":true,"path":`+jsonString(t, w1)+`,"sourceBranch":"main","branch":"w1"}}`; got != want {
+		t.Errorf("worktree_create = %s\nwant %s", got, want)
+	}
+	mustExist(t, filepath.Join(w1, ".git"))
+	mustExist(t, filepath.Join(r, ".git", "worktrees", "w1"))
+}
