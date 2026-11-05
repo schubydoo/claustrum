@@ -625,8 +625,8 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //
 // Before these reasons comes the check of the daemon's own GIT_CONFIG_COUNT, for a
 // baseRepo that os.Stat reads. When it refuses, the reason is the trust refusal text if the
-// trust check refuses, and else the count refusal. See docs/protocol/git-rules-calls.md, "The
-// daemon's own git environment".
+// trust check refuses, the text of a failed start test in a repository, and else the count
+// refusal. See docs/protocol/git-rules-calls.md, "The daemon's own git environment".
 //
 // Then, with no git on PATH, the reason is the exec error alone: `exec: "git":
 // executable file not found in $PATH`. It comes before the six reasons, so it also
@@ -659,8 +659,7 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // After the gate the calls of the request name the copy of the repository in the
 // state shadow. On 5fd08069 the 8 calls of a remove with worktreeRoot carry the
 // four folder variables there, and 14 with branchName (measured on Linux). The
-// calls before the gate have no copy. A failed start test in a remove with
-// worktreeRoot is not measured: its text is the reason, as for a refused config.
+// calls before the gate have no copy.
 func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) (string, string) {
 	u := gitUse{}
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
@@ -673,8 +672,18 @@ func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) 
 	}
 	if statErr == nil {
 		if msg, bad := daemonCountRefusal(); bad {
-			if t := requestGitDirTrust(repo, false); t.verdict == gitDirRefused {
+			// In a repository b3081b51 runs the start test of the settings copy first.
+			// Its listing of the config fails under the daemon's pair, and the text of
+			// that failed test is the reason (measured on Linux and macOS, with a root
+			// outside the repository). On Windows the worktreeRoot refusal comes first,
+			// so no remove reaches this case there.
+			switch t := requestGitDirTrust(repo, false); {
+			case t.verdict == gitDirRefused:
 				msg = t.refusal
+			case t.verdict == gitDirTrusted && t.pinCommonDir != "":
+				if failed := req.shadow.gate(bool(off)); failed != "" {
+					msg = failed
+				}
 			}
 			return workTreeUnknownPrefix + msg, ""
 		}

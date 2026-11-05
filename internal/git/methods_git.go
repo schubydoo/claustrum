@@ -2970,7 +2970,18 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			return keptAll()
 		}
 		if bad {
-			return lockCheck(msg)
+			// b3081b51 puts the count text after a colon, with no "retry", for a plain
+			// folder and a missing baseRepo. In a repository it runs the start test of
+			// the settings copy first, and its listing of the config fails under the
+			// daemon's pair. The reply then has the text of that failed test (measured
+			// on Linux, macOS and Windows). A test that passes or does not run keeps the
+			// count text (claustrum's own, not measured).
+			if t.verdict == gitDirTrusted && t.pinCommonDir != "" {
+				if failed := req.shadow.gate(bool(p.ShadowDirOff)); failed != "" {
+					msg = failed
+				}
+			}
+			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
 		// On Windows the alternates file is checked here too, and the registration
 		// and the branch stay (measured on Windows, alternatesRefusal).
