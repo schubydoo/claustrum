@@ -602,18 +602,18 @@ func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
 // same old8 and a marker file. The rows are of b3081b51 (measured on Windows).
 //
 //   - B: `.git` goes to `.git-real` and a junction to T takes its place right
-//     before `rev-parse --absolute-git-dir`. The stale step removes old8 of
-//     the held folder, now `.git-real`. b3081b51 removes old8 of T there
-//     (measured on Windows). The reply is equal.
+//     before `rev-parse --absolute-git-dir`. The stale step goes by the path
+//     and removes old8 of T, as b3081b51 does (measured on Windows). old8 of
+//     the held folder, now `.git-real`, stays.
 //   - A: no swap, and old8 of the git directory goes.
 //   - C and F: the same junction at `.git`, or a junction at `.git\worktrees`
 //     to `T\worktrees`, right after that call. Nothing goes.
 //   - H: the junction at `.git\worktrees` right before the `worktree add`
 //     call.
 //
-// The removal of the held steps is a recorder in each row but A and H. A
+// The removal of the held steps is a recorder in each row but A, B and H. A
 // with the recorder is the control: it shows that the recorder sees the
-// delete. No row tests the number of git calls.
+// delete, which goes by the path. No row tests the number of git calls.
 func TestCreateStepsOfAHeldGitDirOnWindows(t *testing.T) {
 	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
 	type fixture struct {
@@ -695,7 +695,7 @@ func TestCreateStepsOfAHeldGitDirOnWindows(t *testing.T) {
 	t.Run("A control with the recorder", func(t *testing.T) {
 		f := prepare(t, true)
 		_, _, _, _ = create(t, f)
-		removed(t, f, "worktrees/old8 held")
+		removed(t, f, "old8 other")
 	})
 	t.Run("A", func(t *testing.T) {
 		f := prepare(t, false)
@@ -710,7 +710,7 @@ func TestCreateStepsOfAHeldGitDirOnWindows(t *testing.T) {
 		}
 	})
 	t.Run("B a junction at .git before the gitdir call", func(t *testing.T) {
-		f := prepare(t, true)
+		f := prepare(t, false)
 		stubStepsAt(t, "gitdir", "rev-parse,--absolute-git-dir", "pre", gitDirSwap(f)...)
 		raw, ok, text, code := create(t, f)
 		want := "git worktree add failed: this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
@@ -718,10 +718,25 @@ func TestCreateStepsOfAHeldGitDirOnWindows(t *testing.T) {
 		if ok || text != want || code != "worktree_add_failed" {
 			t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
 		}
-		// b3081b51 removes old8 of T here (measured on Windows). claustrum
-		// removes old8 of the held folder, as row A does.
-		removed(t, f, "worktrees/old8 held")
-		untouched(t, f, f.gitDir+"-real")
+		if _, err := os.Lstat(filepath.Join(f.other, "worktrees", "old8")); !os.IsNotExist(err) {
+			t.Errorf("old8 of T: %v, want it gone", err)
+		}
+		if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", "worktrees", "old8", "gitdir")); err != nil {
+			t.Errorf("old8 of the held folder: %v, want it kept", err)
+		}
+		if text := mustRead(t, filepath.Join(f.other, "marker-OTHER.txt")); text != "other folder" {
+			t.Errorf("the marker of T = %q", text)
+		}
+		if _, err := os.Lstat(f.leaf); !os.IsNotExist(err) {
+			t.Errorf("the leaf: %v, want it gone", err)
+		}
+		for _, dir := range []string{f.gitDir + "-real", f.other} {
+			for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+					t.Errorf("%s in %s: %v, want none", name, dir, err)
+				}
+			}
+		}
 	})
 	t.Run("C a junction at .git after the gitdir call", func(t *testing.T) {
 		f := prepare(t, true)

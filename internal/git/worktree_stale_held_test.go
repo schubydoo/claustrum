@@ -17,9 +17,9 @@ import (
 // The control is one stale entry, which goes. The last case is claustrum's
 // own, not measured: `worktrees` is a link in the held folder, and nothing
 // behind it goes. 5fd08069 changes nothing behind such a link with
-// "shadowDirOff":true only (measured). The step runs on Windows only. This
-// test calls it on every system, with a symbolic link on Linux and macOS and a
-// junction on Windows (linkAt).
+// "shadowDirOff":true only (measured). This held form is a test seam, and no
+// create runs it. This test calls it on every system, with a symbolic link
+// on Linux and macOS and a junction on Windows (linkAt).
 func TestHeldStaleStepRules(t *testing.T) {
 	record := func(f heldFixture) string {
 		return filepath.ToSlash(filepath.Join(f.repo, ".claude", "worktrees", "gone")) + "/.git\n"

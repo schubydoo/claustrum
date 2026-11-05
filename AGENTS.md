@@ -230,12 +230,14 @@ It runs after each refusal of the content check after the checkout
   Windows both handles share delete access. The empty-leaf rmdir tests only that the path
   still resolves to the leaf and the parent is still the held parent.
 - **Stale entry.** One `os.Root.RemoveAll` of one stale `worktrees` entry, after
-  `homeguard.WipesHomeDir` on its path, through a root at that folder (the held folder when held).
-  On Windows `b3081b51` acts behind a junction put at `.git` right before `rev-parse` (measured on Windows).
+  `homeguard.WipesHomeDir` on its path, through a root at that folder (on Linux and macOS the held
+  folder when held). On Windows it goes by the path, also behind a junction or a directory
+  symbolic link put at `.git` right before `rev-parse`. That follows `b3081b51` for the junction
+  (measured on Windows). The link is not measured.
   Create removes that entry only if it is the only stale entry and holds no `locked` file.
   Windows keeps an entry with a `locked` file too (`windowsStaleEntryGoes`) and an entry
   whose record names a path that exists (D27). It deletes nothing behind a junction or a
-  directory symbolic link at that folder (claustrum's own in the state `shadow`). A Windows
+  directory symbolic link at `worktrees` (claustrum's own in the state `shadow`). A Windows
   create with no held git directory is not measured.
 - **Refusals** (Linux and macOS). Before the second rollback and the checkout, these delete
   nothing, except an empty leaf with no `.git` file: a `.git` file of the leaf that is gone,
@@ -463,9 +465,9 @@ directory](docs/protocol/git-worktree-create.md#the-held-git-directory)). Hold t
   the git directory goes through the held folder, never the path. The comment at the top of
   `internal/git/gitdirheld.go` lists the steps.
 - By the path stay: git itself, a request that holds no git directory (the off switch, the
-  state `fallback-git`), the stale step for a `worktrees` folder outside the held folder
-  (from the code), and on Linux and macOS the index in a `worktrees` entry that is a
-  symbolic link, with the identity test of D24. After a gate under the off switch,
+  state `fallback-git`), the stale step on Windows, the stale step for a `worktrees` folder
+  outside the held folder (from the code), and on Linux and macOS the index in a `worktrees`
+  entry that is a symbolic link, with the identity test of D24. After a gate under the off switch,
   claustrum takes the hold at a later gate before the first good add (claustrum's own).
 - On Linux and macOS no delete of a create or a remove goes behind a `worktrees` entry that
   is a symbolic link, and a remove of an existing worktree folder is refused there.
@@ -483,7 +485,8 @@ add`, a new real directory at the path that passes the gate does too
 (`replacedAtPath`, approved by the maintainer). In a staged add the staging step takes it
 before the move, and the registration goes into it (`be1c1ca5` moves it into a copy and into
 a second repository, measured on Linux). Add no other step that resolves the path of the git directory again,
-and never widen a delete of these steps. A rollback after the first move is not
+and never widen a delete of these steps. The one step that goes by the path again is the stale step on
+Windows, which the maintainer approved on 2026-11-05. A rollback after the first move is not
 measured. After the first move the staging sweep is skipped (claustrum's own). After the
 staging step takes the hold, the sweep is skipped (claustrum's own), and the rollback deletes
 the registration that this create made, by identity through the new folder, as `be1c1ca5`

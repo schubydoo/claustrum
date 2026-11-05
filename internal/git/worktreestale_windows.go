@@ -51,13 +51,11 @@ const genericHintChars = "$'"
 // offWorktreesRefusal. The same Lstat test runs in the state shadow, where such
 // a link is not measured (claustrum's own).
 //
-// held is the git directory that the create holds, or nil. When the common git
-// directory of repo is the held folder (acceptedGitDir.isAt), the step goes
-// through it (acceptedGitDir.dropStaleRegistration) and lists, reads and
-// removes nothing by the path. Every other request gets the step by the path:
-// a request with "shadowDirOff":true, the state fallback-git, a server with no
-// run folder, and a held folder that is not that directory, such as a daemon
-// GIT_DIR of another repository (not measured). By the path the step opens one
+// The step goes by the path, also for a create that holds its git directory.
+// After a junction at `.git` right before `rev-parse --absolute-git-dir`,
+// b3081b51 removes the entry of the folder behind the junction (measured on
+// Windows). The maintainer approved this exception to the held folder on
+// 2026-11-05. The step opens one
 // os.Root at the folder and tests that it is the folder of the Lstat. The list,
 // the reads, the `locked` test and the remove go through that root. The remove
 // runs homeguard.WipesHomeDir on the entry first (D2). The root is claustrum's own, not
@@ -71,11 +69,8 @@ const genericHintChars = "$'"
 //
 // matched reports that an entry names the leaf, also one that stays
 // (pairBeforeAdd).
-func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (matched bool) {
+func dropStaleWorktreeRegistration(repo, worktreePath string, _ *acceptedGitDir) (matched bool) {
 	base := staleRegistryDir(repo)
-	if held.isAt(filepath.Dir(base)) {
-		return held.dropStaleRegistration(worktreePath)
-	}
 	fi, err := os.Lstat(base)
 	if err != nil || !goesAsTree(fi.Mode()) {
 		return false

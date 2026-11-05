@@ -75,8 +75,8 @@ func TestHeldStaleStepIgnoresLetterCase(t *testing.T) {
 
 // D27: on Windows the stale step keeps an entry whose record names a `.git`
 // file that exists, in another letter case than the leaf. 5fd08069 deletes it
-// (measured on Windows). Both forms of the step run: by the path, and through
-// the held git directory.
+// (measured on Windows). The step by the path runs, and so does the test seam
+// dropStaleRegistration, the former held form.
 func TestStaleStepKeepsALiveRecord(t *testing.T) {
 	t.Run("by the path", func(t *testing.T) {
 		repo := t.TempDir()
@@ -107,8 +107,8 @@ func TestStaleStepKeepsALiveRecord(t *testing.T) {
 
 // The Windows step works on `worktrees` of the separate git directory that the
 // .git file of repo names. 5fd08069 removes the stale entry gd\worktrees\old
-// there, and the create succeeds (measured on Windows). Both forms of the step
-// run: by the path, and through the held git directory.
+// there, and the create succeeds (measured on Windows). A create that holds the
+// git directory gets the step by the path too.
 func TestStaleStepOfSeparateGitDir(t *testing.T) {
 	setup := func(t *testing.T) (repo, gd, leaf, old string) {
 		root := t.TempDir()
@@ -139,8 +139,8 @@ func TestStaleStepOfSeparateGitDir(t *testing.T) {
 		if !dropStaleWorktreeRegistration(repo, leaf, held) {
 			t.Error("the step reports no match, want one")
 		}
-		if got := strings.Join(*removals, ","); got != "worktrees/old held" {
-			t.Errorf("the step asked to remove %q, want the old registration of the held folder", got)
+		if got := strings.Join(*removals, ","); got != "old other" {
+			t.Errorf("the step asked to remove %q, want the old registration by the path", got)
 		}
 	})
 }
