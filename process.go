@@ -645,10 +645,17 @@ func (p *managedProc) killGroupBeforeExitFrame() {
 // (measured on Linux and macOS). A TERM there sends no signal to the ended child either
 // (measured on Linux). The exit frame of the process.kill case has no killedBy (measured on Linux and macOS),
 // and this stamps none. The Windows answer is not measured. On Windows the error is ignored.
-func (p *managedProc) killGroupInDrain() {
+//
+// With skipLivePid true it sends nothing if pidInUse finds a live process at the pid of
+// the ended child, because the group number is that pid (claustrum's own, not measured).
+// process.kill passes true and killAndWait passes false.
+func (p *managedProc) killGroupInDrain(skipLivePid bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || !p.reaped || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	if skipLivePid && pidInUse(p.cmd.Process.Pid) {
 		return
 	}
 	_ = signalGroup(p.group, p.cmd.Process, "KILL")
@@ -1469,7 +1476,8 @@ func (p *managedProc) stdinWriter() {
 // process group. (Windows is immune: the process handle pins identity.) The skip
 // is OS-level hardening only, and the reply is a success there. On Linux and macOS a
 // KILL inside the exit drain kills the group at once (killGroupInDrain), as b3081b51
-// does (measured). The spelling "SIGKILL" there is not measured.
+// does (measured). The spelling "SIGKILL" there is not measured. A live process at
+// the pid of the ended child skips that kill (claustrum's own, not measured).
 //
 // It returns a *signalFailed when the system refused the signal, and process.kill
 // answers its text (see signalFailed). Each other case returns nil.
@@ -1480,7 +1488,7 @@ func (m *procManager) kill(id, signal string) error {
 	}
 	live, err := p.signalIfLiveErr(signal, "client")
 	if !live && killEndsDrainGroup && strings.TrimPrefix(signal, "SIG") == "KILL" {
-		p.killGroupInDrain()
+		p.killGroupInDrain(true)
 	}
 	return err
 }
@@ -1677,7 +1685,7 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 		logging.Warnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.name, err)
 	}
 	if !live && strings.TrimPrefix(signal, "SIG") == "KILL" {
-		p.killGroupInDrain()
+		p.killGroupInDrain(false)
 	}
 	select {
 	case <-p.done:

@@ -670,7 +670,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/git-worktree-remove.md":       4714,  // the plain path of a baseRepo that exists. 4701: the marker link, the backticks and the stray commondir text of b3081b51, with Linux and macOS for the stray commondir. 4624: the locked gone entry behind a Windows link. 4599: the failed git-directory listing of b3081b51. 4479: the links at the registrations folder on Windows, b3081b51. 4438: the claims fixes of m-19. 4422: the gone worktree of b3081b51. 4398: the alternates line of b3081b51. 4369: macOS for the containment backticks. 4367: the backticks of the containment refusal of be1c1ca5. 4325: the lock texts of be1c1ca5. 4112: rewrite to the page template
 	"docs/protocol/launcher-resolve.md":          1834,  // the both-refused and empty processWrapper rules of b3081b51. 1807: the env kinds and the file order of b3081b51. 1738: the value that is not a string, of b3081b51. 1620: rewrite to the page template
 	"docs/protocol/plugins-prune.md":             1199,  // the not-measured dial failures. 1186: a sibling at a long socket path. 1084: the page rewrite
-	"docs/protocol/process-kill.md":              1042,  // the KILL in the exit drain of b3081b51. 931: the page template
+	"docs/protocol/process-kill.md":              1065,  // the live-pid skip of the drain kill. 1042: the KILL in the exit drain of b3081b51. 931: the page template
 	"docs/protocol/process-killandwait.md":       994,   // the TERM rule of b3081b51 in the exit drain. 977: the page template
 	"docs/protocol/process-link-bound.md":        740,
 	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
