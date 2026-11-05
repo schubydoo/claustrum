@@ -373,29 +373,29 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// The run dir (CLAUDE_SSH_RUN_DIR) is the folder of the socket path, on every
 	// socket shape. spawn launches children through the exec-child trampoline (see
 	// execchild.go).
-	procs.runDir = execChildRunDir(socket)
+	procs.RunDir = execChildRunDir(socket)
 	// Hold the run dir open from here on, so a child record follows the folder
 	// through a rename (linux and darwin, a no-op on windows).
-	procs.holdRunDir()
+	procs.HoldRunDir()
 	// The daemon instance id, stamped into each child's orphan-registry record so a
 	// later daemon can tell this daemon's children from its own.
-	procs.instanceID = instanceID
+	procs.InstanceID = instanceID
 	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
 	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
-	// recorded children become candidates. reapOrphans independently re-checks that each
+	// recorded children become candidates. ReapOrphans independently re-checks that each
 	// owning daemon is gone before it touches a child. Synchronous, and BEFORE the bind:
 	// while the reap waits for a group to end, the old socket file stays as it is and
 	// nothing listens. A client that connects in that wait gets ECONNREFUSED from a
 	// stale socket file, or ENOENT when there is none (measured: the first connection
 	// worked 2.2 to 2.4 s after the start, for a child that ignores SIGTERM). A no-op
-	// off linux and darwin (see childreap_*.go).
+	// off linux and darwin (see internal/childrec/childreap_*.go).
 	//
 	// A daemon that does not hold the run-dir lock runs no reap and writes no child
 	// record. A measurement shows that for a held flock (`5fd08069`, measured on
 	// Linux).
-	procs.noRecords = !claim.Holder
+	procs.NoRecords = !claim.Holder
 	if claim.Holder {
-		procs.reapOrphans()
+		procs.ReapOrphans()
 	}
 
 	_ = os.Remove(socket) // clear a stale socket

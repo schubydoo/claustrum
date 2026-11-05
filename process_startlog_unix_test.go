@@ -227,7 +227,7 @@ func TestTrampolineStartFailureAnswersWithDirectStart(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(d000, 0o700) })
 	m := newTestProcManager(t)
-	m.runDir = runDir // a run dir makes spawn go through the trampoline
+	m.RunDir = runDir // a run dir makes spawn go through the trampoline
 	exe, env := helperCommand(t, "echo")
 
 	_, err := m.spawn(nil, "p1", exe, []string{"hi"}, d000, env, false)
@@ -265,7 +265,7 @@ func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	runDir := t.TempDir()
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
-	m.runDir = runDir
+	m.RunDir = runDir
 	c, frames := pipeConn(t)
 	exe, env := helperCommand(t, "environ")
 	env[envChildMarker] = "1:1"

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/install"
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -287,36 +288,9 @@ type procManager struct {
 	// once at the start of the daemon. The zero value is off.
 	jobs childJobs
 
-	// runRecords holds the run dir and the child-record state (childrecord*.go,
-	// childreap*.go). Its fields are promoted, so code reads them as fields of the manager.
-	runRecords
-}
-
-// runRecords is the run dir of the daemon and the state of its child records. It is set
-// once at daemon startup (newServerOnSocket) and is read-only after that.
-type runRecords struct {
-	// runDir is the run dir of the daemon (CLAUDE_SSH_RUN_DIR): the folder of its
-	// socket path (execChildRunDir). It is "" only for a manager with no socket, as a
-	// unit test builds one. Set once at daemon startup (newServerOnSocket). When
-	// non-empty, spawn launches children through the exec-child trampoline; when
-	// empty it spawns them directly. Read-only after startup.
-	runDir string
-
-	// instanceID is the daemon's per-boot instance id (== server.capabilities
-	// instance_id), threaded in at startup alongside runDir. It is stamped into each
-	// child's orphan-registry record (childRecord.Instance) so a later daemon can tell
-	// this daemon's children apart from its own. Read-only after startup.
-	instanceID string
-	// noRecords is set for a daemon that does not hold the run-dir lock: it writes
-	// no child record. That is measured for a held flock (`5fd08069`, measured on
-	// Linux).
-	noRecords bool
-
-	// runRoot is the run dir, held open for the child records (linux and darwin, see
-	// childrecord_unix.go). runRootOnce guards the one open. Unused on windows.
-	runRootOnce sync.Once //nolint:unused // used in childrecord_unix.go only
-	runRoot     *os.Root  //nolint:unused // used in childrecord_unix.go only
-	runRootErr  error     //nolint:unused // used in childrecord_unix.go only
+	// Records holds the run dir and the child-record state (internal/childrec). Its
+	// fields are promoted, so code reads them as fields of the manager.
+	childrec.Records
 }
 
 // sessionSpawnLock is one per-session-key mutex plus a reference count, so the
@@ -885,7 +859,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	var tempAnswer *rpc.CLITempRoot
 	releaseTemp := func() {}
 	if tempRoot && launcher == nil {
-		cmd.Env, tempAnswer, releaseTemp = privateTempRoot(cmd.Env, m.runDir)
+		cmd.Env, tempAnswer, releaseTemp = privateTempRoot(cmd.Env, m.RunDir)
 	}
 	keptTemp := false
 	defer func() {
@@ -903,7 +877,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	// The path, argv and env before the wrap are kept for the direct start below.
 	// The env is a copy, because the wrap edits the env slice in place.
 	directPath, directArgs, directEnv := cmd.Path, cmd.Args, slices.Clone(cmd.Env)
-	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.runDir)
+	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.RunDir)
 	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
 	// below; a no-op (both ends nil) when the spawn was not trampolined.
 	closeExecErr := func() {
@@ -986,7 +960,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 		cmd = &exec.Cmd{
 			Path:        directPath,
 			Args:        directArgs,
-			Env:         trampolineFallbackEnv(directEnv, m.runDir),
+			Env:         trampolineFallbackEnv(directEnv, m.RunDir),
 			Dir:         cmd.Dir,
 			SysProcAttr: cmd.SysProcAttr,
 			Stdout:      stdoutW,
@@ -1114,7 +1088,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	// The end of the child removes its registry record (linux and darwin, a no-op
 	// on windows). The pid is copied here, so the exit goroutine needs no lock.
 	childPid := cmd.Process.Pid
-	p.forgetRecord = func() { m.removeChildRecord(childPid) }
+	p.forgetRecord = func() { m.RemoveChildRecord(childPid) }
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
 	// A spawn with the id of a process that still runs replaces the table entry, and
@@ -1160,7 +1134,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
 	// non-destructive: errors are logged, and it never affects the spawn result.
 	// With a launcher, argv0 is the launcher and program is the command.
-	m.recordChild(cmd.Process.Pid, path, program)
+	m.RecordChild(cmd.Process.Pid, path, program)
 
 	go p.stdinWriter()
 	var wg sync.WaitGroup

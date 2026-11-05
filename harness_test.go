@@ -61,9 +61,9 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	// Mirror production (newServerOnSocket): the run dir is the folder of the socket,
 	// so every boot trampolines its spawns on linux and darwin, and the daemon
 	// instance id is threaded into the proc manager for child records.
-	s.procs.runDir = execChildRunDir(sock)
-	s.procs.holdRunDir()
-	s.procs.instanceID = s.instanceID
+	s.procs.RunDir = execChildRunDir(sock)
+	s.procs.HoldRunDir()
+	s.procs.InstanceID = s.instanceID
 	// The settings control of the git methods has the same run dir, as in production.
 	s.gitShadow = git.NewShadowHost(execChildRunDir(sock))
 	go func() {

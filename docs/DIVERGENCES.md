@@ -474,7 +474,7 @@ have no flag and no key.
   `SIGKILL` (then this is parity). Or a child outlived a daemon restart because
   it replaced its program.
 - **Pointers.** [DAEMON.md → Child records and the reap](DAEMON.md#child-records-and-the-reap-linux-and-macos)
-  and `childreap.go` (`settleGone`, `reapGoneLeader`).
+  and `internal/childrec/childreap.go` (`settleGone`, `reapGoneLeader`).
 
 ### D22 · Refuse a worktree locked in the `.git` folder of `baseRepo` on remove (always-on) { #d22 }
 

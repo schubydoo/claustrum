@@ -829,7 +829,7 @@ func TestSpawnLauncherCannotStart(t *testing.T) {
 	}
 	_, bare := newRunningServer(t)
 	s, shaped := newRunningServerAt(t, filepath.Join(runDir, "rpc.sock"))
-	if s.procs.runDir == "" {
+	if s.procs.RunDir == "" {
 		t.Fatal("the run-shaped socket did not enable the trampoline")
 	}
 	for name, sock := range map[string]string{"bare": bare, "trampoline": shaped} {

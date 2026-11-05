@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
@@ -37,9 +38,9 @@ func newTeardownServer(t *testing.T) (*server, string, string) {
 	}
 	s := newTestServer(t)
 	s.ln = ln
-	s.procs.runDir = execChildRunDir(sock)
-	s.procs.holdRunDir()
-	s.procs.instanceID = s.instanceID
+	s.procs.RunDir = execChildRunDir(sock)
+	s.procs.HoldRunDir()
+	s.procs.InstanceID = s.instanceID
 	go func() {
 		for {
 			nc, err := ln.Accept()
@@ -117,7 +118,7 @@ func TestNoChildStartsAfterShutdownBegan(t *testing.T) {
 	if n := started.Load(); n != 0 {
 		t.Errorf("the late spawn ran the start of a child %d time(s), want none", n)
 	}
-	if ents, err := os.ReadDir(filepath.Join(runDir, childrenDirName)); err == nil && len(ents) != 0 {
+	if ents, err := os.ReadDir(filepath.Join(runDir, childrec.ChildrenDirName)); err == nil && len(ents) != 0 {
 		t.Errorf("the late spawn left %d entries in children/, want none", len(ents))
 	}
 	if strings.Contains(logs.String(), "Process late started") {
@@ -255,7 +256,7 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 	if !strings.Contains(logs.String(), "ended 0 child process group(s)") {
 		t.Errorf("the cleanup line counts a child:\n%s", logs.String())
 	}
-	children := filepath.Join(runDir, childrenDirName)
+	children := filepath.Join(runDir, childrec.ChildrenDirName)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		ents, err := os.ReadDir(children)
