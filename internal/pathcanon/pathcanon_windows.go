@@ -46,27 +46,40 @@ func AsRecorded(p string) string {
 // a junction still finds a locked registration. Measured against f6010b97 on
 // Windows.
 func FinalDir(p string) string {
+	if s, err := FinalPath(p); err == nil {
+		return s
+	}
+	return Canonical(p)
+}
+
+// FinalPath is the path of the existing file or folder p as the file system reports
+// it for an open handle, with every junction, symbolic link and 8.3 short name
+// resolved. It answers the error of a step that fails.
+func FinalPath(p string) (string, error) {
 	pp, err := windows.UTF16PtrFromString(p)
 	if err != nil {
-		return Canonical(p)
+		return "", err
 	}
 	h, err := windows.CreateFile(pp, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
-		return Canonical(p)
+		return "", err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 	buf := make([]uint16, 1024)
 	// Flags 0 are FILE_NAME_NORMALIZED and VOLUME_NAME_DOS: a drive-letter path.
 	n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)
-	if err != nil || n == 0 || int(n) > len(buf) {
-		return Canonical(p)
+	if err != nil {
+		return "", err
+	}
+	if n == 0 || int(n) > len(buf) {
+		return "", windows.ERROR_INSUFFICIENT_BUFFER
 	}
 	s := windows.UTF16ToString(buf[:n])
 	if rest, ok := strings.CutPrefix(s, `\\?\UNC\`); ok {
-		return `\\` + rest
+		return `\\` + rest, nil
 	}
-	return strings.TrimPrefix(s, `\\?\`)
+	return strings.TrimPrefix(s, `\\?\`), nil
 }
 
 // Same compares two Canonical results without regard to slash

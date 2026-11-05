@@ -320,6 +320,7 @@ After a good add in the state `shadow`, a create removes old staging entries of 
 === "Windows"
 
     - A junction between `baseRepo` and the worktree is refused with `mkdir_failed`.
+    - A junction at `baseRepo` or above it passes. The worktree, its registration and the branch are made in the real repository. The `gitdir` record names the leaf with the junction resolved. After a failed checkout there, the leaf, the registration and the branch go (measured on Windows). A create that holds no git directory keeps the registration there (claustrum's own, not measured).
     - The stale registration goes by the same rule, after `rev-parse --absolute-git-dir`. The compare ignores letter case, measured for a create that holds its git directory. An entry whose record names a path that exists stays ([D27](../DIVERGENCES.md#d27)).
     - A rename of the staging folder that still fails after its retries gives `worktree_add_failed`.
     - An alternates file with Windows line endings or too many object directories gives `worktree_add_failed`, and nothing is made (from the code). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).

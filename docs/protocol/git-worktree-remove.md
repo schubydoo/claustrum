@@ -44,7 +44,7 @@ A failure has no `errorCode`. Unless a section below says otherwise, a failure d
 | `failed to remove worktree: could not check whether <p> is locked` | The daemon could not read the repository safely. A text in brackets ends with `; retry`. Only a passing cause, such as a file that changed during the request, gives a second try a chance. A repository that git cannot use fails again in the same way. A text after a colon has no `; retry`. |
 | `failed to remove worktree:` with another text | A check or a delete step failed. The sections below say what stays. |
 
-In the texts, `<p>` is `worktreePath` as sent. Three texts start in another way: the home refusal `worktreePath must not be or contain the home directory: "<p>"`, the managed-worktrees refusal `baseRepo is inside a managed worktrees directory …`, and the registration text of step 3 below.
+In the texts, `<p>` is `worktreePath` as sent, except one Windows home refusal (Platform notes). Three texts start in another way: the home refusal `worktreePath must not be or contain the home directory: "<p>"`, the managed-worktrees refusal `baseRepo is inside a managed worktrees directory …`, and the registration text of step 3 below.
 
 ## Error texts
 
@@ -65,7 +65,7 @@ The shared texts are in the [error-string catalogue](errors.md#error-string-cata
 | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | A leaf that is a symbolic link or not a directory. Nothing is deleted (measured on macOS) |
 | `refusing to remove worktree: <t> changed while the removal was checking it` | claustrum's own text for a leaf that another directory replaced between two looks. Nothing is deleted. On Linux and macOS, with `worktreeRoot`, a `<directory>` that turns into a symlink out of the root between two looks answers `failed to remove worktree: openat <directory>: path escapes from parent` (claustrum's own) |
 | `failed to remove worktree: openat <path from baseRepo>: path escapes from parent` | [D19](../DIVERGENCES.md#d19), Windows, when a directory between `baseRepo` and the leaf is a junction. `<path from baseRepo>` is the folder that holds the leaf, relative to `baseRepo`, for example `.claude\worktrees`. claustrum's own text. Nothing is deleted, and the branch stays |
-| `worktreePath must not be or contain the home directory: …` | [D2](../DIVERGENCES.md#d2). Without `worktreeRoot` the containment answers first, so it fires only if a repo is an ancestor of home. With `worktreeRoot` it is the active home guard |
+| `worktreePath must not be or contain the home directory: …` | [D2](../DIVERGENCES.md#d2). Without `worktreeRoot` the containment answers first, so it fires only if a repo is an ancestor of home, or on Windows behind a junction (Platform notes). With `worktreeRoot` it is the active home guard |
 
 ### Locks and the repository
 
@@ -188,6 +188,7 @@ A gone worktree directory is no error by itself. After the repository checks, th
     - An unreadable folder is not measured.
     - If `<git dir>\worktrees` is a junction or a directory symbolic link, a worktree that exists gets the lock-check refusal. The leaf, the registration behind the link and the branch stay (`b3081b51`, measured on Windows). With `"shadowDirOff":true` the refusal holds too (claustrum's own, not measured). A gone worktree whose entry is not locked gets success, and its branch goes. The registration behind the link stays (`b3081b51`, measured on Windows). A gone worktree with a locked entry behind the link gets the locked refusal, and nothing is deleted (claustrum's own, not measured).
     - The path compare of a registration ignores letter case and slash direction. An 8.3 short name does not match a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes.
+    - A `baseRepo` with a junction before its last name, such as `<out>\JP\repo`, finds a worktree that exists. The leaf, the registration and the branch go (measured on Windows). A parent folder of `baseRepo` that denies List takes the same path, and the remove goes on (claustrum's own, not measured). If the path behind the junction is home or holds home, the reply is `worktreePath must not be or contain the home directory: "<path behind the junction>"`, and nothing is deleted ([D2](../DIVERGENCES.md#d2), claustrum's own, not measured).
     - An alternates file with Windows line endings or too many object directories gets `… is locked: <text>`, and nothing is deleted, also for a gone worktree folder (measured on Windows). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
     - A `\\?\UNC\` `baseRepo`, or one on a missing share, gets `"success":false`. [UNC refusals](git-rules-trust.md#unc-refusals).
 

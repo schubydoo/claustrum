@@ -1094,9 +1094,9 @@ func (st *addStage) writeStagedRecord(reg *os.Root, staging, leaf string) error 
 }
 
 // stagedRecordText is the `gitdir` record of the new worktree leaf: the
-// resolved path of leaf with forward slashes, `/.git` and a newline.
+// resolved path of leaf (leafRecordPath) with forward slashes, `/.git` and a newline.
 func stagedRecordText(leaf string) string {
-	p := resolveAsFarAsExists(filepath.Clean(leaf))
+	p := leafRecordPath(leaf)
 	return filepath.ToSlash(p) + "/.git\n"
 }
 
@@ -1376,7 +1376,7 @@ func stagedRecordRefusal(a *acceptedGitDir, leaf string) string {
 		if !filepath.IsAbs(rec) {
 			rec = filepath.Join(a.path, rel, rec)
 		}
-		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(rec)), resolveAsFarAsExists(leaf)) {
+		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(rec)), leafRecordPath(leaf)) {
 			return ""
 		}
 	}

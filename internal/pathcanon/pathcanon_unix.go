@@ -28,6 +28,12 @@ func FinalDir(p string) string {
 	return Canonical(p)
 }
 
+// FinalPath is filepath.EvalSymlinks. On Windows it reads the path of an open
+// handle (see pathcanon_windows.go).
+func FinalPath(p string) (string, error) {
+	return filepath.EvalSymlinks(p)
+}
+
 // Same compares two Canonical results as plain strings.
 func Same(a, b string) bool {
 	return a == b
