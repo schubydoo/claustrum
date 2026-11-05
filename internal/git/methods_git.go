@@ -2591,6 +2591,14 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// The one git call of 89cb6289 is the read of the user excludes (measured
 			// on Linux).
 			userExcludesFile()
+			// A stray commondir in a git directory that fails the git-directory test
+			// answers its text after a colon (`b3081b51`, measured on Linux and macOS
+			// with a bad HEAD and a dangling commondir link). `89cb6289` answered the
+			// lock-check text there on Linux. Windows is claustrum's own, not
+			// measured. Every other refusal keeps the lock-check text.
+			if strings.HasSuffix(t.refusal, strayShapeTail) {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + t.refusal)
+			}
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		// A refused daemon GIT_CONFIG_COUNT gets the same answer. hostileConfigRefusal
@@ -2785,8 +2793,15 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if !entryAlreadyGone(gitDir, commonDir) {
 			var r *worktreeRefusal
 			if errors.As(dotGitErr, &r) {
-				return refuse(fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%v), "+
-					"so it is left in place; remove it by hand if it is a leftover", p.WorktreePath, repo, dotGitErr))
+				// For a missing baseRepo the folder with no `.git` entry is in backticks
+				// (`b3081b51`, measured on Linux and macOS). For a baseRepo that exists the path stays
+				// plain (claustrum's own, not measured).
+				reason := r.text
+				if repoMissing && reason == noGitFileText(target.path) {
+					reason = noGitFileText(tickPath(target.path))
+				}
+				return refuse(fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%s), "+
+					"so it is left in place; remove it by hand if it is a leftover", p.WorktreePath, repo, reason))
 			}
 			// One input is measured, with git on PATH (measured on Linux). It is a missing
 			// baseRepo and a `.git` file that names an entry of another missing

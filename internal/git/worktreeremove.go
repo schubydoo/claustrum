@@ -219,12 +219,17 @@ func checkLeafIdentity(parent *os.Root, leaf string, leafDir *os.Root, path stri
 	return nil
 }
 
+// noGitFileText is the reason of a worktree folder p with no `.git` entry.
+func noGitFileText(p string) string {
+	return p + " has no .git file"
+}
+
 // worktreeGitFileTarget reads the `.git` file of the worktree through leafDir. It
 // returns the git dir that the file names. A relative one is taken relative to path.
 func worktreeGitFileTarget(leafDir *os.Root, path string) (string, error) {
 	fi, err := leafDir.Lstat(".git")
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", refuseWorktree("%s has no .git file", path)
+		return "", refuseWorktree("%s", noGitFileText(path))
 	}
 	if err != nil {
 		return "", err
