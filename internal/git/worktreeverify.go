@@ -32,7 +32,7 @@ func (cp worktreeCheckpoint) release() {
 }
 
 // evalSymlinks is filepath.EvalSymlinks behind a seam, so the failure arm of
-// checkpointCreatedWorktree is reachable from a test. baseRepoWalkFails uses the seam
+// checkpointCreatedWorktree is reachable from a test. linkWalkFails uses the seam
 // too. Production never reassigns it.
 var evalSymlinks = filepath.EvalSymlinks
 

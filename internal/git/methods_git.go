@@ -853,8 +853,7 @@ func gitStatus(req *gitCall) rpc.Response {
 }
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
-// git.status treats such a baseRepo as missing, and git.list_branches such a path
-// (docs/protocol/git-status.md, docs/protocol/git-list-branches.md).
+// git.status treats such a baseRepo as missing (docs/protocol/git-status.md).
 func unresolvable(p string) bool {
 	_, err := filepath.EvalSymlinks(p)
 	return err != nil
@@ -879,12 +878,15 @@ func gitListBranches(req *gitCall) rpc.Response {
 	}
 	// A path inside a managed worktrees tree, and a non-empty path that does not
 	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
-	// and before the check of the daemon's own GIT_CONFIG_COUNT.
+	// and before the check of the daemon's own GIT_CONFIG_COUNT. On Windows the
+	// resolve walks the path as sent (linkWalkFails), so a junction before the last
+	// name passes, as on b3081b51 (measured on Windows). A ".." drops the name before
+	// it untested, so b3081b51 lists <T>\missing\.. and <T>\t.txt\.. (measured on Windows).
 	// git.list_branches ignores a baseRepo member, as 5fd08069 does (measured on
 	// Linux). The managed-worktrees test also runs on the daemon's working
 	// directory.
 	if baseRepoUnderManagedWorktrees(p.Path) || baseRepoUnderManagedWorktrees(p.repoDir()) ||
-		(p.Path != "" && unresolvable(p.Path)) {
+		(p.Path != "" && linkWalkFails(p.Path, true)) {
 		return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the

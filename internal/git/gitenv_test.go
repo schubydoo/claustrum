@@ -1014,7 +1014,9 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 // worktree under .claude/worktrees), Z1b (a repository there), Z1c (a repository
 // below a directory holding the marker), Z1c-w9 (a worktreeRoot worktree), val3
 // windows Z2 (a missing component before "..") and val4 L1f (a regular file before
-// "..").
+// ".."). Those two rows came from a build before b3081b51 (PR 441). On Windows ".."
+// drops the name before it untested, so b3081b51 lists <T>\missing\.. and <T>\t.txt\..
+// (measured on Windows). There Z2 and L1f get the answer of <T>.
 func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 	f := newWTFixture(t, false)
 	b := filepath.Dir(f.top)
@@ -1032,12 +1034,15 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 	run := installEnvStub(t)
 	clearDaemonConfigEnv(t)
 	sep := string(filepath.Separator)
-	rows := []struct{ row, path string }{
-		{"val3 Z1a", lw},
-		{"val3 Z1b", inner},
-		{"val3 Z1c", held},
-		{"val3 windows Z2", f.top + sep + "missing" + sep + ".."},
-		{"val4 L1f", strings.Join([]string{b, "F", "..", "T"}, sep)},
+	rows := []struct {
+		row, path string
+		folds     bool // on Windows the path names f.top
+	}{
+		{"val3 Z1a", lw, false},
+		{"val3 Z1b", inner, false},
+		{"val3 Z1c", held, false},
+		{"val3 windows Z2", f.top + sep + "missing" + sep + "..", true},
+		{"val4 L1f", strings.Join([]string{b, "F", "..", "T"}, sep), true},
 	}
 	branches := `["ex","lw","main"]`
 	// Windows refuses a worktreeRoot, so the Z1c-w9 row runs on Linux and macOS.
@@ -1052,7 +1057,10 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 		if !strings.Contains(raw, `"success":true`) {
 			t.Fatalf("create of w9 = %s", raw)
 		}
-		rows = append(rows, struct{ row, path string }{"val3 Z1c-w9", w9})
+		rows = append(rows, struct {
+			row, path string
+			folds     bool
+		}{"val3 Z1c-w9", w9, false})
 		branches = `["ex","lw","main","w9"]`
 	}
 	const bare = `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`
@@ -1073,6 +1081,12 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 			}
 			for _, r := range rows {
 				raw, calls := run("git.list_branches", map[string]any{"path": r.path})
+				if r.folds && runtime.GOOS == "windows" {
+					if raw != phase.control {
+						t.Errorf("%s\n got %s\nwant %s", r.row, raw, phase.control)
+					}
+					continue
+				}
 				if raw != bare {
 					t.Errorf("%s\n got %s\nwant %s", r.row, raw, bare)
 				}

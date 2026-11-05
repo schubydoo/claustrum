@@ -25,10 +25,8 @@ the daemon walks up from the request folder:
   junction resolves, and the pin is `<R>\.git`. A junction outside any repository
   gives "no repository", and each git call carries `GIT_DIR=NUL`.
 - On Windows the resolve of a folder path can fail, for example at a missing name
-  before `..`. The walk then starts at the spelled path. Only `git.info`
-  reaches that start. `git.list_branches` and `git.status` resolve the path first, and
-  so do the create and the remove for an existing `baseRepo`. If that resolve fails,
-  they answer there (all from the code).
+  before `..`. The walk then starts at the spelled path. `git.status` resolves the
+  path first. If that resolve fails, it answers there (all from the code).
 - On Windows a refusal of a config on `git.info` follows the spelled start too. In
   the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
   [Repository config refusals](git-rules-config.md#repository-config-refusals). A
