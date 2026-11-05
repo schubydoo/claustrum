@@ -316,6 +316,10 @@ component_management:
         - internal/pathcanon/netpath_windows.go
         - internal/files/filesreadreal_linux.go
         - internal/files/filesreadreal_other.go
+        # the ELOOP tries of files.stat, files.list and files.validate.
+        - internal/files/linkloopretry.go
+        - internal/files/linkloopretry_linux.go
+        - internal/files/linkloopretry_other.go
         # files.extract_tar: the remove of a destDir entry that Windows cannot read.
         - internal/files/extractunreadable.go
         - internal/files/extractunreadable_unix.go

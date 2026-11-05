@@ -101,8 +101,10 @@ const defaultReadMaxBytes = 262144
 // joining a path against a regular file. claustrum previously answered all three
 // with exists:false, which told the caller the path was absent when the real
 // problem was that the path was malformed or unusable.
+//
+// An ELOOP gets more tries (retryLinkLoop).
 func statForRequest(path string) (fs.FileInfo, error, bool) {
-	fi, err := os.Stat(path)
+	fi, err := retryLinkLoop(func() (fs.FileInfo, error) { return statPath(path) })
 	switch {
 	case err == nil:
 		return fi, nil, false
@@ -141,7 +143,10 @@ func filesList(req *rpc.Request) rpc.Response {
 	// byte-for-byte. Before 7d193f89 the reference said
 	// `readdirent <p>: not a directory` instead. On Windows the flag is 0 (no
 	// O_DIRECTORY) and this is os.Open, whose non-dir wording is not pinned there.
-	f, err := os.OpenFile(p.Path, os.O_RDONLY|oDirectoryFlag, 0)
+	// An ELOOP of the open gets more tries (retryLinkLoop).
+	f, err := retryLinkLoop(func() (*os.File, error) {
+		return openListDir(p.Path, os.O_RDONLY|oDirectoryFlag, 0)
+	})
 	if err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}

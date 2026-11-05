@@ -654,10 +654,10 @@ var docWordLimits = map[string]int{
 	"docs/index.md":                              316,  // the reader router
 	"docs/protocol/errors.md":                    2015, // the root as sent and the quoting and cut of the link-limit text. 1978: the link-limit backticks. 1957: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":         2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
-	"docs/protocol/files-list.md":                468,  // the network links of 683cc6a9
+	"docs/protocol/files-list.md":                550,  // the ELOOP tries of b3081b51. 468: the network links of 683cc6a9
 	"docs/protocol/files-read.md":                825,
-	"docs/protocol/files-stat.md":                434, // the page rewrite
-	"docs/protocol/files-validate.md":            365,
+	"docs/protocol/files-stat.md":                514,   // the ELOOP tries of b3081b51. 434: the page rewrite
+	"docs/protocol/files-validate.md":            445,   // the ELOOP tries of b3081b51
 	"docs/protocol/flags.md":                     2639,  // the prune after a good install. 2633: moved from PROTOCOL.md
 	"docs/protocol/git-info.md":                  1983,  // the network link test of b3081b51. 1947: the link chain row of its own (Linux and macOS run no link test). 1889: the link chain of git.info, b3081b51. 1881: the alternates row of b3081b51. 1850: the page rewrite
 	"docs/protocol/git-rules-calls.md":           5535,  // the ssh door entries of be1c1ca5. 5276: the trace and ssh entries. 5145: the core.hooksPath value. 5121: moved from PROTOCOL.md
