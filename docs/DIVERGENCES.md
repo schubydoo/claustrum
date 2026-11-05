@@ -508,8 +508,9 @@ have no flag and no key.
 
   With a daemon `GIT_DIR` that names a missing path, `b3081b51` deletes the
   folder of S and answers success (measured on Linux). claustrum answers the
-  locked refusal there when the leaf's `.git` file names a locked entry whose
-  `gitdir` record names S.
+  locked refusal there when a locked entry in the `.git` folder of `baseRepo`
+  has a `gitdir` record that names S ([which lock
+  counts](protocol/git-worktree-remove.md#the-repository-checks)).
 - **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
 - **Cost.** In these states claustrum sends `success:false` with a locked text,
   and a folder stays that the reference deletes. A caller must unlock the
