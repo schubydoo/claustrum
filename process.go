@@ -23,6 +23,12 @@ import (
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
+// The format text of the process exit line, claustrum's own, not measured. A
+// test checks its byte length.
+const (
+	fmtProcExited = "[process.Manager] Process %s exited with code %d%s"
+)
+
 // streamFrame is an id-less notification pushed to attached clients.
 // ExitCode is a pointer so a legitimate 0 is emitted while stdout/stderr frames
 // omit it entirely; Data is omitted on exit frames.
