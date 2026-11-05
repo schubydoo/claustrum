@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -646,41 +647,71 @@ func TestRelativeBackPointer(t *testing.T) {
 // TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk (measured
 // on macOS). The git stub runs the real read-tree and then sets the registrations
 // directory to mode 0600. The index cannot be placed, and the rollback cannot
-// delete the registration. The frame carries the openat text and the registration
+// delete the registration. The frame carries the examine text and the registration
 // clause, the leaf goes, and the registration and the branch stay: no branch step
-// runs. The text in the parentheses is the error of the delete, as in the cells.
-// In a measurement, a file is at the index first, and it keeps its bytes. One
-// measured case is in attach mode, where the clause names the registration alone.
+// runs. The text in the parentheses is the examine text too, and no delete of the
+// registration is tried. In a measurement, a file is at the index first, and it
+// keeps its bytes. One measured case is in attach mode, where the clause names the
+// registration alone. In the timeout rows the stub sleeps after the chmod, and
+// the deadline kills it during the checkout.
+//
+// b3081b51 measured Z11a, Z14 and Z14e. Z11b and Z13 follow from the same step
+// (claustrum's own, not measured on b3081b51: 89cb6289 gave the openat and
+// RemoveAll texts there).
 func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
-	const both = "the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
-	const attach = "the worktree registration remains; remove it by hand before retrying (RemoveAll w1: permission denied)"
+	const examined = `"worktrees" could not be examined (statat .: permission denied)`
+	const both = "the worktree registration and the branch remain; remove them by hand before retrying (" + examined + ")"
+	const attach = "the worktree registration remains; remove it by hand before retrying (" + examined + ")"
 	for _, tc := range []struct {
 		name, existing, undo, branch string
-		indexFile                    bool
+		indexFile, timeout           bool
 	}{
-		{"Z11a", "", both, "w1", false},
-		{"Z11b", "", both, "w1", true},
-		{"Z13", "ex", attach, "ex", false},
+		{"Z11a", "", both, "w1", false, false},
+		{"Z11b", "", both, "w1", true, false},
+		{"Z13", "ex", attach, "ex", false, false},
+		{"Z14", "", both, "w1", false, true},
+		{"Z14e", "ex", attach, "ex", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, h, tmp := indexInstallFixture(t)
 			t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })
+			var removals []string
+			old := removeHeldEntry
+			t.Cleanup(func() { removeHeldEntry = old })
+			removeHeldEntry = func(root *os.Root, name string) error {
+				removals = append(removals, name)
+				return old(root, name)
+			}
 			placed := filepath.Join(f.regDir, "w1", "index")
 			steps := [][]string{{"chmod", f.regDir, "600"}}
 			if tc.indexFile {
 				steps = append([][]string{{"write", placed, "placed\n"}}, steps...)
 			}
 			stubSteps(t, steps...)
-			slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
+			head, mid, code, timeoutMs := checkoutFailedHead, " "+examined, "worktree_add_failed", 0
+			if tc.timeout {
+				gate := gateStub(t, "read-tree", 30*time.Second, "", "")
+				t.Setenv("CLAUSTRUM_GITSTUB_MODE", "post")
+				deadlineAt(t, func() bool { return exists(gate + ".in") }, nil)
+				timeoutMs = markerTimeoutMs
+				head = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add timed out after ` +
+					strconv.Itoa(timeoutMs) + `ms (deadline expired during the checkout): ` + killedSuffix()
+				mid, code = "", "timeout"
+			} else {
+				slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
+			}
 
-			raw, _ := f.create(t, h, "w1", tc.existing, 0)
+			raw, _ := f.create(t, h, "w1", tc.existing, timeoutMs)
 			if err := os.Chmod(f.regDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			tail := jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+": "+tc.undo)
-			tail = tail[1:] + `,"errorCode":"worktree_add_failed"}}`
-			if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.HasSuffix(raw, tail) {
-				t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
+			if len(removals) != 0 {
+				t.Errorf("deletes through the held root = %q, want none", removals)
+			}
+			tail := jsonString(t, mid+"; and the undo could not finish for "+f.leaf()+": "+tc.undo)
+			tail = tail[1:] + `,"errorCode":"` + code + `"}}`
+			if !strings.HasPrefix(raw, head) || !strings.HasSuffix(raw, tail) {
+				t.Fatalf("reply = %s\nwant %s … %s", raw, head, tail)
 			}
 			if got := f.leafEntries(t); got != nil {
 				t.Errorf("leaf entries = %q, want the leaf removed", got)

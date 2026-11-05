@@ -873,7 +873,8 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 // One state is apart in both forms: a registration folder whose stat fails. No index of it can be
 // reached then, and the placement runs and fails by itself. Its error is the measured
 // text of a registration that is gone or of a registrations directory without the search
-// permission (measured on macOS).
+// permission (measured on macOS). With tested set, that directory gives the examine text
+// of b3081b51 instead (registrationsExamineError, measured on macOS).
 func guardedInstallWorktreeIndex(idx, adminDir, leaf string, tested testedRegistration) error {
 	if tested.path != "" {
 		return installTestedWorktreeIndex(idx, tested)

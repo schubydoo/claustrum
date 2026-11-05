@@ -149,8 +149,10 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     it after a failed placement of the index, with the leaf gone (measured on
 //     Linux and macOS). In attach mode the text reads "the worktree registration
 //     remains; remove it by hand before retrying (...)" instead (measured on Linux
-//     and macOS). A step C that fails too adds no text of its own (measured on
-//     Linux). A failed read-tree checkout and a timeout during the checkout give
+//     and macOS). After the tests, b3081b51 gives the examine text of a
+//     registrations folder that cannot be searched in the parentheses
+//     (registrationsExamineError, measured on macOS). A step C that fails too
+//     adds no text of its own (measured on Linux). A failed read-tree checkout and a timeout during the checkout give
 //     the same clause (measured on macOS). The same texts after the two other
 //     timeout frames are claustrum's choice (not measured). On Windows, for a
 //     create with no moved registration, a registration that cannot be deleted adds
@@ -519,6 +521,11 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 // delete use one registrations folder. A registrations folder that does not exist
 // has nothing to delete. One that is a symbolic link is refused with an error,
 // so nothing is deleted and the branch stays (deleteRoot, not measured).
+//
+// A registrations folder that the daemon opened and cannot search is refused
+// before the identity test and the delete (registrationsExamineError). Nothing is
+// deleted, and the branch stays. b3081b51 answers that text after a timeout
+// during the checkout, with the leaf gone (measured on macOS). Linux is not measured.
 func removeTestedRegistration(reg testedRegistration) error {
 	if homeguard.WipesHomeDir(reg.path) {
 		return nil
@@ -531,11 +538,25 @@ func removeTestedRegistration(reg testedRegistration) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
+	if err := registrationsExamineError(root, filepath.Dir(reg.path)); err != nil {
+		return err
+	}
 	name := filepath.Base(reg.path)
 	if reg.replacedIn(root, name) {
 		return nil
 	}
 	return removeHeldEntry(root, name)
+}
+
+// registrationsExamineError is the error of a look at "." in root, the opened
+// registrations folder dir, or nil. A folder with no search permission gives
+// `"worktrees" could not be examined (statat .: permission denied)` (measured on
+// macOS). On Windows it answers nil (levelSearchError).
+func registrationsExamineError(root *os.Root, dir string) error {
+	if err := levelSearchError(root); err != nil {
+		return fmt.Errorf("%q could not be examined (%v)", filepath.Base(dir), err)
+	}
+	return nil
 }
 
 // readRegistrationsDir is os.ReadDir behind a seam, so a test can fail a listing
