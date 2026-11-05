@@ -583,9 +583,12 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	addFrame := func(msg string) string {
 		return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, msg) + `,"errorCode":"worktree_add_failed"}}`
 	}
+	// b3081b51 puts the count text after a colon for a plain folder and a missing
+	// baseRepo (measured on Linux, macOS and Windows). With no settings control the
+	// repository row runs no start test and gets the same form (claustrum's own).
 	lockFrame := func(path, reason string) string {
-		return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
-			jsonString(t, "failed to remove worktree: could not check whether "+path+" is locked ("+reason+"); retry") + `}}`
+		text := "failed to remove worktree: could not check whether " + path + " is locked: " + reason
+		return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, text) + `}}`
 	}
 	type row struct {
 		name, method string

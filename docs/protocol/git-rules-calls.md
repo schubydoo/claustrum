@@ -312,9 +312,9 @@ git cannot parse it is from the code. "The count" below is the check of
 | `git.list_branches` | the same | Also a plain folder. The count also refuses a file and an empty or absent `path`, with a repository or a plain folder as the daemon's working directory. A `path` that is not empty and does not resolve, or that is inside a managed worktrees directory, gets `{"isRepo":false,"branches":[]}` before the count, with no git call |
 | `git.status` | the same | Also a plain-folder `baseRepo`. The count also refuses a `path` that is a plain folder, the repository, missing or a file. A `baseRepo` that does not resolve gets `{"isRepo":false,"clean":false}` before the count, with no git call. See [git.status](git-status.md#baserepo). From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, and no folder is made | Also a plain-folder `baseRepo`. The listing refuses it without and with `worktreeRoot`, and from the code the count does too. Without the refusal, a create with `worktreeRoot` there on Windows answers `not_a_repo`. The count also refuses a missing `baseRepo`. It comes before the refusals of a relative `worktreePath`, a `..` component, a path outside the repository and a path that exists. Three frames come before it: the `-32602` frame of a missing `branchName`, the `nested_base_repo` frame of a `baseRepo` inside a managed worktrees directory, and on Windows the frame of claustrum's own trust-root test. On Windows the count also comes before the `worktreeRoot` refusal |
-| `git.worktree_remove` | Without `worktreeRoot`, for a gone worktree: `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. With `worktreeRoot`: `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}` (measured on Linux and macOS) | A plain-folder `baseRepo`. The list below has the other cases |
+| `git.worktree_remove` | Without `worktreeRoot`, for a gone worktree: `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked: <text>"}`. With `worktreeRoot`: `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}` (measured on Linux and macOS) | A plain-folder `baseRepo`. The list below has the other cases |
 
-The other cases of `git.worktree_remove`:
+#### The other cases of `git.worktree_remove`
 
 - These refusals come first, with their usual frames: a relative path, a path
   outside the repository, the repository itself and a `..` component. With
@@ -328,14 +328,18 @@ The other cases of `git.worktree_remove`:
   `baseRepo` with mode 0600 and a path under `.claude` (measured on Linux and
   macOS).
 - Without `worktreeRoot`, the count also refuses a missing `baseRepo` in the
-  gone-worktree frame. For a worktree directory that is present, the count puts
-  `its registrations could not be examined` in place of `<text>`. On Linux and
+  gone-worktree frame. A worktree directory that is present gets `… is locked (its
+  registrations could not be examined); retry`. On Linux and
   macOS a `baseRepo` of `<T>/missing/..`, which does not resolve, gets that frame
   too. On Windows that `baseRepo` gets the managed-worktrees refusal first.
+- Without `worktreeRoot`, in a repository the start test of the settings copy runs
+  first and fails under the daemon's pair. Its text is `<text>` (measured on Linux, macOS and Windows).
+  Otherwise the count text stays (claustrum's own, not measured).
 - With `worktreeRoot`, the count also refuses a `baseRepo` that is a repository in
-  the work-tree frame. A trust refusal puts its own text there instead. For a
-  missing absolute `baseRepo` without a `..` component, the count answers in the
-  gone-worktree frame. A worktree directory that is present then gets `the
+  the work-tree frame. A trust refusal or a failed start test puts its own text
+  there instead. For a
+  missing absolute `baseRepo` without a `..` component, the count answers `… is
+  locked (<text>); retry`. A worktree directory that is present then gets `the
   repository at <baseRepo> could not be read` in place of `<text>`. If the root is
   missing too, the "not reachable" refusal comes first. Each rule of this bullet
   is measured on Linux and macOS.
