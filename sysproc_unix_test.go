@@ -77,7 +77,7 @@ func TestSignalToOneProcessGoesThroughItsHandle(t *testing.T) {
 		return nil
 	}
 	// A pid above every pid limit: a signal that misses the seam finds no process.
-	proc := &os.Process{Pid: 1 << 30}
+	proc := &os.Process{Pid: noSuchPid}
 	for _, name := range []string{"TERM", "", "INT", "HUP"} {
 		_ = signalProcessGroup(proc, name)
 	}

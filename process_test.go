@@ -19,6 +19,12 @@ import (
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
+// noSuchPid is the pid of a fake process behind the signalGroup seam. It is above the pid
+// limit of Linux and macOS, so it names no process and no group. If a change skips the
+// seam, kill(-noSuchPid) finds nothing. A fake pid of 1 would turn into kill(-1), which
+// signals every process of the user.
+const noSuchPid = 1 << 30
+
 // pipeConn returns a *conn whose writes are decoded into frames channel. It
 // backs the conn with net.Pipe and drains the read side in a goroutine so
 // synchronous writes (replay) don't deadlock.
@@ -1103,7 +1109,7 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	// A process mid-drain: reaped, but still running as far as clients are told.
 	p := &managedProc{
 		id: "DRAIN", running: true, reaped: true,
-		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
 	}
 	m.procs["DRAIN"] = p
 
@@ -1217,7 +1223,7 @@ func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &managedProc{
 		id: "WEDGED", running: true,
-		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
 	}
 
 	found, died, alreadyExited, escalated := m.killAndWaitProc(p, "TERM", 10*time.Millisecond, true)
@@ -1265,7 +1271,7 @@ func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
 
 	p = &managedProc{
 		id: "LIVE", running: true,
-		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
 	}
 	p.signalIfLive("TERM", "")
 
