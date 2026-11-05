@@ -326,6 +326,13 @@ are not measured on this build.
 **Divergences.** [CT-2](DIVERGENCES.md#ct-2) now covers a child with a pending
 farewell (PR 775) and a Windows daemon that is killed (PR 781).
 
+**Measured details.** A `process.kill` with `TERM` of a child that runs through
+`sudo` gets the reply first, then an `exit` frame with `"killedBy":"client"`.
+`be1c1ca5`, `b3081b51` and claustrum do this (measured on Linux). On these three
+the `exit` frame comes first with no `killedBy` only after a `TERM` sent by hand
+to the `sudo` pid. Correction of 2026-11-05: an open item said that this build
+sends no `killedBy` there. That run sent a `TERM` by hand first.
+
 These items stay open:
 
 - claustrum does not build the terminal of this build: the `pty` member of
@@ -340,9 +347,6 @@ These items stay open:
 - `plugins.prune` on Windows: for the run folder of the battery this build
   answered with the skip reply, and claustrum found its roots (Windows VM). PR 783
   follows it. Whether `c8e2f083` does the same is not measured.
-- After a client kill of a child that runs through `sudo` on Linux, the `exit`
-  frame of this build has no `killedBy` member (Linux VM). On macOS it has
-  `"killedBy":"client"`, as claustrum sends (from the code). The cause is not known.
 
 ### `c8e2f083a63593e9adf0bbebc99debff07a5545f` — 2026-10-06 (built)
 
