@@ -2,8 +2,8 @@
 """Lint ``codecov.yml`` so every production ``.go`` file sits in exactly one component.
 
 The ``component_management`` map in ``codecov.yml`` lists files one by one. A production
-file that is not listed still counts toward the project total (when the single Linux
-coverage cell compiles it), but its lines show under no component in the PR comment
+file that is not listed still counts toward the project total (when the Linux
+coverage shards compile it), but its lines show under no component in the PR comment
 and the dashboard, and nothing reports the gap.
 The 4534d86 reconciliation added nine production files over #314-#335 and none of
 them reached the map until #336. This lint fails the PR that introduces the tenth.

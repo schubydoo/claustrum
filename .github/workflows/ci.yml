@@ -166,7 +166,7 @@ jobs:
       # The tests named TestRepoHold are tests of the settings copy too, so they
       # go with TestShadow in every shard set. The Windows rest shard passed its
       # 12 minutes with them in it.
-      # The coverage job below still runs the whole suite in one leg.
+      # The coverage shards below run the three sets of the macOS legs.
       matrix:
         include:
           - os: ubuntu-latest
@@ -368,9 +368,63 @@ jobs:
               go build -trimpath -ldflags="-s -w" -o "/tmp/claustrum-${t%/*}-${t#*/}" .
           done
 
+  coverage-shard:
+    # The coverage run is three Ubuntu shards with the -run and -skip sets of
+    # the macOS legs of the test job, so together they run every test once. In
+    # one process internal/git alone took up to 720 s of the old 14 minute limit.
+    # Each shard writes its own profile with -coverpkg=./..., and the coverage
+    # job below merges them.
+    needs: changes
+    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
+    name: coverage shard (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # 3 minutes above the 12 minutes of the go test time limit below
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: worktree
+            select: -run=^TestWorktree
+          - shard: status
+            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+          - shard: rest
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests with coverage
+        # GOFLAGS carries the shard's -run or -skip flag, as in the test job.
+        env:
+          GOFLAGS: ${{ matrix.select }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          go test -race -count=1 -timeout 12m \
+            -coverprofile="coverage-${SHARD}.out" \
+            -covermode=atomic \
+            -coverpkg=./... \
+            ./...
+
+      # `!cancelled()` so a FAILED shard still hands its profile to the merge,
+      # and Codecov still gets the drop.
+      - name: Upload shard profile
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage-${{ matrix.shard }}.out
+          retention-days: 1
+
   coverage:
-    # Single Ubuntu run with cross-package attribution (-coverpkg=./...) so
-    # socket-driven hits count against every package. Floor is a notch below the
+    # Merges the profiles of the coverage shards. Cross-package attribution
+    # (-coverpkg=./...) makes socket-driven hits count against every package.
+    # This job keeps its name, so the total still reports under it, and the
+    # aggregator below still needs it. Floor is a notch below the
     # current number so new commits don't immediately fail; raise it as the suite
     # grows. (50% → 65% after the install/bridge/version/signal unit tests took
     # total coverage to ~70%; → 75% after the methods/process/extract-tar/
@@ -378,11 +432,11 @@ jobs:
     # the osExit-seam lifecycle tests took it to ~98% — what remains is
     # unreachable in-process (os.Executable/build-info/crypto-rand failures) or
     # Windows-only arms this Ubuntu job can't see.)
-    needs: changes
+    needs: [changes, coverage-shard]
     if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: coverage (>= 95%)
     runs-on: ubuntu-latest
-    timeout-minutes: 17 # above the 14 minutes of the go test time limit below
+    timeout-minutes: 10
     env:
       COVERAGE_MIN: "95.0"
     steps:
@@ -394,17 +448,36 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests with coverage
-        run: |
-          go test -race -count=1 -timeout 14m \
-            -coverprofile=coverage.out \
-            -covermode=atomic \
-            -coverpkg=./... \
-            ./...
+      - name: Download shard profiles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-shard-*
+          merge-multiple: true
 
-      - name: Enforce minimum coverage
+      # Each line of a text profile is `file:start.col,end.col statements count`.
+      # The merge keeps the first mode line and sums the count of each block over
+      # all profiles, in the order of first appearance. That is the sum that
+      # `go tool cover` makes of the blocks that repeat inside one profile.
+      # `go tool covdata` reads only the folders of a -cover binary, not these files.
+      - name: Merge shard profiles
         run: |
           set -euo pipefail
+          ls -l coverage-*.out
+          awk '
+            FNR == 1 { if (mode == "") { mode = $0 } else if ($0 != mode) { print "mode differs in " FILENAME > "/dev/stderr"; exit 1 }; next }
+            { key = $1 " " $2; if (!(key in count)) order[++n] = key; count[key] += $3 }
+            END { print mode; for (i = 1; i <= n; i++) print order[i], count[order[i]] }
+          ' coverage-*.out > coverage.out
+
+      - name: Enforce minimum coverage
+        env:
+          SHARDS_RESULT: ${{ needs.coverage-shard.result }}
+        run: |
+          set -euo pipefail
+          if [ "$SHARDS_RESULT" != "success" ]; then
+            echo "::error::the coverage shards ended with ${SHARDS_RESULT}"
+            exit 1
+          fi
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
           echo "Total coverage: ${total}%"
           if awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN { exit !(t < m) }'; then
@@ -453,7 +526,7 @@ jobs:
     # fails this job. A job stopped by its time limit is not measured here.
     # The draft term skips it on a draft, as it skips the jobs that it needs.
     if: ${{ !cancelled() && github.event.pull_request.draft != true }}
-    needs: [changes, lint, test, cross-build, coverage]
+    needs: [changes, lint, test, cross-build, coverage-shard, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

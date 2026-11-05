@@ -1,19 +1,20 @@
 # Codecov config. Coverage is REPORTED here for visibility (PR comment + trend
 # graphs + per-component breakdown); the REAL gate is the CI coverage floor in
 # .github/workflows/ci.yml (the `coverage (>= 95%)` job enforces COVERAGE_MIN on
-# the single Ubuntu cell). The `project` status is `informational: true` (nudge,
+# the merged profile of the three Ubuntu coverage shards). The `project` status is `informational: true` (nudge,
 # never block); `patch` is a real pass/fail traffic light on new-code coverage —
 # but neither is a *required* check, so a red `patch` X still leaves the merge
 # button green unless someone adds `codecov/patch` to branch protection. Coverage
-# uploads from ONE Linux cell (the cross-package `-coverpkg=./...` run in ci.yml),
-# so COVERAGE flags / carryforward / report-merging aren't needed.
+# uploads from ONE Linux cell: the `coverage` job merges the `-coverpkg=./...`
+# profiles of the three `coverage-shard` cells in CI and uploads one report, so
+# COVERAGE flags / carryforward / report-merging in Codecov aren't needed.
 #
 # TEST RESULTS are separate and DO carry flags. The `test` job runs seven cells on
 # three OSes (two shards on Linux and macOS, three on Windows) and uploads a gotestsum-produced junit.xml
 # per cell with `report_type: test_results` and `flags: <Linux|macOS|Windows>`.
 # The shards of one OS share the flag of that OS and hold different tests. Test Analytics
 # (flaky + slow tests) breaks out per platform — the axis claustrum actually varies
-# on. Those flags tag test results, not coverage, so the single-cell coverage story
+# on. Those flags tag test results, not coverage, so the one-upload coverage story
 # above is unchanged and the comment layout below still has no coverage flags to
 # show.
 #
