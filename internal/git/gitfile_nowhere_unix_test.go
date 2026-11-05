@@ -6,17 +6,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sync/atomic"
 	"testing"
 )
 
 // The three call sites of gitFileText in git.worktree_remove, with a stub that fails
 // every listing with the text of git 2.56 for a `.git` file that names no valid
-// repository. So no git 2.56 is needed. The frames are those of 5fd08069, GF and N04
+// repository. So no git 2.56 is needed. The GF frames are those of 5fd08069
 // (measured on Linux). The subfolder case is not measured. With "shadowDirOff":true
-// the listing refusal takes the place of that text in both frames (measured on
-// Linux, two frames). Mutations: invert the gitFileText test at any of the three
+// the listing refusal takes the place of that text (measured on Linux). N04 request
+// 0, a gone worktree, gets success with the branch kept on b3081b51, with and
+// without the member (measured on Linux). The branch step does not run,
+// and G keeps its entries. Mutations: invert the gitFileText test at any of the three
 // sites, name dir in place of the folder that holds `.git`, or ignore the member at
-// either remove site.
+// the GF site.
 func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	f := newWRFixture(t)
 	realGit, err := exec.LookPath("git")
@@ -56,16 +60,28 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 			}
 		})
 	}
+	kept := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
+	// n04Kept tests the disk and the branch step after an N04 request.
+	n04Kept := func(t *testing.T, steps *atomic.Int32) {
+		t.Helper()
+		if n := steps.Load(); n != 0 {
+			t.Errorf("the branch step ran %d times, want 0", n)
+		}
+		if got := entryNames(t, g); !slices.Equal(got, []string{".git", "sub"}) {
+			t.Errorf("G holds %q, want .git and sub", got)
+		}
+	}
 	t.Run("N04 without worktreeRoot", func(t *testing.T) {
 		stub(g)
+		steps := branchStepRuns(t)
 		wp := filepath.Join(g, ".claude", "worktrees", "w1")
 		d := newTestGitDeps()
 		got := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": g, "worktreePath": wp, "branchName": "w1"}))
-		want := refusalFrame(t, "failed to remove worktree: could not check whether "+wp+" is locked: "+check)
-		if got != want {
-			t.Errorf("got  %s\nwant %s", got, want)
+		if got != kept {
+			t.Errorf("got  %s\nwant %s", got, kept)
 		}
+		n04Kept(t, steps)
 	})
 	hooks := "config-defined hooks could not be pinned off; git not run: listing the configuration in force: " +
 		"exit status 128: fatal: gitfile does not point to a valid repository: " + filepath.Join(g, ".git")
@@ -83,12 +99,14 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	})
 	t.Run("N04OFF", func(t *testing.T) {
 		stub(g)
+		steps := branchStepRuns(t)
 		wp := filepath.Join(g, ".claude", "worktrees", "w1")
 		d, _ := newShadowDeps(t)
 		got := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": g, "worktreePath": wp, "branchName": "w1", "shadowDirOff": true}))
-		if want := refusalFrame(t, "failed to remove worktree: could not check whether "+wp+" is locked: "+hooks); got != want {
-			t.Errorf("got  %s\nwant %s", got, want)
+		if got != kept {
+			t.Errorf("got  %s\nwant %s", got, kept)
 		}
+		n04Kept(t, steps)
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -430,6 +431,69 @@ func TestGitVersionFailsInPlainFolder(t *testing.T) {
 	if got := dirNames(t, f.n); len(got) != 0 {
 		t.Errorf("the plain folder holds %q, want nothing", got)
 	}
+}
+
+// branchStepRuns counts the branch steps of the test through the seam
+// branchStepEntered.
+func branchStepRuns(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	branchStepEntered = func(string) { n.Add(1) }
+	t.Cleanup(func() { branchStepEntered = nil })
+	return &n
+}
+
+// TestRemoveOnRegularFileBaseRepo: baseRepo is a regular file, and the worktree is
+// below it. Without worktreeRoot the remove succeeds and keeps the branch, also
+// with a listing that fails, and a failed version call refuses with its text.
+// These frames are those of b3081b51 (measured on Linux and macOS). claustrum
+// runs one version call and no listing (from the code). The file stays, and the branch step
+// does not run. Mutations: answer the open error of statInsideDir, drop the version
+// call, or drop the test of a regular file in removeGoneWorktree.
+func TestRemoveOnRegularFileBaseRepo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no row on Windows")
+	}
+	f := newNoRepoFixture(t)
+	file := filepath.Join(filepath.Dir(f.top), "F", "file")
+	writeFile(t, file, "x\n", 0o644)
+	wp := filepath.Join(file, ".claude", "worktrees", "w1")
+	params := map[string]any{"baseRepo": file, "branchName": "w1", "worktreePath": wp}
+	steps := branchStepRuns(t)
+	check := func(t *testing.T, name, want string) {
+		t.Helper()
+		raw, calls := f.call(t, "git.worktree_remove", params)
+		if raw != want {
+			t.Errorf("%s = %s\nwant %s", name, raw, want)
+		}
+		var argv [][]string
+		for _, c := range calls {
+			if !c.excludesRead() {
+				argv = append(argv, c.argv)
+			}
+		}
+		if len(argv) != 1 || !slices.Equal(argv[0], []string{"version"}) {
+			t.Errorf("%s ran git %q, want one version call", name, argv)
+		}
+		if got := dirNames(t, filepath.Dir(file)); !slices.Equal(got, []string{"file"}) {
+			t.Errorf("after %s the folder holds %q, want the file only", name, got)
+		}
+		if b, err := os.ReadFile(file); err != nil || string(b) != "x\n" {
+			t.Errorf("after %s the file reads %q, %v", name, b, err)
+		}
+		if n := steps.Load(); n != 0 {
+			t.Errorf("after %s the branch step ran %d times, want 0", name, n)
+		}
+	}
+	t.Run("f0", func(t *testing.T) {
+		stubListing(t, 128, "fatal: listing refused\n")
+		check(t, "f0", resultFrame(t, worktreeRemoveResult{Success: true, BranchKept: true}))
+	})
+	t.Run("f1", func(t *testing.T) {
+		versionFails(t)
+		check(t, "f1", resultFrame(t, worktreeRemoveResult{Success: false,
+			Error: "failed to remove worktree: could not check whether " + wp + " is locked: " + versionFailsText}))
+	})
 }
 
 // Measured on Linux, macOS and Windows. With a broken pair and a `git version`

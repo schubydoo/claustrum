@@ -234,6 +234,10 @@ func gitInfo(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
 	if msg, bad := daemonCountRefusal(); bad {
+		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
+		if t.fileGitDir {
+			return notRepo()
+		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// A path that does not exist gets the "no repository" answer, with no start test and no git call beyond
@@ -741,6 +745,10 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
 	if msg, bad := daemonCountRefusal(); bad {
+		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
+		if t.fileGitDir {
+			return notRepo
+		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
@@ -888,6 +896,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
 	if msg, bad := daemonCountRefusal(); bad {
+		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
+		if t.fileGitDir {
+			return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
@@ -1049,6 +1061,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	if msg, bad := daemonCountRefusal(); bad {
+		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
+		if t.fileGitDir {
+			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+		}
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	if t.verdict == gitDirNoRepo {
@@ -2533,7 +2549,8 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		// A baseRepo the daemon can open but not search (mode 0600), or cannot open at
 		// all, answers with the error from its look at .claude, and that error is the
 		// whole reply. Measured side by side against f6010b97 on Linux, and the
-		// reference's answers also on macOS.
+		// reference's answers also on macOS. On Linux and macOS a regular file
+		// passes (statInsideDir).
 		//
 		// On Linux and macOS the look is at the first component of worktreePath below
 		// baseRepo. For a repository of mode 0600, 89cb6289 answers "statat wt" for
@@ -2652,8 +2669,10 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		// worktreePath as sent, and it is not cut (measured). A worktree folder
 		// that is gone gets the same refusal (removeGoneWorktree). With
 		// worktreeRoot the read is in externalWorkTreeRefusal, with its own text.
-		if msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo); msg != "" {
-			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+		if msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo); msg != "" || req.goneCopyText != "" {
+			// A failed copy for a missing daemon GIT_DIR keeps its refusal here
+			// (claustrum's own, not measured).
+			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg + req.goneCopyText)
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
@@ -2919,16 +2938,33 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 	checkRegistration := true
 	// answered is the answer of `rev-parse --absolute-git-dir` in baseRepo, or "".
 	answered := ""
+	// The success of a remove that keeps the registration and the branch, with no
+	// step after it.
+	keptAll := func() rpc.Response {
+		return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+	}
 	if p.WorktreeRoot == "" {
+		// On Linux and macOS a baseRepo that is a regular file gets success. If `git
+		// version` fails, the remove refuses with its text. b3081b51 does so, also
+		// with a hook that fails each listing (measured on Linux and macOS). Its place before the trust check and the count check is
+		// claustrum's own, not measured. Windows is not measured and keeps its path.
+		if fi, err := os.Stat(repo); err == nil && fi.Mode().IsRegular() && runtime.GOOS != "windows" {
+			if v := gitVersionRun(req.use, true); v.err != nil {
+				return lockCheck(gitCannotRunPrefix + v.detail())
+			}
+			return keptAll()
+		}
 		t := requestGitDirTrust(repo, false)
 		if t.verdict == gitDirRefused {
 			return lockCheck(t.refusal)
 		}
 		// A daemon GIT_DIR that names a file: no git call, and the branch is kept
-		// (gitDirTrust.noGit). An empty branchName is not measured there.
+		// (gitDirTrust.noGit). An empty branchName is not measured there. A `.git`
+		// file to a regular file with a refused GIT_CONFIG_* entry of the daemon gets
+		// the same answer (gitDirTrust.fileGitDir).
 		msg, bad := daemonCountRefusal()
-		if t.verdict == gitDirNoRepo && t.noGit && !bad {
-			return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+		if t.verdict == gitDirNoRepo && ((t.noGit && !bad) || (t.fileGitDir && bad)) {
+			return keptAll()
 		}
 		if bad {
 			return lockCheck(msg)
@@ -2951,6 +2987,8 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		// (externalWorkTreeRefusal).
 		if msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo); msg != "" {
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+		} else if noRepo && t.goneEnvGitDir {
+			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
@@ -2963,11 +3001,13 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			// noRepoPinned the answer of the listing is not read.
 			c := hostileConfigRefusal(req.use, repo, true)
 			// git 2.56 fails the listing of a `.git` file to a gone target that is no
-			// entry with its gitfile text. 5fd08069 answers the error of its call about
-			// the repository then (measured on Linux). With "shadowDirOff":true it
-			// answers the listing refusal in the same frame (measured on Linux). A gone
-			// entry keeps the refusal below (not measured).
+			// entry with its gitfile text. b3081b51 then answers success and keeps the
+			// branch, with and without "shadowDirOff":true (measured on Linux). Windows
+			// keeps the refusal of 5fd08069, with the listing refusal under the switch.
 			if c.gitFileText != "" && goneNonEntryGitFile(repo) {
+				if runtime.GOOS != "windows" {
+					return keptAll()
+				}
 				text := c.gitFileText
 				if p.ShadowDirOff {
 					text = c.refusal

@@ -187,7 +187,9 @@ Guards: a leaf that is a symlink or not a directory is refused. A worktree LOCKE
 repository config, git directory file or settings copy that the daemon does not accept
 refuses the remove before any delete. `"shadowDirOff":true` turns that refusal off, and so
 does a remove that starts while such a request runs ([The repository
-checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). On Windows an
+checks](docs/protocol/git-worktree-remove.md#the-repository-checks)). Without
+`worktreeRoot`, on Linux and macOS, in four states a gone worktree gets success there instead, and nothing
+is deleted. On Windows an
 `objects/info/alternates` file of a trusted `baseRepo` with Windows line endings or too many
 object directories refuses it before any delete too, also for a gone worktree folder
 (measured on Windows), and also with

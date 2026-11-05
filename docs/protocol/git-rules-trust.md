@@ -141,7 +141,10 @@ The daemon's own environment changes the check as follows:
 - A `GIT_DIR` names the git directory to judge, for every request folder, even a
   plain one. A relative value is taken relative to the request folder. A
   `GIT_DIR` that names a gone entry gets M5. Any other `GIT_DIR` that does not
-  exist is left to git.
+  exist is left to git. On Linux and macOS each method then answers "no
+  repository" in the state `shadow` (`b3081b51`, measured on Linux and macOS),
+  except two cases of [git.worktree_remove](git-worktree-remove.md#the-repository-checks).
+  Each failure of the copy step there gives that answer (claustrum's own, not measured).
 - On Linux and macOS a `GIT_DIR` that names a `.git` file means "no repository".
   On Windows that `.git` file is trusted and pinned to itself. Without
   `"shadowDirOff":true` class 2 of
@@ -233,21 +236,24 @@ on macOS for `git.worktree_remove` with `worktreeRoot`).
 
 A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
 no listing runs, and the "no repository" column answers, also with an empty
-`GIT_CONFIG_KEY_0` (measured for `git.info` on Linux and macOS). The other methods
-are from the code. On Windows a file with no `gitdir:` line gets the refusal of a
+`GIT_CONFIG_KEY_0` (measured for `git.info` on Linux and macOS). On Windows a file with no `gitdir:` line gets the refusal of a
 config on the five methods: `this repository's git config cannot be used: open
 <GIT_DIR>: not a directory` (measured on Windows). With a git older than 2.56, a
 `.git` file to a gone git dir keeps the "no repository" frame of `git.info`
 (measured on Linux and macOS).
 
-Two states are from the code: a daemon `GIT_COMMON_DIR`, whose listing gets no
-`GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names a regular file.
+Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
+listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
+a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
 repository, and it keeps the "no repository" column (from the code).
 `git.worktree_remove` keeps that column unless its listing fails (from the code).
 For the `.git` file, `git.info` and `git.list_branches` run no listing either
-(from the code). The listing of `git.status` still carries `GIT_DIR=<null>`, and
-its failure is the refusal of `git.status` (from the code).
+(from the code).
+The listing of `git.status` still carries `GIT_DIR=<null>`, and
+its failure is the refusal of `git.status` (from the code). With an incomplete
+`GIT_CONFIG` pair of the daemon, each method answers "no repository" for the
+`.git` file, and a remove of a gone worktree gets success (`b3081b51`).
 
 ### A failed configuration listing
 
@@ -295,6 +301,8 @@ The classes come in this order:
    itself, and its later runs give "no repository" (`c8e2f083`, measured on
    Linux). With `"shadowDirOff":true`
    that git dir gets the hooks refusal on every method (measured on Linux).
+   On Linux and macOS a remove of a gone worktree without `worktreeRoot` gets
+   success in both modes (`b3081b51`, measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
    runs in the folder of [the calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
    If that call fails too, the text is `git cannot run on this
