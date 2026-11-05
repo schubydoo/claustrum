@@ -2647,8 +2647,11 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// answers its text after a colon (`b3081b51`, measured on Linux and macOS
 			// with a bad HEAD and a dangling commondir link). `89cb6289` answered the
 			// lock-check text there on Linux. Windows is claustrum's own, not
-			// measured. Every other refusal keeps the lock-check text.
-			if strings.HasSuffix(t.refusal, strayShapeTail) {
+			// measured. A stray commondir whose content is not "." or "./" answers
+			// so too, with a bad HEAD and a good one (`b3081b51`, measured on Linux,
+			// macOS and Windows). Every other refusal keeps the lock-check text (not
+			// measured on b3081b51).
+			if strings.HasSuffix(t.refusal, strayShapeTail) || strings.HasSuffix(t.refusal, strayContentTail) {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + t.refusal)
 			}
 			return refuse(lockCheckRefusal(p.WorktreePath))

@@ -244,7 +244,14 @@ func wantRemoveRefused(t *testing.T, base, wt, branch, repoForBranch string) {
 // nothing was deleted.
 func checkRemoveRefused(t *testing.T, r rpcReply, wt, branch, repoForBranch string) {
 	t.Helper()
-	want, _ := json.Marshal(worktreeRemoveResult{Success: false, Error: wantLockCheck(wt)})
+	checkRemoveRefusedWith(t, r, wantLockCheck(wt), wt, branch, repoForBranch)
+}
+
+// checkRemoveRefusedWith asserts that the remove reply r is the refusal text and that
+// nothing was deleted.
+func checkRemoveRefusedWith(t *testing.T, r rpcReply, text, wt, branch, repoForBranch string) {
+	t.Helper()
+	want, _ := json.Marshal(worktreeRemoveResult{Success: false, Error: text})
 	wantResult(t, "remove", r, string(want))
 	if !exists(wt) {
 		t.Errorf("remove refused but deleted %s", wt)
@@ -265,8 +272,10 @@ const (
 // repository's git directory is refused with S1 on every method that runs in that
 // repository. For git.status the check is on baseRepo, not on path. A linked worktree
 // of the same repository still works for info and list_branches, because its own git
-// directory is an honest entry. Remove refuses and deletes nothing. The honest control
-// shows the fixture passes when the stray file is absent.
+// directory is an honest entry. Remove refuses with the text after a colon and deletes
+// nothing, with a good HEAD and a bad one (`b3081b51`, measured on Linux, macOS and
+// Windows). The honest control shows the fixture passes when the stray file
+// is absent. Mutation: drop the strayContentTail test of gitWorktreeRemoveLocked.
 func TestGitDirTrustStrayCommondirInMainRepo(t *testing.T) {
 	r := newTrustRepo(t)
 	wantResultPrefix(t, "control info(T)", info(t, r.T), `{"isRepo":true`)
@@ -280,12 +289,18 @@ func TestGitDirTrustStrayCommondirInMainRepo(t *testing.T) {
 	wantRPCError(t, "status(SW,T)", status(t, r.SW, r.T), m1)
 	wantRPCError(t, "status(TW,T)", status(t, r.TW, r.T), m1)
 	wantCreateRefused(t, r.T, r.T, m1)
-	wantRemoveRefused(t, r.T, r.SW, "s0", r.T)
+	locked := "failed to remove worktree: could not check whether " + r.SW + " is locked: "
+	checkRemoveRefusedWith(t, remove(t, r.T, r.SW, "s0"), locked+m1, r.SW, "s0", r.T)
 
 	// TW's git directory is its entry, which is honest: info and list_branches there
 	// still answer.
 	wantResultPrefix(t, "info(TW)", info(t, r.TW), `{"isRepo":true`)
 	wantResultPrefix(t, "list_branches(TW)", listBranches(t, r.TW), `{"isRepo":true`)
+
+	// A bad HEAD and the commondir "nothing-here".
+	writeFile(t, filepath.Join(r.T, ".git", "HEAD"), "garbage\n", 0o644)
+	writeFile(t, cd, "nothing-here\n", 0o644)
+	checkRemoveRefusedWith(t, remove(t, r.T, r.SW, "s0"), locked+wantTR(cd, "nothing-here"), r.SW, "s0", r.T)
 }
 
 // A commondir that is not a plain file is refused, and so is one that names the
@@ -836,7 +851,9 @@ func TestGitDirTrustDaemonGitDir(t *testing.T) {
 		wantRPCError(t, "list_branches(T)", listBranches(t, r.T), m1)
 		wantRPCError(t, "status(SW,T)", status(t, r.SW, r.T), m1)
 		wantCreateRefused(t, r.T, r.T, m1)
-		wantRemoveRefused(t, r.T, r.SW, "s0", r.T)
+		// The text after a colon, as without a daemon GIT_DIR (claustrum's own, not measured).
+		locked := "failed to remove worktree: could not check whether " + r.SW + " is locked: "
+		checkRemoveRefusedWith(t, remove(t, r.T, r.SW, "s0"), locked+m1, r.SW, "s0", r.T)
 	})
 	t.Run("gone entry", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -901,7 +918,9 @@ func TestGitDirTrustDaemonCommonDir(t *testing.T) {
 	wantResultPrefix(t, "list_branches(T)", listBranches(t, r.T), `{"isRepo":true`)
 	wantRPCError(t, "status(SW,T)", status(t, r.SW, r.T), m1)
 	wantCreateRefused(t, r.T, r.T, "git worktree add failed: cannot locate the repository's git directory: "+m1)
-	wantRemoveRefused(t, r.T, r.SW, "s0", r.T)
+	// The text after a colon, as without a daemon GIT_COMMON_DIR (claustrum's own, not measured).
+	locked := "failed to remove worktree: could not check whether " + r.SW + " is locked: "
+	checkRemoveRefusedWith(t, remove(t, r.T, r.SW, "s0"), locked+m1, r.SW, "s0", r.T)
 }
 
 // GIT_CONFIG_PARAMETERS and GIT_CEILING_DIRECTORIES in the daemon's environment
