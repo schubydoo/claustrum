@@ -121,6 +121,11 @@ func fileAtGitDir(gitDir string) bool {
 // every share mode. An open with delete access fails too. An open for attributes
 // works (measured). The file cannot be removed (measured). A handle that
 // os.OpenFile makes shares read and write, so the open is made here.
+//
+// A failed open gives the error of the system alone, with no operation and no
+// path. With a deny entry for writes on git-shadow and the backup and restore
+// privileges on, the start test answers `(Access is denied.)` (`b3081b51`,
+// measured on Windows).
 func openShadowLockFile(path string) (*os.File, error) {
 	name, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
@@ -129,7 +134,7 @@ func openShadowLockFile(path string) (*os.File, error) {
 	h, err := syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil,
 		syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		return nil, err
 	}
 	return os.NewFile(uintptr(h), path), nil
 }
@@ -207,3 +212,14 @@ func openNoShare(path string, access uint32) (*os.File, error) {
 	}
 	return os.NewFile(uintptr(h), path), nil
 }
+
+// goneNotARepoKeepsAll is true on Windows: a remove of a gone worktree whose
+// call about the repository found no repository gets success
+// (removeGoneWorktree). A variable, so that a test on another system can run
+// that step.
+var goneNotARepoKeepsAll = true
+
+// printedPathAsIs is true on Windows: the "disagree" text shows an absolute
+// answer of git as git printed it, also when it is not clean (askGit).
+// b3081b51 does so (measured on Windows).
+const printedPathAsIs = true

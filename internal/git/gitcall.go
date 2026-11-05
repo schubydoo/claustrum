@@ -38,6 +38,8 @@ type gitCall struct {
 	// gitRefused is true when the last settings gate of the request got a bad
 	// answer of git about the repository (ShadowHost.askGit).
 	gitRefused bool
+	// gitNotARepo is true when that bad answer is repoAnswer.notARepo.
+	gitNotARepo bool
 	// configRefused is true when the last settings gate of the request refused
 	// the config of the repository or another file of its git directory
 	// (repoConfigGate).

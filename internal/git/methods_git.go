@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/pathcanon"
@@ -3055,6 +3056,18 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		} else if noRepo && t.goneEnvGitDir {
 			return keptAll()
+		} else if noRepo && goneNotARepoKeepsAll && req.gitNotARepo && measuredNotARepoLength(repo) {
+			// On Windows git finds no repository in a folder that the trust check
+			// accepted: its call about the repository exited 128 with a text of
+			// notARepoStderr, and the second run exited 0. A remove of a gone
+			// worktree then gets success and deletes nothing. It runs no branch step
+			// (from the code). b3081b51 answers so where `<baseRepo>\.git\config`
+			// has 262, 267 or 269 characters (measured on Windows). The other
+			// lengths from 262 to 269 are claustrum's own. 120, 250 and 259 gave
+			// another reply, and so did 280 (measured). A worktree folder that
+			// exists and every other length keep the refusal (claustrum's own,
+			// not measured).
+			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
@@ -3235,6 +3248,21 @@ func dotGitAbsentOrFolder(repo string) bool {
 		return errors.Is(err, fs.ErrNotExist)
 	}
 	return fi.IsDir()
+}
+
+// notARepoConfigLengths are the lowest and the highest length of the path
+// `<baseRepo>\.git\config`, in UTF-16 units, of a gone worktree that gets
+// success. b3081b51 answers so at 262, 267 and 269 (measured on Windows). The
+// lengths between are claustrum's own. A variable, so that a test can give the
+// length of its own fixture.
+var notARepoConfigLengths = [2]int{262, 269}
+
+// measuredNotARepoLength reports whether the config path of repo, the
+// baseRepo as the daemon resolved it, has a length of notARepoConfigLengths.
+// A name outside ASCII is not measured.
+func measuredNotARepoLength(repo string) bool {
+	n := len(utf16.Encode([]rune(filepath.Join(repo, ".git", "config"))))
+	return n >= notARepoConfigLengths[0] && n <= notARepoConfigLengths[1]
 }
 
 // lockCheckRefusal is git.worktree_remove's answer when baseRepo's registrations cannot

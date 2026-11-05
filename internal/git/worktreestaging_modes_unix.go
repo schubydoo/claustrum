@@ -102,3 +102,8 @@ func chownStagedTree(root *os.Root, base, rel string, gid int) error {
 	}
 	return nil
 }
+
+// mainRefsOpenTest is false on Linux and macOS: the staged add does not open
+// `reftable/tables.list` of the git directory (mainRefsFault). A link there is
+// not measured on those systems. A variable, so that a test can run that step.
+var mainRefsOpenTest = false

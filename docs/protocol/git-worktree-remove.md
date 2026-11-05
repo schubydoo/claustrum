@@ -138,6 +138,8 @@ On Linux and macOS without `worktreeRoot`, a gone worktree gets `{"success":true
 - The daemon's `GIT_DIR` names a missing path. An existing worktree folder goes with its files, with the same reply (measured on Linux and macOS). So does one with an unlocked `.git` folder in `baseRepo` (`b3081b51`, measured on Linux, macOS not measured). A lock there that names it keeps the [D22](../DIVERGENCES.md#d22) refusal. A `.git` link or file keeps the copy refusal (claustrum's own, not measured). With a `worktreeRoot` outside the repository the reason is [class 2](git-rules-config.md#class-2-files-of-the-git-directory) with `open <GIT_DIR>: no such file or directory` (measured on Linux).
 - With git 2.56, the `.git` file of `baseRepo` names a path that does not exist and is no entry under `worktrees`, in both modes.
 
+On Windows without `worktreeRoot`, a gone worktree gets that reply when git finds no repository in a folder that the trust check accepted. Its call about the repository exits 128 with `fatal: not a git repository` or with `fatal: error reading '<git dir>'`, and the second run exits 0. The path `<baseRepo>\.git\config` has 262, 267 or 269 characters (`b3081b51`, measured on Windows). 120, 250 and 259 gave another reply (measured). The other lengths from 262 to 269 get success too (claustrum's own). A worktree that exists, another text of git and another length keep the lock-check refusal (claustrum's own, not measured).
+
 ## What the delete removes
 
 The registration is the folder `<git dir>/worktrees/<name>` that git keeps for each linked worktree. `<git dir>` is the git directory of the main repository, also for a linked worktree as `baseRepo`. A daemon that sets `GIT_DIR` and `GIT_COMMON_DIR` uses the repository that `GIT_DIR` names.
