@@ -171,6 +171,7 @@ component_management:
         # 89cb6289 managed launcher: launcher.resolve, the settings reader, the
         # process.spawn launcher checks and the child env strip, with its OS split.
         - methods_launcher.go
+        - spawncheck.go
         - internal/install/managedsettings.go
         - internal/install/managedlauncher_unix.go
         - internal/install/managedlauncher_windows.go

@@ -78,13 +78,13 @@ func TestSocketSpawnTrampolineMarkers(t *testing.T) {
 func TestMaybeRunExecChildExecsTarget(t *testing.T) {
 	var gotPath string
 	var gotArgv, gotEnv []string
-	oldExec, oldExit := execChildExec, osExit
+	oldExec, oldExit := execChildExec, execChildExit
 	execChildExec = func(path string, argv, env []string) error {
 		gotPath, gotArgv, gotEnv = path, argv, env
 		return nil
 	}
-	osExit = func(int) {}
-	t.Cleanup(func() { execChildExec, osExit = oldExec, oldExit })
+	execChildExit = func(int) {}
+	t.Cleanup(func() { execChildExec, execChildExit = oldExec, oldExit })
 
 	oldArgs := os.Args
 	os.Args = []string{"/self", execChildFlag, "/bin/echo", "echo", "hi"}

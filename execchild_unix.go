@@ -60,6 +60,10 @@ var heldGoRuntimeEnv = []string{"GODEBUG", "GOGC", "GOMAXPROCS", "GOMEMLIMIT", "
 // runExecChild in-process.
 var execChildExec = syscall.Exec
 
+// execChildExit is os.Exit behind a seam of the trampoline alone, so a test can run
+// runExecChild in-process. Production never reassigns it.
+var execChildExit = os.Exit
+
 // execChildErrPipe is os.Pipe behind a seam, so a test can force the exec-error pipe
 // creation and capture its ends to prove spawn closes them when a later pre-Start step
 // fails (the descriptor-leak guard, same idiom as osPipe in process.go).
@@ -82,7 +86,7 @@ func maybeRunExecChild() {
 // error, then exits 127. Never returns on success.
 func runExecChild(argv []string) {
 	if len(argv) < 2 {
-		osExit(127)
+		execChildExit(127)
 	}
 	syscall.CloseOnExec(execErrExtraFD)
 	env := restoreHeldEnv(os.Environ())
@@ -95,7 +99,7 @@ func runExecChild(argv []string) {
 	// (os.PathError{Op:"fork/exec", Path, Err}) so the parent's frame matches a direct
 	// spawn, then exit with the shell "cannot exec" code.
 	_, _ = syscall.Write(execErrExtraFD, []byte(fmt.Sprintf("fork/exec %s: %s", argv[0], err)))
-	osExit(127)
+	execChildExit(127)
 }
 
 // childIdentity is "<pid>:<start>" — this process's pid and its start-time token, the
