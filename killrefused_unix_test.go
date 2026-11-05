@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -35,7 +36,7 @@ func refusingSignals(t *testing.T, err error) *[]string {
 // so a signal that misses the seams finds no process.
 func refusedChild(m *procManager, id string) *managedProc {
 	p := &managedProc{
-		id: id, running: true, group: &procGroup{},
+		id: id, running: true, group: &supervisor.ProcGroup{},
 		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}, done: make(chan struct{}),
 	}
 	m.procs[id] = p
@@ -78,24 +79,5 @@ func TestKillOfAGoneProcessStaysASuccess(t *testing.T) {
 		if got := killedByOf(p); got != "client" {
 			t.Errorf("a kill with %v stamped killedBy=%q, want client", err, got)
 		}
-	}
-}
-
-// signalProcessGroup refuses pid 0 and pid 1 with an error for every signal name, before
-// either seam (claustrum's own). A real child never has such a pid.
-func TestSignalProcessGroupRefusesASmallPid(t *testing.T) {
-	calls := refusingSignals(t, nil)
-	for _, pid := range []int{0, 1} {
-		for _, name := range []string{"TERM", "KILL"} {
-			if err := signalProcessGroup(&os.Process{Pid: pid}, name); err == nil {
-				t.Errorf("signalProcessGroup(%d, %s) = nil, want an error", pid, name)
-			}
-		}
-	}
-	if len(*calls) != 0 {
-		t.Errorf("seam calls = %v, want none", *calls)
-	}
-	if err := signalProcessGroup(&os.Process{Pid: noSuchPid}, "KILL"); err != nil || len(*calls) != 1 {
-		t.Errorf("signalProcessGroup(noSuchPid, KILL) = %v, calls %v, want nil and one call", err, *calls)
 	}
 }

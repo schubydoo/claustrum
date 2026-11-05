@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // missingCommandError is the pre-check of a session spawn. It returns the error of a
@@ -32,13 +33,13 @@ import (
 //   - The cwd test comes first, then the login-shell PATH read of the first spawn,
 //     then this stat (measured).
 //
-// Windows is in statSpawnCommand of that system (measured). Not measured:
+// Windows is in supervisor.StatSpawnCommand of that system (measured). Not measured:
 // a stat error other than a missing file. Its text answers.
 func missingCommandError(cmd *exec.Cmd) error {
 	if cmd.Err != nil {
 		return cmd.Err
 	}
-	if err := statSpawnCommand(cmd.Path); err != nil {
+	if err := supervisor.StatSpawnCommand(cmd.Path); err != nil {
 		var pe *fs.PathError
 		if errors.As(err, &pe) {
 			return &fs.PathError{Op: "fork/exec", Path: cmd.Path, Err: pe.Err}

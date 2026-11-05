@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestKillAndWaitKillInsideDrainKillsGroupAtOnce pins measured cases (`5fd08069`,
@@ -19,7 +21,7 @@ func TestKillAndWaitKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 	var mu sync.Mutex
 	var signals []string
 	var done chan struct{}
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, _ *os.Process, name string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		signals = append(signals, name)
@@ -70,12 +72,13 @@ func TestKillAndWaitKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 // exit frame KILL sends nothing either. Windows sends nothing (claustrum's own, not
 // measured). The seam records each signal.
 func TestKillInsideDrainKillsGroupAtOnce(t *testing.T) {
-	oldSignal, oldInUse := signalGroup, pidInUse
-	t.Cleanup(func() { signalGroup, pidInUse = oldSignal, oldInUse })
-	pidInUse = func(int) bool { return false }
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	oldInUse := supervisor.SetPidInUseForTest(func(int) bool { return false })
+	t.Cleanup(func() { supervisor.SetPidInUseForTest(oldInUse) })
 	var mu sync.Mutex
 	var signals []string
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, _ *os.Process, name string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		signals = append(signals, name)
@@ -84,7 +87,7 @@ func TestKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 	m := newTestProcManager(t)
 
 	wantKill := ""
-	if killEndsDrainGroup {
+	if supervisor.KillEndsDrainGroup {
 		wantKill = "KILL"
 	}
 	for _, tc := range []struct {
@@ -126,28 +129,29 @@ func TestKillInsideDrainKillsGroupAtOnce(t *testing.T) {
 // ended child, process.kill sends no group KILL. If it finds none (ESRCH), the KILL goes.
 // killAndWait reads no pidInUse and kills the group in both cases. Both seams are stubs.
 func TestKillInsideDrainSkipsGroupKillAtALivePid(t *testing.T) {
-	oldSignal, oldInUse := signalGroup, pidInUse
-	t.Cleanup(func() { signalGroup, pidInUse = oldSignal, oldInUse })
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
 	var mu sync.Mutex
 	var signals []string
 	var probes []int
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
+	signalGroup = func(_ *supervisor.ProcGroup, _ *os.Process, name string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		signals = append(signals, name)
 		return nil
 	}
 	var inUse bool
-	pidInUse = func(pid int) bool {
+	oldInUse := supervisor.SetPidInUseForTest(func(pid int) bool {
 		mu.Lock()
 		defer mu.Unlock()
 		probes = append(probes, pid)
 		return inUse
-	}
+	})
+	t.Cleanup(func() { supervisor.SetPidInUseForTest(oldInUse) })
 	m := newTestProcManager(t)
 
 	wantKill, wantProbes := "", 0
-	if killEndsDrainGroup {
+	if supervisor.KillEndsDrainGroup {
 		wantKill, wantProbes = "KILL", 1
 	}
 	for _, tc := range []struct {

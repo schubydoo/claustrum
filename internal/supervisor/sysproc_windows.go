@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package supervisor
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// statSpawnCommand is the stat of missingCommandError: one stat of the command path
+// StatSpawnCommand is the stat of missingCommandError: one stat of the command path
 // that the start uses. It answers only for an absolute path that does not exist.
 //
 // Measured on Windows against 89cb6289 (3 of 3 runs): a session spawn of the missing
@@ -29,7 +29,7 @@ import (
 // (measured). Not measured: a relative path. It gets its extension only at the
 // start, so this stat leaves it alone. Not measured: a stat error other than a
 // missing file. It passes, and the start answers.
-func statSpawnCommand(path string) error {
+func StatSpawnCommand(path string) error {
 	if !filepath.IsAbs(path) {
 		return nil
 	}
@@ -39,13 +39,13 @@ func statSpawnCommand(path string) error {
 	return nil
 }
 
-// procGroup is the kill handle of one spawned child on Windows: a process handle with
+// ProcGroup is the kill handle of one spawned child on Windows: a process handle with
 // the right to terminate and, with jobs on, the job of the child.
 //
 // With jobs on (the default), each child joins a job before it runs. So the child
 // starts no process before it joins its job. A process that WMI, the Task Scheduler or
 // a service starts for it is outside the job. A kill ends the whole job, with exit code
-// 1. The end of the child ends the rest of its job (endRest). The job never holds the
+// 1. The end of the child ends the rest of its job (EndRest). The job never holds the
 // daemon. One job for each child follows 52d82f0a (measured on Windows).
 //
 // Measured on Windows against 52d82f0a. A process.kill of the tree `cmd /c "start /b
@@ -65,7 +65,7 @@ func statSpawnCommand(path string) error {
 // ends no child there.
 //
 // An explicit TerminateJobObject ends a job. That is a kill, process.killAndWait, and
-// the kill of a shutdown or of a session supersede. It is also endRest after the exit
+// the kill of a shutdown or of a session supersede. It is also EndRest after the exit
 // of the child, and the kill of a spawn that the daemon does not keep.
 //
 // The job of a child has the limit flags 0x2800: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE and
@@ -77,45 +77,45 @@ func statSpawnCommand(path string) error {
 // process.kill, process.killAndWait and the taskkill /F, and a plain grandchild dies in
 // all three. Each child has a job of its own: the kill of one leaves another.
 //
-// With -keep-children (jobsKeep) the flags are 0x800, breakaway only. So a kept child
+// With -keep-children (JobsKeep) the flags are 0x800, breakaway only. So a kept child
 // stays in its job after the daemon exits, and nothing ends it (claustrum's own).
 //
-// The handles stay open until the exit drain of the child is over (close). A kill in
+// The handles stay open until the exit drain of the child is over (Close). A kill in
 // that window meets a process that has ended. Without a job, TerminateProcess then
 // answers "Access is denied.". Build 89cb6289 logged that text for the escalation of
 // process.killAndWait. Kids of the child held its stdout and stderr there.
-type procGroup struct {
+type ProcGroup struct {
 	mu  sync.Mutex
 	h   windows.Handle // 0 once closed, or after a failed open
 	job windows.Handle // 0 with no job, once closed, or after a failed join
 }
 
-// spawnSysProcAttr is sysproc.NewSysProcAttr for process.spawn. With jobs on the child starts
-// suspended, so it joins its job before it can start a process (confineProcess), and
-// resumeChild lets it run. The suspended start is claustrum's own code, not measured.
-func spawnSysProcAttr(jobs childJobs) *syscall.SysProcAttr {
+// SpawnSysProcAttr is sysproc.NewSysProcAttr for process.spawn. With jobs on the child starts
+// suspended, so it joins its job before it can start a process (ConfineProcess), and
+// ResumeChild lets it run. The suspended start is claustrum's own code, not measured.
+func SpawnSysProcAttr(jobs ChildJobs) *syscall.SysProcAttr {
 	attr := sysproc.NewSysProcAttr()
-	if jobs != jobsOff {
+	if jobs != JobsOff {
 		attr.CreationFlags |= windows.CREATE_SUSPENDED
 	}
 	return attr
 }
 
-// confineProcess opens the kill handle of the just-started child and, with jobs on,
-// puts the child in a new job. It always returns a non-nil *procGroup. If the open
-// fails, the group has a zero handle, and signal() falls back to proc.Kill. If the job
+// ConfineProcess opens the kill handle of the just-started child and, with jobs on,
+// puts the child in a new job. It always returns a non-nil *ProcGroup. If the open
+// fails, the group has a zero handle, and Signal falls back to proc.Kill. If the job
 // cannot be made or joined, the group has no job, and a kill ends the direct child
 // only (claustrum's own, not measured). Neither fails the spawn. os.Process keeps its
 // own handle privately, so the process is opened again by pid. That pid cannot be
 // reused while os.Process holds its handle. The join takes a second handle, so a
 // failed open of that one keeps the kill handle.
-func confineProcess(proc *os.Process, jobs childJobs) (*procGroup, error) {
+func ConfineProcess(proc *os.Process, jobs ChildJobs) (*ProcGroup, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(proc.Pid))
 	if err != nil {
-		return &procGroup{}, err
+		return &ProcGroup{}, err
 	}
-	g := &procGroup{h: h}
-	if jobs == jobsOff {
+	g := &ProcGroup{h: h}
+	if jobs == JobsOff {
 		return g, nil
 	}
 	quota, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(proc.Pid))
@@ -137,7 +137,7 @@ func confineProcess(proc *os.Process, jobs childJobs) (*procGroup, error) {
 
 // newChildJob makes the job of one child. Its limit flags are childJobFlags of the mode.
 // The handle is not inheritable, so only the daemon holds it.
-func newChildJob(jobs childJobs) (windows.Handle, error) {
+func newChildJob(jobs ChildJobs) (windows.Handle, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return 0, os.NewSyscallError("CreateJobObject", err)
@@ -155,20 +155,20 @@ func newChildJob(jobs childJobs) (windows.Handle, error) {
 	return job, nil
 }
 
-// childJobFlags gives the limit flags of a child job: 0x2800 for jobsOn, as on 52d82f0a
-// (measured on Windows), and 0x800 for jobsKeep (claustrum's own). See procGroup.
-func childJobFlags(jobs childJobs) uint32 {
-	if jobs == jobsKeep {
+// childJobFlags gives the limit flags of a child job: 0x2800 for JobsOn, as on 52d82f0a
+// (measured on Windows), and 0x800 for JobsKeep (claustrum's own). See ProcGroup.
+func childJobFlags(jobs ChildJobs) uint32 {
+	if jobs == JobsKeep {
 		return windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
 	}
 	return windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
 }
 
-// resumeChild lets a child run that spawnSysProcAttr started suspended. It resumes
+// ResumeChild lets a child run that SpawnSysProcAttr started suspended. It resumes
 // each thread of the child. A suspended new process has its first thread only, and no
 // thread of another process has its pid. A child that did not start suspended needs
 // nothing. claustrum's own code, not measured.
-func resumeChild(proc *os.Process, attr *syscall.SysProcAttr) error {
+func ResumeChild(proc *os.Process, attr *syscall.SysProcAttr) error {
 	if attr == nil || attr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
 		return nil
 	}
@@ -203,13 +203,13 @@ func resumeChild(proc *os.Process, attr *syscall.SysProcAttr) error {
 	return nil
 }
 
-// signal ends the job of the child, or the direct child when it has no job. Windows
+// Signal ends the job of the child, or the direct child when it has no job. Windows
 // has no POSIX signals, so signame is ignored: every signal form ends the child the
-// same way (89cb6289, with no job, see procGroup). It returns the error of
+// same way (89cb6289, with no job, see ProcGroup). It returns the error of
 // TerminateJobObject, or of TerminateProcess. If TerminateJobObject fails, it ends the
 // direct child with TerminateProcess (claustrum's own, not measured). With no handle it falls back
 // to proc.Kill and returns nil. Nil-receiver safe.
-func (g *procGroup) signal(proc *os.Process, _ string) error {
+func (g *ProcGroup) Signal(proc *os.Process, _ string) error {
 	if g != nil {
 		g.mu.Lock()
 		if g.job != 0 {
@@ -233,10 +233,10 @@ func (g *procGroup) signal(proc *os.Process, _ string) error {
 	return nil
 }
 
-// endRest ends what is left in the job of a child that has ended. The child itself is
+// EndRest ends what is left in the job of a child that has ended. The child itself is
 // gone, so only processes that it started remain there. A no-op with no job.
 // Nil-receiver safe.
-func (g *procGroup) endRest() {
+func (g *ProcGroup) EndRest() {
 	if g == nil {
 		return
 	}
@@ -247,10 +247,10 @@ func (g *procGroup) endRest() {
 	}
 }
 
-// close releases the kill handle and the job handle. With jobsOn the close of the job
-// handle ends what is left in the job. After the exit of the child, endRest emptied it
+// Close releases the kill handle and the job handle. With JobsOn the close of the job
+// handle ends what is left in the job. After the exit of the child, EndRest emptied it
 // already. Nil-receiver safe and idempotent.
-func (g *procGroup) close() {
+func (g *ProcGroup) Close() {
 	if g == nil {
 		return
 	}
@@ -266,18 +266,18 @@ func (g *procGroup) close() {
 	}
 }
 
-// logsUnreapedKill is false: Windows logs no line for a child that the kill did not
+// LogsUnreapedKill is false: Windows logs no line for a child that the kill did not
 // reap in killReapGrace, as before (claustrum's own, not measured).
-const logsUnreapedKill = false
+const LogsUnreapedKill = false
 
-// shutdownAsksEnd is false: the shutdown sweep sends no SIGTERM on Windows, and every
+// ShutdownAsksEnd is false: the shutdown sweep sends no SIGTERM on Windows, and every
 // child ends at once with the kill of its job (b3081b51, measured on Windows).
-const shutdownAsksEnd = false
+const ShutdownAsksEnd = false
 
-// killEndsDrainGroup is false: a process.kill inside the exit drain sends nothing on
+// KillEndsDrainGroup is false: a process.kill inside the exit drain sends nothing on
 // Windows, as before (claustrum's own, not measured).
-const killEndsDrainGroup = false
+const KillEndsDrainGroup = false
 
-// pidInUse is false on Windows. No caller reads it there, because killEndsDrainGroup is
+// pidInUse is false on Windows. No caller reads it there, because KillEndsDrainGroup is
 // false.
 var pidInUse = func(int) bool { return false }

@@ -13,12 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 	"golang.org/x/sys/windows"
 )
 
-// These tests are the Windows analogue of sysproc_unix_test.go: they exercise
-// the kill handle in sysproc_windows.go
+// These tests are the Windows analogue of internal/supervisor/sysproc_unix_test.go: they exercise
+// the kill handle in internal/supervisor/sysproc_windows.go
 // with a real two-level process tree. CI therefore pins the behavior of the file and not
 // only its compilation (IMPROVEMENTS item 20). The trees here have no job, the state of
 // CLAUDE_SSH_NO_JOBS=1. A kill then ends the direct child only, so every test ends the
@@ -46,14 +47,14 @@ func TestDetachSysProcAttrFlags(t *testing.T) {
 // (process.spawn takes the handle right after start). Returns the parent cmd, the
 // grandchild PID, and the group. The cleanup ends the parent and the grandchild, each by
 // its recorded pid, also after a failed assertion.
-func startConfinedTree(t *testing.T) (*exec.Cmd, int, *procGroup) {
+func startConfinedTree(t *testing.T) (*exec.Cmd, int, *supervisor.ProcGroup) {
 	t.Helper()
-	return startConfinedTreeJobs(t, jobsOff)
+	return startConfinedTreeJobs(t, supervisor.JobsOff)
 }
 
-// startConfinedTreeJobs is startConfinedTree with the job mode jobs. With jobsOn the
+// startConfinedTreeJobs is startConfinedTree with the job mode jobs. With supervisor.JobsOn the
 // helper starts suspended, joins its job and then resumes, as process.spawn does.
-func startConfinedTreeJobs(t *testing.T, jobs childJobs) (*exec.Cmd, int, *procGroup) {
+func startConfinedTreeJobs(t *testing.T, jobs supervisor.ChildJobs) (*exec.Cmd, int, *supervisor.ProcGroup) {
 	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
@@ -62,7 +63,7 @@ func startConfinedTreeJobs(t *testing.T, jobs childJobs) (*exec.Cmd, int, *procG
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	cmd := exec.Command(exe, pidFile)
 	cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "tree"})
-	cmd.SysProcAttr = spawnSysProcAttr(jobs)
+	cmd.SysProcAttr = supervisor.SpawnSysProcAttr(jobs)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
@@ -71,13 +72,13 @@ func startConfinedTreeJobs(t *testing.T, jobs childJobs) (*exec.Cmd, int, *procG
 		t.Fatalf("start: %v", err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
-	group, err := confineProcess(cmd.Process, jobs)
-	t.Cleanup(group.close)
+	group, err := supervisor.ConfineProcess(cmd.Process, jobs)
+	t.Cleanup(group.Close)
 	if err != nil {
-		t.Fatalf("confineProcess: %v", err)
+		t.Fatalf("supervisor.ConfineProcess: %v", err)
 	}
-	if err := resumeChild(cmd.Process, cmd.SysProcAttr); err != nil {
-		t.Fatalf("resumeChild: %v", err)
+	if err := supervisor.ResumeChild(cmd.Process, cmd.SysProcAttr); err != nil {
+		t.Fatalf("supervisor.ResumeChild: %v", err)
 	}
 	// Go-ahead: the helper spawns its grandchild only now.
 	if _, err := io.WriteString(stdin, "g"); err != nil {
@@ -123,7 +124,7 @@ func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 	if !processAlive(t, gpid) {
 		t.Fatalf("grandchild %d not alive before signal", gpid)
 	}
-	if err := group.signal(cmd.Process, "KILL"); err != nil {
+	if err := group.Signal(cmd.Process, "KILL"); err != nil {
 		t.Fatalf("signal: %v", err)
 	}
 	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
@@ -138,14 +139,14 @@ func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 // any reap. Measured on Windows against 52d82f0a: no process of the tree is left
 // after a kill.
 func TestSignalEndsTheJob(t *testing.T) {
-	cmd, gpid, group := startConfinedTreeJobs(t, jobsOn)
-	if group.job == 0 {
+	cmd, gpid, group := startConfinedTreeJobs(t, supervisor.JobsOn)
+	if group.JobForTest() == 0 {
 		t.Fatal("the child has no job")
 	}
-	if !inJob(t, gpid, group.job) {
+	if !inJob(t, gpid, group.JobForTest()) {
 		t.Fatalf("grandchild %d is not in the job of the child", gpid)
 	}
-	if err := group.signal(cmd.Process, "KILL"); err != nil {
+	if err := group.Signal(cmd.Process, "KILL"); err != nil {
 		t.Fatalf("signal: %v", err)
 	}
 	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
@@ -161,11 +162,11 @@ func TestSignalEndsTheJob(t *testing.T) {
 func TestSignalOnAnEndedChildIsAccessDenied(t *testing.T) {
 	cmd, _, group := startConfinedTree(t)
 
-	if err := group.signal(cmd.Process, "KILL"); err != nil {
+	if err := group.Signal(cmd.Process, "KILL"); err != nil {
 		t.Fatalf("first signal: %v", err)
 	}
 	_ = cmd.Wait()
-	err := group.signal(cmd.Process, "KILL")
+	err := group.Signal(cmd.Process, "KILL")
 	if err == nil || err.Error() != "TerminateProcess: Access is denied." {
 		t.Errorf("signal on an ended child = %v, want %q", err, "TerminateProcess: Access is denied.")
 	}
@@ -177,7 +178,7 @@ func TestSignalOnAnEndedChildIsAccessDenied(t *testing.T) {
 func TestCloseEndsNothing(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 
-	group.close()
+	group.Close()
 	if waitProcessGone(gpid, time.Second) || !processAlive(t, gpid) {
 		t.Errorf("grandchild %d ended at close", gpid)
 	}
@@ -186,14 +187,14 @@ func TestCloseEndsNothing(t *testing.T) {
 	}
 }
 
-// With no handle (zero handle or nil receiver, the failure paths of confineProcess),
+// With no handle (zero handle or nil receiver, the failure paths of supervisor.ConfineProcess),
 // signal must still fall back to killing the parent process.
 func TestSignalFallsBackWithoutHandle(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		group *procGroup
+		group *supervisor.ProcGroup
 	}{
-		{"zero handle", &procGroup{}},
+		{"zero handle", &supervisor.ProcGroup{}},
 		{"nil receiver", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,7 +210,7 @@ func TestSignalFallsBackWithoutHandle(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 
-			if err := tc.group.signal(cmd.Process, "KILL"); err != nil {
+			if err := tc.group.Signal(cmd.Process, "KILL"); err != nil {
 				t.Errorf("signal = %v, want nil from the fallback", err)
 			}
 			if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
@@ -224,9 +225,9 @@ func TestSignalFallsBackWithoutHandle(t *testing.T) {
 func TestCloseIdempotentAndSignalAfterClose(t *testing.T) {
 	cmd, _, group := startConfinedTree(t)
 
-	group.close()
-	group.close() // second close must be a no-op
-	if err := group.signal(cmd.Process, "KILL"); err != nil {
+	group.Close()
+	group.Close() // second close must be a no-op
+	if err := group.Signal(cmd.Process, "KILL"); err != nil {
 		t.Errorf("signal after close = %v, want nil from the fallback", err)
 	}
 	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
@@ -235,7 +236,7 @@ func TestCloseIdempotentAndSignalAfterClose(t *testing.T) {
 }
 
 // readPIDFile polls until the file holds a parseable PID (the helper writes it
-// asynchronously). Same contract as the Unix twin in sysproc_unix_test.go.
+// asynchronously). Same contract as the Unix twin in internal/supervisor/sysproc_unix_test.go.
 func readPIDFile(t *testing.T, path string) int {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

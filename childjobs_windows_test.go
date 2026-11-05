@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/runlock"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"golang.org/x/sys/windows"
 )
 
@@ -40,10 +41,10 @@ func startBystander(t *testing.T) *exec.Cmd {
 // its job before it runs. Without jobs it starts as before.
 func TestSpawnStartsSuspendedOnlyWithJobs(t *testing.T) {
 	for _, tc := range []struct {
-		jobs childJobs
+		jobs supervisor.ChildJobs
 		want bool
-	}{{jobsOff, false}, {jobsOn, true}, {jobsKeep, true}} {
-		attr := spawnSysProcAttr(tc.jobs)
+	}{{supervisor.JobsOff, false}, {supervisor.JobsOn, true}, {supervisor.JobsKeep, true}} {
+		attr := supervisor.SpawnSysProcAttr(tc.jobs)
 		if got := attr.CreationFlags&windows.CREATE_SUSPENDED != 0; got != tc.want {
 			t.Errorf("jobs %d: CREATE_SUSPENDED = %v, want %v", tc.jobs, got, tc.want)
 		}
@@ -53,20 +54,20 @@ func TestSpawnStartsSuspendedOnlyWithJobs(t *testing.T) {
 	}
 }
 
-// TestJobCloseByMode: the close of the group handles ends a child in a job of jobsOn and
-// the process that it started, as a daemon that dies closes them. A job of jobsKeep
+// TestJobCloseByMode: the close of the group handles ends a child in a job of supervisor.JobsOn and
+// the process that it started, as a daemon that dies closes them. A job of supervisor.JobsKeep
 // (-keep-children) ends nothing at the close (claustrum's own).
 func TestJobCloseByMode(t *testing.T) {
 	for _, tc := range []struct {
-		jobs childJobs
+		jobs supervisor.ChildJobs
 		ends bool
-	}{{jobsOn, true}, {jobsKeep, false}} {
+	}{{supervisor.JobsOn, true}, {supervisor.JobsKeep, false}} {
 		t.Run(fmt.Sprintf("jobs %d", tc.jobs), func(t *testing.T) {
 			cmd, gpid, group := startConfinedTreeJobs(t, tc.jobs)
-			if group.job == 0 || !inJob(t, gpid, group.job) {
+			if group.JobForTest() == 0 || !inJob(t, gpid, group.JobForTest()) {
 				t.Fatalf("grandchild %d is not in the job of the child", gpid)
 			}
-			group.close()
+			group.Close()
 			for _, pid := range []int{cmd.Process.Pid, gpid} {
 				if gone := waitProcessGone(pid, 2*time.Second); gone != tc.ends {
 					t.Errorf("process %d gone after the close = %v, want %v", pid, gone, tc.ends)
@@ -77,9 +78,9 @@ func TestJobCloseByMode(t *testing.T) {
 }
 
 // TestKilledDaemonByMode: a process that owns one spawned child in a job ends hard, as a
-// daemon under taskkill /F does. With jobsOn the child ends with it. Measured on Windows
+// daemon under taskkill /F does. With supervisor.JobsOn the child ends with it. Measured on Windows
 // against 52d82f0a: after a taskkill /F of the daemon the tree is gone at 0, 2 and 5 s,
-// and a process outside the daemon stays. With jobsKeep (-keep-children) the child lives
+// and a process outside the daemon stays. With supervisor.JobsKeep (-keep-children) the child lives
 // on (claustrum's own). The owner writes the job state of its child first, so the test
 // knows that the child was in a job. TestChildSurvivesAKilledDaemon has the child with no
 // job.
@@ -126,28 +127,28 @@ func TestKilledDaemonByMode(t *testing.T) {
 // TestJobLineAtStart: the start logs one job line (`52d82f0a`, measured on Windows). It
 // ends "true (off switch: false)" with no switch, and "false (off switch: true)" with
 // CLAUDE_SSH_NO_JOBS=1. Only the text "1" is the switch (claustrum's own for "0").
-// -keep-children gives jobsKeep, and the line stays the same (claustrum's own).
+// -keep-children gives supervisor.JobsKeep, and the line stays the same (claustrum's own).
 func TestJobLineAtStart(t *testing.T) {
 	for _, tc := range []struct {
 		value    string
 		set      bool
 		keep     bool
-		want     childJobs
+		want     supervisor.ChildJobs
 		wantLine string
 	}{
-		{"", false, false, jobsOn, "true (off switch: false)"},
-		{"1", true, false, jobsOff, "false (off switch: true)"},
-		{"0", true, false, jobsOn, "true (off switch: false)"},
-		{"", false, true, jobsKeep, "true (off switch: false)"},
-		{"1", true, true, jobsOff, "false (off switch: true)"},
+		{"", false, false, supervisor.JobsOn, "true (off switch: false)"},
+		{"1", true, false, supervisor.JobsOff, "false (off switch: true)"},
+		{"0", true, false, supervisor.JobsOn, "true (off switch: false)"},
+		{"", false, true, supervisor.JobsKeep, "true (off switch: false)"},
+		{"1", true, true, supervisor.JobsOff, "false (off switch: true)"},
 	} {
 		t.Run(fmt.Sprintf("%q set %v keep %v", tc.value, tc.set, tc.keep), func(t *testing.T) {
-			t.Setenv(childJobsOffEnv, tc.value)
+			t.Setenv(supervisor.ChildJobsOffEnv, tc.value)
 			if !tc.set {
-				_ = os.Unsetenv(childJobsOffEnv)
+				_ = os.Unsetenv(supervisor.ChildJobsOffEnv)
 			}
 			buf := captureLogBuf(t)
-			if got := startChildJobs(tc.keep); got != tc.want {
+			if got := supervisor.StartChildJobs(tc.keep); got != tc.want {
 				t.Errorf("jobs = %d, want %d", got, tc.want)
 			}
 			// Another test can leave a child whose exit line lands in this buffer, so the
@@ -163,13 +164,13 @@ func TestJobLineAtStart(t *testing.T) {
 // TestJobLineFollowsTheLockLine: in a start the job line comes after the "not the run
 // dir's lock holder" line, as on 52d82f0a (measured on Windows).
 func TestJobLineFollowsTheLockLine(t *testing.T) {
-	t.Setenv(childJobsOffEnv, "")
-	_ = os.Unsetenv(childJobsOffEnv)
+	t.Setenv(supervisor.ChildJobsOffEnv, "")
+	_ = os.Unsetenv(supervisor.ChildJobsOffEnv)
 	buf := captureLogBuf(t)
 	s, sock := bootLineServer(t, false)
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	if s.procs.jobs != jobsOn {
-		t.Errorf("jobs = %d, want jobsOn", s.procs.jobs)
+	if s.procs.jobs != supervisor.JobsOn {
+		t.Errorf("jobs = %d, want supervisor.JobsOn", s.procs.jobs)
 	}
 	wantLinesInOrder(t, buf.String(),
 		runlock.NotHolderLine,
@@ -177,14 +178,14 @@ func TestJobLineFollowsTheLockLine(t *testing.T) {
 }
 
 // TestKeepChildrenServerKeepsJobs: a daemon started with -keep-children gives its
-// children the jobs of jobsKeep, so a kept child outlives the daemon (claustrum's own).
+// children the jobs of supervisor.JobsKeep, so a kept child outlives the daemon (claustrum's own).
 func TestKeepChildrenServerKeepsJobs(t *testing.T) {
-	t.Setenv(childJobsOffEnv, "")
-	_ = os.Unsetenv(childJobsOffEnv)
+	t.Setenv(supervisor.ChildJobsOffEnv, "")
+	_ = os.Unsetenv(supervisor.ChildJobsOffEnv)
 	captureLogBuf(t)
 	s, sock := bootLineServer(t, true)
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	if s.procs.jobs != jobsKeep {
-		t.Errorf("jobs = %d, want jobsKeep", s.procs.jobs)
+	if s.procs.jobs != supervisor.JobsKeep {
+		t.Errorf("jobs = %d, want supervisor.JobsKeep", s.procs.jobs)
 	}
 }

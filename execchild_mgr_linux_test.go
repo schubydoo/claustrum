@@ -6,24 +6,28 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestSpawnClosesTrampolinePipeOnConstructionFailure proves spawn closes the
 // trampoline's exec-error pipe when a later pre-Start step fails (greptile P2). Under
 // a run dir a resolved command is wrapped, which opens that pipe; if the stdout pipe
 // then fails, both ends must be closed, not leaked. Linux-only: only here does
-// wrapCmdWithTrampoline open the pipe. The assertion is on the FILES (a second Close
+// supervisor.WrapCmdWithTrampoline open the pipe. The assertion is on the FILES (a second Close
 // reports ErrClosed), matching TestSpawnClosesPipesOnConstructionFailure.
 func TestSpawnClosesTrampolinePipeOnConstructionFailure(t *testing.T) {
-	oldPipe, oldErrPipe := osPipe, execChildErrPipe
-	t.Cleanup(func() { osPipe, execChildErrPipe = oldPipe, oldErrPipe })
+	oldPipe := osPipe
+	t.Cleanup(func() { osPipe = oldPipe })
 
 	var errR, errW *os.File
-	execChildErrPipe = func() (*os.File, *os.File, error) {
+	var oldErrPipe func() (*os.File, *os.File, error)
+	oldErrPipe = supervisor.SetExecChildErrPipeForTest(func() (*os.File, *os.File, error) {
 		r, w, err := oldErrPipe()
 		errR, errW = r, w
 		return r, w, err
-	}
+	})
+	t.Cleanup(func() { supervisor.SetExecChildErrPipeForTest(oldErrPipe) })
 	// Fail the first stdout pipe, after the exec-error pipe was already opened.
 	osPipe = func() (*os.File, *os.File, error) {
 		return nil, nil, errors.New("pipe: too many open files")

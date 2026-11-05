@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // untilExit reads frames until the exit frame and returns the stdout bytes before it.
@@ -235,7 +237,7 @@ func TestTrampolineStartFailureAnswersWithDirectStart(t *testing.T) {
 		t.Fatalf("spawn error = %v, want %q", err, want)
 	}
 	want := []string{
-		"[process.Manager] exec trampoline failed for p1 (fork/exec " + trampolineSelf() + ": permission denied); starting it directly — a successor daemon will not be able to reap it\n",
+		"[process.Manager] exec trampoline failed for p1 (fork/exec " + supervisor.TrampolineSelfForTest() + ": permission denied); starting it directly — a successor daemon will not be able to reap it\n",
 		"[process.Manager] Failed to start process p1: fork/exec " + exe + ": permission denied\n",
 	}
 	out := logs.String()
@@ -254,13 +256,12 @@ func TestTrampolineStartFailureAnswersWithDirectStart(t *testing.T) {
 func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	// Two stale entries: a run dir entry in the daemon env and a child marker in the
 	// spawn env. The direct start removes the marker and puts the run dir entry last.
-	t.Setenv(envChildMarker, "")
-	t.Setenv(envRunDir, "/stale")
+	t.Setenv(supervisor.EnvChildMarker, "")
+	t.Setenv(supervisor.EnvRunDir, "/stale")
 	logs := captureLogBuf(t)
-	old := trampolineSelf
-	t.Cleanup(func() { trampolineSelf = old })
 	noSelf := filepath.Join(t.TempDir(), "no-such-daemon")
-	trampolineSelf = func() string { return noSelf }
+	old := supervisor.SetTrampolineSelfForTest(func() string { return noSelf })
+	t.Cleanup(func() { supervisor.SetTrampolineSelfForTest(old) })
 
 	runDir := t.TempDir()
 	m := newTestProcManager(t)
@@ -268,12 +269,12 @@ func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	m.RunDir = runDir
 	c, frames := pipeConn(t)
 	exe, env := helperCommand(t, "environ")
-	env[envChildMarker] = "1:1"
+	env[supervisor.EnvChildMarker] = "1:1"
 	// A Go runtime entry in the spawn env. The trampoline wrap moves it to a held name
 	// in place. The direct start must get the env from before the wrap: the entry
 	// under its own name, and no held twin.
 	env["GOTRACEBACK"] = "all"
-	held := heldEnvPrefix + "GOTRACEBACK"
+	held := supervisor.HeldEnvPrefix + "GOTRACEBACK"
 	// The wrap can change the env in place only when its slice has spare room. The
 	// strip of this daemon entry leaves that room.
 	t.Setenv(managedSettingsDirEnv, t.TempDir())
@@ -282,14 +283,14 @@ func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	}
 	// The env of the child is only searched, never printed: it is the host env.
 	lines := strings.Split(strings.TrimSuffix(untilExit(t, frames), "\n"), "\n")
-	if last, want := lines[len(lines)-1], envRunDir+"="+runDir; last != want {
+	if last, want := lines[len(lines)-1], supervisor.EnvRunDir+"="+runDir; last != want {
 		t.Errorf("the last entry of the child env is %q, want %q", last, want)
 	}
 	for i, e := range lines {
-		if strings.HasPrefix(e, envChildMarker+"=") || strings.HasPrefix(e, held+"=") {
+		if strings.HasPrefix(e, supervisor.EnvChildMarker+"=") || strings.HasPrefix(e, held+"=") {
 			t.Errorf("the child env holds %q", e)
 		}
-		if strings.HasPrefix(e, envRunDir+"=") && i != len(lines)-1 {
+		if strings.HasPrefix(e, supervisor.EnvRunDir+"=") && i != len(lines)-1 {
 			t.Errorf("the child env holds the run dir entry %q before its last entry", e)
 		}
 	}

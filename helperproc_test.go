@@ -15,6 +15,7 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestMain doubles the test binary as a tiny cross-platform fixture command
@@ -28,7 +29,7 @@ func TestMain(m *testing.M) {
 	// a run/<clientId>/ socket re-execs this test binary as `--exec-child …`, which
 	// must run the trampoline (stamp the child identity, restore held env, exec the
 	// real target) rather than the suite. A no-op on non-linux and for any other argv.
-	maybeRunExecChild()
+	supervisor.MaybeRunExecChild()
 
 	// Every helper re-exec is a copy of THIS binary, and under -race the tsan
 	// runtime sleeps atexit_sleep_ms (default 1000ms) in the main thread before
@@ -259,7 +260,7 @@ func runHelper(mode string, args []string) int {
 		fmt.Fprint(os.Stderr, "err\n")
 	case "tree":
 		// Fixture for the whole-tree kill tests: wait for the parent's
-		// go-ahead on stdin (so confineProcess runs before any grandchild
+		// go-ahead on stdin (so supervisor.ConfineProcess runs before any grandchild
 		// exists), spawn a grandchild sleeper, record its PID in args[0],
 		// then linger so the tree stays alive until it is killed.
 		var b [1]byte
@@ -414,7 +415,7 @@ func runHelper(mode string, args []string) int {
 		// A stand-in for a daemon that owns one child: spawn a sleeper through the
 		// production process manager, write its pid to args[0], then linger until the
 		// test ends this process hard. On Windows args[1] "job" puts the child in a job
-		// of its own, "keep" in a job of jobsKeep, and "no-job" in none. Before the pid
+		// of its own, "keep" in a job of supervisor.JobsKeep, and "no-job" in none. Before the pid
 		// it writes the job state of the child (childJobState) to args[0] + ".job".
 		client, server := net.Pipe()
 		go func() { _, _ = io.Copy(io.Discard, server) }()
@@ -425,10 +426,10 @@ func runHelper(mode string, args []string) int {
 		}
 		m := newProcManager()
 		if len(args) > 1 && args[1] == "job" {
-			m.jobs = jobsOn
+			m.jobs = supervisor.JobsOn
 		}
 		if len(args) > 1 && args[1] == "keep" {
-			m.jobs = jobsKeep
+			m.jobs = supervisor.JobsKeep
 		}
 		p, err := m.spawn(conn.New(client, nil, 0, nil, nil, nil), "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
 		if err != nil {

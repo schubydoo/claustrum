@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/schubydoo/claustrum/internal/install"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // launcher.resolve and process.spawn rows of the 89cb6289 captures, on unix. The
@@ -768,9 +769,9 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 		params map[string]any
 		want   string
 	}{
-		{"S2-echo-W", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", managedSpawnRelative, "other")},
-		{"S2-echo-empty", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", managedSpawnRelative, "other")},
-		{"S11-relcmd-badlauncher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", managedSpawnRelative, "other")},
+		{"S2-echo-W", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
+		{"S2-echo-empty", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
+		{"S11-relcmd-badlauncher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
 		{"S3", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32004", cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "launcher")},
 		{"S5-wrap", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnErrFrame("-32004", cannot+managedNotAbsolute, "launcher")},
 		{"S5-own-path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path", "launcher")},
@@ -786,7 +787,7 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 	}
 	out := logs.String()
 	for _, want := range []string{
-		"[process.Manager] Failed to start process p1: " + managedSpawnRelative + "\n",
+		"[process.Manager] Failed to start process p1: " + supervisor.ManagedSpawnRelative + "\n",
 		"[process.Manager] Failed to start process p1: " + cannot + managedNotAbsolute + "\n",
 		"[process.Manager] Failed to start process p1: " + cannot + managedNoLauncher + "\n",
 	} {

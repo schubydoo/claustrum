@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package main
+package supervisor
 
 import (
 	"fmt"
@@ -41,9 +41,9 @@ import (
 // spawns the target directly.
 const (
 	execChildFlag  = "--exec-child"
-	heldEnvPrefix  = "CLAUDE_SSH_HELD_"
-	envChildMarker = "CLAUDE_SSH_CHILD"
-	envRunDir      = "CLAUDE_SSH_RUN_DIR"
+	HeldEnvPrefix  = "CLAUDE_SSH_HELD_"
+	EnvChildMarker = "CLAUDE_SSH_CHILD"
+	EnvRunDir      = "CLAUDE_SSH_RUN_DIR"
 	// execErrExtraFD is the child fd of the trampoline's exec-error pipe. spawn passes the
 	// pipe's write end as the sole cmd.ExtraFiles entry, so it lands at fd 3.
 	execErrExtraFD = 3
@@ -69,9 +69,9 @@ var execChildExit = os.Exit
 // fails (the descriptor-leak guard, same idiom as osPipe in process.go).
 var execChildErrPipe = os.Pipe
 
-// maybeRunExecChild runs the trampoline when invoked as `<self> --exec-child ...` and never
+// MaybeRunExecChild runs the trampoline when invoked as `<self> --exec-child ...` and never
 // returns in that case. It is called at the very top of main, before flag parsing.
-func maybeRunExecChild() {
+func MaybeRunExecChild() {
 	if len(os.Args) >= 2 && os.Args[1] == execChildFlag {
 		runExecChild(os.Args[2:])
 	}
@@ -93,7 +93,7 @@ func runExecChild(argv []string) {
 	// The parent removed every CLAUDE_SSH_CHILD entry (runDirEnv), so this adds the
 	// entry at the end. It comes right after CLAUDE_SSH_RUN_DIR: restoreHeldEnv puts a
 	// held Go runtime variable back at its own place, before that entry.
-	env = sysproc.ReplaceOrAppendEnv(env, envChildMarker, childIdentity())
+	env = sysproc.ReplaceOrAppendEnv(env, EnvChildMarker, childIdentity())
 	err := execChildExec(argv[0], argv[1:], env)
 	// Only reached when the target exec failed. Report it exactly as exec.Cmd.Start would
 	// (os.PathError{Op:"fork/exec", Path, Err}) so the parent's frame matches a direct
@@ -109,7 +109,7 @@ func childIdentity() string {
 	return strconv.Itoa(os.Getpid()) + ":" + ownStartToken()
 }
 
-// wrapCmdWithTrampoline rewrites cmd to launch through the exec-child trampoline and
+// WrapCmdWithTrampoline rewrites cmd to launch through the exec-child trampoline and
 // returns the exec-error pipe's read end (nil when not wrapped). It wraps only when a run
 // dir is known (the daemon has a socket path) and the command already resolved. A
 // bare name exec.Command could not find leaves cmd.Err set, and is left untouched so
@@ -120,8 +120,8 @@ func childIdentity() string {
 // failure (missing absolute path, non-executable format, permission) is reported by the
 // trampoline over the returned pipe, not swallowed. It returns the pipe's read AND write
 // ends (both nil when not wrapped): after Start the caller closes the write end (its copy)
-// and reads the read end. See readExecChildError.
-func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os.File) {
+// and reads the read end. See ReadExecChildError.
+func WrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os.File) {
 	if runDir == "" || cmd.Err != nil {
 		return nil, nil
 	}
@@ -162,18 +162,18 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 // two entries (measured on Linux for GOGC and GOMAXPROCS). holdGoEnv and
 // restoreHeldEnv keep such a variable at its own place, before this entry.
 func runDirEnv(env []string, runDir string) []string {
-	env = sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(env, envRunDir), envChildMarker)
-	return append(env, envRunDir+"="+runDir)
+	env = sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(env, EnvRunDir), EnvChildMarker)
+	return append(env, EnvRunDir+"="+runDir)
 }
 
-// trampolineFallbackEnv is the environment of a command that spawn starts directly
+// TrampolineFallbackEnv is the environment of a command that spawn starts directly
 // after the start of the trampoline failed. env is the environment before the wrap.
 // The command gets the run dir entry, and no CLAUDE_SSH_CHILD entry, because only the
 // trampoline can stamp that one. This is the same environment as the direct start in
-// wrapCmdWithTrampoline for a daemon with no re-executable binary. It is claustrum's
+// WrapCmdWithTrampoline for a daemon with no re-executable binary. It is claustrum's
 // choice and is not measured: the one measured row (on Linux) has a direct start that
 // fails too.
-func trampolineFallbackEnv(env []string, runDir string) []string {
+func TrampolineFallbackEnv(env []string, runDir string) []string {
 	return runDirEnv(env, runDir)
 }
 
@@ -191,7 +191,7 @@ func holdGoEnv(env []string) []string {
 		prefix := name + "="
 		for i, e := range env {
 			if strings.HasPrefix(e, prefix) {
-				env[i] = heldEnvPrefix + e
+				env[i] = HeldEnvPrefix + e
 				break
 			}
 		}
@@ -210,7 +210,7 @@ func restoreHeldEnv(env []string) []string {
 	held := make(map[string]bool, len(heldGoRuntimeEnv))
 	for _, e := range env {
 		for _, name := range heldGoRuntimeEnv {
-			if strings.HasPrefix(e, heldEnvPrefix+name+"=") {
+			if strings.HasPrefix(e, HeldEnvPrefix+name+"=") {
 				held[name] = true
 			}
 		}
@@ -219,10 +219,10 @@ func restoreHeldEnv(env []string) []string {
 	at := make(map[string]int, len(held)) // the place in out of each restored name
 	for _, e := range env {
 		key, _, _ := strings.Cut(e, "=")
-		name, isHeld := strings.CutPrefix(key, heldEnvPrefix)
+		name, isHeld := strings.CutPrefix(key, HeldEnvPrefix)
 		switch {
 		case isHeld && held[name]:
-			restored := strings.TrimPrefix(e, heldEnvPrefix)
+			restored := strings.TrimPrefix(e, HeldEnvPrefix)
 			if i, again := at[name]; again {
 				out[i] = restored // a second held entry of one name: the last value wins
 				continue
@@ -237,7 +237,7 @@ func restoreHeldEnv(env []string) []string {
 }
 
 // trampolineSelf is the path the daemon re-execs as the trampoline, or "" when it has no
-// re-executable self (then wrapCmdWithTrampoline spawns the target directly). It prefers
+// re-executable self (then WrapCmdWithTrampoline spawns the target directly). It prefers
 // /proc/self/exe, which points at the running image even after the on-disk binary is
 // unlinked or replaced (linux). On darwin there is no /proc/self/exe, so os.Executable is
 // used — but only when its file still exists: a daemon whose binary was uninstalled while

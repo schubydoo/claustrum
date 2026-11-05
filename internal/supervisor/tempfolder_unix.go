@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package supervisor
 
 import (
 	"errors"
@@ -41,7 +41,7 @@ var tempProbes = struct {
 	inFlight map[string]*tempProbe
 }{inFlight: map[string]*tempProbe{}}
 
-// dropUnusableTempVars removes from env each name of tempFolderNames whose
+// DropUnusableTempVars removes from env each name of tempFolderNames whose
 // inherited folder cannot take a file, and logs one line for each. A relative value
 // is not tested and stays (measured on Linux).
 //
@@ -49,7 +49,7 @@ var tempProbes = struct {
 // tempProbeWait after the start of that test, and keeps the name after it. A spawn
 // that joins a test older than tempProbeWait does not wait. The spawn that started a test logs one
 // line when its wait ends first (claustrum's own, not measured).
-func dropUnusableTempVars(env []string) []string {
+func DropUnusableTempVars(env []string) []string {
 	type tested struct {
 		name, dir string
 		p         *tempProbe

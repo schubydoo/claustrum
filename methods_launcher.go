@@ -16,7 +16,7 @@ import (
 //   - launcher.resolve reads the managed settings and answers none, usable,
 //     unusable or unreadable (handleLauncher below).
 //   - process.spawn takes a `launcher` param and runs the child through it, or
-//     refuses the spawn (refuseManagedLauncher in spawncheck.go, spawnVia in process.go).
+//     refuses the spawn (supervisor.RefuseManagedLauncher in internal/supervisor/spawncheck.go, spawnVia in process.go).
 //   - -install and -probe-cli run the CLI through the launcher, but only when
 //     CLAUDE_SSH_MANAGED_LAUNCHER=1 (internal/install/managedlauncher_run.go).
 //

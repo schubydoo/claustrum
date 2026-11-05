@@ -197,7 +197,7 @@ func bindParams(req *request, v rpc.PathExpander) *response {
 }
 
 // execChildRunDir derives the run dir of the daemon from its socket path, as
-// the execChildRunDir of package main does: the folder of the socket path,
+// supervisor.ExecChildRunDir does: the folder of the socket path,
 // cleaned lexically, and "" only for an empty socket path.
 func execChildRunDir(socket string) string {
 	if socket == "" {

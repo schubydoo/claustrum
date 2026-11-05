@@ -1,4 +1,4 @@
-package main
+package supervisor
 
 import (
 	"path/filepath"
@@ -22,8 +22,8 @@ func TestExecChildRunDir(t *testing.T) {
 		{"", ""},
 	}
 	for _, c := range cases {
-		if got := execChildRunDir(c.sock); got != filepath.FromSlash(c.want) {
-			t.Errorf("execChildRunDir(%q) = %q, want %q", c.sock, got, c.want)
+		if got := ExecChildRunDir(c.sock); got != filepath.FromSlash(c.want) {
+			t.Errorf("ExecChildRunDir(%q) = %q, want %q", c.sock, got, c.want)
 		}
 	}
 }

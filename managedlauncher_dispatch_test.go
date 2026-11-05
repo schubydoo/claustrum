@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // TestLauncherResolveParams pins the params checks of launcher.resolve (measured,
@@ -52,9 +54,9 @@ func TestSpawnLauncherDecodeErrors(t *testing.T) {
 // pins the other texts of the managed launcher.
 func TestManagedSpawnTexts(t *testing.T) {
 	texts := map[string]string{
-		managedSpawnRelative:  "command must be an absolute path when a launcher is given",
-		managedSpawnCannotUse: "the managed launcher cannot be used: ",
-		managedNoInterpreter:  "its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)",
+		supervisor.ManagedSpawnRelative:  "command must be an absolute path when a launcher is given",
+		supervisor.ManagedSpawnCannotUse: "the managed launcher cannot be used: ",
+		supervisor.ManagedNoInterpreter:  "its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)",
 	}
 	for got, want := range texts {
 		if got != want {

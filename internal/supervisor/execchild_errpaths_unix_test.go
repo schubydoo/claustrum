@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package main
+package supervisor
 
 import (
 	"errors"
@@ -46,9 +46,9 @@ func TestWrapCmdWithTrampolinePipeFailure(t *testing.T) {
 	wantPath, wantArgs := cmd.Path, slices.Clone(cmd.Args)
 	wantEnv := slices.Clone(cmd.Env)
 
-	r, w := wrapCmdWithTrampoline(cmd, "/x/run/c0ffee01")
+	r, w := WrapCmdWithTrampoline(cmd, "/x/run/c0ffee01")
 	if r != nil || w != nil {
-		t.Errorf("wrapCmdWithTrampoline returned a pipe (%v, %v) although os.Pipe failed", r, w)
+		t.Errorf("WrapCmdWithTrampoline returned a pipe (%v, %v) although os.Pipe failed", r, w)
 	}
 	if cmd.Path != wantPath || !slices.Equal(cmd.Args, wantArgs) {
 		t.Errorf("the command was rewritten without an error pipe: path=%q args=%v", cmd.Path, cmd.Args)
@@ -61,7 +61,27 @@ func TestWrapCmdWithTrampolinePipeFailure(t *testing.T) {
 	}
 }
 
-// stubExecChildExit swaps execChildExit for the panicking stand-in of stubOsExit, so
+// exitPanic is the sentinel that the execChildExit stub panics with. catchExit
+// turns it back into an exit code.
+type exitPanic struct{ code int }
+
+// catchExit runs f under the stub, reporting a stubbed exit as (code, true).
+// (0, false) means f returned without exiting. Any other panic re-panics.
+func catchExit(f func()) (code int, exited bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			ep, ok := r.(exitPanic)
+			if !ok {
+				panic(r)
+			}
+			code, exited = ep.code, true
+		}
+	}()
+	f()
+	return 0, false
+}
+
+// stubExecChildExit swaps execChildExit for a stand-in that panics with exitPanic, so
 // catchExit reports the exit code of the trampoline.
 func stubExecChildExit(t *testing.T) {
 	t.Helper()

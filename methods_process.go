@@ -9,6 +9,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 func (s *server) handleProcess(c *conn.Conn, req *request) rpc.Response {
@@ -85,7 +86,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	var linkTTL time.Duration
 	if p.LinkBound != nil {
 		if p.Launcher != nil {
-			return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, "linkBound cannot be combined with pty or launcher", spawnReason{"other"})
+			return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, "linkBound cannot be combined with pty or launcher", supervisor.SpawnReason{Reason: "other"})
 		}
 		if p.Pty {
 			return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
@@ -104,10 +105,10 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		return rpc.Response{NoFrame: true}
 	}
 	if err != nil {
-		reason := spawnFailureReason(err, p.Cwd)
-		var sr *spawnRefusal
+		reason := supervisor.SpawnFailureReason(err, p.Cwd)
+		var sr *supervisor.SpawnRefusal
 		if errors.As(err, &sr) {
-			return rpc.ErrResultData(req.ID, sr.code, sr.msg, reason)
+			return rpc.ErrResultData(req.ID, sr.Code, sr.Msg, reason)
 		}
 		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
 	}

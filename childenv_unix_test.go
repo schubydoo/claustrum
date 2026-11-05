@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // otherShapeServer boots the harness daemon on <base>/b/s.sock, a socket that is not
@@ -84,16 +85,16 @@ func unsetEnv(t *testing.T, keys ...string) {
 func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 	// The daemon environment of the rows: EFX, then copies of the two entries, then
 	// CLAUDE_SSH_DAEMON_CHILD as the last entry.
-	unsetEnv(t, "EFX", envChildMarker, envRunDir, daemonChildMarker, "ZZNEW")
+	unsetEnv(t, "EFX", supervisor.EnvChildMarker, supervisor.EnvRunDir, daemonChildMarker, "ZZNEW")
 	os.Setenv("EFX", "old")
-	os.Setenv(envChildMarker, "x")
-	os.Setenv(envRunDir, "/y")
+	os.Setenv(supervisor.EnvChildMarker, "x")
+	os.Setenv(supervisor.EnvRunDir, "/y")
 	os.Setenv(daemonChildMarker, "1")
 	cl, dir := otherShapeServer(t)
 
 	for i := range 5 { // measured: the order is the same in every spawn
 		pid, got := spawnEnviron(t, cl, "e"+strconv.Itoa(i), map[string]string{
-			"ZZNEW": "1", "EFX": "q", daemonChildMarker: "", envChildMarker: "caller", envRunDir: "/caller",
+			"ZZNEW": "1", "EFX": "q", daemonChildMarker: "", supervisor.EnvChildMarker: "caller", supervisor.EnvRunDir: "/caller",
 		})
 		if len(got) < 5 {
 			t.Fatalf("child environment has %d lines: %q", len(got), got)
@@ -101,14 +102,14 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 		// The key of the test helper is a new caller key too. The two new keys have no
 		// fixed order between them (measured).
 		tail := got[len(got)-5:]
-		start := regexp.MustCompile(`^` + envChildMarker + `=` + strconv.Itoa(pid) + `:\S.*$`)
+		start := regexp.MustCompile(`^` + supervisor.EnvChildMarker + `=` + strconv.Itoa(pid) + `:\S.*$`)
 		newKeys := slices.Sorted(slices.Values(tail[1:3]))
 		if tail[0] != daemonChildMarker+"=" || newKeys[0] != "CLAUSTRUM_TEST_HELPER=environ" || newKeys[1] != "ZZNEW=1" ||
-			tail[3] != envRunDir+"="+dir || !start.MatchString(tail[4]) {
+			tail[3] != supervisor.EnvRunDir+"="+dir || !start.MatchString(tail[4]) {
 			t.Fatalf("spawn %d: the environment ends %q\nwant %s=, the helper key, ZZNEW=1, %s=%s, %s=%d:<start>",
-				i, tail, daemonChildMarker, envRunDir, dir, envChildMarker, pid)
+				i, tail, daemonChildMarker, supervisor.EnvRunDir, dir, supervisor.EnvChildMarker, pid)
 		}
-		for _, name := range []string{envRunDir, envChildMarker, "EFX"} {
+		for _, name := range []string{supervisor.EnvRunDir, supervisor.EnvChildMarker, "EFX"} {
 			n := 0
 			for _, e := range got {
 				if strings.HasPrefix(e, name+"=") {
@@ -133,7 +134,7 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 // stands where a new caller key stands. CLAUDE_SSH_RUN_DIR and CLAUDE_SSH_CHILD are the
 // last two entries.
 func TestChildEnvKeepsThePlaceOfAGoRuntimeVariable(t *testing.T) {
-	unsetEnv(t, "EFX", "GOGC", "GOMAXPROCS", envChildMarker, envRunDir, daemonChildMarker)
+	unsetEnv(t, "EFX", "GOGC", "GOMAXPROCS", supervisor.EnvChildMarker, supervisor.EnvRunDir, daemonChildMarker)
 	os.Setenv("EFX", "old")
 	os.Setenv("GOGC", "50")
 	os.Setenv(daemonChildMarker, "1")
@@ -143,17 +144,17 @@ func TestChildEnvKeepsThePlaceOfAGoRuntimeVariable(t *testing.T) {
 	// The key of the test helper is a new caller key too. The two new keys have no
 	// fixed order between them (measured), so the test puts them in name order.
 	want := []string{"EFX=old", "GOGC=50", daemonChildMarker + "=1", "CLAUSTRUM_TEST_HELPER=environ",
-		"GOMAXPROCS=2", envRunDir + "=" + dir}
+		"GOMAXPROCS=2", supervisor.EnvRunDir + "=" + dir}
 	if len(got) < len(want)+1 {
 		t.Fatalf("child environment has %d lines: %q", len(got), got)
 	}
 	tail := slices.Clone(got[len(got)-len(want)-1:])
 	slices.Sort(tail[3:5])
 	if !slices.Equal(tail[:len(want)], want) {
-		t.Errorf("the environment ends %q\nwant %q and then %s", tail, want, envChildMarker)
+		t.Errorf("the environment ends %q\nwant %q and then %s", tail, want, supervisor.EnvChildMarker)
 	}
-	if last := tail[len(want)]; !strings.HasPrefix(last, envChildMarker+"="+strconv.Itoa(pid)+":") {
-		t.Errorf("the last entry is %q, want %s=%d:<start>", last, envChildMarker, pid)
+	if last := tail[len(want)]; !strings.HasPrefix(last, supervisor.EnvChildMarker+"="+strconv.Itoa(pid)+":") {
+		t.Errorf("the last entry is %q, want %s=%d:<start>", last, supervisor.EnvChildMarker, pid)
 	}
 }
 
@@ -187,8 +188,8 @@ func TestChildRecordOnARelativeSocket(t *testing.T) {
 	cl := dial(t, sock)
 
 	_, env := spawnEnviron(t, cl, "e1", map[string]string{})
-	if len(env) < 2 || env[len(env)-2] != envRunDir+"=." {
-		t.Errorf("the environment ends %q, want %s=. before the last entry", env[max(0, len(env)-2):], envRunDir)
+	if len(env) < 2 || env[len(env)-2] != supervisor.EnvRunDir+"=." {
+		t.Errorf("the environment ends %q, want %s=. before the last entry", env[max(0, len(env)-2):], supervisor.EnvRunDir)
 	}
 	pid := spawnSleeper(t, cl, "c1")
 	if _, err := os.Stat(filepath.Join(base, "children", strconv.Itoa(pid)+".json")); err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/procinfo"
 	"github.com/schubydoo/claustrum/internal/rpc"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
 // runShapedServer boots the harness daemon on <base>/run/c1/rpc.sock, the socket shape
@@ -105,7 +106,7 @@ func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
 	var firstProc atomic.Pointer[os.Process]
 	var toFirst atomic.Int32
 	realSignal := signalGroup
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if proc == firstProc.Load() {
 			toFirst.Add(1)
 		}

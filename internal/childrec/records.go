@@ -18,7 +18,7 @@ const ChildrenDirName = childrenDirName
 // once: at HoldRunDir, or at the first record call when HoldRunDir did not run.
 type Records struct {
 	// RunDir is the run dir of the daemon (CLAUDE_SSH_RUN_DIR): the folder of its
-	// socket path (execChildRunDir). It is "" only for a manager with no socket, as a
+	// socket path (supervisor.ExecChildRunDir). It is "" only for a manager with no socket, as a
 	// unit test builds one. When non-empty, spawn launches children through the
 	// exec-child trampoline. When empty it spawns them directly.
 	RunDir string

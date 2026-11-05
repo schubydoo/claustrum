@@ -1,6 +1,6 @@
 //go:build !linux && !darwin
 
-package main
+package supervisor
 
 import (
 	"os"
@@ -16,13 +16,13 @@ import (
 // Claustrum holds no run-dir lock on windows either (its runlock.LockRunFolder is a no-op there), so
 // on windows these are no-ops and the daemon spawns the target directly.
 
-// maybeRunExecChild is a no-op on windows — there is no --exec-child mode to intercept.
-func maybeRunExecChild() {}
+// MaybeRunExecChild is a no-op on windows — there is no --exec-child mode to intercept.
+func MaybeRunExecChild() {}
 
-// wrapCmdWithTrampoline is a no-op on windows — the command is spawned directly, so it
+// WrapCmdWithTrampoline is a no-op on windows — the command is spawned directly, so it
 // returns no exec-error pipe and adds no environment markers.
-func wrapCmdWithTrampoline(*exec.Cmd, string) (execErrR, execErrW *os.File) { return nil, nil }
+func WrapCmdWithTrampoline(*exec.Cmd, string) (execErrR, execErrW *os.File) { return nil, nil }
 
-// trampolineFallbackEnv is never reached on windows: no command is wrapped, so no
+// TrampolineFallbackEnv is never reached on windows: no command is wrapped, so no
 // start of a trampoline can fail. It returns env unchanged.
-func trampolineFallbackEnv(env []string, _ string) []string { return env }
+func TrampolineFallbackEnv(env []string, _ string) []string { return env }

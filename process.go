@@ -22,6 +22,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -194,7 +195,7 @@ type managedProc struct {
 	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
 	// this write-once pointer.
 	cmd   *exec.Cmd
-	group *procGroup // OS kill handle (the process group on Unix, the job or the direct child on Windows)
+	group *supervisor.ProcGroup // OS kill handle (the process group on Unix, the job or the direct child on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -284,9 +285,9 @@ type procManager struct {
 	startGate     sync.RWMutex
 
 	// jobs tells if spawn puts each child in a job of its own (Windows only, see
-	// childJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
+	// supervisor.ChildJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
 	// once at the start of the daemon. The zero value is off.
-	jobs childJobs
+	jobs supervisor.ChildJobs
 
 	// Records holds the run dir and the child-record state (internal/childrec). Its
 	// fields are promoted, so code reads them as fields of the manager.
@@ -495,15 +496,15 @@ func (p *managedProc) isLive() bool {
 	return p.running && !p.reaped
 }
 
-// signalGroup is a seam over procGroup.signal so the "do not signal a reaped
+// signalGroup is a seam over supervisor.ProcGroup.Signal so the "do not signal a reaped
 // process" guards are testable without actually delivering a signal to whatever
 // now owns a recycled pgid — which is precisely the accident being guarded
 // against. Production never reassigns it.
-var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
-	return g.signal(proc, signame)
+var signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
+	return g.Signal(proc, signame)
 }
 
-// signalIfLive delivers signame as signalProcessGroup does unless the process has
+// signalIfLive delivers signame as supervisor.SignalProcessGroup does unless the process has
 // already been reaped, and — only when it actually delivers — records who asked
 // for the kill in p.killedBy. Coupling the stamp to the delivery under one lock
 // is deliberate: a kill that lands on an already-reaped process changed nothing,
@@ -525,7 +526,7 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
 // reaped. A signal to the group goes by pid, and a signal by pid on POSIX is racy by
 // construction: a pidfd cannot address a process GROUP. The signal to the one
-// process goes through its handle (see signalProcessGroup), which has no such
+// process goes through its handle (see supervisor.SignalProcessGroup), which has no such
 // window on a Linux kernel with pidfd.
 //
 // This guard is a claustrum-only judgement, not a measured parity claim. The
@@ -541,7 +542,7 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	return live
 }
 
-// signalIfLiveErr is signalIfLive that also returns a *signalFailed of the delivery.
+// signalIfLiveErr is signalIfLive that also returns a *supervisor.SignalFailed of the delivery.
 func (p *managedProc) signalIfLiveErr(signame, killedBy string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -549,16 +550,16 @@ func (p *managedProc) signalIfLiveErr(signame, killedBy string) (bool, error) {
 }
 
 // signalIfLiveLocked is signalIfLiveErr for a caller that holds p.mu. A delivery
-// that failed with a *signalFailed stamps no killedBy: 52d82f0a gives such a child
+// that failed with a *supervisor.SignalFailed stamps no killedBy: 52d82f0a gives such a child
 // no killedBy at its later exit (measured on Linux and macOS). It sets no signalled
 // either, and a refused shutdown KILL stamps no "shutdown" (claustrum's own, not
 // measured). Every other error of signalGroup counts as
-// a delivery, as before. Only Linux and macOS make a *signalFailed.
+// a delivery, as before. Only Linux and macOS make a *supervisor.SignalFailed.
 func (p *managedProc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false, nil
 	}
-	var failed *signalFailed
+	var failed *supervisor.SignalFailed
 	if err := signalGroup(p.group, p.cmd.Process, signame); errors.As(err, &failed) {
 		// A refused signal leaves a pending farewell and its timer as they are
 		// (claustrum's own, not measured).
@@ -572,19 +573,6 @@ func (p *managedProc) signalIfLiveLocked(signame, killedBy string) (bool, error)
 	p.signalled = true
 	return true, nil
 }
-
-// signalFailed is the error of a signal that the system refused to a live child,
-// such as EPERM for a child that runs as another user. Its text is the text of
-// that error. name is the name of the signal as the log prints it, such as
-// "terminated". Only the procGroup of Linux and macOS makes one.
-type signalFailed struct {
-	name string
-	err  error
-}
-
-func (e *signalFailed) Error() string { return e.err.Error() }
-
-func (e *signalFailed) Unwrap() error { return e.err }
 
 // killGroupAfterExit SIGKILLs the process group once the managed process itself
 // has already exited, sweeping up any child it left behind. Deliberately does
@@ -602,7 +590,7 @@ func (e *signalFailed) Unwrap() error { return e.err }
 // sends none after a process that ended within the grace (measured on Linux), and
 // killAndWaitProc sends none there either.
 //
-// It returns the error of the kill. On Unix that is a *signalFailed or nil. On Windows
+// It returns the error of the kill. On Unix that is a *supervisor.SignalFailed or nil. On Windows
 // it is the error of TerminateJobObject on the job, or of TerminateProcess on a
 // direct child with no job.
 func (p *managedProc) killGroupAfterExit() error {
@@ -636,7 +624,7 @@ func (p *managedProc) killGroupBeforeExitFrame() {
 // (measured on Linux). The exit frame of the process.kill case has no killedBy (measured on Linux and macOS),
 // and this stamps none. The Windows answer is not measured. On Windows the error is ignored.
 //
-// With skipLivePid true it sends nothing if pidInUse finds a live process at the pid of
+// With skipLivePid true it sends nothing if supervisor.PidInUse finds a live process at the pid of
 // the ended child, because the group number is that pid (claustrum's own, not measured).
 // process.kill passes true and killAndWait passes false.
 func (p *managedProc) killGroupInDrain(skipLivePid bool) {
@@ -645,7 +633,7 @@ func (p *managedProc) killGroupInDrain(skipLivePid bool) {
 	if !p.running || !p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	if skipLivePid && pidInUse(p.cmd.Process.Pid) {
+	if skipLivePid && supervisor.PidInUse(p.cmd.Process.Pid) {
 		return
 	}
 	_ = signalGroup(p.group, p.cmd.Process, "KILL")
@@ -727,7 +715,7 @@ func (m *procManager) spawn(c *conn.Conn, id, command string, args []string, cwd
 
 // spawnVia is spawn with the process.spawn launcher param (89cb6289). A nil launcher
 // (the param absent or null) spawns the command itself. A non-nil launcher, an
-// empty one too, goes through refuseManagedLauncher before anything else. When it
+// empty one too, goes through supervisor.RefuseManagedLauncher before anything else. When it
 // passes, the child argv is the launcher argv, then the command, then the args. The
 // launcher is then the process, and its stream frames are its own. A linkTTL above
 // 0 makes a link-bound process with that unattended time (linkbound.go).
@@ -742,7 +730,7 @@ func (m *procManager) spawnVia(c *conn.Conn, id, command string, args []string, 
 func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*managedProc, error) {
 	path, argv := command, args
 	if launcher != nil {
-		if err := refuseManagedLauncher(*launcher, command); err != nil {
+		if err := supervisor.RefuseManagedLauncher(*launcher, command); err != nil {
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
@@ -804,12 +792,12 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 		// text after the id is the frame message. Measured on Linux and on Windows.
 		fi, err := os.Stat(cwd)
 		if err != nil {
-			err = &cwdError{fmt.Errorf("chdir %s: %w", cwd, err)}
+			err = &supervisor.CwdError{Err: fmt.Errorf("chdir %s: %w", cwd, err)}
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 		if !fi.IsDir() {
-			err = &cwdError{fmt.Errorf("chdir %s: not a directory", cwd)}
+			err = &supervisor.CwdError{Err: fmt.Errorf("chdir %s: not a directory", cwd)}
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
@@ -829,7 +817,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
 		// before this failure (measured log order).
-		if err := launchedCommandError(command); err != nil {
+		if err := supervisor.LaunchedCommandError(command); err != nil {
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
@@ -867,7 +855,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 			releaseTemp()
 		}
 	}()
-	cmd.SysProcAttr = spawnSysProcAttr(m.jobs)
+	cmd.SysProcAttr = supervisor.SpawnSysProcAttr(m.jobs)
 	// Launch through the exec-child trampoline, on every socket shape, so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
 	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
@@ -877,7 +865,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	// The path, argv and env before the wrap are kept for the direct start below.
 	// The env is a copy, because the wrap edits the env slice in place.
 	directPath, directArgs, directEnv := cmd.Path, cmd.Args, slices.Clone(cmd.Env)
-	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.RunDir)
+	execErrR, execErrW := supervisor.WrapCmdWithTrampoline(cmd, m.RunDir)
 	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
 	// below; a no-op (both ends nil) when the spawn was not trampolined.
 	closeExecErr := func() {
@@ -960,7 +948,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 		cmd = &exec.Cmd{
 			Path:        directPath,
 			Args:        directArgs,
-			Env:         trampolineFallbackEnv(directEnv, m.RunDir),
+			Env:         supervisor.TrampolineFallbackEnv(directEnv, m.RunDir),
 			Dir:         cmd.Dir,
 			SysProcAttr: cmd.SysProcAttr,
 			Stdout:      stdoutW,
@@ -972,7 +960,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	}
 	if err != nil {
 		if launcher != nil {
-			err = managedLauncherStartError(path, err)
+			err = supervisor.ManagedLauncherStartError(path, err)
 		}
 		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
@@ -990,9 +978,9 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 	// target is running.
 	if execErrR != nil {
 		_ = execErrW.Close() // drop the parent's write end so the read below terminates
-		if execErr := readExecChildError(execErrR); execErr != nil {
+		if execErr := supervisor.ReadExecChildError(execErrR); execErr != nil {
 			if launcher != nil {
-				execErr = managedLauncherStartError(path, execErr)
+				execErr = supervisor.ManagedLauncherStartError(path, execErr)
 			}
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, execErr)
 			_ = cmd.Wait() // reap the trampoline, which reported the error and exited
@@ -1032,7 +1020,7 @@ func (m *procManager) spawnWithTempRoot(c *conn.Conn, id, command string, args [
 		case <-bound.C:
 		}
 		bound.Stop()
-		group.close()
+		group.Close()
 		sysproc.CloseAll(stdoutR, stderrR)
 		_ = stdin.Close()
 	}
@@ -1182,7 +1170,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// On Windows a child in a job takes the rest of its job with it. So a process
 	// that it started and that holds its pipes ends here, and the drain below ends at
 	// once. A no-op on Unix and for a child with no job.
-	p.group.endRest()
+	p.group.EndRest()
 	// A child can leave a grandchild holding the same stdout — `npm run dev &`,
 	// anything that daemonizes. The pipes then stay open long after the process
 	// we spawned is gone. On the reference the exit frame lands 5 seconds after
@@ -1226,7 +1214,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// Release the OS group handle now the child is gone. On Windows this closes
 	// the kill handle of the direct child and the handle of its job. endRest emptied
 	// that job, so the close ends nothing.
-	p.group.close()
+	p.group.Close()
 	sigName := sysproc.ExitSignalName(err)
 	logging.Infof(fmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
 	metrics.Met.ProcessExits.Add(1)
@@ -1460,7 +1448,7 @@ func (p *managedProc) stdinWriter() {
 }
 
 // kill signals the child: on Unix KILL to its group and each other signal to the
-// child alone (see signalProcessGroup). An
+// child alone (see supervisor.SignalProcessGroup). An
 // already-exited child is skipped: once cmd.Wait has reaped it, its Unix pgid
 // can be recycled, so a late negative-pid signal could hit an unrelated
 // process group. (Windows is immune: the process handle pins identity.) The skip
@@ -1469,15 +1457,15 @@ func (p *managedProc) stdinWriter() {
 // does (measured). The spelling "SIGKILL" there is not measured. A live process at
 // the pid of the ended child skips that kill (claustrum's own, not measured).
 //
-// It returns a *signalFailed when the system refused the signal, and process.kill
-// answers its text (see signalFailed). Each other case returns nil.
+// It returns a *supervisor.SignalFailed when the system refused the signal, and process.kill
+// answers its text (see supervisor.SignalFailed). Each other case returns nil.
 func (m *procManager) kill(id, signal string) error {
 	p := m.get(id)
 	if p == nil {
 		return nil
 	}
 	live, err := p.signalIfLiveErr(signal, "client")
-	if !live && killEndsDrainGroup && strings.TrimPrefix(signal, "SIG") == "KILL" {
+	if !live && supervisor.KillEndsDrainGroup && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain(true)
 	}
 	return err
@@ -1587,19 +1575,19 @@ var (
 	cmdStdinPipe = (*exec.Cmd).StdinPipe
 )
 
-// resumeProc is resumeChild behind a seam. The resume cannot fail on Unix, where it
+// resumeProc is supervisor.ResumeChild behind a seam. The resume cannot fail on Unix, where it
 // does nothing, and on Windows only when a thread of the child cannot be resumed. So
 // the arm of spawn that ends the child and answers the error is unreachable without
 // the seam. Production never reassigns it.
-var resumeProc = resumeChild
+var resumeProc = supervisor.ResumeChild
 
-// confineProc is confineProcess behind a seam. Confinement cannot fail on Unix: the
+// confineProc is supervisor.ConfineProcess behind a seam. Confinement cannot fail on Unix: the
 // process group is already set by sysproc.NewSysProcAttr, so the call returns a nil error. On
 // Windows it fails when the OpenProcess it needs fails, or when the job of the child
 // cannot be made or joined. The warn-and-continue arm
 // of spawn is therefore unreachable without the seam. That arm warns, keeps the group
 // that came back and does not abort the spawn. Production never reassigns it.
-var confineProc = confineProcess
+var confineProc = supervisor.ConfineProcess
 
 // clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
 // waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
@@ -1669,10 +1657,10 @@ func (m *procManager) signalAndWait(p *managedProc, signal string, grace time.Du
 // signalAndWaitAs is signalAndWait with the killedBy label of the signal.
 func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	live, err := p.signalIfLiveErr(signal, label)
-	var failed *signalFailed
+	var failed *supervisor.SignalFailed
 	if errors.As(err, &failed) {
 		// The wait and the force go on (52d82f0a, measured on Linux and macOS).
-		logging.Warnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.name, err)
+		logging.Warnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.Name, err)
 	}
 	if !live && strings.TrimPrefix(signal, "SIG") == "KILL" {
 		p.killGroupInDrain(false)
@@ -1733,7 +1721,7 @@ func (m *procManager) signalAndWaitAs(p *managedProc, signal, label string, grac
 		// the dispatch goroutine forever; report not-yet-dead. 52d82f0a logs the
 		// line below on Linux and macOS (measured, after a refused SIGKILL). Windows
 		// logs none (claustrum's own, not measured).
-		if logsUnreapedKill {
+		if supervisor.LogsUnreapedKill {
 			logging.Warnf("[process.Manager] KillAndWait %s: still running 7s after SIGKILL (D-state?)", p.id)
 		}
 		return true, false, false, true
@@ -1912,7 +1900,7 @@ func argsAskEnd(args []string) bool {
 // a signal, for the "cleanup:" line. A child that refused the signal counts too
 // (claustrum's own, not measured).
 //
-// On Linux and macOS (shutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
+// On Linux and macOS (supervisor.ShutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
 // to its pid first, and the sweep waits for it (endAsked). Every other child gets the
 // group SIGKILL at once. On Windows every child gets the kill of its job at once
 // (b3081b51, measured on Windows).
@@ -1923,7 +1911,7 @@ func (m *procManager) killAllCount() int {
 	var asked []*managedProc
 	for _, p := range m.procs {
 		sig := "KILL"
-		if shutdownAsksEnd && p.askEnd {
+		if supervisor.ShutdownAsksEnd && p.askEnd {
 			sig = "TERM"
 		}
 		// Skip exited children — their pgid may already be recycled (see kill).
@@ -1993,9 +1981,9 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	shellenv.AwaitLoginPATH(noShellAgent)
 	base := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	// An inherited temp-folder name whose folder cannot take a file is not handed
-	// on (tempfolder_unix.go). A caller key of that name still reaches the child
+	// on (internal/supervisor/tempfolder_unix.go). A caller key of that name still reaches the child
 	// (claustrum's own, not measured).
-	base = dropUnusableTempVars(base)
+	base = supervisor.DropUnusableTempVars(base)
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather

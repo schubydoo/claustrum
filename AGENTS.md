@@ -438,7 +438,7 @@ name from a parameter or from the archive.
 ### The temp-folder test
 
 On Linux and macOS a spawn tests the folder of an inherited `CLAUDE_CODE_TMPDIR`, `TMPDIR`,
-`TMP` or `TEMP` (`tempfolder_unix.go`). `TMP` and the order are claustrum's own, not
+`TMP` or `TEMP` (`internal/supervisor/tempfolder_unix.go`). `TMP` and the order are claustrum's own, not
 measured. For a folder that does not exist, the test runs in its nearest existing parent
 folder (claustrum's own, not measured, approved by the maintainer). It removes one file,
 `.claude-ssh-<n>`, by name with a plain `os.Remove`, only after its own exclusive create. A

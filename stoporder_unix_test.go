@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
@@ -66,7 +67,7 @@ func TestCloseAllKillsChildrenBeforeTokenAndLock(t *testing.T) {
 	// The seam is set before the daemon starts, so no goroutine of the daemon reads
 	// it while the test writes it.
 	realSignal := signalGroup
-	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	signalGroup = func(g *supervisor.ProcGroup, proc *os.Process, signame string) error {
 		if signame == "KILL" {
 			kills.Add(1)
 			if _, err := os.Stat(token); err == nil {

@@ -9,7 +9,7 @@ import (
 
 // NewSysProcAttr puts the child in a new process group (Windows has no setpgid;
 // CREATE_NEW_PROCESS_GROUP is the closest analogue). With no job a kill ends the direct
-// child only (see procGroup in package main).
+// child only (see supervisor.ProcGroup).
 func NewSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 }

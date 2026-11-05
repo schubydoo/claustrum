@@ -9,7 +9,7 @@ import (
 )
 
 // The linux start-time source of the child records and of the exec-child trampoline's
-// CLAUDE_SSH_CHILD marker (execchild_linux.go of the daemon).
+// CLAUDE_SSH_CHILD marker (internal/supervisor/execchild_linux.go).
 
 // OwnStartTicks returns this process's start-time in clock ticks since boot — field 22 of
 // /proc/self/stat, the value the reference embeds in CLAUDE_SSH_CHILD. Field 2 (comm) is
