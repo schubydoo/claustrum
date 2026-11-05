@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -277,5 +280,73 @@ func TestWorktreeCreateKilledCheckoutKeepsStdoutDrain(t *testing.T) {
 	}
 	if floor := time.Duration(timeoutMs)*time.Millisecond + drainCap/2; elapsed < floor {
 		t.Errorf("reply after %s, want at least %s: the stdout drain was skipped after the deadline kill", elapsed, floor)
+	}
+}
+
+// A read-tree call with a timeoutMs that fails by itself, while a child holds
+// stdout and stderr until after the deadline, answers the failure of git, not
+// timeout (b3081b51, measured on Linux and macOS). The deadline fires right
+// after git exits (checkoutWaited). The child ends only after that, when the
+// test closes the FIFO. The rollback is that of a failed checkout. In the quiet
+// case git writes no stderr, so the text is the exit error. The quiet case is
+// claustrum's own.
+func TestWorktreeCreateFailedCheckoutHeldPastDeadline(t *testing.T) {
+	setDuration(t, &worktreeCreateDrainCap, time.Minute)
+	for _, tc := range []struct {
+		name, stderr, text string
+	}{
+		{"stderr of git", `fatal: a.txt: smudge filter x failed\n`, "fatal: a.txt: smudge filter x failed"},
+		{"no stderr of git", "", "exit status 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newWTFixture(t, false)
+			h := newTestGitDeps()
+			installGitSlowStub(t, f.realGit)
+			slowGit(t, "read-tree", "holdfail", time.Minute, tc.stderr, "")
+			endHeldDescendant(t)
+			fifo := filepath.Join(t.TempDir(), "hold")
+			if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CLAUSTRUM_GITSTUB_HOLDFIFO", fifo)
+			// The open of the writer waits for the stub, which opens the reader.
+			writer := make(chan *os.File, 1)
+			go func() {
+				w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+				if err != nil {
+					close(writer)
+					return
+				}
+				writer <- w
+			}()
+			release := sync.OnceFunc(func() {
+				if w, ok := <-writer; ok {
+					_ = w.Close()
+				}
+			})
+			t.Cleanup(func() {
+				// A reader ends a writer open that no stub met.
+				if r, err := os.OpenFile(fifo, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
+					_ = r.Close()
+				}
+				release()
+			})
+			var exited atomic.Bool
+			old := checkoutWaited
+			t.Cleanup(func() { checkoutWaited = old })
+			checkoutWaited = func() { exited.Store(true) }
+			fired := deadlineAt(t, exited.Load, release)
+
+			raw, _ := f.create(t, h, "w1", "", markerTimeoutMs)
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): ` +
+				tc.text + `","errorCode":"worktree_add_failed"}}`
+			if strings.TrimSpace(raw) != want {
+				t.Fatalf("reply = %s\nwant    %s", raw, want)
+			}
+			if fired().IsZero() {
+				t.Fatal("the deadline did not fire before the reply")
+			}
+			f.assertRolledBack(t, []string{}, false)
+		})
 	}
 }
