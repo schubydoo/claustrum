@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -35,29 +36,9 @@ func splitEnd(line []byte) (plain []byte, at, ln int64, ok bool) {
 	return plain, a, l, true
 }
 
-func TestStampEndMeasuredShape(t *testing.T) {
-	plain := `{"jsonrpc":"2.0","id":1,"result":{"pong":true}}`
-	in := []byte(plain + "\n")
-	keep := string(in)
-	got := string(stampEnd(in, 0))
-	want := `{"jsonrpc":"2.0","id":1,"result":{"pong":true},"end":{"at":0,"len":46}}` + "\n"
-	if got != want {
-		t.Errorf("stampEnd = %q, want %q", got, want)
-	}
-	if string(in) != keep {
-		t.Errorf("stampEnd changed its input: %q", in)
-	}
-	stream := `{"type":"stream","processId":"f1","stream":"stdout","seq":1,"data":"Z290OmhpCg=="}` + "\n"
-	got = string(stampEnd([]byte(stream), 174))
-	want = `{"type":"stream","processId":"f1","stream":"stdout","seq":1,"data":"Z290OmhpCg==","end":{"at":174,"len":81}}` + "\n"
-	if got != want {
-		t.Errorf("stampEnd stream = %q, want %q", got, want)
-	}
-}
-
 func TestSplitEndRoundTrip(t *testing.T) {
 	in := []byte(`{"a":{"b":1}}` + "\n")
-	stamped := stampEnd(in, 12)
+	stamped := conn.StampEnd(in, 12)
 	line := bytes.TrimSuffix(stamped, []byte("\n"))
 	plain, at, ln, ok := splitEnd(line)
 	if !ok || at != 12 || ln != int64(len(in)-2) || string(plain) != `{"a":{"b":1}}` {
@@ -70,7 +51,7 @@ func TestSplitEndRoundTrip(t *testing.T) {
 
 // endPipeConn returns a conn that writes into a buffer that the test reads, and a
 // function that waits for n lines and gives the bytes written so far.
-func endPipeConn(t *testing.T) (*conn, func(int) string) {
+func endPipeConn(t *testing.T) (*conn.Conn, func(int) string) {
 	t.Helper()
 	client, srv := net.Pipe()
 	var (
@@ -90,7 +71,7 @@ func endPipeConn(t *testing.T) (*conn, func(int) string) {
 		}
 	}()
 	t.Cleanup(func() { client.Close(); srv.Close() })
-	return &conn{nc: client}, func(lines int) string {
+	return conn.New(client, nil, 0, nil, nil, nil), func(lines int) string {
 		// The pipe hands over a write before the reader stores it, so poll.
 		deadline := time.Now().Add(5 * time.Second)
 		for {
@@ -107,20 +88,20 @@ func endPipeConn(t *testing.T) (*conn, func(int) string) {
 
 func TestConnLinesCarryRunningEndCount(t *testing.T) {
 	c, gotN := endPipeConn(t)
-	if c.writeResponse(rpc.PongResult{Pong: true}) {
+	if c.WriteResponse(rpc.PongResult{Pong: true}) {
 		t.Fatal("writeResponse failed")
 	}
 	shared := []byte(`{"type":"stream","processId":"p","stream":"stdout","seq":1,"data":"AA=="}` + "\n")
 	keep := string(shared)
-	if err := c.writeLine(shared); err != nil {
+	if err := c.WriteLine(shared); err != nil {
 		t.Fatal(err)
 	}
 	if string(shared) != keep {
 		t.Errorf("writeLine changed the shared slice: %q", shared)
 	}
-	c.lockWrites()
+	c.LockWrites()
 	err := writeFramesLocked(c, []streamFrame{{Type: "stream", ProcessID: "p", Stream: "stderr", Seq: 2}})
-	c.unlockWrites()
+	c.UnlockWrites()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,9 +126,9 @@ func TestConnLinesCarryRunningEndCount(t *testing.T) {
 func TestEndCountIsPerConnection(t *testing.T) {
 	a, gotA := endPipeConn(t)
 	b, gotB := endPipeConn(t)
-	a.writeResponse(rpc.PongResult{Pong: true})
-	a.writeResponse(rpc.PongResult{Pong: true})
-	b.writeResponse(rpc.PongResult{Pong: true})
+	a.WriteResponse(rpc.PongResult{Pong: true})
+	a.WriteResponse(rpc.PongResult{Pong: true})
+	b.WriteResponse(rpc.PongResult{Pong: true})
 	if want := `{"pong":true,"end":{"at":0,"len":12}}` + "\n" + `{"pong":true,"end":{"at":38,"len":12}}` + "\n"; gotA(2) != want {
 		t.Errorf("conn a wire = %q, want %q", gotA(2), want)
 	}

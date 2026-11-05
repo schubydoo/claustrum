@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/metrics"
 )
 
@@ -12,8 +13,8 @@ import (
 // error must come back before any bytes touch the connection (nc stays nil —
 // reaching a write would panic).
 func TestWriteJSONMarshalError(t *testing.T) {
-	c := &conn{}
-	if err := c.writeJSON(map[string]any{"bad": make(chan int)}); err == nil {
+	c := conn.New(nil, nil, 0, nil, nil, nil)
+	if err := c.WriteJSON(map[string]any{"bad": make(chan int)}); err == nil {
 		t.Error("writeJSON of an unmarshalable value succeeded, want error")
 	}
 }
@@ -52,7 +53,7 @@ func TestAcceptLoopBackoffCapsAtOneSecond(t *testing.T) {
 	ln := &erroringListener{}
 	s := &server{
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	done := make(chan struct{})

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
@@ -52,7 +53,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 		token:      testToken,
 		ln:         ln,
 		procs:      newTestProcManager(t),
-		conns:      make(map[*conn]struct{}),
+		conns:      make(map[*conn.Conn]struct{}),
 		shutdown:   make(chan struct{}),
 		instanceID: testInstanceID,
 		startedAt:  testStartedAt,
@@ -76,8 +77,8 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 			// nil ac silently disables every path that claims the deliberate-close
 			// flag: the supersede on reattach, and the idle watcher. A socket test
 			// then asserts against a daemon shape production never has.
-			ac := newActivityConn(nc)
-			c := &conn{nc: ac, ac: ac}
+			ac := conn.NewActivityConn(nc)
+			c := conn.New(ac, ac, 0, nil, nil, nil)
 			s.mu.Lock()
 			s.conns[c] = struct{}{}
 			s.mu.Unlock()

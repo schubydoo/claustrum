@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // closeMarkConn logs a marker line into the captured log just before each Close
@@ -25,7 +27,7 @@ func TestShutdownLogsBeforeConnectionClose(t *testing.T) {
 	s := newTestServer(t)
 	cli, srv := net.Pipe()
 	t.Cleanup(func() { _ = cli.Close() })
-	c := &conn{nc: closeMarkConn{srv}}
+	c := conn.New(closeMarkConn{srv}, nil, 0, nil, nil, nil)
 	s.conns[c] = struct{}{}
 	dropConnsOnShutdown(t, s)
 

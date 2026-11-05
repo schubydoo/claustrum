@@ -8,6 +8,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // The server.shutdown handler returns its reply as soon as the stop has started. It
@@ -22,7 +24,7 @@ func TestShutdownReplyIsWrittenBeforeTheClose(t *testing.T) {
 	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: time.Minute}
 	srv, client := net.Pipe()
 	t.Cleanup(func() { _ = client.Close() })
-	c := &conn{nc: srv}
+	c := conn.New(srv, nil, 0, nil, nil, nil)
 	s.mu.Lock()
 	s.conns[c] = struct{}{}
 	s.mu.Unlock()

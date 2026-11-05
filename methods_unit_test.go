@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
@@ -206,7 +207,7 @@ func TestProcManagerEdgeCases(t *testing.T) {
 		t.Error("writeStdin(missing) = true, want false")
 	}
 	// A proc with no stdin pipe rejects writes without panicking.
-	m.procs["nostdin"] = &managedProc{id: "nostdin", subs: map[*conn]struct{}{}}
+	m.procs["nostdin"] = &managedProc{id: "nostdin", subs: map[*conn.Conn]struct{}{}}
 	if m.writeStdin("nostdin", []byte("x")) {
 		t.Error("writeStdin(no stdin) = true, want false")
 	}
@@ -223,7 +224,7 @@ func TestProcManagerEdgeCases(t *testing.T) {
 func TestProcManagerDetachConn(t *testing.T) {
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	p := &managedProc{id: "p", subs: map[*conn]struct{}{c: {}}}
+	p := &managedProc{id: "p", subs: map[*conn.Conn]struct{}{c: {}}}
 	m.procs["p"] = p
 
 	m.detachConn(c)
@@ -266,7 +267,7 @@ func TestProcessStdinErrors(t *testing.T) {
 	}
 
 	// Registered but NOT running (running:false) → Process not running.
-	s.procs.procs["p1"] = &managedProc{id: "p1", subs: map[*conn]struct{}{}, running: false}
+	s.procs.procs["p1"] = &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, running: false}
 	got = dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "p1", "data": goodB64}))
 	if !strings.Contains(got, "Process not running") {
 		t.Errorf("stdin to exited = %s, want not-running error", got)

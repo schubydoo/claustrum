@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // Measured on reference build 90fca6e6: inside the exit drain, process.reattach
@@ -21,7 +23,7 @@ import (
 // fix, the stdin path reaches the enqueue and a nil condition variable would turn a
 // clean assertion failure into a recovered panic.
 func reapedProc(id string) *managedProc {
-	p := &managedProc{id: id, subs: map[*conn]struct{}{}, running: true, reaped: true}
+	p := &managedProc{id: id, subs: map[*conn.Conn]struct{}{}, running: true, reaped: true}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	return p
 }
@@ -41,7 +43,7 @@ func TestReapedProcessRefusesStdin(t *testing.T) {
 	// It stays a t.Fatalf and it stays FIRST. The new arm below is one-sided: on
 	// its own it cannot tell "refuses a reaped process" from "refuses everything".
 	// The control is the only thing making this test discriminate.
-	live := &managedProc{id: "live", subs: map[*conn]struct{}{}, running: true}
+	live := &managedProc{id: "live", subs: map[*conn.Conn]struct{}{}, running: true}
 	live.stdinCond = sync.NewCond(&live.stdinMu)
 	s.procs.procs["live"] = live
 	if got := dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "live", "data": goodB64})); strings.Contains(got, "Process not running") {
@@ -65,7 +67,7 @@ func TestReapedProcessReattachReportsNotRunning(t *testing.T) {
 	// The control: a live process still reports running true. It gets a condition
 	// variable it does not need here, so the literal stays safe to copy into a test
 	// that does reach the stdin enqueue.
-	liveProc := &managedProc{id: "live", subs: map[*conn]struct{}{}, running: true}
+	liveProc := &managedProc{id: "live", subs: map[*conn.Conn]struct{}{}, running: true}
 	liveProc.stdinCond = sync.NewCond(&liveProc.stdinMu)
 	s.procs.procs["live"] = liveProc
 	if got := dispatchRaw(t, s, rpcLine(t, "process.reattach", map[string]any{"id": "live"})); !strings.Contains(got, `"running":true`) {

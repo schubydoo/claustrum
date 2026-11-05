@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // process.stdin is the one method whose ARRIVAL ORDER is part of its meaning:
@@ -95,12 +97,12 @@ func firstLines(s string, n int) string {
 // launched in reverse order and made to wait, so an ungated implementation would
 // record admissions backwards.
 func TestStdinTicketGateAdmitsInOrder(t *testing.T) {
-	c := &conn{}
+	c := conn.New(nil, nil, 0, nil, nil, nil)
 	const n = 25
 
 	tickets := make([]uint64, n)
 	for i := range tickets {
-		tickets[i] = c.nextStdinTicket() // read-loop order
+		tickets[i] = c.NextStdinTicket() // read-loop order
 	}
 
 	var mu sync.Mutex
@@ -112,11 +114,11 @@ func TestStdinTicketGateAdmitsInOrder(t *testing.T) {
 		go func(tk uint64) {
 			defer wg.Done()
 			<-start
-			c.awaitStdinTurn(tk)
+			c.AwaitStdinTurn(tk)
 			mu.Lock()
 			admitted = append(admitted, tk)
 			mu.Unlock()
-			c.doneStdinTurn(tk)
+			c.DoneStdinTurn(tk)
 		}(tickets[i])
 	}
 	close(start)
@@ -150,7 +152,7 @@ func TestStdinTicketDoesNotSpanTheResponseWrite(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
 
-	go s.serveConn(&conn{nc: server})
+	go s.serveConn(conn.New(server, nil, 0, nil, nil, nil))
 
 	// Nobody ever reads `client`, so every response write blocks.
 	const id = "nowrite"

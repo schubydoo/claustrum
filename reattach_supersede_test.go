@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // Reference build 90fca6e6 made process.reattach close the connection it replaced.
@@ -29,14 +31,14 @@ import (
 // net.Pipe is synchronous and unbuffered, so the peer end needs a reader or the
 // first write blocks forever. The reader discards: these tests assert on whether a
 // write is accepted at all, not on what it carries.
-func activityPipeConn(t *testing.T) (c *conn, ac *activityConn) {
+func activityPipeConn(t *testing.T) (c *conn.Conn, ac *conn.ActivityConn) {
 	t.Helper()
 	client, server := net.Pipe()
-	ac = newActivityConn(client)
+	ac = conn.NewActivityConn(client)
 	// ac is set on BOTH fields, exactly as the accept loop does it. A conn built
 	// without it has no deliberate-close flag and supersede skips it, so a helper
 	// that left it nil would make these tests pass for the wrong reason.
-	c = &conn{nc: ac, ac: ac, done: make(chan struct{})}
+	c = conn.New(ac, ac, 0, nil, make(chan struct{}), nil)
 	go func() { _, _ = io.Copy(io.Discard, server) }()
 	t.Cleanup(func() { client.Close(); server.Close() })
 	return c, ac
@@ -55,7 +57,7 @@ func TestReattachSupersedesThePreviousConnection(t *testing.T) {
 	// The control that must keep passing: while nothing has superseded it, the old
 	// connection accepts a write. Without this arm a mutant that closes every
 	// connection at spawn would look correct.
-	if err := old.writeLine([]byte("{}\n")); err != nil {
+	if err := old.WriteLine([]byte("{}\n")); err != nil {
 		t.Fatalf("the attached connection refused a write before any reattach: %v", err)
 	}
 
@@ -67,11 +69,11 @@ func TestReattachSupersedesThePreviousConnection(t *testing.T) {
 	})
 
 	// The observable. Today claustrum leaves the old connection open.
-	if err := old.writeLine([]byte("{}\n")); err == nil {
+	if err := old.WriteLine([]byte("{}\n")); err == nil {
 		t.Error("the superseded connection still accepts writes; the reference closes it")
 	}
 	// The reattaching connection must not be caught by its own supersede.
-	if err := fresh.writeLine([]byte("{}\n")); err != nil {
+	if err := fresh.WriteLine([]byte("{}\n")); err != nil {
 		t.Errorf("the reattaching connection was closed too: %v", err)
 	}
 	if !strings.Contains(out, "sup") || !strings.Contains(out, "reattached from another connection") {
@@ -93,7 +95,7 @@ func TestReattachOnTheSameConnectionDoesNotSupersede(t *testing.T) {
 	if _, found, _, _, _, _ := m.reattach(c, "same", 0); !found {
 		t.Fatal("reattach did not find the live process")
 	}
-	if err := c.writeLine([]byte("{}\n")); err != nil {
+	if err := c.WriteLine([]byte("{}\n")); err != nil {
 		t.Errorf("reattaching on the same connection closed it: %v", err)
 	}
 }
@@ -143,16 +145,16 @@ func TestSupersedeRefusesAConnWithNoActivityWrapper(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
 	go func() { _, _ = io.Copy(io.Discard, server) }()
-	c := &conn{nc: client} // no ac, the shape only a test builds
+	c := conn.New(client, nil, 0, nil, nil, nil) // no ac, the shape only a test builds
 
-	out := captureLog(t, func() { c.supersede("whatever") })
+	out := captureLog(t, func() { c.Supersede("whatever") })
 
 	if !strings.Contains(out, "no activity wrapper") {
 		t.Errorf("supersede log = %q, want a warning about the missing wrapper", out)
 	}
 	// It must not have closed the connection or marked the writer closed: with no
 	// flag there is nothing to coordinate with, so a silent close would be worse.
-	if err := c.writeLine([]byte("{}\n")); err != nil {
+	if err := c.WriteLine([]byte("{}\n")); err != nil {
 		t.Errorf("supersede closed a conn it refused to supersede: %v", err)
 	}
 }
@@ -162,21 +164,21 @@ func TestSupersedeRefusesAConnWithNoActivityWrapper(t *testing.T) {
 //
 // supersede returns without logging or closing, since the watcher owns both. It
 // still marks the writer closed, because the watcher cannot: it holds the
-// activityConn, not the conn. Without that, a later write would slip past the
+// conn.ActivityConn, not the conn. Without that, a later write would slip past the
 // closed check and record a frame into a -wire-log capture that never reached the
 // wire.
 func TestSupersedeLosingTheClaimStillMarksTheWriterClosed(t *testing.T) {
 	c, ac := activityPipeConn(t)
 
-	if !ac.claimClose() {
+	if !ac.ClaimClose() {
 		t.Fatal("a fresh connection should have its close claim available")
 	}
-	out := captureLog(t, func() { c.supersede("process X reattached from another connection") })
+	out := captureLog(t, func() { c.Supersede("process X reattached from another connection") })
 
 	if strings.Contains(out, "closing connection") {
 		t.Errorf("supersede logged a close it did not own: %q", out)
 	}
-	if err := c.writeLine([]byte("{}\n")); err == nil {
+	if err := c.WriteLine([]byte("{}\n")); err == nil {
 		t.Error("the writer is still open after a lost claim; a later write would be recorded but never sent")
 	}
 }

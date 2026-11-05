@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -68,7 +69,7 @@ const methodShutdown = "server.shutdown"
 // does not return here. The recover in handleRequest then leaves resp nil for
 // server.shutdown, so that request gets no frame.
 // Stream-producing methods (process.*) use the conn to attach the client.
-func (s *server) dispatch(c *conn, raw []byte) *rpc.Response {
+func (s *server) dispatch(c *conn.Conn, raw []byte) *rpc.Response {
 	req, resp := s.gate(c, raw)
 	if resp != nil {
 		return resp
@@ -78,7 +79,7 @@ func (s *server) dispatch(c *conn, raw []byte) *rpc.Response {
 
 // route handles a request that already passed gate. serveConn calls it with the
 // request its read loop decoded, so an accepted line is parsed only once.
-func (s *server) route(c *conn, req request) *rpc.Response {
+func (s *server) route(c *conn.Conn, req request) *rpc.Response {
 	if req.JSONRPC != "2.0" {
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidReq, "Invalid JSON-RPC version"))
 	}
@@ -137,8 +138,8 @@ func (s *server) gitDeps() *git.Deps {
 // reads the next line. A line that passes gate goes to the async dispatch.
 //
 // c is the connection of the line. A request that passes the token check sets the
-// token mark of c (conn.showToken), and a nil c sets none.
-func (s *server) gate(c *conn, raw []byte) (request, *rpc.Response) {
+// token mark of c (conn.Conn.ShowToken), and a nil c sets none.
+func (s *server) gate(c *conn.Conn, raw []byte) (request, *rpc.Response) {
 	var req request
 	if err := json.Unmarshal(raw, &req); err != nil {
 		// Logged here, before serveConn writes the reply. The reference logs
@@ -192,7 +193,7 @@ func (s *server) gate(c *conn, raw []byte) (request, *rpc.Response) {
 		}
 		return req, rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
-	c.showToken()
+	c.ShowToken()
 	// A request past the auth step restarts the idle time of the idle exit, except
 	// server.capabilities (see noteCountedRequest).
 	if req.Method != "server.capabilities" {

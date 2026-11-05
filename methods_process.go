@@ -6,11 +6,12 @@ import (
 	"errors"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
-func (s *server) handleProcess(c *conn, req *request) rpc.Response {
+func (s *server) handleProcess(c *conn.Conn, req *request) rpc.Response {
 	switch req.Method {
 	case "process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach":
 	default:
@@ -67,7 +68,7 @@ type spawnParams struct {
 	CLITempRoot rpc.JSONTrueSwitch `json:"cliTempRoot"`
 }
 
-func (s *server) processSpawn(c *conn, req *request) rpc.Response {
+func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	var p spawnParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
@@ -135,7 +136,7 @@ type stdinParams struct {
 	Attach *uint64 `json:"attach"`
 }
 
-func (s *server) processStdin(c *conn, req *request) rpc.Response {
+func (s *server) processStdin(c *conn.Conn, req *request) rpc.Response {
 	var p stdinParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
@@ -285,7 +286,7 @@ type reattachParams struct {
 	Proof  string  `json:"proof"`
 }
 
-func (s *server) processReattach(c *conn, req *request) rpc.Response {
+func (s *server) processReattach(c *conn.Conn, req *request) rpc.Response {
 	var p reattachParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad

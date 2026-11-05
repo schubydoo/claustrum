@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -46,8 +47,8 @@ func newTeardownServer(t *testing.T) (*server, string, string) {
 			if err != nil {
 				return
 			}
-			ac := newActivityConn(nc)
-			c := &conn{nc: ac, ac: ac}
+			ac := conn.NewActivityConn(nc)
+			c := conn.New(ac, ac, 0, nil, nil, nil)
 			s.mu.Lock()
 			s.conns[c] = struct{}{}
 			s.mu.Unlock()

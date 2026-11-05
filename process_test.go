@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/metrics"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
@@ -26,10 +27,10 @@ import (
 // signals every process of the user.
 const noSuchPid = 1 << 30
 
-// pipeConn returns a *conn whose writes are decoded into frames channel. It
+// pipeConn returns a *conn.Conn whose writes are decoded into frames channel. It
 // backs the conn with net.Pipe and drains the read side in a goroutine so
 // synchronous writes (replay) don't deadlock.
-func pipeConn(t *testing.T) (*conn, <-chan streamFrame) {
+func pipeConn(t *testing.T) (*conn.Conn, <-chan streamFrame) {
 	t.Helper()
 	client, server := net.Pipe()
 	frames := make(chan streamFrame, 64)
@@ -43,13 +44,19 @@ func pipeConn(t *testing.T) (*conn, <-chan streamFrame) {
 		}
 	}()
 	t.Cleanup(func() { client.Close(); server.Close() })
-	return &conn{nc: client}, frames
+	return conn.New(client, nil, 0, nil, nil, nil), frames
+}
+
+// closedConn marks the writer of c closed and returns c.
+func closedConn(c *conn.Conn) *conn.Conn {
+	c.MarkClosed()
+	return c
 }
 
 // emit assigns a monotonic per-process seq starting at 1 and stamps every frame
 // as a "stream" notification carrying the process id.
 func TestEmitAssignsSeqAndStamps(t *testing.T) {
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}}
 	p.emit(streamFrame{Stream: "stdout", Data: "a"})
 	p.emit(streamFrame{Stream: "stderr", Data: "b"})
 
@@ -81,7 +88,7 @@ func TestEmitAssignsSeqAndStamps(t *testing.T) {
 // (strict `>` vs `>=`) rather than an envelope size.
 func lineBytesFor(t *testing.T, data string) int64 {
 	t.Helper()
-	probe := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 1 << 30}
+	probe := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 1 << 30}
 	probe.emit(streamFrame{Stream: "stdout", Data: data})
 	if len(probe.buffer) != 1 {
 		t.Fatalf("probe buffer len = %d, want 1", len(probe.buffer))
@@ -97,7 +104,7 @@ func TestEmitBufferCap(t *testing.T) {
 	// from earlier spawn tests may still be calling emit on their own processes.
 	// Room for exactly two frames. After five emits the older three must drop.
 	line := lineBytesFor(t, "aaaaaaaaaa")
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 2 * line}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 2 * line}
 	for i := 0; i < 5; i++ {
 		p.emit(streamFrame{Stream: "stdout", Data: "aaaaaaaaaa"})
 	}
@@ -118,7 +125,7 @@ func TestEmitBufferCap(t *testing.T) {
 // empty. Pins that boundary — the `>= 1` mutant would drop the sole frame,
 // leaving nothing to replay on reattach.
 func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 10}
 	// No payload arithmetic here: the test only needs ONE frame that exceeds the
 	// cap, and the accounted size is the serialized line, not the 25 payload bytes.
 	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)})
@@ -136,7 +143,7 @@ func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
 func TestEmitRetainsAllAtExactCap(t *testing.T) {
 	// Exactly two frames' worth, so the second emit lands on bufBytes == cap.
 	line := lineBytesFor(t, "aaaaa")
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 2 * line}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 2 * line}
 	p.emit(streamFrame{Stream: "stdout", Data: "aaaaa"}) // seq 1
 	p.emit(streamFrame{Stream: "stdout", Data: "bbbbb"}) // seq 2 -> exactly at cap
 	if len(p.buffer) != 2 {
@@ -160,7 +167,7 @@ func TestReattachUnknownProcess(t *testing.T) {
 // buffer's first/last seq and the running flag.
 func TestReattachReplaysFromSeq(t *testing.T) {
 	m := newTestProcManager(t)
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.emit(streamFrame{Stream: "stdout", Data: "a"}) // seq 1
 	p.emit(streamFrame{Stream: "stdout", Data: "b"}) // seq 2
 	p.emit(streamFrame{Stream: "stdout", Data: "c"}) // seq 3
@@ -215,9 +222,9 @@ func TestEmitDetachesOnWriteError(t *testing.T) {
 	client, server := net.Pipe()
 	client.Close() // writes now fail immediately
 	server.Close()
-	dead := &conn{nc: client}
+	dead := conn.New(client, nil, 0, nil, nil, nil)
 
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{dead: {}}}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{dead: {}}}
 	p.emit(streamFrame{Stream: "stdout", Data: "x"})
 
 	p.mu.Lock()
@@ -282,10 +289,10 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 	client, server := net.Pipe()
 	client.Close() // writes now fail
 	server.Close()
-	c := &conn{nc: client}
-	c.bareShown.Store(true)
+	c := conn.New(client, nil, 0, nil, nil, nil)
+	c.BareShown().Store(true)
 
-	if !c.writeResponse(rpc.PongResult{Pong: true}) {
+	if !c.WriteResponse(rpc.PongResult{Pong: true}) {
 		t.Error("writeResponse did not report the failed write")
 	}
 
@@ -308,7 +315,7 @@ func TestWriteResponseFailureLinesSkips(t *testing.T) {
 	}
 	t.Run("no_token_mark", func(t *testing.T) {
 		buf := captureLogBuf(t)
-		(&conn{nc: dead()}).writeResponse(rpc.PongResult{Pong: true})
+		(conn.New(dead(), nil, 0, nil, nil, nil)).WriteResponse(rpc.PongResult{Pong: true})
 		got := buf.String()
 		if strings.Contains(got, "[Server] writeResponse: wrote") {
 			t.Errorf("a connection with no token mark logged the writeResponse line: %q", got)
@@ -321,9 +328,9 @@ func TestWriteResponseFailureLinesSkips(t *testing.T) {
 		buf := captureLogBuf(t)
 		down := make(chan struct{})
 		close(down)
-		c := &conn{nc: dead(), down: down}
-		c.bareShown.Store(true)
-		if !c.writeResponse(rpc.PongResult{Pong: true}) {
+		c := conn.New(dead(), nil, 0, nil, nil, down)
+		c.BareShown().Store(true)
+		if !c.WriteResponse(rpc.PongResult{Pong: true}) {
 			t.Error("writeResponse did not report the failed write")
 		}
 		if got := buf.String(); strings.Contains(got, "[Server]") {
@@ -338,14 +345,14 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	m := newTestProcManager(t)
-	p := &managedProc{id: "p", subs: map[*conn]struct{}{}, running: true}
+	p := &managedProc{id: "p", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.emit(streamFrame{Stream: "stdout", Data: "a"}) // buffered seq 1
 	m.procs["p"] = p
 
 	client, server := net.Pipe()
 	client.Close()
 	server.Close()
-	dead := &conn{nc: client}
+	dead := conn.New(client, nil, 0, nil, nil, nil)
 
 	_, found, _, _, _, _ := m.reattach(dead, "p", 0) // replays seq 1 → write fails → detach
 	if !found {
@@ -372,12 +379,12 @@ func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
 	t.Cleanup(func() { client.Close(); server.Close() })
 
 	// json.Marshal fails on a channel → the marshal-error branch, no write.
-	(&conn{nc: client}).writeResponse(map[string]any{"bad": make(chan int)})
+	(conn.New(client, nil, 0, nil, nil, nil)).WriteResponse(map[string]any{"bad": make(chan int)})
 	if !strings.Contains(buf.String(), "[Server] Failed to write response") {
 		t.Errorf("marshal error not logged: %q", buf.String())
 	}
 	// A closed conn returns before writing (would otherwise block on the pipe).
-	(&conn{nc: client, closed: true}).writeResponse(rpc.PongResult{Pong: true})
+	closedConn(conn.New(client, nil, 0, nil, nil, nil)).WriteResponse(rpc.PongResult{Pong: true})
 }
 
 // firstStdout drains frames until the first non-empty stdout frame and returns
@@ -484,7 +491,7 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 	pr, pw := io.Pipe()
 	defer pr.Close() // fails the parked pipe Write, and the writer then waits for stdinDone
 	m := newTestProcManager(t)
-	p := &managedProc{id: "wf", subs: map[*conn]struct{}{}, stdin: pw}
+	p := &managedProc{id: "wf", subs: map[*conn.Conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.procs["wf"] = p
 	go p.stdinWriter()
@@ -521,7 +528,7 @@ func TestWriteStdinRejectsWhenFull(t *testing.T) {
 func TestStdinIsAsync(t *testing.T) {
 	pr, pw := io.Pipe()
 	defer pr.Close() // fails the writer's pipe Write, and the writer then waits for stdinDone
-	p := &managedProc{id: "async", subs: map[*conn]struct{}{}, stdin: pw}
+	p := &managedProc{id: "async", subs: map[*conn.Conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 	stopStdinWriter(t, p)
@@ -552,7 +559,7 @@ func TestStdinBackpressure(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
-	p := &managedProc{id: "bp", subs: map[*conn]struct{}{}, stdin: pw}
+	p := &managedProc{id: "bp", subs: map[*conn.Conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 	stopStdinWriter(t, p)
@@ -594,7 +601,7 @@ func TestStdinSoleOverCapWriteAccepted(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
-	p := &managedProc{id: "oc", subs: map[*conn]struct{}{}, stdin: pw}
+	p := &managedProc{id: "oc", subs: map[*conn.Conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 	stopStdinWriter(t, p)
@@ -614,7 +621,7 @@ func TestStdinExactCapFitAccepted(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
-	p := &managedProc{id: "xf", subs: map[*conn]struct{}{}, stdin: pw}
+	p := &managedProc{id: "xf", subs: map[*conn.Conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 	stopStdinWriter(t, p)
@@ -645,7 +652,7 @@ func TestStdinAfterDoneIsDroppedNotFull(t *testing.T) {
 	stdinQueueCap = 8
 	defer func() { stdinQueueCap = old }()
 
-	p := &managedProc{id: "sd", subs: map[*conn]struct{}{}}
+	p := &managedProc{id: "sd", subs: map[*conn.Conn]struct{}{}}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	p.stdinDone = true
 	p.stdinQBytes = stdinQueueCap // already at the cap: the gate would fire
@@ -694,7 +701,7 @@ func waitStdinQueueEmpty(t *testing.T, p *managedProc) {
 // (`len >= 0`) would index p.buffer[0] on an empty slice and panic.
 func TestReattachEmptyBuffer(t *testing.T) {
 	m := newTestProcManager(t)
-	p := &managedProc{id: "eb", subs: map[*conn]struct{}{}, running: true} // no emits → empty buffer
+	p := &managedProc{id: "eb", subs: map[*conn.Conn]struct{}{}, running: true} // no emits → empty buffer
 	m.procs["eb"] = p
 	c, _ := pipeConn(t)
 	_, found, running, first, last, _ := m.reattach(c, "eb", 0)
@@ -832,8 +839,8 @@ func TestSameIDKeepsTheFramesOfTheOldProcess(t *testing.T) {
 func TestWriteJSONClosedConn(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
-	c := &conn{nc: client, closed: true}
-	if err := c.writeJSON(rpc.PongResult{Pong: true}); err != net.ErrClosed {
+	c := closedConn(conn.New(client, nil, 0, nil, nil, nil))
+	if err := c.WriteJSON(rpc.PongResult{Pong: true}); err != net.ErrClosed {
 		t.Errorf("writeJSON on closed conn = %v, want net.ErrClosed", err)
 	}
 }
@@ -843,8 +850,8 @@ func TestWriteJSONClosedConn(t *testing.T) {
 func TestWriteLineClosedConn(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
-	c := &conn{nc: client, closed: true}
-	if err := c.writeLine([]byte("{}\n")); err != net.ErrClosed {
+	c := closedConn(conn.New(client, nil, 0, nil, nil, nil))
+	if err := c.WriteLine([]byte("{}\n")); err != net.ErrClosed {
 		t.Errorf("writeLine on closed conn = %v, want net.ErrClosed", err)
 	}
 }
@@ -855,7 +862,7 @@ func TestWriteLineClosedConn(t *testing.T) {
 func TestEmitFansOutToAllSubscribers(t *testing.T) {
 	c1, f1 := pipeConn(t)
 	c2, f2 := pipeConn(t)
-	p := &managedProc{id: "fan", subs: map[*conn]struct{}{c1: {}, c2: {}}}
+	p := &managedProc{id: "fan", subs: map[*conn.Conn]struct{}{c1: {}, c2: {}}}
 	p.emit(streamFrame{Stream: "stdout", Data: "abc"})
 
 	for i, ch := range []<-chan streamFrame{f1, f2} {
@@ -879,9 +886,9 @@ func TestEmitFanOutSurvivesDeadSubscriber(t *testing.T) {
 	dc, ds := net.Pipe()
 	dc.Close() // writes now fail immediately
 	ds.Close()
-	dead := &conn{nc: dc}
+	dead := conn.New(dc, nil, 0, nil, nil, nil)
 
-	p := &managedProc{id: "fan2", subs: map[*conn]struct{}{live: {}, dead: {}}}
+	p := &managedProc{id: "fan2", subs: map[*conn.Conn]struct{}{live: {}, dead: {}}}
 	p.emit(streamFrame{Stream: "stdout", Data: "x"})
 
 	got := collect(t, frames, 1)
@@ -985,7 +992,7 @@ func TestDefaultBufferCapMatchesReference(t *testing.T) {
 // still pass if emit's `cap == 0` fallback were broken.
 func TestEmitUsesDefaultBufferCap(t *testing.T) {
 	const half = 9 << 20 // two of these exceed the 16 MiB cap, one does not
-	p := &managedProc{id: "defcap", subs: map[*conn]struct{}{}}
+	p := &managedProc{id: "defcap", subs: map[*conn.Conn]struct{}{}}
 	if p.bufCap != 0 {
 		t.Fatalf("bufCap = %d, want 0 so the default applies", p.bufCap)
 	}
@@ -1311,7 +1318,7 @@ func TestSpawnConfinesTheDrainGrace(t *testing.T) {
 
 	m := newTestProcManager(t)
 	exe, env := helperCommand(t, "orphan-stdout")
-	if _, err := m.spawn(&conn{nc: a}, "GRACE", exe, []string{"3"}, "", env, false); err != nil {
+	if _, err := m.spawn(conn.New(a, nil, 0, nil, nil, nil), "GRACE", exe, []string{"3"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// The child exits at once; its grandchild holds stdout, so by now the waiter
@@ -1337,7 +1344,7 @@ func TestSpawnConfinesTheDrainGrace(t *testing.T) {
 // to a subscriber. Both survive any change to the frame's JSON shape.
 func TestEmitAccountsSerializedLineBytes(t *testing.T) {
 	const data = "aaaaaaaaaa"
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 1 << 30}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 1 << 30}
 	p.emit(streamFrame{Stream: "stdout", Data: data})
 
 	f := p.buffer[0]
@@ -1366,7 +1373,7 @@ func TestEmitAccountsSerializedLineBytes(t *testing.T) {
 // envelope like any other frame. Pins that the accounting is not payload-derived.
 func TestEmitAccountsExitFrameWithNoData(t *testing.T) {
 	code := 0
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 1 << 30}
+	p := &managedProc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 1 << 30}
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 
 	if p.buffer[0].Data != "" {

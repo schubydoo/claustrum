@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"errors"
@@ -9,20 +9,20 @@ import (
 	"time"
 )
 
-// closeWhenIdle closes a connection that has gone silent for idleTimeout, matching
+// CloseWhenIdle closes a connection that has gone silent for idleTimeout, matching
 // the 5-minute idle close measured on f6010b97 (tested here with a short timeout).
 // Activity on the connection resets the clock.
 func TestCloseWhenIdle(t *testing.T) {
 	t.Run("idle_connection_is_closed", func(t *testing.T) {
 		c1, c2 := net.Pipe()
 		defer c2.Close()
-		ac := newActivityConn(c1)
+		ac := NewActivityConn(c1)
 		ac.shown.Store(true)
-		s := &server{shutdown: make(chan struct{}), idleTimeout: 80 * time.Millisecond}
+		shutdown := make(chan struct{})
 		done := make(chan struct{})
 		returned := make(chan struct{})
 		buf := captureLogBuf(t)
-		go func() { s.closeWhenIdle(ac, done); close(returned) }()
+		go func() { CloseWhenIdle(ac, 80*time.Millisecond, shutdown, done); close(returned) }()
 
 		select {
 		case <-returned: // watcher closed the conn and exited
@@ -46,12 +46,12 @@ func TestCloseWhenIdle(t *testing.T) {
 	t.Run("idle_connection_without_the_token_mark_closes_silently", func(t *testing.T) {
 		c1, c2 := net.Pipe()
 		defer c2.Close()
-		ac := newActivityConn(c1)
-		s := &server{shutdown: make(chan struct{}), idleTimeout: 80 * time.Millisecond}
+		ac := NewActivityConn(c1)
+		shutdown := make(chan struct{})
 		done := make(chan struct{})
 		returned := make(chan struct{})
 		buf := captureLogBuf(t)
-		go func() { s.closeWhenIdle(ac, done); close(returned) }()
+		go func() { CloseWhenIdle(ac, 80*time.Millisecond, shutdown, done); close(returned) }()
 		select {
 		case <-returned:
 		case <-time.After(2 * time.Second):
@@ -70,11 +70,11 @@ func TestCloseWhenIdle(t *testing.T) {
 		c1, c2 := net.Pipe()
 		defer c1.Close()
 		defer c2.Close()
-		ac := newActivityConn(c1)
-		s := &server{shutdown: make(chan struct{}), idleTimeout: 120 * time.Millisecond}
+		ac := NewActivityConn(c1)
+		shutdown := make(chan struct{})
 		done := make(chan struct{})
 		defer close(done)
-		go s.closeWhenIdle(ac, done)
+		go CloseWhenIdle(ac, 120*time.Millisecond, shutdown, done)
 
 		// Keep stamping activity for ~300ms; the watcher must NOT close it.
 		deadline := time.Now().Add(300 * time.Millisecond)

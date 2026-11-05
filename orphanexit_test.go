@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -425,7 +426,7 @@ func TestOrphanGraceCountsFromLastClientCheck(t *testing.T) {
 	}
 	buf := captureLogBuf(t)
 	_, srv := net.Pipe()
-	fake := &conn{nc: srv}
+	fake := conn.New(srv, nil, 0, nil, nil, nil)
 	s.mu.Lock()
 	s.conns[fake] = struct{}{}
 	s.mu.Unlock()

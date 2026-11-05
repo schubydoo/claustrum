@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Microsoft/go-winio"
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // TestHonorListenPipeWindows: on Windows the transport is real, so the flag passes
@@ -75,7 +76,7 @@ func TestPipeTransportServesJSONRPC(t *testing.T) {
 		token:    testToken,
 		pipeLn:   pln,
 		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
+		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
 	go s.acceptLoop(s.pipeLn)

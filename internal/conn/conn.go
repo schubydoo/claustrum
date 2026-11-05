@@ -1,4 +1,6 @@
-package main
+// Package conn is one client connection of the daemon: its writes, the end
+// member of each line, the stdin order and the idle watcher.
+package conn
 
 import (
 	"encoding/json"
@@ -10,14 +12,14 @@ import (
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
-// conn is one connected client. The write mutex serializes the interleaving of
+// Conn is one connected client. The write mutex serializes the interleaving of
 // JSON-RPC responses and id-less stream notifications on the same socket.
-type conn struct {
+type Conn struct {
 	nc net.Conn
 	// ac is nc again, typed, when the accept loop wrapped it. supersede needs the
 	// deliberate-close flag, and a test that builds a conn around a bare pipe
 	// leaves this nil. Set once at accept and never mutated.
-	ac     *activityConn
+	ac     *ActivityConn
 	wmu    sync.Mutex
 	closed bool
 	// sent is the count of bytes written on this connection. It is guarded by wmu
@@ -60,7 +62,58 @@ type conn struct {
 	stdinServed uint64 // ticket currently admitted
 }
 
-// supersede ends this connection because another one took over what it was
+// New builds a Conn. The accept loop passes every value. A test passes only
+// what it needs, and the zero value of each other one.
+func New(nc net.Conn, ac *ActivityConn, id uint64, wlog *wirelog.Log, done chan struct{}, down <-chan struct{}) *Conn {
+	return &Conn{nc: nc, ac: ac, id: id, wlog: wlog, done: done, down: down}
+}
+
+// NC is the net.Conn of c.
+func (c *Conn) NC() net.Conn { return c.nc }
+
+// AC is the activity wrapper of c, nil for a conn that a test builds around a bare pipe.
+func (c *Conn) AC() *ActivityConn { return c.ac }
+
+// Done is the channel that the read loop closes when it returns.
+func (c *Conn) Done() chan struct{} { return c.done }
+
+// ID is the -wire-log id of c.
+func (c *Conn) ID() uint64 { return c.id }
+
+// Down is the shutdown channel of the daemon.
+func (c *Conn) Down() <-chan struct{} { return c.down }
+
+// WireLog is the -wire-log recorder of c, nil when off.
+func (c *Conn) WireLog() *wirelog.Log { return c.wlog }
+
+// SentStop reports that c sent server.shutdown. The caller holds the lock of the server.
+func (c *Conn) SentStop() bool { return c.sentStop }
+
+// SetSentStop marks that c sent server.shutdown. The caller holds the lock of the server.
+func (c *Conn) SetSentStop() { c.sentStop = true }
+
+// BareShown is the token mark of a conn that has no activity wrapper.
+func (c *Conn) BareShown() *atomic.Bool { return &c.bareShown }
+
+// MarkClosed marks the writer of c closed under its write lock.
+func (c *Conn) MarkClosed() {
+	c.wmu.Lock()
+	c.closed = true
+	c.wmu.Unlock()
+}
+
+// MarkClosedIfFree marks the writer of c closed only if no writer holds its
+// write lock. It reports whether it did.
+func (c *Conn) MarkClosedIfFree() bool {
+	if !c.wmu.TryLock() {
+		return false
+	}
+	c.closed = true
+	c.wmu.Unlock()
+	return true
+}
+
+// Supersede ends this connection because another one took over what it was
 // attached to, matching reference build 90fca6e6.
 //
 // Before 90fca6e6 a reattach only transferred the frame stream: the previously
@@ -75,7 +128,7 @@ type conn struct {
 // The reason text is claustrum's own phrasing, not the reference's verbatim
 // string, the same choice the host cleaner made for its log reasons. What is
 // reproduced is the close, which a client observes; the wording goes to stderr.
-func (c *conn) supersede(reason string) {
+func (c *Conn) Supersede(reason string) {
 	// The accept loop is the only place production builds a conn and it always
 	// sets ac, on every transport and every OS. A nil ac therefore means a
 	// test-built conn around a bare pipe, and there is no flag to claim.
@@ -92,20 +145,20 @@ func (c *conn) supersede(reason string) {
 	// idle watcher is closing this connection instead, so a later writeLine that
 	// slipped past the closed check would record a frame into a -wire-log capture
 	// that never reaches the wire. (The idle watcher still cannot set this itself:
-	// it holds the activityConn, not the conn.)
+	// it holds the ActivityConn, not the conn.)
 	c.wmu.Lock()
 	c.closed = true
 	c.wmu.Unlock()
-	if !c.ac.claimClose() {
+	if !c.ac.ClaimClose() {
 		return
 	}
-	logging.Infof("[Server] closing connection %s: %s", c.remoteLabel(), reason)
+	logging.Infof("[Server] closing connection %s: %s", c.RemoteLabel(), reason)
 	_ = c.nc.Close()
 }
 
-// nextStdinTicket reserves this request's place in the stdin stream. Called from
+// NextStdinTicket reserves this request's place in the stdin stream. Called from
 // the connection's read loop, so tickets follow wire order exactly.
-func (c *conn) nextStdinTicket() uint64 {
+func (c *Conn) NextStdinTicket() uint64 {
 	c.stdinMu.Lock()
 	defer c.stdinMu.Unlock()
 	if c.stdinCond == nil {
@@ -116,9 +169,9 @@ func (c *conn) nextStdinTicket() uint64 {
 	return t
 }
 
-// awaitStdinTurn blocks until every earlier stdin request on this connection has
+// AwaitStdinTurn blocks until every earlier stdin request on this connection has
 // finished.
-func (c *conn) awaitStdinTurn(t uint64) {
+func (c *Conn) AwaitStdinTurn(t uint64) {
 	c.stdinMu.Lock()
 	defer c.stdinMu.Unlock()
 	for c.stdinServed != t {
@@ -126,15 +179,15 @@ func (c *conn) awaitStdinTurn(t uint64) {
 	}
 }
 
-// doneStdinTurn admits the next stdin request.
-func (c *conn) doneStdinTurn(t uint64) {
+// DoneStdinTurn admits the next stdin request.
+func (c *Conn) DoneStdinTurn(t uint64) {
 	c.stdinMu.Lock()
 	c.stdinServed = t + 1
 	c.stdinCond.Broadcast()
 	c.stdinMu.Unlock()
 }
 
-// writeJSON is one of several outbound encodes — see also conn.writeResponse
+// WriteJSON is one of several outbound encodes — see also Conn.WriteResponse
 // below (every JSON-RPC reply), managedProc.emit (every live stream frame),
 // writeFramesLocked in process.go (the replay of a reattach that holds the write
 // lock) and peerRefusalLine in peercheck.go (the refusal of a peer). This one
@@ -146,40 +199,40 @@ func (c *conn) doneStdinTurn(t uint64) {
 // `< > &` with no opt-out, which is what the reference emits, and
 // SetEscapeHTML(false) would look like a cleanup and move the wire — see
 // docs/ARCHITECTURE.md → "Inherited wire bytes".
-func (c *conn) writeJSON(v interface{}) error {
+func (c *Conn) WriteJSON(v interface{}) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	return c.writeLine(append(b, '\n'))
+	return c.WriteLine(append(b, '\n'))
 }
 
-// writeLine writes an already-marshaled, newline-terminated JSON line under the
+// WriteLine writes an already-marshaled, newline-terminated JSON line under the
 // same lock/closed semantics as writeJSON. It lets a frame fanned out to many
 // subscribers be marshaled once (see managedProc.emit) instead of once per conn.
 // Write does not mutate b, so the same slice is safe to hand to every conn.
-func (c *conn) writeLine(b []byte) error {
+func (c *Conn) WriteLine(b []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
-	return c.writeLineLocked(b)
+	return c.WriteLineLocked(b)
 }
 
-// lockWrites takes the write lock of c. Process code holds it across a
+// LockWrites takes the write lock of c. Process code holds it across a
 // reattach and then writes with writeFramesLocked.
-func (c *conn) lockWrites() { c.wmu.Lock() }
+func (c *Conn) LockWrites() { c.wmu.Lock() }
 
-// unlockWrites releases the write lock that lockWrites took.
-func (c *conn) unlockWrites() { c.wmu.Unlock() }
+// UnlockWrites releases the write lock that lockWrites took.
+func (c *Conn) UnlockWrites() { c.wmu.Unlock() }
 
-// closedNow reports whether c is closed. It takes the write lock of c.
-func (c *conn) closedNow() bool {
+// ClosedNow reports whether c is closed. It takes the write lock of c.
+func (c *Conn) ClosedNow() bool {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	return c.closed
 }
 
-// writeLineLocked is writeLine with c.wmu already held.
-func (c *conn) writeLineLocked(b []byte) error {
+// WriteLineLocked is writeLine with c.wmu already held.
+func (c *Conn) WriteLineLocked(b []byte) error {
 	if c.closed {
 		return net.ErrClosed
 	}
@@ -188,26 +241,26 @@ func (c *conn) writeLineLocked(b []byte) error {
 	// Recording before the lock would let two writers log in one order and write
 	// in another, and would log a frame the closed check then drops. A frame
 	// fanned out to N subscribers is recorded once per conn: a per-connection view.
-	b = stampEnd(b, c.sent)
+	b = StampEnd(b, c.sent)
 	c.wlog.Record(c.id, "out", b)
 	n, err := c.nc.Write(b)
 	c.sent += int64(n)
 	return err
 }
 
-// writeResponse writes a JSON-RPC response and, on a write error (e.g. the
+// WriteResponse writes a JSON-RPC response and, on a write error (e.g. the
 // client dropped the connection mid-reply), emits the reference daemon's
 // writeResponse/Failed-to-write log lines with the partial byte count. It
 // reports a failed write. Only the read loop acts on that, for its -32001 and
 // -32700 replies.
-func (c *conn) writeResponse(v interface{}) (failed bool) {
+func (c *Conn) WriteResponse(v interface{}) (failed bool) {
 	// json.Marshal, not an Encoder: this is the encode that carries EVERY
 	// JSON-RPC reply, and its HTML escaping is inherited wire behaviour — see
 	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on writeJSON.
 	b, err := json.Marshal(v)
 	if err != nil {
-		if !c.shuttingDown() {
-			logging.Errorf(fmtReplyFailed, err)
+		if !c.ShuttingDown() {
+			logging.Errorf(FmtReplyFailed, err)
 		}
 		return false
 	}
@@ -220,7 +273,7 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 	// Recorded under wmu, past the closed check, just before the write, so the
 	// capture is exactly what goes on the wire — in wire order, and never a frame
 	// the closed check dropped. Record neither retains nor mutates b.
-	b = stampEnd(b, c.sent)
+	b = StampEnd(b, c.sent)
 	c.wlog.Record(c.id, "out", b)
 	n, err := c.nc.Write(b)
 	c.sent += int64(n)
@@ -228,11 +281,11 @@ func (c *conn) writeResponse(v interface{}) (failed bool) {
 		// Claustrum's own, not measured: the error text is quoted, the first line
 		// is skipped for a connection that never showed the token, and both lines
 		// are skipped once the daemon shuts down.
-		if !c.shuttingDown() {
-			if c.tokenMark().Load() {
-				logging.Debugf(fmtWriteFailed, n, len(b), err)
+		if !c.ShuttingDown() {
+			if c.TokenMark().Load() {
+				logging.Debugf(FmtWriteFailed, n, len(b), err)
 			}
-			logging.Errorf(fmtReplyFailed, err)
+			logging.Errorf(FmtReplyFailed, err)
 		}
 		return true
 	}

@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/conn"
 )
 
 // recordSignals wraps the signalGroup seam and records each signal name sent to
@@ -49,7 +51,7 @@ func TestLinkBoundUnattendedEndHUP(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	exe, env := helperCommand(t, "sleep")
-	p, err := m.spawnVia(&conn{closed: true}, "u1", exe, []string{"60"}, "", env, false, nil, time.Second)
+	p, err := m.spawnVia(closedConn(conn.New(nil, nil, 0, nil, nil, nil)), "u1", exe, []string{"60"}, "", env, false, nil, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

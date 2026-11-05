@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
@@ -17,13 +18,13 @@ import (
 // Measured against f6010b97 and 90fca6e6 on Linux, the reference sent 76 bytes
 // for a line that does not decode into a request. This line carries the end
 // member too (build 52d82f0a, measured on Linux, macOS and Windows).
-var eofParseErrFrame = string(stampEnd([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`+"\n"), 0))
+var eofParseErrFrame = string(conn.StampEnd([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`+"\n"), 0))
 
 // eofAuthErrFrame is the -32001 frame for a request with the id id, given as
 // raw JSON, as the first line of a connection. Measured against f6010b97 and 90fca6e6 on Linux, the
 // reference echoed the id, and sent null for a missing id.
 func eofAuthErrFrame(id string) string {
-	return string(stampEnd([]byte(`{"jsonrpc":"2.0","id":`+id+`,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}`+"\n"), 0))
+	return string(conn.StampEnd([]byte(`{"jsonrpc":"2.0","id":`+id+`,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}`+"\n"), 0))
 }
 
 const eofPing = `{"jsonrpc":"2.0","id":1,"method":"server.ping","params":{},"auth":"` + testToken + `"}`
@@ -42,7 +43,7 @@ func holdDispatch(t *testing.T) (seen func() []string) {
 	)
 	release := make(chan struct{})
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *rpc.Response {
+	dispatchRequest = func(s *server, c *conn.Conn, raw []byte, req request) *rpc.Response {
 		wg.Add(1)
 		defer wg.Done()
 		mu.Lock()
@@ -271,7 +272,7 @@ func TestSocketEOFUnterminatedAtIdleClose(t *testing.T) {
 				t.Fatalf("dial: %v", err)
 			}
 			defer nc.Close()
-			var c *conn
+			var c *conn.Conn
 			deadline := time.Now().Add(5 * time.Second)
 			for c == nil && time.Now().Before(deadline) {
 				s.mu.Lock()
@@ -285,7 +286,7 @@ func TestSocketEOFUnterminatedAtIdleClose(t *testing.T) {
 				t.Fatal("the daemon did not register the connection")
 			}
 			s.idleTimeout = 300 * time.Millisecond
-			go s.closeWhenIdle(c.ac, nil)
+			go s.closeWhenIdle(c.AC(), nil)
 			if _, err := io.WriteString(nc, tc.send); err != nil {
 				t.Fatalf("write: %v", err)
 			}

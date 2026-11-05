@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
@@ -70,7 +71,7 @@ var errSpentID = &spawnRefusal{rpc.CodeInvalidParam, "this id is in use, or was 
 
 // takesFrom reports whether c may write the stdin of p. A plain process takes it
 // from every connection, a link-bound one from its link only.
-func (p *managedProc) takesFrom(c *conn) bool {
+func (p *managedProc) takesFrom(c *conn.Conn) bool {
 	return !p.linked || p.link == c
 }
 
@@ -121,11 +122,11 @@ func (p *managedProc) markDetachedLocked(now time.Time) {
 }
 
 // connGone reports whether c is closed. A nil c counts as gone.
-func connGone(c *conn) bool {
+func connGone(c *conn.Conn) bool {
 	if c == nil {
 		return true
 	}
-	return c.closedNow()
+	return c.ClosedNow()
 }
 
 // unattendedFor is how long p has had no link, or 0 while its link is there.

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
@@ -40,7 +41,7 @@ func TestCloseAllRemovesSocketBeforeConnections(t *testing.T) {
 	t.Cleanup(func() { s.procs.killAll() })
 	fake := &statAtCloseConn{socket: sock}
 	s.mu.Lock()
-	s.conns[&conn{nc: fake}] = struct{}{}
+	s.conns[conn.New(fake, nil, 0, nil, nil, nil)] = struct{}{}
 	s.mu.Unlock()
 
 	s.signalShutdown()

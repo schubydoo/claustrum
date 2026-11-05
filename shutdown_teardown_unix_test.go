@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/tokenfile"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
@@ -26,12 +27,12 @@ import (
 // socket is in a temp dir.
 
 // waitConns waits until the daemon has registered n connections and returns them.
-func waitConns(t *testing.T, s *server, n int) []*conn {
+func waitConns(t *testing.T, s *server, n int) []*conn.Conn {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		s.mu.Lock()
-		cs := make([]*conn, 0, len(s.conns))
+		cs := make([]*conn.Conn, 0, len(s.conns))
 		for c := range s.conns {
 			cs = append(cs, c)
 		}
@@ -72,7 +73,7 @@ func TestShutdownTeardownClosesConnsBeforeCleanup(t *testing.T) {
 	release := s.releaseRunDir
 	s.releaseRunDir = func() {
 		// An empty write on an open conn succeeds. On a closed one it fails.
-		_, writeErr = c.nc.Write(nil)
+		_, writeErr = c.NC().Write(nil)
 		probed = true
 		if release != nil {
 			release()
