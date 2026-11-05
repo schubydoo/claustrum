@@ -664,6 +664,54 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	}
 }
 
+// TestBrokenPairInFolderWithGitFileToRegularFile: the `.git` file of K names a
+// regular file, and the daemon has GIT_CONFIG_KEY_0 with no value. Each method then
+// answers "no repository", and the remove of a gone worktree succeeds and keeps the
+// branch. Nothing in K changes, no git runs but the excludes read, and the branch
+// step does not run. The frames are those of b3081b51 (measured on Linux and
+// macOS). Mutation: drop the fileGitDir test at any of the five sites.
+func TestBrokenPairInFolderWithGitFileToRegularFile(t *testing.T) {
+	if !nonDirGitDirIsNoRepo {
+		t.Skip("on Windows a git directory that is a regular file is no such folder")
+	}
+	f := newNoRepoFixture(t)
+	k := filepath.Join(filepath.Dir(f.top), "K")
+	writeFile(t, filepath.Join(k, "regfile"), "x\n", 0o644)
+	writeFile(t, filepath.Join(k, ".git"), "gitdir: "+filepath.Join(k, "regfile")+"\n", 0o644)
+	plantEnv(t, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.foo")
+	leaf := filepath.Join(k, ".claude", "worktrees", "w1")
+	steps := branchStepRuns(t)
+	for _, r := range []struct {
+		method string
+		params map[string]any
+		want   string
+	}{
+		{"git.status", map[string]any{"path": k, "baseRepo": k}, `{"isRepo":false,"clean":false}`},
+		{"git.info", map[string]any{"path": k}, `{"isRepo":false,"repoSlug":"","defaultBranch":""}`},
+		{"git.list_branches", map[string]any{"path": k}, `{"isRepo":false,"branches":[]}`},
+		{"git.worktree_create", map[string]any{"baseRepo": k, "branchName": "w1", "worktreePath": leaf, "sourceBranch": "main"},
+			`{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}`},
+		{"git.worktree_remove", map[string]any{"baseRepo": k, "branchName": "w1", "worktreePath": leaf},
+			`{"success":true,"branchKept":true}`},
+	} {
+		raw, calls := f.call(t, r.method, r.params)
+		if want := `{"jsonrpc":"2.0","id":1,"result":` + r.want + `}`; raw != want {
+			t.Errorf("%s = %s\nwant %s", r.method, raw, want)
+		}
+		for _, c := range calls {
+			if !c.excludesRead() {
+				t.Errorf("%s ran git %q", r.method, c.argv)
+			}
+		}
+		if got := dirNames(t, k); !slices.Equal(got, []string{".git", "regfile"}) {
+			t.Errorf("after %s K holds %q, want .git and regfile", r.method, got)
+		}
+		if n := steps.Load(); n != 0 {
+			t.Errorf("after %s the branch step ran %d times, want 0", r.method, n)
+		}
+	}
+}
+
 // A worktree directory that is still there gets the lock-check frame without the
 // reason (validation V3, a plain dir). With a worktreeRoot the reason follows
 // "cannot determine the repository's work tree" (round1 B6 M8). On Windows the

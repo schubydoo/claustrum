@@ -324,8 +324,7 @@ The other cases of `git.worktree_remove`:
   code.
 - On Windows a `baseRepo` that fails claustrum's own trust-root test gets the
   managed-worktrees refusal first.
-- Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a
-  regular-file `baseRepo`. So does `statat .claude: permission denied` for a
+- Without `worktreeRoot`, `statat .claude: permission denied` comes first for a
   `baseRepo` with mode 0600 and a path under `.claude` (measured on Linux and
   macOS).
 - Without `worktreeRoot`, the count also refuses a missing `baseRepo` in the

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/pathcanon"
@@ -715,6 +716,10 @@ func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) 
 	// and git's own refusal gets the reason of a folder with no repository.
 	if msg, noRepo := req.settingsGateRefusal(t, off, repo); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
+	} else if req.goneCopyText != "" {
+		// A missing daemon GIT_DIR: b3081b51 answers its open error (measured on Linux, with
+		// a worktreeRoot outside the repository).
+		return workTreeUnknownPrefix + repoFilePrefix + (&fs.PathError{Op: "open", Path: t.pinCommonDir, Err: syscall.ENOENT}).Error(), ""
 	} else if noRepo {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}

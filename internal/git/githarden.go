@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1487,11 +1488,17 @@ func repositoryGitDir(u gitUse, dir string, pre *configListing) (string, error) 
 // returned as is. A directory that can be opened but not searched (mode 0600)
 // gives "statat <name>: permission denied". One that cannot be opened at all
 // (mode 0000) gives "open <dir>: permission denied". A .claude that is a symlink,
-// even to a place outside dir, passes.
+// even to a place outside dir, passes. On Linux and macOS a dir that is a regular
+// file reports nil too: b3081b51 answers success there (measured on Linux and
+// macOS, removeGoneWorktree). Windows and other kinds of file are not measured and
+// keep the error.
 func statInsideDir(dir, name string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if fi, serr := os.Stat(dir); serr == nil && fi.Mode().IsRegular() && runtime.GOOS != "windows" {
 			return nil
 		}
 		return err

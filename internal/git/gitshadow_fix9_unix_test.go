@@ -298,3 +298,101 @@ func TestFailedInitNamesTheGitVersion(t *testing.T) {
 		t.Errorf("the folder of the daemon after the failed test holds %v, want the lock file only", got)
 	}
 }
+
+// TestDaemonGitDirToMissingPath: the daemon has a GIT_DIR that names a missing
+// path, and F is a plain folder. The copy of the repository then fails, and each
+// method answers "no repository". git.info has the member of the start test of
+// the first request, and the remove of a gone worktree succeeds and keeps the
+// branch with no branch step. Nothing in F changes. The frames are those of
+// b3081b51 (measured on Linux and macOS). Mutations: drop the goneEnvGitDir test
+// in settingsGate, or the one of the remove.
+func TestDaemonGitDirToMissingPath(t *testing.T) {
+	f := newShadowFixture(t)
+	base := t.TempDir()
+	requireTempOutsideCheckout(t, base)
+	dir := filepath.Join(base, "F")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(base, "nonexist")
+	t.Setenv("GIT_DIR", missing)
+	leaf := filepath.Join(dir, ".claude", "worktrees", "w1")
+	steps := branchStepRuns(t)
+	for _, r := range []struct {
+		method string
+		params map[string]any
+		want   string
+	}{
+		{"git.status", map[string]any{"path": dir, "baseRepo": dir}, `{"isRepo":false,"clean":false}`},
+		{"git.info", map[string]any{"path": dir}, `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`},
+		{"git.list_branches", map[string]any{"path": dir}, `{"isRepo":false,"branches":[]}`},
+		{"git.worktree_create", map[string]any{"baseRepo": dir, "branchName": "w1", "worktreePath": leaf, "sourceBranch": "main"},
+			`{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}`},
+		{"git.worktree_remove", map[string]any{"baseRepo": dir, "branchName": "w1", "worktreePath": leaf},
+			`{"success":true,"branchKept":true}`},
+	} {
+		raw, _ := f.call(t, r.method, r.params)
+		if want := `{"jsonrpc":"2.0","id":1,"result":` + r.want + `}`; raw != want {
+			t.Errorf("%s = %s\nwant %s", r.method, raw, want)
+		}
+		if got := entryNames(t, dir); len(got) != 0 {
+			t.Errorf("after %s F holds %q, want nothing", r.method, got)
+		}
+		if _, err := os.Lstat(missing); !os.IsNotExist(err) {
+			t.Errorf("after %s the GIT_DIR path: %v, want it missing", r.method, err)
+		}
+		if n := steps.Load(); n != 0 {
+			t.Errorf("after %s the branch step ran %d times, want 0", r.method, n)
+		}
+	}
+}
+
+// TestDaemonGitDirToMissingPathRemoveRefusals: with the GIT_DIR of
+// TestDaemonGitDirToMissingPath, a remove with worktreeRoot outside F gets the
+// class 2 reason with the open error of that path, for a gone and an existing
+// worktree (b3081b51, measured on Linux). Without worktreeRoot an existing
+// worktree keeps the refusal of the failed copy (claustrum's own). No folder
+// changes. Mutations: drop the goneCopyText test in externalWorkTreeRefusal, or
+// at the remove of an existing worktree.
+func TestDaemonGitDirToMissingPathRemoveRefusals(t *testing.T) {
+	f := newShadowFixture(t)
+	base := t.TempDir()
+	requireTempOutsideCheckout(t, base)
+	dir := filepath.Join(base, "F")
+	root := filepath.Join(base, "R")
+	missing := filepath.Join(base, "nonexist")
+	t.Setenv("GIT_DIR", missing)
+	live := filepath.Join(dir, ".claude", "worktrees", "w1")
+	writeFile(t, filepath.Join(live, "keep.txt"), "k\n", 0o644)
+	rootLive := filepath.Join(root, "d", "w2")
+	writeFile(t, filepath.Join(rootLive, "keep.txt"), "k\n", 0o644)
+	unknown := wtUnknown + "a file in this repository's .git directory cannot be used: open " +
+		missing + ": no such file or directory"
+	for _, r := range []struct {
+		name   string
+		params map[string]any
+		want   string
+	}{
+		{"live", map[string]any{"baseRepo": dir, "branchName": "w1", "worktreePath": live},
+			"failed to remove worktree: could not check whether " + live + " is locked: Claude could not prepare " +
+				"its own files on the remote machine: cannot write its copy of the repository's git config: " +
+				"the HEAD of the repository cannot be read"},
+		{"gone root", map[string]any{"baseRepo": dir, "branchName": "w1", "worktreePath": filepath.Join(root, "d", "w1"),
+			"worktreeRoot": root}, unknown},
+		{"live root", map[string]any{"baseRepo": dir, "branchName": "w2", "worktreePath": rootLive,
+			"worktreeRoot": root}, unknown},
+	} {
+		raw, _ := f.call(t, "git.worktree_remove", r.params)
+		if want := refusalFrame(t, r.want); raw != want {
+			t.Errorf("%s = %s\nwant %s", r.name, raw, want)
+		}
+		for _, p := range []string{live, rootLive} {
+			if got := entryNames(t, p); !slices.Equal(got, []string{"keep.txt"}) {
+				t.Errorf("after %s %s holds %q, want keep.txt", r.name, p, got)
+			}
+		}
+		if _, err := os.Lstat(missing); !os.IsNotExist(err) {
+			t.Errorf("after %s the GIT_DIR path: %v, want it missing", r.name, err)
+		}
+	}
+}

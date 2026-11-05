@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -87,6 +88,16 @@ type gitDirTrust struct {
 	// `worktrees` of an existing git directory (isWorktreeEntry). git.info runs the
 	// start test there (gitInfo).
 	goneGitFile bool
+	// fileGitDir is true when verdict is gitDirNoRepo for a `.git` file that the walk
+	// found and that names a regular file (Linux and macOS). With a refused
+	// GIT_CONFIG_* entry of the daemon, each method answers "no repository" there, as
+	// b3081b51 does (measured on Linux and macOS).
+	fileGitDir bool
+	// goneEnvGitDir is true for a daemon GIT_DIR that names a missing path, on Linux
+	// and macOS. A failed copy of the repository then answers "no repository"
+	// (settingsGate), as b3081b51 does (measured on Linux and macOS). Windows keeps
+	// the refusal (claustrum's own, not measured).
+	goneEnvGitDir bool
 }
 
 // noRepoPin is the environment entry of a git call in a folder where the trust check
@@ -498,7 +509,8 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 			if isWorktreeEntry(g) {
 				return gitDirTrust{verdict: gitDirRefused, refusal: gitDirEntryGoneRefusal}
 			}
-			return gitDirTrust{pinCommonDir: g}
+			return gitDirTrust{pinCommonDir: g,
+				goneEnvGitDir: errors.Is(err, fs.ErrNotExist) && runtime.GOOS != "windows"}
 		}
 		// A `.git` file that names a git dir which is gone. The calls of a removal
 		// carry GIT_COMMON_DIR=<that git dir> on 89cb6289 (measured on Linux and
@@ -517,7 +529,7 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 			goneGitFile: errors.Is(err, fs.ErrNotExist) && !isWorktreeEntry(g)}
 	}
 	if !fi.IsDir() && nonDirGitDirIsNoRepo {
-		return gitDirTrust{verdict: gitDirNoRepo, noGit: fromEnv}
+		return gitDirTrust{verdict: gitDirNoRepo, noGit: fromEnv, fileGitDir: !fromEnv && fi.Mode().IsRegular()}
 	}
 	g = resolveGitDirLinks(g)
 	cd := filepath.Join(g, "commondir")

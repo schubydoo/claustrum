@@ -1136,7 +1136,7 @@ func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, d
 // that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
 // pass ask false only for a later gate at a call with --git-dir=.
 func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
-	req.gitRefused, req.configRefused = false, false
+	req.gitRefused, req.configRefused, req.goneCopyText = false, false, ""
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
 	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,
 	// the request still gets its copy (daemonCommonDirStays). The gate then
@@ -1182,6 +1182,14 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 	req.repoRead = read
 	use, err := req.shadow.syncRepo(t.pinCommonDir, read)
 	if err != nil {
+		// A daemon GIT_DIR that names a missing path gets "no repository" in place of
+		// the refusal (gitDirTrust.goneEnvGitDir). Each failure of the step there
+		// takes it (claustrum's own, not measured). A remove of a worktree that exists
+		// keeps the refusal (goneCopyText).
+		if t.goneEnvGitDir {
+			req.goneCopyText = shadowRepoFailureText(err)
+			return "", true
+		}
 		return shadowRepoFailureText(err), false
 	}
 	use.sshKept = req.use.sshKept

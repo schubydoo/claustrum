@@ -42,6 +42,9 @@ type gitCall struct {
 	// the config of the repository or another file of its git directory
 	// (repoConfigGate).
 	configRefused bool
+	// goneCopyText is the refusal of a failed copy that the last settings gate
+	// answered as "no repository" (gitDirTrust.goneEnvGitDir), or "".
+	goneCopyText string
 	// stop holds the time limits of the git calls of the request (gitstop.go). It
 	// is nil for a method with no such limits.
 	stop *gitStop
