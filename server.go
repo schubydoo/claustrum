@@ -279,14 +279,15 @@ func (c *conn) doneStdinTurn(t uint64) {
 	c.stdinMu.Unlock()
 }
 
-// writeJSON is ONE OF THREE outbound encodes — see also conn.writeResponse
-// below (every JSON-RPC reply) and managedProc.emit (every live stream frame).
-// This one carries reattach REPLAY frames only, so it is the narrowest of the
-// three; the comment used to call it "the single outbound encode", which would
-// send someone doing an encoder cleanup looking in exactly one place and missing
-// the two that matter more.
+// writeJSON is one of several outbound encodes — see also conn.writeResponse
+// below (every JSON-RPC reply), managedProc.emit (every live stream frame),
+// writeFramesLocked in process.go (the replay of a reattach that holds the write
+// lock) and peerRefusalLine in peercheck.go (the refusal of a peer). This one
+// carries reattach REPLAY frames only; the comment used to call it "the single
+// outbound encode", which would send someone doing an encoder cleanup looking in
+// exactly one place and missing the others.
 //
-// All three must stay on json.Marshal, not an Encoder: Marshal HTML-escapes
+// All of them must stay on json.Marshal, not an Encoder: Marshal HTML-escapes
 // `< > &` with no opt-out, which is what the reference emits, and
 // SetEscapeHTML(false) would look like a cleanup and move the wire — see
 // docs/ARCHITECTURE.md → "Inherited wire bytes".
@@ -308,19 +309,18 @@ func (c *conn) writeLine(b []byte) error {
 	return c.writeLineLocked(b)
 }
 
-// writeReplayLocked writes the replay frames of a reattach with c.wmu already
-// held, each as writeJSON marshals it. It stops at the first error.
-func (c *conn) writeReplayLocked(frames []streamFrame) error {
-	for _, f := range frames {
-		b, err := json.Marshal(f)
-		if err != nil {
-			return err
-		}
-		if err := c.writeLineLocked(append(b, '\n')); err != nil {
-			return err
-		}
-	}
-	return nil
+// lockWrites takes the write lock of c. Process code holds it across a
+// reattach and then writes with writeFramesLocked.
+func (c *conn) lockWrites() { c.wmu.Lock() }
+
+// unlockWrites releases the write lock that lockWrites took.
+func (c *conn) unlockWrites() { c.wmu.Unlock() }
+
+// closedNow reports whether c is closed. It takes the write lock of c.
+func (c *conn) closedNow() bool {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	return c.closed
 }
 
 // writeLineLocked is writeLine with c.wmu already held.

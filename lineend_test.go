@@ -118,9 +118,9 @@ func TestConnLinesCarryRunningEndCount(t *testing.T) {
 	if string(shared) != keep {
 		t.Errorf("writeLine changed the shared slice: %q", shared)
 	}
-	c.wmu.Lock()
-	err := c.writeReplayLocked([]streamFrame{{Type: "stream", ProcessID: "p", Stream: "stderr", Seq: 2}})
-	c.wmu.Unlock()
+	c.lockWrites()
+	err := writeFramesLocked(c, []streamFrame{{Type: "stream", ProcessID: "p", Stream: "stderr", Seq: 2}})
+	c.unlockWrites()
 	if err != nil {
 		t.Fatal(err)
 	}

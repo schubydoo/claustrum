@@ -125,9 +125,7 @@ func connGone(c *conn) bool {
 	if c == nil {
 		return true
 	}
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.closed
+	return c.closedNow()
 }
 
 // unattendedFor is how long p has had no link, or 0 while its link is there.
