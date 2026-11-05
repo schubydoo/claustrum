@@ -307,7 +307,7 @@ func worktreeConfigSource(ctx context.Context, gitDir, path string) (text []byte
 	if !ok {
 		return refuse(cmp.Or(detail, quoteOperand(path)+" cannot be read"))
 	}
-	out, errOut, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	out, errOut, _, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv(), nil)
 	if err != nil {
 		if d := badLineDetail(errOut, path); d != "" {
 			return refuse(d)
@@ -466,7 +466,7 @@ func listConfigFileText(ctx context.Context, path string) (text []byte, settings
 	if !ok {
 		return nil, nil, "", false
 	}
-	out, errOut, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	out, errOut, _, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv(), nil)
 	if err != nil {
 		return nil, nil, badLineDetail(errOut, path), false
 	}

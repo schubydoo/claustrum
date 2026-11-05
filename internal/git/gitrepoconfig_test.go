@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1371,6 +1372,51 @@ func TestRepoConfigListingIsBound(t *testing.T) {
 	log = &repoReadLog{}
 	if d := repoConfigDetail(context.Background(), gitDir, "", log); !strings.Contains(d, "whose name is longer than") || log.noVerdict {
 		t.Errorf("a listing over the bound in a section with a name bound: detail %q, no verdict %v, want the name refusal", d, log.noVerdict)
+	}
+}
+
+// TestRepoConfigListingKeepsNothingAfterRefusal pins that a listing keeps no
+// bytes after its judge refuses, while git still writes the rest. A judge that
+// passes keeps the whole listing, as listConfigText gives it. Then a config in
+// `remote` whose listing passes the bound gets the "more settings" text.
+func TestRepoConfigListingKeepsNothingAfterRefusal(t *testing.T) {
+	requireGit(t)
+	var b strings.Builder
+	b.WriteString("[remote \"" + strings.Repeat("a", 40) + "\"]\n")
+	for range 100000 {
+		b.WriteString("\tu=\n")
+	}
+	text := []byte(b.String())
+	whole, err := listConfigText(context.Background(), text, gitVersionDir, repoConfigListEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pass := func([]byte) string { return "" }
+	out, _, refusal, err := listRepoConfigText(context.Background(), text, gitVersionDir, repoConfigListEnv(), pass)
+	if err != nil || refusal != "" || !bytes.Equal(out, whole) {
+		t.Errorf("a judge that passes: %d bytes, refusal %q, err %v, want the %d bytes of the listing", len(out), refusal, err, len(whole))
+	}
+	records := 0
+	second := func([]byte) string {
+		if records++; records == 2 {
+			return "refused"
+		}
+		return ""
+	}
+	out, _, refusal, err = listRepoConfigText(context.Background(), text, gitVersionDir, repoConfigListEnv(), second)
+	if err != nil || refusal != "refused" || len(out) != 0 || records != 2 {
+		t.Errorf("a judge that refuses: %d bytes kept, refusal %q, err %v, %d records judged, want 0 bytes and 2 records",
+			len(out), refusal, err, records)
+	}
+
+	old := repoListingMaxBytes
+	t.Cleanup(func() { repoListingMaxBytes = old })
+	repoListingMaxBytes = len(whole) * 3 / 4
+	_, gitDir := configRepo(t)
+	setRepoConfig(t, gitDir, string(text))
+	want := strconv.Quote(filepath.Join(gitDir, "config")) + " has more settings than Claude reads (8 MiB); remove repeated ones"
+	if got := configDetail(t, gitDir); got != want {
+		t.Errorf("a remote listing over the bound: detail = %q, want %q", got, want)
 	}
 }
 
