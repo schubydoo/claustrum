@@ -43,7 +43,7 @@ func staleSocketFile(t *testing.T, path string) {
 // startedAt that server.capabilities answers. Every signal and every read of a
 // process is seamed.
 func TestStartReapsBeforeItBinds(t *testing.T) {
-	if node, _ := ownReapIdentity(); node == "" {
+	if node, _ := childrec.OwnReapIdentityForTest(); node == "" {
 		t.Skip("no node identity on this host")
 	}
 	for _, tc := range []struct {
@@ -139,7 +139,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 // and exits 0. The signal goes through the notifySignals seam, and every signal and every read of a
 // process is seamed.
 func TestRunServeHandlesASignalDuringItsStart(t *testing.T) {
-	if node, _ := ownReapIdentity(); node == "" {
+	if node, _ := childrec.OwnReapIdentityForTest(); node == "" {
 		t.Skip("no node identity on this host")
 	}
 	stubOsExit(t)

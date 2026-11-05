@@ -859,7 +859,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
 		s.mu.Unlock()
-		go s.closeWhenIdle(ac, c.Done())
+		go conn.CloseWhenIdle(ac, s.idleTimeout, s.shutdown, c.Done())
 		go s.serveConn(c)
 	}
 }
@@ -877,12 +877,6 @@ func (p *spokeReader) Read(b []byte) (int, error) {
 		p.sent = true
 	}
 	return n, err
-}
-
-// closeWhenIdle runs the idle watcher of one connection with the idle timeout and
-// the shutdown channel of the server (conn.CloseWhenIdle).
-func (s *server) closeWhenIdle(a *conn.ActivityConn, done <-chan struct{}) {
-	conn.CloseWhenIdle(a, s.idleTimeout, s.shutdown, done)
 }
 
 // dispatchRequest is the seam serveConn dispatches through. A var so a test can

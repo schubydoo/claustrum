@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/childrec"
 	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
@@ -18,7 +19,7 @@ import (
 // lock itself, so nothing is there to signal. The control is the same start with a free lock: the recorded
 // group gets its SIGTERM and the daemon writes a record.
 func TestNotLockHolderReapsAndRecordsNothing(t *testing.T) {
-	if node, _ := ownReapIdentity(); node == "" {
+	if node, _ := childrec.OwnReapIdentityForTest(); node == "" {
 		t.Skip("no node identity on this host")
 	}
 	const orphan = 800000401

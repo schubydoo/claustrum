@@ -36,7 +36,7 @@ type Conn struct {
 	sentStop bool
 
 	// done is closed when serveConn returns, so the per-connection idle watcher
-	// (closeWhenIdle) exits promptly instead of lingering until the idle timeout.
+	// (CloseWhenIdle) exits promptly instead of lingering until the idle timeout.
 	done chan struct{}
 
 	// id correlates this connection's frames in a -wire-log capture. It has no

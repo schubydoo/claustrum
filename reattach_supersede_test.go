@@ -66,7 +66,7 @@ func TestSupersededConnectionIsNotClosedTwice(t *testing.T) {
 	s := &server{shutdown: make(chan struct{}), idleTimeout: time.Millisecond}
 	done := make(chan struct{})
 	out := captureLog(t, func() {
-		go func() { s.closeWhenIdle(ac, done); close(done) }()
+		go func() { conn.CloseWhenIdle(ac, s.idleTimeout, s.shutdown, done); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
