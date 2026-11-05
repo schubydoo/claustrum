@@ -178,7 +178,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 
 	// Too young. hcFakeDaemon's uptime is 100000s and the clock is fixed, so a start-ticks
 	// value close to the uptime is a process that started seconds ago.
-	young := 76
+	young := noSuchPid + 76
 	hcFakeDaemon(t, proot, mk, link, young, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "9999990")
 	if hcRetire(c, young, socket) {
@@ -194,7 +194,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	// would poll the wait out to its deadline.
 	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return syscall.EPERM })
 	sleeps = 0
-	victim := 77
+	victim := noSuchPid + 77
 	hcFakeDaemon(t, proot, mk, link, victim, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
 	link(victim, "fd/1", "/dev/null") // readable connections, none a client

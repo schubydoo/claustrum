@@ -166,3 +166,22 @@ func TestRefusedKillLeavesTheFarewellOpen(t *testing.T) {
 		t.Errorf("killWithFarewell after a refused kill = %q, want %q", got, farewellQueued)
 	}
 }
+
+// signalProcessGroup refuses pid 0 and pid 1 with an error for every signal name, before
+// either seam (claustrum's own). A real child never has such a pid.
+func TestSignalProcessGroupRefusesASmallPid(t *testing.T) {
+	calls := refusingSignals(t, nil)
+	for _, pid := range []int{0, 1} {
+		for _, name := range []string{"TERM", "KILL"} {
+			if err := signalProcessGroup(&os.Process{Pid: pid}, name); err == nil {
+				t.Errorf("signalProcessGroup(%d, %s) = nil, want an error", pid, name)
+			}
+		}
+	}
+	if len(*calls) != 0 {
+		t.Errorf("seam calls = %v, want none", *calls)
+	}
+	if err := signalProcessGroup(&os.Process{Pid: noSuchPid}, "KILL"); err != nil || len(*calls) != 1 {
+		t.Errorf("signalProcessGroup(noSuchPid, KILL) = %v, calls %v, want nil and one call", err, *calls)
+	}
+}

@@ -174,7 +174,7 @@ func TestHcSettledBusyTakesTwoSamples(t *testing.T) {
 // The control runs first and must retire. Without it an implementation that refused
 // every candidate would pass the spare arm.
 func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
-	const pid = 4300
+	const pid = noSuchPid + 4300
 	const socket = "/opt/claude/run/x/rpc.sock"
 
 	// run plants one verifiable, old, marked daemon and says whether it keeps a
@@ -231,7 +231,7 @@ func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
 // which is why the assertion is on the sampler not running at all rather than on a
 // frame.
 func TestRetireAbandonedVerifiesBeforeItSamples(t *testing.T) {
-	const pid = 4400
+	const pid = noSuchPid + 4400
 	const socket = "/opt/claude/run/x/rpc.sock"
 
 	proot, mk, link := fakeProc(t)

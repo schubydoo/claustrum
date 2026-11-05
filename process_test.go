@@ -20,7 +20,8 @@ import (
 )
 
 // noSuchPid is the pid of a fake process behind the signalGroup seam. It is above the pid
-// limit of Linux and macOS, so it names no process and no group. If a change skips the
+// limit of Linux and macOS, so it names no process and no group. Tests that need more
+// than one fake pid use noSuchPid plus a small number. If a change skips the
 // seam, kill(-noSuchPid) finds nothing. A fake pid of 1 would turn into kill(-1), which
 // signals every process of the user.
 const noSuchPid = 1 << 30
@@ -1169,7 +1170,7 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	m := newTestProcManager(t)
 	victim := &managedProc{
 		id: "X", sessionKey: "s", running: true,
-		cmd: &exec.Cmd{Process: &os.Process{Pid: 111}}, done: make(chan struct{}),
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid + 111}}, done: make(chan struct{}),
 	}
 	close(victim.done) // die promptly on the graceful-signal path
 	m.procs["X"] = victim
@@ -1177,7 +1178,7 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	// A concurrent spawn reuses id "X" for an unrelated process after the scan.
 	replacement := &managedProc{
 		id: "X", sessionKey: "other", running: true,
-		cmd: &exec.Cmd{Process: &os.Process{Pid: 222}}, done: make(chan struct{}),
+		cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid + 222}}, done: make(chan struct{}),
 	}
 	m.mu.Lock()
 	m.procs["X"] = replacement
@@ -1187,11 +1188,11 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if !signaledPids[111] {
-		t.Error("captured victim (pid 111) was not signaled")
+	if !signaledPids[noSuchPid+111] {
+		t.Error("captured victim (pid 1073741935) was not signaled")
 	}
-	if signaledPids[222] {
-		t.Error("reused-id replacement (pid 222) was signaled — the kill redirected to the wrong process")
+	if signaledPids[noSuchPid+222] {
+		t.Error("reused-id replacement (pid 1073742046) was signaled — the kill redirected to the wrong process")
 	}
 }
 

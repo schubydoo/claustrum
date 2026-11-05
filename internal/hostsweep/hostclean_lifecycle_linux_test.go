@@ -221,11 +221,11 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 		hcSleep = func(d time.Duration) { now = now.Add(d) }
 		// The process is still in the fake tree (so the pre-signal identity check passes),
 		// but the kernel says it is gone by the time the signal lands.
-		mk(7001, "stat", hcRunningStat(7001, 1, 7001, "1"))
+		mk(noSuchPid+7001, "stat", hcRunningStat(noSuchPid+7001, 1, noSuchPid+7001, "1"))
 		procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.ESRCH })
 		hcHoldPid = holdWith(func(int, syscall.Signal) error { return syscall.ESRCH })
 
-		signalled, survived := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "orphaned process group", "")
+		signalled, survived := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 7001, pgid: noSuchPid + 7001, startTicks: "1"}}, "orphaned process group", "")
 		if signalled != 0 || survived != 0 {
 			t.Errorf("signalled=%d survived=%d, want 0 and 0 for an already-gone group", signalled, survived)
 		}
@@ -237,7 +237,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 		oldGrp, oldSig, oldClock, oldSleep := procinfo.KillGroupForTest(), hcHoldPid, hcClock, hcSleep
 		t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcHoldPid, hcClock, hcSleep = oldSig, oldClock, oldSleep })
 
-		const pid = 7002
+		const pid = noSuchPid + 7002
 		mk(pid, "stat", hcRunningStat(pid, 1, pid, "1"))
 
 		var sent []syscall.Signal

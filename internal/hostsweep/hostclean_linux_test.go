@@ -397,8 +397,8 @@ func TestEndGroupsTwoPhase(t *testing.T) {
 		switch sig {
 		case syscall.SIGTERM:
 			terms = append(terms, pid)
-			if pid == 2001 {
-				_ = os.RemoveAll(filepath.Join(root, "2001")) // g1 exits during the grace
+			if pid == noSuchPid+2001 {
+				_ = os.RemoveAll(filepath.Join(root, "1073743825")) // g1 exits during the grace
 			}
 		case syscall.SIGKILL:
 			kills = append(kills, pid)
@@ -411,18 +411,18 @@ func TestEndGroupsTwoPhase(t *testing.T) {
 	})
 	// Both are live at SIGTERM time (present in procfs, matching pgid+start-ticks). g1 exits
 	// during the grace; g2 stays alive and survives SIGKILL.
-	mk(2001, "stat", "2001 (x) R 1 2001 "+strings.Repeat("0 ", 16)+"5 x")
-	mk(2002, "stat", "2002 (x) R 1 2002 "+strings.Repeat("0 ", 16)+"5 x")
+	mk(noSuchPid+2001, "stat", "1073743825 (x) R 1 1073743825 "+strings.Repeat("0 ", 16)+"5 x")
+	mk(noSuchPid+2002, "stat", "1073743826 (x) R 1 1073743826 "+strings.Repeat("0 ", 16)+"5 x")
 	groups := []tracked{
-		{pid: 2001, pgid: 2001, startTicks: "5"}, // exits during the grace
-		{pid: 2002, pgid: 2002, startTicks: "5"}, // alive throughout
+		{pid: noSuchPid + 2001, pgid: noSuchPid + 2001, startTicks: "5"}, // exits during the grace
+		{pid: noSuchPid + 2002, pgid: noSuchPid + 2002, startTicks: "5"}, // alive throughout
 	}
 	sig, surv := endGroupsTwoPhase(groups, "orphan", "")
 	if sig != 2 {
 		t.Errorf("signalled=%d, want 2", sig)
 	}
-	if len(kills) != 1 || kills[0] != 2002 {
-		t.Errorf("SIGKILL = %v, want [2002] (2001 exited in the grace)", kills)
+	if len(kills) != 1 || kills[0] != noSuchPid+2002 {
+		t.Errorf("SIGKILL = %v, want [1073743826] (1073743825 exited in the grace)", kills)
 	}
 	if surv != 1 {
 		t.Errorf("survived=%d, want 1", surv)
@@ -564,13 +564,13 @@ func TestRetireAbandoned(t *testing.T) {
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
 	socket := "/opt/claude/run/x/rpc.sock"
 	// A verifiable, old, marked daemon that exits on SIGTERM -> retired.
-	hcFakeDaemon(t, proot, mk, link, 4000, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
-	link(4000, "fd/1", "/dev/null") // readable connections, none a client
-	if !hcRetire(c, 4000, socket) {
+	hcFakeDaemon(t, proot, mk, link, noSuchPid+4000, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+	link(noSuchPid+4000, "fd/1", "/dev/null") // readable connections, none a client
+	if !hcRetire(c, noSuchPid+4000, socket) {
 		t.Error("verifiable daemon not retired")
 	}
-	if len(*single) != 1 || (*single)[0] != 4000 {
-		t.Errorf("SIGTERM = %v, want [4000]", *single)
+	if len(*single) != 1 || (*single)[0] != noSuchPid+4000 {
+		t.Errorf("SIGTERM = %v, want [1073745824]", *single)
 	}
 	// An unverifiable (unmarked) daemon is left running.
 	hcFakeDaemon(t, proot, mk, link, 4001, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, false, "1")
@@ -637,12 +637,12 @@ func TestEndGroupsWrapper(t *testing.T) {
 	_, group := hcSeamSignals(t, root)
 	c := &hostCleaner{}
 	var sum hcSummary
-	mk(6001, "stat", "6001 (x) R 1 6001 "+strings.Repeat("0 ", 16)+"1 x") // live at signal time; dies on SIGTERM
-	c.endGroups([]tracked{{pid: 6001, pgid: 6001, startTicks: "1"}}, &sum)
+	mk(noSuchPid+6001, "stat", "1073747825 (x) R 1 1073747825 "+strings.Repeat("0 ", 16)+"1 x") // live at signal time; dies on SIGTERM
+	c.endGroups([]tracked{{pid: noSuchPid + 6001, pgid: noSuchPid + 6001, startTicks: "1"}}, &sum)
 	if sum.orphanSignalled != 1 {
 		t.Errorf("orphanSignalled=%d, want 1", sum.orphanSignalled)
 	}
-	if len(*group) == 0 || (*group)[0] != 6001 {
+	if len(*group) == 0 || (*group)[0] != noSuchPid+6001 {
 		t.Errorf("group not signaled: %v", *group)
 	}
 }
@@ -661,8 +661,8 @@ func TestEndGroupsTwoPhaseForeignOwner(t *testing.T) {
 		}
 		return syscall.EPERM
 	})
-	mk(8100, "stat", "8100 (x) R 1 8100 "+strings.Repeat("0 ", 16)+"1 x")
-	sig, _ := endGroupsTwoPhase([]tracked{{pid: 8100, pgid: 8100, startTicks: "1"}}, "orphan", "")
+	mk(noSuchPid+8100, "stat", "1073749924 (x) R 1 1073749924 "+strings.Repeat("0 ", 16)+"1 x")
+	sig, _ := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 8100, pgid: noSuchPid + 8100, startTicks: "1"}}, "orphan", "")
 	if sig != 0 {
 		t.Errorf("signalled=%d, want 0 (EPERM: not ours)", sig)
 	}
@@ -947,10 +947,10 @@ func TestRetireAbandonedLeftRunning(t *testing.T) {
 	var sent []syscall.Signal
 	hcHoldPid = holdWith(func(_ int, sig syscall.Signal) error { sent = append(sent, sig); return nil }) // no death
 	socket := "/opt/claude/run/x/rpc.sock"
-	hcFakeDaemon(t, proot, mk, link, 4100, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
-	link(4100, "fd/1", "/dev/null") // readable connections, none a client
+	hcFakeDaemon(t, proot, mk, link, noSuchPid+4100, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+	link(noSuchPid+4100, "fd/1", "/dev/null") // readable connections, none a client
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	if hcRetire(c, 4100, socket) {
+	if hcRetire(c, noSuchPid+4100, socket) {
 		t.Error("daemon that outlived SIGTERM was reported retired")
 	}
 	// The retire sends one SIGTERM and nothing more. It does not escalate.
@@ -981,15 +981,15 @@ func TestGroupExistsAndNoSuchProcess(t *testing.T) {
 	old := procinfo.KillGroupForTest()
 	t.Cleanup(func() { procinfo.SetKillGroupForTest(old) })
 	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return nil })
-	if !hcGroupExists(500) {
+	if !hcGroupExists(noSuchPid + 500) {
 		t.Error("group with nil kill error not existing")
 	}
 	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.EPERM })
-	if !hcGroupExists(500) {
+	if !hcGroupExists(noSuchPid + 500) {
 		t.Error("EPERM should still mean the group exists")
 	}
 	procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.ESRCH })
-	if hcGroupExists(500) {
+	if hcGroupExists(noSuchPid + 500) {
 		t.Error("ESRCH should mean no group")
 	}
 	if hcGroupExists(1) {
@@ -1104,20 +1104,20 @@ func TestWaitGone(t *testing.T) {
 		}
 		return nil
 	})
-	// Entry 700: gone, kill enabled, group still exists -> SIGKILL the group.
-	// Entry 701: alive throughout -> survivor.
-	mk(701, "stat", "701 (server) R 1 701 "+strings.Repeat("0 ", 16)+"5 x")
-	// 700 is absent (gone). groupExists(700): our killGroup returns nil -> exists.
+	// Entry noSuchPid+700: gone, kill enabled, group still exists -> SIGKILL the group.
+	// Entry noSuchPid+701: alive throughout -> survivor.
+	mk(noSuchPid+701, "stat", "1073742525 (server) R 1 1073742525 "+strings.Repeat("0 ", 16)+"5 x")
+	// noSuchPid+700 is absent (gone). groupExists(noSuchPid+700): our killGroup returns nil -> exists.
 	entries := []waitEntry{
-		{tracked: tracked{pid: 700, pgid: 700, startTicks: "1"}, kill: true},
-		{tracked: tracked{pid: 701, pgid: 701, startTicks: "5"}, kill: true},
+		{tracked: tracked{pid: noSuchPid + 700, pgid: noSuchPid + 700, startTicks: "1"}, kill: true},
+		{tracked: tracked{pid: noSuchPid + 701, pgid: noSuchPid + 701, startTicks: "5"}, kill: true},
 	}
-	surv := waitGone(entries, now.Add(500*time.Millisecond))
-	if len(killed) != 1 || killed[0] != 700 {
-		t.Errorf("killed = %v, want a group SIGKILL to 700", killed)
+	surv := waitGone(entries, now.Add(noSuchPid+500*time.Millisecond))
+	if len(killed) != 1 || killed[0] != noSuchPid+700 {
+		t.Errorf("killed = %v, want a group SIGKILL to 1073742524", killed)
 	}
-	if len(surv) != 1 || surv[0].pid != 701 {
-		t.Errorf("survivors = %v, want [701]", surv)
+	if len(surv) != 1 || surv[0].pid != noSuchPid+701 {
+		t.Errorf("survivors = %v, want [1073742525]", surv)
 	}
 }
 
@@ -1173,8 +1173,8 @@ func TestEndGroupsTwoPhaseSkipsReusedPid(t *testing.T) {
 	root, mk, _ := fakeProc(t)
 	single, group := hcSeamSignals(t, root)
 	// The tracked child recorded start-ticks "1"; the live pid now shows "999" (a reused pid).
-	mk(5000, "stat", "5000 (x) R 1 5000 "+strings.Repeat("0 ", 16)+"999 x")
-	sig, _ := endGroupsTwoPhase([]tracked{{pid: 5000, pgid: 5000, startTicks: "1"}}, "leftover", "")
+	mk(noSuchPid+5000, "stat", "1073746824 (x) R 1 1073746824 "+strings.Repeat("0 ", 16)+"999 x")
+	sig, _ := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 5000, pgid: noSuchPid + 5000, startTicks: "1"}}, "leftover", "")
 	if sig != 0 {
 		t.Errorf("signalled=%d, want 0 (the pid was reused)", sig)
 	}
@@ -1206,13 +1206,13 @@ func TestEndGroupsTwoPhaseReapsDyingLeaderGroup(t *testing.T) {
 		}
 		return nil
 	})
-	mk(7001, "stat", "7001 (x) R 1 7001 "+strings.Repeat("0 ", 16)+"1 x")
-	sig, _ := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "leftover", "")
+	mk(noSuchPid+7001, "stat", "1073748825 (x) R 1 1073748825 "+strings.Repeat("0 ", 16)+"1 x")
+	sig, _ := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 7001, pgid: noSuchPid + 7001, startTicks: "1"}}, "leftover", "")
 	if sig != 1 {
 		t.Errorf("signalled=%d, want 1", sig)
 	}
-	if len(kills) != 1 || kills[0] != 7001 {
-		t.Errorf("group SIGKILL = %v, want [7001] (leader died in the grace, group lingered)", kills)
+	if len(kills) != 1 || kills[0] != noSuchPid+7001 {
+		t.Errorf("group SIGKILL = %v, want [1073748825] (leader died in the grace, group lingered)", kills)
 	}
 }
 

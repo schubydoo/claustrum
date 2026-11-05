@@ -169,7 +169,7 @@ func TestPassListsRunDirsBeforeTheOrphanPhase(t *testing.T) {
 	hcBackdate(t, nDir, 454*24*time.Hour)
 	nSock := filepath.Join(nDir, rpcSockBasename)
 
-	orphan := os.Getpid() + 1
+	orphan := noSuchPid + 1
 	hcFakeDaemonUID(t, f.proot, f.mk, f.link, orphan, filepath.Join(f.base, "ccd-cli", "2.1.0"),
 		[]string{"claude", "--output-format=stream-json"}, true, "1", f.uid)
 	hcPipeStdio(f.link, orphan)
@@ -453,7 +453,7 @@ func TestRetireAbandonedRefusesParentAndForeignUID(t *testing.T) {
 	t.Cleanup(func() { hcGetuid, hcGetppid = oldUID, oldPpid })
 	hcGetuid = func() int { return 1000 }
 	socket := "/opt/claude/run/x/rpc.sock"
-	const pid = 4500
+	const pid = noSuchPid + 4500
 	hcFakeDaemon(t, proot, mk, link, pid, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
 	link(pid, "fd/1", "/dev/null")
@@ -487,7 +487,7 @@ func TestRetireAbandonedReasonForAYoungDaemon(t *testing.T) {
 	hcGetuid = func() int { return 1000 }
 	hcGetppid = func() int { return 1 }
 	socket := "/opt/claude/run/y/rpc.sock"
-	const pid = 4501
+	const pid = noSuchPid + 4501
 	hcFakeDaemon(t, proot, mk, link, pid, "/opt/claude/srv/a/server",
 		// The fake uptime is 100000 s and a tick is 10 ms, so 9994000 ticks is 60 s old.
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "9994000")
@@ -512,8 +512,7 @@ func TestPassEndsOnlyTheMeasuredOrphanGroups(t *testing.T) {
 	flat := filepath.Join(f.base, "ccd-cli", "2.1.0")
 	nested := filepath.Join(f.base, "ccd-cli", "1.0", "claude")
 	argv := []string{"claude", "-c", "sleep 100000; :", "stream-json"}
-	self := os.Getpid()
-	ended, liveParent, notPipes, nestedPid := self+11, self+12, self+13, self+14
+	ended, liveParent, notPipes, nestedPid := noSuchPid+11, noSuchPid+12, noSuchPid+13, noSuchPid+14
 	for _, p := range []int{ended, liveParent, notPipes} {
 		hcFakeDaemonUID(t, f.proot, f.mk, f.link, p, flat, argv, true, "1", f.uid)
 	}

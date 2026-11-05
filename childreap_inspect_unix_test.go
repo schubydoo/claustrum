@@ -59,8 +59,8 @@ func TestReapWaitKeepsGroupItCannotInspect(t *testing.T) {
 			if !recordExists(runDir, tg.name) {
 				t.Error("the record is gone, want it kept for the next start")
 			}
-			first := "[process.Registry] group 1001 cannot be inspected now (unparseable stat); looking again until the wait is up, sending nothing more unless it verifies again or is seen gone\n"
-			last := "[process.Registry] group 1001 could still not be inspected when the wait was up; keeping its record for the next start\n"
+			first := "[process.Registry] group 1073742825 cannot be inspected now (unparseable stat); looking again until the wait is up, sending nothing more unless it verifies again or is seen gone\n"
+			last := "[process.Registry] group 1073742825 could still not be inspected when the wait was up; keeping its record for the next start\n"
 			if strings.Count(out, first) != 1 || strings.Count(out, last) != 1 || strings.Index(out, first) > strings.Index(out, last) {
 				t.Errorf("log = %q\nwant each of the two lines once, in order", out)
 			}
@@ -105,7 +105,7 @@ func TestReapWaitGroupThatVerifiesAgain(t *testing.T) {
 // TestSameLeaderCannotInspect: the test right before a signal gives no go for a process
 // that cannot be inspected, or that is not this daemon's to judge.
 func TestSameLeaderCannotInspect(t *testing.T) {
-	const pid = 700
+	const pid = noSuchPid + 700
 	for _, tc := range []struct {
 		name string
 		live liveProc

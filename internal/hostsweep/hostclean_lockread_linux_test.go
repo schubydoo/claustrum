@@ -45,15 +45,15 @@ func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 
 		const old = 40 * 24 * time.Hour
 		self := os.Getpid()
-		hcSiblingDaemon(t, f, self+1, "s1", "1", old)
-		hcSiblingDaemon(t, f, self+2, "s3", "1", old)
+		hcSiblingDaemon(t, f, noSuchPid+1, "s1", "1", old)
+		hcSiblingDaemon(t, f, noSuchPid+2, "s3", "1", old)
 		// Uptime is 100000 s in the fake /proc, so start tick 9999000 is 10 s ago.
-		hcSiblingDaemon(t, f, self+3, "s2", "9999000", time.Second) // young, fresh run dir
-		hcSiblingDaemon(t, f, self+4, "s4", "9999000", old)         // young, idle run dir
-		hcSiblingDaemon(t, f, self+5, "s5", "1", time.Second)       // old, fresh run dir
+		hcSiblingDaemon(t, f, noSuchPid+3, "s2", "9999000", time.Second) // young, fresh run dir
+		hcSiblingDaemon(t, f, noSuchPid+4, "s4", "9999000", old)         // young, idle run dir
+		hcSiblingDaemon(t, f, noSuchPid+5, "s5", "1", time.Second)       // old, fresh run dir
 		exe := filepath.Join(f.base, "srv", "a", "server")
 		// The daemon binary, but no serve process, and the cleaner itself: never asked about.
-		hcFakeDaemonUID(t, f.proot, f.mk, f.link, self+6, exe, []string{exe, "--bridge"}, true, "1", f.uid)
+		hcFakeDaemonUID(t, f.proot, f.mk, f.link, noSuchPid+6, exe, []string{exe, "--bridge"}, true, "1", f.uid)
 		hcFakeDaemonUID(t, f.proot, f.mk, f.link, self, exe,
 			[]string{exe, "--serve", "--socket", f.c.ownSocket}, true, "1", f.uid)
 		buf := captureLogBuf(t)
@@ -66,8 +66,8 @@ func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 			t.Fatalf("unread=%v: the pass did not reach the tidy; log %q", unread, log)
 		}
 		sort.Ints(asked)
-		if len(asked) != 2 || asked[0] != self+1 || asked[1] != self+2 {
-			t.Errorf("unread=%v: asked about pids %v, want only the two old idle siblings %d and %d", unread, asked, self+1, self+2)
+		if len(asked) != 2 || asked[0] != noSuchPid+1 || asked[1] != noSuchPid+2 {
+			t.Errorf("unread=%v: asked about pids %v, want only the two old idle siblings %d and %d", unread, asked, noSuchPid+1, noSuchPid+2)
 		}
 		if len(f.single) != 0 || len(f.group) != 0 {
 			t.Errorf("unread=%v: signals single=%v group=%v, want none", unread, f.single, f.group)
@@ -78,7 +78,7 @@ func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 			}
 			continue
 		}
-		for _, pid := range []int{self + 1, self + 2} {
+		for _, pid := range []int{noSuchPid + 1, noSuchPid + 2} {
 			line := fmt.Sprintf("[hostclean] daemon pid %d left alone this pass: its open files could not be inspected\n", pid)
 			if i := strings.Index(log, line); i < 0 || i > firstDir {
 				t.Errorf("log = %q, want %q before the first run dir line", log, line)
@@ -101,7 +101,7 @@ func TestPassOrphanLineWithoutAStdioAnswer(t *testing.T) {
 		oldRead := hcStdioRead
 		t.Cleanup(func() { hcStdioRead = oldRead })
 		hcStdioRead = func(int) (bool, bool, bool) { return false, false, answered }
-		orphan := os.Getpid() + 1
+		orphan := noSuchPid + 1
 		hcFakeDaemonUID(t, f.proot, f.mk, f.link, orphan, filepath.Join(f.base, "ccd-cli", "2.1.0"),
 			[]string{"claude", "--output-format=stream-json"}, true, "1", f.uid)
 		buf := captureLogBuf(t)
@@ -132,7 +132,7 @@ func TestPassPastTheProcessLimitLogsNoDaemonLine(t *testing.T) {
 		oldUnread := hcDaemonFilesUnread
 		t.Cleanup(func() { hcDaemonFilesUnread = oldUnread })
 		hcDaemonFilesUnread = func(int) (bool, bool) { return true, false }
-		sibling := os.Getpid() + 1
+		sibling := noSuchPid + 1
 		hcSiblingDaemon(t, f, sibling, "s1", "1", 40*24*time.Hour)
 		// Bare pid folders above the sibling: the snapshot counts them, and inspect reads
 		// each one as gone. The sibling is one of the n processes.

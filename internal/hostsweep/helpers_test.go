@@ -18,6 +18,11 @@ import (
 	"github.com/schubydoo/claustrum/internal/sockroute"
 )
 
+// noSuchPid is the base of the fake pids behind the signal seams of this package. It is
+// above the pid limit of Linux and macOS, so noSuchPid plus a small number names no
+// process and no group. If a change skips a seam, the signal finds nothing.
+const noSuchPid = 1 << 30
+
 // TestMain runs the test binary as a fixture when CLAUSTRUM_TEST_HELPER names a
 // mode, as the TestMain of package main does for the modes that the tests of this
 // package use. Otherwise it runs the tests.

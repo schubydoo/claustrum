@@ -581,7 +581,7 @@ func TestLockProbeUnopenableLockDarwin(t *testing.T) {
 // and the signal goes through the hcHoldPid seam, so nothing real is signalled. The control
 // runs first: a run that answers and shows no client retires the daemon.
 func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
-	const pid = 4300
+	const pid = noSuchPid + 4300
 	const exe = "/opt/claude/srv/a/server"
 	const socket = "/opt/claude/run/s1/rpc.sock"
 	seamUID(t, 501)
@@ -636,7 +636,7 @@ func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
 // "unread". The control is a completed run with no client record: one SIGTERM at the seam. The
 // daemon is a fake pid behind the kinfo seams, and the lsof run is a stub.
 func TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin(t *testing.T) {
-	const pid = 4400
+	const pid = noSuchPid + 4400
 	const exe = "/opt/claude/srv/a/server"
 	const socket = "/opt/claude/run/s1/rpc.sock"
 	const client = "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn->0x1\n"

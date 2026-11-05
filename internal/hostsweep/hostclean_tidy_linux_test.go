@@ -385,36 +385,36 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 	deadSock := "/opt/claude/run/claustrum-test-gone/rpc.sock"
 	stream := []string{"claude", "--output-format=stream-json"}
 
-	stranded := self + 1 // left alone: marked, old, its own socket is gone, no lock, not busy
+	stranded := noSuchPid + 1 // left alone: marked, old, its own socket is gone, no lock, not busy
 	hcFakeDaemonUID(t, proot, mk, link, stranded, daemonExe,
 		[]string{daemonExe, "--serve", "--socket", deadSock}, true, "1", uid)
 	link(stranded, "fd/1", "/dev/null") // readable descriptors, no daemon.lock, no client
 
-	child := self + 2 // its child: a full stream-json group under a living daemon, left alone
+	child := noSuchPid + 2 // its child: a full stream-json group under a living daemon, left alone
 	hcFakeDaemonUID(t, proot, mk, link, child, cliExe, stream, true, "1", uid)
 	mk(child, "stat", hcRunningStat(child, stranded, child, "1")) // ppid = the stranded daemon
 	hcPipeStdio(link, child)
 
-	unmarked := self + 3 // our --serve daemon, old, no daemon-child marker: no judge looks at it
+	unmarked := noSuchPid + 3 // our --serve daemon, old, no daemon-child marker: no judge looks at it
 	hcFakeDaemonUID(t, proot, mk, link, unmarked, daemonExe,
 		[]string{daemonExe, "--serve", "--socket", "/opt/claude/run/u/rpc.sock"}, false, "1", uid)
 
-	plain := self + 4 // neither a daemon nor a CLI: skipped
+	plain := noSuchPid + 4 // neither a daemon nor a CLI: skipped
 	hcFakeDaemonUID(t, proot, mk, link, plain, "/usr/bin/unrelated", []string{"unrelated"}, false, "1", uid)
 
-	leaderless := self + 5 // its group leader is not in the snapshot
+	leaderless := noSuchPid + 5 // its group leader is not in the snapshot
 	hcFakeDaemonUID(t, proot, mk, link, leaderless, cliExe, stream, true, "1", uid)
 	mk(leaderless, "stat", hcRunningStat(leaderless, 1, 999_001, "1")) // pgid nobody owns
 
-	stopped := self + 6 // spared: a stream-json leader that is stopped, so it cannot be read
+	stopped := noSuchPid + 6 // spared: a stream-json leader that is stopped, so it cannot be read
 	hcFakeDaemonUID(t, proot, mk, link, stopped, cliExe, stream, true, "1", uid)
 	mk(stopped, "stat", strconv.Itoa(stopped)+" (claude) T 1 "+strconv.Itoa(stopped)+" "+strings.Repeat("0 ", 16)+"1 x")
 
-	orphan := self + 7 // reaped: a full stream-json orphan whose descriptors read
+	orphan := noSuchPid + 7 // reaped: a full stream-json orphan whose descriptors read
 	hcFakeDaemonUID(t, proot, mk, link, orphan, cliExe, stream, true, "1", uid)
 	hcPipeStdio(link, orphan)
 
-	vanished := self + 8 // enumerated, then unreadable: skipped
+	vanished := noSuchPid + 8 // enumerated, then unreadable: skipped
 	if err := os.MkdirAll(filepath.Join(proot, strconv.Itoa(vanished)), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestPassLeavesAStrandedDaemonAlone(t *testing.T) {
 
 	self := os.Getpid()
 	daemonExe := "/opt/claude/srv/a/server"
-	stranded, child := self+1, self+2
+	stranded, child := noSuchPid+1, noSuchPid+2
 	hcFakeDaemonUID(t, proot, mk, link, stranded, daemonExe,
 		[]string{daemonExe, "--serve", "--socket", "/opt/claude/run/claustrum-test-gone/rpc.sock"}, true, "1", uid)
 	link(stranded, "fd/1", "/dev/null")

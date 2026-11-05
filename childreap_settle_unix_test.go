@@ -52,7 +52,7 @@ func TestReapTargetsUnknownAfterSettlePause(t *testing.T) {
 	if want := (reapCounts{signalled: 1, skipped: 1}); counts != want {
 		t.Errorf("counts = %+v, want %+v", counts, want)
 	}
-	last := "[process.Registry] group 1001 could still not be inspected when the wait was up; keeping its record for the next start\n"
+	last := "[process.Registry] group 1073742825 could still not be inspected when the wait was up; keeping its record for the next start\n"
 	if strings.Count(out, last) != 1 {
 		t.Errorf("log = %q\nwant it to hold %q once", out, last)
 	}
