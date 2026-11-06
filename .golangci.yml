@@ -1,6 +1,7 @@
 # golangci-lint v2 config. The standard linter set (errcheck, govet,
 # ineffassign, staticcheck, unused) plus a couple of low-noise extras. Run
-# locally with `golangci-lint run ./...`; CI gates on the same.
+# locally with `golangci-lint run ./...` and `GOOS=windows golangci-lint run ./...`;
+# CI gates on both.
 version: "2"
 
 linters:
