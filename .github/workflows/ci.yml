@@ -81,7 +81,7 @@ jobs:
     name: lint (gofmt + vet + tidy + golangci)
     if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -115,6 +115,17 @@ jobs:
         # Pinned to the golangci-lint version validated locally; bump it and the
         # .golangci.yml together. (The action SHA is what Renovate tracks.)
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # renovate: datasource=github-releases depName=golangci/golangci-lint
+          version: v2.15.0
+
+      - name: golangci-lint (GOOS=windows)
+        # The step above lints the Linux build only, so a *_windows.go file is
+        # never read there. This runs the same linter on the Windows build of the
+        # tree, on this Ubuntu runner.
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          GOOS: windows
         with:
           # renovate: datasource=github-releases depName=golangci/golangci-lint
           version: v2.15.0
