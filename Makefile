@@ -30,6 +30,7 @@ vet:
 
 lint:
 	golangci-lint run ./...
+	GOOS=windows golangci-lint run ./...
 
 # The time limit is explicit. The default of go test is 10 minutes. On one
 # Linux host a race run took 552 s, and runs of a branch with more tests

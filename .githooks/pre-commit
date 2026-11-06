@@ -82,6 +82,7 @@ fi
 # 4. golangci-lint — opt-in locally (slower); CI always gates it.
 if command -v golangci-lint >/dev/null 2>&1; then
 	golangci-lint run ./... || fail "golangci-lint reported problems"
+	GOOS=windows golangci-lint run ./... || fail "golangci-lint reported problems in the Windows build"
 fi
 
 # 5. codecov.yml components — a new production .go file must be listed under one
