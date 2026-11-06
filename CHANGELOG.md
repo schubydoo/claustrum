@@ -4,6 +4,44 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.19.0 (2026-11-06)
+
+[Compare with 1.18.0](https://github.com/schubydoo/claustrum/compare/v1.18.0...v1.19.0)
+
+### Features
+
+- A .claude-managed-worktrees marker in a folder that also holds a .git no longer refuses a baseRepo below it on git.worktree_create and git.worktree_remove, and git.list_branches lists the branches of a path below it. ([#954](https://github.com/schubydoo/claustrum/pull/954))
+- On Windows git.worktree_create makes a worktree through a junction at baseRepo or above it, and git.worktree_remove removes a live worktree there, as the reference does. ([#974](https://github.com/schubydoo/claustrum/pull/974))
+
+### Fixes
+
+- On Windows git.worktree_create and git.worktree_remove drop a name before .. in baseRepo by text, a junction, a missing name or a file, as the reference does. git.list_branches does the same in path, and lists the branches of a path through a junction. ([#973](https://github.com/schubydoo/claustrum/pull/973))
+- On Linux and macOS git.worktree_create answers a checkout that failed before timeoutMs with its failure, not timeout. A child that holds the output of git past the deadline does not change that. ([#961](https://github.com/schubydoo/claustrum/pull/961))
+- An unreadable commondir in a worktree entry gets a shorter reason in the git replies. ([#1000](https://github.com/schubydoo/claustrum/pull/1000))
+- On Windows git.worktree_create completes a staged add whose staged worktree folder or its parent folder another process holds open, as the reference does. ([#972](https://github.com/schubydoo/claustrum/pull/972))
+- git.worktree_create of a baseRepo that does not exist answers not_a_repo, also below a managed-worktrees marker or a .claude/worktrees folder, as the reference does on Linux and macOS. ([#966](https://github.com/schubydoo/claustrum/pull/966))
+- On Windows git.worktree_create answers a staged worktree whose .git file names another entry with worktree_add_failed and the text of the reference. ([#948](https://github.com/schubydoo/claustrum/pull/948))
+- On Linux and macOS, git.worktree_remove of a gone worktree answers success with the branch kept in four more cases, as the reference does. The other git methods answer "no repository" in two of them. ([#956](https://github.com/schubydoo/claustrum/pull/956))
+- On Windows the five git methods refuse a `\\?\UNC\` path and a path on a missing share with the texts of the reference. ([#955](https://github.com/schubydoo/claustrum/pull/955))
+- On Linux and macOS a process.kill with KILL in the exit drain of an ended child sends no group kill when a live process has its pid. ([#950](https://github.com/schubydoo/claustrum/pull/950))
+- git.worktree_remove of a gone worktree gives a new refusal text when the daemon's GIT_CONFIG_COUNT is refused. ([#962](https://github.com/schubydoo/claustrum/pull/962))
+- On Linux and macOS, git.worktree_remove deletes an existing worktree folder and succeeds under a daemon GIT_DIR at a missing path, also beside an unlocked .git folder. ([#981](https://github.com/schubydoo/claustrum/pull/981))
+- git.worktree_create and git.worktree_remove put the path in backticks in their worktreeRoot shape and in-repo refusals, and the Windows remove refusal quotes it too. ([#965](https://github.com/schubydoo/claustrum/pull/965))
+- git.worktree_remove of an existing worktree answers the commondir trust text, as the reference does, when the main repository holds a stray commondir with wrong content. ([#963](https://github.com/schubydoo/claustrum/pull/963))
+- A failed start test of the settings copy keeps the inner empty lines and the blanks at line ends of the git error text. On Linux and macOS git.status and git.info on a FIFO or /dev/null outside a repository start no test. ([#986](https://github.com/schubydoo/claustrum/pull/986))
+- The git start test goes on when the daemon ends its first `config --get helper.check` call on the copy after 30 seconds, so the state can be shadow. ([#994](https://github.com/schubydoo/claustrum/pull/994))
+- On Windows the git methods no longer connect to a named pipe that a link at the config or at an included file names. The replies stay the same. ([#968](https://github.com/schubydoo/claustrum/pull/968))
+- On Windows the git methods refuse an include that they reach through a junction below the repository. ([#970](https://github.com/schubydoo/claustrum/pull/970))
+- On Windows the git methods answer an include of NUL or of a stream such as a/inc.cfg::$DATA with the "is outside" text. ([#967](https://github.com/schubydoo/claustrum/pull/967))
+- On Windows a git-shadow folder with a deny entry gives the plain system text. There a disagree path keeps the form that git printed. A reftable junction refuses git.worktree_create there too, and git.worktree_remove answers success for a gone worktree where git finds no repository at a config path of 262 to 269 characters. ([#995](https://github.com/schubydoo/claustrum/pull/995))
+- On Windows the git methods refuse a shallow file that is a symbolic link with the link text of the config, and open nothing through it. ([#985](https://github.com/schubydoo/claustrum/pull/985))
+- On Windows the server.shutdown reply waits for the start of the connection close, at most 500 ms. ([#957](https://github.com/schubydoo/claustrum/pull/957))
+- On Windows the stale registration step of git.worktree_create goes by the path, as the reference does after a junction takes the place of the git directory right before git names it. ([#958](https://github.com/schubydoo/claustrum/pull/958))
+
+### Performance
+
+- The git methods use less memory on a config listing that has too many settings or a name that is too long. ([#949](https://github.com/schubydoo/claustrum/pull/949))
+
 ## 1.18.0 (2026-11-05)
 
 [Compare with 1.17.0](https://github.com/schubydoo/claustrum/compare/v1.17.0...v1.18.0)
