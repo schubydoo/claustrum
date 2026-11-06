@@ -72,6 +72,8 @@ macOS and Windows), with mode 0700 (measured on Linux and macOS).
   records with the lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS
   and Windows).
+- The rename of a write replaces a file at the record name. A plain remove takes an
+  empty folder that was put at a name too (from the code).
 
 With a socket of another layout the daemon writes no file (measured on Linux, macOS
 and Windows). It logs the second line (measured on Linux and macOS).

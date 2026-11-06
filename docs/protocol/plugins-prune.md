@@ -87,7 +87,7 @@ The paths and the `<error>` texts in `legacy` and `errors` are those of the oper
 
 A sibling socket path over 107 bytes on Linux or 103 on macOS goes as follows (`be1c1ca5`, measured on Linux and macOS):
 
-- Linux dials it through `/proc`, as at a [long socket path](../DAEMON.md#a-long-socket-path-linux-and-macos). A dead sibling counts as gone.
+- Linux dials it through `/proc`, as at a [long socket path](../DAEMON.md#a-long-socket-path-linux-and-macos). A dead sibling counts as gone. The maintainer approved acting at a long root on 2026-11-01.
 - Where no shorter name reaches it, `<error>` is `dial unix <socket path>: the socket path is longer than the 107 bytes that this system allows` (`103 bytes` on macOS).
 - If the shorter name fails otherwise, `; no shorter name for it worked: <error of that dial>` follows the limit text. A sibling socket of mode 000 on Linux gives it. Other failures of that dial: claustrum's own, not measured.
 

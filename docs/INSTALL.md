@@ -358,7 +358,7 @@ The hardening of `-cli-version` is [D6](DIVERGENCES.md#d6):
   hold home, and the new file takes the name of the command. For a folder that
   holds home, claustrum refuses as above.
 - The `-cli-zst` blob goes with one plain remove once the new CLI is in place.
-  Every earlier failure keeps it: a blob that is no zstd archive, a folder that
+  No guard runs before that remove. Every earlier failure keeps it: a blob that is no zstd archive, a folder that
   cannot be cleared and a denied rename. claustrum keeps it after a failed chmod
   too (claustrum's own). A CLI that then does not run still costs the blob.
 - On Windows a rename that access denied stops is tried again for 0.2 s. If the

@@ -81,7 +81,8 @@ eviction is refused, and on Windows.
 
 The lock exists on Linux and macOS only. It is a file beside the socket, off the
 JSON-RPC wire. A rule of this section without a mark is measured on Linux. A rule
-marked "also macOS" is measured on macOS too.
+marked "also macOS" is measured on macOS too. The lock is parity with `4534d86`,
+not a claustrum fix.
 
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
 `daemon.lock` in the socket directory (mode `0600`). It writes an owner record, a JSON object, into the file. Both forms are measured on macOS too. Until the reap of its start ends, the record is
@@ -234,7 +235,7 @@ A pass acts on the root as the socket path gives it and on its resolved form, th
 
 ### A long run root
 
-On Linux the cleaner dials a socket path over 107 bytes through `/proc`, as the daemon does ([A long socket path](#a-long-socket-path-linux-and-macos)). So the pass runs at a long root, with the guards of a short one. `be1c1ca5` at a 120-byte socket path on Linux (measured):
+On Linux the cleaner dials a socket path over 107 bytes through `/proc`, as the daemon does ([A long socket path](#a-long-socket-path-linux-and-macos)). So the pass runs at a long root, with the guards of a short one. The maintainer approved acting at a long root on 2026-11-01. `be1c1ca5` at a 120-byte socket path on Linux (measured):
 
 - A live peer in a run dir 40 days old stays (`too young to judge`) and gets no signal.
 - A dead run dir stays if a process holds its `daemon.lock` or if it is 10 days old.

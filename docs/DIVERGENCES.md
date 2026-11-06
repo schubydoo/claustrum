@@ -105,7 +105,8 @@ These hold for each opt-in entry:
   entirely: a cap of `0` skips its `io.LimitReader`. A download bound of `0` is
   `http.Client{Timeout: 0}`, the stdlib's own "no timeout". Never use a huge-but-finite value instead. The
   `cap+1` arithmetic defines the boundary, and a huge value
-  invents a new one.
+  invents a new one. For a deadline, a cancel path that is not armed makes the
+  timeout false by construction.
 - No opt-in bound is a hang detector. Each one is a threshold that an honest slow
   or large input trips too. That is why they are off by default.
 - At the shipped defaults, the bounds of the `--version` run, of a managed
