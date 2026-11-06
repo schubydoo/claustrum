@@ -10,7 +10,7 @@
 # Usage:  scripts/check-upstream.sh [<sha>]
 #   <sha>  reference build SHA. Defaults to scripts/UPSTREAM_SHA.
 #
-# Requires: curl, zstd, go, strings (binutils). Network access to the CDN.
+# Requires: curl, zstd, go, python3, strings (binutils). Network access to the CDN.
 # Exit code: 0 = no drift in the checked surface, 1 = drift, 2 = setup error.
 set -uo pipefail
 
@@ -22,7 +22,7 @@ CDN="https://downloads.claude.ai/claude-ssh-releases"
 PLAT="linux-amd64"
 
 [ -n "$SHA" ] || { echo "no SHA given and scripts/UPSTREAM_SHA is empty" >&2; exit 2; }
-for t in curl zstd go strings; do command -v "$t" >/dev/null || { echo "missing tool: $t" >&2; exit 2; }; done
+for t in curl zstd go python3 strings; do command -v "$t" >/dev/null || { echo "missing tool: $t" >&2; exit 2; }; done
 
 echo "== reference SHA: $SHA  (pinned baseline: ${BASE_SHA:-none}) =="
 if [ -n "$BASE_SHA" ] && [ "$SHA" != "$BASE_SHA" ]; then
@@ -36,7 +36,7 @@ man="$WORK/manifest.json"
 if ! curl -fsS --max-time 30 "$CDN/$SHA/manifest.json" -o "$man"; then
   echo "DRIFT/UNKNOWN: no manifest for $SHA (404?) — bad SHA or withdrawn build." >&2; exit 1
 fi
-want="$(grep -oE "\"$PLAT\"[^}]*\"checksum\":\"[0-9a-f]+\"" "$man" | grep -oE '[0-9a-f]{64}' | head -1)"
+want="$(python3 -I "$HERE/manifest-checksum.py" "$man" "$PLAT")"
 curl -fsS --max-time 120 "$CDN/$SHA/$PLAT/claude-ssh.zst" -o "$WORK/ref.zst" || { echo "download failed" >&2; exit 2; }
 got="$(sha256sum "$WORK/ref.zst" | awk '{print $1}')"
 if [ -z "$want" ]; then
