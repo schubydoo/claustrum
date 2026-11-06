@@ -189,16 +189,13 @@ jobs:
           # The macOS git half is two shards. It ran 565 to 643 s of the 12
           # minutes on main, and one run with the off-switch tests of git.status
           # and the worktree methods passed the limit.
-          # The macOS legs run on macos-15, not macos-latest. On 2026-11-04 the
-          # macos-latest jobs waited for a runner for hours. Go back to
-          # macos-latest when its runners start jobs again.
-          - os: macos-15
+          - os: macos-latest
             shard: worktree
             select: -run=^TestWorktree
-          - os: macos-15
+          - os: macos-latest
             shard: status
             select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)
-          - os: macos-15
+          - os: macos-latest
             shard: rest
             select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           # The Windows worktree shard also takes the tests named TestCreate and
