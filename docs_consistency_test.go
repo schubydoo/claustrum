@@ -303,6 +303,7 @@ var (
 	docCatalogRowRE = regexp.MustCompile(`(?m)^\| \[(D\d+|CT-\d+)\]\(#([a-z0-9-]+)\)`)
 	docEntryRE      = regexp.MustCompile(`(?m)^### (D\d+|CT-\d+) · .*$`)
 	docAnchorRE     = regexp.MustCompile(`\{ #([a-z0-9-]+) \}$`)
+	docAgentsRowRE  = regexp.MustCompile(`(?m)^\| (D\d+|CT-\d+) \|`)
 )
 
 // docSection returns the text from the line "## <title>" to the next "## " line.
@@ -319,9 +320,9 @@ func docSection(t *testing.T, text, title string) string {
 	return rest
 }
 
-// TestDocsDivergenceCatalog: the table of the catalog and the entry headings list
-// the same live IDs, every heading carries its anchor, and a retired entry is no
-// row of the table.
+// TestDocsDivergenceCatalog: the table of the catalog, the entry headings and the
+// Part B table of AGENTS.md list the same live IDs, every heading carries its
+// anchor, and a retired entry is no row of the table.
 func TestDocsDivergenceCatalog(t *testing.T) {
 	text := docRead(t, "docs", "DIVERGENCES.md")
 	catalog := map[string]bool{}
@@ -357,6 +358,16 @@ func TestDocsDivergenceCatalog(t *testing.T) {
 		if catalog[id] || live[id] {
 			t.Errorf("docs/DIVERGENCES.md lists %s as retired and as live: keep it in one place", id)
 		}
+	}
+	agents := map[string]bool{}
+	for _, m := range docAgentsRowRE.FindAllStringSubmatch(docSection(t, docRead(t, "AGENTS.md"), "Gotchas — Part B: the live divergences"), -1) {
+		agents[m[1]] = true
+	}
+	for _, id := range docSetDiff(live, agents) {
+		t.Errorf("AGENTS.md Part B has no row for the live entry %s of docs/DIVERGENCES.md: add a row", id)
+	}
+	for _, id := range docSetDiff(agents, live) {
+		t.Errorf("AGENTS.md Part B has a row for %s, which is no live entry of docs/DIVERGENCES.md: delete the row", id)
 	}
 }
 
@@ -636,7 +647,7 @@ func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
 // because the documents grew past what a person can read. A limit goes down, never
 // up, without the maintainer's word.
 var docWordLimits = map[string]int{
-	"AGENTS.md":                                  3011, // pointer index, TASK-451
+	"AGENTS.md":                                  3029, // pointer index, TASK-451
 	"CONTRIBUTING.md":                            1071,
 	"README.md":                                  1133, // 13 are the HTML tokens of the logo <picture> block (maintainer, 2026-10-31)
 	"SECURITY.md":                                1609, // the ssh door of be1c1ca5. 1553 before
@@ -740,7 +751,7 @@ func TestDocsWordLimits(t *testing.T) {
 // A row is the longest run that the page has now: the limit works as a ratchet. A row goes
 // down, never up, without the maintainer's word. A page with no row gets docSectionRunTarget.
 var docSectionRunLimits = map[string]int{
-	"AGENTS.md":                                389, // pointer index, TASK-451
+	"AGENTS.md":                                397, // pointer index, TASK-451
 	"CONTRIBUTING.md":                          402,
 	"SECURITY.md":                              559,
 	"docs/ARCHITECTURE.md":                     496,

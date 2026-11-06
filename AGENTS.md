@@ -205,7 +205,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
   at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeOneEntry`). Do not
   build a name below it from a request value ([The
-  folders](docs/protocol/git-rules-settings-copy.md#the-folders)).
+  folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
+  ([D8](docs/DIVERGENCES.md#d8)).
 - **`session-folders`.** One plain `os.Root.Remove` by name, of the temp file of a failed write and in the prune ([session
   folders](docs/protocol/git-rules-session-folders.md)). Never widen: Never make either
   remove a tree delete. Never build the name of a remove there from a request value, a
@@ -217,7 +218,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `extractTarGz` tested (`writeSyncedMarker`, [the
   steps](docs/protocol/files-extract-tar.md#what-the-request-does)). Never widen: This step is approved by the maintainer. Do not
   widen it. Do not build that name from a parameter or from the archive.
-- **The temp-folder test** removes its own `.claude-ssh-<n>` file by one plain `os.Remove`
+- **The temp-folder test** (Linux and macOS) removes its own `.claude-ssh-<n>` file by one plain `os.Remove`
   ([process.spawn](docs/protocol/process-spawn.md)). Never widen: Do not make or remove
   the file in any folder but the inherited folder or its nearest existing parent.
 - **`cliTempRoot`.** On Linux it removes the `ccd-<12 hex>` folder that it just made and found unfit, by one rmdir
@@ -271,7 +272,7 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D2 | Refuse a destructive path that is or holds home | always-on | all |
 | D3 | Cap the output size of `files.extract_tar` | off | all |
 | D6 | `-cli-version` must be one path component | always-on | all |
-| D8 | Refuse a link, a FIFO and, on Linux and macOS, another user's `remote-server.log`. An own link to an own file passes on Linux and macOS | always-on | all |
+| D8 | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | always-on | all |
 | D10 | Cap the CLI size of `-install` | off | all |
 | D12 | Bound the download of `-install` | off | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
