@@ -88,7 +88,7 @@ func TestSpawnGitReadIgnoresAdoptedSet(t *testing.T) {
 	t.Setenv("CLAUSTRUM_TEST_DAEMON_ONLY", "d1")
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	m.TakeAdoptedEnv(c, []string{"A=1", "HOME=/h/b", "GIT_X=1"}, true)
+	m.TakeAdoptedEnv(c, []string{"A=1", "HOME=/h/b", "GIT_X=1"}, nil, true)
 	stop := errors.New("stop after the env")
 	var got []string
 	_, err := m.SpawnGitRead(c, "ga", nil, t.TempDir(), nil, func(env []string) ([]string, []string, func(), error) {

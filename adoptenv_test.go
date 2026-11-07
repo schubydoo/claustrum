@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,14 +27,27 @@ func clearClaudeSSHEnv(t *testing.T) {
 	}
 }
 
-// adoptKeptCount is the count of the daemon names that an adopt keeps: TEMP and TMP
-// on Windows (c9125eb8, measured on Windows), none on Linux and macOS.
-func adoptKeptCount() int {
-	if runtime.GOOS != "windows" {
-		return 0
+// clearSessionEnv removes each session-bound variable of this process until the test
+// ends, so a child holds only the session names that the test sets.
+func clearSessionEnv(t *testing.T) {
+	t.Helper()
+	exact := []string{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "KRB5CCNAME", "XDG_SEAT", "XDG_VTNR", "GPG_TTY", "WSL_INTEROP"}
+	for _, e := range os.Environ() {
+		name, value, _ := strings.Cut(e, "=")
+		up := strings.ToUpper(name)
+		if name == "" || !slices.Contains(exact, up) && !strings.HasPrefix(up, "SSH_") && !strings.HasPrefix(up, "SSH2_") && !strings.HasPrefix(up, "XDG_SESSION_") {
+			continue
+		}
+		t.Setenv(name, value)
+		_ = os.Unsetenv(name)
 	}
+}
+
+// adoptKeptCount is the count of the temp-folder names of the daemon that an adopt
+// keeps (c9125eb8, measured on Linux, macOS and Windows).
+func adoptKeptCount() int {
 	n := 0
-	for _, name := range []string{"TEMP", "TMP"} {
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"} {
 		if _, ok := os.LookupEnv(name); ok {
 			n++
 		}
@@ -70,6 +85,7 @@ func adoptLines(log string) []string {
 func TestSocketAdoptEnvFrames(t *testing.T) {
 	clearClaudeSSHEnv(t)
 	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
+	t.Setenv("CLAUSTRUM_TEST_KEEP", "daemon")
 	_, sock := newRunningServer(t)
 	logs := captureLogBuf(t)
 	cl := dial(t, sock)
@@ -116,6 +132,13 @@ func TestSocketAdoptEnvFrames(t *testing.T) {
 		{`{}`, bad},
 		{`{"env":[1,2]}`, bad},
 		{params(map[string]any{"env": []string{"A=final"}}), ok},
+		{params(map[string]any{"env": []string{"a\x00b"}}), bad},
+		{params(map[string]any{"env": append(list("V", 8192, 0), "NOEQUALS")}), bad},
+		{params(map[string]any{"env": append(big(131072), list("V", 8193, 0)...)}), bad},
+		{params(map[string]any{"env": []string{"A=1", "A=2", "B=1"}}), ok},
+		{params(map[string]any{"env": []string{"Z=1"}, "kept": []string{"CLAUSTRUM_TEST_KEEP"}}), ok},
+		{params(map[string]any{"env": []string{"CLAUSTRUM_TEST_KEEP=sent"}, "kept": []string{"CLAUSTRUM_TEST_KEEP"}}), ok},
+		{params(map[string]any{"env": []string{"DISPLAY=:1", "DISPLAY=:2"}}), ok},
 	}
 	for i, row := range rows {
 		id := i + 1
@@ -155,8 +178,16 @@ func TestSocketAdoptEnvFrames(t *testing.T) {
 		refused("it is larger than 256 KiB in total"),
 		adopted(4, 0, `[`+strings.Join(vNames, " ")+`]`),
 		refused("it names more than 8192 variables to keep"),
-		refused("it is empty"),
+		refused("it is empty"), // params null
+		refused("it is empty"), // params {}
 		adopted(1, 0, `["A" "V0" "V1" "V2" "V3"]`),
+		refused("an entry contains a NUL byte"),
+		refused("an entry has no equals sign"),
+		refused("one variable is 128 KiB or longer, more than Linux allows when it starts a program"),
+		adopted(2, 0, `["A" "B"]`),
+		adopted(2, 0, `["A" "B" "CLAUSTRUM_TEST_KEEP" "Z"]`),
+		adopted(1, 0, `["CLAUSTRUM_TEST_KEEP" "Z"]`),
+		adopted(0, 1, `["CLAUSTRUM_TEST_KEEP"]`), // a session-bound name counts once (claustrum's own on Linux and macOS)
 	}
 	got := adoptLines(logs.String())
 	if len(got) != len(want) {
@@ -204,6 +235,7 @@ func adoptChildEnv(t *testing.T, cl *testClient, id string, n int) map[string]st
 // Linux, and on macOS and Windows for the set).
 func TestSocketAdoptEnvReachesChildren(t *testing.T) {
 	clearClaudeSSHEnv(t)
+	clearSessionEnv(t)
 	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
 	t.Setenv("CLAUSTRUM_TEST_DAEMON_ONLY", "d1")
 	_, sock := newRunningServer(t)
@@ -247,6 +279,161 @@ func TestSocketAdoptEnvReachesChildren(t *testing.T) {
 	}
 	expect("c1 after the second adopt", adoptChildEnv(t, c1, "c1b", 6),
 		check{"B", "2"}, check{"A", ""}, check{"SSH_AUTH_SOCK", ""})
+}
+
+// TestSocketAdoptEnvNameClasses: the session-bound names that c1 sends reach only
+// the children of c1, and a later adopt of c1 replaces them. A connection with no
+// adopt keeps those of the daemon. TMPDIR, TMP, TEMP and CLAUDE_CODE_TMPDIR keep the
+// daemon value, a kept name keeps the daemon value, and a sent entry beats a kept
+// name. On Windows the mixed-case twins follow the same classes (c9125eb8, measured
+// on Linux, macOS and Windows).
+func TestSocketAdoptEnvNameClasses(t *testing.T) {
+	clearClaudeSSHEnv(t)
+	clearSessionEnv(t)
+	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
+	temps := map[string]string{}
+	// Short folders: the server below puts its socket under TMPDIR, and a folder
+	// of t.TempDir carries the test name, which makes the socket path longer
+	// than the 104 bytes of macOS.
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"} {
+		dir, err := os.MkdirTemp("", "t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		temps[name] = dir
+	}
+	for name, dir := range temps {
+		t.Setenv(name, dir)
+	}
+	t.Setenv("DISPLAY", ":9")
+	t.Setenv("XDG_SESSION_ID", "9")
+	t.Setenv("GPG_TTY", "/dev/d")
+	t.Setenv("CLAUSTRUM_TEST_KEEP", "daemon")
+	_, sock := newRunningServer(t)
+	logs := captureLogBuf(t)
+	c1, c2 := dial(t, sock), dial(t, sock)
+
+	adopt := func(cl *testClient, id int, params string) {
+		t.Helper()
+		got := string(cl.call(authed(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"server.adoptEnv","params":%s}`, id, params))))
+		if want := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"ok":true}}`, id); got != want {
+			t.Fatalf("adopt %d: %s, want %s", id, got, want)
+		}
+	}
+	lastLine := func(want string) {
+		t.Helper()
+		lines := adoptLines(logs.String())
+		if len(lines) == 0 || !strings.HasPrefix(lines[len(lines)-1], want) {
+			t.Errorf("last adopt line = %q, want the start %q", lines, want)
+		}
+	}
+	head := "[Server] New processes now start from the environment sent on connection <C>: "
+	expect := func(label string, env map[string]string, want map[string]string) {
+		t.Helper()
+		for name, w := range want {
+			v, ok := env[name]
+			switch {
+			case w == "" && ok:
+				t.Errorf("%s: the child has %s=%q, want it absent", label, name, v)
+			case w != "" && v != w:
+				t.Errorf("%s: the child has %s=%q (present %v), want %q", label, name, v, ok, w)
+			}
+		}
+	}
+	session := []string{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "KRB5CCNAME", "XDG_SEAT", "XDG_VTNR", "GPG_TTY", "WSL_INTEROP",
+		"SSH_CONNECTION", "SSH_TTY", "SSH2_X", "XDG_SESSION_ID", "XDG_SESSION_TYPE"}
+	sent := []string{"TMPDIR=/s/tmp", "TMP=/s/tmp", "TEMP=/s/tmp", "CLAUDE_CODE_TMPDIR=/s/cct"}
+	for _, name := range session {
+		sent = append(sent, name+"=/sent/"+strings.ToLower(name))
+	}
+	sent = append(sent, "XDG_RUNTIME_DIR=/sent/run", "CLAUDE_CODE_OTHER=/sent/other", "ZZ=/sent/zz")
+	body, err := json.Marshal(map[string]any{"env": sent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopt(c1, 1, string(body))
+	lastLine(head + "8 variables for every connection, 13 for this connection only.")
+	// The session-bound and temp-folder names of the daemon are not in the names.
+	if lines := adoptLines(logs.String()); len(lines) > 0 {
+		for _, name := range []string{`"DISPLAY"`, `"GPG_TTY"`, `"XDG_SESSION_ID"`, `"TMPDIR"`, `"CLAUDE_CODE_TMPDIR"`} {
+			if strings.Contains(lines[len(lines)-1], name) {
+				t.Errorf("the first adopt line names %s: %q", name, lines[len(lines)-1])
+			}
+		}
+	}
+
+	shared := map[string]string{"XDG_RUNTIME_DIR": "/sent/run", "CLAUDE_CODE_OTHER": "/sent/other", "ZZ": "/sent/zz"}
+	for name, dir := range temps {
+		shared[name] = dir
+	}
+	c1Want := maps.Clone(shared)
+	for _, name := range session {
+		c1Want[name] = "/sent/" + strings.ToLower(name)
+	}
+	expect("c1 after the adopt", adoptChildEnv(t, c1, "c1a", 2), c1Want)
+	c2Want := maps.Clone(shared)
+	for _, name := range session {
+		c2Want[name] = ""
+	}
+	c2Want["DISPLAY"], c2Want["XDG_SESSION_ID"], c2Want["GPG_TTY"] = ":9", "9", "/dev/d"
+	expect("c2 after the adopt", adoptChildEnv(t, c2, "c2a", 1), c2Want)
+
+	adopt(c1, 3, `{"env":["ZZ=second","ONLY2=1"]}`)
+	lastLine(head + `7 variables for every connection, 0 for this connection only. Names added, removed or changed (at most 40): ["CLAUDE_CODE_OTHER" "ONLY2" "XDG_RUNTIME_DIR" "ZZ"]`)
+	c1Want = map[string]string{"ZZ": "second", "ONLY2": "1", "CLAUDE_CODE_OTHER": ""}
+	for _, name := range session {
+		c1Want[name] = ""
+	}
+	expect("c1 after the second adopt", adoptChildEnv(t, c1, "c1b", 4), c1Want)
+	expect("c2 after the second adopt", adoptChildEnv(t, c2, "c2b", 2),
+		map[string]string{"ZZ": "second", "DISPLAY": ":9", "XDG_SESSION_ID": "9", "GPG_TTY": "/dev/d"})
+
+	adopt(c1, 5, `{"env":["Z=1"],"kept":["CLAUSTRUM_TEST_KEEP"]}`)
+	expect("a kept name", adoptChildEnv(t, c1, "kept", 6), map[string]string{"Z": "1", "CLAUSTRUM_TEST_KEEP": "daemon"})
+	adopt(c1, 7, `{"env":["CLAUSTRUM_TEST_KEEP=sent"],"kept":["CLAUSTRUM_TEST_KEEP"]}`)
+	expect("a sent and kept name", adoptChildEnv(t, c1, "keptsent", 8), map[string]string{"CLAUSTRUM_TEST_KEEP": "sent"})
+	adopt(c1, 9, `{"env":["Z=1"]}`)
+	expect("no kept name", adoptChildEnv(t, c1, "nokept", 10), map[string]string{"CLAUSTRUM_TEST_KEEP": ""})
+	// A kept session-bound name takes no entry of the daemon, so it does not reach
+	// c1, and c2 keeps the daemon value (claustrum's own, not measured).
+	adopt(c1, 13, `{"env":["Z=1"],"kept":["DISPLAY"]}`)
+	expect("c1 after a kept DISPLAY", adoptChildEnv(t, c1, "keptsession", 14), map[string]string{"Z": "1", "DISPLAY": ""})
+	expect("c2 after a kept DISPLAY", adoptChildEnv(t, c2, "keptsession2", 4), map[string]string{"Z": "1", "DISPLAY": ":9"})
+
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// On Windows the names are not case-sensitive. adoptChildEnv gives them in
+	// upper case.
+	adopt(c1, 11, `{"env":["Tmp=/s/twin1","temp=/s/twin2","Zz=1","Display=:7","Gpg_Tty=/s/g","gpg_tty=/s/gl"]}`)
+	lastLine(head + "6 variables for every connection, 2 for this connection only.")
+	expect("c1 after the twins", adoptChildEnv(t, c1, "c1t", 12),
+		map[string]string{"TMP": temps["TMP"], "TEMP": temps["TEMP"], "ZZ": "1", "DISPLAY": ":7", "GPG_TTY": "/s/gl"})
+	expect("c2 after the twins", adoptChildEnv(t, c2, "c2t", 3),
+		map[string]string{"TMP": temps["TMP"], "TEMP": temps["TEMP"], "ZZ": "1", "DISPLAY": ":9", "GPG_TTY": "/dev/d"})
+}
+
+// TestSocketAdoptEnvSentTempNameWithNoDaemonValue: a sent temp-folder name that the
+// daemon lacks reaches no child (claustrum's own, not measured).
+func TestSocketAdoptEnvSentTempNameWithNoDaemonValue(t *testing.T) {
+	clearClaudeSSHEnv(t)
+	t.Setenv("CLAUDE_CODE_TMPDIR", "")
+	_ = os.Unsetenv("CLAUDE_CODE_TMPDIR")
+	_, sock := newRunningServer(t)
+	captureLogBuf(t)
+	cl := dial(t, sock)
+	adopt := `{"jsonrpc":"2.0","id":1,"method":"server.adoptEnv","params":{"env":["A=1","CLAUDE_CODE_TMPDIR=/s/cct"]}}`
+	if got := string(cl.call(authed(adopt))); !strings.Contains(got, `"ok":true`) {
+		t.Fatalf("adopt: %s", got)
+	}
+	env := adoptChildEnv(t, cl, "nodaemontmp", 2)
+	if v, ok := env["CLAUDE_CODE_TMPDIR"]; ok {
+		t.Errorf("the child has CLAUDE_CODE_TMPDIR=%q, want it absent", v)
+	}
+	if env["A"] != "1" {
+		t.Errorf("the child has A=%q, want 1", env["A"])
+	}
 }
 
 // TestSocketAdoptEnvTakesLoginPATH: after a good read of the login-shell PATH a

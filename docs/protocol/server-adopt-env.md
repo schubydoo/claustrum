@@ -12,7 +12,7 @@
 |---|---|---|
 | `env` | yes | A list of `NAME=value` strings. |
 | `noLoginShell` | no | A bool. The daemon accepts it. With `true` the spawns of this connection start no [new read](#a-new-read-of-the-login-shell-path) (Linux). |
-| `kept` | no | A list with a limit of 8192 entries (macOS). No row shows what a kept name does, so claustrum tests only the limit. |
+| `kept` | no | A list of names, at most 8192 (Linux and macOS). A kept daemon variable stays if `env` lacks it, except a session-bound name (claustrum's own, not measured). |
 
 The daemon ignores other members, with no log line (Linux and Windows).
 
@@ -26,26 +26,29 @@ A good list gives `{"ok":true}`. A refused list gives `-32602` `Invalid params` 
 
 | `<why>` | The list |
 |---|---|
-| `it is empty` | has no entry. A `params` of `{}` gives it too (Linux and Windows) |
+| `it is empty` | has no entry. A `params` of `{}` (Linux and Windows) or `null` gives it too |
 | `it has more than 8192 entries` | has 8193 entries or more |
 | `an entry has no equals sign` | has an entry with no `=` |
 | `an entry contains a NUL byte` | has an entry with a NUL |
 | `one variable is 128 KiB or longer, more than Linux allows when it starts a program` | has an entry of 131072 bytes or more. The text names Linux on every system |
 | `it is larger than 256 KiB in total` | has more than 262144 bytes in all |
-| `it names more than 8192 variables to keep` | has a `kept` of 8193 entries (macOS) |
+| `it names more than 8192 variables to keep` | has a `kept` of 8193 entries (Linux and macOS) |
 
-The edges are measured on Linux, except the total: 262132 bytes passed and 300009 failed. claustrum adds up the entry lengths. Its total edge and its order of the tests are its own. These shapes give `-32602` with no line: absent params (Linux and macOS), an `env` that is a string, and entries that are not strings (Linux). claustrum answers a `null` params so too (claustrum's own, not measured).
+The edges are measured on Linux, except the total: 262132 bytes passed and 300009 failed. claustrum adds up the entry lengths. The tests of each entry come before the count, and a NUL comes before a missing `=`. claustrum's total edge and its other orders are its own. These shapes give `-32602` with no line: absent params, an `env` that is a string, and entries that are not strings (Linux).
 
 ## The new environment
 
 After a good adopt, a new child of any connection starts from the sent entries, not from the environment of the daemon. The git of a `gitRead` spawn is the exception ([process.spawn gitRead](process-git-read.md#the-run)). The steps of [process.spawn](process-spawn.md) follow.
 
-- `SSH_AUTH_SOCK` reaches only the children of the connection that sent it (Linux).
+- The session-bound names reach only the children of the connection that sent them. A later adopt of that connection replaces them. A connection with no adopt keeps those of the daemon. They are `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `KRB5CCNAME`, `XDG_SEAT`, `XDG_VTNR`, `GPG_TTY`, `WSL_INTEROP` and the names that start with `SSH_`, `SSH2_` or `XDG_SESSION_`. A prefix name that no row showed is claustrum's own, not measured.
+- `TMPDIR`, `TMP`, `TEMP` and `CLAUDE_CODE_TMPDIR` keep the daemon value. On Linux and macOS the daemon value takes its [test](process-spawn.md#a-temp-folder-that-takes-no-file-build-683cc6a9). With no daemon value the child gets none (claustrum's own, not measured).
+- Windows names are not case-sensitive: `Tmp` and `Display` follow the same rules.
 - A sent name that starts with `CLAUDE_SSH_` reaches no child (Linux, one name). The `CLAUDE_SSH_DAEMON_CHILD` of the daemon stays.
 - On Linux and macOS the child gets the login-shell PATH after a good read, as in process.spawn. Before one the sent PATH stays (claustrum's own, not measured). On Windows a list with no PATH gives a child with no PATH.
-- A sent temp-folder entry reaches the child untested (claustrum's own, not measured).
-- On Windows the `TEMP` and `TMP` of the daemon stay. The child also gets `COMSPEC`, `PATHEXT` and `PROMPT` with fixed values.
+- On Windows the child also gets `COMSPEC`, `PATHEXT` and `PROMPT` with fixed values.
 - A later good adopt replaces the set. A refused one keeps it.
+
+### The log line
 
 A good adopt logs one line. This is the line of a list `["B=2"]` after a list of nine entries, on Linux:
 
@@ -53,7 +56,7 @@ A good adopt logs one line. This is the line of a list `["B=2"]` after a list of
 [Server] New processes now start from the environment sent on connection "@": 2 variables for every connection, 0 for this connection only. Names added, removed or changed (at most 40): ["A" "B" "HOME" "LANG" "LD_PRELOAD" "PATH" "USER" "ZZ_ADOPT"]
 ```
 
-The first count includes the entries that the daemon keeps. The names come in name order, at most 40, and Windows gives them in upper case. The label is `"@"` on Linux and Windows and `""` on macOS.
+Each count counts a name once (the second measured on Windows, claustrum's own on Linux and macOS). The first includes the entries that the daemon keeps. The second counts the session-bound names, which the list leaves out. The names come in name order, at most 40, and Windows gives them in upper case. The label is `"@"` on Linux and Windows and `""` on macOS.
 
 ## A new read of the login-shell PATH
 
