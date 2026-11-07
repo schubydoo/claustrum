@@ -12,6 +12,9 @@ import (
 
 var capabilityMethods = append(append([]string{
 	"server.ping", "server.capabilities", methodShutdown,
+	// c9125eb8 lists server.adoptEnv 4th, right after server.shutdown (measured on
+	// Linux, macOS and Windows).
+	methodAdoptEnv,
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 	"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 	// launcher.resolve (89cb6289) sits between git.worktree_remove and process.spawn
@@ -152,6 +155,8 @@ func (s *server) handleServer(c *conn.Conn, req *request) *rpc.Response {
 		}
 		s.signalShutdown()
 		return rpc.Ptr(rpc.OKResult(req.ID, rpc.ShutdownResult{OK: true}))
+	case methodAdoptEnv:
+		return s.handleAdoptEnv(c, req)
 	default:
 		return rpc.Ptr(unknownMethod(req))
 	}

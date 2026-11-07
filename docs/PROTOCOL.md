@@ -1,11 +1,11 @@
 # claustrum protocol reference
 
-This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [22 methods](#methods-22) with the page of each.
+This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [23 methods](#methods-23) with the page of each.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. The three `server.*` methods share one page. The [error texts](protocol/errors.md),
+`SOCK_STREAM` socket. Three `server.*` methods share one page. The [error texts](protocol/errors.md),
 the [stream frames](protocol/streams.md), the [flags](protocol/flags.md) and the
 [shared git rules](#shared-rules-of-the-git-methods) have their own pages. The life
 of the daemon off the wire is on [Running the daemon](DAEMON.md). The pinned
@@ -286,7 +286,7 @@ other two stat it:
   path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
   macOS.
 
-## Methods (22)
+## Methods (23)
 
 `server.capabilities` lists the methods in the order of this table. The
 [reference build history](REFERENCE-BUILDS.md) records the builds that added or
@@ -295,8 +295,9 @@ removed a method.
 | Method | Params → result | Page |
 |---|---|---|
 | `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
-| `server.capabilities` | none → `{"version","methods":[…22…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
+| `server.capabilities` | none → `{"version","methods":[…23…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
 | `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
+| `server.adoptEnv` | `{env[,noLoginShell][,kept]}` → `{"ok":true}` | [server.adoptEnv](protocol/server-adopt-env.md) |
 | `files.list` | `{path[,includeDotNames,junctionsAsDirs]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
 | `files.validate` | `{path}` → `{"valid":bool,"isDir":bool[,"error"]}` | [files.validate](protocol/files-validate.md) |
 | `files.stat` | `{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}` | [files.stat](protocol/files-stat.md) |

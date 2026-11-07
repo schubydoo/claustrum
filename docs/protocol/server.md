@@ -1,6 +1,6 @@
 # server.*
 
-The `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
+Three `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. [server.adoptEnv](server-adopt-env.md) has its own page. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
 
 An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there too.
 
@@ -42,7 +42,7 @@ The members come in this order:
 | Member | Meaning |
 |---|---|
 | `version` | The version of the daemon. |
-| `methods` | The 22 methods, in the order of [Methods](../PROTOCOL.md#methods-22). `files.realpath` is last on every system (`683cc6a9`). On Windows (`c9125eb8`, measured) there is no `files.mkdir`, so claustrum lists 21. |
+| `methods` | The 23 methods, in the order of [Methods](../PROTOCOL.md#methods-23). `files.realpath` is last on every system (`683cc6a9`). On Windows (`c9125eb8`, measured) there is no `files.mkdir`, so claustrum lists 22. |
 | `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the [daemon log](../DAEMON.md#daemon-log-remote-serverlog) holds it too (measured on `89cb6289`). |
 | `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
