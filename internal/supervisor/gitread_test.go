@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,5 +76,46 @@ func TestSpawnGitReadReleaseAtExit(t *testing.T) {
 	}
 	if n := released.Load(); n != 1 {
 		t.Errorf("release ran %d times after the exit, want 1", n)
+	}
+}
+
+// TestSpawnGitReadIgnoresAdoptedSet pins the base of the pane's git after a good
+// adopt: the environment of the daemon, with its HOME and its own names and no
+// adopted name (c9125eb8, measured on Linux, macOS and Windows). A plain spawn of
+// the same connection keeps the adopted base.
+func TestSpawnGitReadIgnoresAdoptedSet(t *testing.T) {
+	fakeGitOnPath(t)
+	t.Setenv("CLAUSTRUM_TEST_DAEMON_ONLY", "d1")
+	m := newTestProcManager(t)
+	c, _ := pipeConn(t)
+	m.TakeAdoptedEnv(c, []string{"A=1", "HOME=/h/b", "GIT_X=1"}, true)
+	stop := errors.New("stop after the env")
+	var got []string
+	_, err := m.SpawnGitRead(c, "ga", nil, t.TempDir(), nil, func(env []string) ([]string, []string, func(), error) {
+		got = env
+		return nil, nil, nil, stop
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("SpawnGitRead error = %v, want the stop of the step", err)
+	}
+	vals := map[string]string{}
+	for _, kv := range got {
+		if name, v, ok := strings.Cut(kv, "="); ok {
+			vals[name] = v
+		}
+	}
+	for _, name := range []string{"A", "GIT_X"} {
+		if v, ok := vals[name]; ok {
+			t.Errorf("the env of the pane's git has the adopted %s=%q, want it absent", name, v)
+		}
+	}
+	if vals["CLAUSTRUM_TEST_DAEMON_ONLY"] != "d1" {
+		t.Errorf("CLAUSTRUM_TEST_DAEMON_ONLY = %q, want the daemon value d1", vals["CLAUSTRUM_TEST_DAEMON_ONLY"])
+	}
+	if home, ok := os.LookupEnv("HOME"); ok && vals["HOME"] != home {
+		t.Errorf("HOME = %q, want the daemon HOME %q", vals["HOME"], home)
+	}
+	if base, ok := m.adoptedBase(c); !ok || !slices.Contains(base, "A=1") {
+		t.Errorf("the adopted base of a plain spawn = %v (ok %v), want A=1 in it", base, ok)
 	}
 }
