@@ -42,8 +42,10 @@ type adoptedEnv struct {
 // entries, and the names whose value the adopt added, removed or changed. Before
 // the first adopt the old set is the environment of the daemon. The names come in
 // name order, at most adoptDiffNamesMax of them. The own names are not compared
-// (measured on Linux: the line did not name a sent SSH_AUTH_SOCK).
-func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env []string) (every, own int, changed []string) {
+// (measured on Linux: the line did not name a sent SSH_AUTH_SOCK). noLoginShell is
+// the member of the adopt. Without it a spawn of c can start a read again of the
+// login-shell PATH (spawnWith).
+func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env []string, noLoginShell bool) (every, own int, changed []string) {
 	daemon := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	all, mine := splitAdopted(env, daemon)
 	m.adopted.mu.Lock()
@@ -55,6 +57,7 @@ func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env []string) (every, own int, ch
 	m.adopted.mu.Unlock()
 	if c != nil {
 		c.SetOwnEnv(mine)
+		c.SetReadsLoginPATH(!noLoginShell)
 	}
 	return len(all), len(mine), adoptDiffNames(old, all)
 }
