@@ -15,17 +15,20 @@ import (
 
 // The object reads of the content check. c9125eb8 reads the commit and the
 // trees through one long-running `git cat-file --batch` per create (measured
-// on Linux and macOS). A git that stops answering, or a process that cannot
-// compute SHA-1, ends that use. Then one `cat-file <kind> <id>` reads each
-// object, with the same result (measured on Linux). The checked line counts
-// the commits and trees that separate runs read.
+// on Linux and macOS). The batch runs on every system. On Windows the call is
+// not measured, but the checked line counts 0 separate runs there (c9125eb8,
+// measured), which fits one batch. A git that stops answering, or a process
+// that cannot compute SHA-1, ends that use. Then one `cat-file <kind> <id>`
+// reads each object, with the same result (measured on Linux). The checked
+// line counts the commits and trees that separate runs read.
 //
 // Claustrum's own, not measured: the blobs of committed links go through the
 // batch too and do not count. The blob of the compare step is always a
-// separate run. An object that the batch names missing, ambiguous or of another kind is
-// read again by a separate run, and the batch goes on. A malformed answer, a
-// failed start and a stop at the limit of the call end the batch as an end of
-// its output does.
+// separate run. An object that the batch names missing, ambiguous or of
+// another kind is read again by a separate run, and the batch goes on. A
+// malformed answer, a failed start and a stop at the limit end the batch as an
+// end of its output does. The batch has the limit of one call for the whole
+// check.
 
 // batchStoppedLine is the log line after the batch stopped answering. Its
 // cause is "EOF" for an end of the output (c9125eb8, measured on Linux).
