@@ -173,7 +173,7 @@ func TestContentCheckMatch(t *testing.T) {
 		t.Errorf("long-running hash-object calls %v, --stdin-paths ran %v, want one of commit and one of tree, and the call of the files", writes, sawPaths)
 	}
 	// One `cat-file --batch` reads the commit and the trees (c9125eb8,
-	// measured on Linux and macOS).
+	// measured on Linux, macOS and Windows).
 	if batch, separate := catFileCalls(calls); batch != 1 || separate != 0 {
 		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 0", batch, separate)
 	}

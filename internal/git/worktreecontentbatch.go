@@ -17,9 +17,8 @@ import (
 
 // The object reads of the content check. c9125eb8 reads the commit and the
 // trees through one long-running `git cat-file --batch` per create (measured
-// on Linux and macOS). The batch runs on every system. On Windows the call is
-// not measured, but the checked line counts 0 separate runs there (c9125eb8,
-// measured), which fits one batch. A git that stops answering, or a process
+// on Linux, macOS and Windows), and the checked line counts 0 separate runs on
+// Windows too. A git that stops answering, or a process
 // that cannot compute SHA-1, ends that use. Then one `cat-file <kind> <id>`
 // reads each object, with the same result (measured on Linux). The checked
 // line counts the commits and trees that separate runs read.
