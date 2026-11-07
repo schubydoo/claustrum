@@ -682,7 +682,8 @@ func (h *ShadowHost) asksGit(t gitDirTrust, off bool) bool {
 // with no `.claude` folder made it as its third call, after `rev-parse
 // --is-inside-work-tree` and before the next listing, where the daemon had made
 // that folder (measured). A create whose `worktree add` moved the time of
-// `.git` made no call after it: its later calls have --git-dir= (measured). The
+// `.git` made no call after it on 5fd08069: its later calls have --git-dir=
+// (measured). The
 // place before each such listing is fitted to those rows. A bad answer at such
 // a step is not measured: the request goes on, and the next request asks again.
 func (u gitUse) recheck(dir string) {
@@ -694,4 +695,27 @@ func (u gitUse) recheck(dir string) {
 		return
 	}
 	u.host.askGit(t, dir)
+}
+
+// askAfterAdd asks git about the repository in dir after a good `worktree
+// add`, before the call that resolves the branch of the checkout to a commit.
+// It returns the text of a bad answer, or "". It runs on macOS only
+// (createAsksAfterAdd).
+//
+// On macOS b3081b51 and c9125eb8 make that call there, also right after a
+// git.info. An answer that names another git directory gets one more call. A
+// right second answer goes on, and the create succeeds with 2 calls. A wrong
+// one fails the create after 4 calls in all (measured on macOS). An answer with another text has the same stop, and "no
+// repository" goes on (claustrum's own, not measured). A kept answer counts,
+// as at each step. The add changes the time of `.git`, so the call runs
+// (from the code).
+func (u gitUse) askAfterAdd(dir string) string {
+	if !createAsksAfterAdd || !u.shadow() || u.host == nil {
+		return ""
+	}
+	t, ok := u.names(dir)
+	if !ok || !u.host.asksGit(t, false) {
+		return ""
+	}
+	return u.host.askGit(t, dir).text
 }

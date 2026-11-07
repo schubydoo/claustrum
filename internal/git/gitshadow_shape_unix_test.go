@@ -366,6 +366,7 @@ func createRows() []shapeRow {
 			{list: "P28", argv: "--git-dir=<repo>/.git --work-tree=<repo> rev-parse --show-toplevel", cwd: "<repo>/.git", shadow: "{A} {D} {H}", off: "{A} {G} {H}"},
 		},
 		addRows("worktree add --no-track --no-checkout -b w1 <leaf>"),
+		probeAfterAdd(),
 		// In the state shadow the commit id of the branch for the read-tree call
 		// (b3081b51, methods_git.go).
 		[]shapeRow{
@@ -439,8 +440,28 @@ func addRows(argv string) []shapeRow {
 
 // probeAfterCreate is the call about the repository that the first request
 // after a staged create makes in the state shadow. The staging folder was a
-// new entry of `.git`, so the kept answer is stale (keptProbe.fresh).
+// new entry of `.git`, so the kept answer is stale (keptProbe.fresh). On macOS
+// the create asks after its add and keeps that answer, so the next request
+// makes no call. b3081b51 and c9125eb8 make none in a remove right after a
+// create (measured on macOS).
 func probeAfterCreate() []shapeRow {
+	if createAsksAfterAdd {
+		return nil
+	}
+	return probeRow()
+}
+
+// probeAfterAdd is the call about the repository after the add of a create in
+// the state shadow, on macOS only (askAfterAdd).
+func probeAfterAdd() []shapeRow {
+	if !createAsksAfterAdd {
+		return nil
+	}
+	return probeRow()
+}
+
+// probeRow is one call about the repository in the state shadow.
+func probeRow() []shapeRow {
 	return []shapeRow{{list: "?core.hooksPath=/dev/null core.fsmonitor=", argv: "rev-parse --git-dir", cwd: "<repo>",
 		shadow: "GIT_COMMON_DIR=<S>/.probe GIT_OBJECT_DIRECTORY=<S>/.probe/objects GIT_ALLOW_PROTOCOL=denied_by_claude_ssh GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 {L}"}}
 }

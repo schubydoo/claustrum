@@ -2137,6 +2137,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		quiet := cu
 		quiet.noRecheck = true
 		if cu.shadow() && !offNow && !isObjectID(checkoutRev) {
+			// On macOS git is asked about the repository first (askAfterAdd). A
+			// bad answer fails the create with the rollback of a failed checkout,
+			// and its branch step asks again. c9125eb8 answers `git worktree add
+			// failed: branch "<b>" could not be resolved to a commit (<text>)`,
+			// and it keeps the branch with that text as the cause (measured on
+			// macOS). The branch of an attach add is claustrum's own, not measured.
+			if text := cu.askAfterAdd(repo); text != "" {
+				u := req.use
+				u.branchGate = func() string { return cu.askAfterAdd(repo) }
+				undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+				return rpc.OKResult(req.ID, rpc.WorktreeResult{
+					Success:    false,
+					Error:      fmt.Sprintf("git worktree add failed: branch %q could not be resolved to a commit (%s)", worktreeBranch, text) + undo,
+					ErrorCode:  "worktree_add_failed",
+					BranchKept: kept,
+				})
+			}
 			if id := resolveCommit(quiet, repo, checkoutRev); id != "" {
 				checkoutRev = id
 			}

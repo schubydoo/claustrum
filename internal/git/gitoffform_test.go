@@ -294,8 +294,10 @@ func TestShadowCreateFollowsAHoldThatEndsAtTheAdd(t *testing.T) {
 	if n := leafListings(calls, leaf, test, rt); n != 2 {
 		t.Errorf("C3: %d listings before the read-tree, want 2", n)
 	}
-	if probeAfter(calls, test, rt) {
-		t.Error("C3: a call asks git about the repository after the start test, want none")
+	// On macOS the call after the add runs there (askAfterAdd). After a hold
+	// that ends at the add that is claustrum's own, not measured.
+	if got := probeAfter(calls, test, rt); got != createAsksAfterAdd {
+		t.Errorf("C3: a call asks git about the repository after the start test: %v, want %v", got, createAsksAfterAdd)
 	}
 	h.wantCopyLink(t)
 }
