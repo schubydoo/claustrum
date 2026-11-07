@@ -37,9 +37,9 @@ import (
 //
 //   - Four such connections within seconds start no read again, on Linux and macOS.
 //     The children keep the PATH of the first read.
-//   - On Linux, after an idle wait of 10 min 35 s, one read again starts during the
-//     first spawn on such a connection, after the SSH agent step. That spawn does not
-//     wait for it and keeps the old PATH. The read logs the line of a good read again,
+//   - On Linux, after an idle wait of 10 min 35 s, the first spawn on such a
+//     connection comes with one read again, right after the SSH agent step. That
+//     spawn does not wait for it and keeps the old PATH. The read logs the line of a good read again,
 //     and later spawns get its PATH.
 //   - On Linux, connections whose environment came with "noLoginShell":true start no
 //     read again.
@@ -218,9 +218,9 @@ func (s *loginPATHState) launchLocked(again bool) bool {
 }
 
 // RefreshLoginPATH runs at a spawn on a connection that sent its own environment
-// with no "noLoginShell":true, after the SSH agent step. After a good read at least
-// loginPATHRefreshAfter old, it starts one read again in the background and does not
-// wait. Where no login shell runs it does nothing (claustrum's own, not measured).
+// with no "noLoginShell":true, after the SSH agent step. After a good read, once the
+// last read started at least loginPATHRefreshAfter ago, it starts one read again in
+// the background and does not wait. Where no login shell runs it does nothing (claustrum's own, not measured).
 func RefreshLoginPATH() {
 	if !loginPATHFromShell {
 		return

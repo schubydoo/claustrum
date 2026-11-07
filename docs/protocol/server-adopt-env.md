@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `env` | yes | A list of `NAME=value` strings. |
-| `noLoginShell` | no | A bool. The daemon accepts it. With `true` no [new read](#a-new-read-of-the-login-shell-path) starts (Linux). |
+| `noLoginShell` | no | A bool. The daemon accepts it. With `true` the spawns of this connection start no [new read](#a-new-read-of-the-login-shell-path) (Linux). |
 | `kept` | no | A list with a limit of 8192 entries (macOS). No row shows what a kept name does, so claustrum tests only the limit. |
 
 The daemon ignores other members, with no log line (Linux and Windows).

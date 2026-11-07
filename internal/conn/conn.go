@@ -89,15 +89,15 @@ func (c *Conn) OwnEnv() []string {
 }
 
 // SetReadsLoginPATH records whether the last good server.adoptEnv of c lets its
-// spawns read the login-shell PATH again.
+// spawns can start a read again of the login-shell PATH.
 func (c *Conn) SetReadsLoginPATH(on bool) {
 	c.ownEnvMu.Lock()
 	defer c.ownEnvMu.Unlock()
 	c.readsLoginPATH = on
 }
 
-// ReadsLoginPATH tells if the spawns of c read the login-shell PATH again. A nil
-// conn and a conn with no good adopt do not.
+// ReadsLoginPATH tells if the spawns of c can start a read again of the login-shell
+// PATH. A nil conn and a conn with no good adopt do not.
 func (c *Conn) ReadsLoginPATH() bool {
 	if c == nil {
 		return false

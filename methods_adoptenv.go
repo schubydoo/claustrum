@@ -17,7 +17,7 @@ const methodAdoptEnv = "server.adoptEnv"
 // limit (measured on macOS). No row shows what a kept name does, so claustrum tests
 // only its limit (claustrum's own, not measured). NoLoginShell is accepted with ok
 // (measured on Linux, macOS and Windows). With it true the spawns of the connection
-// do not read the login-shell PATH again (measured on Linux, see spawnWith). Other
+// start no read again of the login-shell PATH (measured on Linux, see spawnWith). Other
 // members are ignored (measured on Linux and Windows).
 type adoptEnvParams struct {
 	Env          []string `json:"env"`
