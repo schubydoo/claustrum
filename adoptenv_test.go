@@ -292,8 +292,16 @@ func TestSocketAdoptEnvNameClasses(t *testing.T) {
 	clearSessionEnv(t)
 	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
 	temps := map[string]string{}
+	// Short folders: the server below puts its socket under TMPDIR, and a folder
+	// of t.TempDir carries the test name, which makes the socket path longer
+	// than the 104 bytes of macOS.
 	for _, name := range []string{"TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"} {
-		temps[name] = t.TempDir()
+		dir, err := os.MkdirTemp("", "t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		temps[name] = dir
 	}
 	for name, dir := range temps {
 		t.Setenv(name, dir)
