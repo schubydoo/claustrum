@@ -77,9 +77,9 @@ func (r *Records) writeRecord(rec childRecord) {
 // away.
 //
 // The record goes only while the file still holds the start that this daemon wrote
-// (c9125eb8, measured on Linux, and on macOS with start and daemonStart changed
-// together, see removeChildRecordIn). A pid with no record of this
-// daemon gets no removal and no log line. That case is claustrum's own, not measured.
+// (c9125eb8, measured on Linux and macOS, see recordIdentity). A pid with no record of
+// this daemon gets no removal and no log line (c9125eb8, measured on Linux and macOS).
+// The same case through a children symlink is claustrum's own, not measured.
 // 89cb6289 tried the removal and logged its failure.
 //
 // The delete is one plain remove of children/<pid>.json through the os.Root of the
@@ -112,20 +112,16 @@ func (r *Records) RemoveChildRecord(pid int) {
 const maxRecordRead = 64 << 10
 
 // recordIdentity holds the members of a record that the removal compares. Measured on
-// c9125eb8: a changed start keeps the record (Linux), and so does a changed start
-// with a changed daemonStart (macOS). A changed instance, daemonStart or pid alone
-// removes it (Linux). node, host, argv0 and program are compared too, so a change of
-// one of them keeps the record (claustrum's own, not measured).
+// c9125eb8: a changed start keeps the record (Linux and macOS), and so does a changed
+// start with a changed daemonStart (macOS). A changed node, host, argv0 or at removes it
+// (Linux and macOS), and so does a changed instance, daemonStart or pid (Linux). A
+// changed program removes it too (claustrum's own, not measured).
 type recordIdentity struct {
-	Node    string `json:"node"`
-	Host    string `json:"host"`
-	Argv0   string `json:"argv0"`
-	Program string `json:"program"`
-	Start   string `json:"start"`
+	Start string `json:"start"`
 }
 
 func identityOf(rec childRecord) recordIdentity {
-	return recordIdentity{Node: rec.Node, Host: rec.Host, Argv0: rec.Argv0, Program: rec.Program, Start: rec.Start}
+	return recordIdentity{Start: rec.Start}
 }
 
 // removeChildRecordIn removes children/<want.Pid>.json below root, which is the run
@@ -151,9 +147,10 @@ var recordCompared = func() {}
 
 // holdsRecord reports whether name below root is a regular file that holds want.
 // Measured on c9125eb8: a file that is not JSON stays (Linux), and so does a blank
-// file (macOS). The tests below on the kind and the identity of the file are
-// claustrum's own, not measured. A symlink, a FIFO or a file of more than
-// maxRecordRead bytes stays. The last Lstat shows that the name still holds the file
+// file (macOS). A link to a copy of the record, inside or outside the run dir, stays
+// (Linux and macOS). The other tests below on the kind and the identity of the file
+// are claustrum's own, not measured: a FIFO or a file of more than maxRecordRead
+// bytes stays. The last Lstat shows that the name still holds the file
 // that was read, just before the remove. No lock reaches a writer outside this
 // daemon, so that test is the nearest form there.
 func holdsRecord(root *os.Root, name string, want childRecord) bool {
