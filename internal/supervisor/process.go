@@ -45,7 +45,8 @@ type StreamFrame struct {
 	// an exit frame only. Signal is the SIG-prefixed name of the terminating signal
 	// (omitted on a normal exit and always on Windows, which has no signal on the
 	// wait path). KilledBy names who requested the kill: "client" for process.kill /
-	// process.killAndWait, "shutdown" for the shutdown/killAll sweep. Both omitempty,
+	// process.killAndWait, "shutdown" for the shutdown/killAll sweep, "limit" for the
+	// time limit of a gitRead git (c9125eb8, measured on Linux, macOS and Windows). Both omitempty,
 	// so a normal exit stays byte-identical to the pre-4534d86 frame. Provenance: the
 	// "client" values and the SIGTERM/SIGKILL names are live-measured against
 	// 4534d86. Other mapped signal names are not individually measured. The Windows
@@ -164,7 +165,8 @@ type Proc struct {
 	// the process is alive. Read only by pruneExited, under p.mu like running.
 	exitedAt time.Time
 	// killedBy records who asked the daemon to kill this process ("client" for
-	// process.kill / process.killAndWait, "shutdown" for the killAll sweep). It is
+	// process.kill / process.killAndWait, "shutdown" for the killAll sweep, "limit"
+	// for the time limit of a gitRead git, see watchGitReadLimit). It is
 	// stamped by signalIfLive, and only when the signal is actually delivered to a
 	// still-live process, then read once in waitReapAndDrain to populate the exit
 	// frame's killedBy field. Empty when the process exited on its own, was
@@ -767,6 +769,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// why Manager copies its prune tunables at construction.
 	grace := exitDrainGrace
 	endGrace := unattendedEndGrace
+	readLimit, readEndGrace := gitReadLimit, gitReadEndGrace
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
@@ -1169,6 +1172,11 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// From here the exit of the child gives the folder back.
 	keptTemp = true
 	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
+	// Only the pane's git has a time limit. A plain child is not ended at it
+	// (c9125eb8, measured on Linux, macOS and Windows).
+	if gitRead != nil {
+		go m.watchGitReadLimit(p, readLimit, readEndGrace)
+	}
 	return p, nil
 }
 

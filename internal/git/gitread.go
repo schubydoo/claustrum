@@ -30,30 +30,87 @@ type paneShape struct {
 	realIndex bool
 }
 
-// paneShapes are the argv that c9125eb8 runs with "gitRead":true. The list is
-// the union of the measured rows: each one ran on Linux, macOS or Windows. Every
-// other argv gets the shape refusal. That refusal is measured for the argv that
-// the rows tried. For any other argv it is claustrum's own, not measured, and
-// an argv differs from a row if a single byte differs. The run argv of each
-// shape is that of the call logs (measured on Linux, and the status row on Windows).
+// The slots of a shape. A slot in sent takes one request value that passes its
+// test, and the same slot in run gives that value back, in the same order.
+const (
+	// slotRef is a ref: not empty and no leading "-".
+	slotRef = "<ref>"
+	// slotRange is <A>..<B> or <A>...<B>, each side a slotRef.
+	slotRange = "<range>"
+	// slotBlob is <rev>:<path>: no leading "-" and a ":" inside.
+	slotBlob = "<rev>:<path>"
+)
+
+// paneShapes are the argv that c9125eb8 runs with "gitRead":true. The fixed
+// words and their places are those of the measured rows, and the slots take the
+// refs and paths of the rows (measured on Linux, macOS and Windows, the slots on
+// Linux). Every other argv gets the shape refusal. The run argv of each shape is
+// that of the call logs (measured on Linux, and the status row on Windows).
+// claustrum's own, not measured: the run of the two-ref diff, a slotRange with no
+// dots or an empty side, and a slotBlob with no ":".
 var paneShapes = []paneShape{
 	{sent: []string{"status", "--porcelain=v2", "--branch", "-z"},
 		run: []string{"status", "--ignore-submodules=dirty", "--porcelain=v2", "--branch", "-z"}, noLocks: true, realIndex: true},
 	{sent: []string{"rev-parse", "--show-toplevel"}},
 	{sent: []string{"rev-parse", "--abbrev-ref", "HEAD"}},
 	{sent: []string{"rev-parse", "--is-shallow-repository"}},
-	{sent: []string{"rev-parse", "--verify", "HEAD"}},
+	{sent: []string{"rev-parse", "--verify", slotRef}},
 	{sent: []string{"symbolic-ref", "--short", "HEAD"}},
 	{sent: []string{"ls-files", "--others", "--exclude-standard", "--full-name", ":/"}, realIndex: true},
-	{sent: []string{"show", "--no-textconv", "--no-ext-diff", "HEAD:README", "--"},
+	{sent: []string{"show", "--no-textconv", "--no-ext-diff", slotBlob, "--"},
 		run: []string{"show", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
-			"--no-textconv", "--no-ext-diff", "HEAD:README", "--"}},
-	{sent: []string{"merge-base", "HEAD", "HEAD"}},
-	{sent: []string{"rev-list", "--left-right", "--count", "HEAD...HEAD"},
-		run: []string{"rev-list", "--left-right", "--count", "HEAD...HEAD", "--"}},
-	{sent: []string{"diff", "--name-status", "-M", "HEAD"},
+			"--no-textconv", "--no-ext-diff", slotBlob, "--"}},
+	{sent: []string{"merge-base", slotRef, slotRef}},
+	{sent: []string{"rev-list", "--left-right", "--count", slotRange},
+		run: []string{"rev-list", "--left-right", "--count", slotRange, "--"}},
+	{sent: []string{"diff", "--name-status", "-M", slotRef},
 		run: []string{"diff-index", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
-			"--name-status", "-M", "HEAD", "--"}, realIndex: true},
+			"--name-status", "-M", slotRef, "--"}, realIndex: true},
+	{sent: []string{"diff", "--name-status", "-M", slotRef, slotRef},
+		run: []string{"diff-tree", "-r", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
+			"--name-status", "-M", slotRef, slotRef, "--"}},
+}
+
+// paneRefOK is the test of a slotRef. An empty ref and one with a leading "-"
+// are refused (measured on Linux). A ref with a space or ".." inside passes to
+// git (claustrum's own, not measured).
+func paneRefOK(s string) bool { return s != "" && s[0] != '-' }
+
+// paneSlotOK reports whether v passes the test of slot.
+func paneSlotOK(slot, v string) bool {
+	switch slot {
+	case slotRef:
+		return paneRefOK(v)
+	case slotRange:
+		a, b, ok := strings.Cut(v, "...")
+		if !ok {
+			a, b, ok = strings.Cut(v, "..")
+		}
+		return ok && paneRefOK(a) && paneRefOK(b)
+	case slotBlob:
+		return paneRefOK(v) && strings.Contains(v, ":")
+	}
+	return false
+}
+
+// isPaneSlot reports whether w is a slot.
+func isPaneSlot(w string) bool { return w == slotRef || w == slotRange || w == slotBlob }
+
+// paneMatch reports whether args fits the sent argv of s.
+func (s *paneShape) paneMatch(args []string) bool {
+	if len(args) != len(s.sent) {
+		return false
+	}
+	for i, w := range s.sent {
+		if isPaneSlot(w) {
+			if !paneSlotOK(w, args[i]) {
+				return false
+			}
+		} else if args[i] != w {
+			return false
+		}
+	}
+	return true
 }
 
 // paneHardenFirst and paneHardenLast are the `-c` items of the pane's git, in
@@ -107,7 +164,7 @@ var (
 // paneShapeOf is the shape of args, or nil for an argv that the pane may not run.
 func paneShapeOf(args []string) *paneShape {
 	for i := range paneShapes {
-		if slices.Equal(paneShapes[i].sent, args) {
+		if paneShapes[i].paneMatch(args) {
 			return &paneShapes[i]
 		}
 	}
@@ -124,9 +181,10 @@ func PaneShapeRefusal(args []string) string {
 	return fmt.Sprintf("not one of the Changes pane's git commands (%d arguments)", len(args))
 }
 
-// paneArgv is the argv of the run of shape s, after "git": the items of the
-// config.worktree file (front), the `-c` items, then the run argv.
-func paneArgv(s *paneShape, front []string) []string {
+// paneArgv is the argv of the run of shape s for the sent args, after "git": the
+// items of the config.worktree file (front), the `-c` items, then the run argv.
+// Each slot of the run argv gets the value of the same slot of args.
+func paneArgv(s *paneShape, args, front []string) []string {
 	argv := slices.Clone(front)
 	for _, c := range paneHardenFirst {
 		argv = append(argv, "-c", c)
@@ -141,7 +199,19 @@ func paneArgv(s *paneShape, front []string) []string {
 	if run == nil {
 		run = s.sent
 	}
-	return append(argv, run...)
+	var values []string
+	for i, w := range s.sent {
+		if isPaneSlot(w) {
+			values = append(values, args[i])
+		}
+	}
+	for _, w := range run {
+		if isPaneSlot(w) {
+			w, values = values[0], values[1:]
+		}
+		argv = append(argv, w)
+	}
+	return argv
 }
 
 // PaneRun is the prepared run of the pane's git.
@@ -210,7 +280,7 @@ func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
 		index = filepath.Join(u.repoDir, paneNoIndexName)
 	}
 	return PaneRun{
-		Args:    paneArgv(shape, u.front(cwd)),
+		Args:    paneArgv(shape, args, u.front(cwd)),
 		env:     func(spawn []string) []string { return paneEnv(u, spawn, pin, hooks, index) },
 		release: drop,
 	}, nil

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,15 +9,10 @@ import (
 	"testing"
 )
 
-// TestPaneShapeRefusal pins the shape test of a gitRead spawn: each argv of
+// TestPaneShapeRefusal pins the shape test of a gitRead spawn: an argv of
 // paneShapes passes, and any other argv gets the text with its count of args
 // (c9125eb8, measured on Linux, macOS and Windows).
 func TestPaneShapeRefusal(t *testing.T) {
-	for _, s := range paneShapes {
-		if got := PaneShapeRefusal(s.sent); got != "" {
-			t.Errorf("PaneShapeRefusal(%q) = %q, want none", s.sent, got)
-		}
-	}
 	for _, c := range []struct {
 		args []string
 		want string
@@ -42,13 +38,14 @@ func TestPaneShapesList(t *testing.T) {
 		"rev-parse --show-toplevel",
 		"rev-parse --abbrev-ref HEAD",
 		"rev-parse --is-shallow-repository",
-		"rev-parse --verify HEAD",
+		"rev-parse --verify <ref>",
 		"symbolic-ref --short HEAD",
 		"ls-files --others --exclude-standard --full-name :/",
-		"show --no-textconv --no-ext-diff HEAD:README --",
-		"merge-base HEAD HEAD",
-		"rev-list --left-right --count HEAD...HEAD",
-		"diff --name-status -M HEAD",
+		"show --no-textconv --no-ext-diff <rev>:<path> --",
+		"merge-base <ref> <ref>",
+		"rev-list --left-right --count <range>",
+		"diff --name-status -M <ref>",
+		"diff --name-status -M <ref> <ref>",
 	}
 	var got []string
 	for _, s := range paneShapes {
@@ -100,11 +97,92 @@ func TestPaneArgv(t *testing.T) {
 		{[]string{"show", "--no-textconv", "--no-ext-diff", "HEAD:README", "--"},
 			[]string{"show", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
 				"--no-textconv", "--no-ext-diff", "HEAD:README", "--"}, false},
+		// The slots give the sent refs and paths back in their order.
+		{[]string{"rev-parse", "--verify", "main^{commit}"}, []string{"rev-parse", "--verify", "main^{commit}"}, false},
+		{[]string{"merge-base", "main", "topic"}, []string{"merge-base", "main", "topic"}, false},
+		{[]string{"rev-list", "--left-right", "--count", "main..topic"},
+			[]string{"rev-list", "--left-right", "--count", "main..topic", "--"}, false},
+		{[]string{"show", "--no-textconv", "--no-ext-diff", "main:sub/x.txt", "--"},
+			[]string{"show", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
+				"--no-textconv", "--no-ext-diff", "main:sub/x.txt", "--"}, false},
+		{[]string{"diff", "--name-status", "-M", "origin/main"},
+			[]string{"diff-index", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
+				"--name-status", "-M", "origin/main", "--"}, false},
+		// claustrum's own, not measured: the run of the two-ref diff.
+		{[]string{"diff", "--name-status", "-M", "main", "topic"},
+			[]string{"diff-tree", "-r", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
+				"--name-status", "-M", "main", "topic", "--"}, false},
 	} {
 		want := append(paneItems(c.locks), c.run...)
-		if got := paneArgv(paneShapeOf(c.sent), nil); !slices.Equal(got, want) {
+		if got := paneArgv(paneShapeOf(c.sent), c.sent, nil); !slices.Equal(got, want) {
 			t.Errorf("paneArgv(%q) =\n%q\nwant\n%q", c.sent, got, want)
 		}
+	}
+}
+
+// TestPaneShapeRows walks the argv rows of c9125eb8 with variable refs and paths
+// (measured on Linux). An allowed row passes the shape test, and a refused row gets
+// the text with its count of args. The last rows are claustrum's own, not measured.
+func TestPaneShapeRows(t *testing.T) {
+	const sha = "e4ee5331c3b2fa10f838ded96064b55b6ae6f028"
+	allowed := []string{
+		"rev-parse --verify HEAD", "rev-parse --verify main", "rev-parse --verify topic",
+		"rev-parse --verify origin/main", "rev-parse --verify v1", "rev-parse --verify " + sha,
+		"rev-parse --verify e4ee533", "rev-parse --verify HEAD^", "rev-parse --verify HEAD~1",
+		"rev-parse --verify main^{commit}", "rev-parse --verify " + sha + "^{commit}", "rev-parse --verify refs/heads/main",
+		"merge-base HEAD main", "merge-base main topic", "merge-base origin/main HEAD", "merge-base " + sha + " " + sha,
+		"rev-list --left-right --count main...topic", "rev-list --left-right --count origin/main...HEAD",
+		"rev-list --left-right --count " + sha + "..." + sha, "rev-list --left-right --count main..topic",
+		"diff --name-status -M HEAD", "diff --name-status -M main", "diff --name-status -M " + sha,
+		"diff --name-status -M origin/main", "diff --name-status -M main topic",
+		"show --no-textconv --no-ext-diff HEAD:README --", "show --no-textconv --no-ext-diff main:sub/x.txt --",
+		"show --no-textconv --no-ext-diff " + sha + ":README --", "show --no-textconv --no-ext-diff HEAD:missing --",
+		"show --no-textconv --no-ext-diff HEAD:../x --", "show --no-textconv --no-ext-diff HEAD:/etc/passwd --",
+		"show --no-textconv --no-ext-diff :README --",
+		"status --porcelain=v2 --branch -z",
+	}
+	refused := []string{
+		"rev-parse --verify --output=/tmp/r", "rev-parse --verify -q",
+		"merge-base --all main", "merge-base main --octopus",
+		"rev-list --left-right --count main...topic --",
+		"diff --name-status -M HEAD -- sub", "diff --name-status -M HEAD -- .",
+		"diff --name-status -M HEAD --output=/tmp/r", "diff --name-status -M50% HEAD",
+		"show --no-textconv --no-ext-diff HEAD:README", "show --no-textconv --no-ext-diff HEAD:README HEAD:sub/x.txt --",
+		"show --no-textconv --no-ext-diff HEAD:README -- sub/x.txt",
+		"log --no-show-signature --format=%H main..topic", "log --no-show-signature --format=%H%x00%s main..topic",
+		"log --no-show-signature --format=%an origin/main..HEAD",
+		"log --no-show-signature --format=%H " + sha + ".." + sha, "log --no-show-signature --format=%H HEAD..HEAD -n 5",
+		"log --no-show-signature --format=%H main...topic",
+		"ls-files -v -z --full-name :/", "ls-files -v -z --full-name -c :/", "ls-files -v -z --full-name -m :/",
+		"ls-files -v -z --full-name -d -m :/", "ls-files -v -z --full-name --exclude-standard -o :/",
+		"ls-files -z --full-name :/",
+		"status --porcelain=v2 --branch -z --untracked-files=no", "status --porcelain=v2 --branch -z --ignored",
+		"status --porcelain=v2 --branch -z -uall", "status --porcelain=v2 --branch -z --no-renames",
+		"status", "log -1", "commit --allow-empty -m x -q --no-verify",
+		"status --porcelain=v2 --branch -z --ignored -uall --no-renames",
+		// claustrum's own, not measured.
+		"rev-list --left-right --count main", "rev-list --left-right --count ..topic",
+		"rev-list --left-right --count main...-x", "show --no-textconv --no-ext-diff HEAD --",
+	}
+	for _, row := range allowed {
+		if got := PaneShapeRefusal(strings.Fields(row)); got != "" {
+			t.Errorf("PaneShapeRefusal(%q) = %q, want none", row, got)
+		}
+	}
+	for _, row := range refused {
+		args := strings.Fields(row)
+		want := fmt.Sprintf("not one of the Changes pane's git commands (%d arguments)", len(args))
+		if got := PaneShapeRefusal(args); got != want {
+			t.Errorf("PaneShapeRefusal(%q) = %q, want %q", row, got, want)
+		}
+	}
+	// Two rows hold a value that strings.Fields cannot carry: an empty ref is
+	// refused, and a path with a space runs.
+	if got := PaneShapeRefusal([]string{"rev-parse", "--verify", ""}); got != "not one of the Changes pane's git commands (3 arguments)" {
+		t.Errorf("an empty ref: %q, want the refusal", got)
+	}
+	if got := PaneShapeRefusal([]string{"show", "--no-textconv", "--no-ext-diff", "HEAD:a b.txt", "--"}); got != "" {
+		t.Errorf("a path with a space: %q, want none", got)
 	}
 }
 
@@ -154,7 +232,7 @@ func TestPaneGitRunShadow(t *testing.T) {
 	if v, _ := envValue(env, "GIT_CONFIG_KEY_0"); v != "hook.enabled" {
 		t.Errorf("GIT_CONFIG_KEY_0 = %q, want hook.enabled", v)
 	}
-	if !slices.Equal(run.Args, paneArgv(paneShapeOf([]string{"rev-parse", "--show-toplevel"}), nil)) {
+	if top := []string{"rev-parse", "--show-toplevel"}; !slices.Equal(run.Args, paneArgv(paneShapeOf(top), top, nil)) {
 		t.Errorf("Args = %q", run.Args)
 	}
 	cmd := gitCommand(run.Args...)
