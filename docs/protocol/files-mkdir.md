@@ -6,10 +6,10 @@
 
 | Parameter | Meaning |
 |---|---|
-| `parent` | An absolute, clean path: no `.` or `..` component, no `//`, no trailing `/`, no NUL. A `~` is not expanded (claustrum's own, not measured). A `.` inside an absolute path is claustrum's own, not measured. |
-| `name` | One name: not empty, not `.` or `..`, no `/`, no NUL, no space at the start or the end. A space at one end only is claustrum's own, not measured. |
+| `parent` | An absolute, clean path: no `.` or `..` component, no `//`, no trailing `/`, no NUL, no U+FFFD. A `~` is not expanded (claustrum's own, not measured). A `.` inside an absolute path is claustrum's own, not measured. |
+| `name` | One name: not empty, no `/` or `\`, no control character, no U+2028 to U+202E, no U+FFFD, no space or `.` at the end. A space at the start is allowed. U+2029 to U+202D and most controls are claustrum's own, not measured. |
 
-A new folder gets mode 0755 under the umask. An extra member is ignored (measured). A `mode` member and the mode under another umask are claustrum's own, not measured.
+A byte that is not UTF-8 reaches the test as U+FFFD (measured on Linux and macOS). A new folder gets mode 0777 under the umask (measured). An extra member is ignored (measured). A `mode` member is claustrum's own, not measured.
 
 ## Response
 
@@ -20,14 +20,25 @@ The result is `{"code":"<code>"}`, with `"errno":<n>` after it for an OS error. 
 | `created` | The only code that makes a folder. |
 | `exists_folder`, `exists_other`, `exists_link` | The name is a folder, another kind, or a link (a dangling link and a link to a file measured on Linux only). |
 | `parent_refused`, `name_refused` | The parameter test failed. The parent is tested first (claustrum's own, not measured). |
-| `parent_elsewhere` | The parent is a link. |
-| `parent_gone` | Errno 2 (no parent) or 20 (the parent is a file, measured on Linux). |
-| `name_too_long` | Errno 36 from the mkdir of the name (measured on Linux). On macOS claustrum sends 63 (claustrum's own, not measured). |
+| `parent_denied` | Errno 13 from the open of the parent (mode 0300 or 0111). |
+| `parent_gone` | Errno 2 (no parent, or a dangling link) or 20 (a file, or a link to one). |
+| `parent_elsewhere` | The open parent has another real path: a link is at or above it, or on macOS it is under `/tmp` or `/var/tmp`. |
+| `parent_unverified` | The read of that real path failed (errno 5, measured on Linux). |
+
+### Errnos of the mkdir
+
+| Code | Cause |
+|---|---|
 | `denied` | Errno 13 (a parent with mode 0555). |
+| `name_too_long` | Errno 36 on Linux, 63 on macOS. |
+| `read_only_fs` | Errno 30, also the parent `/` on macOS. |
+| `not_permitted`, `no_space`, `over_quota`, `parent_removed` | Errno 1, 28, 122 or 2 (measured on Linux). |
+| `name_unsupported` | Errno 22 or 84 (measured on Linux). |
+| `failed` | Errno 5 (measured on Linux), or another errno (claustrum's own, not measured). |
 
 A `parent` of a wrong type and absent `params` give `-32602` `Invalid params` and no log line (measured on Linux).
 
-claustrum's own, not measured: the folder is made through a handle of the parent that follows no link, so a swapped parent cannot move it. A link above the parent is followed. A parent that does not open for reading gives `denied`. Any other errno, also 36 from the open of the parent, gives `-32603` `files.mkdir: error <n>: <OS text>` and logs `[Files] mkdir: failed (error <n>: <OS text>)`.
+claustrum's own, not measured: the folder is made through the open handle of the parent, so a swapped parent cannot move it. On macOS `fcntl` `F_GETPATH` gives the real path. A parent open that fails with another errno, such as a link loop, gives `failed`.
 
 ## Differences from the reference
 
