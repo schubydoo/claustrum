@@ -13,8 +13,7 @@ Linux, macOS and Windows. `internal/git/githarden.go` holds the lists, and
 with an empty value (claustrum's own, not measured).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
-listing (`git config -z --list`) with the profile of that call. The settle call
-of a create has no listing (claustrum's own). Before its first
+listing (`git config -z --list`) with the profile of that call. Before its first
 listing, a request with no cached value runs the excludes read, `git config
 --includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
 gives it and the probe `git --attr-source=<empty tree> version`. There are two profiles:
@@ -24,9 +23,9 @@ gives it and the probe `git --attr-source=<empty tree> version`. There are two p
   `git.status` use it.
 - The light profile allows `https:ssh`. Most calls of `git.worktree_create` use it.
   In the states `shadow` and `fallback-git` without `"shadowDirOff":true`, the light
-  calls of a create carry the heavy variables, except the checkout, its listings and
-  the settle call (measured on Linux and macOS in the state `shadow`, and on Windows
-  in the state `fallback-git`, claustrum's own for the settle call).
+  calls of a create carry the heavy variables, except the checkout and its listings
+  (measured on Linux and macOS in the state `shadow`, and on Windows in the state
+  `fallback-git`).
 
 [The daemon's own git environment](#the-daemons-own-git-environment) gives the
 variables of the daemon that change these values. A variable that the daemon adds
@@ -397,7 +396,7 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
   measured on Linux and macOS). A filter refusal and the ssh door text of that
   failure then come before `timeout` too (claustrum's own, not measured). Windows
   keeps the drain and answers `timeout` there (claustrum's own, not measured).
-- The settle call of a create and the pair before it ([The settle step](git-worktree-create.md#the-settle-step)) have their own limit, and their stop stops no later call (claustrum's own).
+- The settle call of a create, its listing and the pair before it ([The settle step](git-worktree-create.md#the-settle-step)) have their own limit, and their stop stops no later call (claustrum's own).
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s
   bound of the call about the repository (measured on Linux).
 

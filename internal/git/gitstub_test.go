@@ -437,9 +437,11 @@ func runGitSlow(args []string) int {
 	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	// CLAUSTRUM_GITSTUB_STDINLOG names a file that gets the stdin of each call
-	// whose last argument is --stdin-paths, which the real git then reads as it
-	// is. A long-running hash-object ends with -w and keeps its stdin.
-	if log := os.Getenv("CLAUSTRUM_GITSTUB_STDINLOG"); log != "" && len(args) > 0 && args[len(args)-1] == "--stdin-paths" {
+	// whose last argument is --stdin-paths, and of each `cat-file --buffer
+	// --batch`, which the real git then reads as it is. A long-running
+	// hash-object ends with -w and keeps its stdin.
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_STDINLOG"); log != "" && len(args) > 0 &&
+		(args[len(args)-1] == "--stdin-paths" || slices.Contains(args, "--buffer") && args[len(args)-1] == "--batch") {
 		in, _ := io.ReadAll(os.Stdin)
 		appendLine(log, string(in))
 		cmd.Stdin = bytes.NewReader(in)

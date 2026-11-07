@@ -422,8 +422,7 @@ func (h liveFixture) wantProbeFirst(t *testing.T, cell string, calls []envCall, 
 }
 
 // dropFixtureWorktree removes the linked worktree of the fixture and its
-// registrations folder, as in the repository: no pair of calls then runs
-// before the add (pairBeforeAdd).
+// registrations folder, as in the repository.
 func (h liveFixture) dropFixtureWorktree(t *testing.T) {
 	t.Helper()
 	buildGit(t, h.repo, "worktree", "remove", "--force", h.wt)

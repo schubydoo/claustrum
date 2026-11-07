@@ -92,12 +92,13 @@ func settleLimit(ctx context.Context, s *gitStop) (limit time.Duration, ok bool)
 //
 // When the --attr-source probe of attrSourceArgs answers "not supported", no call
 // runs. On 683cc6a9 the probe exits 129, `git version` follows, and no diff-files
-// call comes (measured on Linux). The rows quote no full argv, so its form is
-// claustrum's own. The option comes first. Then comes the form of the light calls
-// of a create: the items of a `config.worktree` file (gitUse.checkoutFront), the
-// light profile, and the --git-dir and --work-tree of the checkout. The
-// environment is the light environment of the checkout without its hook pins,
-// filter items and LANGUAGE=C (claustrum's own).
+// call comes (measured on Linux). The option comes first. Then come the items of
+// a `config.worktree` file (gitUse.checkoutFront, claustrum's own), the heavy
+// profile, and the --git-dir and --work-tree of the checkout. Before the call a
+// `--git-dir=<git dir> config -z --list` runs in the leaf with the heavy
+// listing environment. The call gets the heavy environment with the hook pins of
+// that listing, then GIT_INDEX_FILE. b3081b51 and c9125eb8 run it so (measured
+// on Linux, macOS and Windows). The order of the variables is measured on Linux.
 //
 // The stop is the one of gitRun on each system, SIGTERM on Linux and macOS, and a
 // kill gitStopGrace later. It does not go through the gitStop of the request, so no
@@ -113,8 +114,8 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if attr == nil {
 		return
 	}
-	// The time left is read after the probe of attrSourceArgs, right before the
-	// call (claustrum's own).
+	// The time left is first read after the probe of attrSourceArgs (claustrum's
+	// own).
 	limit, ok := settleLimit(callerCtx, u.stop)
 	if !ok {
 		return
@@ -127,13 +128,22 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if limit, ok = settleLimit(callerCtx, u.stop); !ok {
 		return
 	}
+	listCtx, listCancel := context.WithTimeout(context.Background(), limit)
+	hooks := runListing(listCtx, leaf, gitDir, precursorEnv(true, pin)).hooks()
+	listCancel()
+	// The time left is read again after the listing, right before the call, so a
+	// slow listing does not take the time of the call (claustrum's own, not
+	// measured).
+	if limit, ok = settleLimit(callerCtx, u.stop); !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(false,
+	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(true,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "diff-files", "--quiet", "--ignore-submodules=all"))...)
 	cmd := gitCommandContext(ctx, args...)
 	cmd.Dir = leaf
-	cmd.Env = append(hardenedGitEnv(false, pin, nil), "GIT_INDEX_FILE="+indexFile)
+	cmd.Env = append(hardenedGitEnv(true, pin, hooks), "GIT_INDEX_FILE="+indexFile)
 	cmd.Cancel = func() error { return stopGitProcess(cmd.Process) }
 	cmd.WaitDelay = gitStopGrace
 	err := runHeld(cmd, cmd.Run)

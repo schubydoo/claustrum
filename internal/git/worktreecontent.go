@@ -64,6 +64,10 @@ type contentCheck struct {
 	batch *objectBatch
 	// hashers are the running long-running hash-object calls, by object kind.
 	hashers map[string]*objectBatch
+	// stopped is true after a long-running git of the check stopped. The batch
+	// and the hash-object calls then take no more objects, and each level of
+	// trees below the top is read per folder depth (readLevel).
+	stopped bool
 	// separate is the count of commits and trees that separate `cat-file`
 	// runs read.
 	separate int
@@ -151,7 +155,7 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	if !ok {
 		return nil, c.repositoryRefusal("the commit names no tree") // not measured
 	}
-	files, text = c.walk(tree, "", true)
+	files, text = c.walk(tree)
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
 	}
@@ -310,15 +314,14 @@ func failText(stderr string, err error) string {
 // readObject reads one object of the commit (catFile) and hashes it again
 // into the folder of the check. While the batch runs, the long-running
 // hash-object of the kind hashes it. After that git stopped, a separate run
-// reads the object again (c9125eb8, measured on Linux), and claustrum ends the
-// batch (claustrum's own, not measured). text is the detail of a
-// failure, or "".
+// reads the object again, and the batch runs on unused to the end of the
+// check (c9125eb8, measured on Linux). text is the detail of a failure, or "".
 func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 	body, stderr, err := c.catFile(kind, id)
 	if err != nil {
 		return nil, failText(stderr, err)
 	}
-	if c.batch != nil {
+	if c.batch != nil && !c.stopped {
 		got, err := c.hashLong(kind, body)
 		switch {
 		case err == nil:
@@ -329,7 +332,7 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 			return body, ""
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))
-			c.stopBatch()
+			c.stopped = true
 			if body, stderr, err = c.catFile(kind, id); err != nil {
 				return nil, failText(stderr, err)
 			}
@@ -373,22 +376,72 @@ func treeOfCommit(body []byte) (string, bool) {
 	return string(id), true
 }
 
-// walk reads the tree id and returns the files of the check in it, in the
-// order of the tree. top is true for the top tree of the commit, where only
-// the names of the check count. Below .claude every blob and link counts. A
-// submodule entry is not compared (claustrum's own, not measured).
-func (c *contentCheck) walk(id, prefix string, top bool) ([]contentFile, string) {
-	body, text := c.readObject("tree", id)
-	if text != "" {
-		return nil, text
+// treeWalk is one tree of the walk, with its files of the check and the trees
+// below it, in the order of the tree.
+type treeWalk struct {
+	id, prefix string
+	top        bool
+	entries    []walkEntry
+}
+
+// walkEntry is one file of the check, or a tree below when sub is set.
+type walkEntry struct {
+	file contentFile
+	sub  *treeWalk
+}
+
+// files is the files of the check in t and the trees below it, in the order of
+// the trees.
+func (t *treeWalk) files(out []contentFile) []contentFile {
+	for _, e := range t.entries {
+		if e.sub != nil {
+			out = e.sub.files(out)
+			continue
+		}
+		out = append(out, e.file)
 	}
+	return out
+}
+
+// walk reads the top tree id and the trees below it, one level of folder depth
+// after the other (readLevel), and returns the files of the check in the order
+// of the trees. In the top tree only the names of the check count. Below
+// .claude every blob and link counts. A submodule entry is not compared
+// (claustrum's own, not measured). Which object a refusal names when two are
+// bad is claustrum's own, not measured. The order across levels is claustrum's
+// own, not measured.
+func (c *contentCheck) walk(id string) ([]contentFile, string) {
+	top := &treeWalk{id: id, top: true}
+	for level := []*treeWalk{top}; len(level) > 0; {
+		bodies, text := c.readLevel(level)
+		if text != "" {
+			return nil, text
+		}
+		var next []*treeWalk
+		for i, t := range level {
+			if text := c.treeEntries(t, bodies[i]); text != "" {
+				return nil, text
+			}
+			for _, e := range t.entries {
+				if e.sub != nil {
+					next = append(next, e.sub)
+				}
+			}
+		}
+		level = next
+	}
+	return top.files(nil), ""
+}
+
+// treeEntries reads the entries of the tree t from its body.
+func (c *contentCheck) treeEntries(t *treeWalk, body []byte) string {
+	id, prefix, top := t.id, t.prefix, t.top
 	idLen := len(c.commit) / 2
-	var files []contentFile
 	for len(body) > 0 {
 		sp := bytes.IndexByte(body, ' ')
 		nul := bytes.IndexByte(body, 0)
 		if sp < 0 || nul < sp || len(body) < nul+1+idLen {
-			return nil, "the stored tree " + id + " cannot be read" // not measured
+			return "the stored tree " + id + " cannot be read" // not measured
 		}
 		mode, name := string(body[:sp]), string(body[sp+1:nul])
 		entry := fmt.Sprintf("%x", body[nul+1:nul+1+idLen])
@@ -403,16 +456,12 @@ func (c *contentCheck) walk(id, prefix string, top bool) ([]contentFile, string)
 		}
 		switch {
 		case isTree && (!top || strings.EqualFold(name, ".claude")):
-			sub, text := c.walk(entry, prefix+name+"/", false)
-			if text != "" {
-				return nil, text
-			}
-			files = append(files, sub...)
+			t.entries = append(t.entries, walkEntry{sub: &treeWalk{id: entry, prefix: prefix + name + "/"}})
 		case isFile:
-			files = append(files, contentFile{path: prefix + name, mode: mode, id: entry})
+			t.entries = append(t.entries, walkEntry{file: contentFile{path: prefix + name, mode: mode, id: entry}})
 		}
 	}
-	return files, ""
+	return ""
 }
 
 // topContentName reports whether name at the top of the commit is a name of
