@@ -260,8 +260,10 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	// content check of a commit with no file of the check (worktreecontent.go), 23.
 	// The pair of the core.fileMode read of that check makes 25. With one
 	// `cat-file --batch` pair for the commit and the tree, claustrum makes 23.
-	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 23}) {
-		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 23", got)
+	// b3081b51 and c9125eb8 run the pair before the add with no registrations
+	// folder too, and a listing before the settle call, so the create makes 26.
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 26}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 26", got)
 	}
 }
 

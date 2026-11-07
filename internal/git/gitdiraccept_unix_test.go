@@ -184,14 +184,15 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 	for _, row := range []struct {
 		name, step, entry, want string
 		// after is the number of git calls after `rev-parse --absolute-git-dir`,
-		// or -1 for a row with no record.
+		// or -1 for a row with no record. A count above 0 has the two calls of
+		// the pair before the add first.
 		after int
 	}{
-		{"swap-copy: a link to a copy after the gitdir call", "answered", "link to the copy", prepare, 3},
-		{"swap-marker: a link to no repository after the gitdir call", "answered", "none", list, 1},
+		{"swap-copy: a link to a copy after the gitdir call", "answered", "link to the copy", prepare, 5},
+		{"swap-marker: a link to no repository after the gitdir call", "answered", "none", list, 3},
 		{"a file that names X", "leaf", "file", "git worktree add failed: cannot locate the repository's git directory: exit status 128", -1},
 		{"swc-file: a file that names X after the gitdir call", "answered", "file", "git worktree add failed: cannot locate the repository's git directory: lstat <gitdir>/commondir: not a directory", 0},
-		{"swc-link: a link to X after the gitdir call", "answered", "link", prepare, 3},
+		{"swc-link: a link to X after the gitdir call", "answered", "link", prepare, 5},
 		{"a link to X before the add", "add", "link", prepare, -1},
 		{"another real directory", "gitdir", "copy", prepare, -1},
 		{"no repository before the add", "add", "none", list, -1},
@@ -199,7 +200,10 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			// The rows do not show a registrations folder in the repository.
-			// Without one the create runs no pair before the add (pairBeforeAdd).
+			// Without one 5fd08069 runs no pair before the add. b3081b51 and
+			// c9125eb8 run it in the first create of a repository (pairBeforeAdd).
+			// With a swap that is not measured: the pair runs through the new
+			// entry, and its calls change nothing.
 			if err := os.RemoveAll(filepath.Join(f.gitDir, worktreesSubdir)); err != nil {
 				t.Fatal(err)
 			}
@@ -252,11 +256,15 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 			if row.after > 0 {
 				held := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--absolute-git-dir") })
 				rest := calls[held+1:]
+				if !slices.Contains(rest[0].argv, "--list") || !slices.Contains(rest[1].argv, "--show-toplevel") {
+					t.Errorf("the first two calls after the gitdir call = %q and %q, want the pair before the add", rest[0].argv, rest[1].argv)
+				}
+				rest = rest[2:]
 				last := rest[len(rest)-1]
 				if !slices.Contains(last.argv, "--list") || last.cwd != f.repo {
 					t.Errorf("the last call = %q in %s, want the listing of the add in the repository", last.argv, last.cwd)
 				}
-				if row.after == 1 {
+				if len(rest) == 1 {
 					if !slices.Contains(last.env, "GIT_DIR="+os.DevNull) {
 						t.Errorf("the listing has no GIT_DIR=%s: %q", os.DevNull, last.env)
 					}
