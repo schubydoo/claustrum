@@ -15,12 +15,16 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | Parameter | Required | Meaning |
 |---|---|---|
 | `id` | yes | Any string. The id of the process in each later `process.*` request and in each stream frame. |
-| `command` | yes | The program. A bare name is looked up on the `PATH` of the daemon. With `launcher`, it must be an absolute path. |
+| `command` | yes | The program. A bare name is looked up on the `PATH` of the daemon. With `launcher`, it must be an absolute path. With `launcherSuppliesCli`, it is `""`. |
 | `args` | no | The arguments after the program, as strings. |
 | `cwd` | no | The working directory of the child. A leading `~` is expanded, as in [Tilde expansion](../PROTOCOL.md#tilde-expansion-in-path-params). Without it, the child gets the working directory of the daemon. |
 | `env` | no | An object of string values, merged over the daemon environment. See [The environment of the child](#the-environment-of-the-child). |
 | `disableShellAgentSocket` | no | `true` skips the SSH agent hand-off for this spawn. `null` counts as `false`. |
 | `launcher` | no | An array of strings that names a managed launcher. See [The managed launcher](#the-managed-launcher). Absent or `null` means no launcher. |
+| `launcherCheck` | no | With `launcher`, run [the file check](launcher-resolve.md#the-file-check-build-c9125eb8) on argv[0] (`c9125eb8`). |
+| `launcherSuppliesCli` | no | `true` with a `launcherCheck`: the launcher runs Claude Code itself (`c9125eb8`). See [A launcher check](#a-launcher-check-build-c9125eb8). |
+| `envOnlyIfSent` | no | A list of names, with `launcherSuppliesCli` (`c9125eb8`). Such a name reaches the child only from `env` (claustrum's own, not measured). |
+| `noLoginShell` | no | Accepted, and the spawn succeeds (`c9125eb8`, measured on Linux and Windows). It changes nothing (claustrum's own). |
 | `linkBound` | no | See [its page](process-link-bound.md). |
 | `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
 | `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux. Any other value counts as absent (claustrum's own). |
@@ -48,8 +52,9 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 |---|---|---|
 | `-32602` | `Invalid params` | No `params`, or a member that the method reads has the wrong type. A `launcher` that is not an array, or that holds an element that is not a string, gets it too. A `null` element becomes an empty argument. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
-| `-32602` | `Command is required` | `command` is absent or empty. |
-| `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. |
+| `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. |
+| `-32602` | `Command is required` | `command` is absent or empty, with no `launcherSuppliesCli`. |
+| `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
@@ -75,6 +80,8 @@ A failure starts no child and makes no record. It logs the failed-start line of 
 ### The reason member (build `52d82f0a`)
 
 A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params`, `Command is required` and `Process ID is required` (claustrum's own) carry none.
+
+A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"<fault>","reason":"launcher"}`. Windows adds `windows_host` to every launcher refusal. Linux adds a fault of [the file check](launcher-resolve.md#the-file-check-build-c9125eb8). A refusal with no `launcherCheck` on Linux and macOS keeps `{"reason":"launcher"}` (claustrum's own, not measured).
 
 | Reason | Linux | Windows |
 |---|---|---|
@@ -193,6 +200,16 @@ The checks run in this order. Step 1 is the Windows rule. The other steps are me
 claustrum's own: step 1 comes before step 2, step 5 before the launcher starts, and any other start failure gives its errno text. The step 6 frames of claustrum are tested, not measured.
 
 A started launcher logs the start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes), which names the first element of `launcher` only. A refusal writes no `[LauncherHandler]` line.
+
+#### A launcher check (build `c9125eb8`)
+
+With `launcherSuppliesCli` the child runs as `<launcher...> <args...>`, with no command, and step 5 does not run. With no `args` the launcher gets no args (measured on Linux).
+
+- On Windows step 1 adds the fault `windows_host`.
+- On macOS a `launcherCheck` gets `-32004 … sshHostLauncher cannot be used with a macOS host: …` with the fault `macos_host`, before any file test. The text is on [the resolve page](launcher-resolve.md#platform-notes).
+- On Linux step 3 runs the file check. `[]` gets the text for no launcher, with the fault `not_absolute` (measured with `launcherSuppliesCli`).
+
+claustrum's own: the macOS refusal comes before step 2. With a command, the own-path test runs first and has no fault, and `[]` gets `not_absolute` too.
 
 ## Platform notes
 

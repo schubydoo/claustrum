@@ -292,3 +292,16 @@ type ManagedLauncherResult struct {
 	Reason string   `json:"reason,omitempty"`
 	Path   string   `json:"path,omitempty"`
 }
+
+// LauncherCheckResult is the launcher.resolve reply to a request with a launcherCheck
+// (c9125eb8). Measured on Linux and macOS:
+//
+//	{"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}
+//	{"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
+type LauncherCheckResult struct {
+	Status         string   `json:"status"`
+	Argv           []string `json:"argv,omitempty"`
+	Reason         string   `json:"reason,omitempty"`
+	Fault          string   `json:"fault,omitempty"`
+	HostPolicySeen bool     `json:"hostPolicySeen"`
+}

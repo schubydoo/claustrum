@@ -15,6 +15,8 @@ An untagged rule on this page matches build `89cb6289`, measured on Linux. A rul
 | Parameter | Required | Meaning |
 |---|---|---|
 | `cliPath` | yes | The path of the CLI that the launcher is to run. Any non-empty string is accepted, a relative one too. The daemon does not `~`-expand it (claustrum's own) (not measured). |
+| `path` | no | A launcher to check, with `launcherCheck` (`c9125eb8`). |
+| `launcherCheck` | no | An object: `sha256`, a list of digests, and `ownerUid`, a uid (`c9125eb8`). See [The file check](#the-file-check-build-c9125eb8). |
 
 ## Response
 
@@ -34,6 +36,15 @@ The result has one of four shapes. Each keeps this member order:
 | `unusable` | A value is set, but the daemon refuses it. `reason` says why. |
 | `unreadable` | A settings file or the drop-in folder cannot be read. `path` names it. |
 
+With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, measured on Linux):
+
+```jsonc
+{"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}
+{"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
+```
+
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file and a file that is not JSON (measured on Linux and macOS). Without `path` and `launcherCheck` the reply is one of the four shapes. So is the reply to a `launcherCheck` with no `path` on Linux and Windows (claustrum's own, not measured).
+
 The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
 The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` come out as JSON escapes, and so does U+2028 in an `argv`. U+0085, U+FFFD and the dash U+2014 (bytes `e2 80 94`) of the reason texts stay raw.
@@ -44,6 +55,7 @@ The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` co
 |---|---|---|
 | `-32602` | `Invalid params` | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string. |
 | `-32602` | `cliPath is required` | `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` (measured on Windows). |
+| `-32602` | `launcherCheck is required with path` | A `path` with no `launcherCheck` (`c9125eb8`). The error has no `data`. |
 | `-32601` | `Unknown method: launcher.<x>` | Another method of the `launcher.*` namespace. |
 
 ## Behavior
@@ -109,6 +121,42 @@ The log line writes these texts raw. The frame escapes them as in [Response](#re
 - A symbolic link to an executable file is usable, and `argv` keeps the link path. argv[0] is quoted as parsed, not cleaned or resolved.
 - A long argv[0] is cut in the text at 256 bytes, back to the start of a character, and `…` follows inside the backticks. The log line shows the same cut. `argv` keeps the whole path. The exact limit is claustrum's own.
 
+### The file check (build `c9125eb8`)
+
+Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `path`, or argv[0] of a [spawn](process-spawn.md#a-launcher-check-build-c9125eb8). `<L>` is that file and `<D>` the item at fault. The texts are measured on Linux.
+
+#### Faults of the file
+
+| `fault` | Case | `reason` |
+|---|---|---|
+| `not_absolute` | A relative path | `the launcher must be an absolute path, not a bare name resolved via PATH` |
+| `script_suffix` | `.js`, `.ts` or `.mjs`, and `.tsx` or `.jsx` (claustrum's own). `X.JS` passes | ``launcher `<L>` ends like a JavaScript or TypeScript source file, and no launcher may. Rename it.`` |
+| `missing` | Missing, a dangling link or a folder | ``launcher `<L>` does not exist or is not an executable regular file`` |
+| `missing` | Mode 0644, or a mount with `noexec` | ``launcher `<L>` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)`` |
+| `unreadable` | The read fails | ``launcher `<L>` cannot be read for its digest: <errno text>`` |
+| `unreadable` | More than 67108864 bytes | ``launcher `<L>` is larger than 64 MiB, the most that can be checked against a digest`` |
+| `digest` | No digest of `sha256` matches | ``launcher `<L>` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.`` |
+
+#### Faults of the walk
+
+The walk tests `/`, each folder down to the file, and the file.
+
+| `fault` | Case | `reason` |
+|---|---|---|
+| `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
+| `writable` | NFS, with no digest | `` `<D>` is on a file system (NFS) whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256. `` |
+| `owner` | Owned by the uid of the daemon | `` `<D>` belongs to the account that signs in (uid <n>). Root, or another account named as ownerUid in the policy, must own the launcher and every folder above it. `` |
+| `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
+| `owner` | Owned by another uid | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. If you trust uid <n> with the launcher, you can name it as ownerUid in sshHostLauncher instead. `` |
+
+#### Rules of the check
+
+- `<mode>` has four octal digits, as in `0775` and `1777`. The group of the file is not tested.
+- Root owns the file and every folder above it. A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them (claustrum's own, not measured). An `ownerUid` in the settings file lifts nothing.
+- With no digest, `{}` or `"sha256":[]`, the file is not read. A digest matches in any letter case. A short one matches nothing.
+- Links pass, a chain of 40 too. The walk tests the folders of the path as written, then those after the links (claustrum's own).
+- A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
+
 ### Log lines
 
 An unusable or unreadable answer writes one line, at WARN (claustrum's own). A usable or none answer writes none.
@@ -120,15 +168,23 @@ An unusable or unreadable answer writes one line, at WARN (claustrum's own). A u
 
 A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
+An unusable answer of [the file check](#the-file-check-build-c9125eb8) writes this line each time, a repeat too (`c9125eb8`, measured on macOS):
+
+```text
+[LauncherHandler] the launcher that the desktop names is refused: <reason>
+```
+
 ## Platform notes
 
 === "Linux and macOS"
 
     The settings folder is `/etc/claude-code` on Linux and `/Library/Application Support/ClaudeCode` on macOS. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is honored as in [Rare states](#rare-states).
 
+    On macOS each resolve with a `launcherCheck` answers unusable with the fault `macos_host`, before any file test. That holds with no `path` and with no settings file (`c9125eb8`). The reason is `sshHostLauncher cannot be used with a macOS host: an access-control list there can let another account change the launcher without this file check seeing it.`
+
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged.
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. A `path` with a `launcherCheck` answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host` (claustrum's own, not measured).
 
 ## Rare states
 

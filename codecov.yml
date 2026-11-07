@@ -178,6 +178,15 @@ component_management:
         - internal/install/managedlauncher_windows.go
         - internal/install/managedlauncherdir_darwin.go
         - internal/install/managedlauncherdir_other.go
+        # c9125eb8 launcherCheck file check and launcher.resolve with a path, with its OS split.
+        - internal/install/launchercheck.go
+        - internal/install/launcherresolve.go
+        - internal/install/launcherfacts_linux.go
+        - internal/install/launcherfacts_other.go
+        - internal/install/launcherhost_darwin.go
+        - internal/install/launcherhost_other.go
+        - internal/install/launcherhost_windows.go
+        - internal/install/fortest_launchercheck.go
         - internal/git/worktreecopy.go
         # The .worktreeinclude directory scan: version gate, opening rules, caps.
         - internal/git/worktreeinclude.go

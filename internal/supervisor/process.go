@@ -735,7 +735,14 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 // and the process keeps its answer in cliTempRoot. folders are the session folders
 // of the spawn (sessionfolders.go), recorded before the start.
 func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*Proc, error) {
-	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil)
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil, nil)
+}
+
+// SpawnLaunched is the spawn of a launcher with the launcherCheck, launcherSuppliesCli
+// or envOnlyIfSent members (c9125eb8, LauncherOpts). A launched spawn takes no
+// link-bound time and no private temp folder, as in SpawnWithTempRoot.
+func (m *Manager) SpawnLaunched(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher []string, lo LauncherOpts, folders []string) (*Proc, error) {
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, &launcher, 0, false, folders, nil, &lo)
 }
 
 // GitReadStep builds the run of a "gitRead":true spawn. It gets the environment
@@ -748,19 +755,27 @@ type GitReadStep func(env []string) (args, childEnv []string, release func(), er
 // built, so a missing cwd gets the cwd refusal of every spawn (c9125eb8, measured
 // on Linux). A step error fails the spawn.
 func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, step GitReadStep) (*Proc, error) {
-	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, step)
+	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, step, nil)
 }
 
-// spawnWith is SpawnWithTempRoot with the step of a gitRead spawn, or nil.
-func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead GitReadStep) (*Proc, error) {
+// spawnWith is SpawnWithTempRoot with the step of a gitRead spawn, or nil, and the
+// launcher members of SpawnLaunched, or nil.
+func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead GitReadStep, lo *LauncherOpts) (*Proc, error) {
 	path, argv := command, args
+	supplies := lo != nil && lo.Supplies
 	if launcher != nil {
-		if err := RefuseManagedLauncher(*launcher, command); err != nil {
+		if err := RefuseManagedLauncher(*launcher, command, lo); err != nil {
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
 		path = (*launcher)[0]
-		argv = append(append(append([]string{}, (*launcher)[1:]...), command), args...)
+		argv = append([]string{}, (*launcher)[1:]...)
+		// A launcher that supplies Claude Code gets the args with no CLI path
+		// (c9125eb8, measured on Linux).
+		if !supplies {
+			argv = append(argv, command)
+		}
+		argv = append(argv, args...)
 	}
 	// Read the drain cap ONCE, here in the caller's goroutine, rather than from
 	// inside the exit waiter. The waiter outlives the request — and outlives the
@@ -835,6 +850,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
+	if lo != nil {
+		cmd.Env = dropUnsentEnv(cmd.Env, lo.EnvOnlyIfSent, env)
+	}
 	// A bare command name that PATH found in a session folder (sessionfolders.go).
 	if launcher == nil {
 		bareCommandStart(cmd, command, env)
@@ -853,7 +871,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		cmd.Env = childEnv
 	}
 	defer releaseGitRead()
-	if launcher != nil {
+	if launcher != nil && !supplies {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
 		// before this failure (measured log order).
@@ -1083,10 +1101,14 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	// With a launcher the line names the launcher's argv[0] only (measured).
 	program := ""
-	if launcher != nil {
+	switch {
+	case supplies:
+		// c9125eb8, measured on Linux.
+		logging.Infof("[process.Manager] Process %s started, PID=%d, via launcher %s, which supplies Claude Code", id, cmd.Process.Pid, path)
+	case launcher != nil:
 		program = command
 		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
-	} else {
+	default:
 		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	}
 	metrics.Met.Spawns.Add(1)

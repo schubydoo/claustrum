@@ -1,0 +1,249 @@
+package install
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// The file check of a launcherCheck (c9125eb8). process.spawn and launcher.resolve
+// run it on a launcher when the request carries a launcherCheck. Only Linux runs it:
+// macOS and Windows refuse first (LauncherCheckHostRefusal). Every text is copied byte
+// for byte from a capture of c9125eb8 on Linux, unless its comment says "claustrum's
+// own, not measured".
+
+// LauncherCheck is the launcherCheck member of process.spawn and launcher.resolve. sha256
+// is a list of digests (a string gets Invalid params, measured on Windows). ownerUid
+// names one more uid that can own the launcher and its folders. A root-owned launcher
+// passes with it (measured on Linux). The lift for that uid is claustrum's own, not
+// measured. path is in the shape (measured on Windows). claustrum
+// reads it for the shape only, and the check tests the launcher itself (claustrum's
+// own, not measured).
+type LauncherCheck struct {
+	SHA256   []string `json:"sha256"`
+	OwnerUID *uint32  `json:"ownerUid"`
+	Path     string   `json:"path"`
+}
+
+// The launcherFault values of a refusal.
+const (
+	FaultWritable     = "writable"
+	FaultOwner        = "owner"
+	FaultScriptSuffix = "script_suffix"
+	FaultMissing      = "missing"
+	FaultUnreadable   = "unreadable"
+	FaultDigest       = "digest"
+	FaultNotAbsolute  = "not_absolute"
+	FaultMacOSHost    = "macos_host"
+	FaultWindowsHost  = "windows_host"
+)
+
+// launcherDigestMax is the largest launcher that the digest test reads: 67108864 bytes
+// pass, 67108865 bytes are refused.
+const launcherDigestMax = 64 << 20
+
+// nobodyUID is the uid that a login sees for an owner that it cannot map.
+const nobodyUID = 65534
+
+// NoLauncherText is the reason of an empty launcher array.
+const NoLauncherText = managedNoLauncher
+
+// launcherFacts are the facts of one path that the walk tests: its owner, its mode
+// bits (the 12 low bits of st_mode) and whether it lies on NFS.
+type launcherFacts struct {
+	uid  uint32
+	mode uint32
+	nfs  bool
+}
+
+// launcherPathFacts and launcherOwnUID are seams, so a test fakes the owner, the mode
+// and the file system type, and runs as any user. Production never reassigns them.
+var (
+	launcherPathFacts = statLauncherFacts
+	launcherOwnUID    = os.Geteuid
+	// openLauncherFile opens the launcher for its digest. A seam, so a test makes the
+	// open fail without a mode-0711 file (root reads one).
+	openLauncherFile = os.Open
+)
+
+// CheckLauncherFile runs the file check on the launcher p. It returns the fault and
+// the reason text, or two empty strings when the launcher passes. The order is
+// claustrum's own, not measured, except where a row shows two faults of one launcher:
+//
+//  1. A relative p is not_absolute.
+//  2. A name with a script ending is script_suffix (the endings of Check). X.JS passes.
+//  3. A p that is missing, a dangling link or no regular file is missing.
+//  4. The walk: "/", each folder down to the launcher, then the launcher. It walks the
+//     folders of p as written, then the folders of p after its links (claustrum's own,
+//     not measured). Each item runs the NFS test, then the owner test, then the write
+//     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
+//     before its own folders (measured).
+//  5. A launcher that this account cannot run is missing.
+//  6. With digests: the size limit, the read, and the compare. Without digests the
+//     file is not read (measured: {} and an empty list pass).
+//
+// A folder or a file that changes between the check and the start is not guarded
+// (claustrum's own, not measured).
+func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
+	shown := managedShown(p)
+	switch {
+	case !filepath.IsAbs(p):
+		return FaultNotAbsolute, managedNotAbsolute
+	case hasManagedScriptExt(p):
+		return FaultScriptSuffix, "launcher `" + shown + "` ends like a JavaScript or TypeScript source file, and no launcher may. Rename it."
+	}
+	fi, err := os.Stat(p)
+	if err != nil || !fi.Mode().IsRegular() {
+		return FaultMissing, managedNotExecutable(p)
+	}
+	target, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return FaultMissing, managedNotExecutable(p)
+	}
+	digests := len(chk.SHA256) > 0
+	seen := map[string]bool{}
+	items := launcherFolders(filepath.Dir(filepath.Clean(p)))
+	// The folder that holds each link of the chain is tested too, so a link that sits
+	// in a folder another account can write is refused (claustrum's own, not measured:
+	// the measured link rows hold their links in a root-owned folder).
+	for _, d := range linkHolderFolders(p) {
+		items = append(items, launcherFolders(d)...)
+	}
+	items = append(items, append(launcherFolders(filepath.Dir(target)), target)...)
+	for _, item := range items {
+		if seen[item] {
+			continue
+		}
+		seen[item] = true
+		if f, r := checkLauncherItem(p, item, chk.OwnerUID, digests); f != "" {
+			return f, r
+		}
+	}
+	if !IsExecutableRegular(p) {
+		return FaultMissing, "launcher `" + shown + "` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)"
+	}
+	if !digests {
+		return "", ""
+	}
+	return checkLauncherDigest(target, shown, fi.Size(), chk.SHA256)
+}
+
+// linkHolderFolders walks the absolute path p one name at a time, as the system does,
+// and returns the real folder that holds each link it meets, in the folders and in
+// the chain of the last name. It stops after 255 links or on a read error: the
+// EvalSymlinks call before it has already refused such a path.
+func linkHolderFolders(p string) []string {
+	var out []string
+	resolved := string(filepath.Separator)
+	rest := strings.Split(p, string(filepath.Separator))
+	for hops := 0; len(rest) > 0; {
+		name := rest[0]
+		rest = rest[1:]
+		switch name {
+		case "", ".":
+			continue
+		case "..":
+			resolved = filepath.Dir(resolved)
+			continue
+		}
+		next := filepath.Join(resolved, name)
+		fi, err := os.Lstat(next)
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			resolved = next
+			continue
+		}
+		hops++
+		dest, err := os.Readlink(next)
+		if hops > 255 || err != nil {
+			return out
+		}
+		out = append(out, resolved)
+		if filepath.IsAbs(dest) {
+			resolved = string(filepath.Separator)
+		}
+		rest = append(strings.Split(dest, string(filepath.Separator)), rest...)
+	}
+	return out
+}
+
+// launcherFolders is "/" and each folder from the top down to dir.
+func launcherFolders(dir string) []string {
+	var out []string
+	for d := dir; ; d = filepath.Dir(d) {
+		out = append(out, d)
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
+// checkLauncherItem tests one item of the walk. Root owns a good item, or the
+// ownerUid of the launcherCheck does. A group or other write bit refuses it, the
+// sticky folder 1777 too. On NFS with no digest the item is refused, whatever its
+// owner and mode. On NFS with a digest the owner and write tests still run
+// (claustrum's own, not measured). An item whose facts cannot be read is missing
+// (claustrum's own, not measured).
+func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (fault, reason string) {
+	f, err := launcherPathFacts(item)
+	shown := "`" + managedShown(item) + "`"
+	if err != nil {
+		return FaultMissing, managedNotExecutable(launcher)
+	}
+	if f.nfs && !digests {
+		return FaultWritable, shown + " is on a file system (NFS) whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+	}
+	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
+		// The order of the three texts, for a daemon that runs as uid 65534, is
+		// claustrum's own, not measured.
+		switch {
+		case int64(f.uid) == int64(launcherOwnUID()):
+			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root, or another account named as ownerUid in the policy, must own the launcher and every folder above it.", shown, f.uid)
+		case f.uid == nobodyUID:
+			return FaultOwner, shown + " shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it."
+		default:
+			return FaultOwner, fmt.Sprintf("%s belongs to uid %d. Root must own the launcher and every folder above it. If you trust uid %d with the launcher, you can name it as ownerUid in sshHostLauncher instead.", shown, f.uid, f.uid)
+		}
+	}
+	if f.mode&0o022 != 0 {
+		return FaultWritable, fmt.Sprintf("%s can be changed by accounts other than its owner (mode %04o), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none.", shown, f.mode)
+	}
+	return "", ""
+}
+
+// checkLauncherDigest reads the launcher at target and compares its SHA-256 with each
+// digest, in any letter case. A file over the limit is not read. The read stops one
+// byte past the limit, so a file that grows after the stat is refused too.
+func checkLauncherDigest(target, shown string, size int64, want []string) (fault, reason string) {
+	tooBig := "launcher `" + shown + "` is larger than 64 MiB, the most that can be checked against a digest"
+	if size > launcherDigestMax {
+		return FaultUnreadable, tooBig
+	}
+	f, err := openLauncherFile(target)
+	if err != nil {
+		return FaultUnreadable, "launcher `" + shown + "` cannot be read for its digest: " + managedErrText(err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(f, launcherDigestMax+1))
+	if err != nil {
+		return FaultUnreadable, "launcher `" + shown + "` cannot be read for its digest: " + managedErrText(err)
+	}
+	if n > launcherDigestMax {
+		return FaultUnreadable, tooBig
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	for _, d := range want {
+		if strings.EqualFold(d, got) {
+			return "", ""
+		}
+	}
+	return FaultDigest, "launcher `" + shown + "` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest."
+}
