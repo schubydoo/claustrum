@@ -67,6 +67,17 @@ func binWithGit(t *testing.T, dir string) string {
 	return bin
 }
 
+// realTempDir is a new temp folder with its links resolved. On macOS
+// t.TempDir() lies below the link /var.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func recordDir(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), RecordFolderName)
@@ -99,7 +110,7 @@ func TestRememberWritesOneRecord(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "keep-me"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := t.TempDir()
+	s := realTempDir(t)
 	before := time.Now().UnixMilli()
 	_ = Remember(s)
 	sum := sha256.Sum256([]byte(s))
@@ -179,7 +190,7 @@ func TestRecordsCountAfterARestart(t *testing.T) {
 func TestFolderAtTheRecordNameFailsTheWrite(t *testing.T) {
 	dir := recordDir(t)
 	buf := captureLog(t)
-	s := t.TempDir()
+	s := realTempDir(t)
 	planted := filepath.Join(dir, RecordName(s))
 	if err := os.Mkdir(planted, 0o700); err != nil {
 		t.Fatal(err)
@@ -271,7 +282,7 @@ func TestUnsavedRecordIsTriedAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(UseForTest(dir))
-	s := t.TempDir()
+	s := realTempDir(t)
 	t.Setenv("PATH", binWithGit(t, s))
 	for i := range 2 {
 		if err := Remember(s); !errors.As(err, new(SaveError)) {
@@ -299,7 +310,7 @@ func TestCreateRecordRunsNoPrune(t *testing.T) {
 	old := recordCap
 	recordCap = 1
 	t.Cleanup(func() { recordCap = old })
-	first := t.TempDir()
+	first := realTempDir(t)
 	if err := Remember(first); err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +320,7 @@ func TestCreateRecordRunsNoPrune(t *testing.T) {
 	if got := names(t, dir); len(got) != 2 {
 		t.Errorf("after the create record the folder holds %v, want two records", got)
 	}
-	if err := Remember(t.TempDir()); err != nil {
+	if err := Remember(realTempDir(t)); err != nil {
 		t.Fatal(err)
 	}
 	if got := names(t, dir); len(got) != 1 {
@@ -328,7 +339,7 @@ func TestPruneRemovesTheLowestMsRecords(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "keep-me"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	base := t.TempDir()
+	base := realTempDir(t)
 	// Three planted records: the ms field rises with i, and the file time falls.
 	var planted []string
 	now := time.Now()
@@ -487,7 +498,7 @@ func TestRememberRecordsDuringTheHold(t *testing.T) {
 	dir := recordDir(t)
 	captureLog(t)
 	release := PauseCheck()
-	f := t.TempDir()
+	f := realTempDir(t)
 	_ = Remember(f)
 	release()
 	if got := names(t, dir); len(got) != 1 || got[0] != RecordName(f) {

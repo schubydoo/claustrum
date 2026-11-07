@@ -1008,14 +1008,15 @@ func indexInstallText(stderr string, installErr error) string {
 // reports that `rev-parse --absolute-git-dir` gave it. If git gave no answer, the
 // directory is that of repoGitDir, which need not exist: a subfolder of a
 // repository has no .git entry. err is the exec error of a call that failed. The
-// answer is stdout only, as for hardenedGitAnswer (claustrum's own).
-func worktreeBaseGitDir(u gitUse, repo string) (gitDir string, answered bool, err error) {
+// answer is stdout only, as for hardenedGitAnswer (claustrum's own). printed is
+// the answer as git printed it, or "".
+func worktreeBaseGitDir(u gitUse, repo string) (gitDir, printed string, answered bool, err error) {
 	ctx := u.stop.context()
 	out, err := gitOutput(ctx, hardenedGitCmd(ctx, u, repo, true, nil, "rev-parse", "--absolute-git-dir"))
 	if d := strings.TrimRight(string(out), "\n"); err == nil && d != "" {
-		return filepath.Clean(filepath.FromSlash(d)), true, nil
+		return filepath.Clean(filepath.FromSlash(d)), d, true, nil
 	}
-	return repoGitDir(repo), false, err
+	return repoGitDir(repo), "", false, err
 }
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no

@@ -48,6 +48,50 @@ func TestPickGitPassesOverALinkToASessionFolder(t *testing.T) {
 	}
 }
 
+// A session folder through a link gets a record of the path as given and one
+// of its resolved path. The resolve follows the link before a `..`, so a git
+// in the resolved folder of `<home>/lnk2/../x` is passed over. A folder with no
+// link gets one record.
+func TestRememberRecordsTheResolvedFolder(t *testing.T) {
+	dir := recordDir(t)
+	captureLog(t)
+	data, home := realTempDir(t), realTempDir(t)
+	for _, d := range []string{"new", "sub", "x"} {
+		if err := os.Mkdir(filepath.Join(data, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	linkAt := func(link, target string) {
+		if err := os.Symlink(target, filepath.Join(home, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	linkAt("lnk", data)
+	linkAt("lnk2", filepath.Join(data, "sub"))
+	plain := filepath.Join(home, "plain")
+	if err := os.Mkdir(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := binWithGit(t, filepath.Join(data, "x"))
+	_ = Remember(filepath.Join(home, "lnk", "new"), filepath.Join(home, "lnk2")+"/../x", plain)
+	var want []string
+	for _, p := range []string{filepath.Join(home, "lnk", "new"), filepath.Join(data, "new"),
+		filepath.Join(home, "x"), filepath.Join(data, "x"), plain} {
+		want = append(want, RecordName(p))
+	}
+	slices.Sort(want)
+	if got := names(t, dir); !slices.Equal(got, want) {
+		t.Errorf("the record folder holds %v, want %v", got, want)
+	}
+	other := binWithGit(t, t.TempDir())
+	t.Setenv("PATH", bin+":"+other)
+	cmd := exec.Command("git")
+	PickGit(cmd)
+	if want := filepath.Join(other, "git"); cmd.Err != nil || cmd.Path != want {
+		t.Errorf("git is %q (%v), want %q", cmd.Path, cmd.Err, want)
+	}
+}
+
 // A record folder that is a link takes no record: no write goes through it.
 func TestNoRecordThroughALinkedFolder(t *testing.T) {
 	target := t.TempDir()
@@ -82,5 +126,36 @@ func TestUnsavedRecordOfALinkedFolderRefuses(t *testing.T) {
 	t.Setenv("PATH", binWithGit(t, s))
 	if err := Remember(link); err == nil {
 		t.Error("Remember of a link to the folder of the first PATH entry = nil, want SaveError")
+	}
+}
+
+// A folder through a link that does not exist yet gets the record of its
+// resolved path too: the leading part that exists is resolved, and the missing
+// name is joined to it. Both records hold `0 0`. A git made there later is
+// passed over.
+func TestRememberRecordsTheResolvedMissingFolder(t *testing.T) {
+	dir := recordDir(t)
+	captureLog(t)
+	data, home := realTempDir(t), realTempDir(t)
+	if err := os.Mkdir(filepath.Join(data, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(data, "sub"), filepath.Join(home, "lnk2")); err != nil {
+		t.Fatal(err)
+	}
+	_ = Remember(filepath.Join(home, "lnk2") + "/../x")
+	for _, p := range []string{filepath.Join(home, "x"), filepath.Join(data, "x")} {
+		b, err := os.ReadFile(filepath.Join(dir, RecordName(p)))
+		if err != nil || !strings.HasSuffix(string(b), " 0 0\n"+p) {
+			t.Errorf("the record of %s holds %q (%v), want `<ms> 0 0` and the path", p, b, err)
+		}
+	}
+	bin := binWithGit(t, filepath.Join(data, "x"))
+	other := binWithGit(t, t.TempDir())
+	t.Setenv("PATH", bin+":"+other)
+	cmd := exec.Command("git")
+	PickGit(cmd)
+	if want := filepath.Join(other, "git"); cmd.Err != nil || cmd.Path != want {
+		t.Errorf("git is %q (%v), want %q", cmd.Path, cmd.Err, want)
 	}
 }

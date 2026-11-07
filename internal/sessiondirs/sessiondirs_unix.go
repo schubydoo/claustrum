@@ -20,6 +20,10 @@ func sameEnvName(a, b string) bool { return a == b }
 // warnBare is true: Linux and macOS log the warning of a bare command (measured).
 const warnBare = true
 
+// recordResolved is true: Linux and macOS add the resolved path of a session
+// folder (withResolved).
+const recordResolved = true
+
 // samePath compares two paths by text.
 func samePath(a, b string) bool { return a == b }
 

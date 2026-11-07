@@ -60,6 +60,13 @@ macOS and Windows), with mode 0700 (measured on Linux and macOS).
 - A new daemon reads the files at its start, so the folders of an earlier daemon count
   (measured on Linux, macOS and Windows). Other files in the folder stay.
 - A folder that has a record gets no new file (claustrum's own, not measured).
+- A spawn folder through a link gets a second file, for its resolved path. The resolve
+  follows the link before a `..`. So `<home>/lnk2/../x`, with `lnk2` a link to
+  `/data/w/sub`, gives `<home>/x` and `/data/w/x` (`b3081b51` and `c9125eb8`, measured
+  on Linux). On macOS `c9125eb8` writes both files also while `x` does not exist yet,
+  each with `0 0`, and then passes over a git in `/data/w/x` (measured on macOS). A
+  missing folder on Linux, more than one missing name or a `..` after one, Windows and
+  a create are claustrum's own: the last two get no second file (not measured).
 
 ### A write and the prune
 
