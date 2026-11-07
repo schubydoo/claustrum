@@ -60,6 +60,29 @@ type Conn struct {
 	stdinCond   *sync.Cond
 	stdinNext   uint64 // next ticket to hand out
 	stdinServed uint64 // ticket currently admitted
+
+	// ownEnv holds the entries of the last good server.adoptEnv of this connection
+	// that reach only its own children (see supervisor.Manager.TakeAdoptedEnv).
+	ownEnvMu sync.Mutex
+	ownEnv   []string
+}
+
+// SetOwnEnv replaces the own entries of the adopted environment of c.
+func (c *Conn) SetOwnEnv(env []string) {
+	c.ownEnvMu.Lock()
+	defer c.ownEnvMu.Unlock()
+	c.ownEnv = env
+}
+
+// OwnEnv is a copy of the own entries of the adopted environment of c. A nil conn
+// has none.
+func (c *Conn) OwnEnv() []string {
+	if c == nil {
+		return nil
+	}
+	c.ownEnvMu.Lock()
+	defer c.ownEnvMu.Unlock()
+	return append([]string(nil), c.ownEnv...)
 }
 
 // New builds a Conn. The accept loop passes every value. A test passes only

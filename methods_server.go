@@ -10,8 +10,11 @@ import (
 	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
-var capabilityMethods = []string{
+var capabilityMethods = append(append([]string{
 	"server.ping", "server.capabilities", methodShutdown,
+	// c9125eb8 lists server.adoptEnv 4th, right after server.shutdown (measured on
+	// Linux, macOS and Windows).
+	methodAdoptEnv,
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 	"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 	// launcher.resolve (89cb6289) sits between git.worktree_remove and process.spawn
@@ -20,10 +23,10 @@ var capabilityMethods = []string{
 	"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
 	// plugins.prune (19f30c46) is appended last.
 	"plugins.prune",
+	// c9125eb8 lists files.mkdir here on Linux and macOS (osCapabilityMethods).
 	// 683cc6a9 lists files.realpath after plugins.prune (measured on Linux, macOS
 	// and Windows). It takes the method count to 21.
-	"files.realpath",
-}
+}, osCapabilityMethods...), "files.realpath")
 
 // capabilityFeatures advertises optional protocol extensions, in the reference's order.
 // process.stdin.offset (the stdin-offset idempotency contract, see process.stdin / rpc.StdinResult)
@@ -152,6 +155,8 @@ func (s *server) handleServer(c *conn.Conn, req *request) *rpc.Response {
 		}
 		s.signalShutdown()
 		return rpc.Ptr(rpc.OKResult(req.ID, rpc.ShutdownResult{OK: true}))
+	case methodAdoptEnv:
+		return s.handleAdoptEnv(c, req)
 	default:
 		return rpc.Ptr(unknownMethod(req))
 	}

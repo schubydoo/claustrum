@@ -11,14 +11,13 @@ more dependency goes into Windows builds only. It is
 All code is in `package main`, except `handlers/` and `internal/`. `handlers/prune.go` holds
 `handlers.PruneParams`, so the `-32602` text of `plugins.prune` names the type
 of the reference byte for byte. A suffix such as `_unix` or `_windows`, or a
-build tag alone, marks the part of a group for one OS. Every OS serves
-the same JSON-RPC methods.
+build tag alone, marks the part of a group for one OS.
 
 | group | files | what they hold |
 |---|---|---|
 | Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install`, `-probe-cli` and `-bridge`. |
 | Transport | `server.go`, `connlog.go`, `internal/conn/`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go`, `internal/sockroute/` | The `AF_UNIX` listener and the connection loop. Connection writes and the end member of each line. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. |
-| Dispatch | `rpc.go`, `internal/rpc/`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `internal/files/`, `pluginsibling_*.go`, `internal/supervisor/spawncheck.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go`, `internal/files/` and `internal/git/` have the 21 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `internal/supervisor/spawncheck.go` holds the `process.spawn` launcher checks. |
+| Dispatch | `rpc.go`, `internal/rpc/`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `internal/files/`, `pluginsibling_*.go`, `internal/supervisor/spawncheck.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go`, `internal/files/` and `internal/git/` have the 23 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `internal/supervisor/spawncheck.go` holds the `process.spawn` launcher checks. |
 | Process | `internal/supervisor/process.go`, `internal/sysproc/`, `internal/supervisor/`, `internal/supervisor/sessionsupersede.go`, `internal/shellenv/` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. |
 | Git | `internal/git/` | See [The git subsystem](#the-git-subsystem). |
 | Install | `internal/install/` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher, its settings reader and the child env strip. |

@@ -1,11 +1,11 @@
 # claustrum protocol reference
 
-This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [21 methods](#methods-21) with the page of each.
+This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [23 methods](#methods-23) with the page of each.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 claustrum uses newline-delimited JSON-RPC 2.0 over an `AF_UNIX`
-`SOCK_STREAM` socket. The three `server.*` methods share one page. The [error texts](protocol/errors.md),
+`SOCK_STREAM` socket. Three `server.*` methods share one page. The [error texts](protocol/errors.md),
 the [stream frames](protocol/streams.md), the [flags](protocol/flags.md) and the
 [shared git rules](#shared-rules-of-the-git-methods) have their own pages. The life
 of the daemon off the wire is on [Running the daemon](DAEMON.md). The pinned
@@ -220,7 +220,8 @@ decoder. See
 claustrum expands a leading tilde in every path-bearing param before the method
 runs: `files.*` `path`, `extract_tar`'s `archivePath` / `destDir`, `git.*` `path` /
 `baseRepo` / `worktreePath`, and `process.spawn`'s `cwd`. Branch names are refs,
-not paths, so claustrum never expands them. claustrum replaces a leading `~` with
+not paths, so claustrum never expands them. Nor does it expand the `parent` of
+[files.mkdir](protocol/files-mkdir.md). claustrum replaces a leading `~` with
 the daemon user's home directory, and then cleans the remainder lexically. Bare
 `~` is the exception. It returns home verbatim, uncleaned.
 
@@ -285,7 +286,7 @@ other two stat it:
   path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
   macOS.
 
-## Methods (21)
+## Methods (23)
 
 `server.capabilities` lists the methods in the order of this table. The
 [reference build history](REFERENCE-BUILDS.md) records the builds that added or
@@ -294,8 +295,9 @@ removed a method.
 | Method | Params → result | Page |
 |---|---|---|
 | `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
-| `server.capabilities` | none → `{"version","methods":[…21…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
+| `server.capabilities` | none → `{"version","methods":[…23…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
 | `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
+| `server.adoptEnv` | `{env[,noLoginShell][,kept]}` → `{"ok":true}` | [server.adoptEnv](protocol/server-adopt-env.md) |
 | `files.list` | `{path[,includeDotNames,junctionsAsDirs]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
 | `files.validate` | `{path}` → `{"valid":bool,"isDir":bool[,"error"]}` | [files.validate](protocol/files-validate.md) |
 | `files.stat` | `{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}` | [files.stat](protocol/files-stat.md) |
@@ -313,6 +315,7 @@ removed a method.
 | `process.killAndWait` | `{id[,signal][,timeoutMs][,escalate][,farewell,graceMs]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true][,"farewellEnd":<end>]}` | [process.killAndWait](protocol/process-killandwait.md) |
 | `process.reattach` | `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}` | [process.reattach](protocol/process-reattach.md) |
 | `plugins.prune` | `{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"<state>","minAgeDays":<clamped>}` | [plugins.prune](protocol/plugins-prune.md) |
+| `files.mkdir` | `{parent,name}` → `{"code":"<code>"[,"errno":<n>]}`, Linux and macOS only (`c9125eb8`) | [files.mkdir](protocol/files-mkdir.md) |
 | `files.realpath` | `{path[,missingLeaf]}` → `{"exists":<bool>[,"real"][,"wouldBe"][,"dangling":true]}` | [files.realpath](protocol/files-realpath.md) |
 
 ## Shared rules of the git methods

@@ -31,6 +31,7 @@
         "server.ping",
         "server.capabilities",
         "server.shutdown",
+        "server.adoptEnv",
         "files.list",
         "files.validate",
         "files.stat",
@@ -48,6 +49,7 @@
         "process.killAndWait",
         "process.reattach",
         "plugins.prune",
+        "files.mkdir",
         "files.realpath"
       ],
       "instanceId": "<IID>",
@@ -78,6 +80,7 @@
         "git.hooks_null_device",
         "git.status.own_lfs_store",
         "files.read.real",
+        "files.mkdir.verified_parent",
         "git.worktree.external_root",
         "process.spawn.link_bound",
         "process.spawn.cli_temp_root",

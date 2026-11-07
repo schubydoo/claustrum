@@ -1,0 +1,239 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "code": "created"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "code": "exists_folder"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "code": "exists_other"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "code": "exists_link"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "code": "exists_link"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "result": {
+      "code": "exists_link"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 11,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 12,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 13,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 14,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 15,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 16,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 17,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 18,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 19,
+    "result": {
+      "code": "name_too_long",
+      "errno": 36
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 20,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 21,
+    "result": {
+      "code": "parent_elsewhere"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 22,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 23,
+    "result": {
+      "code": "parent_gone",
+      "errno": 2
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 24,
+    "result": {
+      "code": "parent_gone",
+      "errno": 20
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 25,
+    "result": {
+      "code": "denied",
+      "errno": 13
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 26,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 27,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 28,
+    "result": {
+      "code": "name_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 29,
+    "result": {
+      "code": "parent_refused"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 30,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 31,
+    "result": {
+      "code": "created"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 32,
+    "result": {
+      "code": "created"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 33,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  }
+]
