@@ -15,8 +15,8 @@ import (
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
-// mkdirServed is true: Linux and macOS serve files.mkdir (c9125eb8, measured).
-const mkdirServed = true
+// mkdirHandler is files.mkdir: Linux and macOS serve it (c9125eb8, measured).
+var mkdirHandler = filesMkdir
 
 // mkdirParams holds the members that files.mkdir reads. An extra member is
 // ignored (c9125eb8, measured). A mode member and the mode under another umask
@@ -86,7 +86,7 @@ func mkdirAt(parent, name string) (rpc.MkdirResult, unix.Errno) {
 		return mkdirParentFailure(parent, err)
 	}
 	defer unix.Close(fd)
-	err = unix.Mkdirat(fd, name, 0o755)
+	err = mkdirAtFd(fd, name, 0o755)
 	switch {
 	case err == nil:
 		return rpc.MkdirResult{Code: "created"}, 0
@@ -99,6 +99,10 @@ func mkdirAt(parent, name string) (rpc.MkdirResult, unix.Errno) {
 	}
 	return rpc.MkdirResult{}, mkdirErrno(err)
 }
+
+// mkdirAtFd is the mkdir call. A test swaps it to give an errno that no fixture
+// on Linux makes.
+var mkdirAtFd = unix.Mkdirat
 
 // openMkdirParent opens the parent folder. O_NOFOLLOW refuses a link as the
 // last name. An EINTR gets another try.
@@ -138,9 +142,8 @@ func mkdirParentFailure(parent string, err error) (rpc.MkdirResult, unix.Errno) 
 // exists_other (claustrum's own, not measured).
 func mkdirExistsCode(fd int, name string) string {
 	var st unix.Stat_t
-	if unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW) != nil {
-		return "exists_other"
-	}
+	// A failed stat leaves Mode 0, which gives exists_other.
+	_ = unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW)
 	switch st.Mode & unix.S_IFMT {
 	case unix.S_IFLNK:
 		return "exists_link"
