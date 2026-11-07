@@ -325,3 +325,96 @@ func TestLoginPATHReadPanicFailsTheRead(t *testing.T) {
 		t.Errorf("log has no failure line for the panic:\n%s", shellenvLines(buf))
 	}
 }
+
+// goodFirstRead makes the read at the start give path, and waits for its end.
+func goodFirstRead(t *testing.T, f *pathReadFake, path string) {
+	t.Helper()
+	WarmAtStart()
+	r := startedRead(t, f)
+	f.answer <- pathAnswer{path: path}
+	awaitReadEnd(t, r)
+}
+
+// TestLoginPATHReadAgainAfterThePause holds the read again (RefreshLoginPATH). On
+// Linux against c9125eb8, no read again starts within seconds of a good read, and one
+// starts after 10 min 35 s. Its spawn does not wait and keeps the old PATH. The read
+// logs the good line again, and later spawns get its PATH. The pause of 10m0s is
+// claustrum's own (not measured). Windows reads no login shell, so it starts none.
+func TestLoginPATHReadAgainAfterThePause(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := installPathReadFake(t)
+	goodFirstRead(t, f, "/login/1")
+	if !loginPATHFromShell {
+		f.advance(time.Hour)
+		RefreshLoginPATH()
+		noReadStarted(t, f, "a read again where no login shell runs")
+		return
+	}
+	f.advance(loginPATHRefreshAfter - time.Second)
+	RefreshLoginPATH()
+	noReadStarted(t, f, "a read again 1 s before the pause ends")
+
+	f.advance(time.Second)
+	RefreshLoginPATH() // returns with the read still running: it does not wait
+	r := startedRead(t, f)
+	if got := CurrentLoginPATH(); got != "/login/1" {
+		t.Errorf("PATH while the read again runs = %q, want /login/1", got)
+	}
+	RefreshLoginPATH()
+	if len(f.calls) != 0 {
+		t.Error("a second read again started while one runs")
+	}
+	f.answer <- pathAnswer{path: "/login/two"}
+	awaitReadEnd(t, r)
+	if got := CurrentLoginPATH(); got != "/login/two" {
+		t.Errorf("PATH after the read again = %q, want /login/two", got)
+	}
+	RefreshLoginPATH()
+	noReadStarted(t, f, "a read again right after a read again")
+
+	want := "DEBUG [shellenv] Extracted shell PATH (8 chars) in 0s, after 0 failed read(s)\n" +
+		"DEBUG [shellenv] Extracted shell PATH (10 chars) in 0s, after 0 failed read(s)\n"
+	if got := shellenvLines(buf); got != want {
+		t.Errorf("log =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestLoginPATHReadAgainNeedsAGoodRead: before a good read the read again starts
+// nothing, so the tries after a failure keep their pauses (claustrum's own, not
+// measured).
+func TestLoginPATHReadAgainNeedsAGoodRead(t *testing.T) {
+	f := installPathReadFake(t)
+	WarmAtStart()
+	r := startedRead(t, f)
+	f.answer <- pathAnswer{err: errors.New("boom")}
+	awaitReadEnd(t, r)
+	f.advance(loginPATHRefreshAfter)
+	RefreshLoginPATH()
+	noReadStarted(t, f, "a read again after a failed read only")
+}
+
+// TestLoginPATHFailedReadAgainKeepsThePATH: a failed read again keeps the PATH of the
+// last good read and counts no failure (claustrum's own, not measured).
+func TestLoginPATHFailedReadAgainKeepsThePATH(t *testing.T) {
+	if !loginPATHFromShell {
+		t.Skip("no login shell runs here, so no read again starts")
+	}
+	buf := captureLogBuf(t)
+	f := installPathReadFake(t)
+	goodFirstRead(t, f, "/login/1")
+	f.advance(loginPATHRefreshAfter)
+	RefreshLoginPATH()
+	r := startedRead(t, f)
+	f.answer <- pathAnswer{err: errors.New("boom")}
+	awaitReadEnd(t, r)
+	if got := CurrentLoginPATH(); got != "/login/1" {
+		t.Errorf("PATH after a failed read again = %q, want /login/1", got)
+	}
+	if loginPATHs.failures != 0 {
+		t.Errorf("failures = %d, want 0", loginPATHs.failures)
+	}
+	want := "WARN  [shellenv] Could not read PATH from the login shell again after 0s: boom; programs keep the PATH of the last good read\n"
+	if got := shellenvLines(buf); !strings.HasSuffix(got, want) {
+		t.Errorf("log =\n%s\nwant a last line\n%s", got, want)
+	}
+}
