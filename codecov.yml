@@ -153,6 +153,9 @@ component_management:
         # Winsock refused error lives in pluginsibling_windows.go.
         - pluginsibling_windows.go
         - pluginsibling_other.go
+        # The OS split of a plugins.prune sibling of the host-term shape (c9125eb8).
+        - pluginhostsibling_linux.go
+        - pluginhostsibling_other.go
         - handlers/prune.go
         # OS-split server.capabilities feature: external_root advertised on unix only.
         - capfeatures_other.go
