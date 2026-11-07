@@ -448,7 +448,13 @@ func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			return repoAnswer{}
 		}
 	}
-	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)}
+	return repoAnswer{text: disagreeText(root, shown, want)}
+}
+
+// disagreeText is the error of an answer of git from root that names the git
+// directory shown, where the daemon finds want.
+func disagreeText(root, shown, want string) string {
+	return fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, shown, want)
 }
 
 // probeTimeoutAnswer is the error of a call about the repository in root that

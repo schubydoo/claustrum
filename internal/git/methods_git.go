@@ -2794,6 +2794,25 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 				repeatRepositoryCheck(req.use, repo)
 				return refuse(lockCheckRefusal(p.WorktreePath))
 			}
+			// An answer that names another git directory gets one more call
+			// (gitDirAgain). A second such answer fails the check. c9125eb8 then
+			// asks 2 more times and refuses with the "disagree" text after 4 calls.
+			// Nothing is deleted (measured on Linux and Windows). claustrum asks the
+			// check once more. Its answer is not used, and the text is that of the
+			// second call (claustrum's own, not measured). A failed second call answers as a failed check (not
+			// measured).
+			var disagree string
+			answered, disagree, checkErr = gitDirAgain(req.use, repo, t, answered)
+			if checkErr != nil {
+				repeatRepositoryCheck(req.use, repo)
+				return refuse(lockCheckRefusal(p.WorktreePath))
+			}
+			if disagree != "" {
+				if again, err := repositoryGitDir(req.use, repo, nil); err == nil {
+					_, _, _ = gitDirAgain(req.use, repo, t, again)
+				}
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + disagree)
+			}
 			// The trust check found no repository, and git found one. Not measured.
 			// claustrum answers as before.
 			if verdict == gitDirNoRepo {
