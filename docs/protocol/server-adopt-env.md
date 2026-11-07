@@ -12,7 +12,7 @@
 |---|---|---|
 | `env` | yes | A list of `NAME=value` strings. |
 | `noLoginShell` | no | A bool. The daemon accepts it. With `true` the adopt lets no [new read](#a-new-read-of-the-login-shell-path) start (Linux and macOS). An earlier adopt still lets one start (claustrum's own, not measured). |
-| `kept` | no | A list of names. The limit of 8192 entries holds on Linux and macOS. A kept daemon variable stays if `env` lacks it, except a session-bound name (claustrum's own, not measured). |
+| `kept` | no | A list of names, at most 8192 (measured on Linux and macOS, claustrum's own on Windows). A kept daemon variable stays if `env` lacks it, except a session-bound name (claustrum's own, not measured). |
 
 The daemon ignores other members, with no log line (Linux and Windows).
 
@@ -51,7 +51,7 @@ After a good adopt, a new child of any connection starts from the sent entries, 
 
 On Windows a sent `HOME` reaches a child only if `kept` names it (c9125eb8, measured on Windows). The daemon adds no `COMSPEC`, `PATHEXT` or `PROMPT`. These rules are claustrum's own, not measured:
 
-- The log line counts a sent `HOME`.
+- The log line counts a sent `HOME`. Its count matched `c9125eb8` in one Windows row.
 - A kept `HOME` with no sent `HOME` takes the daemon value.
 
 ### The log line
