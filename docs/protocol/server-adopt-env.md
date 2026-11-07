@@ -38,7 +38,7 @@ The edges are measured on Linux, except the total: 262132 bytes passed and 30000
 
 ## The new environment
 
-After a good adopt, a new child of any connection starts from the sent entries, not from the environment of the daemon. The steps of [process.spawn](process-spawn.md) follow.
+After a good adopt, a new child of any connection starts from the sent entries, not from the environment of the daemon. The git of a `gitRead` spawn is the exception ([process.spawn gitRead](process-git-read.md#the-run)). The steps of [process.spawn](process-spawn.md) follow.
 
 - `SSH_AUTH_SOCK` reaches only the children of the connection that sent it (Linux).
 - A sent name that starts with `CLAUDE_SSH_` reaches no child (Linux, one name). The `CLAUDE_SSH_DAEMON_CHILD` of the daemon stays.
