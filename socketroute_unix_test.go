@@ -53,7 +53,7 @@ func TestSocketPathOfALongSocket(t *testing.T) {
 	if got := s.socketPath(); got != sock {
 		t.Fatalf("socketPath = %q, want %q", got, sock)
 	}
-	if _, _, ok := pluginsLayoutFromSocket(s.socketPath()); !ok {
+	if _, _, _, ok := pluginsLayoutFromSocket(s.socketPath()); !ok {
 		t.Errorf("no plugin root for %s", sock)
 	}
 }
