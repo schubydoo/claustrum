@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,10 +42,18 @@ func TestPaneShapesList(t *testing.T) {
 		"rev-parse --verify <ref>",
 		"symbolic-ref --short HEAD",
 		"ls-files --others --exclude-standard --full-name :/",
-		"show --no-textconv --no-ext-diff <rev>:<path> --",
+		"show --no-textconv --no-ext-diff <ref> --",
 		"merge-base <ref> <ref>",
-		"rev-list --left-right --count <range>",
-		"diff --name-status -M <ref>",
+		"rev-list --left-right --count <rev>",
+		"log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e <rev>",
+		"hash-object -t tree /dev/null",
+		"diff <base>",
+		"diff --numstat <base>",
+		"diff -z --no-color --name-status -M <base>",
+		"diff --inter-hunk-context=3 <base>",
+		"diff --src-prefix=a/ --dst-prefix=b/ <base>",
+		"diff --name-status -M <base>",
+		"diff --name-status -M <base> -- <exclude>",
 		"diff --name-status -M <ref> <ref>",
 	}
 	var got []string
@@ -120,6 +129,64 @@ func TestPaneArgv(t *testing.T) {
 	}
 }
 
+// TestPaneArgvLogRows pins the run argv of the rows of the call logs of c9125eb8
+// (measured on Linux, macOS and Windows): `diff-index` for one ref, `diff-tree -r`
+// for a range of two dots, `-p` for a patch, and a trailing `--`. realIndex is true
+// for a run with no GIT_INDEX_FILE in the log.
+func TestPaneArgvLogRows(t *testing.T) {
+	const format = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e"
+	opts := []string{"--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv"}
+	cat := func(parts ...[]string) []string { return slices.Concat(parts...) }
+	w := func(s ...string) []string { return s }
+	for _, c := range []struct {
+		sent, run []string
+		realIndex bool
+	}{
+		{w("log", "--no-show-signature", format, "main..topic"), cat(w("log"), opts, w("--no-show-signature", format, "main..topic", "--")), false},
+		{w("log", "--no-show-signature", format, "HEAD"), cat(w("log"), opts, w("--no-show-signature", format, "HEAD", "--")), false},
+		{w("hash-object", "-t", "tree", "/dev/null"), w("hash-object", "-t", "tree", "/dev/null"), false},
+		{w("show", "--no-textconv", "--no-ext-diff", "HEAD", "--"), cat(w("show"), opts, w("--no-textconv", "--no-ext-diff", "HEAD", "--")), false},
+		{w("rev-list", "--left-right", "--count", "HEAD"), w("rev-list", "--left-right", "--count", "HEAD", "--"), false},
+		{w("diff", "HEAD"), cat(w("diff-index", "-p"), opts, w("HEAD", "--")), true},
+		{w("diff", "--numstat", "HEAD"), cat(w("diff-index"), opts, w("--numstat", "HEAD", "--")), true},
+		{w("diff", "-z", "--no-color", "--name-status", "-M", "HEAD"), cat(w("diff-index"), opts, w("-z", "--no-color", "--name-status", "-M", "HEAD", "--")), true},
+		{w("diff", "--name-status", "-M", "main..topic"), cat(w("diff-tree", "-r"), opts, w("--name-status", "-M", "main", "topic", "--")), false},
+		{w("diff", "--inter-hunk-context=3", "HEAD"), cat(w("diff-index", "-p"), opts, w("--inter-hunk-context=3", "HEAD", "--")), true},
+		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude)sub"), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude)sub")), true},
+		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude,literal)sub"), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude,literal)sub")), true},
+		{w("diff", "--src-prefix=a/", "--dst-prefix=b/", "HEAD"), cat(w("diff-index", "-p"), opts, w("--src-prefix=a/", "--dst-prefix=b/", "HEAD", "--")), true},
+		{w("rev-parse", "--show-toplevel"), w("rev-parse", "--show-toplevel"), false},
+	} {
+		s := paneShapeOf(c.sent)
+		if s == nil {
+			t.Errorf("%q: refused, want a run", c.sent)
+			continue
+		}
+		if got, want := paneArgv(s, c.sent, nil), append(paneItems(false), c.run...); !slices.Equal(got, want) {
+			t.Errorf("paneArgv(%q) =\n%q\nwant\n%q", c.sent, got, want)
+		}
+		if _, _, real := s.runFor(c.sent); real != c.realIndex {
+			t.Errorf("%q: realIndex = %v, want %v", c.sent, real, c.realIndex)
+		}
+	}
+}
+
+// TestPaneArgvClaustrumOwn pins the runs that no row shows (claustrum's own, not
+// measured): a range in a patch diff runs as diff-tree -r -p.
+func TestPaneArgvClaustrumOwn(t *testing.T) {
+	for _, c := range []struct {
+		sent, run []string
+	}{
+		{[]string{"diff", "main..topic"},
+			[]string{"diff-tree", "-r", "-p", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv", "main", "topic", "--"}},
+	} {
+		want := append(paneItems(false), c.run...)
+		if got := paneArgv(paneShapeOf(c.sent), c.sent, nil); !slices.Equal(got, want) {
+			t.Errorf("paneArgv(%q) =\n%q\nwant\n%q", c.sent, got, want)
+		}
+	}
+}
+
 // TestPaneShapeRows walks the argv rows of c9125eb8 with variable refs and paths
 // (measured on Linux). An allowed row passes the shape test, and a refused row gets
 // the text with its count of args. The last rows are claustrum's own, not measured.
@@ -140,6 +207,17 @@ func TestPaneShapeRows(t *testing.T) {
 		"show --no-textconv --no-ext-diff HEAD:../x --", "show --no-textconv --no-ext-diff HEAD:/etc/passwd --",
 		"show --no-textconv --no-ext-diff :README --",
 		"status --porcelain=v2 --branch -z",
+		// The rows of c9125eb8 with the branches main and topic (measured on Linux,
+		// macOS and Windows).
+		"log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e main..topic",
+		"log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e HEAD",
+		"hash-object -t tree /dev/null", "show --no-textconv --no-ext-diff HEAD --",
+		"rev-list --left-right --count HEAD", "diff HEAD", "diff --numstat HEAD",
+		"diff -z --no-color --name-status -M HEAD", "diff --name-status -M main..topic",
+		"diff --inter-hunk-context=3 HEAD", "diff --name-status -M HEAD -- :(top,exclude)sub",
+		"diff --name-status -M HEAD -- :(top,exclude,literal)sub", "diff --src-prefix=a/ --dst-prefix=b/ HEAD",
+		// claustrum's own, not measured.
+		"rev-list --left-right --count main",
 	}
 	refused := []string{
 		"rev-parse --verify --output=/tmp/r", "rev-parse --verify -q",
@@ -160,9 +238,14 @@ func TestPaneShapeRows(t *testing.T) {
 		"status --porcelain=v2 --branch -z -uall", "status --porcelain=v2 --branch -z --no-renames",
 		"status", "log -1", "commit --allow-empty -m x -q --no-verify",
 		"status --porcelain=v2 --branch -z --ignored -uall --no-renames",
+		// The refused rows of c9125eb8 with the branches main and topic (measured on
+		// Linux, macOS and Windows).
+		"diff --name-status -M main...topic", "diff --inter-hunk-context=10 HEAD",
+		"diff --name-status HEAD main topic",
 		// claustrum's own, not measured.
-		"rev-list --left-right --count main", "rev-list --left-right --count ..topic",
-		"rev-list --left-right --count main...-x", "show --no-textconv --no-ext-diff HEAD --",
+		"rev-list --left-right --count ..topic", "rev-list --left-right --count main...-x",
+		"diff --name-status -M main..", "diff --name-status -M a..b..c",
+		"diff --name-status -M HEAD -- :(top,exclude)", "diff --name-status -M HEAD -- :(exclude)sub",
 	}
 	for _, row := range allowed {
 		if got := PaneShapeRefusal(strings.Fields(row)); got != "" {
@@ -183,6 +266,33 @@ func TestPaneShapeRows(t *testing.T) {
 	}
 	if got := PaneShapeRefusal([]string{"show", "--no-textconv", "--no-ext-diff", "HEAD:a b.txt", "--"}); got != "" {
 		t.Errorf("a path with a space: %q, want none", got)
+	}
+}
+
+// TestPaneRefBytes pins the ref test of c9125eb8: a ref with a TAB, LF, DEL or
+// SOH byte and a ref of 4097 bytes get the shape refusal with 3 arguments, and a
+// ref of 4096 bytes runs (measured on Linux, and on macOS and Windows but SOH). The other
+// control bytes are claustrum's own, not measured.
+func TestPaneRefBytes(t *testing.T) {
+	refusal := "not one of the Changes pane's git commands (3 arguments)"
+	for _, c := range []struct {
+		ref  string
+		want string
+	}{
+		{"HEAD", ""},
+		{"HEAD^", ""},
+		{strings.Repeat("a", 4096), ""},
+		{"HEAD\tx", refusal},
+		{"a\nb", refusal},
+		{"x\x7f", refusal},
+		{"HEAD\x01", refusal},
+		{strings.Repeat("a", 4097), refusal},
+		{"HEAD\x00", refusal},
+		{"HEAD\x1f", refusal},
+	} {
+		if got := PaneShapeRefusal([]string{"rev-parse", "--verify", c.ref}); got != c.want {
+			t.Errorf("rev-parse --verify %q (%d bytes) = %q, want %q", c.ref, len(c.ref), got, c.want)
+		}
 	}
 }
 
@@ -285,6 +395,70 @@ func TestPaneGitRunNoRepo(t *testing.T) {
 	for _, name := range []string{"GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_WORK_TREE"} {
 		if _, ok := envValue(env, name); ok {
 			t.Errorf("env has %s in a folder with no repository", name)
+		}
+	}
+}
+
+// TestPaneGitRunFallback runs the steps in a repository in the state fallback-git.
+// c9125eb8 refuses the spawn with ErrNoSettingsCopy after the listing in the cwd,
+// and its git does not run (measured on Linux, and the frame on macOS and
+// Windows). A folder with no repository runs on (claustrum's own, not measured).
+func TestPaneGitRunFallback(t *testing.T) {
+	f := newShadowFixture(t)
+	h := f.d.Shadow
+	h.mu.Lock()
+	h.state, h.tested = controlFallback, shadowClock()
+	err := h.makeFolder()
+	h.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PaneGitRun(f.d, f.repo, []string{"rev-parse", "--show-toplevel"}); !errors.Is(err, ErrNoSettingsCopy) {
+		t.Fatalf("PaneGitRun in fallback-git: %v, want ErrNoSettingsCopy", err)
+	}
+	if want := "the helper cannot give git its own copy of a repository's settings on this host (this git does not support it, or the app switched it off)"; ErrNoSettingsCopy.Error() != want {
+		t.Errorf("the text = %q, want %q", ErrNoSettingsCopy.Error(), want)
+	}
+	calls := readEnvCalls(t, f.log)
+	if len(calls) == 0 || !calls[len(calls)-1].listing() {
+		t.Errorf("the last call = %+v, want the listing", calls[max(0, len(calls)-1):])
+	}
+	run, err := PaneGitRun(f.d, resolveTestRoot(t, t.TempDir()), []string{"rev-parse", "--show-toplevel"})
+	if err != nil {
+		t.Fatalf("PaneGitRun in a folder with no repository: %v", err)
+	}
+	run.Release()
+}
+
+// TestPaneGitRunRangeIndex pins the index of a diff run in the state shadow: a
+// range of two dots runs as diff-tree with GIT_INDEX_FILE=<copy>/no-index, and a
+// one-ref diff runs as diff-index with the real index (c9125eb8, measured on Linux,
+// macOS and Windows).
+func TestPaneGitRunRangeIndex(t *testing.T) {
+	f := newShadowFixture(t)
+	for _, c := range []struct {
+		args    []string
+		noIndex bool
+	}{
+		{[]string{"diff", "--name-status", "-M", "HEAD..HEAD"}, true},
+		{[]string{"diff", "HEAD"}, false},
+	} {
+		run, err := PaneGitRun(f.d, f.repo, c.args)
+		if err != nil {
+			t.Fatalf("PaneGitRun(%q): %v", c.args, err)
+		}
+		run.Release()
+		env := run.Env(append(os.Environ(), "GIT_INDEX_FILE=/spawn-index"))
+		common, _ := envValue(env, "GIT_COMMON_DIR")
+		index, ok := envValue(env, "GIT_INDEX_FILE")
+		switch {
+		case c.noIndex && (!ok || index != filepath.Join(common, "no-index")):
+			t.Errorf("%q: GIT_INDEX_FILE = %q (%v), want %q", c.args, index, ok, filepath.Join(common, "no-index"))
+		case !c.noIndex && ok:
+			t.Errorf("%q: GIT_INDEX_FILE = %q, want the real index", c.args, index)
 		}
 	}
 }

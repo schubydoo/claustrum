@@ -23,11 +23,11 @@ import (
 // path is root-owned 0755. The account that signs in is uid 1000.
 func fakeFacts(t *testing.T, over map[string][2]uint32) {
 	t.Helper()
-	t.Cleanup(install.SetLauncherFactsForTest(func(p string) (uint32, uint32, bool, error) {
+	t.Cleanup(install.SetLauncherFactsForTest(func(p string) (uint32, uint32, string, error) {
 		if f, ok := over[p]; ok {
-			return f[0], f[1], false, nil
+			return f[0], f[1], "", nil
 		}
-		return 0, 0o755, false, nil
+		return 0, 0o755, "", nil
 	}, 1000))
 }
 
@@ -204,5 +204,61 @@ func TestLauncherResolveCheck(t *testing.T) {
 	seen := `{"jsonrpc":"2.0","id":1,"result":{"status":"usable","argv":["` + L + `"],"hostPolicySeen":true}}`
 	if got := resolveCheckFrame(t, s, L, `{}`); got != seen {
 		t.Errorf("another key:\n got %s\nwant %s", got, seen)
+	}
+}
+
+// launcherFrameFixture isolates the policy files and gives a server, a real temp
+// folder and a CLI in it.
+func launcherFrameFixture(t *testing.T) (s *server, d, cli string) {
+	t.Helper()
+	tempManagedSettingsDir(t)
+	s = newTestServer(t)
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, d, mkExec(t, filepath.Join(d, "cli"))
+}
+
+// TestLauncherCheckLinksFrames pins the links frames of c9125eb8: a self loop gets
+// launcherFault links in a spawn and fault links in a resolve. The frame shapes are
+// measured on Linux with a right digest. The zero digest of the spawn and the {} of the
+// resolve here are claustrum's own, not measured.
+func TestLauncherCheckLinksFrames(t *testing.T) {
+	s, d, cli := launcherFrameFixture(t)
+	self := filepath.Join(d, "loopself")
+	if err := os.Symlink(self, self); err != nil {
+		t.Fatal(err)
+	}
+	fakeFacts(t, nil)
+	links := "too many symbolic links (or a loop) lead to launcher `" + self + "`"
+	if got, want := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p1", "command": cli, "launcher": []string{self}, "launcherCheck": map[string]any{"sha256": []string{strings.Repeat("0", 64)}}})), faultFrame("the managed launcher cannot be used: "+links, "links"); got != want {
+		t.Errorf("spawn self loop:\n got %s\nwant %s", got, want)
+	}
+	if got, want := resolveCheckFrame(t, s, self, `{}`), `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"`+links+`","fault":"links","hostPolicySeen":false}}`; got != want {
+		t.Errorf("resolve self loop:\n got %s\nwant %s", got, want)
+	}
+}
+
+// TestLauncherCheckServerFSFrames pins the FUSE and SMB frames of c9125eb8 (measured on
+// Linux): a launcher in such a folder with launcherCheck {} gets writable.
+func TestLauncherCheckServerFSFrames(t *testing.T) {
+	s, d, cli := launcherFrameFixture(t)
+	for _, fs := range []string{"FUSE or virtiofs", "SMB"} {
+		mnt := filepath.Join(d, "mnt")
+		L := mkExec(t, filepath.Join(mnt, "launcher.sh"))
+		t.Cleanup(install.SetLauncherFactsForTest(func(p string) (uint32, uint32, string, error) {
+			if p == mnt || p == L {
+				return 0, 0o755, fs, nil
+			}
+			return 0, 0o755, "", nil
+		}, 1000))
+		text := "`" + mnt + "` is on a file system (" + fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+		if got, want := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p2", "command": cli, "launcher": []string{L}, "launcherCheck": map[string]any{}})), faultFrame("the managed launcher cannot be used: "+text, "writable"); got != want {
+			t.Errorf("spawn %s:\n got %s\nwant %s", fs, got, want)
+		}
+		if got, want := resolveCheckFrame(t, s, L, `{}`), `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"`+text+`","fault":"writable","hostPolicySeen":false}}`; got != want {
+			t.Errorf("resolve %s:\n got %s\nwant %s", fs, got, want)
+		}
 	}
 }

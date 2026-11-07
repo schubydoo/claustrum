@@ -35,6 +35,10 @@ const (
 	// CodePeerRefused is the code of the frame of a caller that the peer check
 	// refuses (peercheck.go). 5fd08069 sends it on Linux (measured).
 	CodePeerRefused = -32006
+	// CodeNoSettingsCopy is the process.spawn code of a gitRead spawn in a
+	// repository in the git state fallback-git. c9125eb8 sends it on Linux,
+	// macOS and Windows (measured).
+	CodeNoSettingsCopy = -32008
 )
 
 // Request holds the five wire members of one inbound JSON-RPC line. Package

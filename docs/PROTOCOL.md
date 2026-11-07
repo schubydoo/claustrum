@@ -161,6 +161,7 @@ under [Stream notifications](protocol/streams.md#stream-notifications), is the w
 | `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) | after its reason changes, never on Windows, or on macOS with a `launcherCheck` |
 | `-32005` | a launcher that does not start, from `process.spawn` (see [Errors](protocol/process-spawn.md#errors)) | depends on the reason |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) | no, the connection closes |
+| `-32008` | a `gitRead` spawn in a repository in the git state `fallback-git`, from `process.spawn` (see [The state fallback-git](protocol/process-git-read.md#the-state-fallback-git)) | after the git state changes |
 | `-32001` | `Unauthorized: invalid or missing auth token` | not with the same token |
 
 The column *send again* is claustrum's own advice, read from its code.
