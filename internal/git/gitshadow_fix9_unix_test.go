@@ -258,9 +258,10 @@ func TestDaemonGitDirAndCommonDir(t *testing.T) {
 	// config read of the ssh door before it, so the create makes 13 (gitsshdoor.go).
 	// b3081b51 adds the rev-parse pair of the commit id and the four pairs of the
 	// content check of a commit with no file of the check (worktreecontent.go), 23.
-	// The pair of the core.fileMode read of that check makes 25.
-	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 25}) {
-		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 25", got)
+	// The pair of the core.fileMode read of that check makes 25. With one
+	// `cat-file --batch` pair for the commit and the tree, claustrum makes 23.
+	if got := []int{len(both[0]), len(both[1]), len(both[2]), len(both[3])}; !slices.Equal(got, []int{20, 2, 4, 23}) {
+		t.Errorf("the first four requests made %v calls, want 20, 2, 4 and 23", got)
 	}
 }
 

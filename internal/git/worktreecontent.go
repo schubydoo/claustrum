@@ -21,12 +21,13 @@ import (
 // checkout undoes the worktree (measured on Linux, macOS and Windows).
 //
 // The steps and their order are claustrum's own. The rows show the git calls,
-// their working folders, the codes and the texts:
+// their working folders, the codes and the texts. The batch follows c9125eb8.
+// The config listing and the hash-object forms follow b3081b51:
 //
-//   - `cat-file commit <id>` and `cat-file tree <id>` read the commit and each
-//     tree on the way to the files, with the base repository as the working
-//     folder. `hash-object -t <type> --literally --no-filters --stdin -w` hashes
-//     each one again. Its objects go to a short-lived folder
+//   - `cat-file --batch`, or `cat-file commit <id>` and `cat-file tree <id>`,
+//     read the commit and each tree on the way to the files (catFile), with
+//     the base repository as the working folder. `hash-object -t <type>
+//     --literally --no-filters --stdin -w` hashes each one again. Its objects go to a short-lived folder
 //     `.readback-objects-<n>` of the folder of the daemon (requestDir).
 //   - `hash-object --no-filters --stdin-paths` hashes the files of the new
 //     worktree. A file whose id differs, or every file after a failed call, is
@@ -54,6 +55,11 @@ type contentCheck struct {
 	// fileModeOff is a core.fileMode of false, as git reads it in the base
 	// repository.
 	fileModeOff bool
+	// batch is the running `cat-file --batch` of the check, or nil.
+	batch *objectBatch
+	// separate is the count of commits and trees that separate `cat-file`
+	// runs read.
+	separate int
 }
 
 // contentRefusal is the code and the hint of a refused content check.
@@ -104,8 +110,10 @@ func checkWorktreeContent(u gitUse, repo, leaf, commit string) *contentRefusal {
 		word = "file"
 	}
 	// The level INFO is claustrum's own (not measured).
-	line := fmt.Sprintf("[GitHandler] worktree_create: checked %d %s under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against %d objects of commit %s in %s: ",
-		len(files), word, c.read, short, time.Since(start).Round(time.Millisecond))
+	// The count of separate runs comes after the commit id (c9125eb8, measured
+	// on Linux, macOS and Windows).
+	line := fmt.Sprintf("[GitHandler] worktree_create: checked %d %s under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against %d objects of commit %s (%d of the commits and folder listings read by separate git runs) in %s: ",
+		len(files), word, c.read, short, c.separate, time.Since(start).Round(time.Millisecond))
 	if refusal != nil {
 		// The quoted text has no final period (measured on Linux).
 		logging.Infof("%srefused: %q", line, strings.TrimSuffix(refusal.hint, "."))
@@ -127,6 +135,8 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	defer remove()
 	c.objects = dir
 	c.fileModeOff = c.readFileMode()
+	c.startBatch()
+	defer c.stopBatch()
 	body, text := c.readObject("commit", c.commit)
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
@@ -151,7 +161,7 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 			hashed = append(hashed, f)
 			continue
 		}
-		blob, stderr, err := c.git(c.repo, nil, nil, "cat-file", "blob", f.id)
+		blob, stderr, err := c.catFile("blob", f.id)
 		if err != nil {
 			return nil, c.repositoryRefusal(failText(stderr, err))
 		}
@@ -281,11 +291,10 @@ func failText(stderr string, err error) string {
 	return worktreeGitText(stderr, err)
 }
 
-// readObject reads one object of the commit with `cat-file <kind> <id>` and
-// hashes it again into the folder of the check. text is the detail of a
-// failure, or "".
+// readObject reads one object of the commit (catFile) and hashes it again
+// into the folder of the check. text is the detail of a failure, or "".
 func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
-	body, stderr, err := c.git(c.repo, nil, nil, "cat-file", kind, id)
+	body, stderr, err := c.catFile(kind, id)
 	if err != nil {
 		return nil, failText(stderr, err)
 	}
@@ -474,8 +483,8 @@ func (c *contentCheck) lostExecBit(files []contentFile) *contentRefusal {
 }
 
 // readFileMode runs one `config -z --bool --get-regexp
-// ^core\.(filemode|symlinks)$` in the base repository, before `cat-file commit`
-// (b3081b51, measured on Linux and macOS). git answers from every config scope
+// ^core\.(filemode|symlinks)$` in the base repository, before the first
+// `cat-file` call (b3081b51, measured on Linux and macOS). git answers from every config scope
 // that it reads there. The last core.filemode of the answer counts. The check
 // does not act on core.symlinks. A failed or stopped call gives false, and the
 // execute-bit test runs (claustrum's own, not measured).
