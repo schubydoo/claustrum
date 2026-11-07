@@ -1011,3 +1011,15 @@ func TestRunLsofIsBounded(t *testing.T) {
 		}
 	})
 }
+
+// TestMarkStartTextIsTheUTCDateText: the darwin start part of the stamp is the UTC date text of
+// the kinfo start (on macOS), and empty with no age.
+func TestMarkStartTextIsTheUTCDateText(t *testing.T) {
+	at := time.Date(2026, 11, 6, 15, 23, 43, 0, time.FixedZone("PST", -8*3600))
+	if got := hcMarkStartText(hcTracked{pid: 1768, haveAge: true, startWall: at}); got != "Fri Nov 6 23:23:43 2026" {
+		t.Errorf("hcMarkStartText = %q, want %q", got, "Fri Nov 6 23:23:43 2026")
+	}
+	if got := hcMarkStartText(hcTracked{pid: 1768, startWall: at}); got != "" {
+		t.Errorf("hcMarkStartText with no age = %q, want empty", got)
+	}
+}
