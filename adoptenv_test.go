@@ -138,6 +138,7 @@ func TestSocketAdoptEnvFrames(t *testing.T) {
 		{params(map[string]any{"env": []string{"A=1", "A=2", "B=1"}}), ok},
 		{params(map[string]any{"env": []string{"Z=1"}, "kept": []string{"CLAUSTRUM_TEST_KEEP"}}), ok},
 		{params(map[string]any{"env": []string{"CLAUSTRUM_TEST_KEEP=sent"}, "kept": []string{"CLAUSTRUM_TEST_KEEP"}}), ok},
+		{params(map[string]any{"env": []string{"DISPLAY=:1", "DISPLAY=:2"}}), ok},
 	}
 	for i, row := range rows {
 		id := i + 1
@@ -186,6 +187,7 @@ func TestSocketAdoptEnvFrames(t *testing.T) {
 		adopted(2, 0, `["A" "B"]`),
 		adopted(2, 0, `["A" "B" "CLAUSTRUM_TEST_KEEP" "Z"]`),
 		adopted(1, 0, `["CLAUSTRUM_TEST_KEEP" "Z"]`),
+		adopted(0, 1, `["CLAUSTRUM_TEST_KEEP"]`), // a session-bound name counts once
 	}
 	got := adoptLines(logs.String())
 	if len(got) != len(want) {
@@ -385,6 +387,11 @@ func TestSocketAdoptEnvNameClasses(t *testing.T) {
 	expect("a sent and kept name", adoptChildEnv(t, c1, "keptsent", 8), map[string]string{"CLAUSTRUM_TEST_KEEP": "sent"})
 	adopt(c1, 9, `{"env":["Z=1"]}`)
 	expect("no kept name", adoptChildEnv(t, c1, "nokept", 10), map[string]string{"CLAUSTRUM_TEST_KEEP": ""})
+	// A kept session-bound name takes no entry of the daemon, so it does not reach
+	// c1, and c2 keeps the daemon value (claustrum's own, not measured).
+	adopt(c1, 13, `{"env":["Z=1"],"kept":["DISPLAY"]}`)
+	expect("c1 after a kept DISPLAY", adoptChildEnv(t, c1, "keptsession", 14), map[string]string{"Z": "1", "DISPLAY": ""})
+	expect("c2 after a kept DISPLAY", adoptChildEnv(t, c2, "keptsession2", 4), map[string]string{"Z": "1", "DISPLAY": ":9"})
 
 	if runtime.GOOS != "windows" {
 		return
@@ -397,6 +404,28 @@ func TestSocketAdoptEnvNameClasses(t *testing.T) {
 		map[string]string{"TMP": temps["TMP"], "TEMP": temps["TEMP"], "ZZ": "1", "DISPLAY": ":7", "GPG_TTY": "/s/gl"})
 	expect("c2 after the twins", adoptChildEnv(t, c2, "c2t", 3),
 		map[string]string{"TMP": temps["TMP"], "TEMP": temps["TEMP"], "ZZ": "1", "DISPLAY": ":9", "GPG_TTY": "/dev/d"})
+}
+
+// TestSocketAdoptEnvSentTempNameWithNoDaemonValue: a sent temp-folder name that the
+// daemon lacks reaches no child (claustrum's own, not measured).
+func TestSocketAdoptEnvSentTempNameWithNoDaemonValue(t *testing.T) {
+	clearClaudeSSHEnv(t)
+	t.Setenv("CLAUDE_CODE_TMPDIR", "")
+	_ = os.Unsetenv("CLAUDE_CODE_TMPDIR")
+	_, sock := newRunningServer(t)
+	captureLogBuf(t)
+	cl := dial(t, sock)
+	adopt := `{"jsonrpc":"2.0","id":1,"method":"server.adoptEnv","params":{"env":["A=1","CLAUDE_CODE_TMPDIR=/s/cct"]}}`
+	if got := string(cl.call(authed(adopt))); !strings.Contains(got, `"ok":true`) {
+		t.Fatalf("adopt: %s", got)
+	}
+	env := adoptChildEnv(t, cl, "nodaemontmp", 2)
+	if v, ok := env["CLAUDE_CODE_TMPDIR"]; ok {
+		t.Errorf("the child has CLAUDE_CODE_TMPDIR=%q, want it absent", v)
+	}
+	if env["A"] != "1" {
+		t.Errorf("the child has A=%q, want 1", env["A"])
+	}
 }
 
 // TestSocketAdoptEnvTakesLoginPATH: after a good read of the login-shell PATH a

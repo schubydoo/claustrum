@@ -68,18 +68,22 @@ type adoptedEnv struct {
 func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell bool) (every, own int, changed []string) {
 	daemon := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	all, mine := splitAdopted(env, kept, daemon)
+	// The own entries of c change under the same lock as the set, and adoptedBase
+	// reads both under it. So no spawn of c sees the new set with the old session
+	// names of c, or with those of the daemon. The lock order is adopted.mu, then
+	// the lock of c.
 	m.adopted.mu.Lock()
 	old := daemon
 	if m.adopted.on {
 		old = m.adopted.set
 	}
-	m.adopted.on, m.adopted.set = true, all
-	m.adopted.session = slices.DeleteFunc(slices.Clone(daemon), func(e string) bool { return !isSessionEnvName(envName(e)) })
-	m.adopted.mu.Unlock()
 	if c != nil {
 		c.SetOwnEnv(mine)
 		c.SetReadsLoginPATH(!noLoginShell)
 	}
+	m.adopted.on, m.adopted.set = true, all
+	m.adopted.session = slices.DeleteFunc(slices.Clone(daemon), func(e string) bool { return !isSessionEnvName(envName(e)) })
+	m.adopted.mu.Unlock()
 	return countEnvNames(all), countEnvNames(mine), adoptDiffNames(old, all)
 }
 
@@ -89,11 +93,12 @@ func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell 
 func (m *Manager) adoptedBase(c *conn.Conn) (base []string, ok bool) {
 	m.adopted.mu.Lock()
 	on, set, session := m.adopted.on, m.adopted.set, m.adopted.session
+	own, adopted := c.OwnEnv()
 	m.adopted.mu.Unlock()
 	if !on {
 		return nil, false
 	}
-	if own, adopted := c.OwnEnv(); adopted {
+	if adopted {
 		session = own
 	}
 	return osAdoptedBase(append(slices.Clone(set), session...)), true
