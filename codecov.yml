@@ -277,6 +277,9 @@ component_management:
         - internal/git/gitshadowsweep.go
         - internal/git/gitshadow_unix.go
         - internal/git/gitshadow_windows.go
+        # the macOS call about the repository after the add of a create (c9125eb8).
+        - internal/git/worktreeprobe_darwin.go
+        - internal/git/worktreeprobe_other.go
         # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
         - internal/git/worktreestaging.go
         - internal/git/worktreestaging_modes_darwin.go

@@ -118,15 +118,29 @@ func TestProbeInsideACreate(t *testing.T) {
 	if want := []string{"listing", "--is-inside-work-tree", "the call about the repository", "listing"}; len(calls) < 4 || !slices.Equal(calls[:4], want) {
 		t.Errorf("the first calls of the create = %q\nwant %q", calls[:min(4, len(calls))], want)
 	}
-	if n := len(calls) - len(slices.DeleteFunc(slices.Clone(calls), func(s string) bool { return s == "the call about the repository" })); n != 1 {
-		t.Errorf("the create made %d calls about the repository, want 1: %q", n, calls)
+	// On macOS the create asks once more after its add (askAfterAdd).
+	after := 0
+	if createAsksAfterAdd {
+		after = 1
+	}
+	asked := func(calls []string) int {
+		return len(calls) - len(slices.DeleteFunc(slices.Clone(calls), func(s string) bool { return s == "the call about the repository" }))
+	}
+	if n := asked(calls); n != 1+after {
+		t.Errorf("the create made %d calls about the repository, want %d: %q", n, 1+after, calls)
 	}
 
 	raw, calls = create("w1")
 	if !strings.Contains(raw, "already exists, and a new worktree is only ever created in a fresh directory") {
 		t.Fatalf("the same create again = %s", raw)
 	}
-	if want := []string{"the call about the repository", "listing", "--is-inside-work-tree"}; !slices.Equal(calls, want) {
+	// On macOS the answer of the call after the add is kept, so the same
+	// create again makes no call (claustrum's own, not measured).
+	want := []string{"the call about the repository", "listing", "--is-inside-work-tree"}
+	if createAsksAfterAdd {
+		want = want[1:]
+	}
+	if !slices.Equal(calls, want) {
 		t.Errorf("the calls of the same create again = %q\nwant %q", calls, want)
 	}
 
@@ -134,8 +148,8 @@ func TestProbeInsideACreate(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create of w2 = %s", raw)
 	}
-	if slices.Contains(calls, "the call about the repository") {
-		t.Errorf("a create with both folders there made a call about the repository: %q", calls)
+	if n := asked(calls); n != after {
+		t.Errorf("a create with both folders there made %d calls about the repository, want %d: %q", n, after, calls)
 	}
 }
 
