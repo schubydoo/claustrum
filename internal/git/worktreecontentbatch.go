@@ -306,8 +306,9 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 //
 // Claustrum's own, not measured: the trees of one level go to the read in the
 // order of the walk, a tree of that read does not count in c.separate, the
-// hash-object of the level ends with the level, and a tree whose body cannot be
-// written for it is hashed by a separate run.
+// hash-object of the level ends with the level, no second one starts in a level
+// after a stop, and a tree whose body cannot be written for it is hashed by a
+// separate run.
 func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	read := make([][]byte, len(level))
 	if c.stopped && !level[0].top {
@@ -341,6 +342,10 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 				bodies[i] = body
 				continue
 			}
+			// The stopped git ends here, so a later tree of the level would
+			// start a new one without the flag.
+			h.close()
+			h = nil
 			hashing = false
 		}
 		body, text := c.readObject("tree", t.id)

@@ -256,6 +256,9 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 			if row.after > 0 {
 				held := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--absolute-git-dir") })
 				rest := calls[held+1:]
+				if len(rest) < 3 {
+					t.Fatalf("%d calls after the gitdir call, want the pair and at least one more", len(rest))
+				}
 				if !slices.Contains(rest[0].argv, "--list") || !slices.Contains(rest[1].argv, "--show-toplevel") {
 					t.Errorf("the first two calls after the gitdir call = %q and %q, want the pair before the add", rest[0].argv, rest[1].argv)
 				}

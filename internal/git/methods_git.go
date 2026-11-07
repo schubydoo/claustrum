@@ -1581,7 +1581,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs, arrival)
 	defer cancelCtx()
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
-		pairBeforeAdd(req, gitDir, repo, req.use.shadow() && !bool(p.ShadowDirOff))
+		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
+		// req.use.shadow() is false there (from the code).
+		pairBeforeAdd(req, gitDir, repo, req.use.shadow())
 	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.

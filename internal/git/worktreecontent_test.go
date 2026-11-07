@@ -338,7 +338,12 @@ func TestContentCheckHashObjectEndsByDepth(t *testing.T) {
 			batchEnd = i
 		}
 	}
-	if batchPid == "" || lastRead < 0 || batchEnd < lastRead {
+	switch {
+	case batchPid == "" || lastRead < 0:
+		t.Errorf("the time log has no start of the batch (%q) or of the last separate read (line %d)", batchPid, lastRead)
+	case batchEnd < 0:
+		t.Errorf("the time log has no end line of the batch %s", batchPid)
+	case batchEnd < lastRead:
 		t.Errorf("the batch ended at line %d of the time log, the last separate read started at line %d: want the end after it", batchEnd, lastRead)
 	}
 }
@@ -365,6 +370,85 @@ func TestContentCheckBatchOtherObjectByDepth(t *testing.T) {
 	}
 	got, _ := objectCalls(calls)
 	want := []string{"batch", "read commit", "write commit", "read tree", "write tree", "buffer", "read tree", "write tree"}
+	if !slices.Equal(got, want) {
+		t.Errorf("object calls = %q, want %q", got, want)
+	}
+}
+
+// treeID is the id of the tree at path in the commit HEAD of repo.
+func treeID(t *testing.T, repo, path string) string {
+	t.Helper()
+	cmd := exec.Command("git", "-C", repo, "rev-parse", "HEAD:"+path)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD:%s: %v", path, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// twoFolderFixture is a content fixture whose .claude holds two folders, so
+// that the level below .claude holds two trees.
+func twoFolderFixture(t *testing.T) checkoutRuleFixture {
+	t.Helper()
+	return newContentFixture(t, map[string]string{".claude/a/x.json": "{}\n", ".claude/b/y.json": "[]\n"})
+}
+
+// TestContentCheckLevelReadsByDepth: the first `cat-file --batch` exits 1 at
+// once, and every later git works. Each level below the top tree then goes to
+// one `cat-file --buffer --batch` and one long-running tree hash-object, with
+// no separate read. The second read gets the ids of the level in the order of
+// the walk, and the checked line counts all 5 objects and 2 separate runs. The
+// form follows c9125eb8 (measured on Linux). The order is claustrum's own.
+func TestContentCheckLevelReadsByDepth(t *testing.T) {
+	f := twoFolderFixture(t)
+	slowGit(t, "cat-file,--batch", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
+	t.Setenv("CLAUSTRUM_GITSTUB_NTH", "1")
+	stdin := filepath.Join(t.TempDir(), "stdin")
+	t.Setenv("CLAUSTRUM_GITSTUB_STDINLOG", stdin)
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if want := checkedLineSep("2", "files", 5, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	got, _ := objectCalls(calls)
+	want := []string{"batch", "read commit", "write commit", "read tree", "write tree", "buffer", "long tree", "buffer", "long tree"}
+	if !slices.Equal(got, want) {
+		t.Errorf("object calls = %q, want %q", got, want)
+	}
+	b, err := os.ReadFile(stdin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantIn := treeID(t, f.repo, ".claude") + "\n\n" + treeID(t, f.repo, ".claude/a") + "\n" + treeID(t, f.repo, ".claude/b") + "\n"
+	if !strings.HasPrefix(string(b), wantIn) {
+		t.Errorf("the stdin of the two --buffer reads = %q, want %q first", b, wantIn)
+	}
+}
+
+// TestContentCheckLevelHasherStopsOnce: every long-running hash-object exits 1
+// at once. In the level of two trees the first tree stops the tree
+// hash-object of the level, and no second one starts there: both trees get a
+// separate read and hash (claustrum's own, not measured).
+func TestContentCheckLevelHasherStopsOnce(t *testing.T) {
+	f := twoFolderFixture(t)
+	slowGit(t, "hash-object,--stdin-paths,-w", "fail", 0, "", "")
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if n := strings.Count(logs.String(), "stopped using the long-running git"); n != 1 {
+		t.Errorf("log:\n%s\nwant one stop line, got %d", logs, n)
+	}
+	got, _ := objectCalls(calls)
+	want := []string{"batch", "long commit", "read commit", "write commit", "read tree", "write tree",
+		"buffer", "long tree", "read tree", "write tree",
+		"buffer", "long tree", "read tree", "write tree", "read tree", "write tree"}
 	if !slices.Equal(got, want) {
 		t.Errorf("object calls = %q, want %q", got, want)
 	}
