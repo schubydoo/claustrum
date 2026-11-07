@@ -386,6 +386,8 @@ component_management:
         - internal/supervisor/farewell.go
         # 683cc6a9 link-bound processes: the link, the unattended end and the spent ids.
         - internal/supervisor/linkbound.go
+        # c9125eb8 the time limit of the pane's git of a gitRead spawn.
+        - internal/supervisor/gitreadlimit.go
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
         # per-key spawn lock, and the eviction of the prior same-session process.
         - internal/supervisor/sessionsupersede.go

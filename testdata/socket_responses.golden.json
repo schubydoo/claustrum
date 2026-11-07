@@ -68,6 +68,7 @@
         "git.worktree_remove.unpushedGuard",
         "process.spawn.shellAgentSocket",
         "process.spawn.failure_reason",
+        "process.spawn.git_read",
         "server.line_end",
         "launcher.managed",
         "launcher.non_string_refused",
