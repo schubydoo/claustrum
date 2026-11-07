@@ -757,17 +757,26 @@ func (m *Manager) SpawnLaunched(c *conn.Conn, id, command string, args []string,
 // the child, and a release that runs after the start of the child.
 type GitReadStep func(env []string) (args, childEnv []string, release func(), err error)
 
-// SpawnGitRead starts the pane's git of a "gitRead":true spawn: the command git
-// with args in cwd. step runs after the id and cwd tests and after the env is
-// built, so a missing cwd gets the cwd refusal of every spawn (c9125eb8, measured
-// on Linux). A step error fails the spawn.
-func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, step GitReadStep) (*Proc, error) {
-	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, step, nil)
+// gitReadStart is the start of a gitRead spawn: the shape refusal of its args, or
+// nil, and its step.
+type gitReadStart struct {
+	refusal error
+	step    GitReadStep
 }
 
-// spawnWith is SpawnWithTempRoot with the step of a gitRead spawn, or nil, and the
+// SpawnGitRead starts the pane's git of a "gitRead":true spawn: the command git
+// with args in cwd. refusal is the shape refusal of args, or nil. It comes right
+// after the cwd test, so a missing cwd gets the cwd refusal of every spawn before
+// the shape refusal (c9125eb8, measured on Linux, macOS and Windows). The refusal logs its
+// Failed to start line (measured on Linux). step runs after the env is built. A
+// step error fails the spawn.
+func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, refusal error, step GitReadStep) (*Proc, error) {
+	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, &gitReadStart{refusal: refusal, step: step}, nil)
+}
+
+// spawnWith is SpawnWithTempRoot with the start of a gitRead spawn, or nil, and the
 // launcher members of SpawnLaunched, or nil.
-func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead GitReadStep, lo *LauncherOpts) (*Proc, error) {
+func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead *gitReadStart, lo *LauncherOpts) (*Proc, error) {
 	path, argv := command, args
 	supplies := lo != nil && lo.Supplies
 	if launcher != nil {
@@ -851,6 +860,10 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		}
 		cmd.Dir = cwd
 	}
+	if gitRead != nil && gitRead.refusal != nil {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, gitRead.refusal)
+		return nil, gitRead.refusal
+	}
 	// The launcher variables are stripped after the caller's env is merged, so the
 	// strip covers the spawn env param as well as the daemon env.
 	// A gitRead spawn starts its git from the adopted set too (claustrum's own, not measured).
@@ -872,7 +885,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// every git call of the git methods holds its copy until its wait ends.
 	releaseGitRead := func() {}
 	if gitRead != nil && cmd.Err == nil {
-		runArgs, childEnv, release, err := gitRead(cmd.Env)
+		runArgs, childEnv, release, err := gitRead.step(cmd.Env)
 		if err != nil {
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, &GitReadStepError{Err: err}

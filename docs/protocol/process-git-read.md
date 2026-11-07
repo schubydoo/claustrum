@@ -16,11 +16,13 @@ The result is `{"success":true}`, as for a plain spawn. The output comes in stre
 
 ## The refusals
 
-The combine test comes before the shape test (measured on Linux). The place of the `cwd` test after the shape test is claustrum's own, not measured. Each refusal is `-32602` with `"data":{"reason":"other"}`. Each member below is measured on one system at least.
+The combine test comes before the shape test (measured on Linux). The `cwd` test comes before the shape test too (measured on Linux, macOS and Windows). The place of the `cwd` test after the combine test is claustrum's own, not measured. Each member below is measured on one system at least.
 
-1. The combine test gives `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot or sessionFoldersOff`. It refuses a command other than the bare name `git`, no `cwd` and a non-empty `env`. It also refuses `"sessionFoldersOff":true`, a `linkBound` object, `"cliTempRoot":true` and a `pty` object with a key. An empty `env` object passes (measured on Linux).
-2. The shape test gives `not one of the Changes pane's git commands (<N> arguments)`, where `<N>` is the count of `args`.
-3. The `cwd` test of every spawn comes last: a `cwd` that does not exist gets `cwd_missing` (measured on Linux).
+1. The combine test gives `-32602` `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot or sessionFoldersOff` with `"data":{"reason":"other"}`. It refuses a command other than the bare name `git`, no `cwd` and a non-empty `env`. It also refuses `"sessionFoldersOff":true`, a `linkBound` object, `"cliTempRoot":true` and a `pty` object with a key. An empty `env` object passes (measured on Linux).
+2. The `cwd` test of every spawn: a `cwd` that does not exist gets `-32603` `chdir <cwd>: ...` with `cwd_missing`, also with a refused shape.
+3. The shape test gives `-32602` `not one of the Changes pane's git commands (<N> arguments)` with `"data":{"reason":"other"}`, where `<N>` is the count of `args`. The daemon logs `[process.Manager] Failed to start process <id>: <text>` (measured on Linux).
+
+### Other members
 
 With `gitRead`, `"pty":true` gets `Invalid params` (measured on Linux and Windows). So does a `cliTempRoot` text or object (measured on Linux). A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex`, with or without `gitRead` (measured on Linux and macOS).
 

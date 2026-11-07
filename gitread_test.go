@@ -194,3 +194,38 @@ func streamOf(t *testing.T, fs []supervisor.StreamFrame, stream string) string {
 	}
 	return b.String()
 }
+
+// TestGitReadCwdBeforeShape pins the order of c9125eb8: the cwd test comes before
+// the shape test. A missing cwd with a refused shape gets the cwd frame with
+// cwd_missing (measured on Linux, macOS and Windows). A refused shape in a cwd that exists
+// gets the shape frame and its Failed to start line (measured on Linux).
+func TestGitReadCwdBeforeShape(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing-dir")
+	afile := filepath.Join(dir, "README")
+	writeFile(t, afile, "x\n", 0o644)
+	logs := captureLogBuf(t)
+	spawn := func(id, cwd string, args []string) string {
+		return spawnErrorOf(t, map[string]any{"id": id, "command": "git", "args": args, "cwd": cwd, "gitRead": true})
+	}
+	refused := []string{"status", "--porcelain=v2"}
+	top := []string{"rev-parse", "--show-toplevel"}
+	cwdFrame := errJSON(t, -32603, "chdir "+missing+": "+statErrText(t, missing), "cwd_missing")
+	for _, c := range []struct {
+		name, id, cwd string
+		args          []string
+		want          string
+	}{
+		{"missing cwd, refused shape", "gr-c1", missing, refused, cwdFrame},
+		{"missing cwd, allowed shape", "gr-c2", missing, top, cwdFrame},
+		{"cwd is a file", "gr-c6", afile, top, errJSON(t, -32603, "chdir "+afile+": not a directory", "cwd_missing")},
+		{"refused shape", "gr-c5", dir, refused, `{"code":-32602,"message":"not one of the Changes pane's git commands (2 arguments)","data":{"reason":"other"}}`},
+	} {
+		if got := spawn(c.id, c.cwd, c.args); got != c.want {
+			t.Errorf("%s: error = %s\nwant    %s", c.name, got, c.want)
+		}
+	}
+	if line := "[process.Manager] Failed to start process gr-c5: not one of the Changes pane's git commands (2 arguments)"; !strings.Contains(logs.String(), line) {
+		t.Errorf("log lacks %q", line)
+	}
+}
