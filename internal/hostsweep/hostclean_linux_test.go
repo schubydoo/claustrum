@@ -413,11 +413,11 @@ func TestEndGroupsTwoPhase(t *testing.T) {
 	// during the grace; g2 stays alive and survives SIGKILL.
 	mk(noSuchPid+2001, "stat", "1073743825 (x) R 1 1073743825 "+strings.Repeat("0 ", 16)+"5 x")
 	mk(noSuchPid+2002, "stat", "1073743826 (x) R 1 1073743826 "+strings.Repeat("0 ", 16)+"5 x")
-	groups := []tracked{
-		{pid: noSuchPid + 2001, pgid: noSuchPid + 2001, startTicks: "5"}, // exits during the grace
-		{pid: noSuchPid + 2002, pgid: noSuchPid + 2002, startTicks: "5"}, // alive throughout
+	groups := []hcGroup{
+		{tracked: tracked{pid: noSuchPid + 2001, pgid: noSuchPid + 2001, startTicks: "5"}}, // exits during the grace
+		{tracked: tracked{pid: noSuchPid + 2002, pgid: noSuchPid + 2002, startTicks: "5"}}, // alive throughout
 	}
-	sig, surv := endGroupsTwoPhase(groups, "orphan", "")
+	sig, surv := endGroupsTwoPhase(groups, "orphan")
 	if sig != 2 {
 		t.Errorf("signalled=%d, want 2", sig)
 	}
@@ -638,7 +638,7 @@ func TestEndGroupsWrapper(t *testing.T) {
 	c := &hostCleaner{}
 	var sum hcSummary
 	mk(noSuchPid+6001, "stat", "1073747825 (x) R 1 1073747825 "+strings.Repeat("0 ", 16)+"1 x") // live at signal time; dies on SIGTERM
-	c.endGroups([]tracked{{pid: noSuchPid + 6001, pgid: noSuchPid + 6001, startTicks: "1"}}, &sum)
+	c.endGroups([]hcGroup{{tracked: tracked{pid: noSuchPid + 6001, pgid: noSuchPid + 6001, startTicks: "1"}}}, &sum)
 	if sum.orphanSignalled != 1 {
 		t.Errorf("orphanSignalled=%d, want 1", sum.orphanSignalled)
 	}
@@ -662,7 +662,7 @@ func TestEndGroupsTwoPhaseForeignOwner(t *testing.T) {
 		return syscall.EPERM
 	})
 	mk(noSuchPid+8100, "stat", "1073749924 (x) R 1 1073749924 "+strings.Repeat("0 ", 16)+"1 x")
-	sig, _ := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 8100, pgid: noSuchPid + 8100, startTicks: "1"}}, "orphan", "")
+	sig, _ := endGroupsTwoPhase([]hcGroup{{tracked: tracked{pid: noSuchPid + 8100, pgid: noSuchPid + 8100, startTicks: "1"}}}, "orphan")
 	if sig != 0 {
 		t.Errorf("signalled=%d, want 0 (EPERM: not ours)", sig)
 	}
@@ -1174,7 +1174,7 @@ func TestEndGroupsTwoPhaseSkipsReusedPid(t *testing.T) {
 	single, group := hcSeamSignals(t, root)
 	// The tracked child recorded start-ticks "1"; the live pid now shows "999" (a reused pid).
 	mk(noSuchPid+5000, "stat", "1073746824 (x) R 1 1073746824 "+strings.Repeat("0 ", 16)+"999 x")
-	sig, _ := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 5000, pgid: noSuchPid + 5000, startTicks: "1"}}, "leftover", "")
+	sig, _ := endGroupsTwoPhase([]hcGroup{{tracked: tracked{pid: noSuchPid + 5000, pgid: noSuchPid + 5000, startTicks: "1"}}}, "leftover")
 	if sig != 0 {
 		t.Errorf("signalled=%d, want 0 (the pid was reused)", sig)
 	}
@@ -1207,7 +1207,7 @@ func TestEndGroupsTwoPhaseReapsDyingLeaderGroup(t *testing.T) {
 		return nil
 	})
 	mk(noSuchPid+7001, "stat", "1073748825 (x) R 1 1073748825 "+strings.Repeat("0 ", 16)+"1 x")
-	sig, _ := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 7001, pgid: noSuchPid + 7001, startTicks: "1"}}, "leftover", "")
+	sig, _ := endGroupsTwoPhase([]hcGroup{{tracked: tracked{pid: noSuchPid + 7001, pgid: noSuchPid + 7001, startTicks: "1"}}}, "leftover")
 	if sig != 1 {
 		t.Errorf("signalled=%d, want 1", sig)
 	}

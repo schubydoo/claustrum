@@ -201,3 +201,17 @@ func TestRunDirsEnumerationArms(t *testing.T) {
 		}
 	})
 }
+
+// TestUTCDateText pins the darwin start part of the stamp (on macOS: "Fri Nov 6 23:23:43
+// 2026"): UTC, one blank before a day of one digit, no fraction.
+func TestUTCDateText(t *testing.T) {
+	pst := time.FixedZone("PST", -8*3600)
+	for at, want := range map[time.Time]string{
+		time.Date(2026, 11, 6, 15, 23, 43, 900_000_000, pst): "Fri Nov 6 23:23:43 2026",
+		time.Date(2026, 11, 16, 1, 2, 3, 0, time.UTC):        "Mon Nov 16 01:02:03 2026",
+	} {
+		if got := hcUTCDateText(at); got != want {
+			t.Errorf("hcUTCDateText(%v) = %q, want %q", at, got, want)
+		}
+	}
+}

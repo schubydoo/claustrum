@@ -200,6 +200,18 @@ func kinfoStartWall(buf []byte) time.Time {
 	return time.Unix(int64(le64(buf, offStartSec)), int64(le32(buf, offStartUsec))*1000)
 }
 
+// hcMarkStartText is the start part of the CLAUDE_SSH_CHILD stamp of t on darwin: the start
+// time as a UTC date text with one blank between its words, the form the trampoline stamps
+// (measured on macOS against c9125eb8: "Fri Nov 6 23:23:43 2026"). It is built from the
+// kinfo start second, so no ps runs. That this text equals the ps text of the stamp is
+// claustrum's own, not measured.
+func hcMarkStartText(t hcTracked) string {
+	if !t.haveAge {
+		return ""
+	}
+	return hcUTCDateText(t.startWall)
+}
+
 // hcReadIdent returns pid's process-group id and start-time token for the pid-reuse re-check
 // (tracked.fate). ok is false when the process is gone or a zombie.
 func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {

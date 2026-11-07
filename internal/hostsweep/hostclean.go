@@ -26,10 +26,10 @@ import (
 // enders, the run-dir tidy, and the Start/Pass/Keepalive lifecycle. The OS-specific reads it
 // drives (process inspection, snapshot, socket-peer, lock and open-file probes) live in
 // hostclean_linux.go (/proc, SO_PEERCRED, /proc/locks) and hostclean_darwin.go (sysctl
-// kern.proc, KERN_PROCARGS2, lsof, LOCAL_PEERPID). Everything it touches is confined to the
+// kern.proc, KERN_PROCARGS2, lsof, LOCAL_PEERPID). Every path it touches is confined to the
 // install root of the daemon's own socket. That is one folder, under the path as given
-// and under its real path. It is also confined to this user's own processes. The sweep
-// therefore never reaches an unrelated process or path.
+// and under its real path. Every process it signals is this user's own. An orphan group
+// runs a CLI binary under that root, or carries its own CLAUDE_SSH_CHILD stamp (judgeOrphan).
 //
 // This path is DESTRUCTIVE: the cleaner ends OTHER daemons under its roots. Every process read,
 // kill, dial, rename and remove goes through a package-var seam, so unit tests exercise the whole
@@ -303,7 +303,8 @@ func hcDirIdle(root *os.Root, name string, now time.Time) (time.Duration, bool) 
 
 // ---- ownership / liveness / lock + socket probes ----
 
-// hcDialTimeout and hcWaitPoll are claustrum's own values, not probe-measured.
+// hcDialTimeout is claustrum's own value, not probe-measured. hcWaitPoll matches the
+// group probes of c9125eb8, about every 100 ms (measured on Linux).
 const (
 	hcDialTimeout = 300 * time.Millisecond // probeSocket dial timeout
 	hcWaitPoll    = 100 * time.Millisecond // waitGone poll interval
@@ -526,27 +527,39 @@ type waitEntry struct {
 	kill bool
 }
 
-// waitGone polls the entries until they are gone or the deadline passes. A tracked process
-// that dies while its process group still has members has that group SIGKILLed (reaping the
-// orphaned children); a pid-reused entry is dropped. It returns the entries still alive.
+// waitGone polls the entries until they are gone or the deadline passes. It returns the
+// entries still alive. A pid-reused entry is dropped and never signalled.
+//
+// A tracked leader with kill set that is gone while its group still answers stays in the
+// poll. If the group goes away before the deadline, it gets no SIGKILL. At the deadline a
+// group that still answers gets one SIGKILL and no line. Right before that SIGKILL, the
+// poll reads that leader as gone, not reused, and probes its group. c9125eb8 probed the
+// group about every 100 ms and sent the SIGKILL 3 s after the SIGTERM (measured on Linux).
+// In the settle after the SIGKILL this wait is claustrum's own, not measured.
 func waitGone(entries []waitEntry, deadline time.Time) []waitEntry {
 	for {
-		var survivors []waitEntry
+		// The deadline is read first, so a SIGKILL comes right after the reads of its own entry.
+		last := !hcClock().Before(deadline)
+		var survivors, leaderGone []waitEntry
 		for _, e := range entries {
 			switch e.fate() {
 			case hcFateAlive:
 				survivors = append(survivors, e)
 			case hcFateGone:
 				if e.kill && e.pid > 1 && hcGroupExists(e.pid) {
-					_ = killGroup(e.pid, syscall.SIGKILL)
+					if last {
+						_ = killGroup(e.pid, syscall.SIGKILL)
+					} else {
+						leaderGone = append(leaderGone, e)
+					}
 				}
 			}
 			// hcFateReused: dropped, never signaled.
 		}
-		entries = survivors
-		if len(entries) == 0 || !hcClock().Before(deadline) {
-			return entries
+		if last || len(survivors)+len(leaderGone) == 0 {
+			return survivors
 		}
+		entries = append(survivors, leaderGone...)
 		hcSleep(hcWaitPoll)
 	}
 }
@@ -631,27 +644,34 @@ func newHostCleaner(socket string) (*hostCleaner, error) {
 	return c, nil
 }
 
+// hcGroup is one process group for endGroupsTwoPhase. termLog, when not empty, is a format
+// with one %d (the pid) logged before its SIGTERM.
+type hcGroup struct {
+	tracked
+	termLog string
+}
+
 // endGroupsTwoPhase signals a set of process groups SIGTERM, waits the grace, SIGKILLs the
 // survivors, waits the settle, and reports the ones that outlived SIGKILL. Each entry is a
 // group leader (pid == pgid), and every signal goes to the group (kill(-pid)). label names
 // the entity in the logs ("orphaned process group").
-// termLog, when not empty, is a format with one %d (the pid) logged before each SIGTERM.
 // It returns the count signalled and the count that survived SIGKILL.
 //
 // The line before the SIGKILL is the reference's, measured on Linux against f6010b97 and
-// 89cb6289. A group that waitGone ends early, because its leader is gone, gets no line.
-// The reference printed none there either (measured, the kid variant).
-func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, survived int) {
+// 89cb6289. A group whose leader is gone gets its SIGKILL in waitGone with no line.
+// c9125eb8 printed none there either (measured on Linux).
+func endGroupsTwoPhase(groups []hcGroup, label string) (signalled, survived int) {
 	var live []waitEntry
-	for _, g := range groups {
+	for _, hg := range groups {
+		g := hg.tracked
 		// Re-validate identity immediately before signalling: a child can exit (and its pid be
 		// reused by an unrelated process) between the snapshot and now, so signal only when the
 		// tracked pgid and start-ticks still match.
 		if g.pid < 2 || !g.same() {
 			continue
 		}
-		if termLog != "" {
-			logging.Infof(termLog, g.pid)
+		if hg.termLog != "" {
+			logging.Infof(hg.termLog, g.pid)
 		}
 		err := killGroup(g.pid, syscall.SIGTERM)
 		if err != nil {
@@ -666,7 +686,7 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 		}
 		signalled++
 		// kill-enabled for a group leader: if it exits during the grace, waitGone SIGKILLs its
-		// process group, reaping any members that outlive the leader.
+		// process group at the end of the grace, and only if a member is left.
 		live = append(live, waitEntry{tracked: g, kill: g.pid == g.pgid})
 	}
 	survivors := waitGone(live, hcClock().Add(hcTermGrace))
@@ -677,6 +697,7 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 		logging.Infof("[hostclean] group %d outlived SIGTERM for %s: SIGKILL", g.pid, hcTermGrace)
 		_ = killGroup(g.pid, syscall.SIGKILL)
 	}
+	// In the settle after the SIGKILL this wait is claustrum's own, not measured.
 	for _, g := range waitGone(survivors, hcClock().Add(hcKillSettle)) {
 		survived++
 		logging.Infof("[hostclean] %s %d survived SIGKILL", label, g.pid)
@@ -684,16 +705,36 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 	return signalled, survived
 }
 
+// The lines before the SIGTERM of an orphan group. Both are the reference's (c9125eb8,
+// measured on Linux and macOS). hcOrphanMarkLog is for an orphan that runs no
+// CLI binary and carries its own CLAUDE_SSH_CHILD stamp.
+const (
+	hcOrphanCLILog  = "[hostclean] ending orphaned Claude Code process group %d (its daemon is gone): SIGTERM"
+	hcOrphanMarkLog = "[hostclean] ending orphaned Claude Code process group %d (its daemon is gone; known by its CLAUDE_SSH_CHILD mark, not by its program): SIGTERM"
+)
+
 // endGroups ends a set of orphaned Claude Code process groups (Pass step 9).
-func (c *hostCleaner) endGroups(groups []tracked, sum *hcSummary) {
-	sig, surv := endGroupsTwoPhase(groups, "orphaned process group",
-		"[hostclean] ending orphaned Claude Code process group %d (its daemon is gone): SIGTERM")
+func (c *hostCleaner) endGroups(groups []hcGroup, sum *hcSummary) {
+	sig, surv := endGroupsTwoPhase(groups, "orphaned process group")
 	sum.orphanSignalled += sig
 	sum.orphanSurvived += surv
 }
 
 // hcDaemonChildMarker is the environment entry a daemon-spawned process carries.
 const hcDaemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD=1"
+
+// hcStampMatches reports whether env of t holds CLAUDE_SSH_CHILD=<pid>:<start> of t itself.
+// The start is OS-specific (hcMarkStartText). c9125eb8 ends an orphan that runs no CLI binary
+// when it carries the stamp (measured on Linux and macOS). The test that the stamp names
+// this very process is claustrum's own, not measured: no row varied the stamp. A grandchild
+// inherits the stamp of its parent, so its stamp does not match it.
+func hcStampMatches(t hcTracked) bool {
+	start := hcMarkStartText(t)
+	if t.pid < 2 || start == "" {
+		return false
+	}
+	return hcHasEnv(t.env, "CLAUDE_SSH_CHILD="+strconv.Itoa(t.pid)+":"+start)
+}
 
 // verifyListener returns "" when the process answering a socket is verifiably one of our
 // daemons serving that socket, or a short reason otherwise. It is the strict gate before the
@@ -740,12 +781,18 @@ func hcArgvHasStreamJSON(argv []string) bool {
 	return false
 }
 
+// hcUTCDateText renders at as a UTC date text with one blank between its words, such as
+// "Fri Nov 6 23:23:43 2026". It is the darwin start part of the stamp (hcMarkStartText).
+func hcUTCDateText(at time.Time) string {
+	return at.UTC().Format("Mon Jan 2 15:04:05 2006")
+}
+
 // judgeOrphan reports whether a process group leader is an orphaned Claude Code child whose
 // owning daemon is gone. The caller passes only ppid-1 group leaders that run one of our CLI
-// binaries. It must be this user's own process, in this daemon's namespace, old enough, a
-// stream-json process, carrying the daemon-child marker, and its stdin, stdout and stderr
-// must all be pipes, the stdio a daemon gives its child. The uid, namespace and CLI-binary
-// gates keep the cleaner from ending an unrelated same-user process that merely inherited the
+// binaries or carry their own stamp (hcStampMatches). It must be this user's own process, in
+// this daemon's namespace, old enough, a stream-json process, carrying the daemon-child
+// marker, and its stdin, stdout and stderr must all be pipes, the stdio a daemon gives its
+// child. The uid, namespace and CLI-binary or stamp gates keep the cleaner from ending an unrelated same-user process that merely inherited the
 // marker and happens to carry a stream-json argument. The reason is for the spare log; an
 // empty reason with reap=false is a silent skip.
 func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
@@ -761,8 +808,8 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	if hcClock().Sub(t.startWall) < hcMinAge {
 		return false, "" // too young
 	}
-	if t.exe == "" || !c.roots.isCliBinary(t.exe) {
-		return false, "" // not one of our deployed CLI binaries
+	if t.exe == "" || (!c.roots.isCliBinary(t.exe) && !hcStampMatches(t)) {
+		return false, "" // not one of our deployed CLI binaries, and no own stamp
 	}
 	if t.argv == nil {
 		return false, "its argv could not be read"
@@ -1182,10 +1229,12 @@ func (c *hostCleaner) Pass() hcSummary {
 	}
 
 	// Orphaned Claude Code groups: a group leader re-parented to pid 1 that runs one of our
-	// CLI binaries.
-	var orphanGroups []tracked
+	// CLI binaries, or that carries its own CLAUDE_SSH_CHILD stamp. The CLI test comes first,
+	// so a stamped CLI orphan gets the CLI line.
+	var orphanGroups []hcGroup
 	for _, t := range procs {
-		if t.pid < 2 || t.pid == c.selfPid || t.ppid != 1 || t.pgid != t.pid || t.exe == "" || !c.roots.isCliBinary(t.exe) {
+		isCli := t.exe != "" && c.roots.isCliBinary(t.exe)
+		if t.pid < 2 || t.pid == c.selfPid || t.ppid != 1 || t.pgid != t.pid || t.exe == "" || (!isCli && !hcStampMatches(t)) {
 			continue
 		}
 		reap, reason := c.judgeOrphan(t)
@@ -1203,7 +1252,11 @@ func (c *hostCleaner) Pass() hcSummary {
 			logging.Infof("[hostclean] more orphaned Claude Code groups than one pass ends (%d); leaving the rest for the next pass", hcMaxGroups)
 			break // per-pass cap on orphan groups ended
 		}
-		orphanGroups = append(orphanGroups, t.asTracked())
+		termLog := hcOrphanCLILog
+		if !isCli {
+			termLog = hcOrphanMarkLog
+		}
+		orphanGroups = append(orphanGroups, hcGroup{tracked: t.asTracked(), termLog: termLog})
 	}
 	c.endGroups(orphanGroups, &sum)
 	if !tooMany {
