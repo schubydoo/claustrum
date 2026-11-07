@@ -63,11 +63,42 @@ func contentFrame(t *testing.T, code, hint string) string {
 		jsonQuoted(t, contentRefusalStart+hint) + `,"errorCode":"` + code + `"}}`
 }
 
-// checkedLine matches the log line of one check.
+// checkedLine matches the log line of one check whose commit and trees came
+// through the batch.
 func checkedLine(files, word string, objects int, commit, end string) *regexp.Regexp {
+	return checkedLineSep(files, word, objects, 0, commit, end)
+}
+
+// checkedLineSep is checkedLine with sep commits and trees read by separate
+// runs.
+func checkedLineSep(files, word string, objects, sep int, commit, end string) *regexp.Regexp {
 	return regexp.MustCompile(regexp.QuoteMeta("[GitHandler] worktree_create: checked "+files+" "+word+
 		" under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against "+fmt.Sprint(objects)+
-		" objects of commit "+commit[:12]+" in ") + `[0-9.a-zµ]+` + regexp.QuoteMeta(": "+end))
+		" objects of commit "+commit[:12]+" ("+fmt.Sprint(sep)+" of the commits and folder listings read by separate git runs) in ") +
+		`[0-9.a-zµ]+` + regexp.QuoteMeta(": "+end))
+}
+
+// noSHA1 makes the checks of the test run as in a process that cannot
+// compute SHA-1: with no batch.
+func noSHA1(t *testing.T) {
+	t.Helper()
+	old := sha1Works
+	sha1Works = func() bool { return false }
+	t.Cleanup(func() { sha1Works = old })
+}
+
+// catFileCalls counts the `cat-file --batch` calls and the separate
+// `cat-file commit` and `cat-file tree` calls of calls.
+func catFileCalls(calls []envCall) (batch, separate int) {
+	for _, c := range calls {
+		switch {
+		case containsSeq(c.argv, "cat-file", "--batch"):
+			batch++
+		case containsSeq(c.argv, "cat-file", "commit"), containsSeq(c.argv, "cat-file", "tree"):
+			separate++
+		}
+	}
+	return batch, separate
 }
 
 func noReadbackFolder(t *testing.T, f checkoutRuleFixture) {
@@ -121,6 +152,104 @@ func TestContentCheckMatch(t *testing.T) {
 	}
 	if !sawWrite || !sawPaths {
 		t.Errorf("hash-object -w ran %v, --stdin-paths ran %v, want both", sawWrite, sawPaths)
+	}
+	// One `cat-file --batch` reads the commit and the trees (c9125eb8,
+	// measured on Linux and macOS).
+	if batch, separate := catFileCalls(calls); batch != 1 || separate != 0 {
+		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 0", batch, separate)
+	}
+	for _, c := range calls {
+		if containsSeq(c.argv, "cat-file", "--batch") && canonicalPath(c.cwd) != canonicalPath(f.repo) {
+			t.Errorf("cat-file --batch runs in %s, want the base repository", c.cwd)
+		}
+	}
+}
+
+// TestContentCheckBatchEnds: a `cat-file --batch` that exits 1 at once gives
+// the line of a batch that stopped answering. Separate runs read the commit and
+// the tree. The create succeeds, and the checked line counts 2 separate runs
+// (c9125eb8, measured on Linux).
+func TestContentCheckBatchEnds(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	slowGit(t, "cat-file,--batch", "fail", 0, "", "")
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	stopped := "[GitHandler] worktree_create: stopped using the long-running git cat-file for the new worktree's config check: it stopped answering (EOF); the rest is read with a git process per object or per folder depth (slower, same result)"
+	if !strings.Contains(logs.String(), stopped+"\n") {
+		t.Errorf("log:\n%s\nwant the line %q", logs, stopped)
+	}
+	if want := checkedLineSep("1", "file", 2, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if batch, separate := catFileCalls(calls); batch != 1 || separate != 2 {
+		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 2", batch, separate)
+	}
+}
+
+// TestContentCheckWaitsForTheBatch: the create answers only after the
+// `cat-file --batch` git read the end of its stdin and exited. The stub writes
+// its record 1 s after the real git ended (claustrum's own, not measured).
+func TestContentCheckWaitsForTheBatch(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	record := filepath.Join(t.TempDir(), "batch-ended")
+	slowGit(t, "cat-file,--batch", "post", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
+	t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "sleep\x1f1000\x1ewrite\x1f"+record+"\x1fended")
+	raw, _ := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if _, err := os.Stat(record); err != nil {
+		t.Errorf("the batch git had not ended at the reply: %v", err)
+	}
+}
+
+// TestContentCheckNoSHA1: a process that cannot compute SHA-1 logs its line,
+// starts no `cat-file --batch`, and reads the commit and the tree by separate
+// runs. The checked line counts 2 (c9125eb8, measured on Linux with
+// GODEBUG=fips140=only).
+func TestContentCheckNoSHA1(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	noSHA1(t)
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	line := "[GitHandler] worktree_create: this process cannot compute SHA-1 (GODEBUG=fips140=only), so the new worktree's config check reads each commit, folder and link with separate git processes instead of the long-running ones (slower, same result)"
+	if !strings.Contains(logs.String(), line+"\n") {
+		t.Errorf("log:\n%s\nwant the line %q", logs, line)
+	}
+	if want := checkedLineSep("1", "file", 2, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if batch, separate := catFileCalls(calls); batch != 0 || separate != 2 {
+		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 0 and 2", batch, separate)
+	}
+}
+
+// TestSHA1WorksUnderFIPSOnly: with GODEBUG=fips140=only the probe reports
+// false, and with no GODEBUG it reports true.
+func TestSHA1WorksUnderFIPSOnly(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		godebug, want string
+	}{{"fips140=only", "false"}, {"", "true"}} {
+		cmd := exec.Command(exe)
+		cmd.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sha1-works", "GODEBUG": row.godebug})
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("GODEBUG=%s: %v", row.godebug, err)
+		}
+		if got := strings.TrimSpace(string(out)); got != row.want {
+			t.Errorf("GODEBUG=%s: sha1Works = %s, want %s", row.godebug, got, row.want)
+		}
 	}
 }
 
@@ -232,12 +361,14 @@ func TestContentCheckLinks(t *testing.T) {
 	}
 }
 
-// TestContentCheckStoppedCall: a `cat-file commit` call of the check that its
+// TestContentCheckStoppedCall: a separate `cat-file commit` call of the check that its
 // limit stops gives the repository code with the stop text, and the rollback
 // runs (measured on Linux, macOS and Windows). The log line counts no file and
 // no object (measured on Linux).
 func TestContentCheckStoppedCall(t *testing.T) {
 	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
+	// With no batch the commit is read by a separate run.
+	noSHA1(t)
 	// The limit is that of every call of the create. 5 s is far over a fast
 	// call on a loaded runner and far under the hold of the stub.
 	shortGitLimit(t, 5*time.Second)

@@ -218,6 +218,7 @@ component_management:
         - internal/git/worktreeverify.go
         # the content check of git.worktree_create after the checkout (b3081b51).
         - internal/git/worktreecontent.go
+        - internal/git/worktreecontentbatch.go
         - internal/git/worktreecontent_linux.go
         - internal/git/worktreecontent_nolinux.go
         - internal/git/worktreecontent_unix.go

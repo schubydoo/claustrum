@@ -748,6 +748,10 @@ func applyGitStubStep(w []string) error {
 		return os.WriteFile(w[1], []byte(w[2]), 0o644)
 	case len(w) == 2 && w[0] == "rm":
 		return os.Remove(w[1])
+	case len(w) == 2 && w[0] == "sleep":
+		ms, err := strconv.Atoi(w[1])
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		return err
 	case len(w) == 2 && w[0] == "mkdir":
 		return os.Mkdir(w[1], 0o755)
 	case len(w) == 3 && w[0] == "rename":

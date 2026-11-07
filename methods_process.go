@@ -123,7 +123,7 @@ const gitReadCombineText = `gitRead needs the command "git" and a cwd, and canno
 // passes. With gitRead, "pty":true gets Invalid params (measured on Linux and
 // Windows), and so does a cliTempRoot text or object (measured on Linux). A
 // launcher array gets the combine text here (claustrum's own, not measured). A pty
-// object with no valid key gets its own text (measured on Linux).
+// object with no valid key gets its own text (measured on Linux and macOS).
 func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
 	var raw struct {
 		Pty         json.RawMessage `json:"pty"`
@@ -136,7 +136,7 @@ func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
 	}
 	// A pty object with no valid key gets this text with or without gitRead
-	// (c9125eb8, measured on Linux). The order against the other tests is
+	// (c9125eb8, measured on Linux and macOS). The order against the other tests is
 	// claustrum's own, not measured.
 	if pty && !gitReadPtyKeyOK(raw.Pty) {
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "A terminal needs a key of 32 bytes in hex"))

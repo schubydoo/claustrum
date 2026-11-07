@@ -24,7 +24,7 @@ The combine test comes before the shape test (measured on Linux). The place of t
 
 With `gitRead`, `"pty":true` gets `Invalid params` (measured on Linux and Windows). So does a `cliTempRoot` text or object (measured on Linux). A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex`, with or without `gitRead` (measured on Linux and macOS).
 
-claustrum's own: a `launcher` array gets the combine text.
+claustrum's own: a `launcher` array gets the combine text. The [linkBound](process-link-bound.md#the-refusals) tests come before these tests. So `gitRead` with a `linkBound` object and a `launcher` gets the `linkBound` text.
 
 ## The allowed commands
 
@@ -48,11 +48,13 @@ The daemon takes the steps of the git methods first: the start test, the setting
 
 A folder with no repository is not refused. The git exits 128 with `fatal: not a git repository: '/dev/null'` (`'NUL'` on Windows, measured on Linux and Windows).
 
+The git holds its copy of the settings until it exits, as each git call of the git methods does (claustrum's own).
+
 claustrum's own: a refusal of the git steps fails the spawn with `-32603`, its text and the reason `other`.
 
 ## The time limit
 
-The git gets `SIGTERM` 120 s after its start. A git that ignores it runs about 7 s more. No member sets the limit. A plain child is not ended at it. At the limit the daemon logs `[process.Manager] the pane's git has run for 2m0s; ending it`.
+The limit is 120 s from the start of the git. No member sets the limit. A plain child is not ended at it. At the limit the daemon logs `[process.Manager] the pane's git has run for 2m0s; ending it`.
 
 - Linux and macOS: `SIGTERM` goes to the git alone. If the git still runs 7 s later, its process group gets `SIGKILL`. A git that ends on the `SIGTERM` gets no `SIGKILL`, and a process in its group lives on.
 - Windows: the git ends at the limit with exit code 1. claustrum ends it as it ends a child for every signal (claustrum's own).

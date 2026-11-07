@@ -154,7 +154,7 @@ func TestContentCheckLostExecBit(t *testing.T) {
 }
 
 // wantFileModeCall tests that one config call of core.fileMode ran in the base
-// repository, and before `cat-file commit`.
+// repository, and before `cat-file --batch`.
 func wantFileModeCall(t *testing.T, f checkoutRuleFixture, calls []envCall) {
 	t.Helper()
 	want := []string{"config", "-z", "--bool", "--get-regexp", `^core\.(filemode|symlinks)$`}
@@ -171,8 +171,8 @@ func wantFileModeCall(t *testing.T, f checkoutRuleFixture, calls []envCall) {
 	if n != 1 {
 		t.Fatalf("%d config calls %q, want 1", n, want)
 	}
-	if !slices.ContainsFunc(calls[at+1:], func(c envCall) bool { return containsSeq(c.argv, "cat-file", "commit") }) {
-		t.Error("no cat-file commit call after the config call, want the config call first")
+	if !slices.ContainsFunc(calls[at+1:], func(c envCall) bool { return containsSeq(c.argv, "cat-file", "--batch") }) {
+		t.Error("no cat-file --batch call after the config call, want the config call first")
 	}
 }
 

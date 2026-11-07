@@ -209,6 +209,10 @@ type Proc struct {
 	// nothing to do.
 	forgetRecord func()
 	recordDone   chan struct{}
+	// afterWait runs once, when the wait on the child returns. The pane's git of a
+	// gitRead spawn ends the hold of its copy of the repository there. It is set
+	// once at spawn, and nil means there is nothing to do.
+	afterWait func()
 
 	// Async stdin: process.stdin enqueues here and returns immediately, while a
 	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
@@ -859,18 +863,25 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	// The pane's git of a gitRead spawn gets its argv and env from its step. The
 	// place after the bare-command step is claustrum's own, not measured.
+	// The release of a child that starts runs at its exit (Proc.afterWait), as
+	// every git call of the git methods holds its copy until its wait ends.
 	releaseGitRead := func() {}
 	if gitRead != nil && cmd.Err == nil {
 		runArgs, childEnv, release, err := gitRead(cmd.Env)
 		if err != nil {
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
-			return nil, err
+			return nil, &GitReadStepError{Err: err}
 		}
 		releaseGitRead = release
 		cmd.Args = append([]string{cmd.Args[0]}, runArgs...)
 		cmd.Env = childEnv
 	}
-	defer releaseGitRead()
+	gitReadKept := false
+	defer func() {
+		if !gitReadKept {
+			releaseGitRead()
+		}
+	}()
 	if launcher != nil && !supplies {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
@@ -1193,6 +1204,8 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
 	// From here the exit of the child gives the folder back.
 	keptTemp = true
+	gitReadKept = true
+	p.afterWait = releaseGitRead
 	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
 	// Only the pane's git has a time limit. A plain child is not ended at it
 	// (c9125eb8, measured on Linux, macOS and Windows).
@@ -1224,6 +1237,9 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	p.mu.Lock()
 	p.reaped = true
 	p.mu.Unlock()
+	if p.afterWait != nil {
+		p.afterWait()
+	}
 	// The child has ended, so its registry record goes now, before the drain wait
 	// below. Measured on Linux: the record of the reference is gone 60 ms after the
 	// end of a child whose grandchild holds the pipes, and the exit frame comes 5 s
