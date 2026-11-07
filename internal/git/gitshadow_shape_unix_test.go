@@ -394,8 +394,10 @@ func createRows() []shapeRow {
 		// The content check of b3081b51 (worktreecontent.go), in the state shadow
 		// only. The commit has no file of the check, so no hash-object
 		// --stdin-paths call runs. The config read of core.fileMode comes first.
-		contentCheckRows(`config -z --bool --get-regexp ^core\.(filemode|symlinks)$`, "cat-file commit <id>", "hash-object -t commit --literally --no-filters --stdin -w",
-			"cat-file tree <id>", "hash-object -t tree --literally --no-filters --stdin -w"),
+		// One `cat-file --batch` reads the commit and the tree, as c9125eb8 does.
+		// The config listing and the hash-object forms follow b3081b51.
+		contentCheckRows(`config -z --bool --get-regexp ^core\.(filemode|symlinks)$`, "cat-file --batch", "hash-object -t commit --literally --no-filters --stdin -w",
+			"hash-object -t tree --literally --no-filters --stdin -w"),
 	)
 }
 
