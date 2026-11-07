@@ -733,6 +733,24 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 // and the process keeps its answer in cliTempRoot. folders are the session folders
 // of the spawn (sessionfolders.go), recorded before the start.
 func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*Proc, error) {
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil)
+}
+
+// GitReadStep builds the run of a "gitRead":true spawn. It gets the environment
+// that the spawn built and returns the argv after the command, the environment of
+// the child, and a release that runs after the start of the child.
+type GitReadStep func(env []string) (args, childEnv []string, release func(), err error)
+
+// SpawnGitRead starts the pane's git of a "gitRead":true spawn: the command git
+// with args in cwd. step runs after the id and cwd tests and after the env is
+// built, so a missing cwd gets the cwd refusal of every spawn (c9125eb8, measured
+// on Linux). A step error fails the spawn.
+func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, step GitReadStep) (*Proc, error) {
+	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, step)
+}
+
+// spawnWith is SpawnWithTempRoot with the step of a gitRead spawn, or nil.
+func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead GitReadStep) (*Proc, error) {
 	path, argv := command, args
 	if launcher != nil {
 		if err := RefuseManagedLauncher(*launcher, command); err != nil {
@@ -818,6 +836,20 @@ func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []str
 	if launcher == nil {
 		bareCommandStart(cmd, command, env)
 	}
+	// The pane's git of a gitRead spawn gets its argv and env from its step. The
+	// place after the bare-command step is claustrum's own, not measured.
+	releaseGitRead := func() {}
+	if gitRead != nil && cmd.Err == nil {
+		runArgs, childEnv, release, err := gitRead(cmd.Env)
+		if err != nil {
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+		releaseGitRead = release
+		cmd.Args = append([]string{cmd.Args[0]}, runArgs...)
+		cmd.Env = childEnv
+	}
+	defer releaseGitRead()
 	if launcher != nil {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
