@@ -182,7 +182,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
 === "Windows"
 
-    - With no global excludes file of the user, the status runs. The reference differs ([D16](../DIVERGENCES.md#d16)).
+    - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8`, measured on Windows).
     - A `baseRepo` with a junction before its last component, or a dangling junction, does not resolve: `"isRepo": false`. A link to a network or device path is refused first ([A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path)).
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
@@ -221,8 +221,6 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
 A rule that names a system is measured there only. A linked rule keeps the marks of its own section.
 
-Divergence entry:
-
-- [D16](../DIVERGENCES.md#d16): on Windows, with no global excludes file of the user, claustrum answers the status where the reference answers `-32603 "exit status 128"`.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method.
 
 The measured cells behind each rule are in the tests and in the [reference build history](../REFERENCE-BUILDS.md).

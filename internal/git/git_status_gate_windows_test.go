@@ -11,8 +11,8 @@ import (
 )
 
 // The Windows rows of the git.status gate. Each row is measured on 89cb6289 on
-// Windows, where the daemon has a user excludes file. The frames of
-// claustrum are the same with no such file (D16).
+// Windows, where the daemon has a user excludes file. The suite gives the daemon
+// such a file too (windowsUserExcludes).
 func TestGitStatusWindowsSpellings(t *testing.T) {
 	cases := []struct {
 		name string
