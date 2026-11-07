@@ -249,7 +249,7 @@ In the state `shadow` a good checkout gets one more call: `git diff-files --quie
 - The call runs only with 10 s or more left. It stops 10 s before the deadline, after 1 s at least, and a stop changes nothing (measured on Linux). The time left is read right before the call (claustrum's own). With no `timeoutMs` the limit is that of the other calls of the request (claustrum's own).
 - The 1.1 s become 2.2 s if the Lstat of `.git` in the new worktree fails or its mtime has no nanoseconds. The wait ends with the request, and the call limit is at most that of the other calls (claustrum's own, not measured).
 - A git without `--attr-source` gets no call (measured on Linux).
-- Before it, `--git-dir=<git dir> config -z --list` and the heavy `--git-dir=<git dir> hash-object -t tree <null device>` (`NUL` on Windows) run in the working folder of the daemon (`b3081b51` on Linux and macOS, `c9125eb8` on all three). The answer changes nothing. The pair shares the limit of the settle call, stops no later call, and runs only when the settle call runs (claustrum's own, not measured).
+- Before it, `--git-dir=<git dir> config -z --list` and the heavy `--git-dir=<git dir> hash-object -t tree <null device>` (`NUL` on Windows) run in the working folder of the daemon (`b3081b51` on Linux and macOS, `c9125eb8` on all three). The answer changes nothing. The pair runs only when the settle call can start, with the limit of that moment, and stops no later call. The time left is read again after it, so the settle call can still be skipped (claustrum's own, not measured).
 
 ## The content check
 
