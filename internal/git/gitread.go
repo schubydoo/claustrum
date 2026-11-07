@@ -138,9 +138,10 @@ func paneRangeOK(v string) bool {
 // paneSlotOK reports whether v passes the test of slot. A slotBase with "..."
 // gets the shape refusal (measured on Linux, macOS and Windows). The bound of
 // paneRefOK applies to each side of a range, not to the whole value. A diff
-// <A>..<B> of 4097, 4098 and 8190 bytes with each side of 4096 bytes or less runs
-// (c9125eb8, measured on Linux, macOS and Windows). The same rule for a range in
-// slotRev is claustrum's own, not measured.
+// <A>..<B> of more than 4096 bytes runs when each side has 4096 bytes or less
+// (c9125eb8, measured on Linux, macOS and Windows, a side of exactly 4096 bytes on
+// macOS and Windows). The same rule for a range in slotRev, and the refusal of a
+// side with a control byte, are claustrum's own, not measured.
 func paneSlotOK(slot, v string) bool {
 	switch slot {
 	case slotRef:

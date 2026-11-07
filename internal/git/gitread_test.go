@@ -293,10 +293,12 @@ func TestPaneRefBytes(t *testing.T) {
 }
 
 // TestPaneRangeSides pins the bound of a range: each side of <A>..<B> passes the
-// ref test, and the whole value can be longer than 4096 bytes. A diff range of
-// 4097, 4098, 4099 and 8190 bytes runs, and rev-parse --verify of a range of 4097
-// bytes gets the refusal (c9125eb8, measured on Linux, macOS and Windows). The
-// refusal of a side of 4097 bytes and the log row are claustrum's own, not measured.
+// ref test, and the whole value can be longer than 4096 bytes. A diff range runs
+// with the sides 2000 and 2095, 2000 and 2096, or 4095 and 4095 bytes (c9125eb8,
+// measured on Linux), 2048 and 2047 bytes (macOS and Windows), 4095 and 1 byte
+// (Windows), and 4096 and 1 byte (macOS and Windows). rev-parse --verify of a range of 4097 bytes gets
+// the refusal (measured on macOS). claustrum's own, not measured: the refusal of a
+// side of 4097 bytes or with a control byte, and the rows of log and rev-list.
 func TestPaneRangeSides(t *testing.T) {
 	a := func(n int) string { return strings.Repeat("a", n) }
 	for _, c := range []struct {
@@ -307,10 +309,17 @@ func TestPaneRangeSides(t *testing.T) {
 		{[]string{"diff", "--name-status", "-M", a(2000) + ".." + a(2095)}, ""},
 		{[]string{"diff", "--name-status", "-M", a(4095) + "..b"}, ""},
 		{[]string{"diff", "--name-status", "-M", a(4096) + "..b"}, ""},
-		{[]string{"diff", "--name-status", "-M", a(4094) + ".." + a(4094)}, ""},
+		{[]string{"diff", "--name-status", "-M", a(2000) + ".." + a(2096)}, ""},
+		{[]string{"diff", "--name-status", "-M", a(4095) + ".." + a(4095)}, ""},
 		{[]string{"diff", "--name-status", "-M", a(4097) + "..b"}, "not one of the Changes pane's git commands (4 arguments)"},
 		{[]string{"rev-parse", "--verify", a(2048) + ".." + a(2047)}, "not one of the Changes pane's git commands (3 arguments)"},
 		{[]string{"log", "--no-show-signature", paneLogFormat, a(4096) + "..." + a(4096)}, ""},
+		{[]string{"diff", "--name-status", "-M", "a\x00..b"}, "not one of the Changes pane's git commands (4 arguments)"},
+		{[]string{"diff", "--name-status", "-M", "a\x02..b"}, "not one of the Changes pane's git commands (4 arguments)"},
+		{[]string{"diff", "--name-status", "-M", "a..b\x1b"}, "not one of the Changes pane's git commands (4 arguments)"},
+		{[]string{"log", "--no-show-signature", paneLogFormat, a(4097) + "..b"}, "not one of the Changes pane's git commands (4 arguments)"},
+		{[]string{"rev-list", "--left-right", "--count", "a...b\tc"}, "not one of the Changes pane's git commands (4 arguments)"},
+		{[]string{"rev-list", "--left-right", "--count", "a\x00..b"}, "not one of the Changes pane's git commands (4 arguments)"},
 	} {
 		if got := PaneShapeRefusal(c.args); got != c.want {
 			t.Errorf("%v (last argument %d bytes) = %q, want %q", c.args[:len(c.args)-1], len(c.args[len(c.args)-1]), got, c.want)

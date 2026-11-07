@@ -878,7 +878,8 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// On Linux, after a long wait, the first spawn on a connection that adopted
 	// without "noLoginShell":true started one read again. That spawn kept the old
 	// PATH (c9125eb8, measured on Linux). That a connection with no adopt of its own
-	// reads none is claustrum's own, not measured.
+	// reads none is claustrum's own, not measured. A gitRead spawn starts the read
+	// too (claustrum's own, not measured for a gitRead spawn).
 	if adopted && c.ReadsLoginPATH() {
 		shellenv.RefreshLoginPATH()
 	}
