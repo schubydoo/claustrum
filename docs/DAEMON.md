@@ -372,8 +372,10 @@ reference.
   socket still leads to itself.
 - An orphan is a `stream-json` daemon child that leads its process group. It
   has parent pid 1 and three pipes for stdio. Its binary sits directly in
-  `<root>/ccd-cli`, or it carries a `CLAUDE_SSH_CHILD` stamp (`c9125eb8`). The
-  stamp must name its own pid and start (claustrum's own, not measured). Its
+  `<root>/ccd-cli`, or it carries a `CLAUDE_SSH_CHILD` stamp of its own pid and
+  start. Then its `CLAUDE_SSH_RUN_DIR` must name the run dir of this daemon
+  (both `c9125eb8`, on Linux and macOS). Of two such entries the last counts,
+  and the text must match exactly (claustrum's own, not measured). Its
   group gets `SIGTERM`, and `SIGKILL` 3 s later if a member is left (`c9125eb8`
   for a gone leader, on Linux). In the settle after the `SIGKILL` this wait is
   claustrum's own, not measured. A young orphan stays. An ambiguous orphan is spared and logged.
