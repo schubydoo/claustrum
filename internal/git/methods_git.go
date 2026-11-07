@@ -1513,7 +1513,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg := req.use.swapRefusal("gitdir", repo); msg != "" {
 		return refuseAdd(gitDirAddWrap + msg)
 	}
-	gitDir, gitAnswered, gitDirErr := worktreeBaseGitDir(req.use, repo)
+	gitDir, _, gitAnswered, gitDirErr := worktreeBaseGitDir(req.use, repo)
+	// An answer that names another git directory than the held one, while the
+	// path still names the held folder, gets one more call. A right second answer
+	// goes on, and the create succeeds. A wrong one stops the create with the
+	// "disagree" text, and the leaf does not stay. That is c9125eb8, measured on
+	// Linux and Windows. macOS, a failed second call and a baseRepo spelled
+	// otherwise than its work tree are claustrum's own, not measured. So is the
+	// form of an answer with forward slashes on Windows: it follows the probe rule
+	// of b3081b51 (the Windows row printed backslashes).
+	if gitDirErr == nil && gitAnswered && req.use.accepted.answersOther(gitDir) {
+		var printed string
+		gitDir, printed, gitAnswered, gitDirErr = worktreeBaseGitDir(req.use, repo)
+		if gitDirErr == nil && gitAnswered && req.use.accepted.answersOther(gitDir) {
+			shown := printedProbePath(printed, gitDir, string(filepath.Separator), filepath.IsAbs(filepath.FromSlash(printed)) && printedPathAsIs)
+			return refuseAdd(gitDirAddWrap + disagreeText(repo, shown, req.use.accepted.foundGitDir()))
+		}
+	}
 	// Where gitDirMustBeReal is set, a failed call stops the create in the
 	// state shadow. 5fd08069 then makes no other git call and answers `git
 	// worktree add failed: cannot locate the repository's git directory: exit

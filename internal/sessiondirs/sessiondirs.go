@@ -257,7 +257,68 @@ func (s *store) add(p string) {
 // Linux, macOS and Windows). The other folders of the spawn still get their
 // records (claustrum's own, not measured).
 func Remember(paths ...string) error {
-	return remember(true, paths)
+	return remember(true, withResolved(paths))
+}
+
+// withResolved is paths with the resolved path of each folder after it, where
+// that differs from the folder as given. The resolve follows a link before a
+// `..` after it. On Linux b3081b51 and c9125eb8 write a record for
+// `<home>/lnk/new` and one for `/data/w/new`, where lnk links to `/data/w`. For
+// `<home>/lnk2/../x`, with lnk2 a link to `/data/w/sub`, they write `<home>/x`
+// and `/data/w/x` (measured on Linux). On macOS c9125eb8 writes both records
+// also while x does not exist yet, each with `0 0`, and then passes over a git
+// in `/data/w/x` (measured on macOS). Windows keeps the paths as given
+// (recordResolved). A create record gets no resolved one (claustrum's own, not
+// measured).
+func withResolved(paths []string) []string {
+	if !recordResolved {
+		return paths
+	}
+	var out []string
+	for _, p := range paths {
+		out = append(out, p)
+		real, ok := resolvedPath(p)
+		if !ok {
+			continue
+		}
+		if abs, err := filepath.Abs(p); err == nil && real != abs {
+			out = append(out, real)
+		}
+	}
+	return out
+}
+
+// resolvedPath is p with its links resolved, as filepath.EvalSymlinks walks
+// it. When the end of p does not exist, the longest leading part that resolves
+// is resolved, and the names after it are joined to it. One missing last name
+// after a link and a `..` is measured on macOS (withResolved). On Linux it is
+// claustrum's own. More missing names, and a name after a missing one
+// that is `..`, are claustrum's own, not measured. Another error resolves
+// nothing.
+func resolvedPath(p string) (string, bool) {
+	real, err := filepath.EvalSymlinks(p)
+	if err == nil {
+		return real, true
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return "", false
+	}
+	sep := string(filepath.Separator)
+	parts := strings.Split(p, sep)
+	for k := len(parts) - 1; k > 0; k-- {
+		head := strings.Join(parts[:k], sep)
+		if head == "" {
+			head = sep
+		}
+		real, err := filepath.EvalSymlinks(head)
+		if err == nil {
+			return filepath.Join(append([]string{real}, parts[k:]...)...), true
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", false
+		}
+	}
+	return "", false
 }
 
 // RememberCreate adds the git directory of a good git.worktree_create, as Remember

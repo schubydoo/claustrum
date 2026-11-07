@@ -20,6 +20,10 @@ const warnBare = false
 // case (samePath).
 const matchByIdentity = false
 
+// recordResolved is false: Windows adds no resolved path of a session folder
+// (withResolved, claustrum's own, not measured).
+const recordResolved = false
+
 // samePath compares two paths with no regard to letter case (measured on Windows:
 // a lower-case entry is passed over and cut).
 func samePath(a, b string) bool { return strings.EqualFold(a, b) }

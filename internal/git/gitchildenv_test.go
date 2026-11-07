@@ -401,7 +401,7 @@ func TestHardenedAnswerIsStdoutOnly(t *testing.T) {
 	}
 
 	slowGit(t, "rev-parse,--absolute-git-dir", "pre", 0, line, "")
-	dir, answered, err := worktreeBaseGitDir(gitUse{}, repo)
+	dir, _, answered, err := worktreeBaseGitDir(gitUse{}, repo)
 	want, _ := os.Stat(filepath.Join(repo, ".git"))
 	if got, serr := os.Stat(dir); err != nil || !answered || serr != nil || !os.SameFile(got, want) {
 		t.Errorf("worktreeBaseGitDir = %q, %v, %v, want the folder %s", dir, answered, err, filepath.Join(repo, ".git"))

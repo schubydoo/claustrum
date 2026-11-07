@@ -211,6 +211,31 @@ func (a *acceptedGitDir) isAt(gitDir string) bool {
 	return sameGitDirPath(g, filepath.Clean(a.path)) || (a.sent != "" && g == a.sent)
 }
 
+// answersOther reports whether gitDir, the answer of git to `rev-parse
+// --absolute-git-dir`, names another folder than the git directory of the hold
+// while the path still names the held folder. The git directory of the trust
+// verdict counts, and so does the entry of a linked worktree. It is false on nil.
+func (a *acceptedGitDir) answersOther(gitDir string) bool {
+	if a == nil || a.isAt(gitDir) || !a.stands() {
+		return false
+	}
+	for _, d := range []string{a.trust.pinCommonDir, a.trust.worktreeEntry} {
+		if d != "" && (filepath.Clean(d) == gitDir || sameProbeFolder(gitDir, d)) {
+			return false
+		}
+	}
+	return true
+}
+
+// foundGitDir is the git directory of the hold in the "disagree" text: the
+// entry of a linked worktree, or else the git directory of the trust verdict.
+func (a *acceptedGitDir) foundGitDir() string {
+	if a.trust.worktreeEntry != "" {
+		return a.trust.worktreeEntry
+	}
+	return a.trust.pinCommonDir
+}
+
 // release closes the held folder. It is safe on nil.
 func (a *acceptedGitDir) release() {
 	if a != nil {
