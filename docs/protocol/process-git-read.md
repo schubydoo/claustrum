@@ -28,29 +28,36 @@ claustrum's own: a `launcher` array gets the combine text. The [linkBound](proce
 
 ## The allowed commands
 
-Each fixed word has a fixed place. A slot takes a ref or a path from the request. The slots are measured on Linux.
+Each fixed word has a fixed place. A slot takes a ref or a path from the request. The slots are measured on Linux, and the rows with `main` and `topic` on macOS and Windows too.
 
 - `status --porcelain=v2 --branch -z`
 - `rev-parse --show-toplevel`, `rev-parse --abbrev-ref HEAD`, `rev-parse --is-shallow-repository`, `rev-parse --verify <ref>`
 - `symbolic-ref --short HEAD`
 - `ls-files --others --exclude-standard --full-name :/`
-- `show --no-textconv --no-ext-diff <rev>:<path> --`
-- `merge-base <ref> <ref>`, `rev-list --left-right --count <A>...<B>` and `<A>..<B>`
-- `diff --name-status -M <ref>` and `diff --name-status -M <ref> <ref>`
+- `show --no-textconv --no-ext-diff <ref> --`, where `<ref>` is for example `HEAD` or `<rev>:<path>`
+- `merge-base <ref> <ref>`, `rev-list --left-right --count <rev>`
+- `log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e <rev>`
+- `hash-object -t tree /dev/null`
+- `diff <base>`, `diff --numstat <base>`, `diff -z --no-color --name-status -M <base>`
+- `diff --inter-hunk-context=3 <base>`, `diff --src-prefix=a/ --dst-prefix=b/ <base>`
+- `diff --name-status -M <base>`, the same with `-- :(top,exclude)<path>` or `-- :(top,exclude,literal)<path>`, and `diff --name-status -M <ref> <ref>`
 
-A `<ref>` that is empty or starts with `-` gets the shape refusal (measured on Linux). So does every other argv tried, for example one with an added option, a missing or extra `--` or a second path (measured on Linux). claustrum's own: also an argv no row tried.
+A `<rev>` is a ref, `<A>..<B>` or `<A>...<B>`. A `<base>` is a ref or `<A>..<B>`. A `<base>` with three dots gets the shape refusal, and so does `--inter-hunk-context=10` (measured on Linux, macOS and Windows).
 
-claustrum's own, not measured: a ref with a space or `..` inside goes to git. Each side of a range passes the ref test. A `<rev>:<path>` value needs a `:`.
+## The ref test
+
+A `<ref>` gets the shape refusal when it is empty, starts with `-` or has more than 4096 bytes. So does a ref with a TAB, LF, SOH or DEL byte (measured on Linux, SOH not on macOS and Windows). No git runs. A ref of 4096 bytes runs. Every other argv tried gets the shape refusal too, for example one with an added option, a missing or extra `--` or a second path (measured on Linux). claustrum's own: also an argv no row tried.
+
+claustrum's own, not measured: the other bytes below `0x20` get the refusal. A ref with a space or `..` inside goes to git. Each side of a range passes the ref test. A pathspec needs a path after its prefix. Only `sub` is measured as the path.
 
 ## The run
 
-The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. Some commands get extra arguments, and `diff` with one ref runs as `diff-index` (measured on Linux, and `status` on Windows). claustrum's own, not measured: `diff` with two refs runs as `diff-tree -r` with the same options.
+The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. Some commands get extra arguments (measured on Linux and Windows):
 
-A folder with no repository is not refused. The git exits 128 with `fatal: not a git repository: '/dev/null'` (`'NUL'` on Windows, measured on Linux and Windows).
+- `diff` with one ref runs as `diff-index` with the real index. A patch shape adds `-p`, and a trailing `--` follows the ref.
+- `diff --name-status -M <A>..<B>` runs as `diff-tree -r --ignore-submodules=dirty --submodule=short --no-ext-diff --no-textconv --name-status -M <A> <B> --`.
 
-The git holds its copy of the settings until it exits, as each git call of the git methods does (claustrum's own).
-
-claustrum's own: a refusal of the git steps fails the spawn with `-32603`, its text and the reason `other`.
+claustrum's own, not measured: `diff` with two refs and the other `diff` shapes with `<A>..<B>` run as `diff-tree -r` too.
 
 ## The time limit
 

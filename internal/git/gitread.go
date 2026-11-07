@@ -33,21 +33,39 @@ type paneShape struct {
 // The slots of a shape. A slot in sent takes one request value that passes its
 // test, and the same slot in run gives that value back, in the same order.
 const (
-	// slotRef is a ref: not empty and no leading "-".
+	// slotRef is a ref that passes paneRefOK.
 	slotRef = "<ref>"
-	// slotRange is <A>..<B> or <A>...<B>, each side a slotRef.
-	slotRange = "<range>"
-	// slotBlob is <rev>:<path>: no leading "-" and a ":" inside.
-	slotBlob = "<rev>:<path>"
+	// slotRev is a slotRef. A value with ".." in it is <A>..<B> or <A>...<B>,
+	// each side a slotRef.
+	slotRev = "<rev>"
+	// slotBase is the ref of a diff: a slotRef, or <A>..<B> with each side a
+	// slotRef. A value <A>..<B> runs as diff-tree -r with A and B (paneTreeRun).
+	slotBase = "<base>"
+	// slotExclude is one pathspec after "--": ":(top,exclude)" or
+	// ":(top,exclude,literal)", then a path that is not empty.
+	slotExclude = "<exclude>"
 )
+
+// paneDiffOpts are the options of each diff run, after its first word.
+var paneDiffOpts = []string{"--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv"}
+
+// paneDiffRun is the run of a diff shape: diff-index, -p when patch is true,
+// paneDiffOpts, then rest.
+func paneDiffRun(patch bool, rest ...string) []string {
+	run := []string{"diff-index"}
+	if patch {
+		run = append(run, "-p")
+	}
+	return slices.Concat(run, paneDiffOpts, rest)
+}
 
 // paneShapes are the argv that c9125eb8 runs with "gitRead":true. The fixed
 // words and their places are those of the measured rows, and the slots take the
 // refs and paths of the rows (measured on Linux, macOS and Windows, the slots on
-// Linux). Every other argv gets the shape refusal. The run argv of each shape is
-// that of the call logs (measured on Linux, and the status row on Windows).
-// claustrum's own, not measured: the run of the two-ref diff, a slotRange with no
-// dots or an empty side, and a slotBlob with no ":".
+// Linux and macOS). Every other argv gets the shape refusal. The run argv of each
+// shape is that of the call logs (measured on Linux and Windows). claustrum's own, not measured: the run of the two-ref diff, a range
+// with an empty side, a pathspec other than ":(top,exclude)sub" and its literal
+// form, and a range in a diff shape other than `diff --name-status -M <base>`.
 var paneShapes = []paneShape{
 	{sent: []string{"status", "--porcelain=v2", "--branch", "-z"},
 		run: []string{"status", "--ignore-submodules=dirty", "--porcelain=v2", "--branch", "-z"}, noLocks: true, realIndex: true},
@@ -57,44 +75,94 @@ var paneShapes = []paneShape{
 	{sent: []string{"rev-parse", "--verify", slotRef}},
 	{sent: []string{"symbolic-ref", "--short", "HEAD"}},
 	{sent: []string{"ls-files", "--others", "--exclude-standard", "--full-name", ":/"}, realIndex: true},
-	{sent: []string{"show", "--no-textconv", "--no-ext-diff", slotBlob, "--"},
-		run: []string{"show", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
-			"--no-textconv", "--no-ext-diff", slotBlob, "--"}},
+	{sent: []string{"show", "--no-textconv", "--no-ext-diff", slotRef, "--"},
+		run: slices.Concat([]string{"show"}, paneDiffOpts, []string{"--no-textconv", "--no-ext-diff", slotRef, "--"})},
 	{sent: []string{"merge-base", slotRef, slotRef}},
-	{sent: []string{"rev-list", "--left-right", "--count", slotRange},
-		run: []string{"rev-list", "--left-right", "--count", slotRange, "--"}},
-	{sent: []string{"diff", "--name-status", "-M", slotRef},
-		run: []string{"diff-index", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
-			"--name-status", "-M", slotRef, "--"}, realIndex: true},
+	{sent: []string{"rev-list", "--left-right", "--count", slotRev},
+		run: []string{"rev-list", "--left-right", "--count", slotRev, "--"}},
+	{sent: []string{"log", "--no-show-signature", paneLogFormat, slotRev},
+		run: slices.Concat([]string{"log"}, paneDiffOpts, []string{"--no-show-signature", paneLogFormat, slotRev, "--"})},
+	{sent: []string{"hash-object", "-t", "tree", "/dev/null"}},
+	{sent: []string{"diff", slotBase}, run: paneDiffRun(true, slotBase, "--"), realIndex: true},
+	{sent: []string{"diff", "--numstat", slotBase}, run: paneDiffRun(false, "--numstat", slotBase, "--"), realIndex: true},
+	{sent: []string{"diff", "-z", "--no-color", "--name-status", "-M", slotBase},
+		run: paneDiffRun(false, "-z", "--no-color", "--name-status", "-M", slotBase, "--"), realIndex: true},
+	{sent: []string{"diff", "--inter-hunk-context=3", slotBase},
+		run: paneDiffRun(true, "--inter-hunk-context=3", slotBase, "--"), realIndex: true},
+	{sent: []string{"diff", "--src-prefix=a/", "--dst-prefix=b/", slotBase},
+		run: paneDiffRun(true, "--src-prefix=a/", "--dst-prefix=b/", slotBase, "--"), realIndex: true},
+	{sent: []string{"diff", "--name-status", "-M", slotBase},
+		run: paneDiffRun(false, "--name-status", "-M", slotBase, "--"), realIndex: true},
+	{sent: []string{"diff", "--name-status", "-M", slotBase, "--", slotExclude},
+		run: paneDiffRun(false, "--name-status", "-M", slotBase, "--", slotExclude), realIndex: true},
 	{sent: []string{"diff", "--name-status", "-M", slotRef, slotRef},
-		run: []string{"diff-tree", "-r", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv",
-			"--name-status", "-M", slotRef, slotRef, "--"}},
+		run: slices.Concat([]string{"diff-tree", "-r"}, paneDiffOpts, []string{"--name-status", "-M", slotRef, slotRef, "--"})},
 }
 
-// paneRefOK is the test of a slotRef. An empty ref and one with a leading "-"
-// are refused (measured on Linux). A ref with a space or ".." inside passes to
-// git (claustrum's own, not measured).
-func paneRefOK(s string) bool { return s != "" && s[0] != '-' }
+// paneLogFormat is the format of the log shape.
+const paneLogFormat = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e"
 
-// paneSlotOK reports whether v passes the test of slot.
+// paneRefMax is the longest ref in bytes. A ref of 4096 bytes runs, and one of
+// 4097 bytes gets the shape refusal (measured on Linux, macOS and Windows).
+const paneRefMax = 4096
+
+// paneRefOK is the test of a slotRef. An empty ref, one with a leading "-", one
+// longer than paneRefMax and one with a TAB, LF, SOH or DEL byte are refused
+// (measured on Linux, and on macOS and Windows but SOH). The other bytes below 0x20 are refused
+// too (claustrum's own, not measured). A ref with a space or ".." inside passes
+// to git (claustrum's own, not measured).
+func paneRefOK(s string) bool {
+	if s == "" || s[0] == '-' || len(s) > paneRefMax {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// paneRangeOK reports whether v is <A>...<B> or <A>..<B>, each side a slotRef.
+func paneRangeOK(v string) bool {
+	a, b, ok := strings.Cut(v, "...")
+	if !ok {
+		a, b, ok = strings.Cut(v, "..")
+	}
+	return ok && paneRefOK(a) && paneRefOK(b)
+}
+
+// paneSlotOK reports whether v passes the test of slot. A slotBase with "..."
+// gets the shape refusal (measured on Linux, macOS and Windows).
 func paneSlotOK(slot, v string) bool {
+	if !paneRefOK(v) {
+		return false
+	}
 	switch slot {
 	case slotRef:
-		return paneRefOK(v)
-	case slotRange:
-		a, b, ok := strings.Cut(v, "...")
-		if !ok {
-			a, b, ok = strings.Cut(v, "..")
+		return true
+	case slotRev:
+		return !strings.Contains(v, "..") || paneRangeOK(v)
+	case slotBase:
+		if strings.Contains(v, "...") {
+			return false
 		}
-		return ok && paneRefOK(a) && paneRefOK(b)
-	case slotBlob:
-		return paneRefOK(v) && strings.Contains(v, ":")
+		a, b, ok := strings.Cut(v, "..")
+		return !ok || (paneRefOK(a) && paneRefOK(b) && !strings.Contains(b, ".."))
+	case slotExclude:
+		for _, p := range []string{":(top,exclude,literal)", ":(top,exclude)"} {
+			if rest, ok := strings.CutPrefix(v, p); ok {
+				return rest != ""
+			}
+		}
 	}
 	return false
 }
 
 // isPaneSlot reports whether w is a slot.
-func isPaneSlot(w string) bool { return w == slotRef || w == slotRange || w == slotBlob }
+func isPaneSlot(w string) bool {
+	return w == slotRef || w == slotRev || w == slotBase || w == slotExclude
+}
 
 // paneMatch reports whether args fits the sent argv of s.
 func (s *paneShape) paneMatch(args []string) bool {
@@ -111,6 +179,49 @@ func (s *paneShape) paneMatch(args []string) bool {
 		}
 	}
 	return true
+}
+
+// runFor is the run argv of s for the sent args, its slot values in order, and
+// whether the run keeps the real index. A slotBase value <A>..<B> gives the run
+// of paneTreeRun with A and B, and the index <copy>/no-index. c9125eb8 runs
+// `diff --name-status -M main..topic` as `diff-tree -r ... main topic --` with
+// that index (measured on Linux, macOS and Windows).
+func (s *paneShape) runFor(args []string) (run, values []string, realIndex bool) {
+	run, realIndex = s.run, s.realIndex
+	if run == nil {
+		run = s.sent
+	}
+	for i, w := range s.sent {
+		if !isPaneSlot(w) {
+			continue
+		}
+		if w == slotBase {
+			if a, b, ok := strings.Cut(args[i], ".."); ok {
+				values = append(values, a, b)
+				run, realIndex = paneTreeRun(run), false
+				continue
+			}
+		}
+		values = append(values, args[i])
+	}
+	return run, values, realIndex
+}
+
+// paneTreeRun is run with diff-tree -r for diff-index and two slotRef for its
+// slotBase.
+func paneTreeRun(run []string) []string {
+	var out []string
+	for _, w := range run {
+		switch w {
+		case "diff-index":
+			out = append(out, "diff-tree", "-r")
+		case slotBase:
+			out = append(out, slotRef, slotRef)
+		default:
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // paneHardenFirst and paneHardenLast are the `-c` items of the pane's git, in
@@ -195,16 +306,7 @@ func paneArgv(s *paneShape, args, front []string) []string {
 	for _, c := range paneHardenLast {
 		argv = append(argv, "-c", c)
 	}
-	run := s.run
-	if run == nil {
-		run = s.sent
-	}
-	var values []string
-	for i, w := range s.sent {
-		if isPaneSlot(w) {
-			values = append(values, args[i])
-		}
-	}
+	run, values, _ := s.runFor(args)
 	for _, w := range run {
 		if isPaneSlot(w) {
 			w, values = values[0], values[1:]
@@ -276,7 +378,7 @@ func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
 	}
 	hooks := c.listing.hooks
 	index := ""
-	if !shape.realIndex && u.shadow() {
+	if _, _, real := shape.runFor(args); !real && u.shadow() {
 		index = filepath.Join(u.repoDir, paneNoIndexName)
 	}
 	return PaneRun{
