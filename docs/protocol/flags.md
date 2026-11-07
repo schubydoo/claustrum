@@ -134,7 +134,7 @@ The opt-in divergence of this mode on the wire is `-max-extract-bytes`
 claustrum -bridge -socket <p>
 ```
 
-An SSH session attaches to this relay. It adds no auth, so the client supplies `"auth"`. A dial
+An SSH session attaches to this relay. It adds no auth to a relayed line, so the client supplies `"auth"`. A dial
 failure is a hard error: `claustrum: dial server: <err>` on stderr, exit `1`.
 
 At stdin EOF the bridge half-closes its socket write side, so the daemon reads
@@ -147,7 +147,7 @@ A write to a closed stdout gives exit `0` (build `52d82f0a`, measured on Linux a
 On Windows the daemon can miss the half-close of the bridge (see
 [Transport](../PROTOCOL.md#transport)). The bridge then does not exit.
 
-With `CLAUDE_SSH_ADOPT_ENV` the bridge first sends [a frame of its own](server-adopt-env.md#the-frame-of-the-bridge).
+With `CLAUDE_SSH_ADOPT_ENV=1` the bridge first sends [a frame of its own](server-adopt-env.md#the-frame-of-the-bridge).
 
 ### -stop — ask a running daemon to shut down
 

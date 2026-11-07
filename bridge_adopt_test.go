@@ -168,6 +168,8 @@ func TestRunBridgeSendsAdoptFrameFirst(t *testing.T) {
 	if _, err := io.WriteString(second, `{"jsonrpc":"2.0","id":"bridge","error":{"code":-32601,"message":"Unknown method: server.adoptEnv"}}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
+	// Wait past the adopt wait: the relay must not keep its read deadline.
+	time.Sleep(2 * bridgeAdoptWait)
 	const ping = `{"jsonrpc":"2.0","id":7,"method":"server.ping"}` + "\n"
 	if _, err := io.WriteString(stdin, ping); err != nil {
 		t.Fatal(err)

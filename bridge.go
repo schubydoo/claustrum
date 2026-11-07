@@ -19,7 +19,7 @@ import (
 
 // runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
 // stream it relays must already carry "auth" per request. With CLAUDE_SSH_ADOPT_ENV
-// it first sends a frame of its own (bridgeAdoptFrame). This is what an SSH
+// set to 1 or no-login-shell it first sends a frame of its own (bridgeAdoptFrame). This is what an SSH
 // session attaches to. A dial failure is a hard error (wrapped "dial server:",
 // matching the reference). -stop instead reports a failed dial as a word.
 //

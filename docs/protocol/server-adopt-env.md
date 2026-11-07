@@ -46,7 +46,7 @@ After a good adopt, a new child of any connection starts from the sent entries, 
 - On Windows the `TEMP` and `TMP` of the daemon stay. The child also gets `COMSPEC`, `PATHEXT` and `PROMPT` with fixed values.
 - A later good adopt replaces the set. A refused one keeps it.
 
-A good adopt logs one line. This is the line of a list `["B=2"]` on Linux:
+A good adopt logs one line. This is the line of a list `["B=2"]` after a list of nine entries, on Linux:
 
 ```text
 [Server] New processes now start from the environment sent on connection "@": 2 variables for every connection, 0 for this connection only. Names added, removed or changed (at most 40): ["A" "B" "HOME" "LANG" "LD_PRELOAD" "PATH" "USER" "ZZ_ADOPT"]
@@ -62,7 +62,7 @@ With `CLAUDE_SSH_ADOPT_ENV=1` the [bridge](flags.md#-bridge-stdiosocket-relay) f
 {"auth":"<token>","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["PATH=/usr/bin:/bin","HOME=/home/u","CLAUDE_SSH_ADOPT_ENV=1"]}}
 ```
 
-The bridge does not relay the reply, and an error reply does not stop the relay (Linux). A list that the daemon refuses sends no frame (measured for 300000 bytes on Linux and macOS). With no reply in about 1 s the Windows bridge connected and sent the frame again, three times in 3 s. These parts are claustrum's own, not measured:
+The bridge does not relay the reply, and an error reply does not stop the relay (Linux). A list that the daemon refuses sends no frame (measured for 300000 bytes on Linux and macOS). With no reply in about 1 s the Windows bridge connected and sent the frame again: three frames in 3 s. These parts are claustrum's own, not measured:
 
 - The wait of 1 s holds on Linux and macOS too, and the tries have no limit.
 - A failed new connection ends the bridge with `dial server:`.

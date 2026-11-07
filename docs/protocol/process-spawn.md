@@ -106,7 +106,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 ### The environment of the child
 
-The child gets the environment of the daemon with the `env` of the request merged over it. After [server.adoptEnv](server-adopt-env.md) the base is the adopted set. On Linux and macOS the entries come in this order:
+The child gets the environment of the daemon with the `env` of the request merged over it. A good [server.adoptEnv](server-adopt-env.md) sets the base. On Linux and macOS the entries come in this order:
 
 1. The entries of the daemon, with `CLAUDE_SSH_DAEMON_CHILD=1` last. A caller key that the daemon has replaces that entry in place. An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty (measured on Linux).
 2. The new caller keys, in no fixed order (measured on Linux).
@@ -231,7 +231,7 @@ claustrum's own: the macOS refusal comes before step 2. With a command, the own-
 
     - There is no SSH agent hand-off and no identity marker. The capability and the parameter exist.
     - The block of the child is in name order ([D23](../DIVERGENCES.md#d23)).
-    - The child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at its start (claustrum's own). An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
+    - With no adopt the child gets the `PATH` of the daemon as an entry named exactly `PATH`. claustrum reads it once, at its start (claustrum's own). An entry named `PATH` is replaced in place, else `PATH` is added. Then the `env` of the request comes.
     - Of the entries whose names differ only in letter case, the child gets the last one (from the code). So a daemon `Path` reaches the child as `PATH`, and a caller `Path` value is lost. A caller `PATH` or `path` value keeps its own name.
     - A daemon with no path entry, or a `Path` with an empty value, gives the child no `PATH` entry.
 

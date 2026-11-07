@@ -44,7 +44,7 @@ token did not already give. See
   `-token-fd` token goes to the detached daemon over a pipe, never on disk, in
   argv or in the environment.
 - No mode reads `CLAUDE_RPC_TOKEN`. `-bridge` is a relay, and its client carries
-  its own `auth`. The daemon unsets the variable before it daemonizes, and it
+  its own `auth`. Its own adopt frame takes `auth` from `daemon.token`. The daemon unsets the variable before it daemonizes, and it
   strips the variable from every spawned child.
 - Protect the token and the socket together. Whoever can read the token *and*
   reach the socket can drive the daemon. The socket is owner-only on Linux and macOS. Keep
