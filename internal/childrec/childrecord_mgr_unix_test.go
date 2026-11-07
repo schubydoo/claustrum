@@ -42,12 +42,12 @@ func TestRecordCallsWithNoUsableRunDir(t *testing.T) {
 	}
 }
 
-// TestRemoveRecordThroughChildrenSymlinkInsideRunDir pins the removal at the end of a
-// child when children is a relative symlink to a folder inside the run dir. The
-// removal goes through the link, as on 89cb6289. A file <pid>.json in the target is
-// removed (Linux row SLb, macOS row KDb). With no such file, nothing is removed and no
-// line is logged (Linux row SLa, macOS row KDa). A symlink that leads out of the run
-// dir stays refused: TestChildrenNotADirectory pins that (measured).
+// TestRemoveRecordThroughChildrenSymlinkInsideRunDir pins a children entry that is a
+// relative symlink to a folder inside the run dir. The daemon writes no record through
+// it, so the end of the child removes nothing there and logs nothing. A file
+// <pid>.json in the target stays. 89cb6289 removed it (Linux row SLb, macOS row KDb).
+// c9125eb8 removes only a record that the daemon wrote (Linux and macOS rows C12).
+// This case is claustrum's own, not measured on c9125eb8.
 func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := &Records{}
@@ -64,8 +64,8 @@ func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 	}
 
 	m.RemoveChildRecord(4242) // the file is there
-	if _, err := os.Stat(placed); !os.IsNotExist(err) {
-		t.Errorf("the placed file is still there (stat error: %v), want it removed through the link", err)
+	if _, err := os.Stat(placed); err != nil {
+		t.Errorf("the placed file is gone (%v), want it kept", err)
 	}
 	m.RemoveChildRecord(4243) // no file for this pid
 
@@ -80,8 +80,9 @@ func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 // TestRemoveRecordGoesThroughHeldRunDir pins the removal at the end of a child to the
 // held os.Root of the run dir. After a rename of the run dir, the record under the new
 // name goes and the old path is not made again (measured on Linux). A children symlink
-// that leads out of the run dir is refused: the file in its target stays, and the
-// failure is logged (measured on Linux).
+// that leads out of the run dir is refused: the file in its target stays. 89cb6289
+// logged the failed removal (measured on Linux). Here the daemon wrote no record, so
+// it tries no removal and logs nothing (claustrum's own, not measured on c9125eb8).
 func TestRemoveRecordGoesThroughHeldRunDir(t *testing.T) {
 	t.Run("renamed run dir", func(t *testing.T) {
 		parent := t.TempDir()
@@ -96,11 +97,9 @@ func TestRemoveRecordGoesThroughHeldRunDir(t *testing.T) {
 			t.Fatal(err)
 		}
 		rec := filepath.Join(renamed, "children", "4242.json")
-		if err := os.Mkdir(filepath.Dir(rec), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(rec, []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
+		m.writeRecord(childRecord{Pid: 4242, Start: "1", Argv0: "a"})
+		if _, err := os.Stat(rec); err != nil {
+			t.Fatalf("no record under the new name: %v", err)
 		}
 
 		m.RemoveChildRecord(4242)
@@ -138,9 +137,8 @@ func TestRemoveRecordGoesThroughHeldRunDir(t *testing.T) {
 		if _, err := os.Stat(placed); err != nil {
 			t.Errorf("the file outside the run dir is gone: %v", err)
 		}
-		want := "[process.Registry] cannot remove record of child 4242: removeat children/4242.json: path escapes from parent\n"
-		if out := logs.String(); !strings.Contains(out, want) {
-			t.Errorf("log = %q\nwant it to hold %q", out, want)
+		if out := logs.String(); strings.Contains(out, "[process.Registry]") {
+			t.Errorf("the removal logged a record line, want none:\n%s", out)
 		}
 	})
 }

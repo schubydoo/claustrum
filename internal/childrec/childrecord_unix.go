@@ -3,9 +3,12 @@
 package childrec
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -48,12 +51,18 @@ func (r *Records) runDirRoot() (*os.Root, error) {
 // affects the spawn. The two log texts are the reference's (measured on Linux). The
 // level tag before them is claustrum's own.
 func (r *Records) writeRecord(rec childRecord) {
+	r.writtenMu.Lock()
+	defer r.writtenMu.Unlock()
 	root, err := r.runDirRoot()
 	if err == nil {
 		err = writeChildRecordIn(root, rec)
 	}
 	switch {
 	case err == nil:
+		if r.written == nil {
+			r.written = make(map[int]childRecord)
+		}
+		r.written[rec.Pid] = rec
 	case errors.Is(err, errChildrenNotDir):
 		logging.Errorf("[process.Registry] %s/%s is not a directory; recording nothing", r.RunDir, childrenDirName)
 	default:
@@ -67,34 +76,111 @@ func (r *Records) writeRecord(rec childRecord) {
 // the child ends, also while a grandchild holds the pipes and the exit frame is 5 s
 // away.
 //
+// The record goes only while the file still holds the start that this daemon wrote
+// (c9125eb8, measured on Linux and macOS, see removeChildRecordIn). A pid with no record of this
+// daemon gets no removal and no log line. That case is claustrum's own, not measured.
+// 89cb6289 tried the removal and logged its failure.
+//
 // The delete is one plain remove of children/<pid>.json through the os.Root of the
-// run dir. It is never recursive and it follows no symlink out of the run dir. The
-// reference tries the removal also when it wrote no record, and logs the failure
-// (measured), so this does the same.
+// run dir. It is never recursive and it follows no symlink out of the run dir.
+// writtenMu is held from the read to the remove. So a write of this daemon cannot
+// replace the file in between.
 func (r *Records) RemoveChildRecord(pid int) {
 	if r.RunDir == "" || pid < 2 {
 		return
 	}
+	r.writtenMu.Lock()
+	defer r.writtenMu.Unlock()
+	want, ok := r.written[pid]
+	if !ok {
+		return
+	}
+	delete(r.written, pid)
 	root, err := r.runDirRoot()
 	if err != nil {
 		return
 	}
-	if err := removeChildRecordIn(root, pid); err != nil {
+	if err := removeChildRecordIn(root, want); err != nil {
 		logging.Warnf("[process.Registry] cannot remove record of child %d: %v", pid, err)
 	}
 }
 
-// removeChildRecordIn removes children/<pid>.json below root, which is the run dir. It
-// is one plain remove of one name, never recursive, and the os.Root keeps it inside the
-// run dir. A record that does not exist is not an error. As 89cb6289 does, the remove
-// goes through a children symlink that stays inside the run dir (Linux rows SLa, SLb,
-// macOS KDa, KDb). A symlink that leads out is refused (measured).
-func removeChildRecordIn(root *os.Root, pid int) error {
-	err := root.Remove(childRecordName(pid))
+// maxRecordRead is the most bytes that the removal reads of a record. A larger file
+// stays. The bound is claustrum's own, not measured: a record of this daemon is about
+// 300 bytes.
+const maxRecordRead = 64 << 10
+
+// recordIdentity holds the members of a record that the removal compares. Measured on
+// c9125eb8: a changed start keeps the record (Linux), and so does a changed start
+// with a changed daemonStart (macOS). A changed instance, daemonStart or pid alone
+// removes it (Linux). node, host, argv0 and program are compared too, so a change of
+// one of them keeps the record (claustrum's own, not measured).
+type recordIdentity struct {
+	Node    string `json:"node"`
+	Host    string `json:"host"`
+	Argv0   string `json:"argv0"`
+	Program string `json:"program"`
+	Start   string `json:"start"`
+}
+
+func identityOf(rec childRecord) recordIdentity {
+	return recordIdentity{Node: rec.Node, Host: rec.Host, Argv0: rec.Argv0, Program: rec.Program, Start: rec.Start}
+}
+
+// removeChildRecordIn removes children/<want.Pid>.json below root, which is the run
+// dir, when the file holds want (holdsRecord). It is one plain remove of one name,
+// never recursive, and the os.Root keeps it inside the run dir. A record that does
+// not exist is not an error. A file that is not the record of want stays, and no line
+// is logged (c9125eb8, measured on Linux).
+func removeChildRecordIn(root *os.Root, want childRecord) error {
+	name := childRecordName(want.Pid)
+	if !holdsRecord(root, name, want) {
+		return nil
+	}
+	err := root.Remove(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	return err
+}
+
+// recordCompared runs in holdsRecord after the compare and before the last Lstat. It is
+// a seam for a test that swaps the file there. Production never reassigns it.
+var recordCompared = func() {}
+
+// holdsRecord reports whether name below root is a regular file that holds want.
+// Measured on c9125eb8: a file that is not JSON stays (Linux), and so does a blank
+// file (macOS). The tests below on the kind and the identity of the file are
+// claustrum's own, not measured. A symlink, a FIFO or a file of more than
+// maxRecordRead bytes stays. The last Lstat shows that the name still holds the file
+// that was read, just before the remove. No lock reaches a writer outside this
+// daemon, so that test is the nearest form there.
+func holdsRecord(root *os.Root, name string, want childRecord) bool {
+	before, err := root.Lstat(name)
+	if err != nil || !before.Mode().IsRegular() {
+		return false
+	}
+	// O_NONBLOCK: a FIFO put at the name after the Lstat does not hold the open.
+	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxRecordRead+1))
+	if err != nil || len(data) > maxRecordRead {
+		return false
+	}
+	var got recordIdentity
+	if json.Unmarshal(data, &got) != nil || got != identityOf(want) {
+		return false
+	}
+	recordCompared()
+	now, err := root.Lstat(name)
+	return err == nil && os.SameFile(now, opened)
 }
 
 // AwaitDone waits until each channel of waits is closed, or until shutdownRecordWait

@@ -481,11 +481,13 @@ The record is one JSON object with the members in this order:
 `daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured).
 
 - The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
-- The end of the child removes its record, before the pipe drain.
+- The end of the child removes its record, before the pipe drain. The file must hold the written `start` (`c9125eb8`, measured on Linux and macOS), `node`, `host`, `argv0` and `program` (claustrum's own).
 - A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone (claustrum's own, as the flag is).
 - A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
 - After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
-- No record goes through a `children` that is not a real folder inside the run dir. The remove at the end of the child is the one exception: it follows a symbolic link to a folder inside the run dir.
+- No record is written through a `children` that is not a real folder inside the run dir.
+
+#### The reap
 
 At a `-serve` start, after the run-dir lock and before the bind, the daemon reads the records:
 
