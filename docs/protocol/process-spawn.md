@@ -106,7 +106,7 @@ One failure ends another process first: a session spawn whose command exists and
 
 ### The environment of the child
 
-The child gets the environment of the daemon with the `env` of the request merged over it. A good [server.adoptEnv](server-adopt-env.md) sets the base. On Linux and macOS the entries come in this order:
+The child gets the environment of the daemon with the `env` of the request merged over it. A good [server.adoptEnv](server-adopt-env.md) sets the base. A `gitRead` spawn is the exception. On Linux and macOS the entries come in this order:
 
 1. The entries of the daemon, with `CLAUDE_SSH_DAEMON_CHILD=1` last. A caller key that the daemon has replaces that entry in place. An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty (measured on Linux).
 2. The new caller keys, in no fixed order (measured on Linux).

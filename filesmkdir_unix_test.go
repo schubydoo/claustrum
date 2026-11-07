@@ -82,8 +82,8 @@ func TestSocketFilesMkdir(t *testing.T) {
 		{"parent": p, "name": "shape_extra", "extra": 1},
 		nil,
 	}
-	// Umask 0 lets a mode wider than 0755 show: under umask 022 a mode of 0777 reads
-	// as 0755 too. The fixture above already made its folders.
+	// Umask 0 lets the mode 0777 show: under umask 022 it reads as 0755. The
+	// fixture above already made its folders.
 	oldMask := syscall.Umask(0)
 	t.Cleanup(func() { syscall.Umask(oldMask) })
 	logs := captureLogBuf(t)
@@ -138,8 +138,8 @@ func TestSocketFilesMkdir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fi.Mode().Perm() != 0o755 {
-			t.Errorf("mode of %s = %v, want 0755 under umask 0 (the mode member ignored)", name, fi.Mode().Perm())
+		if fi.Mode().Perm() != 0o777 {
+			t.Errorf("mode of %s = %v, want 0777 under umask 0", name, fi.Mode().Perm())
 		}
 	}
 }

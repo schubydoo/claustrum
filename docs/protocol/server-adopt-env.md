@@ -38,7 +38,7 @@ The edges are measured on Linux, except the total: 262132 bytes passed and 30000
 
 ## The new environment
 
-After a good adopt, a new child of any connection starts from the sent entries, not from the environment of the daemon. The steps of [process.spawn](process-spawn.md) follow.
+After a good adopt, a new child of any connection starts from the sent entries, not from the environment of the daemon. The git of a `gitRead` spawn is the exception ([process.spawn gitRead](process-git-read.md#the-run)). The steps of [process.spawn](process-spawn.md) follow.
 
 - The session-bound names reach only the children of the connection that sent them. A later adopt of that connection replaces them. A connection with no adopt keeps those of the daemon. They are `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `KRB5CCNAME`, `XDG_SEAT`, `XDG_VTNR`, `GPG_TTY`, `WSL_INTEROP` and the names that start with `SSH_`, `SSH2_` or `XDG_SESSION_`. A prefix name that no row showed is claustrum's own, not measured.
 - `TMPDIR`, `TMP`, `TEMP` and `CLAUDE_CODE_TMPDIR` keep the daemon value. On Linux and macOS the daemon value takes its [test](process-spawn.md#a-temp-folder-that-takes-no-file-build-683cc6a9). With no daemon value the child gets none (claustrum's own, not measured).

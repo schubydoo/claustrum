@@ -63,10 +63,11 @@ func paneDiffRun(patch bool, rest ...string) []string {
 // words and their places are those of the measured rows, and the slots take the
 // refs and paths of the rows (measured on Linux, macOS and Windows, the slots on
 // Linux). Every other argv gets the shape refusal. The run argv of each shape is
-// that of the call logs (measured on Linux, macOS and Windows). claustrum's own, not
-// measured: the run of the two-ref diff, a range with an empty side, log with
-// <A>...<B>, a pathspec other than ":(top,exclude)sub" and its literal form, and
-// a range in a diff shape other than `diff --name-status -M <base>`.
+// that of the call logs (measured on Linux, macOS and Windows). So are log with
+// <A>...<B>, each diff shape with <A>..<B>, and the paths "a b", ".." and "*.txt"
+// in a pathspec (measured on Linux, macOS and Windows). claustrum's own, not
+// measured: the run of the two-ref diff, a range with an empty side, and the
+// other paths in a pathspec.
 var paneShapes = []paneShape{
 	{sent: []string{"status", "--porcelain=v2", "--branch", "-z"},
 		run: []string{"status", "--ignore-submodules=dirty", "--porcelain=v2", "--branch", "-z"}, noLocks: true, realIndex: true},
@@ -110,9 +111,9 @@ const paneRefMax = 4096
 // paneRefOK is the test of a slotRef. An empty ref and one with a leading "-"
 // are refused (measured on Linux). So are one longer than paneRefMax and one with
 // a TAB, LF, SOH or DEL byte (measured on Linux, and on macOS and Windows but
-// SOH). claustrum's own, not measured: the other bytes below 0x20 are refused
-// too, and the bound applies to the whole <A>..<B> value. A ref with a space or
-// ".." inside passes to git (claustrum's own, not measured).
+// SOH). A ref with NUL, 0x02, 0x1b or 0x1f gets it too (measured on Linux, macOS
+// and Windows). claustrum's own, not measured: the other bytes below 0x20. A ref
+// with a space or ".." inside passes to git (claustrum's own, not measured).
 func paneRefOK(s string) bool {
 	if s == "" || s[0] == '-' || len(s) > paneRefMax {
 		return false
@@ -135,23 +136,32 @@ func paneRangeOK(v string) bool {
 }
 
 // paneSlotOK reports whether v passes the test of slot. A slotBase with "..."
-// gets the shape refusal (measured on Linux, macOS and Windows).
+// gets the shape refusal (measured on Linux, macOS and Windows). The bound of
+// paneRefOK applies to each side of a range, not to the whole value. A diff
+// <A>..<B> of more than 4096 bytes runs when each side has 4096 bytes or less
+// (c9125eb8, measured on Linux, macOS and Windows, a side of exactly 4096 bytes on
+// macOS and Windows). The same rule for a range in slotRev, and the refusal of a
+// side of more than 4096 bytes or with a control byte, are claustrum's own, not
+// measured.
 func paneSlotOK(slot, v string) bool {
-	if !paneRefOK(v) {
-		return false
-	}
 	switch slot {
 	case slotRef:
-		return true
+		return paneRefOK(v)
 	case slotRev:
-		return !strings.Contains(v, "..") || paneRangeOK(v)
+		if strings.Contains(v, "..") {
+			return paneRangeOK(v)
+		}
+		return paneRefOK(v)
 	case slotBase:
-		if strings.Contains(v, "...") {
+		a, b, ok := strings.Cut(v, "..")
+		if !ok {
+			return paneRefOK(v)
+		}
+		return !strings.Contains(v, "...") && paneRefOK(a) && paneRefOK(b) && !strings.Contains(b, "..")
+	case slotExclude:
+		if !paneRefOK(v) {
 			return false
 		}
-		a, b, ok := strings.Cut(v, "..")
-		return !ok || (paneRefOK(a) && paneRefOK(b) && !strings.Contains(b, ".."))
-	case slotExclude:
 		for _, p := range []string{":(top,exclude,literal)", ":(top,exclude)"} {
 			if rest, ok := strings.CutPrefix(v, p); ok {
 				return rest != ""
