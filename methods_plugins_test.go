@@ -204,7 +204,8 @@ func TestPluginsLayoutFromSocket(t *testing.T) {
 
 // TestPluginsPruneClientIDShape boots a real socket at run/<name>/rpc.sock for each
 // name and seeds one old plugin dir in each root. Only a clientId folder of 8
-// lowercase hex characters gets roots and a sweep. Each other name gets the skip
+// lowercase hex characters gets roots and a sweep. Each other name that is not a
+// host term gets the skip
 // answer with root "" and minAgeDays 0, and both plugin dirs stay. 52d82f0a on
 // Windows gave the skip for one such name. The exact pattern is claustrum's own,
 // not measured.

@@ -118,19 +118,26 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 		return rpc.OKResult(req.ID, res)
 	}
 
-	// The sibling check runs before both sweeps. A sibling whose run dir name is not
-	// 8 lowercase hex spares both roots. c9125eb8 on macOS did so for
-	// `beef5678-<host>` that answers. The test of the name shape and the other detail
-	// forms are claustrum's own, not measured. Each other sibling spares only the
-	// shared legacy root.
+	// The sibling check runs before both sweeps. Any sibling not ruled out whose run
+	// dir name is not 8 lowercase hex spares both roots. c9125eb8 on macOS did so for
+	// `beef5678-<host>` that answers. The test of the name shape, the test of every
+	// sibling, the other detail forms and the choice of the first such sibling for
+	// the text are claustrum's own, not measured. Each other sibling spares only the
+	// shared legacy root, and the text names the first sibling.
 	base := filepath.Dir(legacyRoot) // <X>: the parent of run/ and plugins/
-	sib, sibName := firstLiveSibling(base, filepath.Base(root))
-	if sib != "" && sibName != "" && !pluginClientIDRE.MatchString(sibName) {
-		reason := "another daemon of this install may be running (" + sib + "); its sessions may use the same dirs"
-		countPluginRoot(root, live, &res)
-		res.Legacy = "skipped: " + reason
-		res.Skipped = reason
-		return rpc.OKResult(req.ID, res)
+	sibs := liveSiblings(base, filepath.Base(root))
+	for _, sb := range sibs {
+		if sb.name != "" && !pluginClientIDRE.MatchString(sb.name) {
+			reason := "another daemon of this install may be running (" + sb.detail + "); its sessions may use the same dirs"
+			countPluginRoot(root, live, &res)
+			res.Legacy = "skipped: " + reason
+			res.Skipped = reason
+			return rpc.OKResult(req.ID, res)
+		}
+	}
+	sib := ""
+	if len(sibs) > 0 {
+		sib = sibs[0].detail
 	}
 
 	// Per-install root -> pruned[]. Swept whether or not a sibling of the 8 hex
@@ -141,7 +148,7 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 	// field is the skip reason naming the first such sibling, even when the shared
 	// root does not exist (measured against 19f30c46). With no sibling present, the
 	// shared root is "absent" when missing, or "swept" and classified like the
-	// per-install root when it exists. The reason detail comes from firstLiveSibling:
+	// per-install root when it exists. The reason detail comes from liveSiblings:
 	// a socket that answers, or one that cannot be ruled out gone.
 	if sib != "" {
 		res.Legacy = "skipped: another daemon is running (" + sib + "); its sessions may use the shared legacy dirs"
@@ -158,7 +165,8 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 }
 
 // pluginClientIDRE matches the clientId folder of the socket: 8 lowercase hex.
-// A clientId folder of another shape gets the skip answer. 52d82f0a on Windows
+// A clientId folder of another shape that is not a host term gets the skip
+// answer. 52d82f0a on Windows
 // gave the skip for one such name. The exact pattern is claustrum's own, not
 // measured. It applies on every system.
 var pluginClientIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
@@ -194,11 +202,17 @@ func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, hostTerm, ok
 	return filepath.Join(base, "plugins", clientID), filepath.Join(base, "plugins"), hostTerm, true
 }
 
-// firstLiveSibling reports whether another install's daemon on this host may be
+// liveSibling is one sibling that liveSiblings cannot rule out: the detail to embed
+// in the skip message, and the run dir name ("" for "cannot read").
+type liveSibling struct {
+	detail, name string
+}
+
+// liveSiblings reports whether another install's daemon on this host may be
 // present, in which case its sessions may reference the shared legacy plugins and
-// the caller skips the legacy sweep. It returns the detail to embed in the skip
-// message for the FIRST sibling that may be present, or "" when every sibling is
-// provably gone (so the sweep runs). run/<clientId>/ dirs under base other than own
+// the caller skips the legacy sweep. It returns each sibling that may be present,
+// in order, or none when every sibling is provably gone (so the sweep runs). A run
+// dir that cannot be listed gives one entry. run/<clientId>/ dirs under base other than own
 // are examined in os.ReadDir (sorted) order. A name of any shape counts here, not
 // only 8 lowercase hex. The caller spares both roots for a sibling of another
 // shape (claustrum's own, not measured). claustrum stats each socket, THEN
@@ -219,16 +233,16 @@ func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, hostTerm, ok
 //
 // <rel> is the forward-slash wire path "run/<clientId>/rpc.sock"; "cannot inspect"
 // names the absolute socket path and "cannot read" the run dir, matching the reference.
-// name is the run dir name of the sibling, or "" for "cannot read" and for no sibling.
-func firstLiveSibling(base, own string) (detail, name string) {
+func liveSiblings(base, own string) []liveSibling {
 	runDir := filepath.Join(base, "run")
 	entries, err := os.ReadDir(runDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return "", ""
+			return nil
 		}
-		return "cannot read " + runDir + ": " + err.Error(), ""
+		return []liveSibling{{detail: "cannot read " + runDir + ": " + err.Error()}}
 	}
+	var out []liveSibling
 	for _, e := range entries {
 		if e.Name() == own {
 			continue
@@ -242,19 +256,21 @@ func firstLiveSibling(base, own string) (detail, name string) {
 			if errors.Is(serr, fs.ErrNotExist) || errors.Is(serr, syscall.ENOTDIR) {
 				continue
 			}
-			return "cannot inspect " + sock + ": " + serr.Error(), e.Name()
+			out = append(out, liveSibling{"cannot inspect " + sock + ": " + serr.Error(), e.Name()})
+			continue
 		}
 		c, derr := sockroute.DialSiblingSocket(sock, 300*time.Millisecond)
 		if derr == nil {
 			_ = c.Close()
-			return rel + " answers", e.Name()
+			out = append(out, liveSibling{rel + " answers", e.Name()})
+			continue
 		}
 		if isNobodyListening(derr) {
 			continue
 		}
-		return "cannot rule out " + rel + ": " + derr.Error(), e.Name()
+		out = append(out, liveSibling{"cannot rule out " + rel + ": " + derr.Error(), e.Name()})
 	}
-	return "", ""
+	return out
 }
 
 // isNobodyListening reports whether a sibling dial error means the socket has no
@@ -295,7 +311,7 @@ func (s *server) socketPath() string {
 // (the CLI is spawned with --plugin-dir <...>/<hash>): each argv is split into
 // maximal hex runs, and the 16-hex runs are the candidate hashes. This covers THIS
 // daemon's own children. A sibling daemon's live plugins are handled coarsely at
-// the legacy root instead: firstLiveSibling skips the whole legacy sweep while
+// the legacy root instead: liveSiblings skips the whole legacy sweep while
 // any sibling is present (it answers, or its liveness cannot be ruled out), matching
 // the reference.
 func (s *server) livePluginRefs() map[string]bool {

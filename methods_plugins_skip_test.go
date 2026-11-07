@@ -27,14 +27,15 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 	const hostTermText = "machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here"
 	hostTermFrame := `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":4,"legacy":"skipped: ` + hostTermText + `","skipped":"` + hostTermText + `","minAgeDays":7}}`
 	cases := []struct {
-		name, own, sibling string
+		name, own          string
+		siblings           []string
 		perInstall, legacy []string
 		young              map[string]bool
 		frame              string
 		gone               []string // per-install hashes that the prune removes
 	}{
 		{
-			name: "C91 sibling text", own: "a1b2c3d4", sibling: "e5f6a7b8",
+			name: "C91 sibling text", own: "a1b2c3d4", siblings: []string{"e5f6a7b8"},
 			perInstall: linuxPerInstall, legacy: linuxLegacy, young: linuxYoung,
 			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":["0123456789abcdef","aaaaaaaaaaaaaaaa","fedcba9876543210"],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":1,"legacy":"skipped: another daemon is running (run/e5f6a7b8/rpc.sock answers); its sessions may use the shared legacy dirs","minAgeDays":7}}`,
 			gone:  []string{"0123456789abcdef", "aaaaaaaaaaaaaaaa", "fedcba9876543210"},
@@ -45,7 +46,7 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 			frame: hostTermFrame,
 		},
 		{
-			name: "host term with a live sibling", own: "a1b2c3d4-ffffffff", sibling: "e5f6a7b8",
+			name: "host term with a live sibling", own: "a1b2c3d4-ffffffff", siblings: []string{"e5f6a7b8"},
 			perInstall: linuxPerInstall, legacy: linuxLegacy, young: linuxYoung,
 			frame: hostTermFrame,
 		},
@@ -55,9 +56,17 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":"","pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":0,"legacy":"skipped: this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune","skipped":"this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune","minAgeDays":0}}`,
 		},
 		{
-			name: "a sibling of another name shape", own: "abcd1234", sibling: "beef5678-host",
+			name: "a sibling of another name shape", own: "abcd1234", siblings: []string{"beef5678-host"},
 			perInstall: macPerInstall, legacy: macLegacy,
 			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":2,"legacy":"skipped: another daemon of this install may be running (run/beef5678-host/rpc.sock answers); its sessions may use the same dirs","skipped":"another daemon of this install may be running (run/beef5678-host/rpc.sock answers); its sessions may use the same dirs","minAgeDays":7}}`,
+		},
+		{
+			// An 8 hex sibling comes first in name order. The later sibling of another
+			// shape still spares both roots, and the text names it (claustrum's own,
+			// not measured).
+			name: "a sibling of another name shape after an 8 hex sibling", own: "abcd1234", siblings: []string{"00000001", "abcd1234-host"},
+			perInstall: macPerInstall, legacy: macLegacy,
+			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":2,"legacy":"skipped: another daemon of this install may be running (run/abcd1234-host/rpc.sock answers); its sessions may use the same dirs","skipped":"another daemon of this install may be running (run/abcd1234-host/rpc.sock answers); its sessions may use the same dirs","minAgeDays":7}}`,
 		},
 	}
 	for _, c := range cases {
@@ -82,8 +91,8 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 				return ln
 			}
 			ln := listen(c.own)
-			if c.sibling != "" {
-				listen(c.sibling)
+			for _, sib := range c.siblings {
+				listen(sib)
 			}
 
 			perInstall := filepath.Join(base, "plugins", c.own[:8])

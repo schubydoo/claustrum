@@ -1,6 +1,6 @@
 # plugins.prune
 
-`plugins.prune` deletes the cached plugin directories that no session used for some days. The caller cannot name a path. Do not read an empty `pruned` list as "nothing to delete". Read `errors` and `legacy` too.
+`plugins.prune` deletes the cached plugin directories that no session used for some days. The caller cannot name a path. An empty `pruned` list does not mean "nothing to delete": read `errors` and `legacy` too.
 
 An untagged rule here matches build `5fd08069` or an earlier build.
 
@@ -37,7 +37,7 @@ No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (m
 | `errors` | `<path>: <error>` for each directory that the daemon cannot delete and each root that it cannot list. A missing root is no failure. A directory in `errors` can be deleted in part. With no failure, the member is absent. A response with `errors` is still a success (not measured). |
 | `minAgeDays` | The value that the daemon used, after the limits. |
 
-If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. claustrum also gives it on every system for a `<clientId>` that is neither 8 lowercase hexadecimal characters nor a host term (claustrum's own, not measured). `c9125eb8` did so for each such name it got.
+If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. claustrum also gives it for a `<clientId>` that is neither 8 lowercase hexadecimal characters nor a host term (claustrum's own, not measured). `c9125eb8` did so for each such name it got.
 
 ## Errors
 
@@ -56,12 +56,12 @@ The daemon derives two roots from the path of its own socket, `<X>/run/<clientId
 
 In a root, the daemon looks only at directories whose name is 16 lowercase hexadecimal characters, the content hash of a plugin. It leaves each other entry alone, files and symbolic links too.
 
-The daemon keeps a directory in two cases and deletes it as a tree in each other case:
+The daemon keeps a directory in two cases and else deletes it as a tree:
 
-- The directory is live. A run of exactly 16 lowercase hexadecimal characters in the command or an argument of a child of `process.spawn` names it, until the daemon reports the exit of that child.
+- The directory is live. A run of exactly 16 lowercase hexadecimal characters in the command or an argument of a child of `process.spawn` names it, until the daemon reports that child's exit.
 - The directory is young. Its last use is inside `minAgeDays` days. The last use is the newer modification time of the directory and of its `.synced` file, not of `manifest.json`. With neither time, the directory is not young.
 
-Except at [two skips](#skips-that-keep-both-roots), the daemon goes through the root of this install. It leaves the shared root alone while another daemon runs.
+Except at [two skips](#skips-that-keep-both-roots), the daemon goes through the root of this install, and through the shared root while no other daemon runs.
 
 ### The `legacy` member
 
@@ -69,12 +69,12 @@ Except at [two skips](#skips-that-keep-both-roots), the daemon goes through the 
 |---|---|
 | `absent` | The daemon cannot examine the shared root, for example a missing one. |
 | `swept` | The daemon went through the shared root. |
-| `skipped: another daemon is running (<detail>); its sessions may use the shared legacy dirs` | Another daemon runs, or the daemon cannot exclude one. The text does not say that the shared root exists. |
-| `skipped: another daemon of this install may be running (<detail>); its sessions may use the same dirs` | As above, when the run directory name of that daemon is not 8 lowercase hexadecimal characters. |
+| `skipped: another daemon is running (<detail>); its sessions may use the shared legacy dirs` | Another daemon runs, or the daemon cannot exclude one. It does not show that the shared root exists. |
+| `skipped: another daemon of this install may be running (<detail>); its sessions may use the same dirs` | As above, for any such daemon whose run directory name is not 8 lowercase hexadecimal characters. |
 | `skipped: machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here` | A [host term](#skips-that-keep-both-roots). |
 | `skipped: this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune` | The daemon has no plugin roots. |
 
-The last three also put the text after `skipped: ` in `skipped`. These texts are those of `c9125eb8` (measured on Linux, macOS and Windows).
+The last three also put the text after `skipped: ` in `skipped`. `c9125eb8` gave the first and the last skip text on Linux, macOS and Windows.
 
 ### The `<detail>` text
 
@@ -91,9 +91,9 @@ The daemon goes through the names under `<X>/run` in order. `<detail>` names the
 
 A run directory `<8 lowercase hex>-<8 lowercase hex>` bears a host term. Its root is `plugins/<the first 8 hex>`. This test comes first (`c9125eb8`, measured on Linux). On macOS and Windows: claustrum's own, not measured.
 
-`run/beef5678-<host>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on macOS). The name test and the other `<detail>` forms: claustrum's own, not measured.
+`run/beef5678-<host>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on macOS). claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
 
-At both skips nothing goes, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). Counting this root and not the shared one, and how a live one counts: claustrum's own, not measured.
+Both skips delete nothing, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). Counting this root and not the shared one, and how a live one counts: claustrum's own, not measured.
 
 ## Differences by system
 

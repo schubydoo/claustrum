@@ -85,10 +85,12 @@ func TestPluginsPruneLegacyGating(t *testing.T) {
 	})
 }
 
-// siblingDaemonAlive is the detail of firstLiveSibling, without the name.
+// siblingDaemonAlive is the detail of the first sibling of liveSiblings, or "".
 func siblingDaemonAlive(base, own string) string {
-	detail, _ := firstLiveSibling(base, own)
-	return detail
+	if sibs := liveSiblings(base, own); len(sibs) > 0 {
+		return sibs[0].detail
+	}
+	return ""
 }
 
 // mustPrune dispatches one plugins.prune with the default params and returns its result.
