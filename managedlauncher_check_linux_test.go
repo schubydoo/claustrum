@@ -220,8 +220,10 @@ func launcherFrameFixture(t *testing.T) (s *server, d, cli string) {
 	return s, d, mkExec(t, filepath.Join(d, "cli"))
 }
 
-// TestLauncherCheckLinksFrames pins the links frames of c9125eb8 (measured on Linux): a
-// self loop gets launcherFault links in a spawn and fault links in a resolve.
+// TestLauncherCheckLinksFrames pins the links frames of c9125eb8: a self loop gets
+// launcherFault links in a spawn and fault links in a resolve. The frame shapes are
+// measured on Linux with a right digest. The zero digest of the spawn and the {} of the
+// resolve here are claustrum's own, not measured.
 func TestLauncherCheckLinksFrames(t *testing.T) {
 	s, d, cli := launcherFrameFixture(t)
 	self := filepath.Join(d, "loopself")

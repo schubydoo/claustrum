@@ -155,7 +155,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
 - Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
-- `<fs>` is `NFS`, `FUSE or virtiofs` for a FUSE mount, or `SMB` for CIFS. 9p passes. The `statfs` type finds them (claustrum's own, not measured).
+- `<fs>` is `NFS`, `FUSE or virtiofs` for a FUSE mount, or `SMB` for CIFS. 9p passes (claustrum's own, not measured: 9p was not staged). The `statfs` type finds them (claustrum's own, not measured).
 - On these file systems with a digest the owner and write tests still run. An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
 - A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
 

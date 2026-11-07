@@ -82,7 +82,7 @@ var (
 //  1. A relative p is not_absolute.
 //  2. A name with a script ending is script_suffix (the endings of Check). X.JS passes.
 //  3. A p that leads through too many links, or a loop, is links (a chain of 41, a loop
-//     of 2 and a self loop are measured, a chain of 40 passes). The system call gives
+//     of 2 and a self loop are measured with a digest, a chain of 40 passes). The system call gives
 //     ELOOP there, and a link loop in a folder of p gets the same fault (claustrum's
 //     own, not measured). A p that is missing, a dangling link or no regular file is
 //     missing.
