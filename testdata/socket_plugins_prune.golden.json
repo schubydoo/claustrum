@@ -10,8 +10,8 @@
       "kept": 0,
       "live": 0,
       "young": 0,
-      "legacy": "skipped: this daemon's socket is not under run/\u003cclientId\u003e/, so it has no per-install plugin root to prune",
-      "skipped": "this daemon's socket is not under run/\u003cclientId\u003e/, so it has no per-install plugin root to prune",
+      "legacy": "skipped: this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune",
+      "skipped": "this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune",
       "minAgeDays": 0
     }
   },
