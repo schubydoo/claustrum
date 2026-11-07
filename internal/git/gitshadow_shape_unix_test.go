@@ -387,13 +387,15 @@ func createRows() []shapeRow {
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
 				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
 			// The settle step of 683cc6a9 (worktreesettle.go), in the state shadow
-			// only. The two calls of the empty tree come first (b3081b51 and
-			// c9125eb8, measured on Linux).
+			// only. The two calls of the empty tree come first. A heavy listing in
+			// the leaf comes before the heavy settle call (b3081b51 and c9125eb8,
+			// measured on Linux).
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<cwd>", shadow: "{A} {D} {L}"},
 			{list: "P28", argv: "--git-dir=<repo>/.git hash-object -t tree /dev/null", cwd: "<cwd>", shadow: "{A} {D} {H}"},
-			{list: "ATTR+P20", cwd: leaf,
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf, shadow: "{A} {D} {L}"},
+			{list: "ATTR+P28", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
-				shadow: "{C} {D} {H}" + index[true]},
+				shadow: "{A} {D} {H}" + index[true]},
 		},
 		// The content check of c9125eb8 (worktreecontent.go), in the state shadow
 		// only. The commit has no file of the check, so no hash-object
@@ -553,8 +555,10 @@ func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 // in the state shadow (pairBeforeAdd). The pair runs right after `rev-parse
 // --absolute-git-dir` when the folder of the registrations exists and no entry
 // names the leaf (measured). An entry that names the leaf gives no pair, and it
-// goes before the add (measured). With the member the pair runs too (measured),
-// and a missing folder gives none.
+// goes before the add (measured). With the member the pair runs too (measured).
+// A missing folder gives the pair: b3081b51 and c9125eb8 run it in the first
+// create of a repository (measured on Linux, macOS and Windows). With the member
+// a missing folder still gives none (5fd08069, measured).
 func TestShadowPairBeforeAdd(t *testing.T) {
 	vars := map[shapeState]string{stateShadow: "{A} {D}", stateOff: "{A} {G}"}
 	noFolder := func(t *testing.T, f shapeFixture) {
@@ -576,7 +580,7 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 			}
 			writeFile(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n", 0o644)
 		}, false},
-		{"no registrations folder", stateShadow, noFolder, false},
+		{"no registrations folder", stateShadow, noFolder, true},
 		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true},
 		{"with the member and no registrations folder", stateOff, noFolder, false},
 	} {

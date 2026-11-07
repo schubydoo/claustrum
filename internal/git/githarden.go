@@ -139,7 +139,8 @@ var gitHardenHeavy = []string{
 // The light profile sets the protocol gate and terminal prompt suppression, and
 // turns off replace objects and grafts. git.worktree_create runs its hardened calls
 // under the light profile, except the heavy rev-parse --absolute-git-dir, the heavy
-// pair of gitDirWorkTreeToplevel and the calls of the branch step (branchStepEnv).
+// pair of gitDirWorkTreeToplevel, the calls of the settle step (settleCheckout) and
+// the calls of the branch step (branchStepEnv).
 // Its checkout thus uses the real blob and the real commit, even when refs/replace
 // or info/grafts name others. That was measured side by side against f6010b97 on
 // Linux. 5fd08069 sends the same four with "shadowDirOff":true (measured on Linux,

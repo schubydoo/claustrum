@@ -61,7 +61,8 @@ func TestCreatePairPastTheDeadline(t *testing.T) {
 // TestCreatePairCases is the portable table of the pair. It runs for an entry
 // of another worktree, in the state shadow (measured) and with
 // "shadowDirOff":true. It does not run for a stale entry of the leaf (measured)
-// or with no registrations folder (measured with the member).
+// or with the member and no registrations folder (5fd08069, measured). In the
+// state shadow a missing folder gives the pair (b3081b51 and c9125eb8, measured).
 func TestCreatePairCases(t *testing.T) {
 	stale := func(t *testing.T, f checkoutRuleFixture) {
 		old := filepath.Join(f.gitDir, worktreesSubdir, "old")
@@ -81,7 +82,7 @@ func TestCreatePairCases(t *testing.T) {
 		{"R-Q2b", false, nil, true},
 		{"50a with the member", true, nil, true},
 		{"a stale entry", false, stale, false},
-		{"no registrations folder", false, noFolder, false},
+		{"no registrations folder", false, noFolder, true},
 		{"with the member and no folder", true, noFolder, false},
 	} {
 		t.Run(row.cell, func(t *testing.T) {

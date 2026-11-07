@@ -993,8 +993,12 @@ func gitListBranches(req *gitCall) rpc.Response {
 // the state shadow or with "shadowDirOff":true, when the step before the add
 // found no entry that names the new leaf. They run when the folder of the
 // registrations of gitDir is a real folder, empty or not (measured on Linux, macOS and Windows). With
-// the member 5fd08069 runs them in a repository with a linked worktree (measured). A missing folder
-// and an entry that names the leaf give no pair (measured). The state fallback-git gets no pair
+// the member 5fd08069 runs them in a repository with a linked worktree (measured). An entry that
+// names the leaf gives no pair (measured). On 5fd08069 a missing folder gives none. b3081b51 and
+// c9125eb8 run the pair in the first create of a repository with no such folder (measured on Linux,
+// macOS and Windows, in the state shadow), so there a missing folder gives the pair (missingRuns).
+// With the member a missing folder still gives none: no row of those builds has it. The state
+// fallback-git gets no pair
 // (claustrum's own, not measured). For a linked baseRepo that folder is the one of the main repository
 // (gitDirRegistryDir, not measured). The calls come after `rev-parse --absolute-git-dir` and before
 // the listing of the add (measured on macOS and Windows).
@@ -1011,8 +1015,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 // add and answers the timeout before the checkout, with the rollback
 // (measured on Linux). The limits of the two calls are those of their kind
 // (gitstop.go). No cell measured a limit there: that is claustrum's own.
-func pairBeforeAdd(req *gitCall, gitDir, repo string) {
-	if fi, err := os.Lstat(gitDirRegistryDir(gitDir)); err != nil || !fi.IsDir() {
+func pairBeforeAdd(req *gitCall, gitDir, repo string, missingRuns bool) {
+	fi, err := os.Lstat(gitDirRegistryDir(gitDir))
+	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
+	if !missing && (err != nil || !fi.IsDir()) {
 		return
 	}
 	u := req.use.atGitDirCommand()
@@ -1575,7 +1581,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs, arrival)
 	defer cancelCtx()
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
-		pairBeforeAdd(req, gitDir, repo)
+		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
+		// req.use.shadow() is false there (from the code).
+		pairBeforeAdd(req, gitDir, repo, req.use.shadow())
 	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.
