@@ -40,7 +40,7 @@ func TestSpawnGitReadStepErrorReason(t *testing.T) {
 	fakeGitOnPath(t)
 	m := newTestProcManager(t)
 	text := "cannot write its copy of the repository's git config: mkdir /s/0123: permission denied"
-	_, err := m.SpawnGitRead(nil, "gs", nil, t.TempDir(), func([]string) ([]string, []string, func(), error) {
+	_, err := m.SpawnGitRead(nil, "gs", nil, t.TempDir(), nil, func([]string) ([]string, []string, func(), error) {
 		return nil, nil, nil, errors.New(text)
 	})
 	if err == nil || err.Error() != text {
@@ -58,7 +58,7 @@ func TestSpawnGitReadReleaseAtExit(t *testing.T) {
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
 	var released atomic.Int32
-	p, err := m.SpawnGitRead(c, "gh", nil, t.TempDir(), func(env []string) ([]string, []string, func(), error) {
+	p, err := m.SpawnGitRead(c, "gh", nil, t.TempDir(), nil, func(env []string) ([]string, []string, func(), error) {
 		return []string{"30"}, append(env, "CLAUSTRUM_TEST_HELPER=sleep"), func() { released.Add(1) }, nil
 	})
 	if err != nil {

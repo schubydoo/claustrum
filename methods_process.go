@@ -115,9 +115,10 @@ func launcherShapeRefusal(req *request, p *spawnParams) *rpc.Response {
 const gitReadCombineText = `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot or sessionFoldersOff`
 
 // gitReadRefusal is the refusal of a "gitRead":true spawn before its start, or nil.
-// The order of the tests is that of c9125eb8: the combine test, then the shape
-// test (measured on Linux). The place of the cwd test of the start after both is
-// claustrum's own, not measured. Measured members of the combine test: a non-empty env, no cwd, a
+// The combine test comes before the shape test (c9125eb8, measured on Linux). The
+// shape test comes in the start, after the cwd test (gitReadShape). The place of
+// the cwd test after the combine test is claustrum's own, not measured. Measured
+// members of the combine test: a non-empty env, no cwd, a
 // command other than the bare name git, "sessionFoldersOff":true, a linkBound
 // object, "cliTempRoot":true and a pty object with a key. An empty env object
 // passes. With gitRead, "pty":true gets Invalid params (measured on Linux and
@@ -145,8 +146,16 @@ func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
 		pty || temp || sessiondirs.OffSwitchSet(req.Params) {
 		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, gitReadCombineText, supervisor.SpawnReason{Reason: "other"}))
 	}
-	if msg := git.PaneShapeRefusal(p.Args); msg != "" {
-		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, msg, supervisor.SpawnReason{Reason: "other"}))
+	return nil
+}
+
+// gitReadShape is the shape refusal of a gitRead spawn with args, or nil. The
+// spawn answers it with -32602 and the reason other (c9125eb8, measured on Linux,
+// macOS and Windows). It comes after the cwd test (measured on Linux, macOS and
+// Windows).
+func gitReadShape(args []string) error {
+	if msg := git.PaneShapeRefusal(args); msg != "" {
+		return &supervisor.SpawnRefusal{Code: rpc.CodeInvalidParam, Msg: msg}
 	}
 	return nil
 }
@@ -188,10 +197,20 @@ func (s *server) gitReadStep(cwd string, args []string) supervisor.GitReadStep {
 	return func(env []string) ([]string, []string, func(), error) {
 		run, err := git.PaneGitRun(s.gitDeps(), cwd, args)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, gitReadStepError(err)
 		}
 		return run.Args, run.Env(env), run.Release, nil
 	}
+}
+
+// gitReadStepError is the error of a failed step of a gitRead spawn. The spawn
+// answers git.ErrNoSettingsCopy with -32008 (c9125eb8, measured on Linux, macOS
+// and Windows), and every other error with -32603.
+func gitReadStepError(err error) error {
+	if errors.Is(err, git.ErrNoSettingsCopy) {
+		return &supervisor.SpawnRefusal{Code: rpc.CodeNoSettingsCopy, Msg: err.Error()}
+	}
+	return err
 }
 
 func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
@@ -227,7 +246,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		if bad := gitReadRefusal(req, &p); bad != nil {
 			return *bad
 		}
-		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, s.gitReadStep(p.Cwd, p.Args))
+		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, gitReadShape(p.Args), s.gitReadStep(p.Cwd, p.Args))
 	} else {
 		// The session folders of a Claude Code spawn get their records in the spawn,
 		// unless the request carries the off switch (sessionfolders.go).
@@ -250,12 +269,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		return rpc.Response{NoFrame: true}
 	}
 	if err != nil {
-		reason := supervisor.SpawnFailureReason(err, p.Cwd)
-		var sr *supervisor.SpawnRefusal
-		if errors.As(err, &sr) {
-			return rpc.ErrResultData(req.ID, sr.Code, sr.Msg, reason)
-		}
-		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
+		return spawnErrorReply(req.ID, err, p.Cwd)
 	}
 	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.CLITempRoot()}
 	if p.WantPid {
@@ -263,6 +277,17 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		res.StartTime = mp.StartTime()
 	}
 	return rpc.OKResult(req.ID, res)
+}
+
+// spawnErrorReply is the reply of a process.spawn whose start failed with err in
+// cwd: the code and text of a SpawnRefusal, or -32603 and the text of err.
+func spawnErrorReply(id interface{}, err error, cwd string) rpc.Response {
+	reason := supervisor.SpawnFailureReason(err, cwd)
+	var sr *supervisor.SpawnRefusal
+	if errors.As(err, &sr) {
+		return rpc.ErrResultData(id, sr.Code, sr.Msg, reason)
+	}
+	return rpc.ErrResultData(id, rpc.CodeInternal, err.Error(), reason)
 }
 
 type stdinParams struct {
