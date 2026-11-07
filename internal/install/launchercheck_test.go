@@ -200,19 +200,21 @@ func TestCheckLauncherFileDigest(t *testing.T) {
 	checkFile(t, "64 MiB + 1", big, LauncherCheck{SHA256: []string{zeroDigest}}, FaultUnreadable, "launcher `"+big+"` is larger than 64 MiB, the most that can be checked against a digest")
 }
 
-// TestCheckLauncherFileNFS pins the NFS rule: with no digest ({} or an empty list) the
-// first NFS item is refused with the NFS text and fault writable. With the right
-// digest it passes, and a wrong digest gives digest.
+// TestCheckLauncherFileNFS pins the rule of NFS, FUSE (bindfs) and CIFS: with no digest
+// ({} or an empty list) the first item on that file system is refused with its text and
+// fault writable. With the right digest it passes, and a wrong digest gives digest.
 func TestCheckLauncherFileNFS(t *testing.T) {
-	d := launcherDir(t)
-	mnt := filepath.Join(d, "nfsmnt")
-	L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
-	fakeLauncherFacts(t, map[string]launcherFacts{mnt: {mode: 0o755, nfs: true}, L: {mode: 0o755, nfs: true}})
-	text := "`" + mnt + "` is on a file system (NFS) whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
-	checkFile(t, "{}", L, LauncherCheck{}, FaultWritable, text)
-	checkFile(t, "empty list", L, LauncherCheck{SHA256: []string{}}, FaultWritable, text)
-	checkFile(t, "right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
-	checkFile(t, "wrong", L, LauncherCheck{SHA256: []string{zeroDigest}}, FaultDigest, "launcher `"+L+"` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.")
+	for _, fs := range []string{"NFS", "FUSE or virtiofs", "SMB"} {
+		d := launcherDir(t)
+		mnt := filepath.Join(d, "mnt")
+		L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
+		fakeLauncherFacts(t, map[string]launcherFacts{mnt: {mode: 0o755, fs: fs}, L: {mode: 0o755, fs: fs}})
+		text := "`" + mnt + "` is on a file system (" + fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+		checkFile(t, fs+" {}", L, LauncherCheck{}, FaultWritable, text)
+		checkFile(t, fs+" empty list", L, LauncherCheck{SHA256: []string{}}, FaultWritable, text)
+		checkFile(t, fs+" right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
+		checkFile(t, fs+" wrong", L, LauncherCheck{SHA256: []string{zeroDigest}}, FaultDigest, "launcher `"+L+"` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.")
+	}
 }
 
 // TestCheckLauncherFileLinks pins that a link to a good launcher and a chain of five
