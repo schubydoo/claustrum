@@ -69,8 +69,8 @@ func (s *server) handlePlugins(req *request) rpc.Response {
 	}
 }
 
-// The skip reasons of c9125eb8 (measured on Linux, macOS and Windows for the first,
-// on Linux for the host term, on macOS for the same-install sibling).
+// The skip reasons of c9125eb8 (measured on Linux, macOS and Windows for the first
+// and for the host term, on Linux and macOS for the same-install sibling).
 const (
 	pluginsSkipReason     = "this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune"
 	pluginsHostTermReason = "machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here"
@@ -110,7 +110,7 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 	live := s.livePluginRefs()
 
 	// A host-term run dir removes nothing and counts the per-install root (c9125eb8,
-	// measured on Linux). The host-term test comes before the sibling test.
+	// measured on Linux, macOS and Windows). The host-term test comes before the sibling test.
 	if hostTerm {
 		countPluginRoot(root, live, &res)
 		res.Legacy = "skipped: " + pluginsHostTermReason
@@ -118,16 +118,15 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 		return rpc.OKResult(req.ID, res)
 	}
 
-	// The sibling check runs before both sweeps. Any sibling not ruled out whose run
-	// dir name is not 8 lowercase hex spares both roots. c9125eb8 on macOS did so for
-	// `beef5678-<host>` that answers. The test of the name shape, the test of every
+	// The sibling check runs before both sweeps. A sibling not ruled out that
+	// siblingSparesBothRoots names spares both roots. Each other sibling spares only
+	// the shared legacy root, and the text names the first sibling. The test of every
 	// sibling, the other detail forms and the choice of the first such sibling for
-	// the text are claustrum's own, not measured. Each other sibling spares only the
-	// shared legacy root, and the text names the first sibling.
+	// the text are claustrum's own, not measured.
 	base := filepath.Dir(legacyRoot) // <X>: the parent of run/ and plugins/
 	sibs := liveSiblings(base, filepath.Base(root))
 	for _, sb := range sibs {
-		if sb.name != "" && !pluginClientIDRE.MatchString(sb.name) {
+		if siblingSparesBothRoots(sb.name, filepath.Base(root)) {
 			reason := "another daemon of this install may be running (" + sb.detail + "); its sessions may use the same dirs"
 			countPluginRoot(root, live, &res)
 			res.Legacy = "skipped: " + reason
@@ -171,9 +170,32 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 // measured. It applies on every system.
 var pluginClientIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
 
+// siblingSparesBothRoots reports whether a sibling run dir name spares both roots.
+// c9125eb8 did so for `beef5678-<host name>` that answers (measured on Linux and
+// macOS. On Windows: claustrum's own, not measured). It spared only the shared
+// legacy root for an answering sibling of the host-term shape, such as
+// `beef5678-<machine-id first 8>` (measured on macOS and Windows).
+// hostTermSiblingSparesLegacyOnly holds that rule off Linux, where no row
+// had such a sibling. An 8 lowercase hex name and "" (a run dir that cannot be read)
+// spare only the legacy root. The test of the name shape alone is claustrum's own,
+// not measured.
+//
+// A host-term sibling whose first 8 hex equal own (the client id of this root) uses
+// this same root, and its live plugins are not seen here. It still spares both
+// roots on each system (claustrum's own, not measured).
+func siblingSparesBothRoots(name, own string) bool {
+	if name == "" || pluginClientIDRE.MatchString(name) {
+		return false
+	}
+	if !hostTermSiblingSparesLegacyOnly || !pluginHostTermRE.MatchString(name) {
+		return true
+	}
+	return name[:8] == own
+}
+
 // pluginHostTermRE matches a run dir name that bears a host term: 8 lowercase hex,
-// a dash and 8 lowercase hex. c9125eb8 on Linux took `a1b2c3d4-ffffffff` and refused
-// the other shapes that its row lists. It applies on every system.
+// a dash and 8 lowercase hex. c9125eb8 took `a1b2c3d4-ffffffff` on Linux, macOS and
+// Windows, and on Linux it refused the other shapes that its row lists. It applies on every system.
 var pluginHostTermRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{8}$`)
 
 // pluginsLayoutFromSocket derives the plugin roots from the daemon socket path.
@@ -365,8 +387,9 @@ func prunePluginRoot(root string, legacy bool, cutoff time.Time, live map[string
 
 // countPluginRoot counts the plugin content-hash directories of one root as live or
 // young and removes nothing. A skip that keeps the root uses it. c9125eb8 counted
-// old directories as young there. Which root it counts, and how a live one counts,
-// is claustrum's own, not measured: both roots held the same count in each row.
+// old directories as young there, and only this root: a young dir in the shared root
+// added nothing (measured on Linux and macOS). How a live one counts is claustrum's
+// own, not measured.
 func countPluginRoot(root string, live map[string]bool, res *pruneResult) {
 	entries, err := os.ReadDir(root)
 	if err != nil {

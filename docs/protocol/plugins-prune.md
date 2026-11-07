@@ -70,7 +70,7 @@ Except at [two skips](#skips-that-keep-both-roots), the daemon goes through the 
 | `absent` | The daemon cannot examine the shared root, for example a missing one. |
 | `swept` | The daemon went through the shared root. |
 | `skipped: another daemon is running (<detail>); its sessions may use the shared legacy dirs` | Another daemon runs, or the daemon cannot exclude one. It does not show that the shared root exists. |
-| `skipped: another daemon of this install may be running (<detail>); its sessions may use the same dirs` | As above, for any such daemon whose run directory name is not 8 lowercase hexadecimal characters. |
+| `skipped: another daemon of this install may be running (<detail>); its sessions may use the same dirs` | As above, for any such daemon whose run directory name is neither 8 lowercase hexadecimal characters nor, on macOS and Windows, a host term of another `<clientId>`. |
 | `skipped: machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here` | A [host term](#skips-that-keep-both-roots). |
 | `skipped: this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune` | The daemon has no plugin roots. |
 
@@ -78,7 +78,7 @@ The last three also put the text after `skipped: ` in `skipped`. `c9125eb8` gave
 
 ### The `<detail>` text
 
-The daemon goes through the names under `<X>/run` in order. `<detail>` names the first install that it cannot prove gone, or the run directory itself. In the `of this install` text it names the first such install whose name is not 8 lowercase hex. `<rel>` is `run/<clientId>/rpc.sock`:
+The daemon goes through the names under `<X>/run` in order. `<detail>` names the first install that it cannot prove gone, or the run directory itself. In the `of this install` text it names the first such install whose run directory name is neither 8 lowercase hexadecimal characters nor, on macOS and Windows, a host term of another `<clientId>`. `<rel>` is `run/<clientId>/rpc.sock`:
 
 | `<detail>` | Meaning |
 |---|---|
@@ -89,11 +89,13 @@ The daemon goes through the names under `<X>/run` in order. `<detail>` names the
 
 ### Skips that keep both roots
 
-A run directory `<8 lowercase hex>-<8 lowercase hex>` bears a host term. Its root is `plugins/<the first 8 hex>`. This test comes first (`c9125eb8`, measured on Linux). On macOS and Windows: claustrum's own, not measured.
+A run directory `<8 lowercase hex>-<8 lowercase hex>` bears a host term. Its root is `plugins/<the first 8 hex>`. This test comes first (`c9125eb8`, measured on Linux, macOS and Windows).
 
-`run/beef5678-<host>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on macOS). claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
+`run/beef5678-<host name>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on Linux and macOS). On Windows: claustrum's own, not measured. claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
 
-Both skips delete nothing, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). Counting this root and not the shared one, and how a live one counts: claustrum's own, not measured.
+A sibling of the host-term shape, `run/beef5678-<machine-id first 8>/rpc.sock`, gave no such skip. `c9125eb8` deleted the old directories of this root and gave the first sibling text (measured on macOS and Windows). There `young` counted only this root. Another 8 hex after the dash: claustrum's own, not measured. On Linux claustrum keeps both roots for that name (claustrum's own, not measured). A host-term sibling whose first 8 hex are the `<clientId>` of this daemon uses this same root. claustrum keeps both roots for it on each system (claustrum's own, not measured).
+
+Both skips delete nothing, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). How a live one counts: claustrum's own, not measured.
 
 ## Differences by system
 
