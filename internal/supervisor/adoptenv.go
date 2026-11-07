@@ -59,7 +59,8 @@ type adoptedEnv struct {
 // the first adopt the old set is the environment of the daemon. The names come in
 // name order, at most adoptDiffNamesMax of them. The session-bound names are not
 // compared (measured on Linux). Each count counts a name once (measured on Linux,
-// macOS and Windows, the second count on Windows). kept is the member of the adopt. noLoginShell is the member of
+// macOS and Windows, the second count on Windows and claustrum's own on Linux and
+// macOS). kept is the member of the adopt. noLoginShell is the member of
 // the adopt. Without it a spawn of c can start a read again of the login-shell PATH
 // (spawnWith).
 func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell bool) (every, own int, changed []string) {

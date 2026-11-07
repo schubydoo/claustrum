@@ -41,7 +41,7 @@ The edges are measured on Linux, except the total: 262132 bytes passed and 30000
 After a good adopt, a new child of any connection starts from the sent entries, not from the environment of the daemon. The steps of [process.spawn](process-spawn.md) follow.
 
 - The session-bound names reach only the children of the connection that sent them. A later adopt of that connection replaces them. A connection with no adopt keeps those of the daemon. They are `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `KRB5CCNAME`, `XDG_SEAT`, `XDG_VTNR`, `GPG_TTY`, `WSL_INTEROP` and the names that start with `SSH_`, `SSH2_` or `XDG_SESSION_`. A prefix name that no row showed is claustrum's own, not measured.
-- `TMPDIR`, `TMP`, `TEMP` and `CLAUDE_CODE_TMPDIR` keep the daemon value and its [test](process-spawn.md#a-temp-folder-that-takes-no-file-build-683cc6a9) (Linux and macOS). With no daemon value the child gets none (claustrum's own, not measured).
+- `TMPDIR`, `TMP`, `TEMP` and `CLAUDE_CODE_TMPDIR` keep the daemon value. On Linux and macOS the daemon value takes its [test](process-spawn.md#a-temp-folder-that-takes-no-file-build-683cc6a9). With no daemon value the child gets none (claustrum's own, not measured).
 - Windows names are not case-sensitive: `Tmp` and `Display` follow the same rules.
 - A sent name that starts with `CLAUDE_SSH_` reaches no child (Linux, one name). The `CLAUDE_SSH_DAEMON_CHILD` of the daemon stays.
 - On Linux and macOS the child gets the login-shell PATH after a good read, as in process.spawn. Before one the sent PATH stays (claustrum's own, not measured). On Windows a list with no PATH gives a child with no PATH.
@@ -56,7 +56,7 @@ A good adopt logs one line. This is the line of a list `["B=2"]` after a list of
 [Server] New processes now start from the environment sent on connection "@": 2 variables for every connection, 0 for this connection only. Names added, removed or changed (at most 40): ["A" "B" "HOME" "LANG" "LD_PRELOAD" "PATH" "USER" "ZZ_ADOPT"]
 ```
 
-Each count counts a name once (the second on Windows). The first includes the entries that the daemon keeps. The second counts the session-bound names, which the list leaves out. The names come in name order, at most 40, and Windows gives them in upper case. The label is `"@"` on Linux and Windows and `""` on macOS.
+Each count counts a name once (the second measured on Windows, claustrum's own on Linux and macOS). The first includes the entries that the daemon keeps. The second counts the session-bound names, which the list leaves out. The names come in name order, at most 40, and Windows gives them in upper case. The label is `"@"` on Linux and Windows and `""` on macOS.
 
 ## A new read of the login-shell PATH
 

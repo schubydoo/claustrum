@@ -187,7 +187,7 @@ func TestSocketAdoptEnvFrames(t *testing.T) {
 		adopted(2, 0, `["A" "B"]`),
 		adopted(2, 0, `["A" "B" "CLAUSTRUM_TEST_KEEP" "Z"]`),
 		adopted(1, 0, `["CLAUSTRUM_TEST_KEEP" "Z"]`),
-		adopted(0, 1, `["CLAUSTRUM_TEST_KEEP"]`), // a session-bound name counts once
+		adopted(0, 1, `["CLAUSTRUM_TEST_KEEP"]`), // a session-bound name counts once (claustrum's own on Linux and macOS)
 	}
 	got := adoptLines(logs.String())
 	if len(got) != len(want) {
