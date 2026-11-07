@@ -38,7 +38,7 @@ The result is `{"code":"<code>"}`, with `"errno":<n>` after it for an OS error. 
 
 A `parent` of a wrong type and absent `params` give `-32602` `Invalid params` and no log line (measured on Linux).
 
-claustrum's own, not measured: the folder is made through the open handle of the parent, so a swapped parent cannot move it. On macOS `fcntl` `F_GETPATH` gives the real path. A parent open that fails with another errno, such as a link loop, gives `failed`.
+claustrum's own, not measured: the folder is made through the open handle of the parent, so a swapped parent cannot move it. A Linux host with no `/proc` answers `parent_unverified` to every call. On macOS `fcntl` `F_GETPATH` gives the real path, and the compare is exact. So a parent in another letter case or Unicode form gets `parent_elsewhere`. A parent open that fails with another errno, such as a link loop, gives `failed`.
 
 ## Differences from the reference
 

@@ -226,6 +226,29 @@ func TestFilesMkdirModeFollowsUmask(t *testing.T) {
 	}
 }
 
+// TestFilesMkdirExistsCodes: a name that holds a folder, a file, a link to a
+// folder or a dangling link gives exists_folder, exists_other or exists_link,
+// with no link followed (c9125eb8, measured on Linux and macOS, the dangling
+// link on Linux only).
+func TestFilesMkdirExistsCodes(t *testing.T) {
+	dir := resolveTestRoot(t, t.TempDir())
+	if err := os.Mkdir(filepath.Join(dir, "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "f"), "x", 0o644)
+	for name, target := range map[string]string{"ld": "d", "lx": "gone"} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, code := range map[string]string{"d": "exists_folder", "f": "exists_other", "ld": "exists_link", "lx": "exists_link"} {
+		want := `{"jsonrpc":"2.0","id":1,"result":{"code":"` + code + `"}}`
+		if got, line := mkdirCall(t, dir, name); got != want || line != "[Files] mkdir: "+code {
+			t.Errorf("name %s: frame = %s, log = %q, want %s", name, got, line, want)
+		}
+	}
+}
+
 // TestFilesMkdirExistsGone: a name that the mkdir found and the stat did not
 // gives exists_other (claustrum's own, not measured).
 func TestFilesMkdirExistsGone(t *testing.T) {

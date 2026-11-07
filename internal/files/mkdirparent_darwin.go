@@ -11,7 +11,8 @@ import (
 // openParentPath asks fcntl F_GETPATH for the path of the handle. A failed call
 // gives parent_unverified. The call and the failure are claustrum's own, not
 // measured: the macOS rows show only that a link at or above the parent gives
-// parent_elsewhere.
+// parent_elsewhere. The path is compared exactly, so a parent in another letter
+// case or Unicode form gets parent_elsewhere (claustrum's own, not measured).
 func openParentPath(fd int) (string, error) {
 	buf := make([]byte, unix.PathMax)
 	for {
