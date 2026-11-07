@@ -59,7 +59,7 @@ const (
 
 // shapeDaemonNames are the variables that the daemon sets on a git call. The
 // rows show these, and a variable of the host of the test stays out.
-var shapeDaemonNames = append(slices.Clone(daemonGitKeys), "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE", "LC_ALL", "LANGUAGE")
+var shapeDaemonNames = append(slices.Clone(daemonGitKeys), "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_FLUSH", "GIT_WORK_TREE", "LC_ALL", "LANGUAGE")
 
 // shapeRow is one call, with its variables in each state. An empty text for a
 // state means that the call does not run in that state.
@@ -386,18 +386,22 @@ func createRows() []shapeRow {
 			{list: "P22", cwd: leaf,
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
 				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
-			// The settle call of 683cc6a9 (worktreesettle.go), in the state shadow only.
+			// The settle step of 683cc6a9 (worktreesettle.go), in the state shadow
+			// only. The two calls of the empty tree come first (b3081b51 and
+			// c9125eb8, measured on Linux).
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<cwd>", shadow: "{A} {D} {L}"},
+			{list: "P28", argv: "--git-dir=<repo>/.git hash-object -t tree /dev/null", cwd: "<cwd>", shadow: "{A} {D} {H}"},
 			{list: "ATTR+P20", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
 				shadow: "{C} {D} {H}" + index[true]},
 		},
-		// The content check of b3081b51 (worktreecontent.go), in the state shadow
+		// The content check of c9125eb8 (worktreecontent.go), in the state shadow
 		// only. The commit has no file of the check, so no hash-object
-		// --stdin-paths call runs. The config read of core.fileMode comes first.
-		// One `cat-file --batch` reads the commit and the tree, as c9125eb8 does.
-		// The config listing and the hash-object forms follow b3081b51.
-		contentCheckRows(`config -z --bool --get-regexp ^core\.(filemode|symlinks)$`, "cat-file --batch", "hash-object -t commit --literally --no-filters --stdin -w",
-			"hash-object -t tree --literally --no-filters --stdin -w"),
+		// --no-filters --stdin-paths call runs. No config call of core.fileMode
+		// runs. One `cat-file --batch` reads the commit and the tree, and one
+		// long-running hash-object of each kind hashes them (measured on Linux).
+		contentCheckRows("cat-file --batch", "hash-object -t commit --literally --no-filters --stdin-paths -w",
+			"hash-object -t tree --literally --no-filters --stdin-paths -w"),
 	)
 }
 
@@ -408,7 +412,7 @@ func contentCheckRows(argvs ...string) []shapeRow {
 	for _, argv := range argvs {
 		vars := "{A2} {D} {W} {H}"
 		if strings.HasSuffix(argv, " -w") {
-			vars = "{A2} GIT_COMMON_DIR=<R> {W} {H} GIT_OBJECT_DIRECTORY=<S>/.readback-objects-<n>"
+			vars = "{A2} GIT_COMMON_DIR=<R> {W} {H} GIT_OBJECT_DIRECTORY=<S>/.readback-objects-<n> GIT_ALTERNATE_OBJECT_DIRECTORIES= GIT_FLUSH=1"
 		}
 		out = append(out,
 			shapeRow{list: "none", argv: "config -z --list", cwd: "<repo>", shadow: "{A2} {D} {W} {L}"},

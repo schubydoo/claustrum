@@ -2,10 +2,12 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -21,18 +23,21 @@ import (
 // checkout undoes the worktree (measured on Linux, macOS and Windows).
 //
 // The steps and their order are claustrum's own. The rows show the git calls,
-// their working folders, the codes and the texts. The batch follows c9125eb8.
-// The config listing and the hash-object forms follow b3081b51:
+// their working folders, the codes and the texts. The calls follow c9125eb8:
 //
 //   - `cat-file --batch`, or `cat-file commit <id>` and `cat-file tree <id>`,
 //     read the commit and each tree on the way to the files (catFile), with
-//     the base repository as the working folder. `hash-object -t <type>
-//     --literally --no-filters --stdin -w` hashes each one again. Its objects go to a short-lived folder
+//     the base repository as the working folder. A long-running `hash-object
+//     -t <type> --literally --no-filters --stdin-paths -w`, or `hash-object -t
+//     <type> --literally --no-filters --stdin -w`, hashes each one again
+//     (worktreecontentbatch.go). Its objects go to a short-lived folder
 //     `.readback-objects-<n>` of the folder of the daemon (requestDir).
 //   - `hash-object --no-filters --stdin-paths` hashes the files of the new
 //     worktree. A file whose id differs, or every file after a failed call, is
 //     compared with `cat-file blob <id>`, and then with `cat-file --filters
-//     --path=<name> <id>` in the new worktree.
+//     --path=<name> <id>` in the new worktree. The blob is hashed again with
+//     `hash-object -t blob --literally --no-filters --stdin -w` right after its
+//     read (c9125eb8, measured on Linux and macOS).
 //
 // Each call has the limit of 2 minutes of a git call (gitCallLimit), with the
 // stop of gitRun: SIGTERM to the git process alone, and SIGKILL 2 s later, on
@@ -53,10 +58,12 @@ type contentCheck struct {
 	// linkBlobs are the blobs of the committed links, by path.
 	linkBlobs map[string][]byte
 	// fileModeOff is a core.fileMode of false, as git reads it in the base
-	// repository.
+	// repository (noteFileMode).
 	fileModeOff bool
 	// batch is the running `cat-file --batch` of the check, or nil.
 	batch *objectBatch
+	// hashers are the running long-running hash-object calls, by object kind.
+	hashers map[string]*objectBatch
 	// separate is the count of commits and trees that separate `cat-file`
 	// runs read.
 	separate int
@@ -134,7 +141,6 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	}
 	defer remove()
 	c.objects = dir
-	c.fileModeOff = c.readFileMode()
 	c.startBatch()
 	defer c.stopBatch()
 	body, text := c.readObject("commit", c.commit)
@@ -268,9 +274,7 @@ func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...strin
 		s = &gitStop{wide: s.wide}
 	}
 	ctx := s.context()
-	// The config listing before the call: b3081b51 runs one before its
-	// `cat-file commit` (measured on Linux).
-	cmd := hardenedGitCmd(ctx, c.u, dir, false, nil, args...)
+	cmd := c.cmd(ctx, dir, args...)
 	cmd.Env = append(cmd.Env, env...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -279,6 +283,18 @@ func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...strin
 	cmd.Stderr = &errBuf
 	out, err := gitOutput(ctx, cmd)
 	return out, errBuf.String(), err
+}
+
+// cmd builds one call of the check in dir, after its config listing: b3081b51
+// runs one before its `cat-file commit` (measured on Linux). A listing in the
+// base repository gives the value of core.fileMode (noteFileMode).
+func (c *contentCheck) cmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	u := c.u.atCommand()
+	l := hookPrecursor(ctx, u, dir, false)
+	if dir == c.repo {
+		c.noteFileMode(l)
+	}
+	return hardenedGitCmd(ctx, u, dir, false, &configListing{hooks: l.hooks()}, args...)
 }
 
 // failText is the detail of a failed call in the repository text. A stopped
@@ -292,23 +308,59 @@ func failText(stderr string, err error) string {
 }
 
 // readObject reads one object of the commit (catFile) and hashes it again
-// into the folder of the check. text is the detail of a failure, or "".
+// into the folder of the check. While the batch runs, the long-running
+// hash-object of the kind hashes it. After that git stopped, a separate run
+// reads the object again (c9125eb8, measured on Linux), and claustrum ends the
+// batch (claustrum's own, not measured). text is the detail of a
+// failure, or "".
 func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 	body, stderr, err := c.catFile(kind, id)
 	if err != nil {
 		return nil, failText(stderr, err)
 	}
-	out, stderr, err := c.git(c.repo, body, []string{"GIT_OBJECT_DIRECTORY=" + c.objects},
-		"hash-object", "-t", kind, "--literally", "--no-filters", "--stdin", "-w")
-	if err != nil {
-		return nil, failText(stderr, err)
+	if c.batch != nil {
+		got, err := c.hashLong(kind, body)
+		switch {
+		case err == nil:
+			if text := hashText(kind, id, got); text != "" {
+				return nil, text
+			}
+			c.read++
+			return body, ""
+		case !errors.Is(err, errNoHashHelper):
+			logging.Infof(longStoppedLine, "hash-object", stopCause(err))
+			c.stopBatch()
+			if body, stderr, err = c.catFile(kind, id); err != nil {
+				return nil, failText(stderr, err)
+			}
+		}
 	}
-	if strings.TrimSpace(string(out)) != id {
-		// Not measured: the text is claustrum's own.
-		return nil, "the stored " + kind + " does not match its id"
+	if text := c.writeObject(kind, id, body); text != "" {
+		return nil, text
 	}
 	c.read++
 	return body, ""
+}
+
+// writeObject hashes body as an object of kind with a separate `hash-object
+// -t <kind> --literally --no-filters --stdin -w` into the folder of the check.
+// text is the detail of a failure, or "".
+func (c *contentCheck) writeObject(kind, id string, body []byte) string {
+	out, stderr, err := c.git(c.repo, body, objectWriteEnv(c.objects),
+		"hash-object", "-t", kind, "--literally", "--no-filters", "--stdin", "-w")
+	if err != nil {
+		return failText(stderr, err)
+	}
+	return hashText(kind, id, strings.TrimSpace(string(out)))
+}
+
+// hashText is the detail of an object of kind whose hash got is not its id,
+// or "". Not measured: the text is claustrum's own.
+func hashText(kind, id, got string) string {
+	if got != id {
+		return "the stored " + kind + " does not match its id"
+	}
+	return ""
 }
 
 // treeOfCommit is the tree id of a commit object.
@@ -460,9 +512,9 @@ func (c *contentCheck) changedWhileChecked(files []contentFile) *contentRefusal 
 // that has no execute bit in the new worktree (b3081b51, measured on Linux and
 // macOS). The mode is read before the hash-object call, so a change during
 // that call passes (measured on Linux). With core.fileMode false in any config
-// scope that git reads in the base repository the file passes (measured on
-// Linux and macOS, for the repository config). A
-// failed read of that setting keeps the test (claustrum's own, not measured).
+// scope that git reads in the base repository the file passes (b3081b51,
+// measured on Linux and macOS, for the repository config). The read of that
+// setting is noteFileMode.
 // Windows has no such test (claustrum's own, not measured). The place of this
 // test after the other tests before that call is claustrum's own (not
 // measured).
@@ -482,25 +534,27 @@ func (c *contentCheck) lostExecBit(files []contentFile) *contentRefusal {
 	return nil
 }
 
-// readFileMode runs one `config -z --bool --get-regexp
-// ^core\.(filemode|symlinks)$` in the base repository, before the first
-// `cat-file` call (b3081b51, measured on Linux and macOS). git answers from every config scope
-// that it reads there. The last core.filemode of the answer counts. The check
-// does not act on core.symlinks. A failed or stopped call gives false, and the
-// execute-bit test runs (claustrum's own, not measured).
-func (c *contentCheck) readFileMode() bool {
-	out, _, err := c.git(c.repo, nil, nil, "config", "-z", "--bool", "--get-regexp", `^core\.(filemode|symlinks)$`)
-	if err != nil {
-		return false
+// noteFileMode reads core.fileMode from the listing l before a call of the
+// check in the base repository. c9125eb8 makes no config call of its own for
+// it (measured on Linux, macOS and Windows). Where it reads the value is not
+// measured, so the listing is claustrum's own source. The listing shows every
+// config scope that git reads there, and its last core.filemode counts. A
+// listing that failed keeps the value before it. The words of readBoolWord
+// give the value, and a word that it does not take keeps the execute-bit test
+// (claustrum's own, not measured).
+func (c *contentCheck) noteFileMode(l listingRun) {
+	if l.err != nil {
+		return
 	}
 	off := false
-	for rec := range strings.SplitSeq(string(out), "\x00") {
-		key, value, _ := strings.Cut(rec, "\n")
+	for rec := range strings.SplitSeq(string(l.out), "\x00") {
+		key, value, has := strings.Cut(rec, "\n")
 		if key == "core.filemode" {
-			off = value == "false"
+			v, ok := readBoolWord(repoSetting{key: key, value: value, hasValue: has})
+			off = ok && v == "false"
 		}
 	}
-	return off
+	c.fileModeOff = off
 }
 
 // linkFault is what the chain of a committed link runs into.
@@ -565,6 +619,11 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 		blob, stderr, err = c.git(c.repo, nil, nil, "cat-file", "blob", f.id)
 		if err != nil {
 			return c.repositoryRefusal(failText(stderr, err))
+		}
+		// A failed or wrong hash of the blob refuses with the repository code
+		// (claustrum's own, not measured).
+		if text := c.writeObject("blob", f.id, blob); text != "" {
+			return c.repositoryRefusal(text)
 		}
 		c.read++
 	}

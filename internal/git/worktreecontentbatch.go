@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"crypto/sha1" //nolint:gosec // a probe of the fips140 mode, no hash of data
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -15,24 +17,53 @@ import (
 
 // The object reads of the content check. c9125eb8 reads the commit and the
 // trees through one long-running `git cat-file --batch` per create (measured
-// on Linux and macOS). The batch runs on every system. On Windows the call is
-// not measured, but the checked line counts 0 separate runs there (c9125eb8,
-// measured), which fits one batch. A git that stops answering, or a process
+// on Linux, macOS and Windows), and the checked line counts 0 separate runs on
+// Windows too. A git that stops answering, or a process
 // that cannot compute SHA-1, ends that use. Then one `cat-file <kind> <id>`
 // reads each object, with the same result (measured on Linux). The checked
 // line counts the commits and trees that separate runs read.
+//
+// While the batch runs, c9125eb8 hashes the commits with one long-running
+// `hash-object -t commit --literally --no-filters --stdin-paths -w` and the
+// trees with one such call of `-t tree` (measured on Linux, macOS and
+// Windows). Each starts at the first object of its kind and ends with the
+// batch (measured on Linux). After a hash-object that stopped answering, the
+// batch reads no more objects, and separate runs read and hash that object and
+// the rest: `cat-file <kind> <id>`, then `hash-object -t <kind> --literally
+// --no-filters --stdin -w` (c9125eb8, measured on Linux). The batch process of
+// c9125eb8 runs on to the end of the check. Claustrum also ends it
+// (claustrum's own, not measured).
 //
 // Claustrum's own, not measured: the blobs of committed links go through the
 // batch too and do not count. The blob of the compare step is always a
 // separate run. An object that the batch names missing, ambiguous or of
 // another kind is read again by a separate run, and the batch goes on. A
 // malformed answer, a failed start and a stop at the limit end the batch as an
-// end of its output does. The batch has the limit of one call for the whole
-// check.
+// end of its output does. The batch and each hash-object have the limit of one
+// call for the whole check. The long-running hash-object reads the object from
+// the file objectBodyName in the folder of the objects of the check.
+//
+// After a stop c9125eb8 reads the trees of a level below the top with `cat-file
+// --buffer --batch` and a new long-running hash-object of the trees (measured
+// on Linux). Claustrum reads and hashes each of them alone.
 
-// batchStoppedLine is the log line after the batch stopped answering. Its
-// cause is "EOF" for an end of the output (c9125eb8, measured on Linux).
-const batchStoppedLine = "[GitHandler] worktree_create: stopped using the long-running git cat-file for the new worktree's config check: it stopped answering (%v); the rest is read with a git process per object or per folder depth (slower, same result)"
+// longStoppedLine is the log line after a long-running git of the check
+// stopped. Its first part is the git command, cat-file or hash-object, and the
+// second is the cause (stopCause). The texts are of c9125eb8 (measured on
+// Linux).
+const longStoppedLine = "[GitHandler] worktree_create: stopped using the long-running git %s for the new worktree's config check: %s; the rest is read with a git process per object or per folder depth (slower, same result)"
+
+// stopCause is the cause of longStoppedLine. The batch header "xyz blob" with
+// no size gives the first text (c9125eb8, measured on Linux).
+// The same text for the other answers that do not parse is claustrum's own.
+// An end of the output gives "it stopped answering (EOF)" for the batch and
+// for hash-object (measured on Linux).
+func stopCause(err error) string {
+	if errors.Is(err, errBatchAnswer) {
+		return "it answered with something other than the object asked for"
+	}
+	return fmt.Sprintf("it stopped answering (%v)", err)
+}
 
 // noSHA1Line is the log line of a check that starts no batch, because this
 // process cannot compute SHA-1 (c9125eb8, measured on Linux).
@@ -46,11 +77,22 @@ var sha1Works = func() bool {
 	return err == nil
 }
 
-// errBatchAnswer is the cause of an answer of the batch that does not parse
-// (claustrum's own text, not measured).
+// errBatchAnswer is the cause of an answer of the batch that does not parse.
 var errBatchAnswer = errors.New("an answer that cannot be read")
 
-// objectBatch is the running `git cat-file --batch` of one check.
+// errNoHashHelper marks an object that the long-running hash-object does not
+// take: its file cannot be written, its path holds a line end, or no pipe
+// opened. A separate run hashes that object, and the long-running gits go on
+// (claustrum's own, not measured).
+var errNoHashHelper = errors.New("no long-running hash-object for this object")
+
+// objectBodyName is the file that holds the object for the long-running
+// hash-object, in the folder of the objects of the check (claustrum's own,
+// not measured). The folder goes after the check with the file.
+const objectBodyName = "object-body"
+
+// objectBatch is one long-running git of the check: `cat-file --batch`, or a
+// hash-object with --stdin-paths.
 type objectBatch struct {
 	in   *os.File // our end of the stdin of git
 	inR  *os.File // the end of git, closed after git ended
@@ -60,26 +102,34 @@ type objectBatch struct {
 }
 
 // startBatch starts the batch of the check in the base repository, with the
-// config listing before it, as each call of the check. It gets the limit of
-// one call, and its stop stops no other call (contentCheck.git). A failed
-// start shows at the first read as an end of the output.
+// config listing before it, as each call of the check. A failed start shows
+// at the first read as an end of the output.
 func (c *contentCheck) startBatch() {
 	if !sha1Works() {
 		logging.Infof("%s", noSHA1Line)
 		return
 	}
+	// No pipe: every object is read by a separate run, with no line
+	// (claustrum's own, not measured).
+	c.batch = c.startLong(nil, "cat-file", "--batch")
+}
+
+// startLong starts one long-running git of the check in the base repository,
+// with env after its environment. It gets the limit of one call, and its stop
+// stops no other call (contentCheck.git), but a hash-object stop ends the batch
+// (readObject). It is nil when no pipe opened.
+func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {
-		// No pipe: every object is read by a separate run, with no line
-		// (claustrum's own, not measured).
-		return
+		return nil
 	}
 	s := c.u.stop
 	if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
 	ctx := s.context()
-	cmd := hardenedGitCmd(ctx, c.u, c.repo, false, nil, "cat-file", "--batch")
+	cmd := c.cmd(ctx, c.repo, args...)
+	cmd.Env = append(cmd.Env, env...)
 	outR, outW := io.Pipe()
 	cmd.Stdin, cmd.Stdout = inR, outW
 	b := &objectBatch{in: inW, inR: inR, outR: outR, out: bufio.NewReader(outR), done: make(chan struct{})}
@@ -89,7 +139,7 @@ func (c *contentCheck) startBatch() {
 		// Any end of git reads as an end of its output (io.EOF).
 		_ = outW.Close()
 	}()
-	c.batch = b
+	return b
 }
 
 // read asks the batch for the object id. ok is false for an object that the
@@ -140,12 +190,73 @@ func (b *objectBatch) close() {
 	_ = b.inR.Close()
 }
 
-// stopBatch ends the batch of the check, if one runs.
+// hash asks a long-running hash-object for the id of the file at path. err
+// is an end of the git, after which it gives no answer.
+func (b *objectBatch) hash(path string) (string, error) {
+	if _, err := io.WriteString(b.in, path+"\n"); err != nil {
+		return "", err
+	}
+	line, err := b.out.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
+}
+
+// stopBatch ends the batch and the long-running hash-object calls of the
+// check, if they run.
 func (c *contentCheck) stopBatch() {
 	if c.batch != nil {
 		c.batch.close()
 		c.batch = nil
 	}
+	for kind, h := range c.hashers {
+		h.close()
+		delete(c.hashers, kind)
+	}
+}
+
+// hashLong hashes body as an object of kind with the long-running hash-object
+// of that kind, which it starts at the first object of the kind.
+func (c *contentCheck) hashLong(kind string, body []byte) (string, error) {
+	p := filepath.Join(c.objects, objectBodyName)
+	if strings.ContainsAny(p, "\r\n") {
+		return "", errNoHashHelper
+	}
+	if err := writeObjectBody(c.objects, body); err != nil {
+		return "", errNoHashHelper
+	}
+	h := c.hashers[kind]
+	if h == nil {
+		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		if h == nil {
+			return "", errNoHashHelper
+		}
+		if c.hashers == nil {
+			c.hashers = map[string]*objectBatch{}
+		}
+		c.hashers[kind] = h
+	}
+	return h.hash(p)
+}
+
+// writeObjectBody writes body to objectBodyName in dir, through a root at dir.
+// Tests replace it.
+var writeObjectBody = func(dir string, body []byte) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.WriteFile(objectBodyName, body, 0o600)
+}
+
+// objectWriteEnv is the environment after the environment of a hash-object
+// call with -w: its objects go to dir, with no alternates (b3081b51 and
+// c9125eb8, measured on Linux). GIT_FLUSH=1 comes last (c9125eb8, measured on
+// Linux, macOS and Windows; b3081b51 sets none).
+func objectWriteEnv(dir string) []string {
+	return []string{"GIT_OBJECT_DIRECTORY=" + dir, "GIT_ALTERNATE_OBJECT_DIRECTORIES=", "GIT_FLUSH=1"}
 }
 
 // catFile reads the object id of kind: through the batch while it answers,
@@ -156,7 +267,7 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 		body, ok, err := c.batch.read(kind, id)
 		switch {
 		case err != nil:
-			logging.Infof(batchStoppedLine, err)
+			logging.Infof(longStoppedLine, "cat-file", stopCause(err))
 			c.stopBatch()
 		case ok:
 			return body, "", nil

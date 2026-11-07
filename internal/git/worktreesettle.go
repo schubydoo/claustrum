@@ -119,6 +119,14 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if !ok {
 		return
 	}
+	pairCtx, pairCancel := context.WithTimeout(context.Background(), limit)
+	settleEmptyTree(pairCtx, u, gitDir, pin)
+	pairCancel()
+	// The time left is read again after the pair, so a slow pair does not take
+	// the time of the call (claustrum's own, not measured).
+	if limit, ok = settleLimit(callerCtx, u.stop); !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(false,
@@ -134,4 +142,26 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 		return
 	}
 	settleSleep(callerCtx, readEnd.Add(settleWaitFor(leaf)))
+}
+
+// settleEmptyTree runs the two calls of the empty tree before the settle call:
+// `--git-dir=<git dir> config -z --list`, then the heavy `--git-dir=<git dir>
+// hash-object -t tree <null device>`, both in the working directory of the
+// daemon. b3081b51 runs them on Linux and macOS, and c9125eb8 on Linux, macOS
+// and Windows, with NUL on Windows (measured). The two calls have the
+// form of the two of git.status (statusRun.emptyTree), with the items of the
+// settle call in front (claustrum's own, not measured).
+//
+// The answer is not used: the settle call keeps the id of the probe of
+// attrSourceArgs. The rows hold SHA-1 repositories only, so whether the
+// answer goes into --attr-source is not measured. A failed call changes
+// nothing (claustrum's own, not measured).
+func settleEmptyTree(ctx context.Context, u gitUse, gitDir string, pin []string) {
+	hooks := runListing(ctx, "", gitDir, precursorEnv(true, pin)).hooks()
+	cmd := gitCommandContext(ctx, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(true,
+		"--git-dir="+gitDir, "hash-object", "-t", "tree", os.DevNull))...)
+	cmd.Env = hardenedGitEnv(true, pin, hooks)
+	cmd.Cancel = func() error { return stopGitProcess(cmd.Process) }
+	cmd.WaitDelay = gitStopGrace
+	_, _ = gitOutput(ctx, cmd)
 }
