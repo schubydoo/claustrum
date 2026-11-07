@@ -2,4 +2,4 @@
 default: minor
 ---
 
-On Linux and macOS, a spawn on a connection whose `server.adoptEnv` sent no `"noLoginShell":true` reads the login-shell PATH again in the background when the last read is 10 minutes old. Later spawns get the new PATH.
+On Linux and macOS, after a `server.adoptEnv` with no `"noLoginShell":true`, the next spawn reads the login-shell PATH again in the background. It reads at most once a minute and stops for the day after 24 good reads, and later spawns get the new PATH.

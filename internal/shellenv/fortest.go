@@ -1,6 +1,9 @@
 package shellenv
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // The functions below let the tests of package main drive the PATH read. Only
 // tests call them.
@@ -22,6 +25,7 @@ func ResetForTest() {
 	s.mu.Lock()
 	s.armed, s.closed, s.good, s.path = false, false, false, ""
 	s.failures, s.nextTry, s.run, s.lastRead = 0, time.Time{}, nil, time.Time{}
+	s.adoptPending, s.adoptPATH, s.againSince, s.againCount = false, "", time.Time{}, 0
 	s.clock, s.gate = time.Now, loginShellGate
 	s.mu.Unlock()
 }
@@ -58,3 +62,10 @@ func SetSpawnWaitForTest(d time.Duration) (restore func()) {
 // SpawnHorizonForTest returns the age of a read after which no spawn waits for
 // it.
 func SpawnHorizonForTest() time.Duration { return loginPATHSpawnHorizon }
+
+// ShellPATHForTest returns the PATH that the shell of the read of ctx gets from an
+// adopt, or "" when it gets the daemon PATH.
+func ShellPATHForTest(ctx context.Context) string {
+	p, _ := ctx.Value(shellPATHKey{}).(string)
+	return p
+}
