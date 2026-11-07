@@ -39,7 +39,17 @@ func wantCapabilityFeatures() string {
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
-	return head + `"git.worktree.external_root","process.spawn.link_bound","process.spawn.cli_temp_root","server.instance_id"`
+	return head + `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","process.spawn.cli_temp_root","server.instance_id"`
+}
+
+// wantCapabilityMethods is the methods array text of the server. Windows has no
+// files.mkdir (c9125eb8, measured on Windows).
+func wantCapabilityMethods() string {
+	const head = `"server.ping","server.capabilities","server.shutdown","files.list","files.validate","files.stat","files.read","files.extract_tar","git.info","git.status","git.list_branches","git.worktree_create","git.worktree_remove","launcher.resolve","process.spawn","process.stdin","process.kill","process.killAndWait","process.reattach","plugins.prune",`
+	if runtime.GOOS == "windows" {
+		return head + `"files.realpath"`
+	}
+	return head + `"files.mkdir","files.realpath"`
 }
 
 // wantCapabilitiesFrame is the whole frame of a test server, byte for byte. by is
@@ -49,7 +59,7 @@ func wantCapabilitiesFrame(peerCheck, by string) string {
 	if by != "" {
 		tail += `,"peerCheckBy":` + by
 	}
-	return `{"jsonrpc":"2.0","id":1,"result":{"version":"` + Version + `","methods":["server.ping","server.capabilities","server.shutdown","files.list","files.validate","files.stat","files.read","files.extract_tar","git.info","git.status","git.list_branches","git.worktree_create","git.worktree_remove","launcher.resolve","process.spawn","process.stdin","process.kill","process.killAndWait","process.reattach","plugins.prune","files.realpath"],"instanceId":"` + testInstanceID + `","startedAt":1700000000000,"features":[` + wantCapabilityFeatures() + `],` + tail + `}}`
+	return `{"jsonrpc":"2.0","id":1,"result":{"version":"` + Version + `","methods":[` + wantCapabilityMethods() + `],"instanceId":"` + testInstanceID + `","startedAt":1700000000000,"features":[` + wantCapabilityFeatures() + `],` + tail + `}}`
 }
 
 // stubDaemonNSText gives the daemons of one test the own text t.

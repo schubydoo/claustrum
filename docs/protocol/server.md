@@ -32,7 +32,7 @@ The reply is always this result.
   "methods": ["server.ping", "server.capabilities", "server.shutdown", "…"],
   "instanceId": "<32 hex characters>",
   "startedAt": 1760000000000,
-  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "git.outside_session_folders", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "git.worktree.external_root", "process.spawn.link_bound", "process.spawn.cli_temp_root", "server.instance_id"],
+  "features": ["process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "git.outside_session_folders", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "process.spawn.cli_temp_root", "server.instance_id"],
   "peerCheck": "off"
 }
 ```
@@ -42,7 +42,7 @@ The members come in this order:
 | Member | Meaning |
 |---|---|
 | `version` | The version of the daemon. |
-| `methods` | The 21 methods, in the order of [Methods](../PROTOCOL.md#methods-21). `files.realpath` is last on every system (`683cc6a9`). |
+| `methods` | The 22 methods, in the order of [Methods](../PROTOCOL.md#methods-22). `files.realpath` is last on every system (`683cc6a9`). On Windows (`c9125eb8`, measured) there is no `files.mkdir`, so claustrum lists 21. |
 | `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the [daemon log](../DAEMON.md#daemon-log-remote-serverlog) holds it too (measured on `89cb6289`). |
 | `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows the members in the order of `b3081b51` on Linux and macOS, less `process.spawn.pty`, plus `process.spawn.git_read` and `launcher.supplies_cli` of `c9125eb8`. They follow `process.spawn.failure_reason` and `launcher.non_string_refused` on Linux, macOS and Windows. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. `b3081b51` adds five names of the example on the three systems, and `process.spawn.cli_temp_root` on Linux and macOS only. Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
+The `features` array is always present. The example above shows the members in the order of `b3081b51` on Linux and macOS, less `process.spawn.pty`, plus `process.spawn.git_read` and `launcher.supplies_cli` of `c9125eb8`. They follow `process.spawn.failure_reason` and `launcher.non_string_refused` on Linux, macOS and Windows. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. `b3081b51` adds five names of the example on the three systems, and `process.spawn.cli_temp_root` on Linux and macOS only. `c9125eb8` adds `files.mkdir.verified_parent` after `files.read.real` on Linux and macOS only (measured), and the example holds that name too. Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 

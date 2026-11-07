@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,10 @@ func TestEveryOtherMethodStillRequiresAuth(t *testing.T) {
 		"launcher.resolve",
 		"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
 		"plugins.prune", "files.realpath",
+	}
+	// Linux and macOS have files.mkdir (c9125eb8).
+	if runtime.GOOS != "windows" {
+		methods = append(methods, "files.mkdir")
 	}
 
 	want := map[string]bool{}

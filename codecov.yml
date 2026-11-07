@@ -336,6 +336,8 @@ component_management:
         - internal/files/realpath.go
         - internal/files/realpath_unix.go
         - internal/files/realpath_windows.go
+        - internal/files/mkdir_unix.go
+        - internal/files/mkdir_windows.go
         - internal/pathcanon/netpath_windows.go
         - internal/files/filesreadreal_linux.go
         - internal/files/filesreadreal_other.go
