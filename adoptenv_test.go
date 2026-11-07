@@ -325,10 +325,30 @@ func TestSocketAdoptEnvReadsLoginPATHAgain(t *testing.T) {
 // connection whose adopt sent "noLoginShell":true starts no read again. That a
 // connection with no adopt of its own starts none is claustrum's own, not measured.
 func TestSocketAdoptEnvNoLoginShellReadsNoPATHAgain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no login shell runs on Windows, so no read again starts")
+	}
 	f, cl, sock := adoptAfterGoodRead(t, `{"env":["A=1"],"noLoginShell":true}`)
 	f.advance(11 * time.Minute)
 	adoptChildEnv(t, cl, "nologin", 2)
 	noReadStarted(t, f, "a spawn after an adopt with noLoginShell")
 	adoptChildEnv(t, dial(t, sock), "other", 1)
 	noReadStarted(t, f, "a spawn on a connection with no adopt")
+}
+
+// TestSocketAdoptEnvLaterNoLoginShellEndsTheReadAgain: a later good adopt with
+// "noLoginShell":true on the same connection turns the read again off. The adopt
+// that comes last decides (claustrum's own, not measured).
+func TestSocketAdoptEnvLaterNoLoginShellEndsTheReadAgain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no login shell runs on Windows, so no read again starts")
+	}
+	f, cl, _ := adoptAfterGoodRead(t, `{"env":["A=1"]}`)
+	adopt := `{"jsonrpc":"2.0","id":2,"method":"server.adoptEnv","params":{"env":["A=2"],"noLoginShell":true}}`
+	if got := string(cl.call(authed(adopt))); !strings.Contains(got, `"ok":true`) {
+		t.Fatalf("second adopt: %s", got)
+	}
+	f.advance(11 * time.Minute)
+	adoptChildEnv(t, cl, "later", 3)
+	noReadStarted(t, f, "a spawn after a later adopt with noLoginShell")
 }
