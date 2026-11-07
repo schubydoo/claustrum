@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -225,7 +226,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 		procinfo.SetKillGroupForTest(func(int, syscall.Signal) error { return syscall.ESRCH })
 		hcHoldPid = holdWith(func(int, syscall.Signal) error { return syscall.ESRCH })
 
-		signalled, survived := endGroupsTwoPhase([]tracked{{pid: noSuchPid + 7001, pgid: noSuchPid + 7001, startTicks: "1"}}, "orphaned process group", "")
+		signalled, survived := endGroupsTwoPhase([]hcGroup{{tracked: tracked{pid: noSuchPid + 7001, pgid: noSuchPid + 7001, startTicks: "1"}}}, "orphaned process group")
 		if signalled != 0 || survived != 0 {
 			t.Errorf("signalled=%d survived=%d, want 0 and 0 for an already-gone group", signalled, survived)
 		}
@@ -250,11 +251,10 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 		})
 		hcHoldPid = holdWith(func(_ int, sig syscall.Signal) error { sent = append(sent, sig); return nil })
 
-		// The wait reads the clock once for the deadline, then once per poll after the
-		// liveness checks. One sleep jumps the whole grace, so the third read is the one
-		// that ends the wait — and rewriting the stat there is exactly the race the arm
-		// defends against: the pid is reused after the final liveness check and before the
-		// SIGKILL would land.
+		// The wait reads the clock once for the deadline, then once per poll before the
+		// liveness checks. One sleep jumps the whole grace, so the third read starts the
+		// last poll. The stat rewritten there makes that poll read the pid as reused, so
+		// the wait drops it and no SIGKILL lands.
 		now := time.Unix(2_000_000, 0)
 		hcSleep = func(time.Duration) { now = now.Add(hcTermGrace) }
 		clocks, reused := 0, false
@@ -267,7 +267,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 			return now
 		}
 
-		signalled, survived := endGroupsTwoPhase([]tracked{{pid: pid, pgid: pid, startTicks: "1"}}, "orphaned process group", "")
+		signalled, survived := endGroupsTwoPhase([]hcGroup{{tracked: tracked{pid: pid, pgid: pid, startTicks: "1"}}}, "orphaned process group")
 		if !reused {
 			t.Fatal("the fixture never reused the pid; endGroupsTwoPhase's clock reads no longer line up")
 		}
@@ -283,5 +283,48 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 			}
 		}
 		_ = root
+	})
+
+	t.Run("a pid reused after the last poll is never SIGKILLed", func(t *testing.T) {
+		root, mk, _ := fakeProc(t)
+		oldGrp, oldClock, oldSleep := procinfo.KillGroupForTest(), hcClock, hcSleep
+		t.Cleanup(func() { procinfo.SetKillGroupForTest(oldGrp); hcClock, hcSleep = oldClock, oldSleep })
+		now := time.Unix(2_000_000, 0)
+		hcClock = func() time.Time { return now }
+		hcSleep = func(d time.Duration) { now = now.Add(d) }
+
+		// alive ignores SIGTERM. gone exits on SIGTERM, and a member of its group stays.
+		// The last poll reads alive as itself, then sends gone's group its SIGKILL. That
+		// SIGKILL rewrites the stat of alive: its pid is reused after the last poll, right
+		// before the identity test of endGroupsTwoPhase.
+		const alive, gone = noSuchPid + 7003, noSuchPid + 7004
+		mk(alive, "stat", hcRunningStat(alive, 1, alive, "1"))
+		mk(gone, "stat", hcRunningStat(gone, 1, gone, "1"))
+		var kills []int
+		procinfo.SetKillGroupForTest(func(pid int, sig syscall.Signal) error {
+			switch sig {
+			case syscall.SIGTERM:
+				if pid == gone {
+					_ = os.RemoveAll(filepath.Join(root, strconv.Itoa(pid)))
+				}
+			case syscall.SIGKILL:
+				kills = append(kills, pid)
+				if pid == gone {
+					mk(alive, "stat", hcRunningStat(alive, 1, alive, "9999")) // a different process now
+				}
+			}
+			return nil // the group of gone still answers
+		})
+
+		signalled, survived := endGroupsTwoPhase([]hcGroup{
+			{tracked: tracked{pid: alive, pgid: alive, startTicks: "1"}},
+			{tracked: tracked{pid: gone, pgid: gone, startTicks: "1"}},
+		}, "orphaned process group")
+		if signalled != 2 || survived != 0 {
+			t.Errorf("signalled=%d survived=%d, want 2 and 0", signalled, survived)
+		}
+		if !slices.Equal(kills, []int{gone}) {
+			t.Errorf("SIGKILL = %v, want only [%d]: the reused pid %d got one", kills, gone, alive)
+		}
 	})
 }

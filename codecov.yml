@@ -243,6 +243,8 @@ component_management:
         - internal/git/githarden_drain_windows.go
         # the configuration listing before each hardened call and its hook pins (89cb6289).
         - internal/git/gitlisting.go
+        # the pane's git of a gitRead process.spawn (c9125eb8).
+        - internal/git/gitread.go
         # the filter rule of the git.worktree_create checkout (5fd08069).
         - internal/git/gitfilter.go
         # the ssh door of the git.worktree_create checkout (be1c1ca5).
@@ -382,6 +384,8 @@ component_management:
         - internal/supervisor/farewell.go
         # 683cc6a9 link-bound processes: the link, the unattended end and the spent ids.
         - internal/supervisor/linkbound.go
+        # c9125eb8 the time limit of the pane's git of a gitRead spawn.
+        - internal/supervisor/gitreadlimit.go
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
         # per-key spawn lock, and the eviction of the prior same-session process.
         - internal/supervisor/sessionsupersede.go

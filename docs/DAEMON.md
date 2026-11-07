@@ -250,8 +250,7 @@ A long sibling socket under a short root gets the same verdicts (from the code).
 A stranded daemon is a daemon whose socket path no longer leads to it. On Linux and macOS the cleaner sends no signal to it or to its children. It ends by itself, except at a long socket path, see [Orphan-exit self-probe](#orphan-exit-self-probe).
 
 The cleaner retires an abandoned daemon with `SIGTERM`: a daemon on a run dir that is idle past the threshold, or whose name carries `.removing-` from an earlier removal. A listener that is not the daemon binary, or that serves another
-socket, gets no signal. On macOS the first case is measured, and the second is
-not measured. This gate is parity, not [D15](DIVERGENCES.md#d15). A daemon that is too young is not retired. The run dir gets this line (measured on macOS for a daemon about 33 s old). The age of 5 minutes is claustrum's own:
+socket, gets no signal. On macOS only the first case is measured. This gate is parity, not [D15](DIVERGENCES.md#d15). A daemon that is too young is not retired. The run dir gets this line (measured on macOS for a daemon about 33 s old). The age of 5 minutes is claustrum's own:
 
 ```
 [hostclean] run dir "<dir>" unused for <n> days: its daemon (pid <pid>) was not retired: it is too young to judge
@@ -371,12 +370,13 @@ reference.
   acts only on this user's own processes and on the `run`, `srv` and `ccd-cli`
   folders of its own root. A pass acts only after it confirms that its own
   socket still leads to itself.
-- An orphan is a `stream-json` daemon child that leads its own process group.
-  Its parent is pid 1, its binary sits directly in `<root>/ccd-cli`, and its
-  stdin, stdout and stderr are pipes. Its group gets `SIGTERM`, a 3 s grace,
-  then `SIGKILL`. One pass ends 64 groups at most. A daemon or an orphan that
-  is too young is never touched. An ambiguous orphan is spared with
-  a logged reason.
+- An orphan is a `stream-json` daemon child that leads its process group. It
+  has parent pid 1 and three pipes for stdio. Its binary sits directly in
+  `<root>/ccd-cli`, or it carries a `CLAUDE_SSH_CHILD` stamp (`c9125eb8`). The
+  stamp must name its own pid and start (claustrum's own, not measured). Its
+  group gets `SIGTERM`, and `SIGKILL` 3 s later if a member is left (`c9125eb8`
+  for a gone leader, on Linux). In the settle after the `SIGKILL` this wait is
+  claustrum's own, not measured. A young orphan stays. An ambiguous orphan is spared and logged.
 - A stale run dir is idle past 30 days, or its name carries `.removing-`. Its
   socket does not answer, and no live process holds its lock. The pass reads
   each run dir's idle age before it dials any daemon, because a dial

@@ -127,8 +127,8 @@ func TestEndGroupsLogsTheSIGKILL(t *testing.T) {
 	mk(noSuchPid+5339, "stat", hcRunningStat(noSuchPid+5339, 1, noSuchPid+5339, "1")) // its leader ends on SIGTERM
 	buf := captureLogBuf(t)
 
-	endGroupsTwoPhase([]tracked{{pid: noSuchPid + 5338, pgid: noSuchPid + 5338, startTicks: "1"}, {pid: noSuchPid + 5339, pgid: noSuchPid + 5339, startTicks: "1"}},
-		"orphaned process group", "")
+	endGroupsTwoPhase([]hcGroup{{tracked: tracked{pid: noSuchPid + 5338, pgid: noSuchPid + 5338, startTicks: "1"}}, {tracked: tracked{pid: noSuchPid + 5339, pgid: noSuchPid + 5339, startTicks: "1"}}},
+		"orphaned process group")
 
 	if len(kills) != 2 || kills[0] != noSuchPid+5339 || kills[1] != noSuchPid+5338 {
 		t.Fatalf("SIGKILL = %v, want [1073747163 1073747162]", kills)

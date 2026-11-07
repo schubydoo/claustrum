@@ -458,6 +458,10 @@ Unless an item names another build, the daemon items below are measured against
   `89cb6289`. The
   daemon ends by itself. See
   [Signals of the cleaner](DAEMON.md#signals-of-the-cleaner).
+- The host cleaner ends a stamped orphan that runs no CLI, and it waits 3 s
+  before the group `SIGKILL` of a gone leader. Both follow `c9125eb8` and are
+  not drift and not [D20](DIVERGENCES.md#d20). See
+  [Passes, orphans and stale run dirs](DAEMON.md#passes-orphans-and-stale-run-dirs).
 - On Windows a daemon that outlives its SSH session is not drift, against
   `f6010b97` and `89cb6289`. Since `52d82f0a` each child is in a job, and a kill
   or a killed daemon ends its tree. With `CLAUDE_SSH_NO_JOBS=1` a tree that outlives

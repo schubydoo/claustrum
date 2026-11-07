@@ -45,7 +45,8 @@ type StreamFrame struct {
 	// an exit frame only. Signal is the SIG-prefixed name of the terminating signal
 	// (omitted on a normal exit and always on Windows, which has no signal on the
 	// wait path). KilledBy names who requested the kill: "client" for process.kill /
-	// process.killAndWait, "shutdown" for the shutdown/killAll sweep. Both omitempty,
+	// process.killAndWait, "shutdown" for the shutdown/killAll sweep, "limit" for the
+	// time limit of a gitRead git (c9125eb8, measured on Linux, macOS and Windows). Both omitempty,
 	// so a normal exit stays byte-identical to the pre-4534d86 frame. Provenance: the
 	// "client" values and the SIGTERM/SIGKILL names are live-measured against
 	// 4534d86. Other mapped signal names are not individually measured. The Windows
@@ -164,7 +165,8 @@ type Proc struct {
 	// the process is alive. Read only by pruneExited, under p.mu like running.
 	exitedAt time.Time
 	// killedBy records who asked the daemon to kill this process ("client" for
-	// process.kill / process.killAndWait, "shutdown" for the killAll sweep). It is
+	// process.kill / process.killAndWait, "shutdown" for the killAll sweep, "limit"
+	// for the time limit of a gitRead git, see watchGitReadLimit). It is
 	// stamped by signalIfLive, and only when the signal is actually delivered to a
 	// still-live process, then read once in waitReapAndDrain to populate the exit
 	// frame's killedBy field. Empty when the process exited on its own, was
@@ -207,6 +209,10 @@ type Proc struct {
 	// nothing to do.
 	forgetRecord func()
 	recordDone   chan struct{}
+	// afterWait runs once, when the wait on the child returns. The pane's git of a
+	// gitRead spawn ends the hold of its copy of the repository there. It is set
+	// once at spawn, and nil means there is nothing to do.
+	afterWait func()
 
 	// Async stdin: process.stdin enqueues here and returns immediately, while a
 	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
@@ -733,6 +739,24 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 // and the process keeps its answer in cliTempRoot. folders are the session folders
 // of the spawn (sessionfolders.go), recorded before the start.
 func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*Proc, error) {
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil)
+}
+
+// GitReadStep builds the run of a "gitRead":true spawn. It gets the environment
+// that the spawn built and returns the argv after the command, the environment of
+// the child, and a release that runs after the start of the child.
+type GitReadStep func(env []string) (args, childEnv []string, release func(), err error)
+
+// SpawnGitRead starts the pane's git of a "gitRead":true spawn: the command git
+// with args in cwd. step runs after the id and cwd tests and after the env is
+// built, so a missing cwd gets the cwd refusal of every spawn (c9125eb8, measured
+// on Linux). A step error fails the spawn.
+func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, step GitReadStep) (*Proc, error) {
+	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, step)
+}
+
+// spawnWith is SpawnWithTempRoot with the step of a gitRead spawn, or nil.
+func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead GitReadStep) (*Proc, error) {
 	path, argv := command, args
 	if launcher != nil {
 		if err := RefuseManagedLauncher(*launcher, command); err != nil {
@@ -749,6 +773,7 @@ func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []str
 	// why Manager copies its prune tunables at construction.
 	grace := exitDrainGrace
 	endGrace := unattendedEndGrace
+	readLimit, readEndGrace := gitReadLimit, gitReadEndGrace
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
@@ -818,6 +843,27 @@ func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []str
 	if launcher == nil {
 		bareCommandStart(cmd, command, env)
 	}
+	// The pane's git of a gitRead spawn gets its argv and env from its step. The
+	// place after the bare-command step is claustrum's own, not measured.
+	// The release of a child that starts runs at its exit (Proc.afterWait), as
+	// every git call of the git methods holds its copy until its wait ends.
+	releaseGitRead := func() {}
+	if gitRead != nil && cmd.Err == nil {
+		runArgs, childEnv, release, err := gitRead(cmd.Env)
+		if err != nil {
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, &GitReadStepError{Err: err}
+		}
+		releaseGitRead = release
+		cmd.Args = append([]string{cmd.Args[0]}, runArgs...)
+		cmd.Env = childEnv
+	}
+	gitReadKept := false
+	defer func() {
+		if !gitReadKept {
+			releaseGitRead()
+		}
+	}()
 	if launcher != nil {
 		// The command has to be runnable before the launcher starts. This comes
 		// after the env is built, as the reference's two [shellenv] lines come
@@ -1136,7 +1182,14 @@ func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []str
 	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
 	// From here the exit of the child gives the folder back.
 	keptTemp = true
+	gitReadKept = true
+	p.afterWait = releaseGitRead
 	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
+	// Only the pane's git has a time limit. A plain child is not ended at it
+	// (c9125eb8, measured on Linux, macOS and Windows).
+	if gitRead != nil {
+		go m.watchGitReadLimit(p, readLimit, readEndGrace)
+	}
 	return p, nil
 }
 
@@ -1162,6 +1215,9 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	p.mu.Lock()
 	p.reaped = true
 	p.mu.Unlock()
+	if p.afterWait != nil {
+		p.afterWait()
+	}
 	// The child has ended, so its registry record goes now, before the drain wait
 	// below. Measured on Linux: the record of the reference is gone 60 ms after the
 	// end of a child whose grandchild holds the pipes, and the exit frame comes 5 s

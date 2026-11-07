@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/supervisor"
@@ -67,6 +71,96 @@ type spawnParams struct {
 	// macOS and Windows it changes nothing (b3081b51, measured with true, false and
 	// absent). Any other value counts as absent (claustrum's own, not measured).
 	CLITempRoot rpc.JSONTrueSwitch `json:"cliTempRoot"`
+	// GitRead asks for the pane's git (gitReadRefusal, git.PaneGitRun). It is a
+	// bool. Another JSON type fails the decode. false gives a plain spawn
+	// (c9125eb8, measured on Linux). null counts as absent (claustrum's own, not
+	// measured).
+	GitRead bool `json:"gitRead"`
+}
+
+// gitReadCombineText is the refusal of a gitRead spawn with another command than
+// git, with no cwd, or with a member that it cannot be combined with (c9125eb8,
+// measured on Linux, macOS and Windows).
+const gitReadCombineText = `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot or sessionFoldersOff`
+
+// gitReadRefusal is the refusal of a "gitRead":true spawn before its start, or nil.
+// The order of the tests is that of c9125eb8: the combine test, then the shape
+// test (measured on Linux). The place of the cwd test of the start after both is
+// claustrum's own, not measured. Measured members of the combine test: a non-empty env, no cwd, a
+// command other than the bare name git, "sessionFoldersOff":true, a linkBound
+// object, "cliTempRoot":true and a pty object with a key. An empty env object
+// passes. With gitRead, "pty":true gets Invalid params (measured on Linux and
+// Windows), and so does a cliTempRoot text or object (measured on Linux). A
+// launcher array gets the combine text here (claustrum's own, not measured). A pty
+// object with no valid key gets its own text (measured on Linux and macOS).
+func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
+	var raw struct {
+		Pty         json.RawMessage `json:"pty"`
+		CLITempRoot json.RawMessage `json:"cliTempRoot"`
+	}
+	_ = json.Unmarshal(req.Params, &raw)
+	pty, ptyBad := gitReadMember(raw.Pty, false)
+	temp, tempBad := gitReadMember(raw.CLITempRoot, true)
+	if ptyBad || tempBad {
+		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
+	}
+	// A pty object with no valid key gets this text with or without gitRead
+	// (c9125eb8, measured on Linux and macOS). The order against the other tests is
+	// claustrum's own, not measured.
+	if pty && !gitReadPtyKeyOK(raw.Pty) {
+		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "A terminal needs a key of 32 bytes in hex"))
+	}
+	if p.Command != "git" || p.Cwd == "" || len(p.Env) > 0 || p.Launcher != nil || p.LinkBound != nil ||
+		pty || temp || sessiondirs.OffSwitchSet(req.Params) {
+		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, gitReadCombineText, supervisor.SpawnReason{Reason: "other"}))
+	}
+	if msg := git.PaneShapeRefusal(p.Args); msg != "" {
+		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, msg, supervisor.SpawnReason{Reason: "other"}))
+	}
+	return nil
+}
+
+// gitReadPtyKeyOK is true when the pty object v holds a "key" of 64 hex digits.
+func gitReadPtyKeyOK(v json.RawMessage) bool {
+	var o struct {
+		Key string `json:"key"`
+	}
+	if json.Unmarshal(v, &o) != nil || len(o.Key) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(o.Key)
+	return err == nil
+}
+
+// gitReadMember reads a pty or cliTempRoot member of a gitRead spawn. set is true
+// for a member that the combine test counts. bad is true for a value that gets
+// Invalid params. An absent member, null and false count as absent. For pty, true
+// is bad and an object is set. For cliTempRoot, true is set and an object is bad.
+// Every other value is bad. Only the values that gitReadRefusal names are
+// measured: the rest is claustrum's own, not measured.
+func gitReadMember(v json.RawMessage, temp bool) (set, bad bool) {
+	s := string(bytes.TrimSpace(v))
+	switch {
+	case s == "" || s == "null" || s == "false":
+		return false, false
+	case s == "true":
+		return temp, !temp
+	case strings.HasPrefix(s, "{"):
+		return !temp, temp
+	}
+	return false, true
+}
+
+// gitReadStep is the step of the start of a gitRead spawn in cwd with args
+// (git.PaneGitRun).
+func (s *server) gitReadStep(cwd string, args []string) supervisor.GitReadStep {
+	return func(env []string) ([]string, []string, func(), error) {
+		run, err := git.PaneGitRun(s.gitDeps(), cwd, args)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return run.Args, run.Env(env), run.Release, nil
+	}
 }
 
 func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
@@ -93,13 +187,22 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		}
 		linkTTL = supervisor.UnattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
-	// The session folders of a Claude Code spawn get their records in the spawn,
-	// unless the request carries the off switch (sessionfolders.go).
-	var folders []string
-	if !sessiondirs.OffSwitchSet(req.Params) {
-		folders = sessionFoldersOf(p.Command, p.Args, p.Cwd, p.Launcher != nil)
+	var mp *supervisor.Proc
+	var err error
+	if p.GitRead {
+		if bad := gitReadRefusal(req, &p); bad != nil {
+			return *bad
+		}
+		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, s.gitReadStep(p.Cwd, p.Args))
+	} else {
+		// The session folders of a Claude Code spawn get their records in the spawn,
+		// unless the request carries the off switch (sessionfolders.go).
+		var folders []string
+		if !sessiondirs.OffSwitchSet(req.Params) {
+			folders = sessionFoldersOf(p.Command, p.Args, p.Cwd, p.Launcher != nil)
+		}
+		mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
 	}
-	mp, err := s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
 	if errors.Is(err, supervisor.ErrStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
 		return rpc.Response{NoFrame: true}
