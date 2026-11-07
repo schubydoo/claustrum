@@ -386,7 +386,11 @@ func createRows() []shapeRow {
 			{list: "P22", cwd: leaf,
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
 				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
-			// The settle call of 683cc6a9 (worktreesettle.go), in the state shadow only.
+			// The settle step of 683cc6a9 (worktreesettle.go), in the state shadow
+			// only. The two calls of the empty tree come first (b3081b51 and
+			// c9125eb8, measured on Linux).
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<cwd>", shadow: "{A} {D} {L}"},
+			{list: "P28", argv: "--git-dir=<repo>/.git hash-object -t tree /dev/null", cwd: "<cwd>", shadow: "{A} {D} {H}"},
 			{list: "ATTR+P20", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
 				shadow: "{C} {D} {H}" + index[true]},
