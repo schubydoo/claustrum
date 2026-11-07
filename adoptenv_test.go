@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/schubydoo/claustrum/internal/shellenv"
 )
@@ -273,4 +274,81 @@ func TestSocketAdoptEnvTakesLoginPATH(t *testing.T) {
 	if got := adoptChildEnv(t, cl, "lp", 2)["PATH"]; got != want {
 		t.Errorf("the child of the adopted set has PATH=%q, want %q", got, want)
 	}
+}
+
+// adoptAfterGoodRead gives the read at the start the PATH /login/1, boots a server
+// and adopts params on a new connection. It returns the fake and the connection.
+func adoptAfterGoodRead(t *testing.T, params string) (*pathReadFake, *testClient, string) {
+	t.Helper()
+	clearClaudeSSHEnv(t)
+	f := installPathReadFake(t)
+	shellenv.WarmAtStart()
+	r := startedRead(t, f)
+	f.answer <- pathAnswer{path: "/login/1"}
+	awaitReadEnd(t, r)
+	_, sock := newRunningServer(t)
+	captureLogBuf(t)
+	cl := dial(t, sock)
+	adopt := `{"jsonrpc":"2.0","id":1,"method":"server.adoptEnv","params":` + params + `}`
+	if got := string(cl.call(authed(adopt))); !strings.Contains(got, `"ok":true`) {
+		t.Fatalf("adopt: %s", got)
+	}
+	return f, cl, sock
+}
+
+// TestSocketAdoptEnvReadsLoginPATHAgain: on Linux against c9125eb8, after a long
+// wait the first spawn on a connection that adopted starts one read again. That
+// spawn keeps the old PATH, and a later spawn gets the new one. The pause of 10m0s
+// is claustrum's own (not measured). Windows reads no login shell.
+func TestSocketAdoptEnvReadsLoginPATHAgain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no login shell runs on Windows, so no read again starts")
+	}
+	f, cl, _ := adoptAfterGoodRead(t, `{"env":["A=1","PATH=/adopted/bin"]}`)
+	if got := adoptChildEnv(t, cl, "soon", 2)["PATH"]; got != "/login/1" {
+		t.Fatalf("PATH right after the adopt = %q, want /login/1", got)
+	}
+	noReadStarted(t, f, "a spawn right after the adopt")
+	f.advance(11 * time.Minute)
+	if got := adoptChildEnv(t, cl, "first", 3)["PATH"]; got != "/login/1" {
+		t.Errorf("PATH of the spawn that starts the read again = %q, want /login/1", got)
+	}
+	r := startedRead(t, f)
+	f.answer <- pathAnswer{path: "/login/2"}
+	awaitReadEnd(t, r)
+	if got := adoptChildEnv(t, cl, "next", 4)["PATH"]; got != "/login/2" {
+		t.Errorf("PATH of the next spawn = %q, want /login/2", got)
+	}
+}
+
+// TestSocketAdoptEnvNoLoginShellReadsNoPATHAgain: on Linux against c9125eb8, a
+// connection whose adopt sent "noLoginShell":true starts no read again. That a
+// connection with no adopt of its own starts none is claustrum's own, not measured.
+func TestSocketAdoptEnvNoLoginShellReadsNoPATHAgain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no login shell runs on Windows, so no read again starts")
+	}
+	f, cl, sock := adoptAfterGoodRead(t, `{"env":["A=1"],"noLoginShell":true}`)
+	f.advance(11 * time.Minute)
+	adoptChildEnv(t, cl, "nologin", 2)
+	noReadStarted(t, f, "a spawn after an adopt with noLoginShell")
+	adoptChildEnv(t, dial(t, sock), "other", 1)
+	noReadStarted(t, f, "a spawn on a connection with no adopt")
+}
+
+// TestSocketAdoptEnvLaterNoLoginShellEndsTheReadAgain: a later good adopt with
+// "noLoginShell":true on the same connection turns the read again off. The adopt
+// that comes last decides (claustrum's own, not measured).
+func TestSocketAdoptEnvLaterNoLoginShellEndsTheReadAgain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no login shell runs on Windows, so no read again starts")
+	}
+	f, cl, _ := adoptAfterGoodRead(t, `{"env":["A=1"]}`)
+	adopt := `{"jsonrpc":"2.0","id":2,"method":"server.adoptEnv","params":{"env":["A=2"],"noLoginShell":true}}`
+	if got := string(cl.call(authed(adopt))); !strings.Contains(got, `"ok":true`) {
+		t.Fatalf("second adopt: %s", got)
+	}
+	f.advance(11 * time.Minute)
+	adoptChildEnv(t, cl, "later", 3)
+	noReadStarted(t, f, "a spawn after a later adopt with noLoginShell")
 }

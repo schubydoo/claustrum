@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `env` | yes | A list of `NAME=value` strings. |
-| `noLoginShell` | no | A bool. The daemon accepts it. This method of claustrum does not read it. |
+| `noLoginShell` | no | A bool. The daemon accepts it. With `true` the spawns of this connection start no [new read](#a-new-read-of-the-login-shell-path) (Linux). |
 | `kept` | no | A list with a limit of 8192 entries (macOS). No row shows what a kept name does, so claustrum tests only the limit. |
 
 The daemon ignores other members, with no log line (Linux and Windows).
@@ -54,6 +54,10 @@ A good adopt logs one line. This is the line of a list `["B=2"]` after a list of
 ```
 
 The first count includes the entries that the daemon keeps. The names come in name order, at most 40, and Windows gives them in upper case. The label is `"@"` on Linux and Windows and `""` on macOS.
+
+## A new read of the login-shell PATH
+
+On Linux and macOS, after a good read, a spawn 10 minutes or more after the last read of the login-shell PATH starts a new read in the background. Only a connection whose own adopt sent no `"noLoginShell":true` does so. Its spawn keeps the old PATH, and later spawns get the new one (Linux). A failed new read keeps the old PATH. The 10 minutes, that the spawn starts the read, the failed read, macOS and the own adopt are claustrum's own, not measured.
 
 ## The frame of the bridge
 
