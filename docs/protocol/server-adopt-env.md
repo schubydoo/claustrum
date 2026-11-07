@@ -67,11 +67,11 @@ With `CLAUDE_SSH_ADOPT_ENV=1` the [bridge](flags.md#-bridge-stdiosocket-relay) f
 {"auth":"<token>","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["PATH=/usr/bin:/bin","HOME=/home/u","CLAUDE_SSH_ADOPT_ENV=1"]}}
 ```
 
-The bridge does not relay the reply, and an error reply does not stop the relay (Linux). With no reply in about 1 s, or after a close by the daemon, the bridge connects again at once. The second connection gets the frame again. The third gets none and relays stdin (Linux, macOS and Windows). The relay of stdin starts after the reply (Linux). The wait covers the write of the frame too. A failed or late write counts as a close, a second close leads to the third connection, and a failed new connection ends the bridge with `dial server:` (claustrum's own, not measured).
+The bridge does not relay the reply, and an error reply does not stop the relay (Linux). With no reply in about 1 s, or after a close by the daemon, the bridge connects again at once. The second connection gets the frame again. The third gets none and relays stdin (Linux, macOS and Windows). The relay of stdin starts after the reply (Linux). The wait covers the write of the frame too. A failed or late write counts as a close, any second failed try leads to the third connection, and a failed new connection ends the bridge with `dial server:` (claustrum's own, not measured).
 
 ## The list of the frame
 
-The bridge does not test the list as the daemon does. 9000 entries go (Linux, macOS and Windows), and so does one entry of 131072 bytes (macOS). A frame over 262144 bytes, with no newline, is not sent (Linux and macOS). An entry that is not valid UTF-8 leaves `env`, and its name goes into `kept` after `env` (Linux and macOS):
+The bridge does not test the list as the daemon does. 9000 entries go (Linux, macOS and Windows), and so does one entry of 131072 bytes (macOS). A frame over 262144 bytes, not counting the newline, is not sent (Linux and macOS). An entry that is not valid UTF-8 leaves `env`, and its name goes into `kept` after `env` (Linux and macOS):
 
 ```json
 {"auth":"<token>","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["PATH=/usr/bin:/bin","CLAUDE_SSH_ADOPT_ENV=1"],"kept":["K"]}}
@@ -81,4 +81,4 @@ On Windows the environment is UTF-16, and such a value stays in `env` with U+FFF
 
 - An empty `daemon.token` gives no frame.
 - The limit of 262144 bytes holds on Windows too.
-- A name that is not valid UTF-8 goes into `kept`, and `kept` comes before `noLoginShell`.
+- A name that is not valid UTF-8 goes into `kept` with U+FFFD for its bad bytes, and `kept` comes before `noLoginShell`.

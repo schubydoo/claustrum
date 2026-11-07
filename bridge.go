@@ -107,8 +107,8 @@ type adoptParams struct {
 // The auth member is the content of daemon.token beside the socket, and with no
 // such file the bridge sends no frame (c9125eb8, measured on Linux, macOS and
 // Windows). An empty file sends no frame (claustrum's own, not measured). The frame
-// holds no CLAUDE_RPC_TOKEN, and json.Marshal escapes <, > and & in a value
-// (measured on Linux, macOS and Windows). The bridge does not test the list as the
+// holds no CLAUDE_RPC_TOKEN, and the frame escapes <, > and & in a value as
+// \u003c, \u003e and \u0026 (measured on Linux, macOS and Windows). The bridge does not test the list as the
 // daemon does: 9000 entries went (measured on Linux, macOS and Windows), and so did
 // one entry of 131072 bytes (macOS). Only the size of the frame stops it
 // (bridgeAdoptMaxFrame).
@@ -116,7 +116,8 @@ type adoptParams struct {
 // An entry that is not valid UTF-8 leaves env, and its name goes into kept
 // (measured on Linux and macOS for a value). On Windows the environment is UTF-16,
 // and Go gives such a value with U+FFFD, which stays in env (measured). A name that
-// is not valid UTF-8 goes into kept the same way (claustrum's own, not measured).
+// is not valid UTF-8 goes into kept with U+FFFD for its bad bytes (claustrum's own,
+// not measured).
 func bridgeAdoptFrame(socket string, env []string) []byte {
 	var noLogin bool
 	switch v, _ := os.LookupEnv(bridgeAdoptEnv); v {
@@ -161,8 +162,8 @@ func bridgeAdoptFrame(socket string, env []string) []byte {
 // after the reply or on the third connection (measured on Linux). These parts are
 // claustrum's own, not measured: the wait covers the write of the frame and the
 // read of the reply, so a daemon that never reads cannot hold the bridge. A failed
-// or late write counts as a close, a second close leads to the third connection
-// too, and a failed new dial ends the bridge with "dial server:".
+// or late write counts as a close, any second failed try leads to the third
+// connection too, and a failed new dial ends the bridge with "dial server:".
 func sendAdoptFrame(socket string, nc net.Conn, frame []byte) (net.Conn, io.Reader, error) {
 	for try := 1; ; try++ {
 		br := bufio.NewReader(nc)
