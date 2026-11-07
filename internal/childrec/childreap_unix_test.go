@@ -766,6 +766,57 @@ func TestReapOrphansChildrenSymlink(t *testing.T) {
 	}
 }
 
+// TestReapOrphansChildrenUnreadable pins the start reap of a children folder of mode
+// 000: the cannot-read line, no signal, and the record stays. The text is that of
+// c9125eb8 on macOS. The line on Linux is claustrum's own, not measured.
+func TestReapOrphansChildrenUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a folder of mode 000")
+	}
+	if node, _ := ownReapIdentity(); node == "" {
+		t.Skip("no node identity on this host")
+	}
+	runDir := t.TempDir()
+	const pid = 800000022
+	name := writeRec(t, runDir, orphanRecord(pid, "/f/bin/sigstub", ""))
+	children := filepath.Join(runDir, "children")
+	if err := os.Chmod(children, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(children, 0o700) })
+	sim := newProcSim(t)
+	sim.live[pid] = &liveProc{state: procAlive, startTicks: "9000", pgid: pid,
+		program: "/f/bin/sigstub", runDir: runDir, childMark: strconv.Itoa(pid) + ":9000"}
+	sim.diesOn(pid, syscall.SIGTERM)
+
+	out := captureLog(t, func() { reapOrphans(runDir, "inst-self") })
+
+	if want := "[process.Registry] cannot read " + runDir + "/children: openat children: permission denied; reaping nothing\n"; !strings.Contains(out, want) {
+		t.Errorf("log = %q\nwant it to hold %q", out, want)
+	}
+	if len(sim.kills) != 0 {
+		t.Errorf("the sweep sent signals: %v", sim.kills)
+	}
+	if err := os.Chmod(children, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !recordExists(runDir, name) {
+		t.Error("the sweep removed the record")
+	}
+}
+
+// TestReapOrphansNoChildrenFolder pins the start reap of a run dir with no children
+// folder: no cannot-read line and no reaping-nothing line, as at the first start of a
+// run dir.
+func TestReapOrphansNoChildrenFolder(t *testing.T) {
+	out := captureLog(t, func() { reapOrphans(t.TempDir(), "inst-self") })
+	for _, no := range []string{"cannot read", "reaping nothing"} {
+		if strings.Contains(out, no) {
+			t.Errorf("log = %q, want no %q", out, no)
+		}
+	}
+}
+
 // TestVerifyOrphan walks the whole verdict tree: each guard returns its skip and the all-
 // pass record returns a reap. A mutant that drops any single guard flips exactly one row.
 func TestVerifyOrphan(t *testing.T) {

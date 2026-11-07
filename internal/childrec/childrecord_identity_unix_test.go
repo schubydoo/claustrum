@@ -39,11 +39,12 @@ func replaceRecord(t *testing.T, path string, data []byte) {
 }
 
 // TestRemoveChildRecordOnlyOnIdentity pins the removal at the end of a child to the
-// record that this daemon wrote. Measured on c9125eb8 (Linux and macOS rows C12): the
+// record that this daemon wrote. Measured on c9125eb8 (Linux and macOS): the
 // untouched record goes, and so do the records with a changed instance, daemonStart
-// or pid. A changed start, a start and daemonStart changed together, a text that is
-// not JSON and a blank file stay. No case logs a line. The node, host, argv0 and
-// program cases are claustrum's own, not measured.
+// or pid. A changed node, host, argv0 or at goes too (Linux and macOS). A changed
+// start keeps the record (Linux and macOS). A start and daemonStart changed together,
+// a text that is not JSON and a blank file stay. No case logs a line. The program case is claustrum's own, not
+// measured.
 func TestRemoveChildRecordOnlyOnIdentity(t *testing.T) {
 	edit := func(old, new string) func(string) string {
 		return func(s string) string { return strings.Replace(s, old, new, 1) }
@@ -64,10 +65,11 @@ func TestRemoveChildRecordOnlyOnIdentity(t *testing.T) {
 		}, false, ""},
 		{"not json", func(string) string { return "not json at all\n" }, false, ""},
 		{"blank", func(string) string { return "\n" }, false, ""},
-		{"node changed (claustrum's own)", edit(`"node":"0000`, `"node":"1111`), false, ""},
-		{"host changed (claustrum's own)", edit(`"host":"machine-id:0123`, `"host":"machine-id:9999`), false, ""},
-		{"argv0 changed (claustrum's own)", edit(`"argv0":"/tmp/plain.sh"`, `"argv0":"/tmp/other.sh"`), false, ""},
-		{"program changed (claustrum's own)", edit(`"program":"/tmp/cli"`, `"program":"/tmp/other-cli"`), false, "/tmp/cli"},
+		{"node changed", edit(`"node":"0000`, `"node":"1111`), true, ""},
+		{"host changed", edit(`"host":"machine-id:0123`, `"host":"machine-id:9999`), true, ""},
+		{"argv0 changed", edit(`"argv0":"/tmp/plain.sh"`, `"argv0":"/tmp/other.sh"`), true, ""},
+		{"at changed", edit(`"at":1700000000000`, `"at":1700000000001`), true, ""},
+		{"program changed (claustrum's own)", edit(`"program":"/tmp/cli"`, `"program":"/tmp/other-cli"`), true, "/tmp/cli"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := captureLogBuf(t)
