@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -87,5 +88,28 @@ func TestCreateFromALinkedWorktreeAsksOnce(t *testing.T) {
 	}
 	if asked != 1 {
 		t.Errorf("%d calls of rev-parse --absolute-git-dir, want 1", asked)
+	}
+}
+
+// TestCreateFromALinkedWorktreeNamesItsEntry: for a linked worktree as baseRepo
+// and a git that names another git directory on every call, the refusal names
+// the entry of that worktree as the folder that Claude finds (claustrum's own,
+// not measured).
+func TestCreateFromALinkedWorktreeNamesItsEntry(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	lw := filepath.Join(resolveTestRoot(t, t.TempDir()), "lw")
+	buildGit(t, f.repo, "worktree", "add", "-q", lw, "-b", "lw")
+	other := filepath.Join(t.TempDir(), "other", ".git")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stubAnswer(t, "rev-parse,--absolute-git-dir", 0, filepath.ToSlash(other)+`\n`)
+	leaf := filepath.Join(lw, ".claude", "worktrees", "w2")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": lw, "branchName": "w2", "worktreePath": leaf})
+	want := fmt.Sprintf("git worktree add failed: cannot locate the repository's git directory: "+
+		"git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again",
+		lw, filepath.ToSlash(other), filepath.Join(f.gitDir, "worktrees", "lw"))
+	if got, code := createErrorField(t, raw); got != want || code != "worktree_add_failed" {
+		t.Errorf("the error = %s (%s)\n    want %s (worktree_add_failed)", got, code, want)
 	}
 }

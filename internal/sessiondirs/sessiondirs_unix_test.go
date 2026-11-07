@@ -159,3 +159,38 @@ func TestRememberRecordsTheResolvedMissingFolder(t *testing.T) {
 		t.Errorf("git is %q (%v), want %q", cmd.Path, cmd.Err, want)
 	}
 }
+
+// A folder below a regular file does not resolve: its resolve fails with
+// "not a directory", and only the path as given gets a record, also through a
+// link (claustrum's own, not measured).
+func TestRememberBelowAFileRecordsThePathOnly(t *testing.T) {
+	dir := recordDir(t)
+	captureLog(t)
+	data, home := realTempDir(t), realTempDir(t)
+	if err := os.WriteFile(filepath.Join(data, "file"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(data, filepath.Join(home, "lnk")); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(home, "lnk", "file", "x")
+	_ = Remember(p)
+	if got := names(t, dir); !slices.Equal(got, []string{RecordName(p)}) {
+		t.Errorf("the record folder holds %v, want the record of %s only", got, p)
+	}
+}
+
+// A missing folder right below the root resolves the root and keeps its name,
+// so it gets one record (claustrum's own, not measured). No folder is made.
+func TestRememberMissingBelowTheRoot(t *testing.T) {
+	dir := recordDir(t)
+	captureLog(t)
+	p := "/" + filepath.Base(filepath.Dir(t.TempDir())) + "-claustrum-missing"
+	if _, err := os.Lstat(p); !os.IsNotExist(err) {
+		t.Skipf("%s exists: %v", p, err)
+	}
+	_ = Remember(p)
+	if got := names(t, dir); !slices.Equal(got, []string{RecordName(p)}) {
+		t.Errorf("the record folder holds %v, want the record of %s only", got, p)
+	}
+}
