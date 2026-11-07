@@ -155,6 +155,7 @@ The walk tests `/`, each folder down to the file, and the file.
 - Root owns the file and every folder above it. A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them (claustrum's own, not measured). An `ownerUid` in the settings file lifts nothing.
 - With no digest, `{}` or `"sha256":[]`, the file is not read. A digest matches in any letter case. A short one matches nothing.
 - Links pass, a chain of 40 too. The walk tests the folders of the path as written, then those after the links (claustrum's own).
+- Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
 - A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
 
 ### Log lines
