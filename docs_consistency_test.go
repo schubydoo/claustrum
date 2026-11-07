@@ -677,7 +677,7 @@ var docWordLimits = map[string]int{
 	"docs/index.md":                              325,  // the Go pin item (decision-076). 316: the reader router
 	"docs/protocol/errors.md":                    2015, // the root as sent and the quoting and cut of the link-limit text. 1978: the link-limit backticks. 1957: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":         2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
-	"docs/protocol/files-mkdir.md":               402,  // the failed line and the errno 36 scope, claim fix of a review (decision-080). 380: claim fixes of the files.mkdir page, exact count (decision-080). 538: a new page: its word count plus about 200, c9125eb8
+	"docs/protocol/files-mkdir.md":               536,  // the no-/proc and exact-compare rules, claim fix of a review (decision-080). 508: the name test, the parent codes, the real-path check, the umask mode and the errno codes of c9125eb8, exact count (decision-080). 402: the failed line and the errno 36 scope, claim fix of a review (decision-080). 380: claim fixes of the files.mkdir page, exact count (decision-080). 538: a new page: its word count plus about 200, c9125eb8
 	"docs/protocol/files-list.md":                550,  // the ELOOP tries of b3081b51. 468: the network links of 683cc6a9
 	"docs/protocol/files-read.md":                825,
 	"docs/protocol/files-stat.md":                514,   // the ELOOP tries of b3081b51. 434: the page rewrite
