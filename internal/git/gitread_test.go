@@ -267,8 +267,8 @@ func TestPaneShapeRows(t *testing.T) {
 
 // TestPaneRefBytes pins the ref test of c9125eb8: a ref with a TAB, LF, DEL or
 // SOH byte and a ref of 4097 bytes get the shape refusal with 3 arguments, and a
-// ref of 4096 bytes runs (measured on Linux, and on macOS and Windows but SOH). The other
-// control bytes are claustrum's own, not measured.
+// ref of 4096 bytes runs (measured on Linux, and on macOS and Windows but SOH). A
+// ref with NUL or 0x1f gets the refusal too (measured on Linux, macOS and Windows).
 func TestPaneRefBytes(t *testing.T) {
 	refusal := "not one of the Changes pane's git commands (3 arguments)"
 	for _, c := range []struct {

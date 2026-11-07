@@ -81,8 +81,8 @@ func TestSpawnGitReadReleaseAtExit(t *testing.T) {
 
 // TestSpawnGitReadIgnoresAdoptedSet pins the base of the pane's git after a good
 // adopt: the environment of the daemon, with its HOME and its own names and no
-// adopted name. A plain spawn of the same connection gets the adopted set (c9125eb8,
-// measured on Linux, macOS and Windows).
+// adopted name (c9125eb8, measured on Linux, macOS and Windows). A plain spawn of
+// the same connection keeps the adopted base.
 func TestSpawnGitReadIgnoresAdoptedSet(t *testing.T) {
 	fakeGitOnPath(t)
 	t.Setenv("CLAUSTRUM_TEST_DAEMON_ONLY", "d1")

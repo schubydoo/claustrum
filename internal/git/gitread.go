@@ -111,9 +111,9 @@ const paneRefMax = 4096
 // paneRefOK is the test of a slotRef. An empty ref and one with a leading "-"
 // are refused (measured on Linux). So are one longer than paneRefMax and one with
 // a TAB, LF, SOH or DEL byte (measured on Linux, and on macOS and Windows but
-// SOH). claustrum's own, not measured: the other bytes below 0x20 are refused
-// too. A ref with a space or ".." inside passes to git (claustrum's own, not
-// measured).
+// SOH). A ref with NUL, 0x02, 0x1b or 0x1f gets it too (measured on Linux, macOS
+// and Windows). claustrum's own, not measured: the other bytes below 0x20. A ref
+// with a space or ".." inside passes to git (claustrum's own, not measured).
 func paneRefOK(s string) bool {
 	if s == "" || s[0] == '-' || len(s) > paneRefMax {
 		return false
@@ -141,7 +141,8 @@ func paneRangeOK(v string) bool {
 // <A>..<B> of more than 4096 bytes runs when each side has 4096 bytes or less
 // (c9125eb8, measured on Linux, macOS and Windows, a side of exactly 4096 bytes on
 // macOS and Windows). The same rule for a range in slotRev, and the refusal of a
-// side with a control byte, are claustrum's own, not measured.
+// side of more than 4096 bytes or with a control byte, are claustrum's own, not
+// measured.
 func paneSlotOK(slot, v string) bool {
 	switch slot {
 	case slotRef:
