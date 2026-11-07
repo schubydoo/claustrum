@@ -56,11 +56,13 @@ const nobodyUID = 65534
 const NoLauncherText = managedNoLauncher
 
 // launcherFacts are the facts of one path that the walk tests: its owner, its mode
-// bits (the 12 low bits of st_mode) and whether it lies on NFS.
+// bits (the 12 low bits of st_mode) and fs. fs names a file system whose server decides
+// who can change a file, as the refusal text shows it: "NFS", "FUSE or virtiofs" or
+// "SMB". It is "" for any other file system.
 type launcherFacts struct {
 	uid  uint32
 	mode uint32
-	nfs  bool
+	fs   string
 }
 
 // launcherPathFacts and launcherOwnUID are seams, so a test fakes the owner, the mode
@@ -86,7 +88,7 @@ var (
 //     missing.
 //  4. The walk: "/", each folder down to the launcher, then the launcher. It walks the
 //     folders of p as written, then the folders of p after its links (claustrum's own,
-//     not measured). Each item runs the NFS test, then the owner test, then the write
+//     not measured). Each item runs the file system test, then the owner test, then the write
 //     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
 //     before its own folders (measured).
 //  5. A launcher that this account cannot run is missing.
@@ -198,8 +200,8 @@ func launcherFolders(dir string) []string {
 
 // checkLauncherItem tests one item of the walk. Root owns a good item, or the
 // ownerUid of the launcherCheck does. A group or other write bit refuses it, the
-// sticky folder 1777 too. On NFS with no digest the item is refused, whatever its
-// owner and mode. On NFS with a digest the owner and write tests still run
+// sticky folder 1777 too. On NFS, FUSE or SMB with no digest the item is refused,
+// whatever its owner and mode. With a digest the owner and write tests still run there
 // (claustrum's own, not measured). An item whose facts cannot be read is missing
 // (claustrum's own, not measured).
 func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (fault, reason string) {
@@ -208,8 +210,8 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 	if err != nil {
 		return FaultMissing, managedNotExecutable(launcher)
 	}
-	if f.nfs && !digests {
-		return FaultWritable, shown + " is on a file system (NFS) whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+	if f.fs != "" && !digests {
+		return FaultWritable, shown + " is on a file system (" + f.fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
 	}
 	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
 		// The order of the three texts, for a daemon that runs as uid 65534, is
