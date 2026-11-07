@@ -127,6 +127,28 @@ func runHelper(mode string, args []string) int {
 		exitZeroOnSigterm()
 		fmt.Print("ready\n")
 		time.Sleep(60 * time.Second)
+	case "term-exit0-kid":
+		// Start a grandchild in the group with no stdio that sleeps 60 s, record its
+		// PID in args[0], exit with code 0 on SIGTERM (Unix), then announce
+		// readiness and linger.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, "60")
+		child.Env = BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		exitZeroOnSigterm()
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
 	case "tree-stdout":
 		// Like "tree", with no go-ahead, and the grandchild inherits stdout. The
 		// leader lingers.
