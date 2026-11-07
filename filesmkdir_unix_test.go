@@ -82,11 +82,20 @@ func TestSocketFilesMkdir(t *testing.T) {
 		{"parent": p, "name": "shape_extra", "extra": 1},
 		nil,
 	}
+	// Umask 0 lets a mode wider than 0755 show: under umask 022 a mode of 0777 reads
+	// as 0755 too. The fixture above already made its folders.
+	oldMask := syscall.Umask(0)
+	t.Cleanup(func() { syscall.Umask(oldMask) })
 	logs := captureLogBuf(t)
 	cl := dial(t, startSocketServer(t))
 	got := make([]json.RawMessage, len(params))
 	for i, pm := range params {
 		got[i] = cl.call(req(i+1, "files.mkdir", pm))
+	}
+	// ENAMETOOLONG is 36 on Linux (measured) and 63 on macOS. The golden holds the
+	// Linux frame, so the macOS frame maps back to it. The long name is params[18].
+	if syscall.ENAMETOOLONG != 36 {
+		got[18] = json.RawMessage(strings.Replace(string(got[18]), fmt.Sprintf(`"errno":%d`, int(syscall.ENAMETOOLONG)), `"errno":36`, 1))
 	}
 	assertGolden(t, "socket_files_mkdir.golden.json", encodeGolden(t, got))
 
@@ -124,17 +133,13 @@ func TestSocketFilesMkdir(t *testing.T) {
 	if w := "dirA fileA linkD linkF linkX new1 ro shape_extra sub x"; strings.Join(made, " ") != w {
 		t.Errorf("P holds %v, want %s", made, w)
 	}
-	ref := filepath.Join(root, "ref")
-	if err := os.Mkdir(ref, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"new1", "x"} {
+	for _, name := range []string{"new1", "x", "shape_extra"} {
 		fi, err := os.Stat(filepath.Join(p, name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rf, _ := os.Stat(ref); fi.Mode() != rf.Mode() {
-			t.Errorf("mode of %s = %v, want %v (0755 under the umask, the mode member ignored)", name, fi.Mode(), rf.Mode())
+		if fi.Mode().Perm() != 0o755 {
+			t.Errorf("mode of %s = %v, want 0755 under umask 0 (the mode member ignored)", name, fi.Mode().Perm())
 		}
 	}
 }
