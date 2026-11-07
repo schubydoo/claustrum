@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/shellenv"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -61,8 +62,9 @@ type adoptedEnv struct {
 // compared (measured on Linux). Each count counts a name once (measured on Linux,
 // macOS and Windows, the second count on Windows and claustrum's own on Linux and
 // macOS). kept is the member of the adopt. noLoginShell is the member of
-// the adopt. Without it a spawn of c can start a read again of the login-shell PATH
-// (spawnWith).
+// the adopt. Without it the next spawn of any connection can start a read again of
+// the login-shell PATH (shellenv.NoteAdoptedPATH, measured on Linux and macOS
+// against c9125eb8), with the PATH of the set (measured on Linux).
 func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell bool) (every, own int, changed []string) {
 	daemon := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	all, mine := splitAdopted(env, kept, daemon)
@@ -77,10 +79,15 @@ func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell 
 	}
 	if c != nil {
 		c.SetOwnEnv(mine)
-		c.SetReadsLoginPATH(!noLoginShell)
 	}
 	m.adopted.on, m.adopted.set = true, all
 	m.adopted.session = slices.DeleteFunc(slices.Clone(daemon), func(e string) bool { return !isSessionEnvName(envName(e)) })
+	// Under the same lock, so two adopts at once cannot leave the PATH of one
+	// with the set of the other. The lock order is adopted.mu, then the lock of
+	// the read in shellenv, which never calls back into this package.
+	if !noLoginShell {
+		shellenv.NoteAdoptedPATH(envValue(all, "PATH"))
+	}
 	m.adopted.mu.Unlock()
 	return countEnvNames(all), countEnvNames(mine), adoptDiffNames(old, all)
 }
@@ -205,6 +212,18 @@ func envName(e string) string {
 		return e[:start+i]
 	}
 	return e
+}
+
+// envValue is the value of the last entry of env named name, or "" when env has
+// none.
+func envValue(env []string, name string) string {
+	v := ""
+	for _, e := range env {
+		if n := envName(e); sameEnvName(n, name) {
+			v = e[min(len(n)+1, len(e)):]
+		}
+	}
+	return v
 }
 
 // sameEnvName tells if a and b name the same variable on this system.

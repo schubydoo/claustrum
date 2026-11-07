@@ -875,12 +875,11 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
-	// On Linux, after a long wait, the first spawn on a connection that adopted
-	// without "noLoginShell":true started one read again. That spawn kept the old
-	// PATH (c9125eb8, measured on Linux). That a connection with no adopt of its own
-	// reads none is claustrum's own, not measured. A gitRead spawn starts the read
-	// too (claustrum's own, not measured for a gitRead spawn).
-	if adopted && c.ReadsLoginPATH() {
+	// After a good adopt with no "noLoginShell":true, a spawn of any connection
+	// starts the read again of the login-shell PATH, and keeps the old PATH. A spawn
+	// with "disableShellAgentSocket":true starts none (c9125eb8, measured on Linux and
+	// macOS). A gitRead spawn starts none (claustrum's own, not measured).
+	if gitRead == nil && !noShellAgent {
 		shellenv.RefreshLoginPATH()
 	}
 	if lo != nil {

@@ -40,6 +40,7 @@ type pathReadFake struct {
 	now    time.Time
 	calls  chan struct{} // one value per started read
 	answer chan pathAnswer
+	paths  []string // the PATH that the shell of each read got from an adopt, or ""
 }
 
 func (f *pathReadFake) clock() time.Time {
@@ -62,6 +63,9 @@ func installPathReadFake(t *testing.T) *pathReadFake {
 	f := &pathReadFake{now: time.Unix(1_000_000, 0), calls: make(chan struct{}, 64), answer: make(chan pathAnswer)}
 	old := shellenv.LoginPATHExtractor
 	shellenv.LoginPATHExtractor = func(ctx context.Context) (string, error) {
+		f.mu.Lock()
+		f.paths = append(f.paths, shellenv.ShellPATHForTest(ctx))
+		f.mu.Unlock()
 		f.calls <- struct{}{}
 		select {
 		case a := <-f.answer:
@@ -77,6 +81,16 @@ func installPathReadFake(t *testing.T) *pathReadFake {
 	})
 	armLoginPATH()
 	return f
+}
+
+// lastShellPATH is the PATH that the shell of the last read got from an adopt.
+func (f *pathReadFake) lastShellPATH() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.paths) == 0 {
+		return ""
+	}
+	return f.paths[len(f.paths)-1]
 }
 
 // setSpawnWait sets the longest spawn wait for one test.
