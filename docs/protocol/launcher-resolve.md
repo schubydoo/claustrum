@@ -133,6 +133,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `script_suffix` | `.js`, `.ts` or `.mjs`, and `.tsx` or `.jsx` (claustrum's own). `X.JS` passes | ``launcher `<L>` ends like a JavaScript or TypeScript source file, and no launcher may. Rename it.`` |
 | `missing` | Missing, a dangling link or a folder | ``launcher `<L>` does not exist or is not an executable regular file`` |
 | `missing` | Mode 0644, or a mount with `noexec` | ``launcher `<L>` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)`` |
+| `links` | A chain of 41 links, a loop of 2 or a self loop | `` too many symbolic links (or a loop) lead to launcher `<L>` `` |
 | `unreadable` | The read fails | ``launcher `<L>` cannot be read for its digest: <errno text>`` |
 | `unreadable` | More than 67108864 bytes | ``launcher `<L>` is larger than 64 MiB, the most that can be checked against a digest`` |
 | `digest` | No digest of `sha256` matches | ``launcher `<L>` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.`` |

@@ -206,3 +206,34 @@ func TestLauncherResolveCheck(t *testing.T) {
 		t.Errorf("another key:\n got %s\nwant %s", got, seen)
 	}
 }
+
+// launcherFrameFixture isolates the policy files and gives a server, a real temp
+// folder and a CLI in it.
+func launcherFrameFixture(t *testing.T) (s *server, d, cli string) {
+	t.Helper()
+	tempManagedSettingsDir(t)
+	s = newTestServer(t)
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, d, mkExec(t, filepath.Join(d, "cli"))
+}
+
+// TestLauncherCheckLinksFrames pins the links frames of c9125eb8 (measured on Linux): a
+// self loop gets launcherFault links in a spawn and fault links in a resolve.
+func TestLauncherCheckLinksFrames(t *testing.T) {
+	s, d, cli := launcherFrameFixture(t)
+	self := filepath.Join(d, "loopself")
+	if err := os.Symlink(self, self); err != nil {
+		t.Fatal(err)
+	}
+	fakeFacts(t, nil)
+	links := "too many symbolic links (or a loop) lead to launcher `" + self + "`"
+	if got, want := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p1", "command": cli, "launcher": []string{self}, "launcherCheck": map[string]any{"sha256": []string{strings.Repeat("0", 64)}}})), faultFrame("the managed launcher cannot be used: "+links, "links"); got != want {
+		t.Errorf("spawn self loop:\n got %s\nwant %s", got, want)
+	}
+	if got, want := resolveCheckFrame(t, s, self, `{}`), `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"`+links+`","fault":"links","hostPolicySeen":false}}`; got != want {
+		t.Errorf("resolve self loop:\n got %s\nwant %s", got, want)
+	}
+}
