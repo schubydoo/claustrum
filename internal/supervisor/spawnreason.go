@@ -16,6 +16,13 @@ type SpawnReason struct {
 	Reason string `json:"reason"`
 }
 
+// GitReadStepError marks a failed step of a gitRead spawn (SpawnGitRead). Its
+// reason is other, whatever its text ends with (claustrum's own, not measured).
+type GitReadStepError struct{ Err error }
+
+func (e *GitReadStepError) Error() string { return e.Err.Error() }
+func (e *GitReadStepError) Unwrap() error { return e.Err }
+
 // CwdError marks the two cwd refusals of the start path (missing, or not a folder).
 type CwdError struct{ Err error }
 
@@ -35,6 +42,10 @@ func SpawnFailureReason(err error, cwd string) SpawnReason {
 			return SpawnReason{"other"}
 		}
 		return SpawnReason{"launcher"}
+	}
+	var ge *GitReadStepError
+	if errors.As(err, &ge) {
+		return SpawnReason{"other"}
 	}
 	var ce *CwdError
 	if errors.As(err, &ce) {

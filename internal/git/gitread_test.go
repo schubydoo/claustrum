@@ -123,7 +123,20 @@ func TestPaneGitRunShadow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PaneGitRun: %v", err)
 	}
+	// The run holds its copy until Release: the eviction skips a busy folder.
+	common0, _ := envValue(run.Env(os.Environ()), "GIT_COMMON_DIR")
+	busy := func() int {
+		f.d.Shadow.repoMu.Lock()
+		defer f.d.Shadow.repoMu.Unlock()
+		return f.d.Shadow.repoBusy[filepath.Base(common0)]
+	}
+	if n := busy(); n != 1 {
+		t.Errorf("holds of the copy before Release = %d, want 1", n)
+	}
 	run.Release()
+	if n := busy(); n != 0 {
+		t.Errorf("holds of the copy after Release = %d, want 0", n)
+	}
 	calls := readEnvCalls(t, f.log)
 	if len(calls) == 0 || !calls[len(calls)-1].listing() || calls[len(calls)-1].cwd != f.repo {
 		t.Fatalf("the last call before the run = %+v, want the listing in %s", calls[len(calls)-1:], f.repo)

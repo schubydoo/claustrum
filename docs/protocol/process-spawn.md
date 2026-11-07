@@ -22,8 +22,9 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `disableShellAgentSocket` | no | `true` skips the SSH agent hand-off for this spawn. `null` counts as `false`. |
 | `launcher` | no | An array of strings that names a managed launcher. See [The managed launcher](#the-managed-launcher). Absent or `null` means no launcher. |
 | `linkBound` | no | See [its page](process-link-bound.md). |
+| `gitRead` | no | See [its page](process-git-read.md). |
 | `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
-| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux. Any other value counts as absent (claustrum's own). |
+| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux. Without `gitRead`, any other value counts as absent (claustrum's own). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
 ## Response
@@ -306,9 +307,9 @@ A spawn whose child starts after the shutdown began gets no reply. The daemon en
 
 [Divergence catalog](../DIVERGENCES.md) entries of this method:
 
-- [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with `pid` and `startTime` in the result.
+- [CT-1](../DIVERGENCES.md#ct-1): the `wantPid` parameter.
 - [CT-2](../DIVERGENCES.md#ct-2): the `-keep-children` flag.
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
-- [D23](../DIVERGENCES.md#d23): on Windows the environment block of a child is in name order.
+- [D23](../DIVERGENCES.md#d23): the Windows environment order.
 
-claustrum lacks the terminal of the pinned `b3081b51` and ignores its `pty` member without `linkBound`. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+claustrum lacks the terminal of the pinned `b3081b51` and ignores its `pty` member without `linkBound` or `gitRead`. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
