@@ -65,6 +65,9 @@ type Conn struct {
 	// that reach only its own children (see supervisor.Manager.TakeAdoptedEnv).
 	ownEnvMu sync.Mutex
 	ownEnv   []string
+	// readsLoginPATH is true when the last good server.adoptEnv of this connection
+	// came with no "noLoginShell":true.
+	readsLoginPATH bool
 }
 
 // SetOwnEnv replaces the own entries of the adopted environment of c.
@@ -83,6 +86,25 @@ func (c *Conn) OwnEnv() []string {
 	c.ownEnvMu.Lock()
 	defer c.ownEnvMu.Unlock()
 	return append([]string(nil), c.ownEnv...)
+}
+
+// SetReadsLoginPATH records whether, after the last good server.adoptEnv of c, its
+// spawns start a read again of the login-shell PATH.
+func (c *Conn) SetReadsLoginPATH(on bool) {
+	c.ownEnvMu.Lock()
+	defer c.ownEnvMu.Unlock()
+	c.readsLoginPATH = on
+}
+
+// ReadsLoginPATH tells if the spawns of c can start a read again of the login-shell
+// PATH. A nil conn and a conn with no good adopt do not.
+func (c *Conn) ReadsLoginPATH() bool {
+	if c == nil {
+		return false
+	}
+	c.ownEnvMu.Lock()
+	defer c.ownEnvMu.Unlock()
+	return c.readsLoginPATH
 }
 
 // New builds a Conn. The accept loop passes every value. A test passes only

@@ -16,7 +16,8 @@ const methodAdoptEnv = "server.adoptEnv"
 // adoptEnvParams are the params of server.adoptEnv. Kept is a list with its own
 // limit (measured on macOS). No row shows what a kept name does, so claustrum tests
 // only its limit (claustrum's own, not measured). NoLoginShell is accepted with ok
-// (measured on Linux, macOS and Windows), and this method does not read it. Other
+// (measured on Linux, macOS and Windows). With it true the spawns of the connection
+// start no read again of the login-shell PATH (measured on Linux, see spawnWith). Other
 // members are ignored (measured on Linux and Windows).
 type adoptEnvParams struct {
 	Env          []string `json:"env"`
@@ -89,7 +90,7 @@ func (s *server) handleAdoptEnv(c *conn.Conn, req *request) *rpc.Response {
 		logging.Warnf(fmtAdoptRefused, why)
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
 	}
-	every, own, changed := s.procs.TakeAdoptedEnv(c, p.Env)
+	every, own, changed := s.procs.TakeAdoptedEnv(c, p.Env, p.NoLoginShell)
 	label := `""`
 	if c != nil {
 		label = c.RemoteLabel()

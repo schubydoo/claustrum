@@ -21,7 +21,7 @@ func ResetForTest() {
 	}
 	s.mu.Lock()
 	s.armed, s.closed, s.good, s.path = false, false, false, ""
-	s.failures, s.nextTry, s.run = 0, time.Time{}, nil
+	s.failures, s.nextTry, s.run, s.lastRead = 0, time.Time{}, nil, time.Time{}
 	s.clock, s.gate = time.Now, loginShellGate
 	s.mu.Unlock()
 }
