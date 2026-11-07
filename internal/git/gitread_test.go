@@ -130,7 +130,7 @@ func TestPaneArgv(t *testing.T) {
 }
 
 // TestPaneArgvLogRows pins the run argv of the rows of the call logs of c9125eb8
-// (measured on Linux and Windows, row 6 on macOS too): `diff-index` for one ref, `diff-tree -r`
+// (measured on Linux, macOS and Windows): `diff-index` for one ref, `diff-tree -r`
 // for a range of two dots, `-p` for a patch, and a trailing `--`. realIndex is true
 // for a run with no GIT_INDEX_FILE in the log.
 func TestPaneArgvLogRows(t *testing.T) {
@@ -216,6 +216,7 @@ func TestPaneShapeRows(t *testing.T) {
 		"diff -z --no-color --name-status -M HEAD", "diff --name-status -M main..topic",
 		"diff --inter-hunk-context=3 HEAD", "diff --name-status -M HEAD -- :(top,exclude)sub",
 		"diff --name-status -M HEAD -- :(top,exclude,literal)sub", "diff --src-prefix=a/ --dst-prefix=b/ HEAD",
+		// claustrum's own, not measured.
 		"rev-list --left-right --count main",
 	}
 	refused := []string{
@@ -400,8 +401,8 @@ func TestPaneGitRunNoRepo(t *testing.T) {
 
 // TestPaneGitRunFallback runs the steps in a repository in the state fallback-git.
 // c9125eb8 refuses the spawn with ErrNoSettingsCopy after the listing in the cwd,
-// and its git does not run (measured on Linux, macOS and Windows). A folder with no
-// repository runs on (claustrum's own, not measured).
+// and its git does not run (measured on Linux, and the frame on macOS and
+// Windows). A folder with no repository runs on (claustrum's own, not measured).
 func TestPaneGitRunFallback(t *testing.T) {
 	f := newShadowFixture(t)
 	h := f.d.Shadow
@@ -430,4 +431,34 @@ func TestPaneGitRunFallback(t *testing.T) {
 		t.Fatalf("PaneGitRun in a folder with no repository: %v", err)
 	}
 	run.Release()
+}
+
+// TestPaneGitRunRangeIndex pins the index of a diff run in the state shadow: a
+// range of two dots runs as diff-tree with GIT_INDEX_FILE=<copy>/no-index, and a
+// one-ref diff runs as diff-index with the real index (c9125eb8, measured on Linux
+// and Windows).
+func TestPaneGitRunRangeIndex(t *testing.T) {
+	f := newShadowFixture(t)
+	for _, c := range []struct {
+		args    []string
+		noIndex bool
+	}{
+		{[]string{"diff", "--name-status", "-M", "HEAD..HEAD"}, true},
+		{[]string{"diff", "HEAD"}, false},
+	} {
+		run, err := PaneGitRun(f.d, f.repo, c.args)
+		if err != nil {
+			t.Fatalf("PaneGitRun(%q): %v", c.args, err)
+		}
+		run.Release()
+		env := run.Env(append(os.Environ(), "GIT_INDEX_FILE=/spawn-index"))
+		common, _ := envValue(env, "GIT_COMMON_DIR")
+		index, ok := envValue(env, "GIT_INDEX_FILE")
+		switch {
+		case c.noIndex && (!ok || index != filepath.Join(common, "no-index")):
+			t.Errorf("%q: GIT_INDEX_FILE = %q (%v), want %q", c.args, index, ok, filepath.Join(common, "no-index"))
+		case !c.noIndex && ok:
+			t.Errorf("%q: GIT_INDEX_FILE = %q, want the real index", c.args, index)
+		}
+	}
 }

@@ -768,8 +768,9 @@ type gitReadStart struct {
 // with args in cwd. refusal is the shape refusal of args, or nil. It comes right
 // after the cwd test, so a missing cwd gets the cwd refusal of every spawn before
 // the shape refusal (c9125eb8, measured on Linux, macOS and Windows). The refusal logs its
-// Failed to start line (measured on Linux). step runs after the env is built. A
-// step error fails the spawn.
+// Failed to start line (measured on Linux). The spent-id test comes before it, so
+// a spent id wins over the shape refusal (claustrum's own, not measured). step
+// runs after the env is built. A step error fails the spawn.
 func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, refusal error, step GitReadStep) (*Proc, error) {
 	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, &gitReadStart{refusal: refusal, step: step}, nil)
 }

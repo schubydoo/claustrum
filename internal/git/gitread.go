@@ -62,10 +62,11 @@ func paneDiffRun(patch bool, rest ...string) []string {
 // paneShapes are the argv that c9125eb8 runs with "gitRead":true. The fixed
 // words and their places are those of the measured rows, and the slots take the
 // refs and paths of the rows (measured on Linux, macOS and Windows, the slots on
-// Linux and macOS). Every other argv gets the shape refusal. The run argv of each
-// shape is that of the call logs (measured on Linux and Windows). claustrum's own, not measured: the run of the two-ref diff, a range
-// with an empty side, a pathspec other than ":(top,exclude)sub" and its literal
-// form, and a range in a diff shape other than `diff --name-status -M <base>`.
+// Linux). Every other argv gets the shape refusal. The run argv of each shape is
+// that of the call logs (measured on Linux and Windows). claustrum's own, not
+// measured: the run of the two-ref diff, a range with an empty side, log with
+// <A>...<B>, a pathspec other than ":(top,exclude)sub" and its literal form, and
+// a range in a diff shape other than `diff --name-status -M <base>`.
 var paneShapes = []paneShape{
 	{sent: []string{"status", "--porcelain=v2", "--branch", "-z"},
 		run: []string{"status", "--ignore-submodules=dirty", "--porcelain=v2", "--branch", "-z"}, noLocks: true, realIndex: true},
@@ -106,11 +107,12 @@ const paneLogFormat = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e"
 // 4097 bytes gets the shape refusal (measured on Linux, macOS and Windows).
 const paneRefMax = 4096
 
-// paneRefOK is the test of a slotRef. An empty ref, one with a leading "-", one
-// longer than paneRefMax and one with a TAB, LF, SOH or DEL byte are refused
-// (measured on Linux, and on macOS and Windows but SOH). The other bytes below 0x20 are refused
-// too (claustrum's own, not measured). A ref with a space or ".." inside passes
-// to git (claustrum's own, not measured).
+// paneRefOK is the test of a slotRef. An empty ref and one with a leading "-"
+// are refused (measured on Linux). So are one longer than paneRefMax and one with
+// a TAB, LF, SOH or DEL byte (measured on Linux, and on macOS and Windows but
+// SOH). claustrum's own, not measured: the other bytes below 0x20 are refused
+// too, and the bound applies to the whole <A>..<B> value. A ref with a space or
+// ".." inside passes to git (claustrum's own, not measured).
 func paneRefOK(s string) bool {
 	if s == "" || s[0] == '-' || len(s) > paneRefMax {
 		return false
@@ -337,7 +339,8 @@ func (r PaneRun) Release() { r.release() }
 // PaneGitRun takes the steps of the git methods before the pane's git in cwd:
 // the excludes read, the trust check, the settings gate and the listing. args is
 // an argv of paneShapes. A refusal of a step is the error, and the spawn answers
-// it with -32603 and the reason other (claustrum's own, not measured). The spawn
+// it with -32603 and the reason other (claustrum's own, not measured, and
+// measured on Linux and Windows for a copy that cannot be written). The spawn
 // answers ErrNoSettingsCopy with -32008. A folder
 // with no repository runs on: c9125eb8 answers success there, and git exits
 // 128 (measured on Linux and Windows).
@@ -368,7 +371,9 @@ func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
 		return PaneRun{}, errors.New(c.refusal)
 	}
 	// In the state fallback-git a repository gets ErrNoSettingsCopy after the
-	// listing, and its git does not run (measured on Linux, macOS and Windows).
+	// listing, and its git does not run (measured on Linux, and the frame on macOS
+	// and Windows). A folder with no repository runs on (claustrum's own, not
+	// measured).
 	if t.verdict == gitDirTrusted && !req.shadow.readsRepoConfig() {
 		return PaneRun{}, ErrNoSettingsCopy
 	}
