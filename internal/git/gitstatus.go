@@ -1074,8 +1074,10 @@ var errStatusNoFolder = errors.New("the temporary git folder cannot be made in t
 // `diff-index` (measured).
 //
 // The status runs in a temporary git folder, so it never writes the index of the
-// worktree. On Windows the three commands with GIT_OPTIONAL_LOCKS=0 get
-// statusExcludesFile as their core.excludesFile value. That is the divergence D16.
+// worktree. Each command gets userExcludesFile as its core.excludesFile value. On Windows
+// with no user excludes file that value is NUL. Git for Windows 2.55 stops the
+// `status` call with exit 128, and the reply is -32603 "exit status 128", as on c9125eb8
+// (measured on Windows).
 func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, error) {
 	// The folder comes before the one-time `--attr-source=… version` call of
 	// attrSourceArgs. On 5fd08069 a poll saw `.gitdir-<n>` before that call
@@ -1096,7 +1098,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	if u.shadow() && !daemonCommonDirStays() {
 		r.entryConfig = e.config
 	}
-	excludes := statusExcludesFile()
+	excludes := userExcludesFile()
 
 	porcelain, err := r.git(true, excludes, "status", "--porcelain",
 		"--untracked-files=all", "--ignore-submodules=all")

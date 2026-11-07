@@ -8,6 +8,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,11 +82,42 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "fixture template root:", err)
 			os.Exit(1)
 		}
+		excludesDir, err := windowsUserExcludes()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "user excludes file:", err)
+			os.Exit(1)
+		}
 		code := m.Run()
 		removeFixtureTemplates()
+		if excludesDir != "" {
+			_ = os.RemoveAll(excludesDir)
+		}
 		os.Exit(code)
 	}
 	os.Exit(runHelper(mode, os.Args[1:]))
+}
+
+// windowsUserExcludes gives the daemon of the suite a user excludes file on Windows.
+// It points XDG_CONFIG_HOME at a new folder with an empty git/ignore. The Windows rows of
+// the git.status tests (89cb6289) were measured with a user excludes file. With none the
+// status call passes NUL, and Git for Windows 2.55 stops it with exit 128 (measured on
+// Windows). A test that calls isolateGitConfig decides its own value. It returns the
+// folder to remove, or "" on Linux and macOS.
+func windowsUserExcludes() (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", nil
+	}
+	dir, err := os.MkdirTemp("", "claustrum-user-excludes-")
+	if err != nil {
+		return "", err
+	}
+	if err := os.Mkdir(filepath.Join(dir, "git"), 0o755); err != nil {
+		return dir, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "git", "ignore"), nil, 0o644); err != nil {
+		return dir, err
+	}
+	return dir, os.Setenv("XDG_CONFIG_HOME", dir)
 }
 
 // runWrapLauncher implements the "wrap" helper mode. See runHelper.

@@ -234,12 +234,11 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 				extra = append(extra, kv)
 			}
 		}
-		// The status call spells the null device /dev/null on every OS (D16).
+		// The status call passes the null device of the OS, as every other call does.
 		excludes := shapeNull
 		if c.heavy() && slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--work-tree=") }) &&
 			(c.has("status") || c.has("ls-files") || c.has("diff-index")) {
 			extra = append(extra, "GIT_OPTIONAL_LOCKS=0")
-			excludes = "/dev/null"
 		}
 		if got, want := c.keysAndValues(), wantShapeEnv(c.heavy(), true, extra...); !sameShapeEnv(got, want) {
 			t.Errorf("%s call %d %q env = %q\nwant %q", what, i, c.argv, got, want)
@@ -448,6 +447,12 @@ func TestHardenedGitCallShape(t *testing.T) {
 	})
 
 	t.Run("status", func(t *testing.T) {
+		// On Windows the status call passes NUL, and Git for Windows 2.55 stops it with
+		// exit 128 (measured on Windows). The stub answers that one call with an empty
+		// porcelain, so the calls after it run with any git.
+		if runtime.GOOS == "windows" {
+			stageGit(t, stagedCall{Match: []string{"status", "--porcelain", "core.excludesFile=NUL"}})
+		}
 		raw, calls := run("git.status", map[string]any{"baseRepo": f.top, "path": f.leaf()})
 		if !strings.Contains(raw, `"isRepo":true`) {
 			t.Fatalf("reply = %s", raw)
@@ -486,7 +491,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 		}
 		checkAlternation(t, "status", calls[at-1:at+1], func(shapeCall) string { return f.leaf() })
 		// The status, ls-files and diff-index calls carry GIT_OPTIONAL_LOCKS=0 and the
-		// /dev/null excludes of D16.
+		// null device of the OS as their excludes.
 		var locked int
 		for _, c := range calls[at:] {
 			if c.hardened() && (c.has("status") || c.has("ls-files") || c.has("diff-index")) {
@@ -778,26 +783,5 @@ func TestGitTempPrefixLengths(t *testing.T) {
 	if len(statusGitDirTempPrefix) != 18 || len(checkoutIndexTempPrefix) != 17 {
 		t.Errorf("len(%q) = %d, len(%q) = %d, want 18 and 17 (f6010b97)",
 			statusGitDirTempPrefix, len(statusGitDirTempPrefix), checkoutIndexTempPrefix, len(checkoutIndexTempPrefix))
-	}
-}
-
-// TestStatusExcludesFile pins the core.excludesFile value of the status call. The
-// null device is /dev/null on every OS: on Windows git status exits 128 when the
-// value is NUL (D16). A real excludes file passes through.
-func TestStatusExcludesFile(t *testing.T) {
-	resetUserExcludesCache(t)
-	set := func(v string) {
-		userExcludesMu.Lock()
-		userExcludesDone, userExcludesCached = true, v
-		userExcludesMu.Unlock()
-	}
-	set(os.DevNull)
-	if got := statusExcludesFile(); got != "/dev/null" {
-		t.Errorf("statusExcludesFile() = %q with the null device %q, want /dev/null", got, os.DevNull)
-	}
-	p := filepath.Join(t.TempDir(), "ignore")
-	set(p)
-	if got := statusExcludesFile(); got != p {
-		t.Errorf("statusExcludesFile() = %q, want %q", got, p)
 	}
 }

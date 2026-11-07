@@ -136,7 +136,6 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [D10](#d10) | Cap the `-install` CLI size | off-wire (`-install` output) | off (`0`) | all |
 | [D12](#d12) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
-| [D16](#d16) | `git.status` of a linked worktree works, where the reference errors | on-wire | always-on | Windows |
 | [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
 | [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | all |
@@ -384,31 +383,6 @@ have no flag and no key.
   `internal/runlock/daemon_runlock_unix.go` (`holderSignalRefusal`, `StopRunDirHolder`),
   `internal/runlock/daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
   `internal/runlock/daemon_runlock_linux.go`.
-
-### D16 · `git.status` of a linked worktree returns the status on Windows, where the reference errors (Windows) { #d16 }
-
-- **Behavior.** On Windows, with no global excludes file of the user,
-  `git.status` of a `path` that names a linked worktree returns the status
-  result (`{"isRepo":true,"clean":false,"changes":[…]}`). On Windows claustrum
-  passes `-c core.excludesFile=/dev/null` to the `status`, `ls-files` and
-  `diff-index` calls of `git.status` (`statusExcludesFile`). Every other call
-  with that item passes `NUL` there, as the reference does.
-- **Reference.** On Windows it answers `-32603 "exit status 128"` there
-  (measured on Windows). It passes `NUL`, and Git for Windows 2.55.0 refuses it
-  with `fatal: cannot use NUL as an exclude file`. With a user excludes file its
-  status works. Linux and macOS are byte-identical.
-- **Systems and switch.** Windows. Always on, no switch.
-- **Cost.** A Windows client that diffs frames against the reference sees a
-  result where the reference sends an error.
-- **Rule.** Rule 4, by the maintainer's decision of 2026-10-13. A Windows client
-  that runs status on a session worktree reaches this path by design.
-- **Reopen trigger.** The reference fixes its Windows `git.status`. Or a Git for
-  Windows release accepts `NUL` there. Or a decision to answer 128 as the
-  reference does: that change is the value `NUL` in those three calls. The
-  reference stops at its `status` call, so its value for the other two is not
-  measured.
-- **Pointers.** [git.status](protocol/git-status.md#differences-by-system),
-  `internal/git/gitstatus.go` (`statusChanges`) and `internal/git/githarden.go`.
 
 ### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
@@ -811,6 +785,12 @@ before the chmod, the clear and the rename (claustrum's own): see
 
 The `ldd` probe has the 5 s bound of the reference, always: see
 [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
+
+### D16 · `git.status` of a linked worktree returned the status on Windows (retired) { #d16 }
+
+On Windows, with no user excludes file, the `status` call of `git.status` passes `NUL`
+as the reference does. Git for Windows 2.55 then stops it, and the reply is the
+reference's `exit status 128`: see [git.status](protocol/git-status.md#differences-by-system).
 
 ### D17 · An abandoned `lsof` run on macOS (retired) { #d17 }
 

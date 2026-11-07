@@ -44,9 +44,7 @@ A client sees the hardening here:
 - The records of a new worktree hold absolute paths, also where the user config sets
   `worktree.useRelativePaths` (measured on macOS and Windows).
 - Each call passes the user's global excludes file as `core.excludesFile`
-  ([Calls outside a repository](#calls-outside-a-repository)). On Windows the `status`,
-  `ls-files` and `diff-index` calls of `git.status` pass `/dev/null` where the value is the null device (claustrum's
-  own, [D16](../DIVERGENCES.md#d16)).
+  ([Calls outside a repository](#calls-outside-a-repository)).
 - Each call that sets `core.hooksPath` passes `\\.\NUL` on Windows and `/dev/null` on Linux and macOS
   (`be1c1ca5`, measured on Linux and Windows, macOS not measured).
 - The config listings run with `LC_ALL=C` and `LANGUAGE=C`. git then writes its
