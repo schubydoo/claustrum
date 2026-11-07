@@ -24,6 +24,7 @@ func TestContentCheckLinkAtTheHash(t *testing.T) {
 			f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", "README": "r\n"})
 			p := filepath.Join(f.leaf, "CLAUDE.md")
 			slowGit(t, "hash-object,--stdin-paths", "pre", 0, "", "")
+			contentTestCallOnly(t)
 			t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
 			t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "rm\x1f"+p+"\x1esymlink\x1f"+row.target+"\x1f"+p)
 			raw, _ := f.create(t, nil)

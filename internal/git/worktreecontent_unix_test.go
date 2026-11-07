@@ -71,7 +71,7 @@ func TestContentCheckUndoThatCannotFinish(t *testing.T) {
 	})
 	afterCheckout(t, []string{"chmod", filepath.Join(dir, "settings.json"), "000"}, []string{"chmod", dir, "555"})
 	raw, calls := f.create(t, nil)
-	if slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--stdin-paths") }) {
+	if slices.ContainsFunc(calls, func(c envCall) bool { return c.argv[len(c.argv)-1] == "--stdin-paths" }) {
 		t.Error("a hash-object --stdin-paths call ran, want the refusal before it (measured on Windows)")
 	}
 	start := `"error":"Claude could not confirm that the new worktree matches its commit, so it did not keep it. Try again, and if this repeats check the permissions of the folder the worktree is made in: \".claude/settings.json\" in the new worktree couldn't be read`
@@ -100,9 +100,8 @@ func commitExecutable(t *testing.T, f checkoutRuleFixture) {
 // removes the worktree (b3081b51, measured on Linux and macOS). A chmod at that
 // call passes, because the mode is read first (measured on Linux), and so does
 // a file that stays executable (measured). With core.fileMode false in the
-// repository the file passes (measured on Linux and macOS). One config call
-// reads it in the base repository before `cat-file commit`, at each check
-// (measured on Linux and macOS).
+// repository the file passes (measured on Linux and macOS). No config call of
+// its own reads the setting (c9125eb8, measured on Linux, macOS and Windows).
 func TestContentCheckLostExecBit(t *testing.T) {
 	for _, row := range []struct {
 		name  string
@@ -114,6 +113,7 @@ func TestContentCheckLostExecBit(t *testing.T) {
 		}, false},
 		{"0644 at the hash call", func(t *testing.T, p string) {
 			slowGit(t, "hash-object,--stdin-paths", "pre", 0, "", "")
+			contentTestCallOnly(t)
 			t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
 			t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "chmod\x1f"+p+"\x1f644")
 		}, true},
@@ -131,7 +131,7 @@ func TestContentCheckLostExecBit(t *testing.T) {
 			row.setup(t, filepath.Join(f.leaf, "CLAUDE.md"))
 			logs := captureLogBuf(t)
 			raw, calls := f.create(t, nil)
-			wantFileModeCall(t, f, calls)
+			noFileModeCall(t, calls)
 			if row.ok {
 				if !strings.Contains(raw, `"success":true`) {
 					t.Fatalf("git.worktree_create = %s, want success", raw)
@@ -153,26 +153,14 @@ func TestContentCheckLostExecBit(t *testing.T) {
 	}
 }
 
-// wantFileModeCall tests that one config call of core.fileMode ran in the base
-// repository, and before `cat-file --batch`.
-func wantFileModeCall(t *testing.T, f checkoutRuleFixture, calls []envCall) {
+// noFileModeCall tests that no config call of core.fileMode ran: c9125eb8
+// makes none (measured on Linux, macOS and Windows).
+func noFileModeCall(t *testing.T, calls []envCall) {
 	t.Helper()
-	want := []string{"config", "-z", "--bool", "--get-regexp", `^core\.(filemode|symlinks)$`}
-	at, n := -1, 0
-	for i, c := range calls {
-		if slices.Equal(c.argv[max(0, len(c.argv)-len(want)):], want) {
-			n++
-			at = i
-			if canonicalPath(c.cwd) != canonicalPath(f.repo) {
-				t.Errorf("the config call runs in %s, want the base repository", c.cwd)
-			}
+	for _, c := range calls {
+		if containsSeq(c.argv, "--bool", "--get-regexp") {
+			t.Errorf("a config call %q, want none", c.argv)
 		}
-	}
-	if n != 1 {
-		t.Fatalf("%d config calls %q, want 1", n, want)
-	}
-	if !slices.ContainsFunc(calls[at+1:], func(c envCall) bool { return containsSeq(c.argv, "cat-file", "--batch") }) {
-		t.Error("no cat-file --batch call after the config call, want the config call first")
 	}
 }
 
@@ -262,5 +250,43 @@ func TestContentCheckLinkChains(t *testing.T) {
 			}
 			f.wantGone(t)
 		})
+	}
+}
+
+// TestContentCheckHashesComparedBlobs: a name with a line end under .claude
+// takes the call of the files away, so every file goes to the compare step.
+// There each `cat-file blob <id>` is followed by `hash-object -t blob
+// --literally --no-filters --stdin -w` into the folder of the check (c9125eb8,
+// measured on Linux and macOS). An NTFS folder cannot hold the name, so Windows
+// is not measured.
+func TestContentCheckHashesComparedBlobs(t *testing.T) {
+	f := newContentFixture(t, map[string]string{
+		".claude/settings.json": "{}\n", ".claude/we\nird.md": "w\n", ".mcp.json": "{}\n", "CLAUDE.md": "c\n",
+	})
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	var reads, hashes []int
+	for i, c := range calls {
+		switch {
+		case containsSeq(c.argv, "cat-file", "blob"):
+			reads = append(reads, i)
+		case containsSeq(c.argv, "-t", "blob") && containsSeq(c.argv, "--stdin", "-w"):
+			hashes = append(hashes, i)
+			if dir, _ := envValue(c.env, "GIT_OBJECT_DIRECTORY"); !strings.HasPrefix(filepath.Base(dir), shadowReadbackDirPrefix) {
+				t.Errorf("GIT_OBJECT_DIRECTORY of the blob hash = %q, want a folder %s<n>", dir, shadowReadbackDirPrefix)
+			}
+		case c.argv[len(c.argv)-1] == "--stdin-paths":
+			t.Errorf("a call of the files ran: %q, want none", c.argv)
+		}
+	}
+	if len(reads) != 4 || len(hashes) != 4 {
+		t.Fatalf("%d cat-file blob and %d blob hash calls, want 4 and 4", len(reads), len(hashes))
+	}
+	for i := range reads {
+		if hashes[i] <= reads[i] || (i+1 < len(reads) && hashes[i] >= reads[i+1]) {
+			t.Errorf("blob hash %d is call %d, want it right after the read of call %d", i+1, hashes[i], reads[i])
+		}
 	}
 }

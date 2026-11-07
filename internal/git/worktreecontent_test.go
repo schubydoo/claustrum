@@ -87,6 +87,14 @@ func noSHA1(t *testing.T) {
 	t.Cleanup(func() { sha1Works = old })
 }
 
+// contentTestCallOnly narrows the first rule of the git stub to the
+// `hash-object --no-filters --stdin-paths` call of the files: its last argument
+// is --stdin-paths, where the long-running hash-object calls end with -w.
+func contentTestCallOnly(t *testing.T) {
+	t.Helper()
+	t.Setenv("CLAUSTRUM_GITSTUB_ARGLAST", "--stdin-paths")
+}
+
 // catFileCalls counts the `cat-file --batch` calls and the separate
 // `cat-file commit` and `cat-file tree` calls of calls.
 func catFileCalls(calls []envCall) (batch, separate int) {
@@ -116,7 +124,9 @@ func noReadbackFolder(t *testing.T, f checkoutRuleFixture) {
 // logs the checked line (measured on Linux, macOS and Windows). The calls run
 // in the base repository, and the writes of hash-object go to a folder
 // `.readback-objects-<n>` of the folder of the daemon that is gone after the
-// reply (measured on Linux).
+// reply, with no alternates (measured on Linux). One long-running hash-object
+// of each kind hashes the commit and the trees (c9125eb8, measured on Linux,
+// macOS and Windows).
 func TestContentCheckMatch(t *testing.T) {
 	f := newContentFixture(t, map[string]string{
 		"CLAUDE.md": "c\n", "AGENTS.md": "a\n", ".mcp.json": "{}\n", ".claude/settings.json": "{}\n", "other.txt": "o\n",
@@ -131,16 +141,22 @@ func TestContentCheckMatch(t *testing.T) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	noReadbackFolder(t, f)
-	var sawWrite, sawPaths bool
+	writes := map[string]int{}
+	var sawPaths bool
 	for _, c := range calls {
 		sub := c.argv[slices.Index(c.argv, "core.longpaths=true")+1:]
 		switch {
-		case slices.Equal(sub, []string{"hash-object", "-t", "commit", "--literally", "--no-filters", "--stdin", "-w"}):
-			sawWrite = true
+		case len(sub) == 7 && sub[0] == "hash-object" && slices.Equal(sub[3:], []string{"--literally", "--no-filters", "--stdin-paths", "-w"}):
+			writes[sub[2]]++
 			dir, _ := envValue(c.env, "GIT_OBJECT_DIRECTORY")
 			if !strings.HasPrefix(filepath.Base(dir), shadowReadbackDirPrefix) {
 				t.Errorf("GIT_OBJECT_DIRECTORY of %q = %q, want a folder %s<n>", sub, dir, shadowReadbackDirPrefix)
 			}
+			if alt, ok := envValue(c.env, "GIT_ALTERNATE_OBJECT_DIRECTORIES"); !ok || alt != "" {
+				t.Errorf("GIT_ALTERNATE_OBJECT_DIRECTORIES of %q = %q, %v, want set and empty", sub, alt, ok)
+			}
+		case containsSeq(sub, "--stdin", "-w"):
+			t.Errorf("a separate %q call, want none", sub)
 		case slices.Equal(sub, []string{"hash-object", "--no-filters", "--stdin-paths"}):
 			sawPaths = true
 		default:
@@ -150,8 +166,8 @@ func TestContentCheckMatch(t *testing.T) {
 			t.Errorf("%q runs in %s, want the base repository", sub, c.cwd)
 		}
 	}
-	if !sawWrite || !sawPaths {
-		t.Errorf("hash-object -w ran %v, --stdin-paths ran %v, want both", sawWrite, sawPaths)
+	if writes["commit"] != 1 || writes["tree"] != 1 || len(writes) != 2 || !sawPaths {
+		t.Errorf("long-running hash-object calls %v, --stdin-paths ran %v, want one of commit and one of tree, and the call of the files", writes, sawPaths)
 	}
 	// One `cat-file --batch` reads the commit and the trees (c9125eb8,
 	// measured on Linux and macOS).
@@ -187,6 +203,72 @@ func TestContentCheckBatchEnds(t *testing.T) {
 	if batch, separate := catFileCalls(calls); batch != 1 || separate != 2 {
 		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 2", batch, separate)
 	}
+}
+
+// TestContentCheckBatchOtherObject: a `cat-file --batch` that answers with
+// the header of another object gives its own line. Separate runs read and hash
+// the commit and the tree, and no long-running hash-object starts (c9125eb8,
+// measured on Linux).
+func TestContentCheckBatchOtherObject(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	slowGit(t, "cat-file,--batch", "fail", 0, "", "xyz blob\n")
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	line := "[GitHandler] worktree_create: stopped using the long-running git cat-file for the new worktree's config check: it answered with something other than the object asked for; the rest is read with a git process per object or per folder depth (slower, same result)"
+	if !strings.Contains(logs.String(), line+"\n") {
+		t.Errorf("log:\n%s\nwant the line %q", logs, line)
+	}
+	if want := checkedLineSep("1", "file", 2, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if long, separate := hashObjectWrites(calls); long != 0 || separate != 2 {
+		t.Errorf("%d long-running and %d separate hash-object -w calls, want 0 and 2", long, separate)
+	}
+}
+
+// TestContentCheckHashObjectEnds: a long-running hash-object that exits 1 at
+// once gives the line of a git that stopped answering. The batch ends too, and
+// separate runs read and hash the commit again and the tree. The create
+// succeeds, and the checked line counts 2 separate runs (c9125eb8, measured
+// on Linux).
+func TestContentCheckHashObjectEnds(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	slowGit(t, "hash-object,--stdin-paths,-w", "fail", 0, "", "")
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	line := "[GitHandler] worktree_create: stopped using the long-running git hash-object for the new worktree's config check: it stopped answering (EOF); the rest is read with a git process per object or per folder depth (slower, same result)"
+	if n := strings.Count(logs.String(), line+"\n"); n != 1 {
+		t.Errorf("log:\n%s\nwant the line %q once, got %d", logs, line, n)
+	}
+	if want := checkedLineSep("1", "file", 2, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if batch, separate := catFileCalls(calls); batch != 1 || separate != 2 {
+		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 2", batch, separate)
+	}
+	if long, separate := hashObjectWrites(calls); long != 1 || separate != 2 {
+		t.Errorf("%d long-running and %d separate hash-object -w calls, want 1 and 2", long, separate)
+	}
+}
+
+// hashObjectWrites counts the long-running `hash-object ... --stdin-paths -w`
+// calls and the separate `hash-object ... --stdin -w` calls of calls.
+func hashObjectWrites(calls []envCall) (long, separate int) {
+	for _, c := range calls {
+		switch {
+		case containsSeq(c.argv, "--stdin-paths", "-w"):
+			long++
+		case containsSeq(c.argv, "--stdin", "-w"):
+			separate++
+		}
+	}
+	return long, separate
 }
 
 // TestContentCheckWaitsForTheBatch: the create answers only after the
@@ -403,6 +485,7 @@ func TestContentCheckStoppedHashGoesOn(t *testing.T) {
 	shortGitLimit(t, 5*time.Second)
 	setDuration(t, &gitStopGrace, 200*time.Millisecond)
 	slowGit(t, "hash-object,--stdin-paths", "fail", 60*time.Second, "", "")
+	contentTestCallOnly(t)
 	logs := captureLogBuf(t)
 	raw, calls := f.create(t, nil)
 	if !strings.Contains(raw, `"success":true`) {
@@ -499,6 +582,7 @@ func TestContentCheckChangedDuringTheHash(t *testing.T) {
 	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
 	p := filepath.Join(f.leaf, "CLAUDE.md")
 	slowGit(t, "hash-object,--stdin-paths", "pre", 0, "", "")
+	contentTestCallOnly(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
 	t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "rm\x1f"+p+"\x1esymlink\x1f.\x1f"+p)
 	logs := captureLogBuf(t)
@@ -531,6 +615,7 @@ func TestContentCheckFileGoneDuringTheHash(t *testing.T) {
 		t.Fatalf("Lstat of a missing file = %v", gone)
 	}
 	slowGit(t, "hash-object,--stdin-paths", "pre", 0, "", "")
+	contentTestCallOnly(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
 	t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "rm\x1f"+p)
 	logs := captureLogBuf(t)
