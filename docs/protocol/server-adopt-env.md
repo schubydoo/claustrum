@@ -61,16 +61,24 @@ On Linux and macOS, after a good read, a spawn 10 minutes or more after the last
 
 ## The frame of the bridge
 
-With `CLAUDE_SSH_ADOPT_ENV=1` the [bridge](flags.md#-bridge-stdiosocket-relay) first sends this method with its own environment in its own order. Windows sends the `=C:` entry first. The value `no-login-shell` adds `"noLoginShell":true` last. No variable and `yes` send no frame (Linux), nor do `true`, `0` and an empty value (macOS). The arg `no-login-shell` changes nothing (macOS). The `auth` member is the content of the [token file](../DAEMON.md#token-persistence-daemontoken) beside the socket (Linux and Windows):
+With `CLAUDE_SSH_ADOPT_ENV=1` the [bridge](flags.md#-bridge-stdiosocket-relay) first sends this method with its own environment in its own order. Windows sends the `=C:` entry first. The value `no-login-shell` adds `"noLoginShell":true` last. No variable and `yes` send no frame (Linux), nor do `true`, `0` and an empty value (macOS). The arg `no-login-shell` changes nothing (macOS). The `auth` member is the content of the [token file](../DAEMON.md#token-persistence-daemontoken) beside the socket (Linux, macOS and Windows):
 
 ```json
 {"auth":"<token>","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["PATH=/usr/bin:/bin","HOME=/home/u","CLAUDE_SSH_ADOPT_ENV=1"]}}
 ```
 
-The bridge does not relay the reply, and an error reply does not stop the relay (Linux). A list that the daemon refuses sends no frame (measured for 300000 bytes on Linux and macOS). With no reply in about 1 s the Windows bridge connected and sent the frame again: three frames in 3 s. These parts are claustrum's own, not measured:
+The bridge does not relay the reply, and an error reply does not stop the relay (Linux). With no reply in about 1 s, or after a close by the daemon, the bridge connects again at once. The second connection gets the frame again. The third gets none and relays stdin (Linux, macOS and Windows). The relay of stdin starts after the reply (Linux). The wait covers the write of the frame too. A failed or late write counts as a close, any second failed try leads to the third connection, and a failed new connection ends the bridge with `dial server:` (claustrum's own, not measured).
 
-- The wait of 1 s holds on Linux and macOS too, and the tries have no limit.
-- A failed new connection ends the bridge with `dial server:`.
-- The relay of stdin starts after the reply.
-- A `daemon.token` that does not read gives no frame.
-- The list holds no `CLAUDE_RPC_TOKEN`.
+## The list of the frame
+
+The bridge does not test the list as the daemon does. 9000 entries go (Linux, macOS and Windows), and so does one entry of 131072 bytes (macOS). A frame over 262144 bytes, not counting the newline, is not sent (Linux and macOS). An entry that is not valid UTF-8 leaves `env`, and its name goes into `kept` after `env` (Linux and macOS):
+
+```json
+{"auth":"<token>","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["PATH=/usr/bin:/bin","CLAUDE_SSH_ADOPT_ENV=1"],"kept":["K"]}}
+```
+
+On Windows the environment is UTF-16, and such a value stays in `env` with U+FFFD. With no `daemon.token` the bridge sends no frame, and the list holds no `CLAUDE_RPC_TOKEN` (Linux, macOS and Windows). These parts are claustrum's own, not measured:
+
+- An empty `daemon.token` gives no frame.
+- The limit of 262144 bytes holds on Windows too.
+- A name that is not valid UTF-8 goes into `kept` with U+FFFD for its bad bytes, and `kept` comes before `noLoginShell`.
