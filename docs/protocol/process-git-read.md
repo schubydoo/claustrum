@@ -54,7 +54,7 @@ claustrum's own: a refusal of the git steps fails the spawn with `-32603`, its t
 
 ## The time limit
 
-The git gets `SIGTERM` 120 s after its start. A git that ignores it runs about 7 s more. No member sets the limit. A plain child is not ended at it. At the limit the daemon logs `[process.Manager] the pane's git has run for 2m0s; ending it`.
+The limit is 120 s from the start of the git. No member sets the limit. A plain child is not ended at it. At the limit the daemon logs `[process.Manager] the pane's git has run for 2m0s; ending it`.
 
 - Linux and macOS: `SIGTERM` goes to the git alone. If the git still runs 7 s later, its process group gets `SIGKILL`. A git that ends on the `SIGTERM` gets no `SIGKILL`, and a process in its group lives on.
 - Windows: the git ends at the limit with exit code 1. claustrum ends it as it ends a child for every signal (claustrum's own).
