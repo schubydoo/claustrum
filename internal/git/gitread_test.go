@@ -435,8 +435,8 @@ func TestPaneGitRunFallback(t *testing.T) {
 
 // TestPaneGitRunRangeIndex pins the index of a diff run in the state shadow: a
 // range of two dots runs as diff-tree with GIT_INDEX_FILE=<copy>/no-index, and a
-// one-ref diff runs as diff-index with the real index (c9125eb8, measured on Linux
-// and Windows).
+// one-ref diff runs as diff-index with the real index (c9125eb8, measured on Linux,
+// macOS and Windows).
 func TestPaneGitRunRangeIndex(t *testing.T) {
 	f := newShadowFixture(t)
 	for _, c := range []struct {
