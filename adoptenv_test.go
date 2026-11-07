@@ -446,6 +446,49 @@ func TestSocketAdoptEnvSentTempNameWithNoDaemonValue(t *testing.T) {
 	}
 }
 
+// TestSocketAdoptEnvWindowsHome: on Windows a plain child after an adopt gets no
+// sent HOME unless kept names HOME. A child of a connection with no adopt keeps the
+// SSH_AUTH_SOCK of the daemon, and the daemon adds no COMSPEC, PATHEXT or PROMPT
+// (c9125eb8, measured on Windows).
+func TestSocketAdoptEnvWindowsHome(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows only: on Linux a sent HOME reaches the child")
+	}
+	clearClaudeSSHEnv(t)
+	clearSessionEnv(t)
+	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
+	t.Setenv("SSH_AUTH_SOCK", "/daemon/agent")
+	_, sock := newRunningServer(t)
+	logs := captureLogBuf(t)
+	c1, c2 := dial(t, sock), dial(t, sock)
+	adopt := func(id int, params string) {
+		t.Helper()
+		got := string(c1.call(authed(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"server.adoptEnv","params":%s}`, id, params))))
+		if want := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"ok":true}}`, id); got != want {
+			t.Fatalf("adopt %d: %s, want %s", id, got, want)
+		}
+	}
+	adopt(1, `{"env":["A=1","HOME=/h/b","GIT_X=1"]}`)
+	want := fmt.Sprintf("%d variables for every connection, 0 for this connection only.", 4+adoptKeptCount())
+	if lines := adoptLines(logs.String()); len(lines) == 0 || !strings.Contains(lines[len(lines)-1], want) {
+		t.Errorf("adopt lines = %q, want the last to hold %q", lines, want)
+	}
+	env := adoptChildEnv(t, c2, "plain", 1)
+	for name, w := range map[string]string{"A": "1", "GIT_X": "1", "SSH_AUTH_SOCK": "/daemon/agent", "HOME": "", "COMSPEC": "", "PATHEXT": "", "PROMPT": ""} {
+		v, ok := env[name]
+		switch {
+		case w == "" && ok:
+			t.Errorf("the child has %s=%q, want it absent", name, v)
+		case w != "" && v != w:
+			t.Errorf("the child has %s=%q (present %v), want %q", name, v, ok, w)
+		}
+	}
+	adopt(2, `{"env":["HOME=/sent"],"kept":["HOME"]}`)
+	if v := adoptChildEnv(t, c2, "kepthome", 2)["HOME"]; v != "/sent" {
+		t.Errorf("after a kept HOME the child has HOME=%q, want /sent", v)
+	}
+}
+
 // TestSocketAdoptEnvTakesLoginPATH: after a good read of the login-shell PATH a
 // child of an adopted set gets that PATH on Linux and macOS, not the sent one
 // (c9125eb8, measured on Linux and macOS). On Windows the sent PATH stays (from

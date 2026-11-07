@@ -11,5 +11,6 @@ const adoptTakesLoginPATH = true
 // envKey is the name itself: names are case-sensitive here.
 func envKey(name string) string { return name }
 
-// osAdoptedBase adds nothing on Linux and macOS.
-func osAdoptedBase(base []string) []string { return base }
+// keptOnlyNames is empty on Linux and macOS: a sent HOME reaches the child
+// (c9125eb8, measured on Linux, claustrum's own on macOS, not measured).
+var keptOnlyNames []string

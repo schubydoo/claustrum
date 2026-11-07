@@ -49,6 +49,9 @@ type adoptedEnv struct {
 	mu  sync.Mutex
 	on  bool
 	set []string
+	// base is set without the names of keptOnlyNames that kept lacks. A child
+	// starts from it, and the counts and names of the adopt line come from set.
+	base []string
 	// session holds the session-bound entries of the daemon, for a connection
 	// with no adopt of its own.
 	session []string
@@ -80,7 +83,7 @@ func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell 
 	if c != nil {
 		c.SetOwnEnv(mine)
 	}
-	m.adopted.on, m.adopted.set = true, all
+	m.adopted.on, m.adopted.set, m.adopted.base = true, all, withoutUnkept(all, kept, keptOnlyNames)
 	m.adopted.session = slices.DeleteFunc(slices.Clone(daemon), func(e string) bool { return !isSessionEnvName(envName(e)) })
 	// Under the same lock, so two adopts at once cannot leave the PATH of one
 	// with the set of the other. The lock order is adopted.mu, then the lock of
@@ -92,12 +95,15 @@ func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell 
 	return countEnvNames(all), countEnvNames(mine), adoptDiffNames(old, all)
 }
 
-// adoptedBase is the start of the environment of a child of c: the adopted set,
-// then the session-bound entries of c, or those of the daemon when c had no good
-// adopt of its own. ok is false before the first good adopt.
+// adoptedBase is the start of the environment of a child of c: the adopted set
+// without the names of keptOnlyNames that kept lacks, then the session-bound
+// entries of c, or those of the daemon when c had no good adopt of its own. ok is
+// false before the first good adopt. On Windows the daemon adds no COMSPEC,
+// PATHEXT or PROMPT (c9125eb8, measured on Windows). In the same run a cmd.exe child
+// got the three and a git child did not, so they come from cmd.exe.
 func (m *Manager) adoptedBase(c *conn.Conn) (base []string, ok bool) {
 	m.adopted.mu.Lock()
-	on, set, session := m.adopted.on, m.adopted.set, m.adopted.session
+	on, set, session := m.adopted.on, m.adopted.base, m.adopted.session
 	own, adopted := c.OwnEnv()
 	m.adopted.mu.Unlock()
 	if !on {
@@ -106,7 +112,19 @@ func (m *Manager) adoptedBase(c *conn.Conn) (base []string, ok bool) {
 	if adopted {
 		session = own
 	}
-	return osAdoptedBase(append(slices.Clone(set), session...)), true
+	return append(slices.Clone(set), session...), true
+}
+
+// withoutUnkept is set without each entry whose name is one of names and not one
+// of kept.
+func withoutUnkept(set, kept, names []string) []string {
+	return slices.DeleteFunc(slices.Clone(set), func(e string) bool {
+		name := envName(e)
+		in := func(list []string) bool {
+			return slices.ContainsFunc(list, func(n string) bool { return sameEnvName(n, name) })
+		}
+		return in(names) && !in(kept)
+	})
 }
 
 // splitAdopted splits the sent entries into the set for every connection and the

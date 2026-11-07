@@ -2,10 +2,7 @@
 
 package supervisor
 
-import (
-	"slices"
-	"strings"
-)
+import "strings"
 
 // adoptTakesLoginPATH is false on Windows: after an adopt with no PATH the child
 // had no PATH (c9125eb8, measured on Windows).
@@ -15,23 +12,8 @@ const adoptTakesLoginPATH = false
 // adopt line lists the names so (c9125eb8, measured on Windows).
 func envKey(name string) string { return strings.ToUpper(name) }
 
-// adoptedFixedEnv are the entries that a child of an adopted set got on Windows,
-// with values that are not those of the daemon (c9125eb8, measured on Windows).
-// They are not in the count of the adopt line. Each one is added only when the
-// base has no entry of its name (claustrum's own, not measured).
-var adoptedFixedEnv = []string{
-	`COMSPEC=C:\Windows\System32\cmd.exe`,
-	`PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC`,
-	`PROMPT=$P$G`,
-}
-
-// osAdoptedBase adds each entry of adoptedFixedEnv that base lacks.
-func osAdoptedBase(base []string) []string {
-	for _, e := range adoptedFixedEnv {
-		name := envName(e)
-		if !slices.ContainsFunc(base, func(b string) bool { return sameEnvName(envName(b), name) }) {
-			base = append(base, e)
-		}
-	}
-	return base
-}
+// keptOnlyNames are the sent names that reach a child on Windows only when kept
+// names them. A sent HOME did not reach the child, and with HOME in kept the sent
+// HOME did (c9125eb8, measured on Windows). The adopt line still counts it, and
+// its count then matched c9125eb8 in that row.
+var keptOnlyNames = []string{"HOME"}
