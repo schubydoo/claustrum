@@ -555,8 +555,10 @@ func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 // in the state shadow (pairBeforeAdd). The pair runs right after `rev-parse
 // --absolute-git-dir` when the folder of the registrations exists and no entry
 // names the leaf (measured). An entry that names the leaf gives no pair, and it
-// goes before the add (measured). With the member the pair runs too (measured),
-// and a missing folder gives none.
+// goes before the add (measured). With the member the pair runs too (measured).
+// A missing folder gives the pair: b3081b51 and c9125eb8 run it in the first
+// create of a repository (measured on Linux, macOS and Windows). With the member
+// a missing folder still gives none (5fd08069, measured).
 func TestShadowPairBeforeAdd(t *testing.T) {
 	vars := map[shapeState]string{stateShadow: "{A} {D}", stateOff: "{A} {G}"}
 	noFolder := func(t *testing.T, f shapeFixture) {
@@ -578,7 +580,7 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 			}
 			writeFile(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n", 0o644)
 		}, false},
-		{"no registrations folder", stateShadow, noFolder, false},
+		{"no registrations folder", stateShadow, noFolder, true},
 		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true},
 		{"with the member and no registrations folder", stateOff, noFolder, false},
 	} {
