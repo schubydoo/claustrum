@@ -250,6 +250,7 @@ In the state `shadow` a good checkout gets one more call: `git diff-files --quie
 - The 1.1 s become 2.2 s if the Lstat of `.git` in the new worktree fails or its mtime has no nanoseconds. The wait ends with the request, and the call limit is at most that of the other calls (claustrum's own, not measured).
 - A git without `--attr-source` gets no call (measured on Linux).
 - Before it, `--git-dir=<git dir> config -z --list` and the heavy `--git-dir=<git dir> hash-object -t tree <null device>` (`NUL` on Windows) run in the working folder of the daemon (`b3081b51` on Linux and macOS, `c9125eb8` on all three). The answer changes nothing. The pair runs only when the settle call can start, with the limit of that moment, and stops no later call. The time left is read again after it, so the settle call can still be skipped (claustrum's own, not measured).
+- Right before the call, `--git-dir=<git dir> config -z --list` runs in the new worktree. The call has the heavy profile and variables, with `GIT_INDEX_FILE` last (`b3081b51` and `c9125eb8`, Linux, macOS and Windows).
 
 ## The content check
 

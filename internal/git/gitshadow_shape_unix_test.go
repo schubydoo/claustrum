@@ -387,13 +387,15 @@ func createRows() []shapeRow {
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
 				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
 			// The settle step of 683cc6a9 (worktreesettle.go), in the state shadow
-			// only. The two calls of the empty tree come first (b3081b51 and
-			// c9125eb8, measured on Linux).
+			// only. The two calls of the empty tree come first. A heavy listing in
+			// the leaf comes before the heavy settle call (b3081b51 and c9125eb8,
+			// measured on Linux).
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<cwd>", shadow: "{A} {D} {L}"},
 			{list: "P28", argv: "--git-dir=<repo>/.git hash-object -t tree /dev/null", cwd: "<cwd>", shadow: "{A} {D} {H}"},
-			{list: "ATTR+P20", cwd: leaf,
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf, shadow: "{A} {D} {L}"},
+			{list: "ATTR+P28", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
-				shadow: "{C} {D} {H}" + index[true]},
+				shadow: "{A} {D} {H}" + index[true]},
 		},
 		// The content check of c9125eb8 (worktreecontent.go), in the state shadow
 		// only. The commit has no file of the check, so no hash-object
