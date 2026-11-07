@@ -119,9 +119,16 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if !ok {
 		return
 	}
+	pairCtx, pairCancel := context.WithTimeout(context.Background(), limit)
+	settleEmptyTree(pairCtx, u, gitDir, pin)
+	pairCancel()
+	// The time left is read again after the pair, so a slow pair does not take
+	// the time of the call (claustrum's own, not measured).
+	if limit, ok = settleLimit(callerCtx, u.stop); !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	settleEmptyTree(ctx, u, gitDir, pin)
 	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(false,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "diff-files", "--quiet", "--ignore-submodules=all"))...)
 	cmd := gitCommandContext(ctx, args...)
@@ -140,8 +147,8 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 // settleEmptyTree runs the two calls of the empty tree before the settle call:
 // `--git-dir=<git dir> config -z --list`, then the heavy `--git-dir=<git dir>
 // hash-object -t tree <null device>`, both in the working directory of the
-// daemon. b3081b51 and c9125eb8 run them there on Linux, and c9125eb8 on macOS
-// and Windows, where the null device is NUL (measured). The two calls have the
+// daemon. b3081b51 runs them on Linux and macOS, and c9125eb8 on Linux, macOS
+// and Windows, with NUL on Windows (measured). The two calls have the
 // form of the two of git.status (statusRun.emptyTree), with the items of the
 // settle call in front (claustrum's own, not measured).
 //

@@ -310,7 +310,8 @@ func failText(stderr string, err error) string {
 // readObject reads one object of the commit (catFile) and hashes it again
 // into the folder of the check. While the batch runs, the long-running
 // hash-object of the kind hashes it. After that git stopped, a separate run
-// reads the object again (c9125eb8, measured on Linux). text is the detail of a
+// reads the object again (c9125eb8, measured on Linux), and claustrum ends the
+// batch (claustrum's own, not measured). text is the detail of a
 // failure, or "".
 func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 	body, stderr, err := c.catFile(kind, id)
@@ -619,6 +620,8 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 		if err != nil {
 			return c.repositoryRefusal(failText(stderr, err))
 		}
+		// A failed or wrong hash of the blob refuses with the repository code
+		// (claustrum's own, not measured).
 		if text := c.writeObject("blob", f.id, blob); text != "" {
 			return c.repositoryRefusal(text)
 		}

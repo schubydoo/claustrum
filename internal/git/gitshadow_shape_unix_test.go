@@ -59,7 +59,7 @@ const (
 
 // shapeDaemonNames are the variables that the daemon sets on a git call. The
 // rows show these, and a variable of the host of the test stays out.
-var shapeDaemonNames = append(slices.Clone(daemonGitKeys), "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_WORK_TREE", "LC_ALL", "LANGUAGE")
+var shapeDaemonNames = append(slices.Clone(daemonGitKeys), "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_FLUSH", "GIT_WORK_TREE", "LC_ALL", "LANGUAGE")
 
 // shapeRow is one call, with its variables in each state. An empty text for a
 // state means that the call does not run in that state.
@@ -412,7 +412,7 @@ func contentCheckRows(argvs ...string) []shapeRow {
 	for _, argv := range argvs {
 		vars := "{A2} {D} {W} {H}"
 		if strings.HasSuffix(argv, " -w") {
-			vars = "{A2} GIT_COMMON_DIR=<R> {W} {H} GIT_OBJECT_DIRECTORY=<S>/.readback-objects-<n> GIT_ALTERNATE_OBJECT_DIRECTORIES="
+			vars = "{A2} GIT_COMMON_DIR=<R> {W} {H} GIT_OBJECT_DIRECTORY=<S>/.readback-objects-<n> GIT_ALTERNATE_OBJECT_DIRECTORIES= GIT_FLUSH=1"
 		}
 		out = append(out,
 			shapeRow{list: "none", argv: "config -z --list", cwd: "<repo>", shadow: "{A2} {D} {W} {L}"},

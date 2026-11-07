@@ -155,6 +155,9 @@ func TestContentCheckMatch(t *testing.T) {
 			if alt, ok := envValue(c.env, "GIT_ALTERNATE_OBJECT_DIRECTORIES"); !ok || alt != "" {
 				t.Errorf("GIT_ALTERNATE_OBJECT_DIRECTORIES of %q = %q, %v, want set and empty", sub, alt, ok)
 			}
+			if flush, _ := envValue(c.env, "GIT_FLUSH"); flush != "1" {
+				t.Errorf("GIT_FLUSH of %q = %q, want 1", sub, flush)
+			}
 		case containsSeq(sub, "--stdin", "-w"):
 			t.Errorf("a separate %q call, want none", sub)
 		case slices.Equal(sub, []string{"hash-object", "--no-filters", "--stdin-paths"}):
@@ -206,7 +209,7 @@ func TestContentCheckBatchEnds(t *testing.T) {
 }
 
 // TestContentCheckBatchOtherObject: a `cat-file --batch` that answers with
-// the header of another object gives its own line. Separate runs read and hash
+// the header "xyz blob" with no size gives its own line. Separate runs read and hash
 // the commit and the tree, and no long-running hash-object starts (c9125eb8,
 // measured on Linux).
 func TestContentCheckBatchOtherObject(t *testing.T) {
@@ -230,10 +233,9 @@ func TestContentCheckBatchOtherObject(t *testing.T) {
 }
 
 // TestContentCheckHashObjectEnds: a long-running hash-object that exits 1 at
-// once gives the line of a git that stopped answering. The batch ends too, and
-// separate runs read and hash the commit again and the tree. The create
-// succeeds, and the checked line counts 2 separate runs (c9125eb8, measured
-// on Linux).
+// once gives the line of a git that stopped answering. Separate runs read and
+// hash the commit again and the tree. The create succeeds (c9125eb8, measured
+// on Linux), and the checked line counts 2 separate runs.
 func TestContentCheckHashObjectEnds(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	slowGit(t, "hash-object,--stdin-paths,-w", "fail", 0, "", "")
@@ -269,6 +271,74 @@ func hashObjectWrites(calls []envCall) (long, separate int) {
 		}
 	}
 	return long, separate
+}
+
+// TestNoteFileMode: the last core.filemode of a listing counts, `0` and a value
+// of `false` give false, a key with no value gives true, a listing with none
+// gives true, and a failed listing keeps the value before it (claustrum's own,
+// not measured).
+func TestNoteFileMode(t *testing.T) {
+	c := &contentCheck{}
+	for _, row := range []struct {
+		name string
+		l    listingRun
+		off  bool
+	}{
+		{"false", listingRun{out: []byte("core.filemode\nfalse\x00")}, true},
+		{"a failed listing", listingRun{err: errors.New("exit status 1")}, true},
+		{"false, then true", listingRun{out: []byte("core.filemode\nfalse\x00core.filemode\ntrue\x00")}, false},
+		{"true, then 0", listingRun{out: []byte("core.filemode\ntrue\x00user.name\nx\x00core.filemode\n0\x00")}, true},
+		{"no value", listingRun{out: []byte("core.filemode\x00")}, false},
+		{"no key", listingRun{out: []byte("core.bare\nfalse\x00")}, false},
+	} {
+		c.noteFileMode(row.l)
+		if c.fileModeOff != row.off {
+			t.Errorf("%s: fileModeOff = %v, want %v", row.name, c.fileModeOff, row.off)
+		}
+	}
+}
+
+// TestContentCheckHashOfAnotherID: a separate `hash-object --stdin -w` whose
+// answer is not the id of the commit refuses with the repository code. The
+// batch fails at once, so the separate runs read and hash (claustrum's own
+// text, not measured).
+func TestContentCheckHashOfAnotherID(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "cat-file,--batch")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
+	slowGit(t, "hash-object,--stdin,-w", "fail", 0, "", strings.Repeat("e", 40)+"\n")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "0")
+	raw, _ := f.create(t, nil)
+	commit := gitRevParse(t, f.repo, "HEAD")
+	hint := `Run "git fsck" in ` + fmt.Sprintf("%q", f.repo) + ` to check the repository: git couldn't read what it stores for commit ` +
+		commit[:12] + ` (the stored commit does not match its id).`
+	if want := contentFrame(t, "worktree_verify_repository", hint); raw != want {
+		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
+	}
+}
+
+// TestContentCheckBodyNotWritten: a file of the object that cannot be written
+// sends that object to a separate `hash-object --stdin -w`, with no log line,
+// and the create matches (claustrum's own, not measured).
+func TestContentCheckBodyNotWritten(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	old := writeObjectBody
+	writeObjectBody = func(string, []byte) error { return fs.ErrPermission }
+	t.Cleanup(func() { writeObjectBody = old })
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if strings.Contains(logs.String(), "stopped using the long-running git") {
+		t.Errorf("log:\n%s\nwant no stop line", logs)
+	}
+	if want := checkedLine("1", "file", 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if long, separate := hashObjectWrites(calls); long != 0 || separate != 2 {
+		t.Errorf("%d long-running and %d separate hash-object -w calls, want 0 and 2", long, separate)
+	}
 }
 
 // TestContentCheckWaitsForTheBatch: the create answers only after the

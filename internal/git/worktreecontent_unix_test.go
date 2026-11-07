@@ -102,31 +102,36 @@ func commitExecutable(t *testing.T, f checkoutRuleFixture) {
 // a file that stays executable (measured). With core.fileMode false in the
 // repository the file passes (measured on Linux and macOS). No config call of
 // its own reads the setting (c9125eb8, measured on Linux, macOS and Windows).
+// The value comes from the config listing, whose last core.filemode counts,
+// and `off` is false too (claustrum's own, not measured).
 func TestContentCheckLostExecBit(t *testing.T) {
+	chmodAfter := func(t *testing.T, p string) { afterCheckout(t, []string{"chmod", p, "644"}) }
 	for _, row := range []struct {
-		name  string
-		setup func(t *testing.T, p string)
-		ok    bool
+		name   string
+		setup  func(t *testing.T, p string)
+		ok     bool
+		config [][]string
 	}{
 		{"0644 after the checkout", func(t *testing.T, p string) {
 			afterCheckout(t, []string{"chmod", p, "644"})
-		}, false},
+		}, false, nil},
 		{"0644 at the hash call", func(t *testing.T, p string) {
 			slowGit(t, "hash-object,--stdin-paths", "pre", 0, "", "")
 			contentTestCallOnly(t)
 			t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "steps")
 			t.Setenv("CLAUSTRUM_GITSTUB_VALUE", "chmod\x1f"+p+"\x1f644")
-		}, true},
-		{"0755 stays", func(*testing.T, string) {}, true},
-		{"core.fileMode false", func(t *testing.T, p string) {
-			afterCheckout(t, []string{"chmod", p, "644"})
-		}, true},
+		}, true, nil},
+		{"0755 stays", func(*testing.T, string) {}, true, nil},
+		{"core.fileMode false", chmodAfter, true, [][]string{{"core.fileMode", "false"}}},
+		{"core.fileMode off", chmodAfter, true, [][]string{{"core.fileMode", "off"}}},
+		{"core.fileMode false, then true", chmodAfter, false,
+			[][]string{{"core.fileMode", "false"}, {"--add", "core.fileMode", "true"}}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
 			commitExecutable(t, f)
-			if row.name == "core.fileMode false" {
-				runGit(t, f.repo, "config", "core.fileMode", "false")
+			for _, c := range row.config {
+				runGit(t, f.repo, append([]string{"config"}, c...)...)
 			}
 			row.setup(t, filepath.Join(f.leaf, "CLAUDE.md"))
 			logs := captureLogBuf(t)

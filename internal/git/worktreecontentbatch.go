@@ -29,9 +29,11 @@ import (
 // trees with one such call of `-t tree` (measured on Linux, macOS and
 // Windows). Each starts at the first object of its kind and ends with the
 // batch (measured on Linux). After a hash-object that stopped answering, the
-// batch ends too, and separate runs read and hash that object and the rest:
-// `cat-file <kind> <id>`, then `hash-object -t <kind> --literally
-// --no-filters --stdin -w` (c9125eb8, measured on Linux).
+// batch reads no more objects, and separate runs read and hash that object and
+// the rest: `cat-file <kind> <id>`, then `hash-object -t <kind> --literally
+// --no-filters --stdin -w` (c9125eb8, measured on Linux). The batch process of
+// c9125eb8 runs on to the end of the check. Claustrum also ends it
+// (claustrum's own, not measured).
 //
 // Claustrum's own, not measured: the blobs of committed links go through the
 // batch too and do not count. The blob of the compare step is always a
@@ -43,7 +45,8 @@ import (
 // the file objectBodyName in the folder of the objects of the check.
 //
 // After a stop c9125eb8 reads the trees of a level below the top with `cat-file
-// --buffer --batch` (measured on Linux). Claustrum reads each of them alone.
+// --buffer --batch` and a new long-running hash-object of the trees (measured
+// on Linux). Claustrum reads and hashes each of them alone.
 
 // longStoppedLine is the log line after a long-running git of the check
 // stopped. Its first part is the git command, cat-file or hash-object, and the
@@ -51,8 +54,8 @@ import (
 // Linux).
 const longStoppedLine = "[GitHandler] worktree_create: stopped using the long-running git %s for the new worktree's config check: %s; the rest is read with a git process per object or per folder depth (slower, same result)"
 
-// stopCause is the cause of longStoppedLine. A batch that answered with the
-// header of another object gives the first text (c9125eb8, measured on Linux).
+// stopCause is the cause of longStoppedLine. The batch header "xyz blob" with
+// no size gives the first text (c9125eb8, measured on Linux).
 // The same text for the other answers that do not parse is claustrum's own.
 // An end of the output gives "it stopped answering (EOF)" for the batch and
 // for hash-object (measured on Linux).
@@ -114,7 +117,8 @@ func (c *contentCheck) startBatch() {
 
 // startLong starts one long-running git of the check in the base repository,
 // with env after its environment. It gets the limit of one call, and its stop
-// stops no other call (contentCheck.git). It is nil when no pipe opened.
+// stops no other call (contentCheck.git), but a hash-object stop ends the batch
+// (readObject). It is nil when no pipe opened.
 func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {
@@ -238,7 +242,8 @@ func (c *contentCheck) hashLong(kind string, body []byte) (string, error) {
 }
 
 // writeObjectBody writes body to objectBodyName in dir, through a root at dir.
-func writeObjectBody(dir string, body []byte) error {
+// Tests replace it.
+var writeObjectBody = func(dir string, body []byte) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
@@ -249,9 +254,10 @@ func writeObjectBody(dir string, body []byte) error {
 
 // objectWriteEnv is the environment after the environment of a hash-object
 // call with -w: its objects go to dir, with no alternates (b3081b51 and
-// c9125eb8, measured on Linux).
+// c9125eb8, measured on Linux). GIT_FLUSH=1 comes last (c9125eb8, measured on
+// Linux, macOS and Windows; b3081b51 sets none).
 func objectWriteEnv(dir string) []string {
-	return []string{"GIT_OBJECT_DIRECTORY=" + dir, "GIT_ALTERNATE_OBJECT_DIRECTORIES="}
+	return []string{"GIT_OBJECT_DIRECTORY=" + dir, "GIT_ALTERNATE_OBJECT_DIRECTORIES=", "GIT_FLUSH=1"}
 }
 
 // catFile reads the object id of kind: through the batch while it answers,
