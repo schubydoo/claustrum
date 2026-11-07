@@ -57,7 +57,7 @@ The first count includes the entries that the daemon keeps. The names come in na
 
 ## A new read of the login-shell PATH
 
-On Linux and macOS, a spawn 10 minutes or more after the last read of the login-shell PATH starts a new read in the background. Only a connection whose own adopt sent no `"noLoginShell":true` does so. Its spawn keeps the old PATH, and later spawns get the new one (Linux). The 10 minutes, macOS and the own adopt are claustrum's own, not measured.
+On Linux and macOS, after a good read, a spawn 10 minutes or more after the last read of the login-shell PATH starts a new read in the background. Only a connection whose own adopt sent no `"noLoginShell":true` does so. Its spawn keeps the old PATH, and later spawns get the new one (Linux). A failed new read keeps the old PATH. The 10 minutes, that the spawn starts the read, the failed read, macOS and the own adopt are claustrum's own, not measured.
 
 ## The frame of the bridge
 

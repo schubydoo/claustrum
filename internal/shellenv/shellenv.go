@@ -46,7 +46,9 @@ import (
 //
 // claustrum's own, not measured: that the spawn starts the read again, the pause of
 // 10m0s from the start of the last read, that a taken gate starts no read again,
-// and that a failed read again keeps the old PATH and counts no failure.
+// that a failed read again keeps the old PATH and counts no failure, and that a
+// read again holds the gate, so a spawn whose SSH agent step falls due meanwhile
+// runs no shell for it.
 //
 // On Windows no login shell runs. The read takes the daemon's own PATH
 // (shellenv_windows.go). claustrum's own there, not measured: the read at the start

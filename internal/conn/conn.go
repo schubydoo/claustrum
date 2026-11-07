@@ -88,8 +88,8 @@ func (c *Conn) OwnEnv() []string {
 	return append([]string(nil), c.ownEnv...)
 }
 
-// SetReadsLoginPATH records whether the last good server.adoptEnv of c lets its
-// spawns can start a read again of the login-shell PATH.
+// SetReadsLoginPATH records whether, after the last good server.adoptEnv of c, its
+// spawns start a read again of the login-shell PATH.
 func (c *Conn) SetReadsLoginPATH(on bool) {
 	c.ownEnvMu.Lock()
 	defer c.ownEnvMu.Unlock()
