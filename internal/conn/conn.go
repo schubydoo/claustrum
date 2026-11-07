@@ -65,27 +65,30 @@ type Conn struct {
 	// that reach only its own children (see supervisor.Manager.TakeAdoptedEnv).
 	ownEnvMu sync.Mutex
 	ownEnv   []string
+	// adopted is true after the first good server.adoptEnv of this connection.
+	adopted bool
 	// readsLoginPATH is true when the last good server.adoptEnv of this connection
 	// came with no "noLoginShell":true.
 	readsLoginPATH bool
 }
 
-// SetOwnEnv replaces the own entries of the adopted environment of c.
+// SetOwnEnv replaces the own entries of the adopted environment of c, and marks c
+// as a connection that adopted.
 func (c *Conn) SetOwnEnv(env []string) {
 	c.ownEnvMu.Lock()
 	defer c.ownEnvMu.Unlock()
-	c.ownEnv = env
+	c.ownEnv, c.adopted = env, true
 }
 
-// OwnEnv is a copy of the own entries of the adopted environment of c. A nil conn
-// has none.
-func (c *Conn) OwnEnv() []string {
+// OwnEnv is a copy of the own entries of the adopted environment of c. adopted
+// tells if c had a good adopt of its own. A nil conn has none.
+func (c *Conn) OwnEnv() (env []string, adopted bool) {
 	if c == nil {
-		return nil
+		return nil, false
 	}
 	c.ownEnvMu.Lock()
 	defer c.ownEnvMu.Unlock()
-	return append([]string(nil), c.ownEnv...)
+	return append([]string(nil), c.ownEnv...), c.adopted
 }
 
 // SetReadsLoginPATH records whether, after the last good server.adoptEnv of c, its

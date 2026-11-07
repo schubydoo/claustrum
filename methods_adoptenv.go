@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"strings"
 
 	"github.com/schubydoo/claustrum/internal/conn"
@@ -13,9 +12,9 @@ import (
 // Windows). A connection sends its environment, and new children start from it.
 const methodAdoptEnv = "server.adoptEnv"
 
-// adoptEnvParams are the params of server.adoptEnv. Kept is a list with its own
-// limit (measured on macOS). No row shows what a kept name does, so claustrum tests
-// only its limit (claustrum's own, not measured). NoLoginShell is accepted with ok
+// adoptEnvParams are the params of server.adoptEnv. Kept names daemon variables that
+// stay in the set when the sent entries lack them, with a limit of its own (measured
+// on Linux, macOS and Windows, the limit on Linux and macOS). NoLoginShell is accepted with ok
 // (measured on Linux, macOS and Windows). With it true the spawns of the connection
 // start no read again of the login-shell PATH (measured on Linux, see spawnWith). Other
 // members are ignored (measured on Linux and Windows).
@@ -42,26 +41,27 @@ const (
 )
 
 // adoptEnvProblem is the reason text of a refused adopt, or "" for a good one. The
-// texts are measured. Their order when one list has two faults is claustrum's own,
-// not measured.
+// texts are measured. The tests of each entry come before the count, and in one
+// entry a NUL comes before a missing "=" (measured on Linux, macOS and Windows).
+// The other orders are claustrum's own, not measured.
 func adoptEnvProblem(env, kept []string) string {
 	if len(env) == 0 {
 		return "it is empty"
 	}
-	if len(env) > adoptMaxEntries {
-		return "it has more than 8192 entries"
-	}
 	total := 0
 	for _, e := range env {
 		switch {
-		case !strings.Contains(e, "="):
-			return "an entry has no equals sign"
 		case strings.Contains(e, "\x00"):
 			return "an entry contains a NUL byte"
+		case !strings.Contains(e, "="):
+			return "an entry has no equals sign"
 		case len(e) >= adoptMaxEntryBytes:
 			return "one variable is 128 KiB or longer, more than Linux allows when it starts a program"
 		}
 		total += len(e)
+	}
+	if len(env) > adoptMaxEntries {
+		return "it has more than 8192 entries"
 	}
 	if total > adoptMaxTotalBytes {
 		return "it is larger than 256 KiB in total"
@@ -73,15 +73,17 @@ func adoptEnvProblem(env, kept []string) string {
 }
 
 // handleAdoptEnv answers server.adoptEnv. These shapes give -32602 with no line:
-// absent params (measured on Linux and macOS), an env that is a string (Linux, macOS
-// and Windows) and entries that are not strings (Linux). Other params that do not
-// decode give the same (claustrum's own, not measured). A literal null counts as
-// absent (claustrum's own, not measured). A refused list gives -32602 and the refusal
-// line, and the adopted set stays. A good list replaces the set and answers ok.
+// absent params (measured on Linux, macOS and Windows), an env that is a string (Linux,
+// macOS and Windows) and entries that are not strings (Linux). Other params that do
+// not decode give the same (claustrum's own, not measured). A literal null gives the
+// line of an empty list (measured on Linux, macOS and Windows). A refused list gives
+// -32602 and the refusal line, and the adopted set stays. A good list replaces the
+// set and answers ok.
 func (s *server) handleAdoptEnv(c *conn.Conn, req *request) *rpc.Response {
-	if len(req.Params) == 0 || bytes.Equal(req.Params, []byte("null")) {
+	if len(req.Params) == 0 {
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
 	}
+	// A literal null decodes to no member, so its list is empty.
 	var p adoptEnvParams
 	if err := decodeParams(req, &p); err != nil {
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
@@ -90,7 +92,7 @@ func (s *server) handleAdoptEnv(c *conn.Conn, req *request) *rpc.Response {
 		logging.Warnf(fmtAdoptRefused, why)
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
 	}
-	every, own, changed := s.procs.TakeAdoptedEnv(c, p.Env, p.NoLoginShell)
+	every, own, changed := s.procs.TakeAdoptedEnv(c, p.Env, p.Kept, p.NoLoginShell)
 	label := `""`
 	if c != nil {
 		label = c.RemoteLabel()

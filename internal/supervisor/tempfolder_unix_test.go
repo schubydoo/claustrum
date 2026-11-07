@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -495,7 +496,9 @@ func TestTempFolderThatTakesNoFileIsNotHandedOn(t *testing.T) {
 	}
 }
 
-func TestAdoptedTempFolderPassesAsSent(t *testing.T) {
+// An adopted base holds the TMPDIR of the daemon (adoptenv.go), and that entry takes
+// the test of a spawn too (c9125eb8, measured on Linux).
+func TestAdoptedTempFolderTakesTheTest(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write a 0555 folder")
 	}
@@ -505,21 +508,14 @@ func TestAdoptedTempFolderPassesAsSent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
 	isolateTempEnv(t)
-	// The daemon's TMPDIR takes no file. The adopted set sends its own.
-	t.Setenv("TMPDIR", filepath.Join(ro, "sub"))
-	n := countTempProbes(t, "", nil)
-	sent := "TMPDIR=" + t.TempDir()
-	env := buildSpawnEnvOn([]string{"A=1", sent}, true, nil, false)
-	found := false
-	for _, e := range env {
-		if e == sent {
-			found = true
-		}
+	// The daemon's TMPDIR takes no file.
+	daemon := filepath.Join(ro, "sub")
+	t.Setenv("TMPDIR", daemon)
+	env := buildSpawnEnvOn([]string{"A=1", "TMPDIR=" + daemon}, true, nil, false)
+	if envHas(env, "TMPDIR") {
+		t.Errorf("the child env %v holds TMPDIR, want it not handed on", env)
 	}
-	if !found {
-		t.Errorf("the child env %v lost the sent %s", env, sent)
-	}
-	if got := n.Load(); got != 0 {
-		t.Errorf("%d temp-folder tests ran on an adopted base, want 0", got)
+	if !slices.Contains(env, "A=1") {
+		t.Errorf("the child env %v lost A=1", env)
 	}
 }
