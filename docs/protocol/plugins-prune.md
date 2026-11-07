@@ -93,7 +93,7 @@ A run directory `<8 lowercase hex>-<8 lowercase hex>` bears a host term. Its roo
 
 `run/beef5678-<host name>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on Linux and macOS). On Windows: claustrum's own, not measured. claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
 
-A sibling of the host-term shape, `run/beef5678-<machine-id first 8>/rpc.sock`, gave no such skip. `c9125eb8` deleted the old directories of this root and gave the first sibling text (measured on macOS and Windows). There `young` counted only this root. Another 8 hex after the dash: claustrum's own, not measured. On Linux claustrum keeps both roots for that name (claustrum's own, not measured).
+A sibling of the host-term shape, `run/beef5678-<machine-id first 8>/rpc.sock`, gave no such skip. `c9125eb8` deleted the old directories of this root and gave the first sibling text (measured on macOS and Windows). There `young` counted only this root. Another 8 hex after the dash: claustrum's own, not measured. On Linux claustrum keeps both roots for that name (claustrum's own, not measured). A host-term sibling whose first 8 hex are the `<clientId>` of this daemon uses this same root. claustrum keeps both roots for it on each system (claustrum's own, not measured).
 
 Both skips delete nothing, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). How a live one counts: claustrum's own, not measured.
 

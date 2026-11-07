@@ -106,6 +106,13 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 			perInstall: macPerInstall, legacy: termLegacyYoung, young: termYoung,
 			frame: termFrame(0, 2), gone: termGone,
 		},
+		skipCase{
+			// A host-term sibling of the own client id uses this same root. It spares
+			// both roots on each system (claustrum's own, not measured).
+			name: "a sibling of the host-term shape that shares this root", own: "a1b2c3d4", siblings: []string{"a1b2c3d4-0badf00d"},
+			perInstall: macPerInstall, legacy: macLegacy,
+			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":2,"legacy":"skipped: another daemon of this install may be running (run/a1b2c3d4-0badf00d/rpc.sock answers); its sessions may use the same dirs","skipped":"another daemon of this install may be running (run/a1b2c3d4-0badf00d/rpc.sock answers); its sessions may use the same dirs","minAgeDays":7}}`,
+		},
 	)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
