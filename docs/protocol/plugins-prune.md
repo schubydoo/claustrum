@@ -1,8 +1,8 @@
 # plugins.prune
 
-`plugins.prune` deletes the cached plugin directories that no session used for some days. The directories are under the plugin roots of the daemon. The caller cannot name a path. Do not read an empty `pruned` list as "nothing to delete". Read `errors` and `legacy` too.
+`plugins.prune` deletes the cached plugin directories that no session used for some days. The caller cannot name a path. An empty `pruned` list does not mean "nothing to delete": read `errors` and `legacy` too.
 
-An untagged rule on this page matches build `5fd08069` or an earlier build.
+An untagged rule here matches build `5fd08069` or an earlier build.
 
 ## Request
 
@@ -12,8 +12,8 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `minAgeDays` | no | The number of days that a directory stays after its last use. The daemon limits the value to the range 7 to 3650. Without a value, or with a value below 7, the daemon uses 7. |
-| `keep` | no | A list of strings. The daemon accepts it and does not use it. A directory whose name is in `keep` is deleted as any other. |
+| `minAgeDays` | no | Days that a directory stays after its last use, limited to 7 to 3650. The default is 7. |
+| `keep` | no | Strings that the daemon accepts and ignores. A name in it is deleted as any other. |
 
 No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (measured on Linux). `"params": null` gets the defaults (not measured).
 
@@ -26,26 +26,26 @@ No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (m
 | Member | Meaning |
 |---|---|
 | `root` | The root of this install. |
-| `pruned` | The hashes that the daemon deleted in the root of this install, sorted. |
-| `prunedLegacy` | The hashes that the daemon deleted in the shared root, sorted. |
+| `pruned` | The hashes deleted in the root of this install, sorted. |
+| `prunedLegacy` | The hashes deleted in the shared root, sorted. |
 | `staleArchives` | Always `0`. |
 | `kept` | Always `0`. |
-| `live` | The number of live directories, over all roots that the daemon went through. |
-| `young` | The number of young directories that are not live, over the same roots. |
+| `live` | Live directories, over the roots that the daemon went through or counted. |
+| `young` | Young directories that are not live, over the same roots. |
 | `legacy` | What the daemon did with the shared root: see [The `legacy` member](#the-legacy-member). |
-| `skipped` | The reason, only in a response of a daemon with no plugin roots. |
-| `errors` | One `<path>: <error>` text for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success (not measured). |
+| `skipped` | The reason, only where the daemon goes through no root. |
+| `errors` | `<path>: <error>` for each directory that the daemon cannot delete and each root that it cannot list. A missing root is no failure. A directory in `errors` can be deleted in part. With no failure, the member is absent. A response with `errors` is still a success (not measured). |
 | `minAgeDays` | The value that the daemon used, after the limits. |
 
-If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. claustrum also gives this answer when `<clientId>` is not 8 lowercase hexadecimal characters, on every system (claustrum's own, not measured). On Windows `52d82f0a` gave it for one such name.
+If the socket of the daemon is not at `run/<clientId>/rpc.sock`, the daemon has no plugin roots and deletes nothing. `root` is then `""` and `minAgeDays` is `0`. claustrum also gives it for a `<clientId>` that is neither 8 lowercase hexadecimal characters nor a host term (claustrum's own, not measured). `c9125eb8` did so for each such name it got.
 
 ## Errors
 
-This method has no `errorCode` member. A failure is a JSON-RPC error.
+A failure is a JSON-RPC error, with no `errorCode` member.
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params: <detail>` | The JSON decoder refuses `params` or a member of it. For example, a member has the wrong type, or `minAgeDays` is not a whole number. `<detail>` is the text of the JSON decoder. The other methods answer `Invalid params` with no detail. |
+| `-32602` | `Invalid params: <detail>` | The JSON decoder refuses `params`, for example a member of the wrong type, or `minAgeDays` is not a whole number. `<detail>` is its text. The other methods answer `Invalid params` with no detail. |
 
 ## Which directories the daemon deletes
 
@@ -54,38 +54,52 @@ The daemon derives two roots from the path of its own socket, `<X>/run/<clientId
 - The root of this install, `<X>/plugins/<clientId>`.
 - The shared root of older versions, `<X>/plugins`.
 
-In a root, the daemon looks only at directories whose name is 16 lowercase hexadecimal characters. That name is the content hash of a plugin. It leaves each other entry alone, a file and a symbolic link included.
+In a root, the daemon looks only at directories whose name is 16 lowercase hexadecimal characters, the content hash of a plugin. It leaves each other entry alone, files and symbolic links too.
 
-The daemon keeps a directory in two cases, and deletes it with all its content in each other case:
+The daemon keeps a directory in two cases and else deletes it as a tree:
 
-- The directory is live. A child that this daemon started with `process.spawn` has the hash in its command or its arguments. The daemon has not yet reported the exit of that child. A run of exactly 16 lowercase hexadecimal characters anywhere in the command or in an argument counts. For example, the agent CLI runs with `--plugin-dir <root>/<hash>`.
-- The directory is young. Its last use is inside the last `minAgeDays` days. The last use is the newer of two times: the modification time of the directory, and that of its `.synced` file. The time of `manifest.json` does not count. If the daemon cannot read either time, the directory is not young.
+- The directory is live. A run of exactly 16 lowercase hexadecimal characters in the command or an argument of a child of `process.spawn` names it, until the daemon reports that child's exit.
+- The directory is young. Its last use is inside `minAgeDays` days. The last use is the newer modification time of the directory and of its `.synced` file, not of `manifest.json`. With neither time, the directory is not young.
 
-The daemon always goes through the root of this install. If a daemon of another install runs, the daemon leaves the shared root alone, because the sessions of that daemon can use the shared directories. The member `legacy` says what it did.
+Except at [two skips](#skips-that-keep-both-roots), the daemon goes through the root of this install, and through the shared root while no other daemon runs.
 
 ### The `legacy` member
 
 | `legacy` | Meaning |
 |---|---|
-| `absent` | The daemon cannot examine the shared root. For example, it does not exist. |
+| `absent` | The daemon cannot examine the shared root, for example a missing one. |
 | `swept` | The daemon went through the shared root. |
-| `skipped: another install's daemon is running (<detail>); its sessions may use the shared legacy dirs` | The daemon found a daemon of another install, or it cannot exclude one. It left the shared root alone. This test comes first, so the text does not say that the shared root exists. |
-| `skipped: <reason>` with a `skipped` member | The daemon has no plugin roots. |
+| `skipped: another daemon is running (<detail>); its sessions may use the shared legacy dirs` | Another daemon runs, or the daemon cannot exclude one. It does not show that the shared root exists. |
+| `skipped: another daemon of this install may be running (<detail>); its sessions may use the same dirs` | As above, for any such daemon whose run directory name is not 8 lowercase hexadecimal characters. |
+| `skipped: machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here` | A [host term](#skips-that-keep-both-roots). |
+| `skipped: this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune` | The daemon has no plugin roots. |
 
-`<detail>` says what stopped the test. The daemon goes through the names under `<X>/run` in order and passes over each install that it can prove is gone. `<detail>` names the first install that it cannot rule out, or the run directory itself. `<rel>` is `run/<clientId>/rpc.sock`:
+The last three also put the text after `skipped: ` in `skipped`. `c9125eb8` gave the first and the last skip text on Linux, macOS and Windows.
+
+### The `<detail>` text
+
+The daemon goes through the names under `<X>/run` in order. `<detail>` names the first install that it cannot prove gone, or the run directory itself. In the `of this install` text it names the first such install whose name is not 8 lowercase hex. `<rel>` is `run/<clientId>/rpc.sock`:
 
 | `<detail>` | Meaning |
 |---|---|
 | `<rel> answers` | The socket accepted a connection inside 300 ms. |
-| `cannot rule out <rel>: <error>` | The connection failed for a reason that does not show that no daemon listens. |
+| `cannot rule out <rel>: <error>` | The connection failed, but not in a way that shows no listener. |
 | `cannot inspect <socket path>: <error>` | The daemon cannot examine the socket path. |
 | `cannot read <run directory>: <error>` | The daemon cannot list `<X>/run`. |
 
+### Skips that keep both roots
+
+A run directory `<8 lowercase hex>-<8 lowercase hex>` bears a host term. Its root is `plugins/<the first 8 hex>`. This test comes first (`c9125eb8`, measured on Linux). On macOS and Windows: claustrum's own, not measured.
+
+`run/beef5678-<host>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on macOS). claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
+
+Both skips delete nothing, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). Counting this root and not the shared one, and how a live one counts: claustrum's own, not measured.
+
 ## Differences by system
 
-The paths and the `<error>` texts in `legacy` and `errors` are those of the operating system, except the texts below. `<rel>` has `/` separators on each system. On Windows, the named-pipe transport of `-listen-pipe` does not change the roots: the daemon still has its socket, and the roots come from that path.
+Paths and `<error>` texts come from the operating system, except below. `<rel>` has `/` separators on each system. On Windows, `-listen-pipe` does not change the roots, which come from the socket path.
 
-A sibling socket path over 107 bytes on Linux or 103 on macOS goes as follows (`be1c1ca5`, measured on Linux and macOS):
+A sibling socket path over 107 bytes on Linux or 103 on macOS (`be1c1ca5`, measured on Linux and macOS):
 
 - Linux dials it through `/proc`, as at a [long socket path](../DAEMON.md#a-long-socket-path-linux-and-macos). A dead sibling counts as gone. The maintainer approved acting at a long root on 2026-11-01.
 - Where no shorter name reaches it, `<error>` is `dial unix <socket path>: the socket path is longer than the 107 bytes that this system allows` (`103 bytes` on macOS).
@@ -93,4 +107,4 @@ A sibling socket path over 107 bytes on Linux or 103 on macOS goes as follows (`
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`. The `errors` member is not measured.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies to this method. The `errors` member is not measured.

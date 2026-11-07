@@ -38,4 +38,10 @@ type Records struct {
 	runRootOnce sync.Once //nolint:unused // used in childrecord_unix.go only
 	runRoot     *os.Root  //nolint:unused // used in childrecord_unix.go only
 	runRootErr  error     //nolint:unused // used in childrecord_unix.go only
+
+	// written holds the record that this daemon wrote for each pid whose record is not
+	// removed yet. The removal compares the file with it. writtenMu guards the map and
+	// keeps the write and the removal of a record apart. Unused on windows.
+	writtenMu sync.Mutex          //nolint:unused // used in childrecord_unix.go only
+	written   map[int]childRecord //nolint:unused // used in childrecord_unix.go only
 }

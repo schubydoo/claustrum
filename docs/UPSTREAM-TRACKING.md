@@ -529,8 +529,9 @@ Unless an item names another build, the daemon items below are measured against
       claustrum can log the exit line of the old process and the `supersedes`
       line. `89cb6289` logs neither.
     - On Linux `89cb6289` unlinks a child record up to three times at a stop or
-      a kill, and claustrum unlinks it once. `89cb6289` also unlinks a record
-      that it never wrote. The files left are the same.
+      a kill, claustrum once. It also unlinks a record that it never wrote,
+      rewritten or unreadable. claustrum keeps those ([Child
+      records](DAEMON.md#child-records-and-the-reap-linux-and-macos)).
     - On macOS `89cb6289` runs one `ps` at the daemon start and one for each
       spawn. claustrum runs none at the start and three for each spawn.
     - With a zero-byte `-token-file`, `89cb6289` logs `claude-ssh: empty token in

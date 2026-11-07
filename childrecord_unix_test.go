@@ -341,24 +341,24 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 
 // TestChildrenNotADirectory pins a children entry that is not a real folder: no record
 // is written, nothing is written through a symlink, and the two log lines come in
-// order (`89cb6289`, measured on Linux). The removal at the end of the child is still
-// tried, and its failure is logged before the exit line.
+// order (`89cb6289`, measured on Linux). 89cb6289 then tried the removal at the end of
+// the child and logged its failure. claustrum wrote no record, so it tries no removal
+// and logs no cannot-remove line (claustrum's own, not measured on c9125eb8).
 func TestChildrenNotADirectory(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		plant   func(t *testing.T, runDir, outside string)
-		removal string
+		name  string
+		plant func(t *testing.T, runDir, outside string)
 	}{
 		{"regular file", func(t *testing.T, runDir, _ string) {
 			if err := os.WriteFile(filepath.Join(runDir, "children"), nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, "not a directory"},
+		}},
 		{"symlink to a folder outside the run dir", func(t *testing.T, runDir, outside string) {
 			if err := os.Symlink(outside, filepath.Join(runDir, "children")); err != nil {
 				t.Fatal(err)
 			}
-		}, "path escapes from parent"},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := captureLogBuf(t)
@@ -386,7 +386,6 @@ func TestChildrenNotADirectory(t *testing.T) {
 			want := []string{
 				"[process.Manager] Process c1 started, PID=" + pid + ",",
 				"[process.Registry] " + runDir + "/children is not a directory; recording nothing\n",
-				"[process.Registry] cannot remove record of child " + pid + ": removeat children/" + pid + ".json: " + tc.removal + "\n",
 				"[process.Manager] Process c1 exited with code",
 			}
 			out, at := logs.String(), 0
@@ -397,13 +396,17 @@ func TestChildrenNotADirectory(t *testing.T) {
 				}
 				at += i + len(w)
 			}
+			if no := "[process.Registry] cannot remove record of child " + pid + ":"; strings.Contains(out, no) {
+				t.Errorf("the log holds %q, want no removal for a record that was not written:\n%s", no, out)
+			}
 		})
 	}
 }
 
-// TestChildrenMode000 pins a children folder that refuses every entry: no record, the
-// cannot-record line with the temp name, and the cannot-remove line at the end of the
-// child (`89cb6289`, measured on Linux).
+// TestChildrenMode000 pins a children folder that refuses every entry: no record and
+// the cannot-record line with the temp name (`89cb6289`, measured on Linux). 89cb6289
+// also logged a cannot-remove line at the end of the child. claustrum wrote no record,
+// so it logs none (claustrum's own, not measured on c9125eb8).
 func TestChildrenMode000(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the mode of a folder")
@@ -427,10 +430,11 @@ func TestChildrenMode000(t *testing.T) {
 	}
 	out := logs.String()
 	record := regexp.MustCompile(`\[process\.Registry\] cannot record child ` + pid + `: openat children/\.rec-` + pid + `\.json\.[0-9a-z]{12}: permission denied\n`)
-	remove := "[process.Registry] cannot remove record of child " + pid + ": removeat children/" + pid + ".json: permission denied\n"
-	loc := record.FindStringIndex(out)
-	if loc == nil || !strings.Contains(out[loc[1]:], remove) {
-		t.Errorf("want the cannot-record line and then the cannot-remove line, got:\n%s", out)
+	if !record.MatchString(out) {
+		t.Errorf("want the cannot-record line, got:\n%s", out)
+	}
+	if no := "[process.Registry] cannot remove record of child " + pid + ":"; strings.Contains(out, no) {
+		t.Errorf("the log holds %q, want no removal for a record that was not written:\n%s", no, out)
 	}
 }
 

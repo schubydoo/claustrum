@@ -481,11 +481,15 @@ The record is one JSON object with the members in this order:
 `daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured).
 
 - The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
-- The end of the child removes its record, before the pipe drain.
+- The end of the child removes its record, before the pipe drain, if the file holds the written `start`, `node`, `host`, `argv0` and `program`.
+- Measured on `c9125eb8`: a changed `start` keeps the record (Linux, and macOS with `start` and `daemonStart` changed together). A blank file (macOS) and text that is not JSON (Linux) stay. A changed `instance`, `daemonStart` or `pid` still goes (Linux). No case logs a line.
+- claustrum's own, not measured: the `node`, `host`, `argv0` and `program` tests. A pid with no record of this daemon gets no remove and no line, also through a `children` symlink. A symlink, a FIFO or a file over 64 KiB stays. An Lstat just before the remove must show the file that was read.
 - A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone (claustrum's own, as the flag is).
 - A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
 - After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
-- No record goes through a `children` that is not a real folder inside the run dir. The remove at the end of the child is the one exception: it follows a symbolic link to a folder inside the run dir.
+- No record is written through a `children` that is not a real folder inside the run dir.
+
+#### The reap
 
 At a `-serve` start, after the run-dir lock and before the bind, the daemon reads the records:
 
