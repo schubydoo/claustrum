@@ -45,8 +45,8 @@ func TestRecordCallsWithNoUsableRunDir(t *testing.T) {
 // TestRemoveRecordThroughChildrenSymlinkInsideRunDir pins a children entry that is a
 // relative symlink to a folder inside the run dir. The daemon writes no record through
 // it, so the end of the child removes nothing there and logs nothing. A file
-// <pid>.json in the target stays. 89cb6289 removed it (Linux row SLb, macOS row KDb).
-// c9125eb8 removes only a record that the daemon wrote (Linux and macOS rows C12).
+// <pid>.json in the target stays. 89cb6289 removed it (Linux and macOS).
+// c9125eb8 removes a record only while it holds the start that the daemon wrote.
 // This case is claustrum's own, not measured on c9125eb8.
 func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 	logs := captureLogBuf(t)

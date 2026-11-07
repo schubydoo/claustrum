@@ -258,9 +258,14 @@ func (r *Records) ReapOrphans() {
 		// prints it for every children entry that is not a real folder. The other
 		// shapes are not measured. The level is that of the sibling line of a spawn.
 		logging.Errorf("[process.Registry] %s/%s is not a directory; reaping nothing", r.RunDir, childrenDirName)
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		// The text is the reference's: c9125eb8 prints it on macOS for a children
+		// folder of mode 000, before the listening line. The other errors, the level
+		// and the line on Linux are claustrum's own, not measured.
+		logging.Errorf("[process.Registry] cannot read %s/%s: %v; reaping nothing", r.RunDir, childrenDirName, err)
 	}
 	if err != nil {
-		return // no registry dir means nothing was ever recorded here
+		return // no readable registry dir: nothing to reap
 	}
 	defer dir.Close()
 	childrenPath := r.RunDir + "/" + childrenDirName

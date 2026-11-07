@@ -481,9 +481,9 @@ The record is one JSON object with the members in this order:
 `daemonStart` and `start` are strings. They hold clock ticks on Linux and the date text of `CLAUDE_SSH_CHILD` on macOS. On macOS the node is the boot-session UUID, and the host is the hostname. With a `launcher`, `argv0` is the launcher, and a `program` member after `argv0` holds the command. claustrum writes no `program` without a launcher (not measured).
 
 - The daemon writes a record through a temp file `children/.rec-<pid>.json.<12 characters>` and a rename. The source of the 12 characters is claustrum's own.
-- The end of the child removes its record, before the pipe drain, if the file holds the written `start`, `node`, `host`, `argv0` and `program`.
-- Measured on `c9125eb8`: a changed `start` keeps the record (Linux, and macOS with `start` and `daemonStart` changed together). A blank file (macOS) and text that is not JSON (Linux) stay. A changed `instance`, `daemonStart` or `pid` still goes (Linux). No case logs a line.
-- claustrum's own, not measured: the `node`, `host`, `argv0` and `program` tests. A pid with no record of this daemon gets no remove and no line, also through a `children` symlink. A symlink, a FIFO or a file over 64 KiB stays. An Lstat just before the remove must show the file that was read.
+- The end of the child removes its record, before the pipe drain, if the file is a regular file that holds the written `start` (`c9125eb8`).
+- Measured on `c9125eb8`: a changed `start` keeps the record (Linux and macOS, also with `daemonStart` changed on macOS). A blank file (macOS) and text that is not JSON (Linux) stay. A link to a copy of the record, inside or outside the run dir, stays (Linux and macOS). A changed `node`, `host`, `argv0` or `at` goes (Linux and macOS). A changed `instance`, `daemonStart` or `pid` still goes (Linux). A pid with no record of this daemon gets no remove and no line (Linux and macOS). No case logs a line.
+- claustrum's own, not measured: a changed `program` goes. A pid with no record through a `children` symlink gets no remove and no line. A FIFO or a file over 64 KiB stays. An Lstat just before the remove must show the file that was read.
 - A graceful shutdown removes the records of the children that it ends. claustrum waits 1 s at most for them (claustrum's own). With `-keep-children` it removes the records of the children that stay alive, so the next daemon leaves them alone (claustrum's own, as the flag is).
 - A record stays after a kill of the daemon, and for a process whose `id` a later spawn took.
 - After a rename of the run dir, a record goes under the new name. The daemon holds the run dir open.
@@ -629,6 +629,7 @@ These lines tell of [process.spawn](protocol/process-spawn.md) children and thei
 - A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once from the spawn that started the test (claustrum's own, not measured)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
+- `children` unreadable at a start (ERROR): `[process.Registry] cannot read <run dir>/children: <error>; reaping nothing` (`c9125eb8`, measured on macOS with mode 000). Other errors and the line on Linux are claustrum's own, not measured
 - No start time (WARN): `[process.Manager] cannot read the start time of pid <n> (no /proc and no ps on this platform): a successor daemon will not be able to reap it` (`be1c1ca5`, measured on Linux with a `/proc` that holds only `self/exe`). If `/proc/self/stat` is missing, claustrum logs it (claustrum's own)
 - A record write fails (ERROR): `[process.Registry] cannot record child <pid>: <error>`
 - A record remove fails (WARN): `[process.Registry] cannot remove record of child <pid>: <error>`
