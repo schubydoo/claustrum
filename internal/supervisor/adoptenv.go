@@ -20,10 +20,7 @@ import (
 // of one reaches only the children of the sending connection. A connection with a
 // good adopt of its own gets only the entries of its last adopt. A connection with
 // none gets the entries of the daemon (c9125eb8, measured on Linux, macOS and
-// Windows). The rows showed DISPLAY, WAYLAND_DISPLAY, XAUTHORITY, KRB5CCNAME,
-// XDG_SEAT, XDG_VTNR, GPG_TTY, WSL_INTEROP, SSH_AUTH_SOCK, SSH_CONNECTION, SSH_TTY,
-// SSH_CLIENT, SSH2_X, XDG_SESSION_ID and XDG_SESSION_TYPE. The other names of the
-// three prefixes are claustrum's own, not measured.
+// Windows). A prefix name that no row showed is claustrum's own, not measured.
 var (
 	sessionEnvNames    = []string{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "KRB5CCNAME", "XDG_SEAT", "XDG_VTNR", "GPG_TTY", "WSL_INTEROP"}
 	sessionEnvPrefixes = []string{"SSH_", "SSH2_", "XDG_SESSION_"}
@@ -32,7 +29,7 @@ var (
 // daemonTempNames are the temp-folder names that a child takes from the daemon,
 // never from the sent entries. They count in the set for every connection
 // (c9125eb8, measured on Linux, macOS and Windows). The daemon value then takes the
-// test of a spawn (DropUnusableTempVars, measured on Linux). A sent name that the
+// test of a spawn (DropUnusableTempVars, measured on Linux and macOS). A sent name that the
 // daemon lacks reaches no child (claustrum's own, not measured).
 var daemonTempNames = []string{"TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"}
 
@@ -62,7 +59,7 @@ type adoptedEnv struct {
 // the first adopt the old set is the environment of the daemon. The names come in
 // name order, at most adoptDiffNamesMax of them. The session-bound names are not
 // compared (measured on Linux). Each count counts a name once (measured on Linux,
-// macOS and Windows). kept is the member of the adopt. noLoginShell is the member of
+// macOS and Windows, the second count on Windows). kept is the member of the adopt. noLoginShell is the member of
 // the adopt. Without it a spawn of c can start a read again of the login-shell PATH
 // (spawnWith).
 func (m *Manager) TakeAdoptedEnv(c *conn.Conn, env, kept []string, noLoginShell bool) (every, own int, changed []string) {

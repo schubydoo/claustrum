@@ -497,7 +497,7 @@ func TestTempFolderThatTakesNoFileIsNotHandedOn(t *testing.T) {
 }
 
 // An adopted base holds the TMPDIR of the daemon (adoptenv.go), and that entry takes
-// the test of a spawn too (c9125eb8, measured on Linux).
+// the test of a spawn too (c9125eb8, measured on Linux and macOS).
 func TestAdoptedTempFolderTakesTheTest(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write a 0555 folder")

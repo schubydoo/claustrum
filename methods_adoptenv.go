@@ -14,7 +14,8 @@ const methodAdoptEnv = "server.adoptEnv"
 
 // adoptEnvParams are the params of server.adoptEnv. Kept names daemon variables that
 // stay in the set when the sent entries lack them, with a limit of its own (measured
-// on Linux, macOS and Windows, the limit on Linux and macOS). NoLoginShell is accepted with ok
+// on Linux, macOS and Windows, the limit on Linux and macOS), except a session-bound
+// name (claustrum's own, not measured). NoLoginShell is accepted with ok
 // (measured on Linux, macOS and Windows). With it true the spawns of the connection
 // start no read again of the login-shell PATH (measured on Linux, see spawnWith). Other
 // members are ignored (measured on Linux and Windows).

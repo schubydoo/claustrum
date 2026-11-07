@@ -12,7 +12,7 @@ import (
 // TestSocketAdoptEnvTestsTheDaemonTempFolder: after a good adopt a child takes
 // TMPDIR from the daemon, not from the sent entries, and the daemon value takes the
 // test of a spawn. A folder that takes no file is not handed on (c9125eb8, measured
-// on Linux).
+// on Linux and macOS).
 func TestSocketAdoptEnvTestsTheDaemonTempFolder(t *testing.T) {
 	clearClaudeSSHEnv(t)
 	root := t.TempDir()
