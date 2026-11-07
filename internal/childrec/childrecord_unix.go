@@ -77,7 +77,8 @@ func (r *Records) writeRecord(rec childRecord) {
 // away.
 //
 // The record goes only while the file still holds the start that this daemon wrote
-// (c9125eb8, measured on Linux and macOS, see removeChildRecordIn). A pid with no record of this
+// (c9125eb8, measured on Linux, and on macOS with start and daemonStart changed
+// together, see removeChildRecordIn). A pid with no record of this
 // daemon gets no removal and no log line. That case is claustrum's own, not measured.
 // 89cb6289 tried the removal and logged its failure.
 //

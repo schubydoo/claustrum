@@ -32,7 +32,8 @@ func TestRecordChildWindowsNoop(t *testing.T) {
 
 // TestRemoveChildRecordWindowsKeepsPlantedRecord pins the end of a child on windows: a
 // planted record for its pid stays (c9125eb8 and b3081b51, measured on Windows, row
-// C12). The measured record held literal backslash-quotes, so it was not JSON. A mutant that ported the linux/darwin removal to windows would fail here.
+// C12). The measured record held literal backslash-quotes, so it was not JSON.
+// A remove that runs with no record of this daemon fails here.
 func TestRemoveChildRecordWindowsKeepsPlantedRecord(t *testing.T) {
 	m := &Records{RunDir: t.TempDir()}
 	path := filepath.Join(m.RunDir, "children", "4242.json")
