@@ -197,3 +197,35 @@ func TestGoneLeaderReusedPidGetsNoSIGKILL(t *testing.T) {
 		t.Errorf("SIGKILL at %v to a reused pid, want none", f.kills)
 	}
 }
+
+// TestPassSkipsAStoppedStampedNonStreamGroupSilently: a stopped group of a program that is no
+// CLI binary, with its own stamp and no stream-json argv, gets no line and no undecided count
+// (claustrum's own, not measured). The control, the same group with stream-json, gets the
+// stopped line, so the instrument sees a line when one comes.
+func TestPassSkipsAStoppedStampedNonStreamGroupSilently(t *testing.T) {
+	f := hcNewPassFixture(t)
+	launcher := filepath.Join(f.base, "launcher", "stubl")
+	plain, stream := noSuchPid+301, noSuchPid+302
+	for _, pid := range []int{plain, stream} {
+		hcStampedOrphan(t, f, pid, launcher, "CLAUDE_SSH_CHILD="+strconv.Itoa(pid)+":1")
+		f.mk(pid, "stat", fmt.Sprintf("%d (sh) T 1 %d %s1 x", pid, pid, strings.Repeat("0 ", 16)))
+	}
+	f.mk(plain, "cmdline", "sh\x00-c\x00sleep 300\x00")
+	buf := captureLogBuf(t)
+
+	sum := f.c.Pass()
+
+	got := buf.String()
+	if strings.Contains(got, strconv.Itoa(plain)) {
+		t.Errorf("log names the plain group %d\nlog: %s", plain, got)
+	}
+	if want := fmt.Sprintf("[hostclean] spared process group %d this sweep: could not read it (it is stopped)\n", stream); !strings.Contains(got, want) {
+		t.Errorf("log lacks the control line %q\nlog: %s", want, got)
+	}
+	if sum.undecided != 1 {
+		t.Errorf("undecided = %d, want 1 (the control only)", sum.undecided)
+	}
+	if len(f.group) != 0 {
+		t.Errorf("group signals = %v, want none", f.group)
+	}
+}

@@ -796,6 +796,12 @@ func hcUTCDateText(at time.Time) string {
 // marker and happens to carry a stream-json argument. The reason is for the spare log; an
 // empty reason with reap=false is a silent skip.
 func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
+	// A group that runs no CLI binary passes on only with its own stamp and a stream-json
+	// argv. Any other such group is skipped with no line, before the arms that log a reason
+	// (claustrum's own, not measured). A CLI group keeps the order below.
+	if (t.exe == "" || !c.roots.isCliBinary(t.exe)) && (!hcStampMatches(t) || !hcArgvHasStreamJSON(t.argv)) {
+		return false, ""
+	}
 	if t.stopped {
 		return false, "could not read it (it is stopped)"
 	}
