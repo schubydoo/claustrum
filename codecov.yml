@@ -342,6 +342,7 @@ component_management:
         - internal/files/mkdir_windows.go
         - internal/files/mkdirparent_darwin.go
         - internal/files/mkdirparent_linux.go
+        - internal/files/mkdirparent_other.go
         - internal/pathcanon/netpath_windows.go
         - internal/files/filesreadreal_linux.go
         - internal/files/filesreadreal_other.go
