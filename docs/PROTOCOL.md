@@ -220,7 +220,8 @@ decoder. See
 claustrum expands a leading tilde in every path-bearing param before the method
 runs: `files.*` `path`, `extract_tar`'s `archivePath` / `destDir`, `git.*` `path` /
 `baseRepo` / `worktreePath`, and `process.spawn`'s `cwd`. Branch names are refs,
-not paths, so claustrum never expands them. claustrum replaces a leading `~` with
+not paths, so claustrum never expands them. Nor does it expand the `parent` of
+[files.mkdir](protocol/files-mkdir.md). claustrum replaces a leading `~` with
 the daemon user's home directory, and then cleans the remainder lexically. Bare
 `~` is the exception. It returns home verbatim, uncleaned.
 
