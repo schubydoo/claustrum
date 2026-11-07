@@ -560,3 +560,45 @@ func TestSettleCheckoutReadsTheLimitAfterTheProbe(t *testing.T) {
 		t.Errorf("the call stopped %v after the start, want about %v: the probe moved the stop", took, want)
 	}
 }
+
+// A slow listing in the leaf before the settle call takes no time from the call:
+// the time left is read again after the listing, and with less than the margin
+// left no call runs (claustrum's own, not measured). Mutation: drop the
+// settleLimit read after runListing in settleCheckout.
+func TestSettleCheckoutReadsTheLimitAfterTheListing(t *testing.T) {
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found in PATH")
+	}
+	const listing = 1200 * time.Millisecond
+	installGitSlowStub(t, realGit)
+	setAttrSource(t, true)
+	dir := t.TempDir()
+	wd, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(t.TempDir(), "calls.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "--list")
+	t.Setenv("CLAUSTRUM_GITSTUB_DIR2", wd)
+	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt(listing.Milliseconds(), 10))
+	slowGit(t, "diff-files", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "0")
+	setDuration(t, &settleMargin, time.Second)
+	setDuration(t, &settleMinLimit, 3*time.Second)
+	start := time.Now()
+	ctx, cancel := context.WithDeadline(context.Background(), start.Add(settleMargin+500*time.Millisecond))
+	defer cancel()
+	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), nil, start)
+	if took := time.Since(start); took < listing {
+		t.Fatalf("settleCheckout took %v, want at least the listing delay %v: the listing did not run", took, listing)
+	}
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "diff-files") {
+		t.Errorf("the settle call ran with less than the margin left after the listing:\n%s", b)
+	}
+}

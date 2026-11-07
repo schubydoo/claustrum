@@ -114,8 +114,8 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if attr == nil {
 		return
 	}
-	// The time left is read after the probe of attrSourceArgs, right before the
-	// call (claustrum's own).
+	// The time left is first read after the probe of attrSourceArgs (claustrum's
+	// own).
 	limit, ok := settleLimit(callerCtx, u.stop)
 	if !ok {
 		return
@@ -128,9 +128,17 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	if limit, ok = settleLimit(callerCtx, u.stop); !ok {
 		return
 	}
+	listCtx, listCancel := context.WithTimeout(context.Background(), limit)
+	hooks := runListing(listCtx, leaf, gitDir, precursorEnv(true, pin)).hooks()
+	listCancel()
+	// The time left is read again after the listing, right before the call, so a
+	// slow listing does not take the time of the call (claustrum's own, not
+	// measured).
+	if limit, ok = settleLimit(callerCtx, u.stop); !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	hooks := runListing(ctx, leaf, gitDir, precursorEnv(true, pin)).hooks()
 	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(true,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "diff-files", "--quiet", "--ignore-submodules=all"))...)
 	cmd := gitCommandContext(ctx, args...)
