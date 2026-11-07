@@ -500,8 +500,6 @@ Unless an item names another build, the daemon items below are measured against
   spawn, is the PATH read and not drift. A spawn waits for it at most 4 s
   (measured against `52d82f0a`). See
   [The login-shell PATH](protocol/process-spawn.md#the-login-shell-path-linux-and-macos).
-  A second read after `server.adoptEnv` is not drift either, see
-  [A new read](protocol/server-adopt-env.md#a-new-read-of-the-login-shell-path).
 - A `-serve` launcher that gives up after 12 s is not drift, also for a daemon
   that ends before its bind (measured on Linux, macOS and Windows). See [The launcher wait](DAEMON.md#the-launcher-wait).
   A daemon that gets `SIGTERM` or `SIGINT` during its start binds and then exits
