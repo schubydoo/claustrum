@@ -176,7 +176,7 @@ func TestPluginsLayoutFromSocket(t *testing.T) {
 		{"/x/run/v8-cl/rpc.sock", "", "", false, false},       // clientId not 8 hex
 		{"/x/run/xx-0123abcd/rpc.sock", "", "", false, false}, // 8 hex after a prefix
 		{"", "", "", false, false},                            // no path (abstract socket / pipe)
-		// A host term: 8 lowercase hex, a dash, 8 lowercase hex (c9125eb8, measured on Linux).
+		// A host term: 8 lowercase hex, a dash, 8 lowercase hex (c9125eb8, measured on Linux, macOS and Windows).
 		{"/x/run/a1b2c3d4-ffffffff/rpc.sock", "/x/plugins/a1b2c3d4", "/x/plugins", true, true},
 		// The names that c9125eb8 on Linux did not take as a host term.
 		{"/x/run/a1b2c3d4-ffff/rpc.sock", "", "", false, false},
