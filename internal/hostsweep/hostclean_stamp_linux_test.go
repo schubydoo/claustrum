@@ -21,11 +21,15 @@ import (
 // pids above the pid limit.
 
 // hcStampedOrphan stages an old orphan group leader with stream-json argv, the daemon-child
-// marker, pipe stdio and the environment entry stamp ("" for none). Its start-ticks are "1".
-func hcStampedOrphan(t *testing.T, f *hcPassFix, pid int, exe, stamp string) {
+// marker, pipe stdio, the environment entry stamp ("" for none) and the entries extra. Its
+// start-ticks are "1".
+func hcStampedOrphan(t *testing.T, f *hcPassFix, pid int, exe, stamp string, extra ...string) {
 	t.Helper()
 	hcFakeDaemonUID(t, f.proot, f.mk, f.link, pid, exe, []string{"claude", "--output-format", "stream-json", "--verbose"}, true, "1", f.uid)
 	env := "PATH=/bin\x00CLAUDE_SSH_DAEMON_CHILD=1\x00"
+	for _, e := range extra {
+		env += e + "\x00"
+	}
 	if stamp != "" {
 		env += stamp + "\x00"
 	}
@@ -43,10 +47,11 @@ func TestPassEndsAStampedOrphanOfAnotherProgram(t *testing.T) {
 	cli := filepath.Join(f.base, "ccd-cli", "2.0.1")
 	marked, bare, otherPid, otherStart, cliPid := noSuchPid+101, noSuchPid+102, noSuchPid+103, noSuchPid+104, noSuchPid+105
 	stamp := func(pid int, start string) string { return "CLAUDE_SSH_CHILD=" + strconv.Itoa(pid) + ":" + start }
-	hcStampedOrphan(t, f, marked, launcher, stamp(marked, "1"))
-	hcStampedOrphan(t, f, bare, launcher, "")
-	hcStampedOrphan(t, f, otherPid, launcher, stamp(otherPid+1, "1"))
-	hcStampedOrphan(t, f, otherStart, launcher, stamp(otherStart, "2"))
+	own := "CLAUDE_SSH_RUN_DIR=" + f.c.ownRunDir
+	hcStampedOrphan(t, f, marked, launcher, stamp(marked, "1"), own)
+	hcStampedOrphan(t, f, bare, launcher, "", own)
+	hcStampedOrphan(t, f, otherPid, launcher, stamp(otherPid+1, "1"), own)
+	hcStampedOrphan(t, f, otherStart, launcher, stamp(otherStart, "2"), own)
 	hcStampedOrphan(t, f, cliPid, cli, stamp(cliPid, "1"))
 	buf := captureLogBuf(t)
 
@@ -71,6 +76,65 @@ func TestPassEndsAStampedOrphanOfAnotherProgram(t *testing.T) {
 	for _, pid := range []int{bare, otherPid, otherStart} {
 		if strings.Contains(got, strconv.Itoa(pid)) {
 			t.Errorf("log names the spared group %d\nlog: %s", pid, got)
+		}
+	}
+}
+
+// TestPassEndsAStampedOrphanOnlyOfTheOwnRunDir: a stamped orphan of a program that is no CLI
+// binary is ended only when its CLAUDE_SSH_RUN_DIR names the own run dir of the daemon. With
+// two entries, the second names the run dir. No entry, another folder, the run root and
+// `<root>/run/../x` are spared with no line (c9125eb8, measured on Linux and macOS). A first
+// entry of the run dir before another folder is spared (claustrum's own, not measured). A CLI
+// orphan with no entry still ends (claustrum's own, not measured).
+func TestPassEndsAStampedOrphanOnlyOfTheOwnRunDir(t *testing.T) {
+	f := hcNewPassFixture(t)
+	launcher := filepath.Join(f.base, "launcher", "stubl")
+	cli := filepath.Join(f.base, "ccd-cli", "2.0.1")
+	own := f.c.ownRunDir
+	rows := []struct {
+		pid   int
+		exe   string
+		env   []string
+		ended bool
+	}{
+		{noSuchPid + 401, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + own}, true},
+		{noSuchPid + 402, launcher, nil, false},
+		{noSuchPid + 403, launcher, []string{"CLAUDE_SSH_RUN_DIR=/tmp/x"}, false},
+		{noSuchPid + 404, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + f.runRoot}, false},
+		{noSuchPid + 405, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + f.runRoot + "/../x"}, false},
+		{noSuchPid + 406, launcher, []string{"CLAUDE_SSH_RUN_DIR=/tmp/outside-x", "CLAUDE_SSH_RUN_DIR=" + own}, true},
+		{noSuchPid + 407, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + own, "CLAUDE_SSH_RUN_DIR=/tmp/outside-x"}, false},
+		{noSuchPid + 408, cli, nil, true},
+	}
+	for _, r := range rows {
+		hcStampedOrphan(t, f, r.pid, r.exe, "CLAUDE_SSH_CHILD="+strconv.Itoa(r.pid)+":1", r.env...)
+	}
+	buf := captureLogBuf(t)
+
+	sum := f.c.Pass()
+
+	var want []int
+	for _, r := range rows {
+		if r.ended {
+			want = append(want, r.pid)
+		}
+	}
+	slices.Sort(f.group)
+	if !slices.Equal(f.group, want) {
+		t.Fatalf("group signals = %v, want %v", f.group, want)
+	}
+	if sum.orphanSignalled != len(want) || sum.undecided != 0 {
+		t.Errorf("summary signalled %d undecided %d, want %d and 0", sum.orphanSignalled, sum.undecided, len(want))
+	}
+	got := buf.String()
+	for _, r := range rows {
+		if !r.ended && strings.Contains(got, strconv.Itoa(r.pid)) {
+			t.Errorf("log names the spared group %d\nlog: %s", r.pid, got)
+		}
+	}
+	for _, pid := range []int{noSuchPid + 401, noSuchPid + 406} {
+		if line := fmt.Sprintf(hcOrphanMarkLog, pid) + "\n"; !strings.Contains(got, line) {
+			t.Errorf("log lacks %q\nlog: %s", line, got)
 		}
 	}
 }
@@ -207,7 +271,7 @@ func TestPassSkipsAStoppedStampedNonStreamGroupSilently(t *testing.T) {
 	launcher := filepath.Join(f.base, "launcher", "stubl")
 	plain, stream := noSuchPid+301, noSuchPid+302
 	for _, pid := range []int{plain, stream} {
-		hcStampedOrphan(t, f, pid, launcher, "CLAUDE_SSH_CHILD="+strconv.Itoa(pid)+":1")
+		hcStampedOrphan(t, f, pid, launcher, "CLAUDE_SSH_CHILD="+strconv.Itoa(pid)+":1", "CLAUDE_SSH_RUN_DIR="+f.c.ownRunDir)
 		f.mk(pid, "stat", fmt.Sprintf("%d (sh) T 1 %d %s1 x", pid, pid, strings.Repeat("0 ", 16)))
 	}
 	f.mk(plain, "cmdline", "sh\x00-c\x00sleep 300\x00")
