@@ -242,7 +242,7 @@ func openChildrenDir(root *os.Root) (*os.Root, error) {
 // phases, and logs a summary. It runs on every socket shape: measured on Linux and
 // macOS against f6010b97 and 89cb6289, a new daemon on a socket of another shape ends
 // the recorded child of a dead daemon. It is a no-op for a manager with no run dir,
-// and when the children entry is absent or is not a real folder.
+// and when the children entry is absent, is not a real folder or cannot be read.
 func (r *Records) ReapOrphans() {
 	if r.RunDir == "" {
 		return
