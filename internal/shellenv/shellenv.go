@@ -323,7 +323,9 @@ func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
 		s.failures = 0
 		if r.again {
 			s.againCount++
-			if s.againCount == loginPATHAgainCap {
+			// A read that ends after its window ends logs no line, because the next
+			// read again opens a new window (claustrum's own, not measured).
+			if s.againCount == loginPATHAgainCap && s.clock().Before(s.againSince.Add(loginPATHAgainWindow)) {
 				// The level of this line is claustrum's own (not measured).
 				logging.Infof(loginPATHAgainLine, rfc3339UTC(s.againSince), s.againCount, rfc3339UTC(s.againSince.Add(loginPATHAgainWindow)))
 			}

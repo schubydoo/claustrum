@@ -575,8 +575,9 @@ func TestLoginPATHFailedReadsAgainStop(t *testing.T) {
 }
 
 // TestLoginPATHReadAgainWindowKeepsARunningRead: a read of the old window that still
-// runs at its end counts in the old window, so its end logs the cap line. A spawn
-// meanwhile opens no new window (claustrum's own, not measured).
+// runs at its end counts in the old window, and a spawn meanwhile opens no new
+// window. That read is the 24th, and it ends after the window, so it logs no cap
+// line (claustrum's own, not measured).
 func TestLoginPATHReadAgainWindowKeepsARunningRead(t *testing.T) {
 	if !loginPATHFromShell {
 		t.Skip("no login shell runs here, so no read again starts")
@@ -596,7 +597,10 @@ func TestLoginPATHReadAgainWindowKeepsARunningRead(t *testing.T) {
 	againAfterAdopt(f, "/g", 61*time.Second) // past the end of the window, while the read runs
 	f.answer <- pathAnswer{path: "/login/n"}
 	awaitReadEnd(t, r)
-	if got := shellenvLines(buf); strings.Count(got, "[shellenv] Since 1970-01-12T13:46:40Z") != 1 {
-		t.Errorf("log =\n%s\nwant the cap line of the first window", got)
+	if loginPATHs.againCount != loginPATHAgainCap || !loginPATHs.againSince.Equal(start) {
+		t.Errorf("window = %d reads since %v, want %d since %v", loginPATHs.againCount, loginPATHs.againSince, loginPATHAgainCap, start)
+	}
+	if got := shellenvLines(buf); strings.Contains(got, "[shellenv] Since ") {
+		t.Errorf("log =\n%s\nwant no cap line for a read that ends after its window", got)
 	}
 }

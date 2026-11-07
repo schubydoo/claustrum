@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `env` | yes | A list of `NAME=value` strings. |
-| `noLoginShell` | no | A bool. The daemon accepts it. With `true` the adopt lets no [new read](#a-new-read-of-the-login-shell-path) start (Linux and macOS). |
+| `noLoginShell` | no | A bool. The daemon accepts it. With `true` the adopt lets no [new read](#a-new-read-of-the-login-shell-path) start (Linux and macOS). An earlier adopt still lets one start (claustrum's own, not measured). |
 | `kept` | no | A list of names, at most 8192 (Linux and macOS). A kept daemon variable stays if `env` lacks it, except a session-bound name (claustrum's own, not measured). |
 
 The daemon ignores other members, with no log line (Linux and Windows).
@@ -71,7 +71,20 @@ On Linux and macOS, after a good read, a good adopt with no `"noLoginShell":true
 [shellenv] Since 2026-11-07T11:00:36Z the login shell's PATH has been read again 24 times, each time because a new connection sent its environment. It is not read again before 2026-11-08T11:00:36Z; until then programs keep the PATH just read
 ```
 
-claustrum's own, not measured: the exact 60 s, the new window after 24 h, and no read after the line. A `gitRead` spawn starts no read, and after a failure a later spawn tries again. An adopt before the first good read counts too (claustrum's own).
+### Rules not measured
+
+These rules of the new read are claustrum's own, not measured:
+
+- The exact 60 s, and no read after the cap line before the time it names.
+- Only good reads count toward the cap. The window of 24 h starts at the first read of the daemon, and then a new window starts.
+- A spawn inside the 60 s, or one that finds another login shell running, leaves the read due.
+- After a later adopt with `"noLoginShell":true` the shell gets the PATH of the earlier adopt.
+- With no PATH in the adopt the shell gets the daemon PATH.
+- A `gitRead` spawn starts no read.
+- After a failed read a later spawn tries again, and the pause doubles. After 16 failures in a row no read starts, also after a new adopt.
+- An adopt before the first good read counts too.
+- The cap line is at INFO level. A 24th read that ends after its window logs no cap line.
+- On macOS the shell gets the PATH of the adopt, and the failure note and the cap line are those of Linux.
 
 ## The frame of the bridge
 

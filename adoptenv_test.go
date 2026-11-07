@@ -588,6 +588,16 @@ func TestSocketAdoptEnvNoLoginShellReadsNoPATHAgain(t *testing.T) {
 	noReadStarted(t, f, "a spawn after an adopt with noLoginShell")
 	adoptChildEnv(t, dial(t, sock), "other", 1)
 	noReadStarted(t, f, "a spawn on a connection with no adopt")
+	// The control at the same clock step: an adopt with no noLoginShell lets the
+	// next spawn start a read.
+	adopt := `{"jsonrpc":"2.0","id":3,"method":"server.adoptEnv","params":{"env":["A=1"]}}`
+	if got := string(cl.call(authed(adopt))); !strings.Contains(got, `"ok":true`) {
+		t.Fatalf("control adopt: %s", got)
+	}
+	adoptChildEnv(t, cl, "control", 4)
+	r := startedRead(t, f)
+	f.answer <- pathAnswer{path: "/login/2"}
+	awaitReadEnd(t, r)
 }
 
 // TestSocketAdoptEnvLaterNoLoginShellKeepsTheReadAgain: a later good adopt with
