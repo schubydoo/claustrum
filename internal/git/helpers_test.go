@@ -74,6 +74,8 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		time.Sleep(time.Duration(secs) * time.Second)
+	case "sha1-works": // the SHA-1 probe of the content check, under the GODEBUG of the test
+		fmt.Println(sha1Works())
 	case "filter-mark":
 		// A stand-in git filter. It appends one line to the file args[0], to prove
 		// that it ran, and then copies stdin to stdout as cat does.

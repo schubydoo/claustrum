@@ -227,9 +227,9 @@ type PaneRun struct {
 // spawn built for it.
 func (r PaneRun) Env(spawn []string) []string { return r.env(spawn) }
 
-// Release ends the hold of the copy that the run names. The spawn calls it after
-// the start of the child. The hold does not last for the life of the child
-// (claustrum's own, not measured).
+// Release ends the hold of the copy that the run names. The spawn calls it when
+// the wait on the child returns, as runHeld does for every other git child. A
+// spawn whose child does not start calls it at once.
 func (r PaneRun) Release() { r.release() }
 
 // PaneGitRun takes the steps of the git methods before the pane's git in cwd:

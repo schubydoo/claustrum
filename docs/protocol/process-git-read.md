@@ -24,7 +24,7 @@ The combine test comes before the shape test (measured on Linux). The place of t
 
 With `gitRead`, `"pty":true` gets `Invalid params` (measured on Linux and Windows). So does a `cliTempRoot` text or object (measured on Linux). A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex`, with or without `gitRead` (measured on Linux and macOS).
 
-claustrum's own: a `launcher` array gets the combine text.
+claustrum's own: a `launcher` array gets the combine text. The [linkBound](process-link-bound.md#the-refusals) tests come before these tests. So `gitRead` with a `linkBound` object and a `launcher` gets the `linkBound` text.
 
 ## The allowed commands
 
@@ -47,6 +47,8 @@ claustrum's own, not measured: a ref with a space or `..` inside goes to git. Ea
 The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. Some commands get extra arguments, and `diff` with one ref runs as `diff-index` (measured on Linux, and `status` on Windows). claustrum's own, not measured: `diff` with two refs runs as `diff-tree -r` with the same options.
 
 A folder with no repository is not refused. The git exits 128 with `fatal: not a git repository: '/dev/null'` (`'NUL'` on Windows, measured on Linux and Windows).
+
+The git holds its copy of the settings until it exits, as each git call of the git methods does (claustrum's own).
 
 claustrum's own: a refusal of the git steps fails the spawn with `-32603`, its text and the reason `other`.
 
