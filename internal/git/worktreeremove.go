@@ -697,6 +697,50 @@ func repeatRepositoryCheck(u gitUse, repo string) {
 	}
 }
 
+// gitDirAgain asks `rev-parse --absolute-git-dir` in repo one more time, with
+// its listing, when answered names another git directory than the trust verdict
+// t. It returns the answer that counts, the "disagree" text when the second
+// answer names another one too, and the exec error of a failed second call.
+//
+// c9125eb8 asks in the state shadow. A right second answer goes on, and the
+// remove succeeds after 2 calls (measured on Linux and Windows). The ask runs
+// only in the state shadow with a trusted verdict, a pinned git directory and
+// no git directory in the environment of the daemon. An empty answer counts as
+// before. macOS and those limits are claustrum's own, not measured.
+func gitDirAgain(u gitUse, repo string, t gitDirTrust, answered string) (gitDir, disagree string, err error) {
+	if !u.shadow() || daemonCommonDirSet() || os.Getenv("GIT_DIR") != "" ||
+		t.verdict != gitDirTrusted || t.pinCommonDir == "" || !namesOtherGitDir(t, answered) {
+		return answered, "", nil
+	}
+	again, err := repositoryGitDir(u, repo, nil)
+	if err != nil || !namesOtherGitDir(t, again) {
+		return again, "", err
+	}
+	found := filepath.Clean(filepath.FromSlash(again))
+	shown := printedProbePath(again, found, string(filepath.Separator), filepath.IsAbs(found) && printedPathAsIs)
+	want := t.pinCommonDir
+	if t.worktreeEntry != "" {
+		want = t.worktreeEntry
+	}
+	return again, disagreeText(repo, shown, want), nil
+}
+
+// namesOtherGitDir reports whether answer, a path that git printed, names
+// another folder than the git directory of t. The entry of a linked worktree
+// counts as its git directory. An empty answer reports false.
+func namesOtherGitDir(t gitDirTrust, answer string) bool {
+	if answer == "" {
+		return false
+	}
+	g := filepath.Clean(filepath.FromSlash(answer))
+	for _, d := range []string{t.pinCommonDir, t.worktreeEntry} {
+		if d != "" && (filepath.Clean(d) == g || sameProbeFolder(g, d)) {
+			return false
+		}
+	}
+	return true
+}
+
 // removeListingCheck is the first listing check of a remove without worktreeRoot,
 // for a worktree folder that exists. A listing that git ran and that exited
 // non-zero or died by a signal runs once more, whatever its stderr says. Exit 0
