@@ -15,8 +15,9 @@ import (
 
 // TestSpawnLauncherRefusedOnWindows pins SW: any non-null launcher, an empty one
 // too, is -32004 with the Windows text and the reason launcher (build 52d82f0a),
-// before the cwd check, and the command does not run. A null launcher spawns the
-// command.
+// before the cwd check, and the command does not run. c9125eb8 adds the windows_host
+// fault before the reason, and a supplies spawn takes the shorter prefix (measured
+// on Windows). A null launcher spawns the command.
 func TestSpawnLauncherRefusedOnWindows(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -25,13 +26,20 @@ func TestSpawnLauncherRefusedOnWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	nocwd := filepath.Join(t.TempDir(), "nope")
-	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"the managed launcher cannot be used: a launcher cannot be applied on a Windows host","data":{"reason":"launcher"}}}`
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"the managed launcher cannot be used: a launcher cannot be applied on a Windows host","data":{"launcherFault":"windows_host","reason":"launcher"}}}`
+	supplies := `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"the launcher cannot be used: a launcher cannot be applied on a Windows host","data":{"launcherFault":"windows_host","reason":"launcher"}}}`
 	for row, params := range map[string]map[string]any{
-		"SW1":  {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`}},
-		"SW1x": {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`, "/c"}},
-		"SW2":  {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}},
-		"SW4":  {"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{exe}},
+		"SW1":      {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`}},
+		"SW1x":     {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`, "/c"}},
+		"SW2":      {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}},
+		"SW4":      {"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{exe}},
+		"check":    {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}, "launcherCheck": map[string]any{"sha256": []string{}}},
+		"supplies": {"id": "p1", "command": "", "launcher": []string{exe}, "launcherSuppliesCli": true, "launcherCheck": map[string]any{"path": exe}},
 	} {
+		want := want
+		if row == "supplies" {
+			want = supplies
+		}
 		b, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken, "params": params})
 		if err != nil {
 			t.Fatal(err)

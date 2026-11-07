@@ -158,7 +158,7 @@ under [Stream notifications](protocol/streams.md#stream-notifications), is the w
 | `-32603` | internal error, for example `open <path>: no such file or directory`. A recovered handler panic also gives this code, with `recovered panic: <v>` | depends on the text, see [error texts](protocol/errors.md) |
 | `-32002` | a full stdin queue, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) | later, while the child reads its input |
 | `-32003` | an `offset` past the applied bytes, from `process.stdin` (see [Errors](protocol/process-stdin.md#errors)) | yes, from `applied` |
-| `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) | after its reason changes, never on Windows |
+| `-32004` | a refused `launcher`, from `process.spawn` (see [The managed launcher](protocol/process-spawn.md#the-managed-launcher)) | after its reason changes, never on Windows, or on macOS with a `launcherCheck` |
 | `-32005` | a launcher that does not start, from `process.spawn` (see [Errors](protocol/process-spawn.md#errors)) | depends on the reason |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) | no, the connection closes |
 | `-32001` | `Unauthorized: invalid or missing auth token` | not with the same token |
@@ -306,7 +306,7 @@ removed a method.
 | `git.list_branches` | `{path[,shadowDirOff]}` → `{"isRepo":true,"branches":[…sorted…]}` | [git.list_branches](protocol/git-list-branches.md) |
 | `git.worktree_create` | `{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs][,shadowDirOff]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}` | [git.worktree_create](protocol/git-worktree-create.md) |
 | `git.worktree_remove` | `{baseRepo,worktreePath[,branchName][,worktreeRoot][,shadowDirOff]}` → `{"success":true}`, or `{"success":true,"branchKept":true}` when the branch step keeps the branch | [git.worktree_remove](protocol/git-worktree-remove.md) |
-| `launcher.resolve` | `{cliPath}` → one of four shapes | [launcher.resolve](protocol/launcher-resolve.md) |
+| `launcher.resolve` | `{cliPath[,path,launcherCheck]}` → one of four shapes, or with `path` and `launcherCheck` `{"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}` · `{"status":"unusable","reason","fault","hostPolicySeen"}` | [launcher.resolve](protocol/launcher-resolve.md) |
 | `process.spawn` | `{id,command[,args][,cwd][,env][,disableShellAgentSocket][,launcher][,wantPid]}` → `{"success":true}`, then stream frames | [process.spawn](protocol/process-spawn.md) |
 | `process.stdin` | `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}` | [process.stdin](protocol/process-stdin.md) |
 | `process.kill` | `{id[,signal][,farewell,graceMs]}` → `{"success":true[,"farewellEnd":<end>]}` | [process.kill](protocol/process-kill.md) |

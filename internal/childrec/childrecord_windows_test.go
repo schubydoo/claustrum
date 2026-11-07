@@ -29,3 +29,22 @@ func TestRecordChildWindowsNoop(t *testing.T) {
 		t.Errorf("RecordChild created the children dir on windows; it must write nothing")
 	}
 }
+
+// TestRemoveChildRecordWindowsKeepsPlantedRecord pins the end of a child on windows: a
+// planted record for its pid stays (c9125eb8 and b3081b51, measured on Windows, row
+// C12). The measured record held literal backslash-quotes, so it was not JSON.
+// A remove that runs with no record of this daemon fails here.
+func TestRemoveChildRecordWindowsKeepsPlantedRecord(t *testing.T) {
+	m := &Records{RunDir: t.TempDir()}
+	path := filepath.Join(m.RunDir, "children", "4242.json")
+	if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{\"pid\":4242,\"start\":\"REWRITTEN-BY-OTHER-PROCESS\"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.RemoveChildRecord(4242)
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the planted record is gone on windows: %v", err)
+	}
+}

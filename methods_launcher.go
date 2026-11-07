@@ -72,16 +72,34 @@ func (l *managedLauncherLog) note(res rpc.ManagedLauncherResult) {
 
 type managedLauncherParams struct {
 	CliPath string `json:"cliPath"`
+	// Path and LauncherCheck ask for the file check of the launcher at Path
+	// (c9125eb8, install.ResolveChecked). A member of another JSON type gets Invalid
+	// params (claustrum's own, not measured). An empty Path counts as absent
+	// (claustrum's own, not measured).
+	Path          string                 `json:"path"`
+	LauncherCheck *install.LauncherCheck `json:"launcherCheck"`
 }
 
 // ExpandPaths is a no-op. claustrum's choice (not measured): cliPath is not
 // `~`-expanded, so the own-path check compares the caller's text.
 func (p *managedLauncherParams) ExpandPaths() {}
 
+// launcherCheckRefusedByHost is true on macOS, where a resolve with a launcherCheck
+// and no path gets the host refusal too (c9125eb8, measured on macOS). On Linux and
+// Windows such a resolve answers as one with no launcherCheck (claustrum's own, not
+// measured).
+func launcherCheckRefusedByHost() bool {
+	f, _ := install.LauncherCheckHostRefusal()
+	return f == install.FaultMacOSHost
+}
+
 // handleLauncher serves the launcher namespace. Its one method is launcher.resolve.
 // No params member, a non-object params or a non-string cliPath is -32602 "Invalid
 // params". {}, null params, a null or empty cliPath and a wrong key are -32602
 // "cliPath is required". Any other string is a cliPath, a relative one too.
+// With a path and a launcherCheck the reply is the file check of c9125eb8
+// (install.ResolveChecked). A path with no launcherCheck is -32602 "launcherCheck is
+// required with path", after the cliPath test (measured on Linux).
 func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
@@ -95,6 +113,17 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 	}
 	if p.CliPath == "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "cliPath is required")
+	}
+	if p.Path != "" && p.LauncherCheck == nil {
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "launcherCheck is required with path")
+	}
+	if p.LauncherCheck != nil && (p.Path != "" || launcherCheckRefusedByHost()) {
+		res := install.ResolveChecked(p.Path, *p.LauncherCheck)
+		if res.Status == install.StatusUnusable {
+			// One line for each refusal, a repeat too (measured on macOS).
+			logging.Warnf("[LauncherHandler] the launcher that the desktop names is refused: %s", res.Reason)
+		}
+		return rpc.OKResult(req.ID, res)
 	}
 	res, note := install.Resolve(p.CliPath)
 	if note != "" && s.managedLog.firstIgnoredVar() {

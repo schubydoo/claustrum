@@ -11,9 +11,11 @@ import (
 )
 
 // SpawnReason is the data member of an error that the start path of process.spawn
-// makes. The member order is code, message, data.
+// makes. The member order is code, message, data. A launcher refusal of c9125eb8
+// puts launcherFault before reason (measured on Linux, macOS and Windows).
 type SpawnReason struct {
-	Reason string `json:"reason"`
+	LauncherFault string `json:"launcherFault,omitempty"`
+	Reason        string `json:"reason"`
 }
 
 // GitReadStepError marks a failed step of a gitRead spawn (SpawnGitRead). Its
@@ -39,29 +41,29 @@ func SpawnFailureReason(err error, cwd string) SpawnReason {
 	var sr *SpawnRefusal
 	if errors.As(err, &sr) {
 		if sr.Code == rpc.CodeInvalidParam {
-			return SpawnReason{"other"}
+			return SpawnReason{Reason: "other"}
 		}
-		return SpawnReason{"launcher"}
+		return SpawnReason{LauncherFault: sr.Fault, Reason: "launcher"}
 	}
 	var ge *GitReadStepError
 	if errors.As(err, &ge) {
-		return SpawnReason{"other"}
+		return SpawnReason{Reason: "other"}
 	}
 	var ce *CwdError
 	if errors.As(err, &ce) {
-		return SpawnReason{"cwd_missing"}
+		return SpawnReason{Reason: "cwd_missing"}
 	}
 	switch {
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist),
 		strings.HasSuffix(err.Error(), ": "+syscall.ENOENT.Error()):
-		return SpawnReason{"not_found"}
+		return SpawnReason{Reason: "not_found"}
 	case errors.Is(err, fs.ErrPermission), strings.HasSuffix(err.Error(), ": "+syscall.EACCES.Error()):
 		// The cwd is tested again after the failed start. A cwd that exists but
 		// cannot be entered gives cwd_unusable. Measured for mode 000 only.
 		if cwd != "" && cwdUnusable(cwd) {
-			return SpawnReason{"cwd_unusable"}
+			return SpawnReason{Reason: "cwd_unusable"}
 		}
-		return SpawnReason{"not_executable"}
+		return SpawnReason{Reason: "not_executable"}
 	}
-	return SpawnReason{"other"}
+	return SpawnReason{Reason: "other"}
 }

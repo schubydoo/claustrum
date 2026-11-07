@@ -284,7 +284,8 @@ the linked pages.
   `process.spawn` `launcher` param, the child env strip, and the gated launcher
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
-  measured. `f6010b97` has none of these. See
+  measured. `f6010b97` has none of these. `launcherFault`, `macos_host`, the file
+  check and `launcher.supplies_cli` follow `c9125eb8`. See
   [launcher.resolve](protocol/launcher-resolve.md),
   [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
   and [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
@@ -528,8 +529,9 @@ Unless an item names another build, the daemon items below are measured against
       claustrum can log the exit line of the old process and the `supersedes`
       line. `89cb6289` logs neither.
     - On Linux `89cb6289` unlinks a child record up to three times at a stop or
-      a kill, and claustrum unlinks it once. `89cb6289` also unlinks a record
-      that it never wrote. The files left are the same.
+      a kill, claustrum once. It also unlinks a record that it never wrote,
+      rewritten or unreadable. claustrum keeps those ([Child
+      records](DAEMON.md#child-records-and-the-reap-linux-and-macos)).
     - On macOS `89cb6289` runs one `ps` at the daemon start and one for each
       spawn. claustrum runs none at the start and three for each spawn.
     - With a zero-byte `-token-file`, `89cb6289` logs `claude-ssh: empty token in
