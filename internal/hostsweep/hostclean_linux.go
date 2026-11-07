@@ -352,6 +352,10 @@ func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {
 	return s.pgid, s.startTicks, s.ok
 }
 
+// hcMarkStartText is the start part of the CLAUDE_SSH_CHILD stamp of t on linux: field 22 of
+// /proc/<pid>/stat, the form the trampoline stamps (measured on Linux against c9125eb8).
+func hcMarkStartText(t hcTracked) string { return t.startTicks }
+
 // hcLockNeedsRecord says that lock content that is no record stops the holder read. It is a
 // var only so a test can stage the darwin answer.
 var hcLockNeedsRecord = true
