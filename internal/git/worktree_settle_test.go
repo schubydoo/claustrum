@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -574,9 +575,14 @@ func TestSettleCheckoutReadsTheLimitAfterTheListing(t *testing.T) {
 	installGitSlowStub(t, realGit)
 	setAttrSource(t, true)
 	dir := t.TempDir()
-	wd, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
+	// On Windows git runs in dir as given, which can hold a short name such as
+	// RUNNER~1, and the stub compares the folder as text. EvalSymlinks would give
+	// the long name there. On Linux and macOS it resolves a link such as /var.
+	wd := dir
+	if runtime.GOOS != "windows" {
+		if wd, err = filepath.EvalSymlinks(dir); err != nil {
+			t.Fatal(err)
+		}
 	}
 	log := filepath.Join(t.TempDir(), "calls.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
