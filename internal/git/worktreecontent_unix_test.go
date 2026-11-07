@@ -295,3 +295,20 @@ func TestContentCheckHashesComparedBlobs(t *testing.T) {
 		}
 	}
 }
+
+// TestContentCheckComparedBlobOfAnotherID: in the compare step a blob hash
+// whose answer is not the id of the blob refuses with the repository code. The
+// name with a line end sends the file to the compare step (claustrum's own
+// text and code, not measured).
+func TestContentCheckComparedBlobOfAnotherID(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".claude/we\nird.md": "w\n"})
+	slowGit(t, "hash-object,blob,--stdin,-w", "fail", 0, "", strings.Repeat("e", 40)+"\n")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "0")
+	raw, _ := f.create(t, nil)
+	commit := gitRevParse(t, f.repo, "HEAD")
+	hint := `Run "git fsck" in ` + fmt.Sprintf("%q", f.repo) + ` to check the repository: git couldn't read what it stores for commit ` +
+		commit[:12] + ` (the stored blob does not match its id).`
+	if want := contentFrame(t, "worktree_verify_repository", hint); raw != want {
+		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
+	}
+}
