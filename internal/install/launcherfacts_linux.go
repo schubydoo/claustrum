@@ -8,7 +8,8 @@ import "syscall"
 const nfsSuperMagic = 0x6969
 
 // statLauncherFacts reads the owner, the mode bits and the file system type of p. It
-// follows a link, and the walk passes paths with no link in them.
+// follows a link, so a folder of the path as written that is a link gives the facts
+// of its target. The walk tests the holder folder of each link too.
 func statLauncherFacts(p string) (launcherFacts, error) {
 	var st syscall.Stat_t
 	if err := syscall.Stat(p, &st); err != nil {

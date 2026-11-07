@@ -15,8 +15,8 @@ An untagged rule on this page matches build `89cb6289`, measured on Linux. A rul
 | Parameter | Required | Meaning |
 |---|---|---|
 | `cliPath` | yes | The path of the CLI that the launcher is to run. Any non-empty string is accepted, a relative one too. The daemon does not `~`-expand it (claustrum's own) (not measured). |
-| `path` | no | A launcher to check, with `launcherCheck` (`c9125eb8`). |
-| `launcherCheck` | no | An object: `sha256`, a list of digests, and `ownerUid`, a uid (`c9125eb8`). See [The file check](#the-file-check-build-c9125eb8). |
+| `path` | no | A launcher to check, with `launcherCheck` (`c9125eb8`). An empty `path` counts as absent (claustrum's own, not measured). |
+| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). |
 
 ## Response
 
@@ -43,7 +43,7 @@ With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, me
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
 
-`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). A `launcherCheck` with no `path` on Linux and Windows gets one of the four shapes (claustrum's own, not measured).
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). It is `false` for a file that is not a JSON object, a file that cannot be read and a file over 2 MiB too (claustrum's own, not measured). A `launcherCheck` with no `path` on Linux and Windows gets one of the four shapes (claustrum's own, not measured).
 
 The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
@@ -54,7 +54,7 @@ The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` co
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string. |
-| `-32602` | `cliPath is required` | `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name, such as `path` (measured on Windows). |
+| `-32602` | `cliPath is required` | `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name (measured on Windows). The `cliPath` test comes first, so `{"path":…}` with no `cliPath` gets it too. |
 | `-32602` | `launcherCheck is required with path` | A `path` with no `launcherCheck` (`c9125eb8`). The error has no `data`. |
 | `-32601` | `Unknown method: launcher.<x>` | Another method of the `launcher.*` namespace. |
 
@@ -151,9 +151,10 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 
 - `<mode>` has four octal digits. The group of the file is not tested.
 - A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them (claustrum's own, not measured). An `ownerUid` in the settings file lifts nothing.
-- With no digest, `{}` or `"sha256":[]`, the file is not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
+- With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
 - Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
+- On NFS with a digest the owner and write tests still run. An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
 - A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
 
 ### Log lines

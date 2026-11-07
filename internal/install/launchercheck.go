@@ -83,8 +83,9 @@ var (
 //     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
 //     before its own folders (measured).
 //  5. A launcher that this account cannot run is missing.
-//  6. With digests: the size limit, the read, and the compare. Without digests the
-//     file is not read (measured: {} and an empty list pass).
+//  6. With digests: the size limit, the read, and the compare. {} and an empty list
+//     pass (measured). Without digests the file is not read (claustrum's own, not
+//     measured).
 //
 // A folder or a file that changes between the check and the start is not guarded
 // (claustrum's own, not measured).
