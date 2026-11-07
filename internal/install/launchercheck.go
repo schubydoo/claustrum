@@ -3,11 +3,13 @@ package install
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // The file check of a launcherCheck (c9125eb8). process.spawn and launcher.resolve
@@ -35,6 +37,7 @@ const (
 	FaultOwner        = "owner"
 	FaultScriptSuffix = "script_suffix"
 	FaultMissing      = "missing"
+	FaultLinks        = "links"
 	FaultUnreadable   = "unreadable"
 	FaultDigest       = "digest"
 	FaultNotAbsolute  = "not_absolute"
@@ -53,11 +56,13 @@ const nobodyUID = 65534
 const NoLauncherText = managedNoLauncher
 
 // launcherFacts are the facts of one path that the walk tests: its owner, its mode
-// bits (the 12 low bits of st_mode) and whether it lies on NFS.
+// bits (the 12 low bits of st_mode) and fs. fs names a file system whose server decides
+// who can change a file, as the refusal text shows it: "NFS", "FUSE or virtiofs" or
+// "SMB". It is "" for any other file system.
 type launcherFacts struct {
 	uid  uint32
 	mode uint32
-	nfs  bool
+	fs   string
 }
 
 // launcherPathFacts and launcherOwnUID are seams, so a test fakes the owner, the mode
@@ -76,10 +81,14 @@ var (
 //
 //  1. A relative p is not_absolute.
 //  2. A name with a script ending is script_suffix (the endings of Check). X.JS passes.
-//  3. A p that is missing, a dangling link or no regular file is missing.
+//  3. A p that leads through too many links, or a loop, is links (a chain of 41, a loop
+//     of 2 and a self loop are measured with a digest, a chain of 40 passes). The system call gives
+//     ELOOP there, and a link loop in a folder of p gets the same fault (claustrum's
+//     own, not measured). A p that is missing, a dangling link or no regular file is
+//     missing.
 //  4. The walk: "/", each folder down to the launcher, then the launcher. It walks the
 //     folders of p as written, then the folders of p after its links (claustrum's own,
-//     not measured). Each item runs the NFS test, then the owner test, then the write
+//     not measured). Each item runs the file system test, then the owner test, then the write
 //     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
 //     before its own folders (measured).
 //  5. A launcher that this account cannot run is missing.
@@ -98,6 +107,9 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 		return FaultScriptSuffix, "launcher `" + shown + "` ends like a JavaScript or TypeScript source file, and no launcher may. Rename it."
 	}
 	fi, err := os.Stat(p)
+	if errors.Is(err, syscall.ELOOP) {
+		return FaultLinks, "too many symbolic links (or a loop) lead to launcher `" + shown + "`"
+	}
 	if err != nil || !fi.Mode().IsRegular() {
 		return FaultMissing, managedNotExecutable(p)
 	}
@@ -188,8 +200,8 @@ func launcherFolders(dir string) []string {
 
 // checkLauncherItem tests one item of the walk. Root owns a good item, or the
 // ownerUid of the launcherCheck does. A group or other write bit refuses it, the
-// sticky folder 1777 too. On NFS with no digest the item is refused, whatever its
-// owner and mode. On NFS with a digest the owner and write tests still run
+// sticky folder 1777 too. On NFS, FUSE or SMB with no digest the item is refused,
+// whatever its owner and mode. With a digest the owner and write tests still run there
 // (claustrum's own, not measured). An item whose facts cannot be read is missing
 // (claustrum's own, not measured).
 func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (fault, reason string) {
@@ -198,8 +210,8 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 	if err != nil {
 		return FaultMissing, managedNotExecutable(launcher)
 	}
-	if f.nfs && !digests {
-		return FaultWritable, shown + " is on a file system (NFS) whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+	if f.fs != "" && !digests {
+		return FaultWritable, shown + " is on a file system (" + f.fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
 	}
 	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
 		// The order of the three texts, for a daemon that runs as uid 65534, is
