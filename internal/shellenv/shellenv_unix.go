@@ -147,7 +147,7 @@ func extractLoginPATH(ctx context.Context) (string, error) {
 		timedOut.Store(true)
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	cmd.Env = loginPATHShellEnv()
+	cmd.Env = loginPATHShellEnv(ctx)
 	cmd.WaitDelay = loginPATHWaitDelay
 	out := newShellOutput()
 	cmd.Stdout, cmd.Stderr = &out.stdout, &out.stderr
@@ -203,14 +203,30 @@ func hasAbsoluteDir(p string) bool {
 // daemon do not reach it, and a daemon with no SHELL gives an empty entry. The agent
 // shell has another environment (probeShellEnv).
 //
+// A read again after a good adopt gives the shell the PATH of the adopt (measured on
+// Linux against c9125eb8, see shellPATH).
+//
 // Not measured: the order of the entries, a daemon that has a TERM, and a daemon
 // with no HOME, PATH or USER.
-func loginPATHShellEnv() []string {
+func loginPATHShellEnv(ctx context.Context) []string {
 	env := make([]string, 0, 8)
 	for _, name := range []string{"HOME", "PATH", "SHELL", "TERM", "USER"} {
-		env = append(env, name+"="+os.Getenv(name))
+		v := os.Getenv(name)
+		if name == "PATH" {
+			v = shellPATH(ctx)
+		}
+		env = append(env, name+"="+v)
 	}
 	return append(env, "DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true", "CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1")
+}
+
+// shellPATH returns the PATH for the shell of the read of ctx: the PATH of the
+// adopt, or the daemon PATH.
+func shellPATH(ctx context.Context) string {
+	if p, ok := ctx.Value(shellPATHKey{}).(string); ok {
+		return p
+	}
+	return os.Getenv("PATH")
 }
 
 // The caps of what a login shell prints, for the PATH read and the agent run.

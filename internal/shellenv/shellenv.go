@@ -32,23 +32,39 @@ import (
 // failed reads for the spawn wait, the cap of 16 failed reads, the wait of 1 s after
 // the stop, and that only a spawn starts a try again.
 //
-// A spawn on a connection that sent its own environment can read the PATH again
-// (RefreshLoginPATH). Measured against c9125eb8:
+// After a good read, a good server.adoptEnv lets the PATH be read again
+// (NoteAdoptedPATH, RefreshLoginPATH). Measured on Linux and macOS against c9125eb8:
 //
-//   - Four such connections within seconds start no read again, on Linux and macOS.
-//     The children keep the PATH of the first read.
-//   - On Linux, after an idle wait of 10 min 35 s, the first spawn on such a
-//     connection comes with one read again, right after the SSH agent step. That
-//     spawn does not wait for it and keeps the old PATH. The read logs the line of a good read again,
-//     and later spawns get its PATH.
-//   - On Linux, connections whose environment came with "noLoginShell":true start no
-//     read again.
+//   - The adopt starts no read. The next spawn of any connection starts it in the
+//     background, also a spawn on a connection that never adopted. That spawn keeps
+//     the old PATH, and later spawns of every connection get the new one.
+//   - An adopt with the same PATH as before lets a read start too.
+//   - A spawn with "disableShellAgentSocket":true starts none. The next plain spawn
+//     does.
+//   - An adopt with "noLoginShell":true starts none.
+//   - A spawn 28 s to 31 s after the start of the last read starts none, and one
+//     61 s after it does.
+//   - On Linux, the login shell of the read gets the PATH of the adopt.
+//   - On Linux, a failed read logs the failure line, and the spawns keep the old
+//     PATH. The next good read logs "after 1 failed read(s)".
+//   - On Linux, after 24 reads again, the line of the cap follows the good line of
+//     the 24th read (loginPATHAgainLine).
 //
-// claustrum's own, not measured: that the spawn starts the read again, the pause of
-// 10m0s from the start of the last read, that a taken gate starts no read again,
-// that a failed read again keeps the old PATH and counts no failure, and that a
-// read again holds the gate, so a spawn whose SSH agent step falls due meanwhile
-// runs no shell for it.
+// claustrum's own, not measured:
+//
+//   - the floor of exactly 60 s from the start of the last read
+//   - that only good reads count toward the cap, in a window of 24 h from the start
+//     of the first read, and a new window from the first read again that starts
+//     after it ends
+//   - that a failed read again lets a later spawn try again after its pause
+//   - that a good read clears the failure count
+//   - that a gitRead spawn starts no read again
+//   - that a taken gate starts none and keeps the adopt pending
+//   - that a spawn inside the floor keeps the adopt pending
+//   - that an adopt before the first good read counts too
+//   - that the shell gets the daemon PATH when the adopt sent none
+//   - that a read again holds the gate, so a spawn whose SSH agent step falls due
+//     meanwhile runs no shell for it
 //
 // On Windows no login shell runs. The read takes the daemon's own PATH
 // (shellenv_windows.go). claustrum's own there, not measured: the read at the start
@@ -69,10 +85,21 @@ var (
 	loginPATHFirstPause = 30 * time.Second
 	// loginPATHStopWait is the longest wait for a read after its stop (not measured).
 	loginPATHStopWait = 1 * time.Second
-	// loginPATHRefreshAfter is the age of the last read from which a spawn on a
-	// connection with its own environment reads again (claustrum's own, not measured).
-	loginPATHRefreshAfter = 10 * time.Minute
+	// loginPATHRefreshAfter is the age of the last read from which a spawn after a
+	// good adopt reads again. Measured on c9125eb8: none at 31 s, one at 61 s. The
+	// exact 60 s is claustrum's own, not measured.
+	loginPATHRefreshAfter = 60 * time.Second
+	// loginPATHAgainWindow is the window of the cap of the reads again (claustrum's
+	// own, not measured: the line of the cap names a time 24 h after its start).
+	loginPATHAgainWindow = 24 * time.Hour
 )
+
+// loginPATHAgainCap is the count of good reads again in one window after which no
+// read again starts (measured on Linux against c9125eb8: 24 reads, then the line).
+const loginPATHAgainCap = 24
+
+// loginPATHAgainLine is the line of the cap (measured on Linux against c9125eb8).
+const loginPATHAgainLine = "[shellenv] Since %s the login shell's PATH has been read again %d times, each time because a new connection sent its environment. It is not read again before %s; until then programs keep the PATH just read"
 
 const (
 	// loginPATHWaitFailures is the count of failed reads from which no spawn waits
@@ -123,6 +150,12 @@ type loginPATHState struct {
 	nextTry  time.Time // the earliest start of the next read after a failure
 	run      *loginPATHRun
 	lastRead time.Time // the start of the last read
+
+	// The read again after a good adopt.
+	adoptPending bool      // a good adopt came since the last read again started
+	adoptPATH    string    // the PATH of that adopt, or "" for the daemon PATH
+	againSince   time.Time // the start of the window of the cap
+	againCount   int       // the good reads again in that window
 
 	// Seams for tests.
 	clock func() time.Time
@@ -203,26 +236,46 @@ func (s *loginPATHState) startLocked() bool {
 	if s.good {
 		return false
 	}
-	return s.launchLocked(false)
+	return s.launchLocked(false, "")
 }
 
 // launchLocked starts a read in the background, unless a read runs, the daemon
-// shuts down or the gate is taken. again marks a read after a good read.
-func (s *loginPATHState) launchLocked(again bool) bool {
+// shuts down or the gate is taken. again marks a read after a good read, and path
+// is the PATH of its shell.
+func (s *loginPATHState) launchLocked(again bool, path string) bool {
 	if s.run != nil || s.closed || !tryGate(s.gate) {
 		return false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &loginPATHRun{started: s.clock(), cancel: cancel, end: make(chan struct{}), gate: s.gate, again: again}
 	s.run, s.lastRead = r, r.started
-	go s.read(ctx, r)
+	if s.againSince.IsZero() {
+		s.againSince = r.started
+	}
+	go s.read(withShellPATH(ctx, path), r)
 	return true
 }
 
-// RefreshLoginPATH runs at a spawn on a connection that sent its own environment
-// with no "noLoginShell":true, after the SSH agent step. After a good read, once the
+// NoteAdoptedPATH runs at a good server.adoptEnv with no "noLoginShell":true. path
+// is the PATH that the adopt sent, or "" when it sent none. The next spawn that
+// RefreshLoginPATH lets through reads the PATH again with it. Where no login shell
+// runs it does nothing.
+func NoteAdoptedPATH(path string) {
+	if !loginPATHFromShell {
+		return
+	}
+	s := loginPATHs
+	s.mu.Lock()
+	s.adoptPending, s.adoptPATH = true, path
+	s.mu.Unlock()
+}
+
+// RefreshLoginPATH runs at a spawn with no "disableShellAgentSocket":true and no
+// gitRead, after the SSH agent step. After a good read and a good adopt, once the
 // last read started at least loginPATHRefreshAfter ago, it starts one read again in
-// the background and does not wait. Where no login shell runs it does nothing (claustrum's own, not measured).
+// the background and does not wait. It starts none after loginPATHAgainCap good
+// reads again in the window, or before the pause of a failure ends. Where no login
+// shell runs it does nothing.
 func RefreshLoginPATH() {
 	if !loginPATHFromShell {
 		return
@@ -230,8 +283,24 @@ func RefreshLoginPATH() {
 	s := loginPATHs
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.armed && s.good && s.clock().Sub(s.lastRead) >= loginPATHRefreshAfter {
-		s.launchLocked(true)
+	now := s.clock()
+	if !s.armed || !s.good || !s.adoptPending || now.Sub(s.lastRead) < loginPATHRefreshAfter {
+		return
+	}
+	if s.failures >= loginPATHMaxFailures || now.Before(s.nextTry) {
+		return
+	}
+	// A new window starts only with a read that launches. No read runs then, so no
+	// read of the old window counts in the new one (claustrum's own, not measured).
+	newWindow := !now.Before(s.againSince.Add(loginPATHAgainWindow))
+	if !newWindow && s.againCount >= loginPATHAgainCap {
+		return
+	}
+	if s.launchLocked(true, s.adoptPATH) {
+		s.adoptPending = false
+		if newWindow {
+			s.againSince, s.againCount = now, 0
+		}
 	}
 }
 
@@ -251,11 +320,22 @@ func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
 		if loginPATHFromShell {
 			logging.Debugf("[shellenv] Extracted shell PATH (%d chars) in %s, after %d failed read(s)", len(path), took, s.failures)
 		}
-	case r.again:
-		// The text of this line is claustrum's own (not measured).
-		logging.Warnf("[shellenv] Could not read PATH from the login shell again after %s: %v; programs keep the PATH of the last good read", took, err)
+		s.failures = 0
+		if r.again {
+			s.againCount++
+			// A read that ends after its window ends logs no line, because the next
+			// read again opens a new window (claustrum's own, not measured).
+			if s.againCount == loginPATHAgainCap && s.clock().Before(s.againSince.Add(loginPATHAgainWindow)) {
+				// The level of this line is claustrum's own (not measured).
+				logging.Infof(loginPATHAgainLine, rfc3339UTC(s.againSince), s.againCount, rfc3339UTC(s.againSince.Add(loginPATHAgainWindow)))
+			}
+		}
 	default:
 		s.failures++
+		if r.again {
+			// A later spawn tries again after the pause (claustrum's own, not measured).
+			s.adoptPending = true
+		}
 		logging.Warnf("[shellenv] Could not read PATH from the login shell after %s (%s): %v", took, s.failureNoteLocked(), err)
 	}
 	s.mu.Unlock()
@@ -275,16 +355,39 @@ func (s *loginPATHState) extract(ctx context.Context) (path string, err error) {
 }
 
 // failureNoteLocked records when the next read can start, and renders the note of
-// the failure line.
+// the failure line. After a good read the note of c9125eb8 follows (measured on
+// Linux for the first failure of a read again). Before one the older note stays
+// (claustrum's own for c9125eb8, not measured).
 func (s *loginPATHState) failureNoteLocked() string {
 	if s.failures >= loginPATHMaxFailures {
 		// The text of this note is claustrum's own (not measured).
+		if s.good {
+			return fmt.Sprintf("failure %d; no further try; programs keep the last PATH that was read", s.failures)
+		}
 		return fmt.Sprintf("failure %d; no further try; programs get the daemon's own PATH", s.failures)
 	}
 	pause := loginPATHFirstPause << (s.failures - 1)
 	s.nextTry = s.clock().Add(pause)
-	return fmt.Sprintf("failure %d; next try in %s at the earliest; until one works, programs get the daemon's own PATH",
-		s.failures, pause)
+	keep := "programs get the daemon's own PATH"
+	if s.good {
+		keep = "programs keep the last PATH that was read, or sshd's if none was"
+	}
+	return fmt.Sprintf("failure %d; next try in %s at the earliest; until one works, %s", s.failures, pause, keep)
+}
+
+// rfc3339UTC renders t in UTC to the second, as the line of the cap does.
+func rfc3339UTC(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+// shellPATHKey is the context key of the PATH for the shell of a read.
+type shellPATHKey struct{}
+
+// withShellPATH gives the shell of the read of ctx the PATH path. An empty path
+// keeps the daemon PATH.
+func withShellPATH(ctx context.Context, path string) context.Context {
+	if path == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, shellPATHKey{}, path)
 }
 
 // stop ends the read r if it still runs, and waits for its end at most

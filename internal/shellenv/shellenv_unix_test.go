@@ -343,7 +343,7 @@ func TestLoginPATHShellGetsEightEntries(t *testing.T) {
 
 	want := []string{"HOME=/home/row", "PATH=" + os.Getenv("PATH"), "SHELL=" + shell, "TERM=", "USER=row",
 		"DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true", "CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1"}
-	if got := loginPATHShellEnv(); !slices.Equal(got, want) {
+	if got := loginPATHShellEnv(context.Background()); !slices.Equal(got, want) {
 		t.Errorf("loginPATHShellEnv() = %q, want %q", got, want)
 	}
 
@@ -362,6 +362,22 @@ func TestLoginPATHShellGetsEightEntries(t *testing.T) {
 		if strings.Contains(string(b), key+"=") {
 			t.Errorf("the shell environment holds %s of the daemon:\n%s", key, b)
 		}
+	}
+}
+
+// TestLoginPATHReadAgainShellGetsTheAdoptedPATH: the login shell of a read again
+// gets the PATH of the adopt, not the daemon PATH (measured on Linux against
+// c9125eb8).
+func TestLoginPATHReadAgainShellGetsTheAdoptedPATH(t *testing.T) {
+	dump := filepath.Join(t.TempDir(), "path")
+	t.Setenv("SHELL", writeFakeShell(t, `printf '%s\n' "$PATH" > '`+dump+`'`))
+	_, _ = extractLoginPATH(withShellPATH(context.Background(), "/adopted/p3:/usr/bin"))
+	b, err := os.ReadFile(dump)
+	if err != nil {
+		t.Fatalf("the stub shell wrote no PATH: %v", err)
+	}
+	if got := strings.TrimSuffix(string(b), "\n"); got != "/adopted/p3:/usr/bin" {
+		t.Errorf("the shell of the read again got PATH=%q, want /adopted/p3:/usr/bin", got)
 	}
 }
 

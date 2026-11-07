@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `env` | yes | A list of `NAME=value` strings. |
-| `noLoginShell` | no | A bool. The daemon accepts it. With `true` the spawns of this connection start no [new read](#a-new-read-of-the-login-shell-path) (Linux). |
+| `noLoginShell` | no | A bool. The daemon accepts it. With `true` the adopt lets no [new read](#a-new-read-of-the-login-shell-path) start (Linux and macOS). An earlier adopt still lets one start (claustrum's own, not measured). |
 | `kept` | no | A list of names, at most 8192 (Linux and macOS). A kept daemon variable stays if `env` lacks it, except a session-bound name (claustrum's own, not measured). |
 
 The daemon ignores other members, with no log line (Linux and Windows).
@@ -60,7 +60,31 @@ Each count counts a name once (the second measured on Windows, claustrum's own o
 
 ## A new read of the login-shell PATH
 
-On Linux and macOS, after a good read, a spawn 10 minutes or more after the last read of the login-shell PATH starts a new read in the background. Only a connection whose own adopt sent no `"noLoginShell":true` does so. Its spawn keeps the old PATH, and later spawns get the new one (Linux). A failed new read keeps the old PATH. The 10 minutes, that the spawn starts the read, the failed read, macOS and the own adopt are claustrum's own, not measured.
+On Linux and macOS, after a good read, a good adopt with no `"noLoginShell":true` lets the PATH be read again, also with the same PATH. The next spawn of any connection starts the read in the background. On Linux the login shell gets the PATH of the adopt. That spawn keeps the old PATH, and later spawns get the new one.
+
+- A spawn 31 s after the start of the last read starts no read, and one 61 s after it does.
+- A spawn with `"disableShellAgentSocket":true` starts no read.
+- On Linux a failed read keeps the old PATH, and its log line says `until one works, programs keep the last PATH that was read, or sshd's if none was`.
+- After 24 reads again, Linux logs this line:
+
+```text
+[shellenv] Since 2026-11-07T11:00:36Z the login shell's PATH has been read again 24 times, each time because a new connection sent its environment. It is not read again before 2026-11-08T11:00:36Z; until then programs keep the PATH just read
+```
+
+### Rules not measured
+
+These rules of the new read are claustrum's own, not measured:
+
+- The exact 60 s, and no read after the cap line before the time it names.
+- Only good reads count toward the cap. The window of 24 h starts at the first read of the daemon, and then a new window starts.
+- A spawn inside the 60 s, or one that finds another login shell running, leaves the read due.
+- After a later adopt with `"noLoginShell":true` the shell gets the PATH of the earlier adopt.
+- With no PATH in the adopt the shell gets the daemon PATH.
+- A `gitRead` spawn starts no read.
+- After a failed read a later spawn tries again, and the pause doubles. After 16 failures in a row no read starts, also after a new adopt.
+- An adopt before the first good read counts too.
+- The cap line is at INFO level. A 24th read that ends after its window logs no cap line.
+- On macOS the shell gets the PATH of the adopt, and the failure note and the cap line are those of Linux.
 
 ## The frame of the bridge
 
