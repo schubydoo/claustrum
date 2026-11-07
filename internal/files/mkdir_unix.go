@@ -31,8 +31,8 @@ func (p *mkdirParams) ExpandPaths() {}
 
 // mkdirParentRefused reports a parent that is empty, relative, holds a NUL, or is
 // not clean: a "." or ".." component, "//" or a trailing slash (c9125eb8,
-// measured on Linux; a relative parent and a ".." on macOS too). A "." component inside an absolute path and the
-// parent "/" are claustrum's own, not measured. A parent with U+FFFD is refused
+// measured on Linux; a relative parent and a ".." on macOS too). A "." component
+// inside an absolute path is claustrum's own, not measured. A parent with U+FFFD is refused
 // (c9125eb8, measured on Linux and macOS). The JSON decoder turns a byte that is
 // not UTF-8 into U+FFFD (from the code).
 func mkdirParentRefused(p string) bool {

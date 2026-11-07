@@ -9,7 +9,7 @@
 | `parent` | An absolute, clean path: no `.` or `..` component, no `//`, no trailing `/`, no NUL, no U+FFFD. A `~` is not expanded (claustrum's own, not measured). A `.` inside an absolute path is claustrum's own, not measured. |
 | `name` | One name: not empty, no `/` or `\`, no control character, no U+2028 to U+202E, no U+FFFD, no space or `.` at the end. A space at the start is allowed. U+2029 to U+202D and most controls are claustrum's own, not measured. |
 
-A byte that is not UTF-8 reaches the test as U+FFFD (measured on Linux and macOS). A new folder gets mode 0777 under the umask (measured). An extra member is ignored (measured). A `mode` member is claustrum's own, not measured.
+A name with the byte 0xff gets `name_refused` (measured on Linux and macOS). A new folder gets mode 0777 under the umask (measured). An extra member is ignored (measured). A `mode` member is claustrum's own, not measured.
 
 ## Response
 
@@ -22,7 +22,7 @@ The result is `{"code":"<code>"}`, with `"errno":<n>` after it for an OS error. 
 | `parent_refused`, `name_refused` | The parameter test failed. The parent is tested first (claustrum's own, not measured). |
 | `parent_denied` | Errno 13 from the open of the parent (mode 0300 or 0111). |
 | `parent_gone` | Errno 2 (no parent, or a dangling link) or 20 (a file, or a link to one). |
-| `parent_elsewhere` | The open parent has another real path: a link is at or above it, or on macOS it is under `/tmp` or `/var/tmp`. |
+| `parent_elsewhere` | The open parent has another real path: a link is at or above it (on macOS also `/tmp` and `/var/tmp`, measured). |
 | `parent_unverified` | The read of that real path failed (errno 5, measured on Linux). |
 
 ### Errnos of the mkdir
@@ -38,7 +38,7 @@ The result is `{"code":"<code>"}`, with `"errno":<n>` after it for an OS error. 
 
 A `parent` of a wrong type and absent `params` give `-32602` `Invalid params` and no log line (measured on Linux).
 
-claustrum's own, not measured: the folder is made through the open handle of the parent, so a swapped parent cannot move it. A Linux host with no `/proc` answers `parent_unverified` to every call. On macOS `fcntl` `F_GETPATH` gives the real path, and the compare is exact. So a parent in another letter case or Unicode form gets `parent_elsewhere`. A parent open that fails with another errno, such as a link loop, gives `failed`.
+claustrum's own, not measured: the folder is made through the open handle of the parent, so a swapped parent cannot move it. A Linux host with no `/proc` answers `parent_unverified` to every call that opens its parent. On macOS `fcntl` `F_GETPATH` gives the real path, and the compare is exact. So a parent in another letter case or Unicode form gets `parent_elsewhere`. A parent open that fails with another errno, such as a link loop, gives `failed`.
 
 ## Differences from the reference
 
