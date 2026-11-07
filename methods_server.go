@@ -63,7 +63,8 @@ var capabilityMethods = []string{
 // git.worktree_create.verify_error_codes after existingBranch, launcher.non_string_refused
 // after launcher.managed, git.outside_session_folders after server.peer_check and
 // git.status.own_lfs_store after git.hooks_null_device (measured on Linux, macOS and
-// Windows). The array is always emitted.
+// Windows). c9125eb8 inserted process.spawn.git_read after process.spawn.failure_reason
+// (measured on Linux, macOS and Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.kill.farewell",
@@ -79,6 +80,7 @@ var capabilityFeatures = append(append([]string{
 	"git.worktree_remove.unpushedGuard",
 	"process.spawn.shellAgentSocket",
 	"process.spawn.failure_reason",
+	"process.spawn.git_read",
 	"server.line_end",
 	"launcher.managed",
 	"launcher.non_string_refused",

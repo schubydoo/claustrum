@@ -35,7 +35,7 @@ func wantPeerCheckLine() string {
 // lists no git.worktree.external_root, process.spawn.link_bound or
 // process.spawn.cli_temp_root.
 func wantCapabilityFeatures() string {
-	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","server.line_end","launcher.managed","launcher.non_string_refused","server.peer_check","git.outside_session_folders","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
+	const head = `"process.stdin.offset","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","process.spawn.git_read","server.line_end","launcher.managed","launcher.non_string_refused","server.peer_check","git.outside_session_folders","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
