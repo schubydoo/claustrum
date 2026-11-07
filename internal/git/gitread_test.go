@@ -296,6 +296,32 @@ func TestPaneRefBytes(t *testing.T) {
 	}
 }
 
+// TestPaneRangeSides pins the bound of a range: each side of <A>..<B> passes the
+// ref test, and the whole value can be longer than 4096 bytes. A diff range of
+// 4097, 4098, 4099 and 8190 bytes runs, and rev-parse --verify of a range of 4097
+// bytes gets the refusal (c9125eb8, measured on Linux, macOS and Windows). The
+// refusal of a side of 4097 bytes and the log row are claustrum's own, not measured.
+func TestPaneRangeSides(t *testing.T) {
+	a := func(n int) string { return strings.Repeat("a", n) }
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"diff", "--name-status", "-M", a(2048) + ".." + a(2047)}, ""},
+		{[]string{"diff", "--name-status", "-M", a(2000) + ".." + a(2095)}, ""},
+		{[]string{"diff", "--name-status", "-M", a(4095) + "..b"}, ""},
+		{[]string{"diff", "--name-status", "-M", a(4096) + "..b"}, ""},
+		{[]string{"diff", "--name-status", "-M", a(4094) + ".." + a(4094)}, ""},
+		{[]string{"diff", "--name-status", "-M", a(4097) + "..b"}, "not one of the Changes pane's git commands (4 arguments)"},
+		{[]string{"rev-parse", "--verify", a(2048) + ".." + a(2047)}, "not one of the Changes pane's git commands (3 arguments)"},
+		{[]string{"log", "--no-show-signature", paneLogFormat, a(4096) + "..." + a(4096)}, ""},
+	} {
+		if got := PaneShapeRefusal(c.args); got != c.want {
+			t.Errorf("%v (last argument %d bytes) = %q, want %q", c.args[:len(c.args)-1], len(c.args[len(c.args)-1]), got, c.want)
+		}
+	}
+}
+
 // TestPaneGitRunShadow runs the steps before the pane's git in a repository in
 // the state shadow. The run names the copy in GIT_COMMON_DIR, and the index of
 // rev-parse is <copy>/no-index. The env ends with GIT_OPTIONAL_LOCKS=0, an empty

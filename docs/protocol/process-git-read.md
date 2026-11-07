@@ -48,9 +48,9 @@ A `<rev>` is a ref, `<A>..<B>` or `<A>...<B>`. A `<base>` is a ref or `<A>..<B>`
 
 ## The ref test
 
-A `<ref>` gets the shape refusal when it is empty or starts with `-` (measured on Linux), or has more than 4096 bytes. So does a ref with a TAB, LF, SOH or DEL byte (measured on Linux, SOH not on macOS and Windows). No git runs. A ref of 4096 bytes runs. Every other argv tried gets the shape refusal too, for example one with an added option, a missing or extra `--` or a second path (measured on Linux). claustrum's own: also an argv no row tried.
+A `<ref>` gets the shape refusal when it is empty or starts with `-` (measured on Linux), or has more than 4096 bytes. So does a ref with a TAB, LF, SOH or DEL byte (measured on Linux, SOH not on macOS and Windows). No git runs. A ref of 4096 bytes runs. In `diff --name-status -M` each side of `<A>..<B>` passes the ref test, so a range of more than 4096 bytes runs when no side has more (measured on Linux, macOS and Windows). Every other argv tried gets the shape refusal too, for example one with an added option, a missing or extra `--` or a second path (measured on Linux). claustrum's own: also an argv no row tried.
 
-claustrum's own, not measured: the other bytes below `0x20` get the refusal. A ref with a space or `..` inside goes to git. Each side of a range passes the ref test, and the 4096-byte bound applies to the whole `<A>..<B>` value too. A pathspec needs a path after its prefix. Only `sub` is measured as the path. Also not measured: `log` with `<A>...<B>`, a range in the other `diff` shapes, and the ref test in the other slots and on a pathspec.
+claustrum's own, not measured: the other bytes below `0x20` get the refusal. A ref with a space or `..` inside goes to git. A range in the other slots takes the same test of each side. A pathspec needs a path after its prefix. Only `sub` is measured as the path. Also not measured: `log` with `<A>...<B>`, a range in the other `diff` shapes, and the ref test in the other slots and on a pathspec.
 
 ## The run
 

@@ -111,8 +111,8 @@ const paneRefMax = 4096
 // are refused (measured on Linux). So are one longer than paneRefMax and one with
 // a TAB, LF, SOH or DEL byte (measured on Linux, and on macOS and Windows but
 // SOH). claustrum's own, not measured: the other bytes below 0x20 are refused
-// too, and the bound applies to the whole <A>..<B> value. A ref with a space or
-// ".." inside passes to git (claustrum's own, not measured).
+// too. A ref with a space or ".." inside passes to git (claustrum's own, not
+// measured).
 func paneRefOK(s string) bool {
 	if s == "" || s[0] == '-' || len(s) > paneRefMax {
 		return false
@@ -135,23 +135,30 @@ func paneRangeOK(v string) bool {
 }
 
 // paneSlotOK reports whether v passes the test of slot. A slotBase with "..."
-// gets the shape refusal (measured on Linux, macOS and Windows).
+// gets the shape refusal (measured on Linux, macOS and Windows). The bound of
+// paneRefOK applies to each side of a range, not to the whole value. A diff
+// <A>..<B> of 4097, 4098 and 8190 bytes with each side of 4096 bytes or less runs
+// (c9125eb8, measured on Linux, macOS and Windows). The same rule for a range in
+// slotRev is claustrum's own, not measured.
 func paneSlotOK(slot, v string) bool {
-	if !paneRefOK(v) {
-		return false
-	}
 	switch slot {
 	case slotRef:
-		return true
+		return paneRefOK(v)
 	case slotRev:
-		return !strings.Contains(v, "..") || paneRangeOK(v)
+		if strings.Contains(v, "..") {
+			return paneRangeOK(v)
+		}
+		return paneRefOK(v)
 	case slotBase:
-		if strings.Contains(v, "...") {
+		a, b, ok := strings.Cut(v, "..")
+		if !ok {
+			return paneRefOK(v)
+		}
+		return !strings.Contains(v, "...") && paneRefOK(a) && paneRefOK(b) && !strings.Contains(b, "..")
+	case slotExclude:
+		if !paneRefOK(v) {
 			return false
 		}
-		a, b, ok := strings.Cut(v, "..")
-		return !ok || (paneRefOK(a) && paneRefOK(b) && !strings.Contains(b, ".."))
-	case slotExclude:
 		for _, p := range []string{":(top,exclude,literal)", ":(top,exclude)"} {
 			if rest, ok := strings.CutPrefix(v, p); ok {
 				return rest != ""
