@@ -64,7 +64,7 @@ func TestPluginsPruneLegacyGating(t *testing.T) {
 		}
 
 		res := mustPrune(t, s)
-		want := "skipped: another install's daemon is running (run/" + sibID +
+		want := "skipped: another daemon is running (run/" + sibID +
 			"/rpc.sock answers); its sessions may use the shared legacy dirs"
 		if res.Legacy != want {
 			t.Errorf("Legacy = %q, want %q", res.Legacy, want)
@@ -83,6 +83,12 @@ func TestPluginsPruneLegacyGating(t *testing.T) {
 			t.Errorf("Legacy = %q, want %q", res.Legacy, "absent")
 		}
 	})
+}
+
+// siblingDaemonAlive is the detail of firstLiveSibling, without the name.
+func siblingDaemonAlive(base, own string) string {
+	detail, _ := firstLiveSibling(base, own)
+	return detail
 }
 
 // mustPrune dispatches one plugins.prune with the default params and returns its result.

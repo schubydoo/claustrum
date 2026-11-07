@@ -163,28 +163,41 @@ func TestLockPluginDir(t *testing.T) {
 func TestPluginsLayoutFromSocket(t *testing.T) {
 	cases := []struct {
 		sock, root, legacy string
-		ok                 bool
+		hostTerm, ok       bool
 	}{
-		{"/x/run/c0ffee01/rpc.sock", "/x/plugins/c0ffee01", "/x/plugins", true},
-		{"/home/u/.claude/remote/run/abcd1234/rpc.sock", "/home/u/.claude/remote/plugins/abcd1234", "/home/u/.claude/remote/plugins", true},
-		{"/tmp/cssh-probe.X/rpc.sock", "", "", false},  // not under run/<clientId>
-		{"/x/run/c0ffee01/other.sock", "", "", false},  // wrong socket basename
-		{"/x/notrun/c0ffee01/rpc.sock", "", "", false}, // parent-of-parent not "run"
-		{"/x/RUN/c0ffee01/rpc.sock", "", "", false},    // "run" compares case-sensitively
-		{"/x/run/c0ffee01/RPC.SOCK", "", "", false},    // "rpc.sock" compares case-sensitively
-		{"/x/run/0123ABCD/rpc.sock", "", "", false},    // clientId not lowercase hex
-		{"/x/run/v8-cl/rpc.sock", "", "", false},       // clientId not 8 hex
-		{"/x/run/xx-0123abcd/rpc.sock", "", "", false}, // 8 hex after a prefix
-		{"", "", "", false}, // no path (abstract socket / pipe)
+		{"/x/run/c0ffee01/rpc.sock", "/x/plugins/c0ffee01", "/x/plugins", false, true},
+		{"/home/u/.claude/remote/run/abcd1234/rpc.sock", "/home/u/.claude/remote/plugins/abcd1234", "/home/u/.claude/remote/plugins", false, true},
+		{"/tmp/cssh-probe.X/rpc.sock", "", "", false, false},  // not under run/<clientId>
+		{"/x/run/c0ffee01/other.sock", "", "", false, false},  // wrong socket basename
+		{"/x/notrun/c0ffee01/rpc.sock", "", "", false, false}, // parent-of-parent not "run"
+		{"/x/RUN/c0ffee01/rpc.sock", "", "", false, false},    // "run" compares case-sensitively
+		{"/x/run/c0ffee01/RPC.SOCK", "", "", false, false},    // "rpc.sock" compares case-sensitively
+		{"/x/run/0123ABCD/rpc.sock", "", "", false, false},    // clientId not lowercase hex
+		{"/x/run/v8-cl/rpc.sock", "", "", false, false},       // clientId not 8 hex
+		{"/x/run/xx-0123abcd/rpc.sock", "", "", false, false}, // 8 hex after a prefix
+		{"", "", "", false, false},                            // no path (abstract socket / pipe)
+		// A host term: 8 lowercase hex, a dash, 8 lowercase hex (c9125eb8, measured on Linux).
+		{"/x/run/a1b2c3d4-ffffffff/rpc.sock", "/x/plugins/a1b2c3d4", "/x/plugins", true, true},
+		// The names that c9125eb8 on Linux did not take as a host term.
+		{"/x/run/a1b2c3d4-ffff/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4-FFFFFFFF/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4-zzzzzzzz/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4-0123456789abcdef/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4-0123456789abcdef0123456789abcdef/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4-ffffffff-eeeeeeee/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4.ffffffff/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4ffffffff/rpc.sock", "", "", false, false},
+		{"/x/run/a1b2c3d4-host/rpc.sock", "", "", false, false},
+		{"/x/run/c1/rpc.sock", "", "", false, false},
 	}
 	for _, c := range cases {
 		// The roots are built with filepath.Join, so the expected values use native
 		// separators (a no-op on Unix, "\\" on Windows). FromSlash("") stays "".
 		wantRoot, wantLegacy := filepath.FromSlash(c.root), filepath.FromSlash(c.legacy)
-		root, legacy, ok := pluginsLayoutFromSocket(c.sock)
-		if ok != c.ok || root != wantRoot || legacy != wantLegacy {
-			t.Errorf("pluginsLayoutFromSocket(%q) = (%q,%q,%v), want (%q,%q,%v)",
-				c.sock, root, legacy, ok, wantRoot, wantLegacy, c.ok)
+		root, legacy, hostTerm, ok := pluginsLayoutFromSocket(c.sock)
+		if ok != c.ok || hostTerm != c.hostTerm || root != wantRoot || legacy != wantLegacy {
+			t.Errorf("pluginsLayoutFromSocket(%q) = (%q,%q,%v,%v), want (%q,%q,%v,%v)",
+				c.sock, root, legacy, hostTerm, ok, wantRoot, wantLegacy, c.hostTerm, c.ok)
 		}
 	}
 }
