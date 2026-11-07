@@ -43,6 +43,7 @@ After a good adopt, a new child of any connection starts from the sent entries, 
 - `SSH_AUTH_SOCK` reaches only the children of the connection that sent it (Linux).
 - A sent name that starts with `CLAUDE_SSH_` reaches no child (Linux, one name). The `CLAUDE_SSH_DAEMON_CHILD` of the daemon stays.
 - On Linux and macOS the child gets the login-shell PATH after a good read, as in process.spawn. Before one the sent PATH stays (claustrum's own, not measured). On Windows a list with no PATH gives a child with no PATH.
+- A sent temp-folder entry reaches the child untested (claustrum's own, not measured).
 - On Windows the `TEMP` and `TMP` of the daemon stay. The child also gets `COMSPEC`, `PATHEXT` and `PROMPT` with fixed values.
 - A later good adopt replaces the set. A refused one keeps it.
 

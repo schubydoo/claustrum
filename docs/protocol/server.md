@@ -1,6 +1,6 @@
 # server.*
 
-Three `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
+Three `server.*` methods describe the daemon and stop it. `server.ping` tells a client that the daemon answers. `server.capabilities` lists the methods and the optional features of this build. `server.shutdown` stops the daemon. [server.adoptEnv](server-adopt-env.md) has its own page. The surprise: `server.shutdown` needs no token, and its reply can lose a race with the close of the connection.
 
 An untagged rule on this page matches build `5fd08069`, measured on Linux. A rule that names macOS or Windows was measured there too.
 

@@ -494,3 +494,32 @@ func TestTempFolderThatTakesNoFileIsNotHandedOn(t *testing.T) {
 		at = loc[0]
 	}
 }
+
+func TestAdoptedTempFolderPassesAsSent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write a 0555 folder")
+	}
+	ro := filepath.Join(t.TempDir(), "ro")
+	if err := os.Mkdir(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	isolateTempEnv(t)
+	// The daemon's TMPDIR takes no file. The adopted set sends its own.
+	t.Setenv("TMPDIR", filepath.Join(ro, "sub"))
+	n := countTempProbes(t, "", nil)
+	sent := "TMPDIR=" + t.TempDir()
+	env := buildSpawnEnvOn([]string{"A=1", sent}, true, nil, false)
+	found := false
+	for _, e := range env {
+		if e == sent {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the child env %v lost the sent %s", env, sent)
+	}
+	if got := n.Load(); got != 0 {
+		t.Errorf("%d temp-folder tests ran on an adopted base, want 0", got)
+	}
+}

@@ -2079,8 +2079,11 @@ func buildSpawnEnvOn(adoptedEnv []string, adopted bool, env map[string]string, n
 	}
 	// An inherited temp-folder name whose folder cannot take a file is not handed
 	// on (internal/supervisor/tempfolder_unix.go). A caller key of that name still reaches the child
-	// (claustrum's own, not measured).
-	base = DropUnusableTempVars(base)
+	// (claustrum's own, not measured). An adopted base holds no inherited name, so
+	// its temp-folder entries pass untested (claustrum's own, not measured).
+	if !adopted {
+		base = DropUnusableTempVars(base)
+	}
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather
