@@ -78,7 +78,7 @@ The last three also put the text after `skipped: ` in `skipped`. `c9125eb8` gave
 
 ### The `<detail>` text
 
-The daemon goes through the names under `<X>/run` in order. `<detail>` names the first install that it cannot prove gone, or the run directory itself. `<rel>` is `run/<clientId>/rpc.sock`:
+The daemon goes through the names under `<X>/run` in order. `<detail>` names the first install that it cannot prove gone, or the run directory itself. In the `of this install` text it names the first such install whose name is not 8 lowercase hex. `<rel>` is `run/<clientId>/rpc.sock`:
 
 | `<detail>` | Meaning |
 |---|---|
