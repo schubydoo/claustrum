@@ -131,7 +131,7 @@ func TestPaneArgv(t *testing.T) {
 
 // TestPaneArgvLogRows pins the run argv of the rows of the call logs of c9125eb8
 // (measured on Linux, macOS and Windows): `diff-index` for one ref, `diff-tree -r`
-// for a range of two dots, `-p` for a patch, and a trailing `--`. realIndex is true
+// for a range of two dots in each diff shape, `-p` for a patch, and a trailing `--`. realIndex is true
 // for a run with no GIT_INDEX_FILE in the log.
 func TestPaneArgvLogRows(t *testing.T) {
 	const format = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e"
@@ -156,6 +156,17 @@ func TestPaneArgvLogRows(t *testing.T) {
 		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude,literal)sub"), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude,literal)sub")), true},
 		{w("diff", "--src-prefix=a/", "--dst-prefix=b/", "HEAD"), cat(w("diff-index", "-p"), opts, w("--src-prefix=a/", "--dst-prefix=b/", "HEAD", "--")), true},
 		{w("rev-parse", "--show-toplevel"), w("rev-parse", "--show-toplevel"), false},
+		// log with <A>...<B> and each diff shape with <A>..<B>.
+		{w("log", "--no-show-signature", format, "main...topic"), cat(w("log"), opts, w("--no-show-signature", format, "main...topic", "--")), false},
+		{w("diff", "main..topic"), cat(w("diff-tree", "-r", "-p"), opts, w("main", "topic", "--")), false},
+		{w("diff", "--numstat", "main..topic"), cat(w("diff-tree", "-r"), opts, w("--numstat", "main", "topic", "--")), false},
+		{w("diff", "-z", "--no-color", "--name-status", "-M", "main..topic"), cat(w("diff-tree", "-r"), opts, w("-z", "--no-color", "--name-status", "-M", "main", "topic", "--")), false},
+		{w("diff", "--inter-hunk-context=3", "main..topic"), cat(w("diff-tree", "-r", "-p"), opts, w("--inter-hunk-context=3", "main", "topic", "--")), false},
+		{w("diff", "--src-prefix=a/", "--dst-prefix=b/", "main..topic"), cat(w("diff-tree", "-r", "-p"), opts, w("--src-prefix=a/", "--dst-prefix=b/", "main", "topic", "--")), false},
+		{w("diff", "--name-status", "-M", "main..topic", "--", ":(top,exclude)sub"), cat(w("diff-tree", "-r"), opts, w("--name-status", "-M", "main", "topic", "--", ":(top,exclude)sub")), false},
+		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude)a b"), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude)a b")), true},
+		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude).."), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude)..")), true},
+		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude)*.txt"), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude)*.txt")), true},
 	} {
 		s := paneShapeOf(c.sent)
 		if s == nil {
@@ -167,22 +178,6 @@ func TestPaneArgvLogRows(t *testing.T) {
 		}
 		if _, _, real := s.runFor(c.sent); real != c.realIndex {
 			t.Errorf("%q: realIndex = %v, want %v", c.sent, real, c.realIndex)
-		}
-	}
-}
-
-// TestPaneArgvClaustrumOwn pins the runs that no row shows (claustrum's own, not
-// measured): a range in a patch diff runs as diff-tree -r -p.
-func TestPaneArgvClaustrumOwn(t *testing.T) {
-	for _, c := range []struct {
-		sent, run []string
-	}{
-		{[]string{"diff", "main..topic"},
-			[]string{"diff-tree", "-r", "-p", "--ignore-submodules=dirty", "--submodule=short", "--no-ext-diff", "--no-textconv", "main", "topic", "--"}},
-	} {
-		want := append(paneItems(false), c.run...)
-		if got := paneArgv(paneShapeOf(c.sent), c.sent, nil); !slices.Equal(got, want) {
-			t.Errorf("paneArgv(%q) =\n%q\nwant\n%q", c.sent, got, want)
 		}
 	}
 }
@@ -211,6 +206,7 @@ func TestPaneShapeRows(t *testing.T) {
 		// macOS and Windows).
 		"log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e main..topic",
 		"log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e HEAD",
+		"log --no-show-signature --format=%H%x00%h%x00%s%x00%an%x00%ae%x00%ct%x1e main...topic",
 		"hash-object -t tree /dev/null", "show --no-textconv --no-ext-diff HEAD --",
 		"rev-list --left-right --count HEAD", "diff HEAD", "diff --numstat HEAD",
 		"diff -z --no-color --name-status -M HEAD", "diff --name-status -M main..topic",

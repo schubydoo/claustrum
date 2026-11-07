@@ -63,10 +63,11 @@ func paneDiffRun(patch bool, rest ...string) []string {
 // words and their places are those of the measured rows, and the slots take the
 // refs and paths of the rows (measured on Linux, macOS and Windows, the slots on
 // Linux). Every other argv gets the shape refusal. The run argv of each shape is
-// that of the call logs (measured on Linux, macOS and Windows). claustrum's own, not
-// measured: the run of the two-ref diff, a range with an empty side, log with
-// <A>...<B>, a pathspec other than ":(top,exclude)sub" and its literal form, and
-// a range in a diff shape other than `diff --name-status -M <base>`.
+// that of the call logs (measured on Linux, macOS and Windows). So are log with
+// <A>...<B>, each diff shape with <A>..<B>, and the paths "a b", ".." and "*.txt"
+// in a pathspec (measured on Linux, macOS and Windows). claustrum's own, not
+// measured: the run of the two-ref diff, a range with an empty side, and the
+// other paths in a pathspec.
 var paneShapes = []paneShape{
 	{sent: []string{"status", "--porcelain=v2", "--branch", "-z"},
 		run: []string{"status", "--ignore-submodules=dirty", "--porcelain=v2", "--branch", "-z"}, noLocks: true, realIndex: true},
