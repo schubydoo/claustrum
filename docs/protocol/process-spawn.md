@@ -246,7 +246,7 @@ The read starts in the background with the daemon. These rules are measured agai
 - The read runs `$SHELL -l -i -c …` if `$SHELL` is an executable file, or else the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
 - The `PATH` is the line after a fresh sentinel line, on stdout or on stderr, with a final newline and an absolute directory.
 - 2 MiB on stdout fails the read, and a full stderr does not. A shell that leaves a process on its stdout still gives its PATH, about 500 ms after it ends. The log holds no shell output.
-- The shell gets `HOME`, `PATH`, `SHELL`, `TERM` and `USER` of the daemon, with `TERM` empty if the daemon has none, plus `DISABLE_AUTO_UPDATE=true`, `ZSH_DISABLE_COMPFIX=true` and `CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1`.
+- The shell gets `HOME`, `PATH`, `SHELL`, `TERM` and `USER` of the daemon, with `TERM` empty if the daemon has none, plus `DISABLE_AUTO_UPDATE=true`, `ZSH_DISABLE_COMPFIX=true` and `CLAUDE_DESKTOP_RESOLVING_ENVIRONMENT=1`. On Linux a read again after an adopt gets the PATH of the adopt (`c9125eb8`, [server.adoptEnv](server-adopt-env.md#a-new-read-of-the-login-shell-path)).
 - claustrum's own: a 30 s limit per read, the stream order, the doubling after 2m0s, no try after 16 failures, and no wait after 5.
 
 ### The identity markers (Linux and macOS)
