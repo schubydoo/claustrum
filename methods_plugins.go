@@ -118,16 +118,15 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 		return rpc.OKResult(req.ID, res)
 	}
 
-	// The sibling check runs before both sweeps. Any sibling not ruled out whose run
-	// dir name is not 8 lowercase hex spares both roots. c9125eb8 on macOS did so for
-	// `beef5678-<host>` that answers. The test of the name shape, the test of every
+	// The sibling check runs before both sweeps. A sibling not ruled out that
+	// siblingSparesBothRoots names spares both roots. Each other sibling spares only
+	// the shared legacy root, and the text names the first sibling. The test of every
 	// sibling, the other detail forms and the choice of the first such sibling for
-	// the text are claustrum's own, not measured. Each other sibling spares only the
-	// shared legacy root, and the text names the first sibling.
+	// the text are claustrum's own, not measured.
 	base := filepath.Dir(legacyRoot) // <X>: the parent of run/ and plugins/
 	sibs := liveSiblings(base, filepath.Base(root))
 	for _, sb := range sibs {
-		if sb.name != "" && !pluginClientIDRE.MatchString(sb.name) {
+		if siblingSparesBothRoots(sb.name) {
 			reason := "another daemon of this install may be running (" + sb.detail + "); its sessions may use the same dirs"
 			countPluginRoot(root, live, &res)
 			res.Legacy = "skipped: " + reason
@@ -170,6 +169,22 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 // gave the skip for one such name. The exact pattern is claustrum's own, not
 // measured. It applies on every system.
 var pluginClientIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
+
+// siblingSparesBothRoots reports whether a sibling run dir name spares both roots.
+// c9125eb8 did so for `beef5678-<host name>` that answers (measured on Linux and
+// macOS. On Windows: claustrum's own, not measured). It spared only the shared
+// legacy root for an answering sibling of the host-term shape, such as
+// `beef5678-<machine-id first 8>` (measured on macOS and Windows).
+// hostTermSiblingSparesLegacyOnly holds that rule off Linux, where no row
+// had such a sibling. An 8 lowercase hex name and "" (a run dir that cannot be read)
+// spare only the legacy root. The test of the name shape alone is claustrum's own,
+// not measured.
+func siblingSparesBothRoots(name string) bool {
+	if name == "" || pluginClientIDRE.MatchString(name) {
+		return false
+	}
+	return !hostTermSiblingSparesLegacyOnly || !pluginHostTermRE.MatchString(name)
+}
 
 // pluginHostTermRE matches a run dir name that bears a host term: 8 lowercase hex,
 // a dash and 8 lowercase hex. c9125eb8 on Linux took `a1b2c3d4-ffffffff` and refused

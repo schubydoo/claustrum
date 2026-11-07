@@ -2,4 +2,4 @@
 default: patch
 ---
 
-plugins.prune gets new skip texts, and it deletes nothing while any sibling daemon whose run directory name is not 8 lowercase hex may run.
+plugins.prune gets new skip texts. It deletes nothing while a sibling daemon whose run directory name is not 8 lowercase hex may run, except a host-term name on macOS and Windows.

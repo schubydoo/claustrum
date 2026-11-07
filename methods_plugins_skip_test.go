@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,14 +27,15 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 
 	const hostTermText = "machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here"
 	hostTermFrame := `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":4,"legacy":"skipped: ` + hostTermText + `","skipped":"` + hostTermText + `","minAgeDays":7}}`
-	cases := []struct {
+	type skipCase struct {
 		name, own          string
 		siblings           []string
 		perInstall, legacy []string
 		young              map[string]bool
 		frame              string
 		gone               []string // per-install hashes that the prune removes
-	}{
+	}
+	cases := []skipCase{
 		{
 			name: "C91 sibling text", own: "a1b2c3d4", siblings: []string{"e5f6a7b8"},
 			perInstall: linuxPerInstall, legacy: linuxLegacy, young: linuxYoung,
@@ -69,6 +71,42 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":2,"legacy":"skipped: another daemon of this install may be running (run/abcd1234-host/rpc.sock answers); its sessions may use the same dirs","skipped":"another daemon of this install may be running (run/abcd1234-host/rpc.sock answers); its sessions may use the same dirs","minAgeDays":7}}`,
 		},
 	}
+	// A live sibling of the host-term shape, as in the macOS and Windows rows: own
+	// a1b2c3d4, sibling beef5678-<machine-id first 8>. Off Linux the root of this
+	// install is pruned and only the shared root stays. `young` counts this root only.
+	// Linux keeps the skip of both roots (claustrum's own, not measured).
+	const termSib = "beef5678-0badf00d"
+	termPerInstallYoung := append([]string{"3333333333333333"}, macPerInstall...)
+	termLegacyYoung := append([]string{"2222222222222222"}, macLegacy...)
+	termYoung := map[string]bool{"3333333333333333": true, "2222222222222222": true}
+	termFrame := func(young, sameInstallYoung int) string {
+		if !hostTermSiblingSparesLegacyOnly {
+			reason := "another daemon of this install may be running (run/" + termSib + "/rpc.sock answers); its sessions may use the same dirs"
+			return `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":[],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":` + strconv.Itoa(sameInstallYoung) + `,"legacy":"skipped: ` + reason + `","skipped":"` + reason + `","minAgeDays":7}}`
+		}
+		return `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":["0123456789abcdef","0123456789abcdf0"],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":` + strconv.Itoa(young) + `,"legacy":"skipped: another daemon is running (run/` + termSib + `/rpc.sock answers); its sessions may use the shared legacy dirs","minAgeDays":7}}`
+	}
+	var termGone []string
+	if hostTermSiblingSparesLegacyOnly {
+		termGone = macPerInstall
+	}
+	cases = append(cases,
+		skipCase{
+			name: "a sibling of the host-term shape", own: "a1b2c3d4", siblings: []string{termSib},
+			perInstall: macPerInstall, legacy: macLegacy,
+			frame: termFrame(0, 2), gone: termGone,
+		},
+		skipCase{
+			name: "a sibling of the host-term shape, a young dir in this root", own: "a1b2c3d4", siblings: []string{termSib},
+			perInstall: termPerInstallYoung, legacy: macLegacy, young: termYoung,
+			frame: termFrame(1, 3), gone: termGone,
+		},
+		skipCase{
+			name: "a sibling of the host-term shape, a young dir in the shared root", own: "a1b2c3d4", siblings: []string{termSib},
+			perInstall: macPerInstall, legacy: termLegacyYoung, young: termYoung,
+			frame: termFrame(0, 2), gone: termGone,
+		},
+	)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// A short temp root, not t.TempDir(): the socket path must stay under the
