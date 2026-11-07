@@ -11,7 +11,7 @@ import (
 
 // TestSpawnRefusalReasonsWindows pins the reasons that Windows measured: a folder as
 // the command is not_found, a text file that is not a program is other, and any
-// launcher is refused with the fixed text.
+// launcher is refused with the fixed text and the windows_host fault (c9125eb8).
 func TestSpawnRefusalReasonsWindows(t *testing.T) {
 	dir := t.TempDir()
 	txt := filepath.Join(dir, "noexec.txt")
@@ -33,7 +33,7 @@ func TestSpawnRefusalReasonsWindows(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := spawnErrorOf(t, tc.params)
 			if tc.reason == "launcher" {
-				if want := errJSON(t, -32004, launcherText, "launcher"); got != want {
+				if want := `{"code":-32004,"message":"` + launcherText + `","data":{"launcherFault":"windows_host","reason":"launcher"}}`; got != want {
 					t.Fatalf("error = %s\nwant    %s", got, want)
 				}
 				return

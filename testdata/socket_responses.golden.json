@@ -71,6 +71,7 @@
         "server.line_end",
         "launcher.managed",
         "launcher.non_string_refused",
+        "launcher.supplies_cli",
         "server.peer_check",
         "git.outside_session_folders",
         "git.shadow_dir",

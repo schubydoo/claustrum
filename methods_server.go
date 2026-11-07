@@ -64,7 +64,8 @@ var capabilityMethods = []string{
 // after launcher.managed, git.outside_session_folders after server.peer_check and
 // git.status.own_lfs_store after git.hooks_null_device (measured on Linux, macOS and
 // Windows). c9125eb8 inserted process.spawn.git_read after process.spawn.failure_reason
-// (measured on Linux, macOS and Windows). The array is always emitted.
+// and launcher.supplies_cli after launcher.non_string_refused (measured on Linux, macOS
+// and Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.kill.farewell",
@@ -84,6 +85,7 @@ var capabilityFeatures = append(append([]string{
 	"server.line_end",
 	"launcher.managed",
 	"launcher.non_string_refused",
+	"launcher.supplies_cli",
 	"server.peer_check",
 	"git.outside_session_folders",
 	"git.shadow_dir",

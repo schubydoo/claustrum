@@ -618,7 +618,7 @@ These line rules are claustrum's own unless an item names a build. `89cb6289` an
 
 These lines tell of [process.spawn](protocol/process-spawn.md) children and their [records and the reap](#child-records-and-the-reap-linux-and-macos). The levels are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
-- A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows.
+- A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (from the code). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux).
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
 - An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (`52d82f0a`, measured on Linux and macOS for `client`)
 - A bad `process.kill` farewell (INFO): `[process] kill <id>: its farewell is not said: <rule>` (same build and systems)

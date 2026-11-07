@@ -11,6 +11,8 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/git"
+	"github.com/schubydoo/claustrum/internal/install"
+	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/supervisor"
@@ -76,6 +78,35 @@ type spawnParams struct {
 	// (c9125eb8, measured on Linux). null counts as absent (claustrum's own, not
 	// measured).
 	GitRead bool `json:"gitRead"`
+	// LauncherCheck, LauncherSuppliesCli and EnvOnlyIfSent are the launcher members
+	// of c9125eb8 (launcherShapeRefusal, supervisor.LauncherOpts). A member of
+	// another JSON type gets Invalid params (measured on Linux and Windows). null
+	// counts as absent (claustrum's own, not measured). noLoginShell is accepted
+	// and changes nothing here (measured on Linux and Windows: the spawn succeeds).
+	LauncherCheck       *install.LauncherCheck `json:"launcherCheck"`
+	LauncherSuppliesCli bool                   `json:"launcherSuppliesCli"`
+	EnvOnlyIfSent       *[]string              `json:"envOnlyIfSent"`
+}
+
+// launcherShapeText is the refusal of a launcher member that lacks the member it
+// needs (c9125eb8, measured on Linux, macOS and Windows).
+const launcherShapeText = "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli"
+
+// launcherShapeRefusal is the refusal of the launcher members, or nil. Measured: a
+// launcherCheck with no launcher ({} too), a launcherSuppliesCli with a command or
+// with no launcherCheck, and an envOnlyIfSent list with no launcherSuppliesCli. The
+// test comes before the command test, so a supplies spawn with command "" and no
+// launcherCheck gets this text, not "Command is required" (measured on Linux and
+// Windows). An empty envOnlyIfSent list counts as present (claustrum's own, not
+// measured). The refusal logs its failed-start line (measured on Linux).
+func launcherShapeRefusal(req *request, p *spawnParams) *rpc.Response {
+	if (p.LauncherCheck != nil && p.Launcher == nil) ||
+		(p.LauncherSuppliesCli && (p.LauncherCheck == nil || p.Command != "")) ||
+		(p.EnvOnlyIfSent != nil && !p.LauncherSuppliesCli) {
+		logging.Errorf("[process.Manager] Failed to start process %s: %s", p.ID, launcherShapeText)
+		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, launcherShapeText, supervisor.SpawnReason{Reason: "other"}))
+	}
+	return nil
 }
 
 // gitReadCombineText is the refusal of a gitRead spawn with another command than
@@ -171,7 +202,10 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if p.ID == "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
-	if p.Command == "" {
+	if bad := launcherShapeRefusal(req, &p); bad != nil {
+		return *bad
+	}
+	if p.Command == "" && !p.LauncherSuppliesCli {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Command is required")
 	}
 	// 683cc6a9 refuses linkBound with a launcher by this text and with "pty":true by
@@ -201,7 +235,15 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		if !sessiondirs.OffSwitchSet(req.Params) {
 			folders = sessionFoldersOf(p.Command, p.Args, p.Cwd, p.Launcher != nil)
 		}
-		mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
+		if p.LauncherCheck != nil {
+			lo := supervisor.LauncherOpts{Check: p.LauncherCheck, Supplies: p.LauncherSuppliesCli}
+			if p.EnvOnlyIfSent != nil {
+				lo.EnvOnlyIfSent = *p.EnvOnlyIfSent
+			}
+			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders)
+		} else {
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
+		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {
 		// No frame. The teardown closes the connection (measured).
