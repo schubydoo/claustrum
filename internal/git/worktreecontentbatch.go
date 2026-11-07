@@ -30,9 +30,8 @@ import (
 // batch (measured on Linux). After a hash-object that stopped answering, the
 // batch reads no more objects, and separate runs read and hash that object and
 // the rest: `cat-file <kind> <id>`, then `hash-object -t <kind> --literally
-// --no-filters --stdin -w` (c9125eb8, measured on Linux). The batch process of
-// c9125eb8 runs on to the end of the check. Claustrum also ends it
-// (claustrum's own, not measured).
+// --no-filters --stdin -w`. The batch process runs on to the end of the check
+// (c9125eb8, measured on Linux).
 //
 // Claustrum's own, not measured: the blobs of committed links go through the
 // batch too and do not count. The blob of the compare step is always a
@@ -43,9 +42,10 @@ import (
 // call for the whole check. The long-running hash-object reads the object from
 // the file objectBodyName in the folder of the objects of the check.
 //
-// After a stop c9125eb8 reads the trees of a level below the top with `cat-file
-// --buffer --batch` and a new long-running hash-object of the trees (measured
-// on Linux). Claustrum reads and hashes each of them alone.
+// After a stop c9125eb8 reads the trees of a level below the top with one
+// `cat-file --buffer --batch` and hashes them with a new long-running
+// hash-object of the trees (measured on Linux, readLevel). The top tree is read
+// and hashed alone.
 
 // longStoppedLine is the log line after a long-running git of the check
 // stopped. Its first part is the git command, cat-file or hash-object, and the
@@ -149,6 +149,12 @@ func (b *objectBatch) read(kind, id string) (body []byte, ok bool, err error) {
 	if _, err := io.WriteString(b.in, id+"\n"); err != nil {
 		return nil, false, err
 	}
+	return b.answer(kind, id)
+}
+
+// answer reads the answer of the batch for the object id that it was asked
+// for, as read does.
+func (b *objectBatch) answer(kind, id string) (body []byte, ok bool, err error) {
 	line, err := b.out.ReadString('\n')
 	if err != nil {
 		return nil, false, err
@@ -219,25 +225,34 @@ func (c *contentCheck) stopBatch() {
 // hashLong hashes body as an object of kind with the long-running hash-object
 // of that kind, which it starts at the first object of the kind.
 func (c *contentCheck) hashLong(kind string, body []byte) (string, error) {
-	p := filepath.Join(c.objects, objectBodyName)
-	if strings.ContainsAny(p, "\r\n") {
-		return "", errNoHashHelper
-	}
-	if err := writeObjectBody(c.objects, body); err != nil {
-		return "", errNoHashHelper
-	}
-	h := c.hashers[kind]
-	if h == nil {
-		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
-		if h == nil {
-			return "", errNoHashHelper
-		}
+	id, h, err := c.hashOn(c.hashers[kind], kind, body)
+	if h != nil && c.hashers[kind] == nil {
 		if c.hashers == nil {
 			c.hashers = map[string]*objectBatch{}
 		}
 		c.hashers[kind] = h
 	}
-	return h.hash(p)
+	return id, err
+}
+
+// hashOn hashes body as an object of kind with h, a long-running hash-object
+// of that kind. A nil h starts one. h is the one that ran, or nil.
+func (c *contentCheck) hashOn(h *objectBatch, kind string, body []byte) (string, *objectBatch, error) {
+	p := filepath.Join(c.objects, objectBodyName)
+	if strings.ContainsAny(p, "\r\n") {
+		return "", h, errNoHashHelper
+	}
+	if err := writeObjectBody(c.objects, body); err != nil {
+		return "", h, errNoHashHelper
+	}
+	if h == nil {
+		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		if h == nil {
+			return "", nil, errNoHashHelper
+		}
+	}
+	id, err := h.hash(p)
+	return id, h, err
 }
 
 // writeObjectBody writes body to objectBodyName in dir, through a root at dir.
@@ -263,12 +278,13 @@ func objectWriteEnv(dir string) []string {
 // and by a separate `cat-file <kind> <id>` run otherwise. A commit or a tree
 // that a separate run read counts in c.separate.
 func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
-	if c.batch != nil {
+	if c.batch != nil && !c.stopped {
 		body, ok, err := c.batch.read(kind, id)
 		switch {
 		case err != nil:
 			logging.Infof(longStoppedLine, "cat-file", stopCause(err))
 			c.stopBatch()
+			c.stopped = true
 		case ok:
 			return body, "", nil
 		}
@@ -278,4 +294,101 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 		c.separate++
 	}
 	return body, stderr, err
+}
+
+// readLevel reads and hashes the trees of one level of folder depth, and
+// returns their bodies in the order of level. Each tree goes through
+// readObject, except after a stop of a long-running git below the top tree:
+// then one `cat-file --buffer --batch` reads the trees of the level, and a new
+// long-running `hash-object -t tree --literally --no-filters --stdin-paths -w`
+// hashes them (c9125eb8, measured on Linux). A tree that the read gave no body
+// for, and each tree after a stop of that hash-object, go through readObject
+// as a separate run. That stop logs no line (measured on Linux).
+//
+// Claustrum's own, not measured: the trees of one level go to the read in the
+// order of the walk, a tree of that read does not count in c.separate, the
+// hash-object of the level ends with the level, and a tree whose body cannot be
+// written for it is hashed by a separate run.
+func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
+	read := make([][]byte, len(level))
+	if c.stopped && !level[0].top {
+		read = c.readByDepth(level)
+	}
+	bodies := make([][]byte, len(level))
+	var h *objectBatch
+	defer func() {
+		if h != nil {
+			h.close()
+		}
+	}()
+	hashing := true
+	for i, t := range level {
+		if body := read[i]; body != nil && hashing {
+			got, ran, err := c.hashOn(h, "tree", body)
+			h = ran
+			switch {
+			case err == nil:
+				if text := hashText("tree", t.id, got); text != "" {
+					return nil, text
+				}
+				c.read++
+				bodies[i] = body
+				continue
+			case errors.Is(err, errNoHashHelper):
+				if text := c.writeObject("tree", t.id, body); text != "" {
+					return nil, text
+				}
+				c.read++
+				bodies[i] = body
+				continue
+			}
+			hashing = false
+		}
+		body, text := c.readObject("tree", t.id)
+		if text != "" {
+			return nil, text
+		}
+		bodies[i] = body
+	}
+	return bodies, ""
+}
+
+// readByDepth reads the trees of level with one `cat-file --buffer --batch`.
+// The ids go to its stdin, which then closes. The answers are read while the
+// ids go in, so a full pipe holds neither side. A body is nil for a tree that
+// the batch named missing or of another kind, and for each tree from the first
+// answer that does not parse or does not come.
+func (c *contentCheck) readByDepth(level []*treeWalk) [][]byte {
+	read := make([][]byte, len(level))
+	b := c.startLong(nil, "cat-file", "--buffer", "--batch")
+	if b == nil {
+		return read
+	}
+	var ids strings.Builder
+	for _, t := range level {
+		ids.WriteString(t.id + "\n")
+	}
+	wrote := make(chan struct{})
+	go func() {
+		defer close(wrote)
+		_, _ = io.WriteString(b.in, ids.String())
+		_ = b.in.Close()
+	}()
+	// A write that git does not take ends when close drops the last read end
+	// of the pipe.
+	defer func() {
+		b.close()
+		<-wrote
+	}()
+	for i, t := range level {
+		body, ok, err := b.answer("tree", t.id)
+		if err != nil {
+			break
+		}
+		if ok {
+			// An empty tree has a body of no bytes, which is not nil.
+			read[i] = append([]byte{}, body...)
+		}
+	}
+	return read
 }
