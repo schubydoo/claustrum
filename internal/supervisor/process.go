@@ -867,9 +867,11 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	// The launcher variables are stripped after the caller's env is merged, so the
 	// strip covers the spawn env param as well as the daemon env.
-	// A gitRead spawn starts its git from the adopted set too (claustrum's own, not measured).
+	// After a good adopt the pane's git of a gitRead spawn still starts from the
+	// environment of the daemon, with no adopted name (c9125eb8, measured on Linux,
+	// macOS and Windows).
 	adoptedEnv, adopted := m.adoptedBase(c)
-	cmd.Env = install.StripEnv(buildSpawnEnvOn(adoptedEnv, adopted, env, noShellAgent), launcher != nil)
+	cmd.Env = install.StripEnv(buildSpawnEnvOn(adoptedEnv, adopted && gitRead == nil, env, noShellAgent), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
