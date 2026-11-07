@@ -38,6 +38,11 @@ func Handle(req *rpc.Request) rpc.Response {
 		fn = filesRealpath
 	case "files.extract_tar":
 		fn = filesExtractTar
+	case "files.mkdir":
+		if !mkdirServed {
+			return rpc.UnknownMethod(req)
+		}
+		fn = filesMkdir
 	default:
 		return rpc.UnknownMethod(req)
 	}

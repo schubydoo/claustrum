@@ -117,6 +117,17 @@ func docSetDiff(a, b map[string]bool) []string {
 	return out
 }
 
+// docMethods is the method list that the documents show: the Linux and macOS list.
+// On Windows capabilityMethods has no files.mkdir, so it goes back before
+// files.realpath.
+func docMethods() []string {
+	if slices.Contains(capabilityMethods, "files.mkdir") {
+		return capabilityMethods
+	}
+	last := len(capabilityMethods) - 1
+	return append(capabilityMethods[:last:last], "files.mkdir", capabilityMethods[last])
+}
+
 // docMethodRowRE finds a row of the method table of docs/PROTOCOL.md: the method in
 // group 1, and the page that its last cell links to in group 2.
 var docMethodRowRE = regexp.MustCompile("(?m)^\\| `([A-Za-z_.]+)` \\|.*\\]\\(protocol/([a-z0-9-]+\\.md)(?:#[a-z0-9_-]+)?\\) \\|$")
@@ -142,10 +153,10 @@ func TestDocsEveryMethodHasAHome(t *testing.T) {
 		}
 		rows = append(rows, m[1])
 	}
-	if !slices.Equal(rows, capabilityMethods) {
-		t.Errorf("the method table of docs/PROTOCOL.md is %v, and server.capabilities returns %v: put the rows in the order of capabilityMethods", rows, capabilityMethods)
+	if !slices.Equal(rows, docMethods()) {
+		t.Errorf("the method table of docs/PROTOCOL.md is %v, and server.capabilities returns %v: put the rows in the order of capabilityMethods", rows, docMethods())
 	}
-	for _, m := range capabilityMethods {
+	for _, m := range docMethods() {
 		page := strings.NewReplacer(".", "-", "_", "-").Replace(m)
 		_, err1 := os.Stat(filepath.Join("docs", "protocol", page+".md"))
 		_, err2 := os.Stat(filepath.Join("docs", "protocol", strings.ToLower(page)+".md"))
@@ -176,13 +187,14 @@ var docNotMethods = map[string]string{
 // advertised feature, a wildcard like `git.*`, or an entry of docNotMethods.
 func TestDocsNoPhantomMethod(t *testing.T) {
 	known := map[string]bool{}
-	for _, m := range capabilityMethods {
+	for _, m := range docMethods() {
 		known[m] = true
 	}
 	for _, f := range capabilityFeatures {
 		known[f] = true
 	}
 	// capabilityFeatures lists these on unix only, and the test must pass on Windows.
+	known["files.mkdir.verified_parent"] = true
 	known["git.worktree.external_root"] = true
 	known["process.spawn.link_bound"] = true
 	known["process.spawn.cli_temp_root"] = true
@@ -231,8 +243,8 @@ var docGoNotMethods = map[string]string{
 // its first `//` to the end. It reads no other text of a test file, because a
 // test frame may use any method name.
 func TestDocsNoPhantomMethodInGoText(t *testing.T) {
-	known := map[string]bool{"git.worktree.external_root": true, "process.spawn.link_bound": true, "process.spawn.cli_temp_root": true}
-	for _, m := range capabilityMethods {
+	known := map[string]bool{"files.mkdir.verified_parent": true, "git.worktree.external_root": true, "process.spawn.link_bound": true, "process.spawn.cli_temp_root": true}
+	for _, m := range docMethods() {
 		known[m] = true
 	}
 	for _, f := range capabilityFeatures {
@@ -286,7 +298,7 @@ var docMethodCountSentences = []docCountSentence{
 // len(capabilityMethods). The history sentences of
 // REFERENCE-BUILDS.md are not in the list on purpose.
 func TestDocsMethodCount(t *testing.T) {
-	want := len(capabilityMethods)
+	want := len(docMethods())
 	for _, s := range docMethodCountSentences {
 		m := s.re.FindStringSubmatch(docFlat(docRead(t, docRel(s.file))))
 		if m == nil {
@@ -527,7 +539,7 @@ func TestDocsPinnedBuild(t *testing.T) {
 // TestDocsCapabilityFeatures: the features array in the server.capabilities example
 // of the server page under docs/protocol equals capabilityFeatures, name for name and in order. The
 // document shows the unix list. On Windows osCapabilityFeatures is empty, so the
-// test puts git.worktree.external_root, process.spawn.link_bound and
+// test puts files.mkdir.verified_parent, git.worktree.external_root, process.spawn.link_bound and
 // process.spawn.cli_temp_root back where methods_server.go appends them (after the
 // fixed names, before server.instance_id).
 func TestDocsCapabilityFeatures(t *testing.T) {
@@ -547,7 +559,7 @@ func TestDocsCapabilityFeatures(t *testing.T) {
 	}
 	if !hasExt {
 		last := len(want) - 1
-		want = append(want[:last:last], ext, "process.spawn.link_bound", "process.spawn.cli_temp_root", want[last])
+		want = append(want[:last:last], "files.mkdir.verified_parent", ext, "process.spawn.link_bound", "process.spawn.cli_temp_root", want[last])
 	}
 	if strings.Join(doc, " ") != strings.Join(want, " ") {
 		t.Errorf("the features array of docs/protocol/server.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities example read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
@@ -665,6 +677,7 @@ var docWordLimits = map[string]int{
 	"docs/index.md":                              325,  // the Go pin item (decision-076). 316: the reader router
 	"docs/protocol/errors.md":                    2015, // the root as sent and the quoting and cut of the link-limit text. 1978: the link-limit backticks. 1957: the .probe text, 41 words of a new row
 	"docs/protocol/files-extract-tar.md":         2463, // the file that Windows cannot read. 2457: the empty folder that Windows cannot read. 2420: the .synced rules of 683cc6a9
+	"docs/protocol/files-mkdir.md":               538,  // a new page: its word count plus about 200, c9125eb8
 	"docs/protocol/files-list.md":                550,  // the ELOOP tries of b3081b51. 468: the network links of 683cc6a9
 	"docs/protocol/files-read.md":                825,
 	"docs/protocol/files-stat.md":                514,   // the ELOOP tries of b3081b51. 434: the page rewrite
@@ -687,7 +700,7 @@ var docWordLimits = map[string]int{
 	"docs/protocol/process-reattach.md":          1046, // attach, fresh and proof
 	"docs/protocol/process-spawn.md":             4513, // the approval of the parent test, moved from AGENTS.md (TASK-451). 4505: the end of the hold while the lock is busy. 4492: the late step log of cliTempRoot. 4467: the text of a record that cannot be saved. 4420: the relative names and the shared wait of the cliTempRoot step. 4376: the cliTempRoot inputs and time limit of b3081b51. 4255: the private temp folder of b3081b51. 3615: the temp-folder test of 683cc6a9. 3474: rewrite to the page template
 	"docs/protocol/process-stdin.md":             929,  // attach
-	"docs/protocol/server.md":                    1780, // the Windows shutdown reply of b3081b51. 1747: the pin of b3081b51. 1745: the six feature names of b3081b51. 1721: the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
+	"docs/protocol/server.md":                    1803, // the files.mkdir method and feature of c9125eb8 (decision-062). 1780: the Windows shutdown reply of b3081b51. 1747: the pin of b3081b51. 1745: the six feature names of b3081b51. 1721: the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                   584,  // moved from PROTOCOL.md
 	"docs/protocol/git-rules-session-folders.md": 1860, // the rename and the remove of a record name, moved from AGENTS.md (TASK-451). 1830: the place, spelling and no-pin folder of a create record. 1788: the stack merge. 1760: the record of a create, b3081b51. 1687: the launcher add-dir and letter-case rules, 3 words of a heading. 1666: the retry after a failed rename. 1659: a heading for the create rule. 1656: the spawn shapes that record, b3081b51. 1582: the record that cannot be saved, b3081b51. 1361: the claims fixes of m-19. 1335: the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
 }

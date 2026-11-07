@@ -68,6 +68,13 @@ type RealpathResult struct {
 	Dangling bool   `json:"dangling,omitempty"`
 }
 
+// MkdirResult is the files.mkdir result. Errno is set for a code that an OS
+// error gave (c9125eb8, measured on Linux and macOS).
+type MkdirResult struct {
+	Code  string `json:"code"`
+	Errno int    `json:"errno,omitempty"`
+}
+
 type ValidateResult struct {
 	Valid bool   `json:"valid"`
 	IsDir bool   `json:"isDir"`
