@@ -97,6 +97,11 @@ type ShutdownResult struct {
 	OK bool `json:"ok"`
 }
 
+// AdoptEnvResult is the reply of a good server.adoptEnv: {"ok":true} (c9125eb8).
+type AdoptEnvResult struct {
+	OK bool `json:"ok"`
+}
+
 // SpawnResult is process.spawn's reply. It is deliberately distinct from the
 // StdinResult of process.stdin and the KillResult: the CT-1 opt-in
 // ("wantPid":true) adds pid + startTime here only, so those fields can never

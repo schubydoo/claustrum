@@ -147,6 +147,8 @@ A write to a closed stdout gives exit `0` (build `52d82f0a`, measured on Linux a
 On Windows the daemon can miss the half-close of the bridge (see
 [Transport](../PROTOCOL.md#transport)). The bridge then does not exit.
 
+With `CLAUDE_SSH_ADOPT_ENV` the bridge first sends [a frame of its own](server-adopt-env.md#the-frame-of-the-bridge).
+
 ### -stop — ask a running daemon to shut down
 
 ```text

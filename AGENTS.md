@@ -47,7 +47,7 @@ modes and the OS splits is in
 |------|------|
 | `rpc.go` | `request`, `gate` (read loop), `route` (`dispatchRequest`) |
 | `internal/rpc/` | error codes, reply types, result structs with fields in the order of the reference. Never a map |
-| `methods_*.go`, `internal/{files,git}/` | the 22 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
+| `methods_*.go`, `internal/{files,git}/` | the 23 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*` |
 | `internal/supervisor/process.go` | spawn, stream frames, stdin queue, replay buffer, `reattach` |
 | `handlers/prune.go` | the params type of `plugins.prune`, whose name is in its `-32602` text |
 | `internal/homeguard/homeguard.go` | `WipesHomeDir`, the home guard each RPC path to a recursive delete owes |

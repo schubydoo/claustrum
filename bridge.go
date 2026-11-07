@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,11 +13,13 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/runlock"
 	"github.com/schubydoo/claustrum/internal/sockroute"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 	"github.com/schubydoo/claustrum/internal/tokenfile"
 )
 
 // runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
-// stream it relays must already carry "auth" per request. This is what an SSH
+// stream it relays must already carry "auth" per request. With CLAUDE_SSH_ADOPT_ENV
+// it first sends a frame of its own (bridgeAdoptFrame). This is what an SSH
 // session attaches to. A dial failure is a hard error (wrapped "dial server:",
 // matching the reference). -stop instead reports a failed dial as a word.
 //
@@ -35,6 +40,12 @@ func runBridge(socket string) error {
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
+	var from io.Reader = nc
+	if frame := bridgeAdoptFrame(socket, os.Environ()); frame != nil {
+		if nc, from, err = sendAdoptFrame(socket, nc, frame); err != nil {
+			return fmt.Errorf("dial server: %w", err)
+		}
+	}
 	defer nc.Close()
 	// Read the globals once, here, so the copy goroutines never touch them.
 	in, out := os.Stdin, os.Stdout
@@ -42,8 +53,103 @@ func runBridge(socket string) error {
 		_, _ = io.Copy(nc, in)
 		closeWriteOrClose(nc)
 	}()
-	_, _ = io.Copy(bridgeStdout(out), nc)
+	_, _ = io.Copy(bridgeStdout(out), from)
 	return nil
+}
+
+// bridgeAdoptEnv is the variable of the bridge that asks for its first frame,
+// server.adoptEnv (c9125eb8, measured on Linux, macOS and Windows). The value 1
+// sends the frame. The value no-login-shell sends it with "noLoginShell":true. No
+// variable and yes send none (Linux), nor do true, 0 and an empty value (macOS).
+// Other values send none (claustrum's own, not measured). The arg no-login-shell
+// changes nothing (macOS).
+const bridgeAdoptEnv = "CLAUDE_SSH_ADOPT_ENV"
+
+// bridgeAdoptWait is how long the bridge waits for the reply to its frame. With no
+// reply the Windows bridge closed the connection after about 1 s, connected again
+// and sent the frame again (c9125eb8, measured on Windows). Linux and macOS do the
+// same here (claustrum's own, not measured). var so a test can shrink it.
+var bridgeAdoptWait = time.Second
+
+// adoptFrame is the first frame of the bridge, with its members in name order as
+// measured.
+type adoptFrame struct {
+	Auth    string      `json:"auth"`
+	ID      string      `json:"id"`
+	JSONRPC string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+	Params  adoptParams `json:"params"`
+}
+
+// adoptParams are the params of the frame. noLoginShell is the last member, and
+// only when it is true (measured).
+type adoptParams struct {
+	Env          []string `json:"env"`
+	NoLoginShell bool     `json:"noLoginShell,omitempty"`
+}
+
+// bridgeAdoptFrame is the line of the first frame for env, the environment of the
+// bridge, or nil when the bridge sends none. env goes in its own order (measured).
+// The auth member is the content of daemon.token beside the socket (measured on
+// Windows, and on Linux with that file). The bridge sends no frame when that file
+// does not read or is empty (claustrum's own, not measured). An env that the daemon
+// refuses sends no frame (measured on Linux and macOS for one of 300000 bytes).
+// CLAUDE_RPC_TOKEN is not sent (claustrum's own, not measured).
+// json.Marshal escapes <, > and & in a value (claustrum's own, not measured).
+func bridgeAdoptFrame(socket string, env []string) []byte {
+	var noLogin bool
+	switch v, _ := os.LookupEnv(bridgeAdoptEnv); v {
+	case "1":
+	case "no-login-shell":
+		noLogin = true
+	default:
+		return nil
+	}
+	env = sysproc.RemoveEnvKey(env, "CLAUDE_RPC_TOKEN")
+	if adoptEnvProblem(env, nil) != "" {
+		return nil
+	}
+	token, err := os.ReadFile(filepath.Join(tokenfile.Dir(socket), tokenfile.Name))
+	if err != nil || len(token) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(adoptFrame{
+		Auth: string(token), ID: "bridge", JSONRPC: "2.0", Method: methodAdoptEnv,
+		Params: adoptParams{Env: env, NoLoginShell: noLogin},
+	})
+	if err != nil {
+		return nil
+	}
+	return append(b, '\n')
+}
+
+// sendAdoptFrame writes frame on nc and reads one reply line, which the bridge
+// does not relay (measured on Linux). An error reply does not stop the relay
+// (measured on Linux). It returns the connection and the reader that the relay
+// goes on with. With no reply in bridgeAdoptWait it dials again and sends the frame
+// again (measured on Windows for three tries). The missing limit is claustrum's
+// own, not measured. So are these: a failed new dial ends the bridge with "dial
+// server:", the write of the frame has no deadline of its own, any other failed
+// read ends the wait and the relay goes on, and the stdin relay starts after the
+// reply.
+func sendAdoptFrame(socket string, nc net.Conn, frame []byte) (net.Conn, io.Reader, error) {
+	for {
+		br := bufio.NewReader(nc)
+		_ = nc.SetReadDeadline(time.Now().Add(bridgeAdoptWait))
+		_, werr := nc.Write(frame)
+		_, rerr := br.ReadString('\n')
+		var te interface{ Timeout() bool }
+		if werr == nil && errors.As(rerr, &te) && te.Timeout() {
+			_ = nc.Close()
+			var err error
+			if nc, err = sockroute.DialUnixPath(socket, 0); err != nil {
+				return nil, nil, err
+			}
+			continue
+		}
+		_ = nc.SetReadDeadline(time.Time{})
+		return nc, br, nil
+	}
 }
 
 // closeWriteOrClose ends the write side of nc so the daemon reads EOF, and

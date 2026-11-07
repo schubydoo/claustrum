@@ -294,6 +294,9 @@ type Manager struct {
 	// once at the start of the daemon. The zero value is off.
 	Jobs ChildJobs
 
+	// adopted is the environment of the last good server.adoptEnv (adoptenv.go).
+	adopted adoptedEnv
+
 	// Records holds the run dir and the child-record state (internal/childrec). Its
 	// fields are promoted, so code reads them as fields of the manager.
 	childrec.Records
@@ -850,7 +853,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	// The launcher variables are stripped after the caller's env is merged, so the
 	// strip covers the spawn env param as well as the daemon env.
-	cmd.Env = install.StripEnv(buildSpawnEnv(env, noShellAgent), launcher != nil)
+	// A gitRead spawn starts its git from the adopted set too (claustrum's own, not measured).
+	adoptedEnv, adopted := m.adoptedBase(c)
+	cmd.Env = install.StripEnv(buildSpawnEnvOn(adoptedEnv, adopted, env, noShellAgent), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
@@ -2058,11 +2063,20 @@ func BuildEnv(env map[string]string) []string { return buildSpawnEnv(env, false)
 // buildSpawnEnv is BuildEnv for a spawn. noShellAgent is the disableShellAgentSocket
 // of the request, which ends a read of the login-shell PATH that still runs.
 func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
+	return buildSpawnEnvOn(nil, false, env, noShellAgent)
+}
+
+// buildSpawnEnvOn is buildSpawnEnv on the adopted base of a connection when adopted
+// is true (adoptenv.go), and on the environment of the daemon otherwise.
+func buildSpawnEnvOn(adoptedEnv []string, adopted bool, env map[string]string, noShellAgent bool) []string {
 	// A spawn starts a read of the login-shell PATH that is due, and waits for a
 	// running read within its bounds (internal/shellenv/shellenv.go). A no-op after a good read, and
 	// when the read is not armed (a test server).
 	shellenv.AwaitLoginPATH(noShellAgent)
-	base := sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	base := adoptedEnv
+	if !adopted {
+		base = sysproc.RemoveEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	}
 	// An inherited temp-folder name whose folder cannot take a file is not handed
 	// on (internal/supervisor/tempfolder_unix.go). A caller key of that name still reaches the child
 	// (claustrum's own, not measured).
@@ -2076,8 +2090,8 @@ func buildSpawnEnv(env map[string]string, noShellAgent bool) []string {
 	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
 	// the later PATH entry (measured on Windows against 89cb6289). With a daemon
 	// entry named Path, a caller key named exactly Path replaces it and still loses to
-	// the later PATH.
-	if lp := shellenv.CurrentLoginPATH(); lp != "" {
+	// the later PATH. On an adopted base Windows skips this step (adoptTakesLoginPATH).
+	if lp := shellenv.CurrentLoginPATH(); lp != "" && (!adopted || adoptTakesLoginPATH) {
 		base = sysproc.ReplaceOrAppendEnv(base, "PATH", lp)
 	}
 	// A caller key that the base holds replaces that entry in place. A new caller key

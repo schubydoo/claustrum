@@ -73,7 +73,7 @@ func TestShutdownStillRequiresTheJSONRPCVersion(t *testing.T) {
 // dispatch surface without being pinned here.
 func TestEveryOtherMethodStillRequiresAuth(t *testing.T) {
 	methods := []string{
-		"server.ping", "server.capabilities",
+		"server.ping", "server.capabilities", "server.adoptEnv",
 		"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 		"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 		"launcher.resolve",
