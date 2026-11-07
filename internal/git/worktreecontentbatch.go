@@ -20,7 +20,7 @@ import (
 // on Linux, macOS and Windows), and the checked line counts 0 separate runs on
 // Windows too. A git that stops answering, or a process
 // that cannot compute SHA-1, ends that use. Then one `cat-file <kind> <id>`
-// reads each object, with the same result (measured on Linux). The checked
+// reads each object above the level below the top tree, with the same result (measured on Linux). The checked
 // line counts the commits and trees that separate runs read.
 //
 // While the batch runs, c9125eb8 hashes the commits with one long-running
@@ -116,8 +116,7 @@ func (c *contentCheck) startBatch() {
 
 // startLong starts one long-running git of the check in the base repository,
 // with env after its environment. It gets the limit of one call, and its stop
-// stops no other call (contentCheck.git), but a hash-object stop ends the batch
-// (readObject). It is nil when no pipe opened.
+// stops no other call (contentCheck.git). It is nil when no pipe opened.
 func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {

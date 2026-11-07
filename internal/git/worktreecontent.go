@@ -408,7 +408,8 @@ func (t *treeWalk) files(out []contentFile) []contentFile {
 // of the trees. In the top tree only the names of the check count. Below
 // .claude every blob and link counts. A submodule entry is not compared
 // (claustrum's own, not measured). Which object a refusal names when two are
-// bad is claustrum's own, not measured.
+// bad is claustrum's own, not measured. The order across levels is claustrum's
+// own, not measured.
 func (c *contentCheck) walk(id string) ([]contentFile, string) {
 	top := &treeWalk{id: id, top: true}
 	for level := []*treeWalk{top}; len(level) > 0; {
@@ -418,7 +419,7 @@ func (c *contentCheck) walk(id string) ([]contentFile, string) {
 		}
 		var next []*treeWalk
 		for i, t := range level {
-			if text := c.parseTree(t, bodies[i]); text != "" {
+			if text := c.treeEntries(t, bodies[i]); text != "" {
 				return nil, text
 			}
 			for _, e := range t.entries {
@@ -432,8 +433,8 @@ func (c *contentCheck) walk(id string) ([]contentFile, string) {
 	return top.files(nil), ""
 }
 
-// parseTree reads the entries of the tree t from its body.
-func (c *contentCheck) parseTree(t *treeWalk, body []byte) string {
+// treeEntries reads the entries of the tree t from its body.
+func (c *contentCheck) treeEntries(t *treeWalk, body []byte) string {
 	id, prefix, top := t.id, t.prefix, t.top
 	idLen := len(c.commit) / 2
 	for len(body) > 0 {
