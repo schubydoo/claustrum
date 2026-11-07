@@ -133,7 +133,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `script_suffix` | `.js`, `.ts` or `.mjs`, and `.tsx` or `.jsx` (claustrum's own). `X.JS` passes | ``launcher `<L>` ends like a JavaScript or TypeScript source file, and no launcher may. Rename it.`` |
 | `missing` | Missing, a dangling link or a folder | ``launcher `<L>` does not exist or is not an executable regular file`` |
 | `missing` | Mode 0644, or a mount with `noexec` | ``launcher `<L>` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)`` |
-| `links` | A chain of 41 links, a loop of 2 or a self loop | `` too many symbolic links (or a loop) lead to launcher `<L>` `` |
+| `links` | A chain of 41 links, a loop of 2 or a self loop (with no digest: claustrum's own, not measured), or a loop in a folder of the path (claustrum's own, not measured) | `` too many symbolic links (or a loop) lead to launcher `<L>` `` |
 | `unreadable` | The read fails | ``launcher `<L>` cannot be read for its digest: <errno text>`` |
 | `unreadable` | More than 67108864 bytes | ``launcher `<L>` is larger than 64 MiB, the most that can be checked against a digest`` |
 | `digest` | No digest of `sha256` matches | ``launcher `<L>` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.`` |
@@ -155,7 +155,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
 - Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
-- `<fs>` is `NFS`, `FUSE or virtiofs` for bindfs, or `SMB` for CIFS. virtiofs and 9p were not staged. The `statfs` type finds them (claustrum's own, not measured).
+- `<fs>` is `NFS`, `FUSE or virtiofs` for a FUSE mount, or `SMB` for CIFS. 9p passes. The `statfs` type finds them (claustrum's own, not measured).
 - On these file systems with a digest the owner and write tests still run. An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
 - A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
 

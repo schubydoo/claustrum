@@ -28,8 +28,8 @@ func linkChain(t *testing.T, d, name, target string, n int) string {
 }
 
 // TestCheckLauncherFileLinkLoop pins the links fault of c9125eb8 (measured on Linux):
-// a chain of 41 links, a loop of 2 and a self loop get links, with a right or a wrong
-// digest. Chains of 5, 39 and 40 pass. Linux only, because the link limit of the
+// a chain of 41 links, a loop of 2 and a self loop get links with a right digest, the
+// loop of 2 with a wrong one too. Chains of 5, 39 and 40 pass. Linux only, because the link limit of the
 // system differs elsewhere.
 func TestCheckLauncherFileLinkLoop(t *testing.T) {
 	d := launcherDir(t)
@@ -59,6 +59,25 @@ func TestCheckLauncherFileLinkLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkFile(t, "self loop", self, right, FaultLinks, links(self))
+	loopdir := filepath.Join(d, "loopdir")
+	if err := os.Symlink(loopdir, loopdir); err != nil {
+		t.Fatal(err)
+	}
+	mid := filepath.Join(loopdir, "x")
+	checkFile(t, "loop in a folder of the path", mid, right, FaultLinks, links(mid))
+}
+
+// TestLauncherFSTypeReal pins that the f_type seam reads the real statfs: /proc gives
+// the proc f_type and no server file system name.
+func TestLauncherFSTypeReal(t *testing.T) {
+	magic, err := launcherFSType("/proc")
+	if err != nil || magic != unix.PROC_SUPER_MAGIC {
+		t.Fatalf("f_type of /proc: got %#x, %v, want %#x", magic, err, unix.PROC_SUPER_MAGIC)
+	}
+	f, err := statLauncherFacts("/proc")
+	if err != nil || f.fs != "" {
+		t.Errorf("facts of /proc: got %q, %v, want no name", f.fs, err)
+	}
 }
 
 // TestStatLauncherFactsFileSystem pins the f_type test through the statfs seam: NFS,

@@ -36,8 +36,7 @@ func statLauncherFacts(p string) (launcherFacts, error) {
 // launcherFSName names the file system of an f_type as the refusal text shows it, or
 // "" for a file system that the walk trusts. The f_type test is claustrum's own, not
 // measured: the rows staged NFS, FUSE (bindfs) and CIFS (vers=3.0) on Linux. virtiofs
-// reports the FUSE f_type and was not staged. The two SMB values cover a mount with
-// SMB1 and one with a later dialect. 9p was not staged, so it is not named.
+// reports the FUSE f_type and was not staged. 9p was not staged, so it is not named.
 func launcherFSName(magic uint32) string {
 	switch magic {
 	case unix.NFS_SUPER_MAGIC:
