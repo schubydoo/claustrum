@@ -7,12 +7,6 @@ import (
 	"strings"
 )
 
-// osKeptDaemonNames are the names that an adopt takes from the daemon on Windows.
-// After an adopt of two entries the set held five, and the TEMP and TMP of the
-// daemon reached the child unchanged (c9125eb8, measured on Windows). A sent TEMP
-// or TMP wins (claustrum's own, not measured).
-var osKeptDaemonNames = []string{"TEMP", "TMP"}
-
 // adoptTakesLoginPATH is false on Windows: after an adopt with no PATH the child
 // had no PATH (c9125eb8, measured on Windows).
 const adoptTakesLoginPATH = false

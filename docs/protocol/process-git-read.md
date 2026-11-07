@@ -48,18 +48,19 @@ A `<rev>` is a ref, `<A>..<B>` or `<A>...<B>`. A `<base>` is a ref or `<A>..<B>`
 
 ## The ref test
 
-A `<ref>` gets the shape refusal when it is empty or starts with `-` (measured on Linux), or has more than 4096 bytes. So does a ref with a TAB, LF, SOH or DEL byte (measured on Linux, SOH not on macOS and Windows). No git runs. A ref of 4096 bytes runs. Every other argv tried gets the shape refusal too, for example one with an added option, a missing or extra `--` or a second path (measured on Linux). claustrum's own: also an argv no row tried.
+A `<ref>` gets the shape refusal when it is empty or starts with `-` (measured on Linux), or has more than 4096 bytes. So does a ref with a TAB, LF, SOH or DEL byte (measured on Linux, SOH not on macOS and Windows). A ref with NUL, 0x02, 0x1b or 0x1f gets it too (measured on Linux, macOS and Windows). No git runs. A ref of 4096 bytes runs. In `diff --name-status -M` a range `<A>..<B>` of more than 4096 bytes runs when no side has more (measured on Linux, macOS and Windows, a side of 4096 bytes on macOS and Windows). Every other argv tried gets the shape refusal too, for example one with an added option, a missing or extra `--` or a second path (measured on Linux). claustrum's own: also an argv no row tried.
 
-claustrum's own, not measured: the other bytes below `0x20` get the refusal. A ref with a space or `..` inside goes to git. Each side of a range passes the ref test, and the 4096-byte bound applies to the whole `<A>..<B>` value too. A pathspec needs a path after its prefix. Only `sub` is measured as the path. Also not measured: `log` with `<A>...<B>`, a range in the other `diff` shapes, and the ref test in the other slots and on a pathspec.
+claustrum's own, not measured: the other bytes below `0x20` get the refusal. A ref with a space or `..` inside goes to git. Each side of a range takes the ref test, so a side of more than 4096 bytes or with a control byte gets the refusal, in every slot. A pathspec needs a path after its prefix. Only `sub`, `a b`, `..` and `*.txt` are measured as the path. Also not measured: the ref test in the other slots and on a pathspec.
 
 ## The run
 
-The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. Some commands get extra arguments (measured on Linux, macOS and Windows):
+The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. After a good [server.adoptEnv](server-adopt-env.md) the git starts from the environment of the daemon, with no adopted name (measured on Linux, macOS and Windows). Some commands get extra arguments (measured on Linux, macOS and Windows):
 
 - `diff` with one ref runs as `diff-index` with the real index. A patch shape adds `-p`, and a trailing `--` follows the ref.
-- `diff --name-status -M <A>..<B>` runs as `diff-tree -r --ignore-submodules=dirty --submodule=short --no-ext-diff --no-textconv --name-status -M <A> <B> --`.
+- `diff --name-status -M <A>..<B>` runs as `diff-tree -r --ignore-submodules=dirty --submodule=short --no-ext-diff --no-textconv --name-status -M <A> <B> --`. The other `diff` shapes with `<A>..<B>` run as `diff-tree -r` too.
+- `log` with `<A>...<B>` runs, with the range before the trailing `--`.
 
-claustrum's own, not measured: `diff` with two refs and the other `diff` shapes with `<A>..<B>` run as `diff-tree -r` too.
+claustrum's own, not measured: `diff` with two refs runs as `diff-tree -r` too.
 
 A folder with no repository is not refused. The git exits 128 with `fatal: not a git repository: '/dev/null'` (`'NUL'` on Windows, measured on Linux and Windows).
 

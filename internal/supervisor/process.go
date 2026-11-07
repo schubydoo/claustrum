@@ -867,16 +867,19 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	// The launcher variables are stripped after the caller's env is merged, so the
 	// strip covers the spawn env param as well as the daemon env.
-	// A gitRead spawn starts its git from the adopted set too (claustrum's own, not measured).
+	// After a good adopt the pane's git of a gitRead spawn still starts from the
+	// environment of the daemon, with no adopted name (c9125eb8, measured on Linux,
+	// macOS and Windows).
 	adoptedEnv, adopted := m.adoptedBase(c)
-	cmd.Env = install.StripEnv(buildSpawnEnvOn(adoptedEnv, adopted, env, noShellAgent), launcher != nil)
+	cmd.Env = install.StripEnv(buildSpawnEnvOn(adoptedEnv, adopted && gitRead == nil, env, noShellAgent), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
 	// On Linux, after a long wait, the first spawn on a connection that adopted
 	// without "noLoginShell":true started one read again. That spawn kept the old
 	// PATH (c9125eb8, measured on Linux). That a connection with no adopt of its own
-	// reads none is claustrum's own, not measured.
+	// reads none is claustrum's own, not measured. A gitRead spawn starts the read
+	// too (claustrum's own, not measured for a gitRead spawn).
 	if adopted && c.ReadsLoginPATH() {
 		shellenv.RefreshLoginPATH()
 	}
@@ -2100,11 +2103,9 @@ func buildSpawnEnvOn(adoptedEnv []string, adopted bool, env map[string]string, n
 	}
 	// An inherited temp-folder name whose folder cannot take a file is not handed
 	// on (internal/supervisor/tempfolder_unix.go). A caller key of that name still reaches the child
-	// (claustrum's own, not measured). An adopted base holds no inherited name, so
-	// its temp-folder entries pass untested (claustrum's own, not measured).
-	if !adopted {
-		base = DropUnusableTempVars(base)
-	}
+	// (claustrum's own, not measured). An adopted base holds the temp-folder entries
+	// of the daemon, and they take the test too (c9125eb8, measured on Linux and macOS).
+	base = DropUnusableTempVars(base)
 	// The base holds no CLAUDE_SSH_PEER_CHECK: the daemon removed it from its own
 	// environment at its start (startPeerCheck). A caller key of that name passes.
 	// The login-shell PATH is applied HERE, to the child's environment, rather
