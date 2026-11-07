@@ -430,7 +430,9 @@ func TestRunBridgeSecondCloseThirdConnection(t *testing.T) {
 // is larger than the socket buffer, so its write blocks. The wait covers the write,
 // and the bridge still reaches the third connection (claustrum's own, not measured).
 func TestRunBridgeDaemonNeverReads(t *testing.T) {
-	t.Setenv("CLAUSTRUM_TEST_BIG", strings.Repeat("v", 250000))
+	// 220000 bytes is over the default send buffer of Linux (212992) and macOS, and
+	// leaves room for a host environment of about 40 KB.
+	t.Setenv("CLAUSTRUM_TEST_BIG", strings.Repeat("v", 220000))
 	r := startAdoptBridge(t, 300*time.Millisecond)
 	if _, err := io.WriteString(r.stdin, adoptTestPing); err != nil {
 		t.Fatal(err)
