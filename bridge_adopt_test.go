@@ -63,6 +63,13 @@ func TestBridgeAdoptFrameBytes(t *testing.T) {
 	if got := bridgeAdoptFrame(adoptSocketDir(t, ""), env); got != nil {
 		t.Errorf("a missing daemon.token gave the frame %q, want none", got)
 	}
+	empty := adoptSocketDir(t, "")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(empty), tokenfile.Name), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := bridgeAdoptFrame(empty, env); got != nil {
+		t.Errorf("an empty daemon.token gave the frame %q, want none", got)
+	}
 }
 
 // TestBridgeAdoptFrameLimits: the bridge does not test the list as the daemon does.
@@ -115,6 +122,12 @@ func TestBridgeAdoptFrameKept(t *testing.T) {
 		if got := string(bridgeAdoptFrame(sock, env)); got != tc.want {
 			t.Errorf("%s=%q: frame %q, want %q", bridgeAdoptEnv, tc.value, got, tc.want)
 		}
+	}
+	// A name that is not valid UTF-8 goes into kept too (claustrum's own, not measured).
+	t.Setenv(bridgeAdoptEnv, "1")
+	const want = `{"auth":"tok","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["CLAUDE_SSH_ADOPT_ENV=1"],"kept":["\ufffd"]}}` + "\n"
+	if got := string(bridgeAdoptFrame(sock, []string{"CLAUDE_SSH_ADOPT_ENV=1", "\xff=1"})); got != want {
+		t.Errorf("a name that is not UTF-8: frame %q, want %q", got, want)
 	}
 }
 
@@ -266,18 +279,18 @@ type adoptBridgeRun struct {
 	conns  []net.Conn
 }
 
-// startAdoptBridge starts runBridge on a fake listener with a short adopt wait. The
+// startAdoptBridge starts runBridge on a fake listener with the adopt wait wait. The
 // cleanups close the listener and the accepted connections, and wait for the bridge.
-func startAdoptBridge(t *testing.T) *adoptBridgeRun {
+func startAdoptBridge(t *testing.T, wait time.Duration) *adoptBridgeRun {
 	t.Helper()
 	old := bridgeAdoptWait
-	bridgeAdoptWait = 300 * time.Millisecond
+	bridgeAdoptWait = wait
 	t.Cleanup(func() { bridgeAdoptWait = old })
 	t.Setenv(bridgeAdoptEnv, "1")
 	sock := adoptSocketDir(t, "tok")
 	r := &adoptBridgeRun{frame: string(bridgeAdoptFrame(sock, os.Environ())), done: make(chan error, 1)}
 	if r.frame == "" {
-		t.Fatal("this environment gives no frame")
+		t.Skip("the environment of this host gives a frame over 262144 bytes, so the bridge sends none")
 	}
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -346,7 +359,7 @@ const adoptTestPing = `{"jsonrpc":"2.0","id":7,"method":"server.ping"}` + "\n"
 // wait, and the third gets no frame but the request that the client wrote at the
 // start (c9125eb8, measured on Linux, macOS and Windows).
 func TestRunBridgeSilentDaemonThirdConnection(t *testing.T) {
-	r := startAdoptBridge(t)
+	r := startAdoptBridge(t, 300*time.Millisecond)
 	if _, err := io.WriteString(r.stdin, adoptTestPing); err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +387,8 @@ func TestRunBridgeSilentDaemonThirdConnection(t *testing.T) {
 // The bridge dials again, sends the frame there, and relays the request after the
 // reply (c9125eb8, measured on Linux, macOS and Windows).
 func TestRunBridgeRetriesAfterClose(t *testing.T) {
-	r := startAdoptBridge(t)
+	// A wait of 1 s, so a slow race run still gets the reply in time.
+	r := startAdoptBridge(t, time.Second)
 	if _, err := io.WriteString(r.stdin, adoptTestPing); err != nil {
 		t.Fatal(err)
 	}
@@ -391,4 +405,41 @@ func TestRunBridgeRetriesAfterClose(t *testing.T) {
 		t.Fatalf("second connection: line after the reply %q, want %q", got, adoptTestPing)
 	}
 	r.expectPong(t, second)
+}
+
+// TestRunBridgeSecondCloseThirdConnection: the listener closes the first and the
+// second connection at once. The third gets no frame but the request of the client
+// (claustrum's own, not measured: the rows close only the first connection).
+func TestRunBridgeSecondCloseThirdConnection(t *testing.T) {
+	r := startAdoptBridge(t, time.Second)
+	if _, err := io.WriteString(r.stdin, adoptTestPing); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		c, _ := r.accept(t)
+		_ = c.Close()
+	}
+	third, br := r.accept(t)
+	if got := readLineWithin(t, third, br); got != adoptTestPing {
+		t.Fatalf("third connection: first line %q, want the relayed request %q", got, adoptTestPing)
+	}
+	r.expectPong(t, third)
+}
+
+// TestRunBridgeDaemonNeverReads: a daemon that accepts and never reads. The frame
+// is larger than the socket buffer, so its write blocks. The wait covers the write,
+// and the bridge still reaches the third connection (claustrum's own, not measured).
+func TestRunBridgeDaemonNeverReads(t *testing.T) {
+	t.Setenv("CLAUSTRUM_TEST_BIG", strings.Repeat("v", 250000))
+	r := startAdoptBridge(t, 300*time.Millisecond)
+	if _, err := io.WriteString(r.stdin, adoptTestPing); err != nil {
+		t.Fatal(err)
+	}
+	r.accept(t)
+	r.accept(t)
+	third, br := r.accept(t)
+	if got := readLineWithin(t, third, br); got != adoptTestPing {
+		t.Fatalf("third connection: first line %q, want the relayed request %q", got, adoptTestPing)
+	}
+	r.expectPong(t, third)
 }

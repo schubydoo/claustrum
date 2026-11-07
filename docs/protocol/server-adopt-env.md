@@ -67,7 +67,7 @@ With `CLAUDE_SSH_ADOPT_ENV=1` the [bridge](flags.md#-bridge-stdiosocket-relay) f
 {"auth":"<token>","id":"bridge","jsonrpc":"2.0","method":"server.adoptEnv","params":{"env":["PATH=/usr/bin:/bin","HOME=/home/u","CLAUDE_SSH_ADOPT_ENV=1"]}}
 ```
 
-The bridge does not relay the reply, and an error reply does not stop the relay (Linux). With no reply in about 1 s, or after a close by the daemon, the bridge connects again at once. The second connection gets the frame again. The third gets none and relays stdin (Linux, macOS and Windows). The relay of stdin starts after the reply (Linux). A failed write counts as a close, a second close leads to the third connection, and a failed new connection ends the bridge with `dial server:` (claustrum's own, not measured).
+The bridge does not relay the reply, and an error reply does not stop the relay (Linux). With no reply in about 1 s, or after a close by the daemon, the bridge connects again at once. The second connection gets the frame again. The third gets none and relays stdin (Linux, macOS and Windows). The relay of stdin starts after the reply (Linux). The wait covers the write of the frame too. A failed or late write counts as a close, a second close leads to the third connection, and a failed new connection ends the bridge with `dial server:` (claustrum's own, not measured).
 
 ## The list of the frame
 

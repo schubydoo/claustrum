@@ -159,19 +159,20 @@ func bridgeAdoptFrame(socket string, env []string) []byte {
 // connection gets the frame again. The third gets no frame, and the relay goes on
 // there (c9125eb8, measured on Linux, macOS and Windows). The stdin relay starts
 // after the reply or on the third connection (measured on Linux). These parts are
-// claustrum's own, not measured: a failed write counts as a close, a second close
-// leads to the third connection too, a failed new dial ends the bridge with "dial
-// server:", and the write of the frame has no deadline of its own.
+// claustrum's own, not measured: the wait covers the write of the frame and the
+// read of the reply, so a daemon that never reads cannot hold the bridge. A failed
+// or late write counts as a close, a second close leads to the third connection
+// too, and a failed new dial ends the bridge with "dial server:".
 func sendAdoptFrame(socket string, nc net.Conn, frame []byte) (net.Conn, io.Reader, error) {
 	for try := 1; ; try++ {
 		br := bufio.NewReader(nc)
-		_ = nc.SetReadDeadline(time.Now().Add(bridgeAdoptWait))
+		_ = nc.SetDeadline(time.Now().Add(bridgeAdoptWait))
 		_, err := nc.Write(frame)
 		if err == nil {
 			_, err = br.ReadString('\n')
 		}
 		if err == nil {
-			_ = nc.SetReadDeadline(time.Time{})
+			_ = nc.SetDeadline(time.Time{})
 			return nc, br, nil
 		}
 		_ = nc.Close()
