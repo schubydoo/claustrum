@@ -337,7 +337,8 @@ func (r PaneRun) Release() { r.release() }
 // PaneGitRun takes the steps of the git methods before the pane's git in cwd:
 // the excludes read, the trust check, the settings gate and the listing. args is
 // an argv of paneShapes. A refusal of a step is the error, and the spawn answers
-// it with -32603 and the reason other (claustrum's own, not measured). A folder
+// it with -32603 and the reason other (claustrum's own, not measured). The spawn
+// answers ErrNoSettingsCopy with -32008. A folder
 // with no repository runs on: c9125eb8 answers success there, and git exits
 // 128 (measured on Linux and Windows).
 func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
@@ -366,6 +367,11 @@ func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
 	if c.refusal != "" {
 		return PaneRun{}, errors.New(c.refusal)
 	}
+	// In the state fallback-git a repository gets ErrNoSettingsCopy after the
+	// listing, and its git does not run (measured on Linux, macOS and Windows).
+	if t.verdict == gitDirTrusted && !req.shadow.readsRepoConfig() {
+		return PaneRun{}, ErrNoSettingsCopy
+	}
 	if err := req.stop.halted(); err != nil {
 		return PaneRun{}, err
 	}
@@ -387,6 +393,11 @@ func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
 		release: drop,
 	}, nil
 }
+
+// ErrNoSettingsCopy is the refusal of a gitRead spawn in a repository in the
+// state fallback-git. c9125eb8 answers it with -32008 and the reason other
+// (measured on Linux, macOS and Windows).
+var ErrNoSettingsCopy = errors.New("the helper cannot give git its own copy of a repository's settings on this host (this git does not support it, or the app switched it off)")
 
 // paneNoIndexName is the name of the index of most shapes, in the copy of the
 // repository. claustrum makes no file of that name (from the code).

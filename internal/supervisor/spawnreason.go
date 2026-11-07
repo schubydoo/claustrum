@@ -19,7 +19,9 @@ type SpawnReason struct {
 }
 
 // GitReadStepError marks a failed step of a gitRead spawn (SpawnGitRead). Its
-// reason is other, whatever its text ends with (claustrum's own, not measured).
+// reason is other, whatever its text ends with (claustrum's own, not measured),
+// also for a SpawnRefusal inside it: the -32008 refusal of c9125eb8 has the reason
+// other (measured on Linux, macOS and Windows).
 type GitReadStepError struct{ Err error }
 
 func (e *GitReadStepError) Error() string { return e.Err.Error() }
@@ -38,16 +40,16 @@ func (e *CwdError) Unwrap() error { return e.Err }
 // than cwd_unusable, the -32005 launcher start refusal, a pipe failure and an errno
 // that no row lists are claustrum's own, not measured.
 func SpawnFailureReason(err error, cwd string) SpawnReason {
+	var ge *GitReadStepError
+	if errors.As(err, &ge) {
+		return SpawnReason{Reason: "other"}
+	}
 	var sr *SpawnRefusal
 	if errors.As(err, &sr) {
 		if sr.Code == rpc.CodeInvalidParam {
 			return SpawnReason{Reason: "other"}
 		}
 		return SpawnReason{LauncherFault: sr.Fault, Reason: "launcher"}
-	}
-	var ge *GitReadStepError
-	if errors.As(err, &ge) {
-		return SpawnReason{Reason: "other"}
 	}
 	var ce *CwdError
 	if errors.As(err, &ce) {

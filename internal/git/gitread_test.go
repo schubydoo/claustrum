@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -395,4 +396,38 @@ func TestPaneGitRunNoRepo(t *testing.T) {
 			t.Errorf("env has %s in a folder with no repository", name)
 		}
 	}
+}
+
+// TestPaneGitRunFallback runs the steps in a repository in the state fallback-git.
+// c9125eb8 refuses the spawn with ErrNoSettingsCopy after the listing in the cwd,
+// and its git does not run (measured on Linux, macOS and Windows). A folder with no
+// repository runs on (claustrum's own, not measured).
+func TestPaneGitRunFallback(t *testing.T) {
+	f := newShadowFixture(t)
+	h := f.d.Shadow
+	h.mu.Lock()
+	h.state, h.tested = controlFallback, shadowClock()
+	err := h.makeFolder()
+	h.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.log, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PaneGitRun(f.d, f.repo, []string{"rev-parse", "--show-toplevel"}); !errors.Is(err, ErrNoSettingsCopy) {
+		t.Fatalf("PaneGitRun in fallback-git: %v, want ErrNoSettingsCopy", err)
+	}
+	if want := "the helper cannot give git its own copy of a repository's settings on this host (this git does not support it, or the app switched it off)"; ErrNoSettingsCopy.Error() != want {
+		t.Errorf("the text = %q, want %q", ErrNoSettingsCopy.Error(), want)
+	}
+	calls := readEnvCalls(t, f.log)
+	if len(calls) == 0 || !calls[len(calls)-1].listing() {
+		t.Errorf("the last call = %+v, want the listing", calls[max(0, len(calls)-1):])
+	}
+	run, err := PaneGitRun(f.d, resolveTestRoot(t, t.TempDir()), []string{"rev-parse", "--show-toplevel"})
+	if err != nil {
+		t.Fatalf("PaneGitRun in a folder with no repository: %v", err)
+	}
+	run.Release()
 }

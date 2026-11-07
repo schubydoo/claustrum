@@ -61,6 +61,16 @@ The daemon takes the steps of the git methods first: the start test, the setting
 
 claustrum's own, not measured: `diff` with two refs and the other `diff` shapes with `<A>..<B>` run as `diff-tree -r` too.
 
+## The state fallback-git
+
+In the git state `fallback-git` a repository gets `{"code":-32008,"message":"the helper cannot give git its own copy of a repository's settings on this host (this git does not support it, or the app switched it off)","data":{"reason":"other"}}` (measured on Linux, macOS and Windows). The daemon takes the steps up to the `config -z --list` call first, and the git does not run (measured on Linux). In the state `shadow`, `"shadowDirOff":true` on the spawn changes nothing (measured on Linux, macOS and Windows).
+
+A folder with no repository is not refused. The git exits 128 with `fatal: not a git repository: '/dev/null'` (`'NUL'` on Windows, measured on Linux and Windows).
+
+The git holds its copy of the settings until it exits, as each git call of the git methods does (claustrum's own).
+
+claustrum's own: a refusal of the git steps fails the spawn with `-32603`, its text and the reason `other`.
+
 ## The time limit
 
 The limit is 120 s from the start of the git. No member sets the limit. A plain child is not ended at it. At the limit the daemon logs `[process.Manager] the pane's git has run for 2m0s; ending it`.

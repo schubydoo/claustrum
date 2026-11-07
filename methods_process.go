@@ -197,10 +197,20 @@ func (s *server) gitReadStep(cwd string, args []string) supervisor.GitReadStep {
 	return func(env []string) ([]string, []string, func(), error) {
 		run, err := git.PaneGitRun(s.gitDeps(), cwd, args)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, gitReadStepError(err)
 		}
 		return run.Args, run.Env(env), run.Release, nil
 	}
+}
+
+// gitReadStepError is the error of a failed step of a gitRead spawn. The spawn
+// answers git.ErrNoSettingsCopy with -32008 (c9125eb8, measured on Linux, macOS
+// and Windows), and every other error with -32603.
+func gitReadStepError(err error) error {
+	if errors.Is(err, git.ErrNoSettingsCopy) {
+		return &supervisor.SpawnRefusal{Code: rpc.CodeNoSettingsCopy, Msg: err.Error()}
+	}
+	return err
 }
 
 func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
@@ -259,12 +269,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		return rpc.Response{NoFrame: true}
 	}
 	if err != nil {
-		reason := supervisor.SpawnFailureReason(err, p.Cwd)
-		var sr *supervisor.SpawnRefusal
-		if errors.As(err, &sr) {
-			return rpc.ErrResultData(req.ID, sr.Code, sr.Msg, reason)
-		}
-		return rpc.ErrResultData(req.ID, rpc.CodeInternal, err.Error(), reason)
+		return spawnErrorReply(req.ID, err, p.Cwd)
 	}
 	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.CLITempRoot()}
 	if p.WantPid {
@@ -272,6 +277,17 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		res.StartTime = mp.StartTime()
 	}
 	return rpc.OKResult(req.ID, res)
+}
+
+// spawnErrorReply is the reply of a process.spawn whose start failed with err in
+// cwd: the code and text of a SpawnRefusal, or -32603 and the text of err.
+func spawnErrorReply(id interface{}, err error, cwd string) rpc.Response {
+	reason := supervisor.SpawnFailureReason(err, cwd)
+	var sr *supervisor.SpawnRefusal
+	if errors.As(err, &sr) {
+		return rpc.ErrResultData(id, sr.Code, sr.Msg, reason)
+	}
+	return rpc.ErrResultData(id, rpc.CodeInternal, err.Error(), reason)
 }
 
 type stdinParams struct {

@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
@@ -227,5 +229,25 @@ func TestGitReadCwdBeforeShape(t *testing.T) {
 	}
 	if line := "[process.Manager] Failed to start process gr-c5: not one of the Changes pane's git commands (2 arguments)"; !strings.Contains(logs.String(), line) {
 		t.Errorf("log lacks %q", line)
+	}
+}
+
+// TestGitReadNoSettingsCopyFrame pins the frame of a gitRead spawn in a repository
+// in the state fallback-git, as c9125eb8 sends it (measured on Linux, macOS
+// and Windows).
+// The step error reaches the reply wrapped, as the start returns it.
+func TestGitReadNoSettingsCopyFrame(t *testing.T) {
+	err := &supervisor.GitReadStepError{Err: gitReadStepError(git.ErrNoSettingsCopy)}
+	b, merr := json.Marshal(spawnErrorReply(1, err, ""))
+	if merr != nil {
+		t.Fatal(merr)
+	}
+	const want = `{"jsonrpc":"2.0","id":1,"error":{"code":-32008,"message":"the helper cannot give git its own copy of a repository's settings on this host (this git does not support it, or the app switched it off)","data":{"reason":"other"}}}`
+	if string(b) != want {
+		t.Errorf("reply = %s\nwant    %s", b, want)
+	}
+	other := &supervisor.GitReadStepError{Err: gitReadStepError(errors.New("x"))}
+	if b, _ := json.Marshal(spawnErrorReply(2, other, "")); string(b) != `{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"x","data":{"reason":"other"}}}` {
+		t.Errorf("another step error = %s, want -32603", b)
 	}
 }
