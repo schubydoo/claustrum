@@ -276,7 +276,6 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D10 | Cap the CLI size of `-install` | off | all |
 | D12 | Bound the download of `-install` | off | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
-| D16 | `git.status` of a linked worktree works | always-on | Windows |
 | D19 | Remove refuses a junction between `baseRepo` and the leaf | always-on | Windows |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
 | D22 | Remove refuses a worktree locked in the `.git` folder of `baseRepo` | always-on | all |

@@ -169,7 +169,6 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D10](DIVERGENCES.md#d10) | Off | No, install path | An opt-in size cap fails `-install` |
 | [D12](DIVERGENCES.md#d12) | Off | No, install path | An opt-in bound fails a slow `-install` download |
 | [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
-| [D16](DIVERGENCES.md#d16) | Always-on, Windows | Yes | `git.status` of a linked worktree answers the status, not an error, when the user has no global excludes file |
 | [D19](DIVERGENCES.md#d19) | Always-on, Windows | Maybe | `git.worktree_remove` refuses a junction between `baseRepo` and the leaf |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
 | [D22](DIVERGENCES.md#d22) | Always-on | Maybe | `git.worktree_remove` refuses a locked worktree where `89cb6289` answers success (four states, and a missing daemon `GIT_DIR` of `b3081b51`), and with `worktreeRoot` the frame differs in three more |
@@ -183,7 +182,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [CT-4](DIVERGENCES.md#ct-4) | Not built | No | None |
 | [CT-5](DIVERGENCES.md#ct-5) | Opt-in, Windows | No | An extra named-pipe transport |
 
-D1, D4, D5, D7, D9, D11, D13, D14, D17, D18, D21 and D25 are retired: claustrum
+D1, D4, D5, D7, D9, D11, D13, D14, D16, D17, D18, D21 and D25 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
 entry above covers it. One thing on those paths is claustrum's own and not
 drift: the D13 chmod, clear and rename come after the checksum test. A difference against `89cb6289` on the D4 paths is
@@ -420,7 +419,7 @@ the linked pages.
   - A configuration key of 1048576 bytes passes, and one byte more gets the key
     text.
   - The `git.info` root comes from the walk.
-  - [D16](DIVERGENCES.md#d16) stays. `git.status` answers by the worktree entries
+  - `git.status` answers by the worktree entries
     of `baseRepo`, as `89cb6289` does
     ([git.status](protocol/git-status.md#path)).
 

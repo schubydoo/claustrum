@@ -318,7 +318,7 @@ func TestGitStatusTempListingFailureIsARefusal(t *testing.T) {
 	writeFile(t, filepath.Join(common, "config"), "[broken\n", 0o644)
 	tmp := t.TempDir()
 	r := &statusRun{ctx: context.Background(), path: f.W, common: common, tmp: tmp, pin: []string{"GIT_COMMON_DIR=" + common}}
-	_, err := r.git(true, statusExcludesFile(), "status", "--porcelain")
+	_, err := r.git(true, userExcludesFile(), "status", "--porcelain")
 	var refusal statusRefusal
 	if !errors.As(err, &refusal) || !strings.HasPrefix(err.Error(), hooksRefusalPrefix) {
 		t.Fatalf("status with a failing listing = %v\nwant a refusal that starts %q", err, hooksRefusalPrefix)

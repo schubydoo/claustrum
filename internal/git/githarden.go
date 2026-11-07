@@ -1061,19 +1061,6 @@ func hardenedGitRunIn(ctx context.Context, u gitUse, dir string, heavy bool, pre
 	return strings.TrimRight(string(out), "\n"), err
 }
 
-// statusExcludesFile is the core.excludesFile value of the status, ls-files and diff-index calls of git.status. It is
-// userExcludesFile, except that the null device is spelled /dev/null on every OS. On Windows git status exits 128 with
-// "fatal: cannot use NUL as an exclude file" when core.excludesFile is NUL. It accepts /dev/null there. git ls-files
-// and git check-ignore accept NUL. Measured with Git for Windows 2.55.0 on Windows 11. f6010b97 passes NUL to its
-// status call there and answers exit status 128. This value on those three calls is the divergence D16. On Linux and
-// macOS os.DevNull is /dev/null, so nothing changes there.
-func statusExcludesFile() string {
-	if e := userExcludesFile(); e != os.DevNull {
-		return e
-	}
-	return "/dev/null"
-}
-
 // gitEmptyTree is git's canonical empty-tree object (SHA-1). Passing it as
 // --attr-source makes git read gitattributes from an empty tree — i.e. ignore a
 // repository's in-repo .gitattributes.
