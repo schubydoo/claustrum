@@ -13,12 +13,13 @@ import (
 // request has none. The policy value is not used: argv names p, also when the
 // processWrapper of the policy names another file (measured on Linux).
 //
-// macOS answers its host refusal, with or without p (measured). On Linux and Windows a
+// macOS answers its host refusal with no p (measured). With p it does the same
+// (claustrum's own, not measured). On Linux and Windows a
 // request with no p does not come here (claustrum's own, not measured: it answers as
 // a request with no launcherCheck). On Windows p gets the Windows refusal
 // (claustrum's own, not measured).
 func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckResult {
-	res := rpc.LauncherCheckResult{HostPolicySeen: HostPolicySeen()}
+	res := rpc.LauncherCheckResult{HostPolicySeen: policyHoldsOtherKey()}
 	fault, reason := LauncherCheckHostRefusal()
 	if fault == "" {
 		fault, reason = CheckLauncherFile(p, chk)
@@ -31,12 +32,13 @@ func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckResult {
 	return res
 }
 
-// HostPolicySeen reports whether a managed settings file holds a key other than
+// policyHoldsOtherKey reports whether a managed settings file holds a key other than
 // processWrapper: the base file or a drop-in (measured on Linux and macOS). The env
-// key counts as another key, as any key does. A missing file, a file that is not a
-// JSON object and a file that cannot be read count as none (a file that is not JSON:
-// measured on macOS. The others: claustrum's own, not measured).
-func HostPolicySeen() bool {
+// key counts as another key, as any key does. A missing file counts as none (measured
+// on Linux and macOS), and so does a file that is not JSON (measured on macOS). A file
+// that is not a JSON object and a file that cannot be read count as none too
+// (claustrum's own, not measured).
+func policyHoldsOtherKey() bool {
 	dir, _ := managedSettingsDir()
 	if dir == "" {
 		return false

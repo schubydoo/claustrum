@@ -43,7 +43,7 @@ With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, me
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
 
-`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file and a file that is not JSON (measured on Linux and macOS). Without `path` and `launcherCheck` the reply is one of the four shapes. So is the reply to a `launcherCheck` with no `path` on Linux and Windows (claustrum's own, not measured).
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). A `launcherCheck` with no `path` on Linux and Windows gets one of the four shapes (claustrum's own, not measured).
 
 The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
@@ -139,8 +139,6 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 
 #### Faults of the walk
 
-The walk tests `/`, each folder down to the file, and the file.
-
 | `fault` | Case | `reason` |
 |---|---|---|
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
@@ -151,10 +149,10 @@ The walk tests `/`, each folder down to the file, and the file.
 
 #### Rules of the check
 
-- `<mode>` has four octal digits, as in `0775` and `1777`. The group of the file is not tested.
-- Root owns the file and every folder above it. A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them (claustrum's own, not measured). An `ownerUid` in the settings file lifts nothing.
-- With no digest, `{}` or `"sha256":[]`, the file is not read. A digest matches in any letter case. A short one matches nothing.
-- Links pass, a chain of 40 too. The walk tests the folders of the path as written, then those after the links (claustrum's own).
+- `<mode>` has four octal digits. The group of the file is not tested.
+- A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them (claustrum's own, not measured). An `ownerUid` in the settings file lifts nothing.
+- With no digest, `{}` or `"sha256":[]`, the file is not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
+- Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
 - A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
 
@@ -169,7 +167,7 @@ An unusable or unreadable answer writes one line, at WARN (claustrum's own). A u
 
 A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
-An unusable answer of [the file check](#the-file-check-build-c9125eb8) writes this line each time, a repeat too (`c9125eb8`, measured on macOS):
+An unusable answer to a `launcherCheck` writes this line each time, a repeat too (`c9125eb8`, measured on Linux and macOS):
 
 ```text
 [LauncherHandler] the launcher that the desktop names is refused: <reason>
@@ -181,7 +179,7 @@ An unusable answer of [the file check](#the-file-check-build-c9125eb8) writes th
 
     The settings folder is `/etc/claude-code` on Linux and `/Library/Application Support/ClaudeCode` on macOS. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is honored as in [Rare states](#rare-states).
 
-    On macOS each resolve with a `launcherCheck` answers unusable with the fault `macos_host`, before any file test. That holds with no `path` and with no settings file (`c9125eb8`). The reason is `sshHostLauncher cannot be used with a macOS host: an access-control list there can let another account change the launcher without this file check seeing it.`
+    On macOS each resolve with a `launcherCheck` answers unusable with the fault `macos_host`, before any file test. That holds with no `path` and with no settings file (`c9125eb8`). With a `path` it holds too (claustrum's own, not measured). The reason is `sshHostLauncher cannot be used with a macOS host: an access-control list there can let another account change the launcher without this file check seeing it.`
 
 === "Windows"
 

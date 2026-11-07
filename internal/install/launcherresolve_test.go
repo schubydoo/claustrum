@@ -48,7 +48,7 @@ func TestHostPolicySeen(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if got := HostPolicySeen(); got != c.want {
+		if got := policyHoldsOtherKey(); got != c.want {
 			t.Errorf("%s: hostPolicySeen = %v, want %v", c.name, got, c.want)
 		}
 	}

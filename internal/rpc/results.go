@@ -294,7 +294,8 @@ type ManagedLauncherResult struct {
 }
 
 // LauncherCheckResult is the launcher.resolve reply to a request with a launcherCheck
-// (c9125eb8). Measured on Linux and macOS:
+// (c9125eb8). The usable shape is measured on Linux, the unusable one on Linux and
+// macOS:
 //
 //	{"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}
 //	{"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
