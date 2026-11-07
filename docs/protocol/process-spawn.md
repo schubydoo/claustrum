@@ -23,7 +23,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `launcher` | no | An array of strings that names a managed launcher. See [The managed launcher](#the-managed-launcher). Absent or `null` means no launcher. |
 | `launcherCheck` | no | With `launcher`, run [the file check](launcher-resolve.md#the-file-check-build-c9125eb8) on argv[0] (`c9125eb8`). |
 | `launcherSuppliesCli` | no | `true` with a `launcherCheck`: the launcher runs Claude Code itself (`c9125eb8`). See [A launcher check](#a-launcher-check-build-c9125eb8). `null` counts as absent for this member, `launcherCheck` and `envOnlyIfSent` (claustrum's own, not measured). |
-| `envOnlyIfSent` | no | A list of names, with `launcherSuppliesCli` (`c9125eb8`). Such a name reaches the child only from `env`. An empty list counts as present (claustrum's own, not measured). |
+| `envOnlyIfSent` | no | A list of names, with `launcherSuppliesCli` (`c9125eb8`). Such names reach the child only from `env`, and an empty list counts as present (claustrum's own, not measured). |
 | `noLoginShell` | no | Accepted, and the spawn succeeds (`c9125eb8`, measured on Linux and Windows). It changes nothing, and a value of any type passes (claustrum's own, not measured). |
 | `linkBound` | no | See [its page](process-link-bound.md). |
 | `gitRead` | no | See [its page](process-git-read.md). |
