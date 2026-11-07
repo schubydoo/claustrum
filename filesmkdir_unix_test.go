@@ -13,7 +13,7 @@ import (
 )
 
 // mkdirFixture makes the parent folder P with a folder, a file, three links and a
-// folder of mode 0555, and a link linkP to P (the fixture of c9125eb8, Linux C2).
+// folder of mode 0555, and a link linkP to P (the fixture of c9125eb8).
 func mkdirFixture(t *testing.T) (root, p string) {
 	t.Helper()
 	root = resolveTestRoot(t, t.TempDir())

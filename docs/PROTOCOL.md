@@ -313,7 +313,7 @@ removed a method.
 | `process.killAndWait` | `{id[,signal][,timeoutMs][,escalate][,farewell,graceMs]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true][,"farewellEnd":<end>]}` | [process.killAndWait](protocol/process-killandwait.md) |
 | `process.reattach` | `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}` | [process.reattach](protocol/process-reattach.md) |
 | `plugins.prune` | `{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"<state>","minAgeDays":<clamped>}` | [plugins.prune](protocol/plugins-prune.md) |
-| `files.mkdir` | `{parent,name}` → `{"code":"<code>"[,"errno":<n>]}`, Linux and macOS only | [files.mkdir](protocol/files-mkdir.md) |
+| `files.mkdir` | `{parent,name}` → `{"code":"<code>"[,"errno":<n>]}`, Linux and macOS only (`c9125eb8`) | [files.mkdir](protocol/files-mkdir.md) |
 | `files.realpath` | `{path[,missingLeaf]}` → `{"exists":<bool>[,"real"][,"wouldBe"][,"dangling":true]}` | [files.realpath](protocol/files-realpath.md) |
 
 ## Shared rules of the git methods

@@ -11,8 +11,7 @@ more dependency goes into Windows builds only. It is
 All code is in `package main`, except `handlers/` and `internal/`. `handlers/prune.go` holds
 `handlers.PruneParams`, so the `-32602` text of `plugins.prune` names the type
 of the reference byte for byte. A suffix such as `_unix` or `_windows`, or a
-build tag alone, marks the part of a group for one OS. Every OS serves
-the same JSON-RPC methods.
+build tag alone, marks the part of a group for one OS.
 
 | group | files | what they hold |
 |---|---|---|

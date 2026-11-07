@@ -168,7 +168,7 @@ has the `-cli-*` flags.
 ## Platforms
 
 Claustrum cross-compiles to linux, macOS (darwin), and windows, on amd64 and arm64. It is a
-static `CGO_ENABLED=0` Go binary, and every OS serves the same JSON-RPC methods.
+static `CGO_ENABLED=0` Go binary.
 
 ## Tests
 

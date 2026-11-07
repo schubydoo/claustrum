@@ -42,7 +42,7 @@ The members come in this order:
 | Member | Meaning |
 |---|---|
 | `version` | The version of the daemon. |
-| `methods` | The 22 methods, in the order of [Methods](../PROTOCOL.md#methods-22). `files.realpath` is last on every system (`683cc6a9`). Windows has no `files.mkdir` and lists 21 (`c9125eb8`, measured on Windows). |
+| `methods` | The 22 methods, in the order of [Methods](../PROTOCOL.md#methods-22). `files.realpath` is last on every system (`683cc6a9`). On Windows (`c9125eb8`, measured) there is no `files.mkdir`, so claustrum lists 21. |
 | `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the [daemon log](../DAEMON.md#daemon-log-remote-serverlog) holds it too (measured on `89cb6289`). |
 | `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows the members in the order of `b3081b51` on Linux and macOS, less `process.spawn.pty`. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. `b3081b51` adds five names of the example on the three systems, and `process.spawn.cli_temp_root` on Linux and macOS only. `c9125eb8` adds `files.mkdir.verified_parent` after `files.read.real` on Linux and macOS only (measured). Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
+The `features` array is always present. The example above shows the members in the order of `b3081b51` on Linux and macOS, less `process.spawn.pty`. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. `b3081b51` adds five names of the example on the three systems, and `process.spawn.cli_temp_root` on Linux and macOS only. `c9125eb8` adds `files.mkdir.verified_parent` after `files.read.real` on Linux and macOS only (measured), and the example holds that name too. Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 

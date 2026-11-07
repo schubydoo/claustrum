@@ -18,8 +18,9 @@ import (
 // mkdirServed is true: Linux and macOS serve files.mkdir (c9125eb8, measured).
 const mkdirServed = true
 
-// mkdirParams holds the members that files.mkdir reads. Other members, mode too,
-// are ignored (c9125eb8, measured on Linux). ExpandPaths does nothing, so a "~"
+// mkdirParams holds the members that files.mkdir reads. An extra member is
+// ignored (c9125eb8, measured). A mode member and the mode under another umask
+// are claustrum's own, not measured. ExpandPaths does nothing, so a "~"
 // parent is not absolute and gets parent_refused (claustrum's own, not measured).
 type mkdirParams struct {
 	Parent string `json:"parent"`
@@ -30,14 +31,15 @@ func (p *mkdirParams) ExpandPaths() {}
 
 // mkdirParentRefused reports a parent that is empty, relative, holds a NUL, or is
 // not clean: a "." or ".." component, "//" or a trailing slash (c9125eb8,
-// measured on Linux and macOS). A "." component inside an absolute path and the
+// measured on Linux; a relative parent and a ".." on macOS too). A "." component inside an absolute path and the
 // parent "/" are claustrum's own, not measured.
 func mkdirParentRefused(p string) bool {
 	return !filepath.IsAbs(p) || strings.ContainsRune(p, 0) || filepath.Clean(p) != p
 }
 
 // mkdirNameRefused reports a name that is empty, "." or "..", holds a slash or a
-// NUL, or starts and ends with a space (c9125eb8, measured on Linux and macOS). A
+// NUL, or starts and ends with a space (c9125eb8, measured on Linux; "a/b", ".",
+// ".." and an empty name on macOS too). A
 // space at one end only is refused too (claustrum's own, not measured).
 func mkdirNameRefused(n string) bool {
 	return n == "" || n == "." || n == ".." || strings.ContainsAny(n, "/\x00") ||
@@ -67,8 +69,7 @@ func filesMkdir(req *rpc.Request) rpc.Response {
 }
 
 // mkdirAt runs the checks and the mkdir. A non-zero fail is an errno that no
-// code covers. It gets -32603 (claustrum's own, not measured). The code
-// parent_unverified is not built, because no row staged it.
+// code covers. It gets -32603 (claustrum's own, not measured).
 func mkdirAt(parent, name string) (rpc.MkdirResult, unix.Errno) {
 	if mkdirParentRefused(parent) {
 		return rpc.MkdirResult{Code: "parent_refused"}, 0
@@ -132,7 +133,8 @@ func mkdirParentFailure(parent string, err error) (rpc.MkdirResult, unix.Errno) 
 
 // mkdirExistsCode names what holds the name, with no link followed: a link is
 // exists_link, a folder exists_folder and any other kind exists_other (c9125eb8,
-// measured on Linux and macOS). A name that went before the stat is
+// measured on Linux and macOS; a dangling link and a link to a file measured on
+// Linux only). A name that went before the stat is
 // exists_other (claustrum's own, not measured).
 func mkdirExistsCode(fd int, name string) string {
 	var st unix.Stat_t
