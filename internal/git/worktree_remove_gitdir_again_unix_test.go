@@ -50,6 +50,18 @@ func TestRemoveWithWorktreeRootAsksTheGitDirAgain(t *testing.T) {
 			if asked != 2 {
 				t.Errorf("%d calls of rev-parse --absolute-git-dir, want 2", asked)
 			}
+			// The measured 6 calls ran on a warm daemon. A fresh fixture first reads
+			// the excludes file, asks the probe and reads the settings copy, so the
+			// last 6 calls are the remove step.
+			wantTail := []string{"--list", "--show-toplevel", "--list", "--absolute-git-dir", "--list", "--absolute-git-dir"}
+			if len(calls) < len(wantTail) {
+				t.Fatalf("%d git calls, want at least %d", len(calls), len(wantTail))
+			}
+			for i, w := range wantTail {
+				if c := calls[len(calls)-len(wantTail)+i]; !slices.Contains(c.argv, w) {
+					t.Errorf("call %d of the last 6 = %q, want one with %s", i+1, c.argv, w)
+				}
+			}
 			for _, c := range calls {
 				if slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "list") {
 					t.Errorf("a call %q ran, want none", c.argv)

@@ -704,10 +704,11 @@ func repeatRepositoryCheck(u gitUse, repo string) {
 //
 // c9125eb8 asks in the state shadow. Without worktreeRoot a right second answer
 // goes on, and the remove succeeds after 2 calls (measured on Linux and
-// Windows). With worktreeRoot see gitDirCheckRefusal. The ask runs
-// only in the state shadow with a trusted verdict, a pinned git directory and
-// no git directory in the environment of the daemon. An empty answer counts as
-// before. macOS and those limits are claustrum's own, not measured.
+// Windows). Without worktreeRoot, macOS is claustrum's own, not measured. With
+// worktreeRoot see gitDirCheckRefusal. The ask runs only in the state shadow
+// with a trusted verdict, a pinned git directory and no git directory in the
+// environment of the daemon. An empty answer counts as before. Those limits are
+// claustrum's own, not measured.
 func gitDirAgain(u gitUse, repo string, t gitDirTrust, answered string) (gitDir, disagree string, err error) {
 	if !u.shadow() || daemonCommonDirSet() || os.Getenv("GIT_DIR") != "" ||
 		t.verdict != gitDirTrusted || t.pinCommonDir == "" || !namesOtherGitDir(t, answered) {
