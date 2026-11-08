@@ -629,7 +629,8 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //     (measured).
 //  6. The hardened `git rev-parse --absolute-git-dir` fails in baseRepo. The reason
 //     is the exec error, for example "exit status 128" (measured). A failed listing
-//     before it gets its own prefix (gitDirCheckRefusal).
+//     before it, or two answers that name another git directory, get their own
+//     prefix (gitDirCheckRefusal).
 //
 // A baseRepo that does not exist skips every reason, and no git call runs here. That
 // holds with git on PATH and without it (`89cb6289`, measured on Linux). The removal
@@ -774,14 +775,15 @@ func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) 
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}
-	if msg := gitDirCheckRefusal(u, repo); msg != "" {
+	if msg := gitDirCheckRefusal(u, repo, t); msg != "" {
 		return msg, ""
 	}
 	return "", topLevel
 }
 
 // gitDirUnknownPrefix starts the refusal of git.worktree_remove with worktreeRoot when
-// the listing before `rev-parse --absolute-git-dir` fails (gitDirCheckRefusal).
+// the listing before `rev-parse --absolute-git-dir` fails, or two answers that name
+// another git directory (gitDirCheckRefusal).
 const gitDirUnknownPrefix = "failed to remove worktree: cannot determine the repository's git directory: "
 
 // gitDirCheckRefusal is reason 6 of externalWorkTreeRefusal: the heavy listing, then
@@ -792,7 +794,14 @@ const gitDirUnknownPrefix = "failed to remove worktree: cannot determine the rep
 // (measured). A listing whose repository folder went and one that says git finds no
 // repository go on to the rev-parse, as before (claustrum's own, not measured). A
 // repo that is not a folder runs no call.
-func gitDirCheckRefusal(u gitUse, repo string) string {
+//
+// An answer of the rev-parse that names another git directory than the trust
+// verdict t gets one more call, with its listing (gitDirAgain). A wrong second
+// answer gives gitDirUnknownPrefix and the "disagree" text after 6 calls, and
+// nothing is deleted (c9125eb8, measured on macOS). These parts are claustrum's
+// own, not measured: Linux, a right second answer, which goes on, and a failed
+// second call, which gives the text of reason 6.
+func gitDirCheckRefusal(u gitUse, repo string, t gitDirTrust) string {
 	if fi, err := os.Stat(repo); err != nil || !fi.IsDir() {
 		return ""
 	}
@@ -801,8 +810,16 @@ func gitDirCheckRefusal(u gitUse, repo string) string {
 	if r.err != nil && !copyGone(r.err) && !r.saysNoRepository() {
 		return gitDirUnknownPrefix + failedListingText(u, r, true)
 	}
-	if err := repositoryCheckError(u, repo, &configListing{hooks: r.hooks()}); err != nil {
+	answered, err := repositoryGitDir(u, repo, &configListing{hooks: r.hooks()})
+	if err != nil {
 		return workTreeUnknownPrefix + err.Error()
+	}
+	_, disagree, err := gitDirAgain(u, repo, t, answered)
+	if err != nil {
+		return workTreeUnknownPrefix + err.Error()
+	}
+	if disagree != "" {
+		return gitDirUnknownPrefix + disagree
 	}
 	return ""
 }

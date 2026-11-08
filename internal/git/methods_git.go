@@ -2446,10 +2446,22 @@ func makeRefusedLeafParents(p *gitParams, repo string) {
 // After a gate that passed, the later git commands follow the off switch
 // (measured on Linux). A later gate runs one time (claustrum's own, not
 // measured).
+//
+// When the second gate got the "disagree" answer, c9125eb8 asks git 4 more
+// times. The reply is the same text, after 8 calls in all, and nothing is
+// deleted (measured on macOS, in a remove right after a failed create).
+// claustrum makes the call about the repository two more times there (askGit,
+// 2 calls each), and it does not use the answers. These parts are claustrum's
+// own, not measured: Linux and Windows, an answer with no output, a later
+// answer that is good, and the other bad answers, which get no more calls.
 func (req *gitCall) removeGate(t gitDirTrust, off rpc.JSONTrueSwitch, repo string) (msg string, noRepo bool) {
 	msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	if req.gitRefused || req.configRefused {
 		msg, noRepo = req.settingsGateRefusal(t, off, repo)
+	}
+	if req.gitDisagreed {
+		req.shadow.askGit(t, repo)
+		req.shadow.askGit(t, repo)
 	}
 	if msg == "" && !noRepo {
 		req.keepLiveForm(bool(off), t, repo)

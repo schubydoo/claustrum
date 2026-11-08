@@ -403,7 +403,8 @@ func probeErrorShapes(t *testing.T, f shadowFixture, text string) []string {
 // repository of another owner. A bad answer makes no folder of the repository
 // and no read of its config (measured). The counts are the calls about the
 // repository per request: one, two on a remove, and twice that for an exit 128
-// or an answer that names another path.
+// or an answer that names another path. A remove with that answer asks two
+// times more.
 func TestProbeAnswers(t *testing.T) {
 	type answer struct {
 		name           string
@@ -420,6 +421,9 @@ func TestProbeAnswers(t *testing.T) {
 		version bool
 		// secondOK makes the second run of an exit 128 exit 0.
 		secondOK bool
+		// disagree is true for the "disagree" answers. A remove then asks two
+		// times more (removeGate): c9125eb8 makes 8 calls on macOS.
+		disagree bool
 	}
 	// The other path is absolute on the system of the test. Git prints a path
 	// with forward slashes on Windows too, and the text shows it as printed.
@@ -437,7 +441,7 @@ func TestProbeAnswers(t *testing.T) {
 		elsewhere = "C:/elsewhere/.git"
 		unclean = "C:/elsewhere/sub/../.git"
 		uncleanShown = unclean
-		windowsRows = []answer{{name: "another path, backslashes", stdout: `C:\elsewhere\.git` + "\n", calls: 2,
+		windowsRows = []answer{{name: "another path, backslashes", stdout: `C:\elsewhere\.git` + "\n", calls: 2, disagree: true,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
 				strconv.Quote(`C:\elsewhere\.git`) + ", Claude finds %[2]q; try again"}}
 	}
@@ -476,13 +480,13 @@ func TestProbeAnswers(t *testing.T) {
 		{name: "W2-268: exit 128, error reading", exit: 128, calls: 2, version: true,
 			stderr: "fatal: error reading '/x/repo/.git'\n",
 			text:   "git could not check this repository on the remote machine: at %[1]q: fatal: error reading '/x/repo/.git'"},
-		{name: "another path", stdout: elsewhere + "\n", calls: 2,
+		{name: "another path", stdout: elsewhere + "\n", calls: 2, disagree: true,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
 				strings.ReplaceAll(strconv.Quote(elsewhere), "%", "%%") + ", Claude finds %[2]q; try again"},
-		{name: "another path, not clean", stdout: unclean + "\n", calls: 2,
+		{name: "another path, not clean", stdout: unclean + "\n", calls: 2, disagree: true,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
 				strings.ReplaceAll(strconv.Quote(uncleanShown), "%", "%%") + ", Claude finds %[2]q; try again"},
-		{name: "no output", calls: 2,
+		{name: "no output", calls: 2, disagree: true,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds %[1]q, Claude finds %[2]q; try again"},
 	}, windowsRows...) {
 		for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
@@ -509,6 +513,9 @@ func TestProbeAnswers(t *testing.T) {
 				wantCalls := a.calls
 				if method == "git.worktree_remove" {
 					wantCalls *= 2
+					if a.disagree {
+						wantCalls *= 2
+					}
 				}
 				var others []string
 				versions := 0
