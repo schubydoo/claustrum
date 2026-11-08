@@ -112,14 +112,16 @@ measured on Linux and macOS). On Linux and macOS the host cleaner ends an orphan
 the stamp of a run dir under its root. It waits 3 s before the group `SIGKILL` of a gone
 leader (PRs 1012, 1028 and 1036). A child record goes while it still holds the written
 `start` (PRs 1011 and 1029). The orphan rule and the child record are measured on Linux
-and macOS, the 3 s wait on Linux. On Linux and macOS a spawn folder through a link gets a second record
-for its resolved path (PR 1033).
+and macOS, the 3 s wait on Linux. On macOS a spawn folder through a link gets both
+session-folder records while the folder does not exist yet (PR 1033, measured on macOS).
 
 **Older gaps closed.** Some git calls of `git.worktree_create` follow both `b3081b51` and
 `c9125eb8`. These are the settle listing, the first `rev-parse --show-toplevel` pair and
 the order of the door read. With `shadowDirOff` they include `GIT_SSH_COMMAND=false` on
 two pairs (PRs 1026, 1040 and 1041). The systems of each call are on [the method
-page](protocol/git-worktree-create.md#the-settle-step).
+page](protocol/git-worktree-create.md#the-settle-step). A spawn folder through a link gets
+a second session-folder record for its resolved path, as on `b3081b51` (PR 1033, measured
+on Linux).
 
 **How it was bounded.** Each item above was measured side by side with `b3081b51` on the
 systems named. The final code then ran the frame battery three times beside `c9125eb8`,
