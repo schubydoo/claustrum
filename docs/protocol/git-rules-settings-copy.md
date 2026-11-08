@@ -273,7 +273,10 @@ answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 
 The three texts have the shapes of the start test. A bad answer is not kept, and a
-remove asks twice. For a repository of another owner with no `safe.directory`,
+remove asks twice. After a second "disagree" answer that names another path, a remove
+without `worktreeRoot` asks two times more, 8 calls in all. `c9125eb8` does so on macOS
+in a remove right after a failed create (measured). Linux, Windows, an answer with no
+output, a later good answer and the other bad answers are claustrum's own, not measured. For a repository of another owner with no `safe.directory`,
 `git.worktree_remove` answers the lock-check refusal that ends `(its registrations
 could not be examined); retry`. With a child that holds the pipes, an exit 0 counts
 by its output so far (measured on `git.status` only).
