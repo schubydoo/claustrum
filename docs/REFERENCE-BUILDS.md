@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `c9125eb8…` | 2026-11-02 (built) | the methods `files.mkdir` and `server.adoptEnv`, the `gitRead` and launcher members of `process.spawn`, the launcher file check, the adopt frame of the bridge, new git refusals and new `plugins.prune` skips. See below | [PRs 1008–1019, 1021–1041](https://github.com/schubydoo/claustrum/pull/1041) |
 | `b3081b51…` | 2026-10-30 (built) | new `server.capabilities` features, the launcher refusal of a value that is not a string, the session folders, the content check of a new worktree, new Windows git refusals and the `cliTempRoot` member. See below | [PRs 906, 907, 909–915, 920, 921, 923–927](https://github.com/schubydoo/claustrum/pull/927) |
 | `be1c1ca5…` | 2026-10-19 (built) | the staged worktree add on every system, the ssh door of the checkout, new worktree texts, the null-device hook path on Windows, new git child variables, a long socket path, `cliRemoved` and a new feature. See below | [PRs 807–818](https://github.com/schubydoo/claustrum/pull/818) |
 | `683cc6a9…` | 2026-10-14 (built) | the `files.realpath` method, the `real` member of `files.read`, `junctionsAsDirs`, `alreadyComplete`, `linkBound`, a settle step after the checkout, new git trust texts and new features. See below | [PRs 784, 786–793, 796–805](https://github.com/schubydoo/claustrum/pull/805) |
@@ -42,6 +43,7 @@ release.
 
 | Reference SHA | Divergences opened | Divergences retired | Other divergence notes |
 |---|---|---|---|
+| `c9125eb8…` | | D16 | |
 | `b3081b51…` | D28 | | |
 | `be1c1ca5…` | | | D2 and D24 cover the staged add. A D10 cap that fires before the disk fills skips the second prune |
 | `52d82f0a…` | | | CT-2 covers a pending farewell and a killed Windows daemon |
@@ -71,6 +73,72 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `c9125eb87bca9ab294d4190dd79be9dfb8d11806` — 2026-11-02 (built)
+
+Its `-version` prints
+`claude-ssh c9125eb87bca9ab294d4190dd79be9dfb8d11806 (built 2026-11-02T19:01:49Z)`.
+Issue 998 reported the build, pinned by Claude Desktop 4.23118.0 for Linux. It carries
+a `go1.25.14` stamp (`go version` on the binary). The rules are on the pages of the
+methods and in [PROTOCOL.md](PROTOCOL.md).
+
+**Wire delta.**
+
+- The new method [`files.mkdir`](protocol/files-mkdir.md) makes one folder and answers a
+  code (PRs 1015 and 1022, measured on Linux and macOS). Windows answers `-32601`.
+- The new method `server.adoptEnv` sets the base environment of new children (PRs 1016,
+  1025 and 1034, measured on Linux, macOS and Windows).
+- With `CLAUDE_SSH_ADOPT_ENV=1` the bridge sends a `server.adoptEnv` frame first (PRs
+  1016 and 1023, measured on Linux, macOS and Windows).
+- A `"gitRead":true` spawn runs one read-only git command of the Changes pane, with a
+  time limit (PRs 1008, 1013, 1019 and 1024, measured on Linux, macOS and Windows).
+- `process.spawn` takes `launcherCheck`, `launcherSuppliesCli`, `envOnlyIfSent` and
+  `noLoginShell`. `launcher.resolve` answers `usable` or `unusable` (PRs 1014 and 1018).
+  On Linux the check tests the launcher file.
+- `server.capabilities` lists the new methods and features of these items.
+- `git.worktree_remove` and `git.worktree_create` ask git again when its git-dir answer
+  names another repository, and refuse a second wrong answer (PRs 1032, 1033, 1035, 1038
+  and 1039). Each rule names its systems on its page.
+- On Windows, with no user excludes file, `git.status` passes `NUL` as the excludes
+  file. Git for Windows 2.55 then fails, and the reply is `exit status 128` (PR 1031,
+  measured on Windows).
+- `plugins.prune` has new skip texts. A live sibling of the host-term shape with another
+  client id spares only the shared legacy root (PRs 1010, 1030 and 1037).
+
+**Off-wire churn.** The content check of `git.worktree_create` reads and hashes its
+objects through long-running git runs (PRs 1009 and 1021). On Linux and macOS, after
+`server.adoptEnv`, the daemon reads the login-shell PATH again (PRs 1017 and 1027,
+measured on Linux and macOS). On Linux and macOS the host cleaner ends an orphan with
+the stamp of a run dir under its root. It waits 3 s before the group `SIGKILL` of a gone
+leader (PRs 1012, 1028 and 1036). A child record goes while it still holds the written
+`start` (PRs 1011 and 1029). Both are measured on Linux and macOS. The 3 s wait is
+measured on Linux. On Linux and macOS a spawn folder through a link gets a second record
+for its resolved path (PR 1033).
+
+**Older gaps closed.** Some git calls of `git.worktree_create` follow both `b3081b51` and
+`c9125eb8`. These are the settle listing, the first `rev-parse --show-toplevel` pair and
+the order of the door read. With `shadowDirOff` they include `GIT_SSH_COMMAND=false` on
+two pairs (PRs 1026, 1040 and 1041). The systems of each call are on [the method
+page](protocol/git-worktree-create.md#the-settle-step).
+
+**How it was bounded.** Each item above was measured side by side with `b3081b51` on the
+systems named. The final code then ran the frame battery three times beside `c9125eb8`,
+on Linux, macOS and Windows. On each system the passes of one build were equal. The only
+frame that differs is the `server.capabilities` reply. claustrum lacks `process.resize`
+everywhere, and `process.spawn.pty` on Linux and macOS: the held terminal.
+
+**Divergences.** D16 retired: on Windows, with no user excludes file, `git.status` passes
+`NUL` as the reference does (PR 1031).
+
+These items stay open:
+
+- claustrum does not build the terminal: the `pty` member of `process.spawn` and the
+  method `process.resize`. The maintainer holds the terminal until a Claude Desktop build
+  calls it.
+- The text of the ssh door in the `GIT_SSH_COMMAND` of the read-tree call differs from the
+  reference, by the maintainer's choice. A copy of that text is a copy of code by the
+  reference authors.
+- The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `b3081b512da230f24d74a2082a678246a89685ee` — 2026-10-30 (built)
 

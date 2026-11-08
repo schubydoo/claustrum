@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `b3081b51`. Its result is in
+baseline, `c9125eb8`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -194,7 +194,7 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and
 `-metrics-addr` and `-wire-log`
 ([flags.md → Flags of claustrum alone](protocol/flags.md#flags-of-claustrum-alone)).
-claustrum lacks the terminal of `52d82f0a`, `683cc6a9` and `be1c1ca5`, and of the pinned `b3081b51`, so `server.capabilities` lacks
+claustrum lacks the terminal of `52d82f0a`, `683cc6a9`, `be1c1ca5` and `b3081b51`, and of the pinned `c9125eb8`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
 (measured on macOS and Windows). Check those
@@ -250,7 +250,7 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `b3081b51`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `c9125eb8`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names another build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
@@ -284,7 +284,7 @@ the linked pages.
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
   measured. `f6010b97` has none of these. `launcherFault`, `macos_host`, the file
-  check and `launcher.supplies_cli` follow `c9125eb8`. See
+  check and `launcher.supplies_cli` follow the pin. See
   [launcher.resolve](protocol/launcher-resolve.md),
   [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
   and [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
@@ -312,7 +312,7 @@ the linked pages.
   is the home folder by identity gets the home refusal (D2).
 - The `-install` prune and sweeps follow `5fd08069`, and so do the blob timing,
   the Windows `rename: ` prefix, the Windows rename retry and the Linux file test of a
-  cache hit. The prune of a cache miss and `cliRemoved` follow the pin.
+  cache hit. The prune of a cache miss and `cliRemoved` follow `be1c1ca5`.
 - The git filters of the `git.worktree_create` checkout follow `5fd08069`. Against
   `89cb6289` the refusal `repository_only_filter` is new. So are the texts for a
   name over 200 bytes and for more than 64 filters (`89cb6289` not run for 64
@@ -458,8 +458,9 @@ Unless an item names another build, the daemon items below are measured against
   `89cb6289`. The
   daemon ends by itself. See
   [Signals of the cleaner](DAEMON.md#signals-of-the-cleaner).
-- The host cleaner ends a stamped orphan that runs no CLI, and it waits 3 s
-  before the group `SIGKILL` of a gone leader. Both follow `c9125eb8` and are
+- The host cleaner ends a stamped orphan that runs no CLI and whose stamp names a
+  run dir under its root. It waits 3 s before the group `SIGKILL` of a gone
+  leader. Both follow `c9125eb8` and are
   not drift and not [D20](DIVERGENCES.md#d20). See
   [Passes, orphans and stale run dirs](DAEMON.md#passes-orphans-and-stale-run-dirs).
 - On Windows a daemon that outlives its SSH session is not drift, against
@@ -555,8 +556,8 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `b3081b51`, carries a go1.25.14 stamp (`go version` on the binary), as
-`be1c1ca5`, `683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
+pinned today, `c9125eb8`, carries a go1.25.14 stamp (`go version` on the binary), as
+`b3081b51`, `be1c1ca5`, `683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
 same escape. `files.read` puts raw file bytes into `content`, so under Go 1.27
 every read of a file with a non-UTF-8 byte diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this
