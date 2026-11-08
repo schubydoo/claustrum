@@ -585,6 +585,8 @@ func TestSSHOffPlaceInHardenedEnv(t *testing.T) {
 // A call with no GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS= keeps the daemon's own
 // GIT_SSH_COMMAND. The branch step ends with false. A create or a remove that
 // the off switch holds keeps the daemon's value, unless the call names the copy.
+// The two pairs and the settle step of a create are the exception (pairSSHUse,
+// settleCheckout).
 func TestSSHOffNeedsTheNoNetworkPair(t *testing.T) {
 	t.Setenv("GIT_SSH_COMMAND", "daemon-ssh")
 	kept := func() bool { return true }

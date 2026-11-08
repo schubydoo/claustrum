@@ -173,9 +173,15 @@ The repository calls are the configuration listings, the hardened calls,
   in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value, except the read-tree call of a shadow create (the ssh door) (`be1c1ca5`,
   measured on Linux and Windows, macOS not measured). With `"shadowDirOff":true` a
   call of `git.worktree_create` or `git.worktree_remove` that names no copy keeps
-  the daemon's value (measured on Linux). The settle calls are an exception
-  ([The settle step](git-worktree-create.md#the-settle-step)). The state
-  `fallback-git` is from the code.
+  the daemon's value (measured on Linux). Outside `fallback-git` the
+  `--absolute-git-dir` pair, the `--show-toplevel` pair and the four heavy
+  [settle](git-worktree-create.md#the-settle-step) calls of such a create get
+  `false` with any daemon value (`c9125eb8` and `b3081b51`, measured on Linux.
+  On macOS and Windows it is claustrum's own, not measured). The state
+  `fallback-git` is from the code. A create with no member of its own that starts
+  under the hold of another request gets the same `false` (claustrum's own, not
+  measured). With the member, the `--show-toplevel` pair after a record mismatch
+  keeps the daemon's value while the hold lasts (claustrum's own, not measured).
 The daemon parses each value from the standard output of git (from
 the code). The reference does so for the branch of `git.info` and the repository
 test of a create (measured on Linux).
