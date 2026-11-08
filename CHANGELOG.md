@@ -4,6 +4,33 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.20.0 (2026-11-08)
+
+[Compare with 1.19.0](https://github.com/schubydoo/claustrum/compare/v1.19.0...v1.20.0)
+
+### Features
+
+- On Linux and macOS, after a `server.adoptEnv` with no `"noLoginShell":true`, the next spawn reads the login-shell PATH again in the background. It reads at most once a minute and stops for the day after 24 good reads, and later spawns get the new PATH. ([#1017](https://github.com/schubydoo/claustrum/pull/1017))
+- The new method `files.mkdir` makes one folder in an existing parent folder on Linux and macOS, and answers a code for each outcome. ([#1015](https://github.com/schubydoo/claustrum/pull/1015))
+- `process.spawn` takes `gitRead` and runs a read-only git command of the Changes pane under the daemon's copy of the repository settings. ([#1008](https://github.com/schubydoo/claustrum/pull/1008))
+- The pane's git of a `gitRead` spawn ends at a 120 s limit with `killedBy` `limit`, takes variable refs and paths, and `server.capabilities` lists `process.spawn.git_read`. ([#1013](https://github.com/schubydoo/claustrum/pull/1013))
+- A `gitRead` spawn runs more commands of the Changes pane and refuses a ref with a control byte or over 4096 bytes. It tests its `cwd` before its shape and answers `-32008` in the git state `fallback-git`. ([#1019](https://github.com/schubydoo/claustrum/pull/1019))
+- `process.spawn` and `launcher.resolve` take a `launcherCheck` that tests the launcher file on Linux, a spawn takes `launcherSuppliesCli`, and `server.capabilities` lists `launcher.supplies_cli`. ([#1014](https://github.com/schubydoo/claustrum/pull/1014))
+- A new `server.adoptEnv` method sets the environment that new children start from, and `-bridge` sends it first when `CLAUDE_SSH_ADOPT_ENV` asks for it. ([#1016](https://github.com/schubydoo/claustrum/pull/1016))
+
+### Fixes
+
+- On Linux and macOS the end of a child removes its record only while the file still holds the written `start`. At a start, a `children` folder that cannot be opened logs one line. ([#1011](https://github.com/schubydoo/claustrum/pull/1011))
+- The content check of git.worktree_create reads the commit and its trees through one long-running git cat-file, and its checked log line counts those that separate git runs read. ([#1009](https://github.com/schubydoo/claustrum/pull/1009))
+- On Windows with no user excludes file, `git.status` passes `NUL` as `core.excludesFile`, as the reference does. With Git for Windows 2.55 the reply is then `-32603 "exit status 128"`, and D16 is retired. ([#1031](https://github.com/schubydoo/claustrum/pull/1031))
+- The host cleaner ends an orphan group with its own CLAUDE_SSH_CHILD stamp and any CLAUDE_SSH_RUN_DIR entry of a run dir under its root. It sends the group SIGKILL of a gone leader only if a member is left after 3 s. ([#1012](https://github.com/schubydoo/claustrum/pull/1012))
+- On Linux the launcher check gives the fault links to a launcher past 40 links or in a loop, and refuses one on FUSE or SMB with no digest. ([#1018](https://github.com/schubydoo/claustrum/pull/1018))
+- plugins.prune gets new skip texts. It deletes nothing while it cannot rule out a sibling daemon whose run directory name is not 8 lowercase hex. A host-term name of another client id is the exception. ([#1010](https://github.com/schubydoo/claustrum/pull/1010))
+- On Linux and macOS a session folder that a spawn names through a link also gets a record of its resolved path, with a link resolved before a `..`, also for a folder that does not exist yet. ([#1033](https://github.com/schubydoo/claustrum/pull/1033))
+- In the state `shadow`, when git names another git directory for `baseRepo`, git.worktree_create asks once more. A right answer goes on, and a wrong one fails the create and leaves no worktree folder. ([#1033](https://github.com/schubydoo/claustrum/pull/1033))
+- On Linux and macOS in the state `shadow`, git.worktree_create asks git about the repository after the add. After the add of a commit it asks before the content check. Answers that name another git directory, or a "not a git repository" answer, fail the create and roll it back. ([#1035](https://github.com/schubydoo/claustrum/pull/1035))
+- In the state shadow, git.worktree_remove asks git for the git directory again when the answer names another repository. A second such answer refuses the remove with the disagree text, also with worktreeRoot, and nothing is deleted. ([#1032](https://github.com/schubydoo/claustrum/pull/1032))
+
 ## 1.19.0 (2026-11-06)
 
 [Compare with 1.18.0](https://github.com/schubydoo/claustrum/compare/v1.18.0...v1.19.0)
