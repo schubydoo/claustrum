@@ -753,18 +753,35 @@ func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
 
 // TestFallbackCreateWithTheMemberKeepsItsCalls: in the state fallback-git a
 // create with "shadowDirOff":true makes no commit call and no settle step, and
-// the read-tree call names the ref (claustrum's own, not measured).
+// the read-tree call names the ref (claustrum's own, not measured). The
+// absolute-git-dir pair and the show-toplevel pair keep the daemon's
+// GIT_SSH_COMMAND there, as before (claustrum's own, not measured).
 func TestFallbackCreateWithTheMemberKeepsItsCalls(t *testing.T) {
 	requireGit(t)
 	f := newShapeFixture(t, stateFallback)
+	t.Setenv("GIT_SSH_COMMAND", "daemon-ssh")
 	raw, calls := f.call(t, "git.worktree_create", map[string]any{
 		"baseRepo": f.repo, "branchName": "w1", "worktreePath": f.leaf, "shadowDirOff": true})
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	readTree := 0
-	for _, c := range calls {
+	readTree, pairs := 0, 0
+	for i, c := range calls {
 		what := strings.Join(c.argv, " ")
+		if i > 0 && (slices.Contains(c.argv, "--absolute-git-dir") || slices.Contains(c.argv, "--show-toplevel")) {
+			pairs++
+			for _, call := range []envCall{calls[i-1], c} {
+				var ssh []string
+				for _, kv := range call.env {
+					if envName(kv) == "GIT_SSH_COMMAND" {
+						ssh = append(ssh, kv)
+					}
+				}
+				if !slices.Equal(ssh, []string{"GIT_SSH_COMMAND=daemon-ssh"}) {
+					t.Errorf("the pair of %s: %s has %q, want the daemon's value", what, strings.Join(call.argv, " "), ssh)
+				}
+			}
+		}
 		switch {
 		case slices.Contains(c.argv, "--verify") && strings.HasSuffix(c.argv[len(c.argv)-1], "^{commit}"):
 			t.Errorf("a commit call ran: %s", what)
@@ -779,5 +796,8 @@ func TestFallbackCreateWithTheMemberKeepsItsCalls(t *testing.T) {
 	}
 	if readTree != 1 {
 		t.Errorf("%d read-tree calls, want 1", readTree)
+	}
+	if pairs != 2 {
+		t.Errorf("%d pairs, want the absolute-git-dir pair and the show-toplevel pair", pairs)
 	}
 }

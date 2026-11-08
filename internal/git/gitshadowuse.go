@@ -755,7 +755,9 @@ func (u gitUse) profileEnv(heavy bool) []string {
 // git.info, git.status and git.list_branches keep it. The calls of a create
 // and a remove that name no copy then keep the daemon's own value (measured
 // on Linux). A call that names the copy gets it always, and so do the calls
-// in the state fallback-git (from the code, not measured).
+// in the state fallback-git (from the code, not measured). With the member
+// outside fallback-git the two pairs of a create get it too (pairSSHUse), and
+// so does its settle step (settleCheckout).
 func (u gitUse) sshOff() bool {
 	return u.shadow() || u.sshKept == nil || !u.sshKept()
 }

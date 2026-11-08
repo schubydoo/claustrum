@@ -1021,14 +1021,17 @@ func gitListBranches(req *gitCall) rpc.Response {
 // add and answers the timeout before the checkout, with the rollback
 // (measured on Linux). The limits of the two calls are those of their kind
 // (gitstop.go). No cell measured a limit there: that is claustrum's own.
-func pairBeforeAdd(req *gitCall, gitDir, repo string, missingRuns bool) (afterListing func()) {
+//
+// member is the hold of the off switch at the bind (bindGitParams). Under the
+// hold of another request it is claustrum's own, not measured (pairSSHUse).
+func pairBeforeAdd(req *gitCall, gitDir, repo string, missingRuns, member bool) (afterListing func()) {
 	fi, err := os.Lstat(gitDirRegistryDir(gitDir))
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
 	if !missing && (err != nil || !fi.IsDir()) {
 		return nil
 	}
 	run := func() {
-		u := req.use.atGitDirCommand()
+		u := pairSSHUse(req, member).atGitDirCommand()
 		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
 	}
 	if missing && !stagedAddWindowsSteps {
@@ -1036,6 +1039,20 @@ func pairBeforeAdd(req *gitCall, gitDir, repo string, missingRuns bool) (afterLi
 	}
 	run()
 	return nil
+}
+
+// pairSSHUse is the use of the absolute-git-dir pair and the show-toplevel
+// pair of a create. With "shadowDirOff":true, when the calls name no copy and
+// the daemon is not in the state fallback-git, both pairs get
+// GIT_SSH_COMMAND=false, whatever the daemon has (c9125eb8 and b3081b51,
+// measured on Linux). macOS and Windows follow Linux
+// (claustrum's own, not measured). In every other state it is req.use.
+func pairSSHUse(req *gitCall, member bool) gitUse {
+	u := req.use
+	if member && !u.shadow() && req.shadow.readsRepoConfig() {
+		u.sshKept = nil
+	}
+	return u
 }
 
 func gitWorktreeCreate(req *gitCall) rpc.Response {
@@ -1526,7 +1543,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg := req.use.swapRefusal("gitdir", repo); msg != "" {
 		return refuseAdd(gitDirAddWrap + msg)
 	}
-	gitDir, _, gitAnswered, gitDirErr := worktreeBaseGitDir(req.use, repo)
+	gitDir, _, gitAnswered, gitDirErr := worktreeBaseGitDir(pairSSHUse(req, bool(p.ShadowDirOff)), repo)
 	// An answer that names another git directory than the held one, while the
 	// path still names the held folder, gets one more call. A right second answer
 	// goes on, and the create succeeds. A wrong one stops the create with the
@@ -1537,7 +1554,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// of b3081b51 (the Windows row printed backslashes).
 	if gitDirErr == nil && gitAnswered && req.use.accepted.answersOther(gitDir) {
 		var printed string
-		gitDir, printed, gitAnswered, gitDirErr = worktreeBaseGitDir(req.use, repo)
+		// The member never reaches this call: only a use that names the copy
+		// holds a git directory (from the code).
+		gitDir, printed, gitAnswered, gitDirErr = worktreeBaseGitDir(pairSSHUse(req, bool(p.ShadowDirOff)), repo)
 		if gitDirErr == nil && gitAnswered && req.use.accepted.answersOther(gitDir) {
 			shown := printedProbePath(printed, gitDir, string(filepath.Separator), filepath.IsAbs(filepath.FromSlash(printed)) && printedPathAsIs)
 			return refuseAdd(gitDirAddWrap + disagreeText(repo, shown, req.use.accepted.foundGitDir()))
@@ -1613,7 +1632,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
-		afterAddListing = pairBeforeAdd(req, gitDir, repo, req.use.shadow())
+		afterAddListing = pairBeforeAdd(req, gitDir, repo, req.use.shadow(), bool(p.ShadowDirOff))
 	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.
