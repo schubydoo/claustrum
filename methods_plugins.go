@@ -173,21 +173,20 @@ var pluginClientIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
 // siblingSparesBothRoots reports whether a sibling run dir name spares both roots.
 // c9125eb8 did so for `beef5678-<host name>` that answers (measured on Linux and
 // macOS. On Windows: claustrum's own, not measured). It spared only the shared
-// legacy root for an answering sibling of the host-term shape, such as
-// `beef5678-<machine-id first 8>` (measured on macOS and Windows).
-// hostTermSiblingSparesLegacyOnly holds that rule off Linux, where no row
-// had such a sibling. An 8 lowercase hex name and "" (a run dir that cannot be read)
-// spare only the legacy root. The test of the name shape alone is claustrum's own,
-// not measured.
+// legacy root for an answering sibling of the host-term shape with another client
+// id, such as `beef5678-<machine-id first 8>` (measured on Linux, macOS and
+// Windows) and `beef5678-ffffffff` (measured on Linux). An 8 lowercase hex name
+// and "" (a run dir that cannot be read) spare only the legacy root. The test of
+// the name shape alone is claustrum's own, not measured.
 //
 // A host-term sibling whose first 8 hex equal own (the client id of this root) uses
-// this same root, and its live plugins are not seen here. It still spares both
-// roots on each system (claustrum's own, not measured).
+// this same root, and its live plugins are not seen here. It spares both roots
+// (c9125eb8, measured on Linux. On macOS and Windows: claustrum's own, not measured).
 func siblingSparesBothRoots(name, own string) bool {
 	if name == "" || pluginClientIDRE.MatchString(name) {
 		return false
 	}
-	if !hostTermSiblingSparesLegacyOnly || !pluginHostTermRE.MatchString(name) {
+	if !pluginHostTermRE.MatchString(name) {
 		return true
 	}
 	return name[:8] == own
