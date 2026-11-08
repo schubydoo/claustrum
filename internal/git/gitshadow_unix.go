@@ -18,6 +18,12 @@ const shadowLinksWorktrees = true
 // a variable so that a test can switch the steps of Windows on.
 var stagedAddWindowsSteps = false
 
+// doorReadBeforeListing is true on Linux and macOS. The config read of the ssh
+// door of a create comes before the second listing of the checkout, and that
+// listing gets the door entries (c9125eb8 and b3081b51, measured on Linux and
+// macOS, hardenedGitCheckout).
+const doorReadBeforeListing = true
+
 // gitDirMustBeReal is true on Linux and macOS. A create holds the git directory
 // that its gate accepted, and tests at its steps that the path still names it
 // (acceptedGitDir). On macOS, 5fd08069 refuses a create whose `.git` became a

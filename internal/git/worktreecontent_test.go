@@ -375,6 +375,34 @@ func TestContentCheckBatchOtherObjectByDepth(t *testing.T) {
 	}
 }
 
+// TestContentCheckBatchOtherObjectOneDepthRead: in a tree of three levels below
+// the top, a `cat-file --batch` that answers "xyz blob" stops at the commit.
+// The first level goes to one `cat-file --buffer --batch`, which answers the
+// same. The other two levels get no such read: separate runs read and hash
+// them. One stop line comes, and the checked line counts 5 separate runs
+// (c9125eb8, measured on Linux).
+func TestContentCheckBatchOtherObjectOneDepthRead(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".claude/settings.json": "{}\n", ".claude/a/b/f": "deep\n"})
+	slowGit(t, "cat-file,--batch", "fail", 0, "", "xyz blob\n")
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if n := strings.Count(logs.String(), "stopped using the long-running git"); n != 1 {
+		t.Errorf("log:\n%s\nwant one stop line, got %d", logs, n)
+	}
+	if want := checkedLineSep("2", "files", 5, 5, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	got, _ := objectCalls(calls)
+	want := []string{"batch", "read commit", "write commit", "read tree", "write tree",
+		"buffer", "read tree", "write tree", "read tree", "write tree", "read tree", "write tree"}
+	if !slices.Equal(got, want) {
+		t.Errorf("object calls = %q, want %q", got, want)
+	}
+}
+
 // treeID is the id of the tree at path in the commit HEAD of repo.
 func treeID(t *testing.T, repo, path string) string {
 	t.Helper()
@@ -431,9 +459,11 @@ func TestContentCheckLevelReadsByDepth(t *testing.T) {
 }
 
 // TestContentCheckLevelHasherStopsOnce: every long-running hash-object exits 1
-// at once. In the level of two trees the first tree stops the tree
-// hash-object of the level, and no second one starts there: both trees get a
-// separate read and hash (claustrum's own, not measured).
+// at once. The tree hash-object of the first level below the top stops, so the
+// level of two trees gets no read per folder depth: both trees get a separate
+// read and hash. c9125eb8 makes one `cat-file --buffer --batch` in a tree of
+// three levels so (measured on Linux). The two trees of one level are
+// claustrum's own, not measured.
 func TestContentCheckLevelHasherStopsOnce(t *testing.T) {
 	f := twoFolderFixture(t)
 	slowGit(t, "hash-object,--stdin-paths,-w", "fail", 0, "", "")
@@ -448,7 +478,7 @@ func TestContentCheckLevelHasherStopsOnce(t *testing.T) {
 	got, _ := objectCalls(calls)
 	want := []string{"batch", "long commit", "read commit", "write commit", "read tree", "write tree",
 		"buffer", "long tree", "read tree", "write tree",
-		"buffer", "long tree", "read tree", "write tree", "read tree", "write tree"}
+		"read tree", "write tree", "read tree", "write tree"}
 	if !slices.Equal(got, want) {
 		t.Errorf("object calls = %q, want %q", got, want)
 	}

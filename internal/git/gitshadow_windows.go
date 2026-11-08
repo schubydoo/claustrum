@@ -59,6 +59,13 @@ const shadowLinksWorktrees = false
 // (measured). Linux and macOS stage the add too, with their own steps first.
 const stagedAddWindowsSteps = true
 
+// doorReadBeforeListing is false on Windows. The config read of the ssh door
+// comes after the second listing of the checkout and the refusals that follow
+// it, and that listing gets no door entries (claustrum's own, not measured).
+// The row of 5fd08069 pins only that the second listing follows the first one
+// (measured on Windows). That build has no door.
+const doorReadBeforeListing = false
+
 // gitDirMustBeReal is true on Windows. A git directory that is a junction or
 // a directory symbolic link is refused there, and a create tests at each of its steps that the
 // git directory is still the folder that its gate accepted (acceptedGitDir).

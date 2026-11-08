@@ -68,6 +68,10 @@ type contentCheck struct {
 	// and the hash-object calls then take no more objects, and each level of
 	// trees below the top is read per folder depth (readLevel).
 	stopped bool
+	// depthEnded is true after a read per folder depth gave an answer that
+	// does not parse or does not come, or after its tree hash-object stopped.
+	// No later level is read per folder depth then (readLevel).
+	depthEnded bool
 	// separate is the count of commits and trees that separate `cat-file`
 	// runs read.
 	separate int

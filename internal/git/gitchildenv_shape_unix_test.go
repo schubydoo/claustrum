@@ -14,11 +14,19 @@ import (
 
 // The ssh command and the trace entries on each git call of the five git
 // methods, in the state shadow and with "shadowDirOff":true. A call with
-// GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS= gets GIT_SSH_COMMAND=false, except a
-// call of a create or a remove with the member, which keeps the daemon's
-// value. In the state shadow the read-tree call of a create gets the ssh
-// door. Every other call keeps the daemon's value too. be1c1ca5 does so on
-// Linux. Each call has the three trace entries with the value 0.
+// GIT_NO_LAZY_FETCH=1 and GIT_ASKPASS= gets GIT_SSH_COMMAND=false. In the
+// state shadow the read-tree call of a create gets the ssh door. Every other
+// call keeps the daemon's value. be1c1ca5 does so on Linux. The listing right
+// before the read-tree call gets the door too (c9125eb8, measured on Linux and
+// macOS). Each call has the three trace entries with the value 0.
+//
+// With the member claustrum keeps the daemon's value on the heavy calls of a
+// create and a remove, such as the absolute-git-dir pair and the show-toplevel
+// pair. The rows of c9125eb8 and b3081b51 send GIT_SSH_COMMAND=false on those
+// two pairs (measured on Linux, with no daemon value). That gap is open. The
+// settle step of a create with the member gets GIT_SSH_COMMAND=false, as
+// c9125eb8 sends it there with no daemon value (measured on Linux). With a
+// daemon value it is claustrum's own, not measured.
 func TestGitCallSSHAndTracePerState(t *testing.T) {
 	requireGit(t)
 	for _, state := range []shapeState{stateShadow, stateOff} {
@@ -48,6 +56,9 @@ func TestGitCallSSHAndTracePerState(t *testing.T) {
 				}
 				keeps := state == stateOff && (c.method == "git.worktree_create" || c.method == "git.worktree_remove")
 				pairs := 0
+				// settle marks the calls of the settle step of a create with the
+				// member: the heavy calls right after the read-tree call.
+				settle := false
 				for i, call := range calls {
 					what := c.method + " call " + strings.Join(call.argv, " ")
 					var ssh []string
@@ -57,15 +68,24 @@ func TestGitCallSSHAndTracePerState(t *testing.T) {
 						}
 					}
 					want := "GIT_SSH_COMMAND=daemon-ssh"
-					if slices.Contains(call.env, "GIT_NO_LAZY_FETCH=1") && slices.Contains(call.env, "GIT_ASKPASS=") {
+					heavy := slices.Contains(call.env, "GIT_NO_LAZY_FETCH=1") && slices.Contains(call.env, "GIT_ASKPASS=")
+					if !heavy && call.argv[len(call.argv)-1] != "version" {
+						settle = false
+					}
+					if heavy {
 						pairs++
-						if !keeps {
+						if !keeps || settle {
 							want = sshOffEntry
 						}
 					}
-					if state == stateShadow && slices.Contains(call.argv, "read-tree") {
+					_, indexed := lookupExact(call.env, "GIT_INDEX_FILE")
+					secondListing := indexed && argvEndsWith(call.argv, []string{"config", "-z", "--list"})
+					if state == stateShadow && (slices.Contains(call.argv, "read-tree") || secondListing) {
 						// The ssh door of be1c1ca5 (gitsshdoor.go).
 						want = "GIT_SSH_COMMAND=" + sshDoorScript
+					}
+					if keeps && slices.Contains(call.argv, "read-tree") {
+						settle = true
 					}
 					if !slices.Equal(ssh, []string{want}) {
 						t.Errorf("%s (%d): %q, want %q", what, i+1, ssh, want)

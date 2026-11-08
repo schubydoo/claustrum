@@ -115,6 +115,30 @@ func TestCheckoutSSHDoorEnv(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Errorf("door entries of read-tree =\n%q\nwant\n%q", got, want)
 			}
+			// The second listing has the door entries of the read-tree call on
+			// Linux and macOS (c9125eb8, measured on Linux and macOS). On Windows
+			// it has no door, and it keeps a GIT_SSH_COMMAND of the daemon as before
+			// the door (doorReadBeforeListing, claustrum's own, not measured).
+			wantDoor := doorEntries(env)
+			if !doorReadBeforeListing {
+				wantDoor = nil
+				if row.daemon != nil && row.daemon[0] == "GIT_SSH_COMMAND" {
+					wantDoor = []string{"GIT_SSH_COMMAND=" + row.daemon[1]}
+				}
+			}
+			var listings int
+			for _, c := range calls {
+				if _, ok := lookupExact(c.env, "GIT_INDEX_FILE"); !ok || !argvEndsWith(c.argv, []string{"config", "-z", "--list"}) {
+					continue
+				}
+				listings++
+				if got := doorEntries(c.env); !slices.Equal(got, wantDoor) {
+					t.Errorf("door entries of the second listing =\n%q\nwant\n%q", got, wantDoor)
+				}
+			}
+			if listings != 1 {
+				t.Errorf("%d listings with GIT_INDEX_FILE, want 1", listings)
+			}
 		})
 	}
 }
