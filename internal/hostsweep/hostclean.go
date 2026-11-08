@@ -30,7 +30,7 @@ import (
 // install root of the daemon's own socket. That is one folder, under the path as given
 // and under its real path. Every process it signals is this user's own. An orphan group
 // runs a CLI binary under that root, or carries its own CLAUDE_SSH_CHILD stamp and a
-// CLAUDE_SSH_RUN_DIR of the own run dir (judgeOrphan).
+// CLAUDE_SSH_RUN_DIR of a run dir under that root (judgeOrphan).
 //
 // This path is DESTRUCTIVE: the cleaner ends OTHER daemons under its roots. Every process read,
 // kill, dial, rename and remove goes through a package-var seam, so unit tests exercise the whole
@@ -737,24 +737,25 @@ func hcStampMatches(t hcTracked) bool {
 	return hcHasEnv(t.env, "CLAUDE_SSH_CHILD="+strconv.Itoa(t.pid)+":"+start)
 }
 
-// stampedOwnRun reports whether t carries its own stamp (hcStampMatches) and a
-// CLAUDE_SSH_RUN_DIR that names the own run dir of this daemon. c9125eb8 ends a stamped
-// orphan of a program that is no CLI binary only then (measured on Linux and macOS). It
-// spares one with no entry, with another folder, with the run root or with `<root>/run/../x`.
-// With two entries it ends the orphan whose second entry names the run dir. That the
-// last entry counts and that the test compares the text exactly is claustrum's own, not
-// measured.
-func (c *hostCleaner) stampedOwnRun(t hcTracked) bool {
-	if c.ownRunDir == "" || !hcStampMatches(t) {
+// stampedKnownRun reports whether t carries its own stamp (hcStampMatches) and a
+// CLAUDE_SSH_RUN_DIR entry that names a run dir under the root of this daemon. c9125eb8
+// ends a stamped orphan of a program that is no CLI binary only then (measured on Linux and
+// macOS). Any entry counts: the first, the middle or the last. The run dir of a gone daemon
+// under the same root counts too. It spares one with no entry, with another folder, with the
+// run root or with `<root>/run/../x`. Not measured, claustrum's own: the test reads the text
+// only and needs no folder on disk. It takes either form of the root. It spares a deeper
+// path, `<root>/run/.` and `<root>/run/..`.
+func (c *hostCleaner) stampedKnownRun(t hcTracked) bool {
+	if c.roots == nil || !hcStampMatches(t) {
 		return false
 	}
-	runDir, found := "", false
 	for _, e := range t.env {
-		if v, ok := strings.CutPrefix(e, "CLAUDE_SSH_RUN_DIR="); ok {
-			runDir, found = v, true
+		v, ok := strings.CutPrefix(e, "CLAUDE_SSH_RUN_DIR=")
+		if name := filepath.Base(v); ok && name != "." && name != ".." && c.roots.under(v, runComponent, 1) {
+			return true
 		}
 	}
-	return found && runDir == c.ownRunDir
+	return false
 }
 
 // verifyListener returns "" when the process answering a socket is verifiably one of our
@@ -810,17 +811,17 @@ func hcUTCDateText(at time.Time) string {
 
 // judgeOrphan reports whether a process group leader is an orphaned Claude Code child whose
 // owning daemon is gone. The caller passes only ppid-1 group leaders that run one of our CLI
-// binaries or carry their own stamp and run dir (stampedOwnRun). It must be this user's own process, in
+// binaries or carry their own stamp and a run dir under the root (stampedKnownRun). It must be this user's own process, in
 // this daemon's namespace, old enough, a stream-json process, carrying the daemon-child
 // marker, and its stdin, stdout and stderr must all be pipes, the stdio a daemon gives its
 // child. The uid, namespace and CLI-binary or stamp gates keep the cleaner from ending an unrelated same-user process that merely inherited the
 // marker and happens to carry a stream-json argument. The reason is for the spare log; an
 // empty reason with reap=false is a silent skip.
 func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
-	// A group that runs no CLI binary passes on only with its own stamp, the run dir of this daemon and a stream-json
+	// A group that runs no CLI binary passes on only with its own stamp, a run dir under the root and a stream-json
 	// argv. Any other such group is skipped with no line, before the arms that log a reason
 	// (claustrum's own, not measured). A CLI group keeps the order below.
-	if (t.exe == "" || !c.roots.isCliBinary(t.exe)) && (!c.stampedOwnRun(t) || !hcArgvHasStreamJSON(t.argv)) {
+	if (t.exe == "" || !c.roots.isCliBinary(t.exe)) && (!c.stampedKnownRun(t) || !hcArgvHasStreamJSON(t.argv)) {
 		return false, ""
 	}
 	if t.stopped {
@@ -835,8 +836,8 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	if hcClock().Sub(t.startWall) < hcMinAge {
 		return false, "" // too young
 	}
-	if t.exe == "" || (!c.roots.isCliBinary(t.exe) && !c.stampedOwnRun(t)) {
-		return false, "" // not one of our deployed CLI binaries, and no own stamp and run dir
+	if t.exe == "" || (!c.roots.isCliBinary(t.exe) && !c.stampedKnownRun(t)) {
+		return false, "" // not one of our deployed CLI binaries, and no own stamp and known run dir
 	}
 	if t.argv == nil {
 		return false, "its argv could not be read"
@@ -1256,12 +1257,12 @@ func (c *hostCleaner) Pass() hcSummary {
 	}
 
 	// Orphaned Claude Code groups: a group leader re-parented to pid 1 that runs one of our
-	// CLI binaries, or that carries its own CLAUDE_SSH_CHILD stamp and run dir. The CLI test comes first,
+	// CLI binaries, or that carries its own CLAUDE_SSH_CHILD stamp and a known run dir. The CLI test comes first,
 	// so a stamped CLI orphan gets the CLI line.
 	var orphanGroups []hcGroup
 	for _, t := range procs {
 		isCli := t.exe != "" && c.roots.isCliBinary(t.exe)
-		if t.pid < 2 || t.pid == c.selfPid || t.ppid != 1 || t.pgid != t.pid || t.exe == "" || (!isCli && !c.stampedOwnRun(t)) {
+		if t.pid < 2 || t.pid == c.selfPid || t.ppid != 1 || t.pgid != t.pid || t.exe == "" || (!isCli && !c.stampedKnownRun(t)) {
 			continue
 		}
 		reap, reason := c.judgeOrphan(t)
