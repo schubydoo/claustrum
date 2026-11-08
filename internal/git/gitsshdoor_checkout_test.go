@@ -117,10 +117,14 @@ func TestCheckoutSSHDoorEnv(t *testing.T) {
 			}
 			// The second listing has the door entries of the read-tree call on
 			// Linux and macOS (c9125eb8, measured on Linux and macOS). On Windows
-			// it has none (doorReadBeforeListing).
+			// it has no door, and it keeps a GIT_SSH_COMMAND of the daemon as before
+			// the door (doorReadBeforeListing, claustrum's own, not measured).
 			wantDoor := doorEntries(env)
 			if !doorReadBeforeListing {
 				wantDoor = nil
+				if row.daemon != nil && row.daemon[0] == "GIT_SSH_COMMAND" {
+					wantDoor = []string{"GIT_SSH_COMMAND=" + row.daemon[1]}
+				}
 			}
 			var listings int
 			for _, c := range calls {
