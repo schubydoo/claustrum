@@ -236,6 +236,9 @@ func (u gitUse) shadow() bool {
 // refuses there with that text, and the listing in the repository is its last
 // call (measured on Linux).
 //
+// afterListing, when set, runs after the listing and the refusals that follow
+// it, right before the add (pairBeforeAdd).
+//
 // offMember is true for a create with "shadowDirOff":true and no copy. Its add
 // gets the same test after the listing. On 5fd08069 that listing comes after
 // `rev-parse --absolute-git-dir` and is the last call (measured on Linux,
@@ -246,7 +249,7 @@ func (u gitUse) shadow() bool {
 // lock also covers the staging steps (not measured). The lock comes before
 // fixedForm, so an add that waits for a remove takes the form of the off switch
 // at its start, and the gate of fixedForm runs under the lock.
-func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, offMember bool, args ...string) (string, error) {
+func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, offMember bool, afterListing func(), args ...string) (string, error) {
 	defer lockWorktreeAddStep(repo)()
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
@@ -282,6 +285,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		if text := f.worktreesOpenRefusal(); text != "" {
 			return "", &addNotPrepared{text: text}
 		}
+	}
+	if afterListing != nil {
+		afterListing()
 	}
 	// On Linux and macOS an add that names the copy is staged as on Windows,
 	// after the steps above (runAddStaged). be1c1ca5 does so on Linux and macOS.

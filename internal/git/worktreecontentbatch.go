@@ -45,7 +45,8 @@ import (
 // After a stop c9125eb8 reads the trees of a level below the top with one
 // `cat-file --buffer --batch` and hashes them with a new long-running
 // hash-object of the trees (measured on Linux, readLevel). The top tree is read
-// and hashed alone.
+// and hashed alone. After a fault of that read or of that hash-object, the
+// levels below it are read by separate runs (measured on Linux).
 
 // longStoppedLine is the log line after a long-running git of the check
 // stopped. Its first part is the git command, cat-file or hash-object, and the
@@ -319,15 +320,23 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 // for, and each tree after a stop of that hash-object, go through readObject
 // as a separate run. That stop logs no line (measured on Linux).
 //
+// A fault ends the reads per folder depth for the rest of the check
+// (depthEnded). It is an answer of the read that does not parse or does not
+// come, or a stop of its tree hash-object. c9125eb8 makes one `cat-file
+// --buffer --batch` in a tree of three levels below the top then, and separate
+// runs read the other levels (measured on Linux, for both faults).
+//
 // Claustrum's own, not measured: the trees of one level go to the read in the
 // order of the walk, a tree of that read does not count in c.separate, the
 // hash-object of the level ends with the level, no second one starts in a level
 // after a stop, and a tree whose body cannot be written for it is hashed by a
-// separate run.
+// separate run. With no fault each level gets its own read.
 func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	read := make([][]byte, len(level))
-	if c.stopped && !level[0].top {
-		read = c.readByDepth(level)
+	if c.stopped && !c.depthEnded && !level[0].top {
+		var faulted bool
+		read, faulted = c.readByDepth(level)
+		c.depthEnded = faulted
 	}
 	bodies := make([][]byte, len(level))
 	var h *objectBatch
@@ -362,6 +371,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 			h.close()
 			h = nil
 			hashing = false
+			c.depthEnded = true
 		}
 		body, text := c.readObject("tree", t.id)
 		if text != "" {
@@ -376,12 +386,13 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 // The ids go to its stdin, which then closes. The answers are read while the
 // ids go in, so a full pipe holds neither side. A body is nil for a tree that
 // the batch named missing or of another kind, and for each tree from the first
-// answer that does not parse or does not come.
-func (c *contentCheck) readByDepth(level []*treeWalk) [][]byte {
-	read := make([][]byte, len(level))
+// answer that does not parse or does not come. faulted is true after such an
+// answer. No pipe gives no fault (claustrum's own, not measured).
+func (c *contentCheck) readByDepth(level []*treeWalk) (read [][]byte, faulted bool) {
+	read = make([][]byte, len(level))
 	b := c.startLong(nil, "cat-file", "--buffer", "--batch")
 	if b == nil {
-		return read
+		return read, false
 	}
 	var ids strings.Builder
 	for _, t := range level {
@@ -402,12 +413,12 @@ func (c *contentCheck) readByDepth(level []*treeWalk) [][]byte {
 	for i, t := range level {
 		body, ok, err := b.answer("tree", t.id)
 		if err != nil {
-			break
+			return read, true
 		}
 		if ok {
 			// An empty tree has a body of no bytes, which is not nil.
 			read[i] = append([]byte{}, body...)
 		}
 	}
-	return read
+	return read, false
 }

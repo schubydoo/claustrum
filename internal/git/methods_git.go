@@ -1001,7 +1001,13 @@ func gitListBranches(req *gitCall) rpc.Response {
 // fallback-git gets no pair
 // (claustrum's own, not measured). For a linked baseRepo that folder is the one of the main repository
 // (gitDirRegistryDir, not measured). The calls come after `rev-parse --absolute-git-dir` and before
-// the listing of the add (measured on macOS and Windows).
+// the listing of the add (measured on macOS and Windows). With a missing folder
+// they come after the listing of the add and right before the add on Linux and
+// macOS (c9125eb8 and b3081b51, measured on Linux and macOS). The caller then
+// gets them back as afterListing, for worktreeAdd. Windows keeps the place
+// before the listing (claustrum's own, not measured). A refusal before the
+// add then runs no pair (claustrum's own, not measured): the listing of the
+// add stays the last call of the refusals of 5fd08069 after a swap.
 //
 // The test does not follow a link. A symbolic link to a real folder there
 // gives no pair, also when that folder holds a registration (measured on
@@ -1015,14 +1021,21 @@ func gitListBranches(req *gitCall) rpc.Response {
 // add and answers the timeout before the checkout, with the rollback
 // (measured on Linux). The limits of the two calls are those of their kind
 // (gitstop.go). No cell measured a limit there: that is claustrum's own.
-func pairBeforeAdd(req *gitCall, gitDir, repo string, missingRuns bool) {
+func pairBeforeAdd(req *gitCall, gitDir, repo string, missingRuns bool) (afterListing func()) {
 	fi, err := os.Lstat(gitDirRegistryDir(gitDir))
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
 	if !missing && (err != nil || !fi.IsDir()) {
-		return
+		return nil
 	}
-	u := req.use.atGitDirCommand()
-	_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
+	run := func() {
+		u := req.use.atGitDirCommand()
+		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, repo, u.gitDirPin(repo), u.gitDirFront())
+	}
+	if missing && !stagedAddWindowsSteps {
+		return run
+	}
+	run()
+	return nil
 }
 
 func gitWorktreeCreate(req *gitCall) rpc.Response {
@@ -1596,10 +1609,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// contexts are the context of the request. The deadline counts from arrival.
 	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs, arrival)
 	defer cancelCtx()
+	var afterAddListing func()
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
-		pairBeforeAdd(req, gitDir, repo, req.use.shadow())
+		afterAddListing = pairBeforeAdd(req, gitDir, repo, req.use.shadow())
 	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.
@@ -1707,7 +1721,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 	}
 	listEntriesBefore()
-	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, addArgs...)
+	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
 	added = addErr == nil
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
@@ -1758,7 +1772,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
 		listEntriesBefore()
-		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, fallbackArgs...)
+		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, nil, fallbackArgs...)
 		added = addErr == nil
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
 			return resp
@@ -2169,6 +2183,17 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				checkoutRev = id
 			}
 		}
+		// With the member the read-tree call names the commit id too, from the
+		// same call, with no question about the repository first (c9125eb8 and
+		// b3081b51, measured on Linux). On macOS and Windows it is claustrum's
+		// own, not measured. A live hold with no member keeps the ref
+		// (claustrum's own, not measured).
+		member := bool(p.ShadowDirOff) && !cu.shadow()
+		if member && !isObjectID(checkoutRev) {
+			if id := resolveCommit(quiet, repo, checkoutRev); id != "" {
+				checkoutRev = id
+			}
+		}
 		if cu.shadow() && !offNow && isObjectID(checkoutRev) {
 			checkUse, checkCommit = &quiet, checkoutRev
 		}
@@ -2181,7 +2206,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, tested, checkoutRev, cu.gitDirPin(repo), rule)
+			indexDir, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || member)
 		var filters filterPlan
 		if rule != nil {
 			filters = rule.plan

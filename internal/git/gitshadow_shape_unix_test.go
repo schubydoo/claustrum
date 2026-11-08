@@ -367,36 +367,40 @@ func createRows() []shapeRow {
 		},
 		addRows("worktree add --no-track --no-checkout -b w1 <leaf>"),
 		probeAfterAdd(),
-		// In the state shadow the commit id of the branch for the read-tree call
-		// (b3081b51, methods_git.go).
+		// In the state shadow and with the member the commit id of the branch for
+		// the read-tree call (b3081b51 and c9125eb8, methods_git.go).
 		[]shapeRow{
-			{list: "none", argv: "config -z --list", cwd: "<repo>", shadow: "{A2} {D} {W} {L}"},
-			{list: "P21", argv: "rev-parse --verify --quiet refs/heads/w1^{commit}", cwd: "<repo>", shadow: "{A2} {D} {W} {H}"},
+			{list: "none", argv: "config -z --list", cwd: "<repo>", shadow: "{A2} {D} {W} {L}", off: "{C} {G} {L}"},
+			{list: "P21", argv: "rev-parse --verify --quiet refs/heads/w1^{commit}", cwd: "<repo>", shadow: "{A2} {D} {W} {H}", off: "{C} {G} {H}"},
 		},
 		[]shapeRow{
 			same("none", "--git-dir=<repo>/.git config -z --list", leaf, "{C} {D} {L}", "{C} {G} {L}"),
-			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
-				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			// The config read of the ssh door of be1c1ca5 (gitsshdoor.go), in the
-			// state shadow only.
+			// state shadow only. It comes before the second listing (c9125eb8,
+			// measured on Linux and macOS).
 			{list: "none", argv: `--git-dir=<repo>/.git config -z --get-regexp ^(core\.sshcommand|ssh\.variant)$`, cwd: leaf,
+				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "lfs.storage=<repo>/.git/lfs+P22", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules <id>",
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "P22", cwd: leaf,
-				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
-				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
+				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules <id>",
+				off:  "{C} {G} {H}" + index[false]},
+			{list: "P22", cwd: leaf,
+				argv:     "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
+				fallback: "{C} {G} {H}" + index[true]},
 			// The settle step of 683cc6a9 (worktreesettle.go), in the state shadow
-			// only. The two calls of the empty tree come first. A heavy listing in
-			// the leaf comes before the heavy settle call (b3081b51 and c9125eb8,
-			// measured on Linux).
-			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<cwd>", shadow: "{A} {D} {L}"},
-			{list: "P28", argv: "--git-dir=<repo>/.git hash-object -t tree /dev/null", cwd: "<cwd>", shadow: "{A} {D} {H}"},
-			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf, shadow: "{A} {D} {L}"},
+			// and with the member. The two calls of the empty tree come first. A
+			// heavy listing in the leaf comes before the heavy settle call
+			// (b3081b51 and c9125eb8, measured on Linux).
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: "<cwd>", shadow: "{A} {D} {L}", off: "{A} {G} {L}"},
+			{list: "P28", argv: "--git-dir=<repo>/.git hash-object -t tree /dev/null", cwd: "<cwd>", shadow: "{A} {D} {H}", off: "{A} {G} {H}"},
+			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf, shadow: "{A} {D} {L}", off: "{A} {G} {L}"},
 			{list: "ATTR+P28", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
-				shadow: "{A} {D} {H}" + index[true]},
+				shadow: "{A} {D} {H}" + index[true], off: "{A} {G} {H}" + index[false]},
 		},
 		// The content check of c9125eb8 (worktreecontent.go), in the state shadow
 		// only. The commit has no file of the check, so no hash-object
@@ -573,7 +577,9 @@ func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 // goes before the add (measured). With the member the pair runs too (measured).
 // A missing folder gives the pair: b3081b51 and c9125eb8 run it in the first
 // create of a repository (measured on Linux, macOS and Windows). With the member
-// a missing folder still gives none (5fd08069, measured).
+// a missing folder still gives none (5fd08069, measured). In the state shadow
+// a missing folder puts the pair after the listing of the add, right before
+// the add (c9125eb8 and b3081b51, measured on Linux and macOS).
 func TestShadowPairBeforeAdd(t *testing.T) {
 	vars := map[shapeState]string{stateShadow: "{A} {D}", stateOff: "{A} {G}"}
 	noFolder := func(t *testing.T, f shapeFixture) {
@@ -586,18 +592,20 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 		state shapeState
 		stage func(t *testing.T, f shapeFixture)
 		pair  bool
+		// afterAddListing puts the pair after the listing of the add.
+		afterAddListing bool
 	}{
-		{"an entry of another worktree", stateShadow, func(*testing.T, shapeFixture) {}, true},
+		{"an entry of another worktree", stateShadow, func(*testing.T, shapeFixture) {}, true, false},
 		{"a stale entry of the leaf", stateShadow, func(t *testing.T, f shapeFixture) {
 			old := filepath.Join(f.gitDir, "worktrees", "old")
 			if err := os.Mkdir(old, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			writeFile(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n", 0o644)
-		}, false},
-		{"no registrations folder", stateShadow, noFolder, true},
-		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true},
-		{"with the member and no registrations folder", stateOff, noFolder, false},
+		}, false, false},
+		{"no registrations folder", stateShadow, noFolder, true, true},
+		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true, false},
+		{"with the member and no registrations folder", stateOff, noFolder, false, false},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newShapeFixture(t, row.state)
@@ -621,6 +629,16 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 			at := slices.Index(got, absolute)
 			if at < 0 {
 				t.Fatalf("calls = %q, want %q", got, absolute)
+			}
+			if row.afterAddListing {
+				const addListing = "none | config -z --list | <repo> | {A2} {D} {W} {L}"
+				if at+1 >= len(got) || got[at+1] != addListing {
+					t.Fatalf("calls = %q\nwant the listing of the add %q right after %q", got, addListing, absolute)
+				}
+				at++
+				if at+3 >= len(got) || !strings.Contains(got[at+3], "| worktree add ") {
+					t.Errorf("calls = %q\nwant the add right after the pair", got)
+				}
 			}
 			if row.pair && (at+2 >= len(got) || !slices.Equal(got[at+1:at+3], want)) {
 				t.Errorf("calls = %q\nwant the pair %q right after %q", got, want, absolute)
