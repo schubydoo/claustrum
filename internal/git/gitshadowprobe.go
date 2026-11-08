@@ -138,11 +138,13 @@ func (k keptProbe) fresh(root string) bool {
 // repoAnswer is what the daemon makes of the answer of git. The zero value is a
 // good answer. noRepo is the answer "this is no repository that git uses", and
 // text is the text of an error. notARepo is true for a noRepo answer whose first
-// call exited 128 with a text of notARepoStderr (askGit). disagree is true when
+// call exited 128 with a text of notARepoStderr (askGit). said is the error
+// output of that first call, through worktreeGitText. disagree is true when
 // text is the "disagree" text (disagreeText).
 type repoAnswer struct {
 	noRepo   bool
 	notARepo bool
+	said     string
 	disagree bool
 	text     string
 }
@@ -421,6 +423,9 @@ func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			if exitedWith128(r) {
 				a := secondProbe(folder, root, env, r, inGitDir)
 				a.notARepo = a.noRepo && notARepoStderr(r.stderr, filepath.ToSlash(filepath.Join(root, ".git")))
+				if a.notARepo {
+					a.said = worktreeGitText(r.stderr, nil)
+				}
 				return a
 			}
 			if whole := cannotRunText(); whole != "" {
@@ -701,16 +706,24 @@ func (u gitUse) recheck(dir string) {
 
 // askAfterAdd asks git about the repository in dir after a good `worktree
 // add`, before the call that resolves the branch of the checkout to a commit.
-// It returns the text of a bad answer, or "". It runs on macOS only
-// (createAsksAfterAdd).
+// It returns the text of a bad answer, or "". It runs on Linux and macOS
+// (createAsksAfterAdd). The content check asks it too (contentCheck.ask).
 //
 // On macOS b3081b51 and c9125eb8 make that call there, also right after a
 // git.info. An answer that names another git directory gets one more call. A
 // right second answer goes on, and the create succeeds with 2 calls. A wrong
-// one fails the create after 4 calls in all (measured on macOS). An answer with another text has the same stop, and "no
-// repository" goes on (claustrum's own, not measured). A kept answer counts,
-// as at each step. The add changes the time of `.git`, so the call runs
-// (from the code).
+// one fails the create after 4 calls in all (measured on macOS). On Linux both
+// builds make the call right after the add, in a first and in a second create
+// (measured). A bad answer on Linux has the rule of macOS (claustrum's own,
+// not measured).
+//
+// A "no repository" answer whose first call wrote `fatal: not a git
+// repository` with exit 128 is bad too. Its text is "git finds no repository
+// here: " and git's text, and it fails the create after 6 calls (c9125eb8,
+// measured on macOS). An answer with another text has the same stop, and
+// another "no repository" answer goes on (claustrum's own, not measured). A
+// kept answer counts, as at each step. The add changes the time of `.git`,
+// so the call runs (from the code).
 func (u gitUse) askAfterAdd(dir string) string {
 	if !createAsksAfterAdd || !u.shadow() || u.host == nil {
 		return ""
@@ -719,5 +732,9 @@ func (u gitUse) askAfterAdd(dir string) string {
 	if !ok || !u.host.asksGit(t, false) {
 		return ""
 	}
-	return u.host.askGit(t, dir).text
+	a := u.host.askGit(t, dir)
+	if a.notARepo {
+		return noRepositoryHerePrefix + a.said
+	}
+	return a.text
 }

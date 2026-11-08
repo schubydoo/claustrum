@@ -71,12 +71,20 @@ type contentCheck struct {
 	// separate is the count of commits and trees that separate `cat-file`
 	// runs read.
 	separate int
+	// ask asks git about the repository before the start of the batch and
+	// before each separate `cat-file` run (askRepo), or is nil. It returns the
+	// text of a bad answer, or "".
+	ask func() string
+	// asked is true after ask gave a bad answer.
+	asked bool
 }
 
-// contentRefusal is the code and the hint of a refused content check.
+// contentRefusal is the code and the hint of a refused content check. asked is
+// true when the check got a bad answer of git about the repository.
 type contentRefusal struct {
 	ErrorCode string
 	hint      string
+	asked     bool
 }
 
 // contentRefusalStart starts the error text of every refusal of the check
@@ -107,11 +115,15 @@ type contentFile struct {
 }
 
 // checkWorktreeContent runs the content check of a new worktree at leaf,
-// whose checkout read commit. It logs one line and returns nil on a match.
-func checkWorktreeContent(u gitUse, repo, leaf, commit string) *contentRefusal {
+// whose checkout read commit. It logs one line and returns nil on a match. ask
+// is contentCheck.ask.
+func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string) *contentRefusal {
 	start := time.Now()
-	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit}
+	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask}
 	files, refusal := c.run()
+	if refusal != nil {
+		refusal.asked = c.asked
+	}
 	short := commit
 	if len(short) > 12 {
 		short = short[:12]
@@ -299,6 +311,19 @@ func (c *contentCheck) cmd(ctx context.Context, dir string, args ...string) *exe
 		c.noteFileMode(l)
 	}
 	return hardenedGitCmd(ctx, u, dir, false, &configListing{hooks: l.hooks()}, args...)
+}
+
+// askRepo runs ask, when the check has one, and returns the text of a bad
+// answer, or "".
+func (c *contentCheck) askRepo() string {
+	if c.ask == nil {
+		return ""
+	}
+	text := c.ask()
+	if text != "" {
+		c.asked = true
+	}
+	return text
 }
 
 // failText is the detail of a failed call in the repository text. A stopped

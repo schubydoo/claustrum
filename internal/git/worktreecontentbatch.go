@@ -104,9 +104,19 @@ type objectBatch struct {
 // startBatch starts the batch of the check in the base repository, with the
 // config listing before it, as each call of the check. A failed start shows
 // at the first read as an end of the output.
+//
+// Before the batch git is asked about the repository (askRepo). After a bad
+// answer no batch starts, the line longStoppedLine says "it did not start",
+// and the next separate run asks again (c9125eb8, measured on macOS). The
+// read per folder depth after that line is claustrum's own, not measured.
 func (c *contentCheck) startBatch() {
 	if !sha1Works() {
 		logging.Infof("%s", noSHA1Line)
+		return
+	}
+	if c.askRepo() != "" {
+		logging.Infof(longStoppedLine, "cat-file", "it did not start")
+		c.stopped = true
 		return
 	}
 	// No pipe: every object is read by a separate run, with no line
@@ -275,7 +285,9 @@ func objectWriteEnv(dir string) []string {
 
 // catFile reads the object id of kind: through the batch while it answers,
 // and by a separate `cat-file <kind> <id>` run otherwise. A commit or a tree
-// that a separate run read counts in c.separate.
+// that a separate run read counts in c.separate. A bad answer of git about the
+// repository before a separate run (askRepo) is the error, with its text, and
+// the run does not start (c9125eb8, measured on macOS for the commit).
 func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 	if c.batch != nil && !c.stopped {
 		body, ok, err := c.batch.read(kind, id)
@@ -287,6 +299,9 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 		case ok:
 			return body, "", nil
 		}
+	}
+	if text := c.askRepo(); text != "" {
+		return nil, "", errors.New(text)
 	}
 	body, stderr, err := c.git(c.repo, nil, nil, "cat-file", kind, id)
 	if err == nil && kind != "blob" {

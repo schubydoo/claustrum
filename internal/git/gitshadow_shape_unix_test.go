@@ -440,23 +440,17 @@ func addRows(argv string) []shapeRow {
 
 // probeAfterCreate is the call about the repository that the first request
 // after a staged create makes in the state shadow. The staging folder was a
-// new entry of `.git`, so the kept answer is stale (keptProbe.fresh). On macOS
-// the create asks after its add and keeps that answer, so the next request
-// makes no call. b3081b51 and c9125eb8 make none in a remove right after a
+// new entry of `.git`, so the kept answer is stale (keptProbe.fresh). On Linux
+// and macOS the create asks after its add and keeps that answer, so the next
+// request makes no call. b3081b51 and c9125eb8 make none in a remove right after a
 // create (measured on macOS).
 func probeAfterCreate() []shapeRow {
-	if createAsksAfterAdd {
-		return nil
-	}
-	return probeRow()
+	return nil
 }
 
 // probeAfterAdd is the call about the repository after the add of a create in
-// the state shadow, on macOS only (askAfterAdd).
+// the state shadow, on Linux and macOS (askAfterAdd).
 func probeAfterAdd() []shapeRow {
-	if !createAsksAfterAdd {
-		return nil
-	}
 	return probeRow()
 }
 
