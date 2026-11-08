@@ -373,10 +373,10 @@ reference.
 - An orphan is a `stream-json` daemon child that leads its process group. It
   has parent pid 1 and three pipes for stdio. Its binary sits directly in
   `<root>/ccd-cli`, or it carries a `CLAUDE_SSH_CHILD` stamp of its own pid and
-  start. A stamped orphan also needs a `CLAUDE_SSH_RUN_DIR` that names the run
-  dir of this daemon (both `c9125eb8`, on Linux and macOS). Of two such entries
-  the last counts, and the text must match exactly. A stopped stamped orphan
-  with another run dir is skipped with no line (claustrum's own, not measured). Its
+  start. A stamped orphan also needs any `CLAUDE_SSH_RUN_DIR` entry of a run
+  dir under the root, a gone daemon's too (both `c9125eb8`, on Linux and macOS).
+  A text test spares a deeper path, and a stopped stamped orphan without that
+  entry is skipped silently (claustrum's own, not measured). Its
   group gets `SIGTERM`, and `SIGKILL` 3 s later if a member is left (`c9125eb8`
   for a gone leader, on Linux). In the settle after the `SIGKILL` this wait is
   claustrum's own, not measured. A young orphan stays. An ambiguous orphan is spared and logged.

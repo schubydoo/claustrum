@@ -80,17 +80,19 @@ func TestPassEndsAStampedOrphanOfAnotherProgram(t *testing.T) {
 	}
 }
 
-// TestPassEndsAStampedOrphanOnlyOfTheOwnRunDir: a stamped orphan of a program that is no CLI
-// binary is ended only when its CLAUDE_SSH_RUN_DIR names the own run dir of the daemon. With
-// two entries, the second names the run dir. No entry, another folder, the run root and
-// `<root>/run/../x` are spared with no line (c9125eb8, measured on Linux and macOS). A first
-// entry of the run dir before another folder is spared (claustrum's own, not measured). A CLI
-// orphan with no entry still ends (claustrum's own, not measured).
-func TestPassEndsAStampedOrphanOnlyOfTheOwnRunDir(t *testing.T) {
+// TestPassEndsAStampedOrphanOfAKnownRunDir: a stamped orphan of a program that is no CLI
+// binary is ended when any CLAUDE_SSH_RUN_DIR entry names a run dir under the root. The own
+// run dir first, last or in the middle counts, and so does the run dir of a gone daemon. No
+// entry, another folder, the run root and `<root>/run/../x` are spared with no line
+// (c9125eb8, measured on Linux and macOS). A deeper path, `<root>/run/.` and `<root>/run/..`
+// are spared (claustrum's own, not measured). A CLI orphan with no entry still ends (c9125eb8, measured
+// on Linux and macOS).
+func TestPassEndsAStampedOrphanOfAKnownRunDir(t *testing.T) {
 	f := hcNewPassFixture(t)
 	launcher := filepath.Join(f.base, "launcher", "stubl")
 	cli := filepath.Join(f.base, "ccd-cli", "2.0.1")
 	own := f.c.ownRunDir
+	gone := filepath.Join(f.runRoot, "c9")
 	rows := []struct {
 		pid   int
 		exe   string
@@ -103,8 +105,13 @@ func TestPassEndsAStampedOrphanOnlyOfTheOwnRunDir(t *testing.T) {
 		{noSuchPid + 404, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + f.runRoot}, false},
 		{noSuchPid + 405, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + f.runRoot + "/../x"}, false},
 		{noSuchPid + 406, launcher, []string{"CLAUDE_SSH_RUN_DIR=/tmp/outside-x", "CLAUDE_SSH_RUN_DIR=" + own}, true},
-		{noSuchPid + 407, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + own, "CLAUDE_SSH_RUN_DIR=/tmp/outside-x"}, false},
+		{noSuchPid + 407, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + own, "CLAUDE_SSH_RUN_DIR=/tmp/outside-x"}, true},
 		{noSuchPid + 408, cli, nil, true},
+		{noSuchPid + 409, launcher, []string{"CLAUDE_SSH_RUN_DIR=/tmp/outside-x", "CLAUDE_SSH_RUN_DIR=" + own, "CLAUDE_SSH_RUN_DIR=/tmp/outside-y"}, true},
+		{noSuchPid + 410, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + gone}, true},
+		{noSuchPid + 411, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + gone + "/x"}, false},
+		{noSuchPid + 412, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + f.runRoot + "/.."}, false},
+		{noSuchPid + 413, launcher, []string{"CLAUDE_SSH_RUN_DIR=" + f.runRoot + "/."}, false},
 	}
 	for _, r := range rows {
 		hcStampedOrphan(t, f, r.pid, r.exe, "CLAUDE_SSH_CHILD="+strconv.Itoa(r.pid)+":1", r.env...)
@@ -132,7 +139,7 @@ func TestPassEndsAStampedOrphanOnlyOfTheOwnRunDir(t *testing.T) {
 			t.Errorf("log names the spared group %d\nlog: %s", r.pid, got)
 		}
 	}
-	for _, pid := range []int{noSuchPid + 401, noSuchPid + 406} {
+	for _, pid := range []int{noSuchPid + 401, noSuchPid + 406, noSuchPid + 407, noSuchPid + 409, noSuchPid + 410} {
 		if line := fmt.Sprintf(hcOrphanMarkLog, pid) + "\n"; !strings.Contains(got, line) {
 			t.Errorf("log lacks %q\nlog: %s", line, got)
 		}
