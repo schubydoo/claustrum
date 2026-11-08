@@ -139,11 +139,13 @@ func (k keptProbe) fresh(root string) bool {
 // good answer. noRepo is the answer "this is no repository that git uses", and
 // text is the text of an error. notARepo is true for a noRepo answer whose first
 // call exited 128 with a text of notARepoStderr (askGit). said is the error
-// output of that first call, through worktreeGitText.
+// output of that first call, through worktreeGitText. disagree is true when
+// text is the "disagree" text (disagreeText).
 type repoAnswer struct {
 	noRepo   bool
 	notARepo bool
 	said     string
+	disagree bool
 	text     string
 }
 
@@ -453,7 +455,7 @@ func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			return repoAnswer{}
 		}
 	}
-	return repoAnswer{text: disagreeText(root, shown, want)}
+	return repoAnswer{text: disagreeText(root, shown, want), disagree: true}
 }
 
 // disagreeText is the error of an answer of git from root that names the git

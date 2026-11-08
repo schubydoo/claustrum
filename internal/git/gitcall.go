@@ -40,6 +40,8 @@ type gitCall struct {
 	gitRefused bool
 	// gitNotARepo is true when that bad answer is repoAnswer.notARepo.
 	gitNotARepo bool
+	// gitDisagreed is true when that bad answer is repoAnswer.disagree.
+	gitDisagreed bool
 	// configRefused is true when the last settings gate of the request refused
 	// the config of the repository or another file of its git directory
 	// (repoConfigGate).
