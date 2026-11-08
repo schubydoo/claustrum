@@ -445,18 +445,12 @@ func addRows(argv string) []shapeRow {
 // request makes no call. b3081b51 and c9125eb8 make none in a remove right after a
 // create (measured on macOS).
 func probeAfterCreate() []shapeRow {
-	if createAsksAfterAdd {
-		return nil
-	}
-	return probeRow()
+	return nil
 }
 
 // probeAfterAdd is the call about the repository after the add of a create in
 // the state shadow, on Linux and macOS (askAfterAdd).
 func probeAfterAdd() []shapeRow {
-	if !createAsksAfterAdd {
-		return nil
-	}
 	return probeRow()
 }
 
