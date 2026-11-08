@@ -173,7 +173,9 @@ The repository calls are the configuration listings, the hardened calls,
   in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value, except the read-tree call of a shadow create (the ssh door) (`be1c1ca5`,
   measured on Linux and Windows, macOS not measured). With `"shadowDirOff":true` a
   call of `git.worktree_create` or `git.worktree_remove` that names no copy keeps
-  the daemon's value (measured on Linux). The state `fallback-git` is from the code.
+  the daemon's value (measured on Linux). The settle calls are an exception
+  ([The settle step](git-worktree-create.md#the-settle-step)). The state
+  `fallback-git` is from the code.
 The daemon parses each value from the standard output of git (from
 the code). The reference does so for the branch of `git.info` and the repository
 test of a create (measured on Linux).
@@ -188,8 +190,8 @@ after `LANGUAGE=C`, in this order (`be1c1ca5`, measured on Linux). `GIT_SSH_COMM
 is the [ssh door](git-worktree-create.md#the-ssh-door). `CLAUDE_SSH_PERSONS_SSH`
 is the person's ssh command. Then come `CLAUDE_SSH_PERSONS_ENV`,
 `CLAUDE_SSH_DOOR_MARK` with 16 hex digits, and `GIT_SSH_VARIANT`. One mark for
-each daemon process is claustrum's own. The second listing before the read-tree
-call gets the same entries (`c9125eb8`, measured on Linux and macOS).
+each daemon process is claustrum's own. On Linux and macOS the second listing gets them too
+([ssh door](git-worktree-create.md#the-ssh-door)).
 
 - With no ssh setting the person's command is `'ssh'`, with the single quotes
   (Linux and Windows). The daemon's `GIT_SSH` gets single quotes too, such as

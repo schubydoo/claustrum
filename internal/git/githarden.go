@@ -477,15 +477,16 @@ var reapCheckoutGroup = sysproc.ReapProcessGroup
 // without "shadowDirOff". The rows are measured on Linux, macOS and
 // Windows.
 //
-//   - A second listing runs right before the read-tree call. It has the argv of
+//   - A second listing runs before the read-tree call. It has the argv of
 //     the first one, and the variables of the read-tree call: the hook pins,
 //     GIT_INDEX_FILE and LANGUAGE=C, and no added LC_ALL. claustrum reads its
 //     output to the end and keeps none of it. A failure of it refuses the create (ownConfigListing). Then
 //     come the cap of the filter rule (tooManyFiltersText) and the other
-//     refusals of the plan. 5fd08069 has that order (measured on Linux). The
-//     config read of the ssh door comes before this listing, and the listing
-//     carries the five entries of the door too (c9125eb8, measured on Linux
-//     and macOS).
+//     refusals of the plan. 5fd08069 has that order (measured on Linux). On
+//     Linux and macOS the config read of the ssh door comes before this
+//     listing, and the listing carries the five entries of the door too
+//     (c9125eb8, measured on Linux and macOS). Windows keeps the old order
+//     (doorReadBeforeListing).
 //   - The read-tree call has the item lfs.storage=<git directory>/lfs before the
 //     list of the profile. The pairs of the filter rule come before that item
 //     (measured on Linux). For a baseRepo that is a linked worktree the value is
@@ -582,18 +583,28 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	if u.shadow() {
 		// The two additions of the read-tree call (the comment above).
 		env = append(env, "LANGUAGE=C")
-		// The config read of the ssh door (gitsshdoor.go), then the second
-		// listing with the door in its env, as the read-tree call has it
-		// (c9125eb8 and b3081b51, measured on Linux and macOS). A refusal of
-		// the read before that listing is claustrum's own (not measured).
-		door, text := readSSHDoorSettings(u, leaf, gitDir, env)
-		if err := u.stop.halted(); err != nil {
-			return "", false, err
+		// The config read of the ssh door (gitsshdoor.go), and the door in the
+		// env of the read-tree call. On Linux and macOS the read comes before
+		// the second listing, and that listing gets the door too (c9125eb8
+		// and b3081b51, measured on Linux and macOS). A refusal of the read
+		// before that listing is claustrum's own (not measured). On Windows
+		// the read comes after the refusals below (doorReadBeforeListing).
+		readDoor := func() error {
+			door, text := readSSHDoorSettings(u, leaf, gitDir, env)
+			if err := u.stop.halted(); err != nil {
+				return err
+			}
+			if text != "" {
+				return checkoutRefusal(text)
+			}
+			env = sshDoorEnv(env, door)
+			return nil
 		}
-		if text != "" {
-			return "", false, checkoutRefusal(text)
+		if doorReadBeforeListing {
+			if err := readDoor(); err != nil {
+				return "", false, err
+			}
 		}
-		env = sshDoorEnv(env, door)
 		if text := ownConfigListing(leaf, gitDir, env); text != "" {
 			return "", false, checkoutRefusal(text)
 		}
@@ -612,6 +623,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// The items of the `config.worktree` file come after that item and
 		// before the list of the profile (gitUse.checkoutFront).
 		list = append(list, u.checkoutFront(gitDir)...)
+		if !doorReadBeforeListing {
+			if err := readDoor(); err != nil {
+				return "", false, err
+			}
+		}
 	}
 	cmd := gitCommandContext(ctx, append(list, hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf
@@ -924,11 +940,11 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 			return stderr, drained, errGitDirNotReal, nil
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
-		// settle is set: in the state shadow, and with the member (c9125eb8
-		// and b3081b51, measured on Linux). With the member on macOS and
-		// Windows it is claustrum's own, not measured. In the state
-		// fallback-git and after a drain overrun no call runs (claustrum's
-		// own, not measured).
+		// settle is set: in the state shadow, and with the member outside the
+		// state fallback-git (c9125eb8 and b3081b51, measured on Linux). With
+		// the member on macOS and Windows it is claustrum's own, not measured.
+		// In the state fallback-git, also with the member, and after a drain
+		// overrun no call runs (claustrum's own, not measured).
 		if err == nil && settle {
 			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, pin, readEnd)
 			// The test of the held git directory runs again right before the

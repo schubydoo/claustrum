@@ -2142,7 +2142,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// (measured on Linux and macOS). The id comes from one `rev-parse
 		// --verify --quiet <ref>^{commit}`. b3081b51 runs that call in a create
 		// on Windows (measured). Its place and its `-c` items are claustrum's
-		// own, and so is the ref in the other states (not measured). A call
+		// own. So is the ref in the state fallback-git and under a live hold
+		// with no member (not measured). The member is below. A call
 		// that fails leaves the ref, and then no content check runs
 		// (claustrum's own, not measured).
 		//
@@ -2187,8 +2188,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// same call, with no question about the repository first (c9125eb8 and
 		// b3081b51, measured on Linux). On macOS and Windows it is claustrum's
 		// own, not measured. A live hold with no member keeps the ref
-		// (claustrum's own, not measured).
-		member := bool(p.ShadowDirOff) && !cu.shadow()
+		// (claustrum's own, not measured). In the state fallback-git a create
+		// with the member makes the calls it made before: no commit call and
+		// no settle step (claustrum's own, not measured).
+		member := bool(p.ShadowDirOff) && !cu.shadow() && req.shadow.readsRepoConfig()
 		if member && !isObjectID(checkoutRev) {
 			if id := resolveCommit(quiet, repo, checkoutRev); id != "" {
 				checkoutRev = id

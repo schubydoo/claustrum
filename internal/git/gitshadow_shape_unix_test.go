@@ -750,3 +750,34 @@ func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
 	f.check(t, "git.worktree_remove with worktreeRoot", got,
 		rows(probeAfterCreate(), light("rev-parse --show-toplevel"), heavy, light("worktree list --porcelain -z"), heavy))
 }
+
+// TestFallbackCreateWithTheMemberKeepsItsCalls: in the state fallback-git a
+// create with "shadowDirOff":true makes no commit call and no settle step, and
+// the read-tree call names the ref (claustrum's own, not measured).
+func TestFallbackCreateWithTheMemberKeepsItsCalls(t *testing.T) {
+	requireGit(t)
+	f := newShapeFixture(t, stateFallback)
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{
+		"baseRepo": f.repo, "branchName": "w1", "worktreePath": f.leaf, "shadowDirOff": true})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+	readTree := 0
+	for _, c := range calls {
+		what := strings.Join(c.argv, " ")
+		switch {
+		case slices.Contains(c.argv, "--verify") && strings.HasSuffix(c.argv[len(c.argv)-1], "^{commit}"):
+			t.Errorf("a commit call ran: %s", what)
+		case slices.Contains(c.argv, "diff-files"), argvEndsWith(c.argv, []string{"hash-object", "-t", "tree", os.DevNull}):
+			t.Errorf("a settle call ran: %s", what)
+		case slices.Contains(c.argv, "read-tree"):
+			readTree++
+			if last := c.argv[len(c.argv)-1]; last != "refs/heads/w1" {
+				t.Errorf("read-tree names %q, want refs/heads/w1", last)
+			}
+		}
+	}
+	if readTree != 1 {
+		t.Errorf("%d read-tree calls, want 1", readTree)
+	}
+}
