@@ -12,9 +12,9 @@ Per-method wire facts (params, result field order, error texts) live in
 [PROTOCOL.md](PROTOCOL.md) and on the pages under `protocol/`. The history of the
 reference builds is in [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md).
 
-claustrum follows the reference build `b3081b51`, except its [terminal](REFERENCE-BUILDS.md#b3081b512da230f24d74a2082a678246a89685ee-2026-10-30-built). An
+claustrum follows the reference build `c9125eb8`, except its [terminal](REFERENCE-BUILDS.md#c9125eb87bca9ab294d4190dd79be9dfb8d11806-2026-11-02-built). An
 entry names the build of a measurement where the build matters. A measurement of the reference that names no build was made
-on `be1c1ca5` or an earlier build. A fact read from
+on `b3081b51` or an earlier build. A fact read from
 claustrum's code is marked "from the code".
 
 ## The one hard rule
@@ -789,7 +789,7 @@ The `ldd` probe has the 5 s bound of the reference, always: see
 ### D16 · `git.status` of a linked worktree returned the status on Windows (retired) { #d16 }
 
 On Windows, with no user excludes file, the `status` call of `git.status` passes `NUL`
-as the reference does. Git for Windows 2.55 then stops it, and the reply is the
+as the reference does (`c9125eb8`, measured on Windows). Git for Windows 2.55 then stops it, and the reply is the
 reference's `exit status 128`: see [git.status](protocol/git-status.md#differences-by-system).
 
 ### D17 · An abandoned `lsof` run on macOS (retired) { #d17 }
