@@ -111,8 +111,8 @@ objects through long-running git runs (PRs 1009 and 1021). On Linux and macOS, a
 measured on Linux and macOS). On Linux and macOS the host cleaner ends an orphan with
 the stamp of a run dir under its root. It waits 3 s before the group `SIGKILL` of a gone
 leader (PRs 1012, 1028 and 1036). A child record goes while it still holds the written
-`start` (PRs 1011 and 1029). Both are measured on Linux and macOS. The 3 s wait is
-measured on Linux. On Linux and macOS a spawn folder through a link gets a second record
+`start` (PRs 1011 and 1029). The orphan rule and the child record are measured on Linux
+and macOS, the 3 s wait on Linux. On Linux and macOS a spawn folder through a link gets a second record
 for its resolved path (PR 1033).
 
 **Older gaps closed.** Some git calls of `git.worktree_create` follow both `b3081b51` and

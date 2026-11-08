@@ -789,7 +789,7 @@ The `ldd` probe has the 5 s bound of the reference, always: see
 ### D16 · `git.status` of a linked worktree returned the status on Windows (retired) { #d16 }
 
 On Windows, with no user excludes file, the `status` call of `git.status` passes `NUL`
-as the reference does. Git for Windows 2.55 then stops it, and the reply is the
+as the reference does (`c9125eb8`, measured on Windows). Git for Windows 2.55 then stops it, and the reply is the
 reference's `exit status 128`: see [git.status](protocol/git-status.md#differences-by-system).
 
 ### D17 · An abandoned `lsof` run on macOS (retired) { #d17 }
