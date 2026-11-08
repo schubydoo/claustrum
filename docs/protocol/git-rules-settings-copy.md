@@ -234,7 +234,7 @@ blocks of rewritten URLs. The file ends with
 ### The call about the repository
 
 In the state `shadow` the daemon runs `rev-parse --git-dir` before the method's
-calls, in the root of the work tree. On macOS a create asks again after a good add, unless it made a new branch from a `sourceBranch` that gives a commit ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). It passes `-c core.hooksPath=<null device>`
+calls, in the root of the work tree. On Linux and macOS a create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). It passes `-c core.hooksPath=<null device>`
 and `-c core.fsmonitor=` (build `c8e2f083`, measured on Windows). The call names
 the folder `.probe` of the daemon. The daemon removes leftovers like
 `shallow` and keeps a planted `keepme` (measured on Linux). Other names and

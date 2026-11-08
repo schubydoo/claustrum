@@ -118,7 +118,7 @@ func TestProbeInsideACreate(t *testing.T) {
 	if want := []string{"listing", "--is-inside-work-tree", "the call about the repository", "listing"}; len(calls) < 4 || !slices.Equal(calls[:4], want) {
 		t.Errorf("the first calls of the create = %q\nwant %q", calls[:min(4, len(calls))], want)
 	}
-	// On macOS the create asks once more after its add (askAfterAdd).
+	// On Linux and macOS the create asks once more after its add (askAfterAdd).
 	after := 0
 	if createAsksAfterAdd {
 		after = 1
@@ -134,8 +134,9 @@ func TestProbeInsideACreate(t *testing.T) {
 	if !strings.Contains(raw, "already exists, and a new worktree is only ever created in a fresh directory") {
 		t.Fatalf("the same create again = %s", raw)
 	}
-	// On macOS the answer of the call after the add is kept, so the same
-	// create again makes no call (claustrum's own, not measured).
+	// On Linux and macOS the answer of the call after the add is kept, so the
+	// same create again makes no call (b3081b51 and c9125eb8, measured on Linux
+	// and macOS).
 	want := []string{"the call about the repository", "listing", "--is-inside-work-tree"}
 	if createAsksAfterAdd {
 		want = want[1:]

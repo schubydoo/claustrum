@@ -2098,6 +2098,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// the switch.
 	var checkUse *gitUse
 	var checkCommit string
+	var checkAsk func() string
 	if indexDir != "" {
 		// The filter rule runs in the checkout (gitfilter.go). 5fd08069 refuses after
 		// its read-tree call, and rolls back as after a failed checkout (measured on
@@ -2136,13 +2137,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// measured).
 		quiet := cu
 		quiet.noRecheck = true
+		// After the add of a commit id from sourceBranch the content check asks
+		// git about the repository instead, before its batch (checkAsk).
+		// b3081b51 and c9125eb8 make that call there on macOS, and c9125eb8 on
+		// Linux (measured). A wrong answer on every call fails the create with
+		// worktree_verify_repository after 6 calls, and the branch step keeps
+		// the branch with the same text (measured on macOS).
+		if cu.shadow() && !offNow && isObjectID(checkoutRev) {
+			checkAsk = func() string { return cu.askAfterAdd(repo) }
+		}
 		if cu.shadow() && !offNow && !isObjectID(checkoutRev) {
-			// On macOS git is asked about the repository first (askAfterAdd). A
-			// bad answer fails the create with the rollback of a failed checkout,
-			// and its branch step asks again. c9125eb8 answers `git worktree add
-			// failed: branch "<b>" could not be resolved to a commit (<text>)`,
-			// and it keeps the branch with that text as the cause (measured on
-			// macOS). The branch of an attach add is claustrum's own, not measured.
+			// On Linux and macOS git is asked about the repository first
+			// (askAfterAdd). A bad answer fails the create with the rollback of a
+			// failed checkout, and its branch step asks again. c9125eb8 answers
+			// `git worktree add failed: branch "<b>" could not be resolved to a
+			// commit (<text>)`, and it keeps the branch with that text as the
+			// cause (measured on macOS). The branch of an attach add is
+			// claustrum's own, not measured.
 			if text := cu.askAfterAdd(repo); text != "" {
 				u := req.use
 				u.branchGate = func() string { return cu.askAfterAdd(repo) }
@@ -2318,8 +2329,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// before the copy step, and no check with "shadowDirOff":true or in the
 	// state fallback-git, are claustrum's own (not measured).
 	if checkUse != nil {
-		if r := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit); r != nil {
-			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+		if r := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit, checkAsk); r != nil {
+			u := req.use
+			if r.asked {
+				u.branchGate = checkAsk
+			}
+			undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{
 				Success:    false,
 				Error:      contentRefusalStart + r.hint + contentUndoText(undo),
