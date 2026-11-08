@@ -178,7 +178,10 @@ The repository calls are the configuration listings, the hardened calls,
   [settle](git-worktree-create.md#the-settle-step) calls of such a create get
   `false` with any daemon value (`c9125eb8` and `b3081b51`, measured on Linux.
   On macOS and Windows it is claustrum's own, not measured). The state
-  `fallback-git` is from the code.
+  `fallback-git` is from the code. A create with no member of its own that starts
+  under the hold of another request gets the same `false` (claustrum's own, not
+  measured). With the member, the `--show-toplevel` pair after a record mismatch
+  keeps the daemon's value while the hold lasts (claustrum's own, not measured).
 The daemon parses each value from the standard output of git (from
 the code). The reference does so for the branch of `git.info` and the repository
 test of a create (measured on Linux).
