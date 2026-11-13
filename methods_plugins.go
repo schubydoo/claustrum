@@ -36,9 +36,9 @@ import (
 // appears in a running child's argv — the CLI is launched with --plugin-dir
 // <...>/<hash>) or young (last-used within minAgeDays); otherwise it is removed and
 // its hash is listed (sorted). The caller's params.keep list does NOT protect a dir
-// and no plain file is swept, so `kept` and `staleArchives` stay 0 (accepted as
-// parity fields; their reference triggers are not pinned). Measured against
-// 19f30c46 and against a live Desktop session.
+// and no plain file is swept. Measured against 19f30c46 and against a live Desktop
+// session. A young dir that keep names counts as kept (c9125eb8, see
+// pruneOnePluginDir). staleArchives stays 0: its reference trigger is not pinned.
 
 // pruneResult is plugins.prune's reply. Field order is the reference's, so the
 // serialized frame is byte-compatible. pruned/prunedLegacy are never omitempty
@@ -141,7 +141,7 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 
 	// Per-install root -> pruned[]. Swept whether or not a sibling of the 8 hex
 	// shape is alive. An absent root is not an error, just empty.
-	prunePluginRoot(root, false, cutoff, live, &res)
+	prunePluginRoot(root, false, cutoff, live, keepSet(p.Keep), &res)
 	// Shared legacy root -> prunedLegacy[]. While another daemon on this host is not
 	// ruled out, its sessions can use the shared legacy plugins. So the legacy
 	// field is the skip reason naming the first such sibling, even when the shared
@@ -155,7 +155,7 @@ func (s *server) pluginsPrune(req *request) rpc.Response {
 		res.Legacy = "absent"
 	} else {
 		res.Legacy = "swept"
-		prunePluginRoot(legacyRoot, true, cutoff, live, &res)
+		prunePluginRoot(legacyRoot, true, cutoff, live, nil, &res)
 	}
 
 	sort.Strings(res.Pruned)
@@ -364,10 +364,10 @@ func notHexDigit(r rune) bool {
 // 19f30c46, which swept no plain file regardless of age or extension.
 //
 // The caller's params.keep list does NOT protect a plugin: the reference pruned a
-// valid old plugin whose bare hash was in keep (kept stayed 0). The Kept counter is
-// therefore never populated here, and keep is accepted only for parity. staleArchives
-// likewise has no reproduced trigger and stays 0.
-func prunePluginRoot(root string, legacy bool, cutoff time.Time, live map[string]bool, res *pruneResult) {
+// valid old plugin whose bare hash was in keep (kept stayed 0). keep only moves the
+// count of a young dir from young to kept (pruneOnePluginDir). staleArchives has no
+// reproduced trigger and stays 0.
+func prunePluginRoot(root string, legacy bool, cutoff time.Time, live, keep map[string]bool, res *pruneResult) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -380,7 +380,7 @@ func prunePluginRoot(root string, legacy bool, cutoff time.Time, live map[string
 		if !e.IsDir() || !files.PluginHashRE.MatchString(name) {
 			continue // only plugin content-hash directories are swept
 		}
-		pruneOnePluginDir(root, name, legacy, cutoff, live, res)
+		pruneOnePluginDir(root, name, legacy, cutoff, live, keep, res)
 	}
 }
 
@@ -418,7 +418,12 @@ var pluginRemoveAll = os.RemoveAll
 // pruneOnePluginDir classifies one plugin content-hash directory and, when it is
 // neither live nor young, removes it. It holds that directory's lock across the
 // removal, so two concurrent prunes of the same directory never interleave.
-func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live map[string]bool, res *pruneResult) {
+//
+// A young dir that keep names counts as kept, not young (c9125eb8, measured on
+// Linux: keep [h] with h young in both roots gave kept 1, young 1). The caller
+// passes keep for the per-install root only. That choice of root, and that a live
+// dir stays live, are claustrum's own, not measured.
+func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live, keep map[string]bool, res *pruneResult) {
 	unlock := lockPluginDir(name)
 	defer unlock()
 	dir := filepath.Join(root, name)
@@ -428,7 +433,11 @@ func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live ma
 	}
 	lastUsed := pluginLastUsed(dir)
 	if lastUsed.After(cutoff) {
-		res.Young++
+		if keep[name] {
+			res.Kept++
+		} else {
+			res.Young++
+		}
 		return
 	}
 	if rerr := pluginRemoveAll(dir); rerr != nil {
@@ -442,6 +451,15 @@ func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live ma
 		res.Pruned = append(res.Pruned, name)
 		logging.Infof("[Plugins] pruned plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
 	}
+}
+
+// keepSet is the set of the names in the keep param of plugins.prune.
+func keepSet(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
 }
 
 // pluginDirLocks holds one lock per plugin-directory NAME (not full path).

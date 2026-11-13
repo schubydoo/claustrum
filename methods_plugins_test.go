@@ -335,7 +335,7 @@ func TestPrunePluginRootClassification(t *testing.T) {
 
 	cutoff := time.Now().Add(-30 * 24 * time.Hour)
 	res := pruneResult{Pruned: []string{}, PrunedLegacy: []string{}}
-	prunePluginRoot(root, false, cutoff, map[string]bool{liveHash: true}, &res)
+	prunePluginRoot(root, false, cutoff, map[string]bool{liveHash: true}, nil, &res)
 
 	sort.Strings(res.Pruned)
 	if want := []string{pruneHash, noSynced}; !slices.Equal(res.Pruned, want) {
@@ -471,6 +471,72 @@ func TestPluginsPruneSweepsRealRoot(t *testing.T) {
 	for _, gone := range []string{filepath.Join(perInstall, oldHash), filepath.Join(legacyRoot, legacyOld)} {
 		if _, err := os.Stat(gone); !os.IsNotExist(err) {
 			t.Errorf("%s should be removed", gone)
+		}
+	}
+}
+
+// TestPluginsPruneKeepCountsYoungAsKept follows the row of c9125eb8 on Linux: keep
+// [h] with h young in both roots gave kept 1, young 1, and nothing went. An old dir
+// that keep names still goes, as before. A mutant that ignores keep gives kept 0,
+// young 2. A mutant that applies keep to the shared root too gives kept 2.
+func TestPluginsPruneKeepCountsYoungAsKept(t *testing.T) {
+	// A short temp root: the AF_UNIX socket path lives under it (macOS limit).
+	base, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+
+	const clientID = "c0ffee02"
+	runDir := filepath.Join(base, "run", clientID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("unix", filepath.Join(runDir, "rpc.sock"))
+	if err != nil {
+		t.Skipf("AF_UNIX listen unsupported here: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	perInstall := filepath.Join(base, "plugins", clientID)
+	legacyRoot := filepath.Join(base, "plugins")
+	old := time.Now().Add(-60 * 24 * time.Hour)
+	young := time.Now().Add(-1 * time.Hour)
+	mk := func(root, name string, mt time.Time) {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const (
+		keptHash = "fedcba9876543210" // young, in keep, in both roots
+		oldKept  = "0123456789abcdef" // old, in keep -> pruned
+	)
+	mk(perInstall, keptHash, young)
+	mk(legacyRoot, keptHash, young)
+	mk(perInstall, oldKept, old)
+
+	s := &server{ln: ln, procs: newTestProcManager(t)}
+	resp := s.pluginsPrune(&request{ID: 1, Params: json.RawMessage(`{"keep":["` + keptHash + `","` + oldKept + `"],"minAgeDays":1}`)})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error frame: %+v", resp.Error)
+	}
+	res, ok := resp.Result.(pruneResult)
+	if !ok {
+		t.Fatalf("result type = %T, want pruneResult", resp.Result)
+	}
+	if res.Kept != 1 || res.Young != 1 || res.Live != 0 {
+		t.Errorf("counts kept=%d young=%d live=%d, want kept=1 young=1 live=0", res.Kept, res.Young, res.Live)
+	}
+	if !slices.Equal(res.Pruned, []string{oldKept}) || len(res.PrunedLegacy) != 0 {
+		t.Errorf("Pruned = %v, PrunedLegacy = %v, want [%s] and []", res.Pruned, res.PrunedLegacy, oldKept)
+	}
+	for _, survivor := range []string{filepath.Join(perInstall, keptHash), filepath.Join(legacyRoot, keptHash)} {
+		if _, err := os.Stat(survivor); err != nil {
+			t.Errorf("%s should survive: %v", survivor, err)
 		}
 	}
 }

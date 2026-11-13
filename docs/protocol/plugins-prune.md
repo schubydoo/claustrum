@@ -13,7 +13,7 @@ An untagged rule here matches build `5fd08069` or an earlier build.
 | Parameter | Required | Meaning |
 |---|---|---|
 | `minAgeDays` | no | Days that a directory stays after its last use, limited to 7 to 3650. The default is 7. |
-| `keep` | no | Strings that the daemon accepts and ignores. A name in it is deleted as any other. |
+| `keep` | no | Strings. A name in it is deleted as any other. |
 
 No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (measured on Linux). `"params": null` gets the defaults (not measured).
 
@@ -29,9 +29,9 @@ No `params` member gets `-32602 Invalid params: unexpected end of JSON input` (m
 | `pruned` | The hashes deleted in the root of this install, sorted. |
 | `prunedLegacy` | The hashes deleted in the shared root, sorted. |
 | `staleArchives` | Always `0`. |
-| `kept` | Always `0`. |
+| `kept` | Young directories of this install's root that `keep` names (`c9125eb8`, measured on Linux). The root is claustrum's own, not measured. |
 | `live` | Live directories, over the roots that the daemon went through or counted. |
-| `young` | Young directories that are not live, over the same roots. |
+| `young` | Young directories that are neither live nor kept, over the same roots. |
 | `legacy` | What the daemon did with the shared root: see [The `legacy` member](#the-legacy-member). |
 | `skipped` | The reason, only where the daemon goes through no root. |
 | `errors` | `<path>: <error>` for each directory that the daemon cannot delete and each root that it cannot list. A missing root is no failure. A directory in `errors` can be deleted in part. With no failure, the member is absent. A response with `errors` is still a success (not measured). |

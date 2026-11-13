@@ -9,9 +9,9 @@
 package handlers
 
 // PruneParams is the params object for plugins.prune (reference build 19f30c46).
-// Keep is a caller-supplied list accepted for parity but not consulted by the
-// handler — the reference pruned a valid old plugin whose hash was in Keep, so the
-// result's "kept" count stays 0 (see methods_plugins.go). MinAgeDays is the
+// Keep is a caller-supplied list that protects no plugin: the reference pruned a
+// valid old plugin whose hash was in Keep. A young plugin in this install's root that
+// Keep names counts as kept, not young (see methods_plugins.go). MinAgeDays is the
 // retention window in days;
 // the handler clamps it to [7, 3650] and an absent value reads as 0, which clamps
 // up to 7. The field order matches the reference so the field-mismatch form of the
