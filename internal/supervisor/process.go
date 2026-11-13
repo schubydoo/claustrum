@@ -270,6 +270,10 @@ type Manager struct {
 	// spentAge is linkSpentAge, copied at construction. Guarded by mu.
 	spent    map[string]time.Time
 	spentAge time.Duration
+	// givenUp holds the time each given-up id was given up (givenup.go), and
+	// givenUpAge is givenUpIDAge, copied at construction. Guarded by mu.
+	givenUp    map[string]time.Time
+	givenUpAge time.Duration
 	// linkStarting holds the id of each link-bound spawn from its id test until
 	// spawnVia returns, so no other spawn of that id starts. Guarded by mu.
 	linkStarting map[string]struct{}
@@ -352,6 +356,8 @@ func NewManager() *Manager {
 		spawnLocks:     make(map[string]*sessionSpawnLock),
 		spent:          make(map[string]time.Time),
 		spentAge:       linkSpentAge,
+		givenUp:        make(map[string]time.Time),
+		givenUpAge:     givenUpIDAge,
 		linkStarting:   make(map[string]struct{}),
 	}
 	go m.pruneLoop()
@@ -425,6 +431,7 @@ func (m *Manager) pruneExited() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pruneSpentLocked(now)
+	m.pruneGivenUpLocked(now)
 	for id, p := range m.procs {
 		p.mu.Lock()
 		// exitedAt is zero until the exit frame goes out, which covers both a
@@ -820,7 +827,10 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// spawn holds its id in linkStarting until its table entry is there.
 	m.mu.Lock()
 	taken := m.idTakenLocked(id)
-	if !taken && linkTTL > 0 {
+	// A given-up id is refused after a spent id, at the same place (claustrum's own,
+	// not measured).
+	givenUp := !taken && m.givenUpLocked(id)
+	if !taken && !givenUp && linkTTL > 0 {
 		m.linkStarting[id] = struct{}{}
 		defer func() {
 			m.mu.Lock()
@@ -832,6 +842,10 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	if taken {
 		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
 		return nil, errSpentID
+	}
+	if givenUp {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errGivenUpID)
+		return nil, errGivenUpID
 	}
 	cmd := exec.Command(path, argv...)
 	if cwd != "" {

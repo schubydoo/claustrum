@@ -364,6 +364,9 @@ func (s *server) processKill(req *request) rpc.Response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
+	// An unknown id is given up (supervisor.GiveUpUnknown, 4c111e86, measured on
+	// Linux, macOS and Windows). The reply stays as before.
+	s.procs.GiveUpUnknown(p.ID)
 	ask, rule := supervisor.ReadFarewell(p.Farewell, p.GraceMs)
 	switch {
 	case rule != "":
@@ -412,6 +415,9 @@ func (s *server) processKillAndWait(req *request) rpc.Response {
 	if p.ID == "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
+	// An unknown id is given up, as on process.kill. The reply stays
+	// {"found":false,"died":false} (measured on Linux and Windows).
+	s.procs.GiveUpUnknown(p.ID)
 	ms := 0
 	if p.TimeoutMs != nil {
 		ms = *p.TimeoutMs
@@ -465,6 +471,10 @@ func (s *server) processReattach(c *conn.Conn, req *request) rpc.Response {
 	if p.ID == "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
+	// An unknown id is given up, as on process.kill. The reply stays the result of
+	// an unknown process (measured on Linux and Windows). With a proof the give-up is
+	// claustrum's own, not measured.
+	s.procs.GiveUpUnknown(p.ID)
 	// A non-empty proof gets the zero result for a process without a terminal and for
 	// an unknown id: no replay, and the connection that holds the process keeps it
 	// (c8e2f083, measured on Linux). The order against the id test is not

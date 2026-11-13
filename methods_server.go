@@ -70,10 +70,12 @@ var capabilityMethods = append(append([]string{
 // and launcher.supplies_cli after launcher.non_string_refused (measured on Linux, macOS
 // and Windows). 4c111e86 lists two launcher names before server.instance_id on Linux
 // (launcherOSFeatures, measured on Linux). It inserted
-// git.worktree_create.unusable_git_refused after git.outside_session_folders
-// (measured on Linux, macOS and Windows). The array is always emitted.
+// git.worktree_create.unusable_git_refused after git.outside_session_folders, and
+// process.spawn.refuses_given_up_id after process.stdin.offset (measured on Linux,
+// macOS and Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
+	"process.spawn.refuses_given_up_id",
 	"process.kill.farewell",
 	"files.extract_tar.execBit",
 	"files.list.includeDotNames",
