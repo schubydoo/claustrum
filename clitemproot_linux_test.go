@@ -105,12 +105,15 @@ func cleanTempRoots(t *testing.T, releases *[]func()) {
 		if live != 0 || held != 0 {
 			t.Errorf("after the test: live %d, held %d, want 0 and 0", live, held)
 		}
+		tempRootsLost.mu.Lock()
+		tempRootsLost.list = nil
+		tempRootsLost.mu.Unlock()
 	})
 }
 
 func runTempRoot(t *testing.T, x, runDir string, releases *[]func()) ([]string, *rpc.CLITempRoot) {
 	t.Helper()
-	env, res, release := privateTempRoot([]string{"TMPDIR=" + x}, runDir)
+	env, res, release, _ := privateTempRoot([]string{"TMPDIR=" + x}, runDir)
 	*releases = append(*releases, release)
 	return env, res
 }
@@ -680,7 +683,7 @@ func TestCLITempRootTempDirOrder(t *testing.T) {
 			cleanTempRoots(t, &rel)
 			x, runDir := tempRootDir(t, true)
 			in := c.env(x, filepath.Join(x, "gone"))
-			env, res, release := privateTempRoot(in, runDir)
+			env, res, release, _ := privateTempRoot(in, runDir)
 			rel = append(rel, release)
 			got := ccdFolders(t, x)
 			if !c.folder {
@@ -722,7 +725,7 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	})
 	in := []string{"TMPDIR=" + x}
 	start := time.Now()
-	env, res, release := privateTempRoot(in, runDir)
+	env, res, release, _ := privateTempRoot(in, runDir)
 	rel = append(rel, release)
 	b, _ := json.Marshal(res)
 	if want := `{"whyNot":"the temp dir did not answer in time"}`; string(b) != want {

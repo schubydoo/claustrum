@@ -27,8 +27,9 @@ later replay.
   `SIGTERM` or `SIGKILL`. It is omitted always on
   Windows (measured on Windows). `killedBy` names who asked the daemon to kill the
   process: `client` for `process.kill` and `process.killAndWait`, `shutdown`
-  for the shutdown and `KillAll` sweep, and `limit` for
-  [gitRead](process-git-read.md#the-time-limit). It is emitted on every OS. A refused signal sets none (`52d82f0a`, Linux and macOS). Signal names
+  for the shutdown and `KillAll` sweep, `limit` for
+  [gitRead](process-git-read.md#the-time-limit), and `temp_root` for [a lost private temp
+  folder](process-spawn.md#a-lost-folder-build-4c111e86) (`4c111e86`). It is emitted on every OS. A refused signal sets none (`52d82f0a`, Linux and macOS). Signal names
   other than `SIGTERM` and `SIGKILL` are not measured. The shutdown sweep sets
   `shutdown` only on a `process.killAndWait` that still waits. Linux measured it in the log. Another kill
   keeps `client` (not measured).
@@ -47,6 +48,9 @@ later replay.
   The acknowledgement caveat of `stdinApplied` (see
   [process.reattach](process-reattach.md)) still applies to a write
   accepted while the process was live.
+
+### Frame size and the replay buffer
+
 - Each stdout/stderr frame carries at most one 32 KiB read. Larger output splits
   across frames. Concatenate `data` in `seq` order to reassemble it. The exact
   frame *boundaries* depend on pipe scheduling and are not stable. Only the

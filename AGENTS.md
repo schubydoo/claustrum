@@ -233,6 +233,10 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   after `homeguard.WipesHomeDir` (`removeMadeTempRoot`, [the
   rules](docs/protocol/process-spawn.md#the-private-temp-folder-build-b3081b51)). Before it, one rmdir removes the `t`
   that it just made, through the handle of the new folder. Never widen: Remove no other name and never a tree.
+- **A lost temp folder** (Linux). A child that asked with `cliTempRootEnd` gets SIGTERM through `signalIfLive`, then,
+  if it still runs 3 s later, a group SIGKILL (`endForLostTempRoot`). A child that ended on the SIGTERM gets a group
+  SIGKILL before its reap (`killGroupOnTempRootExit`). Never widen: Signal no other child, send no group SIGKILL
+  after the reap, and none to a group that the spawn did not make.
 
 ### The held git directory
 

@@ -1,0 +1,64 @@
+package supervisor
+
+import (
+	"time"
+
+	"github.com/schubydoo/claustrum/internal/logging"
+)
+
+// tempRootEndGrace is the wait from the SIGTERM of a child whose private temp folder
+// is lost to the SIGKILL of its group. 4c111e86 sends the SIGKILL about 3 s after the
+// SIGTERM to a child that ignores it (measured on macOS). A var so a test can shorten
+// it.
+var tempRootEndGrace = 3 * time.Second
+
+// endForLostTempRoot ends p after the temp-folder step of package main found its
+// private temp folder lost, with the killedBy "temp_root". The step calls it only
+// for a child whose spawn asked with "cliTempRootEnd":true. 4c111e86 logs the line,
+// sends the SIGTERM, and sends the SIGKILL to a child that still runs after the wait
+// (measured on Linux and macOS, the SIGKILL and the line order on macOS). A
+// process.kill in the wait keeps the killedBy "temp_root" (measured on macOS).
+//
+// Each signal goes through signalIfLive, so no signal reaches a reaped child, and
+// the SIGKILL goes to the group as in watchGitReadLimit. A child that ends on the
+// SIGTERM gets a group SIGKILL before its reap (killGroupOnTempRootExit). Once the
+// shutdown began, no end starts (claustrum's own, not measured).
+func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
+	if !p.IsLive() || m.startsStopped.Load() {
+		return
+	}
+	logging.Infof("[process.Manager] Process %s is being ended: its private temp folder is lost", p.id)
+	if !p.signalIfLive("TERM", "temp_root") {
+		return
+	}
+	t := time.NewTimer(grace)
+	defer t.Stop()
+	select {
+	case <-p.done:
+		return
+	case <-t.C:
+	}
+	p.mu.Lock()
+	p.tempRootKilled = true
+	p.mu.Unlock()
+	p.signalIfLive("KILL", "temp_root")
+}
+
+// killGroupOnTempRootExit runs in the exit goroutine of a child whose spawn asked with
+// cliTempRootEnd, before the reap. Once the child has exited, while it is not reaped
+// yet, it sends SIGKILL to the group of a child that the temp_root end signalled and
+// that did not get the SIGKILL of that end. The child that is not reaped holds its
+// pid, so the group id cannot be reused. The group must be the one that the spawn
+// made: its id is the pid of the child. This is claustrum's own rule (decision-099).
+// Where the exit cannot be seen without a reap, it sends nothing.
+func (p *Proc) killGroupOnTempRootExit() {
+	if p.cmd == nil || p.cmd.Process == nil || !exitSeenUnreaped(p.cmd.Process.Pid) {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.killedBy != "temp_root" || p.tempRootKilled || !groupMadeAtSpawn(p.cmd.Process.Pid) {
+		return
+	}
+	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+}
