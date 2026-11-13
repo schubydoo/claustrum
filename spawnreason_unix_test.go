@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -36,7 +37,7 @@ func TestSpawnRefusalReasonsUnix(t *testing.T) {
 		{"folder as command", map[string]any{"id": "a", "command": dir},
 			errJSON(t, -32603, "fork/exec "+dir+": permission denied", "not_executable")},
 		{"launcher missing", map[string]any{"id": "a", "command": exe, "launcher": []string{missing}},
-			errJSON(t, -32004, "the managed launcher cannot be used: launcher `"+missing+"` does not exist or is not an executable regular file", "launcher")},
+			launcherMissingJSON(t, missing)},
 		{"launcher with a bare command", map[string]any{"id": "a", "command": "true", "launcher": []string{exe}},
 			errJSON(t, -32602, "command must be an absolute path when a launcher is given", "other")},
 	}
@@ -59,4 +60,15 @@ func TestSpawnRefusalReasonsUnix(t *testing.T) {
 			}
 		})
 	}
+}
+
+// launcherMissingJSON is the -32004 refusal of a missing launcher with no
+// launcherCheck. Its data carries launcherFault on Linux only (c9125eb8, measured on
+// Linux). macOS keeps the frame with reason only (not measured).
+func launcherMissingJSON(t *testing.T, missing string) string {
+	msg := "the managed launcher cannot be used: launcher `" + missing + "` does not exist or is not an executable regular file"
+	if runtime.GOOS != "linux" {
+		return errJSON(t, -32004, msg, "launcher")
+	}
+	return `{"code":-32004,"message":"` + msg + `","data":{"launcherFault":"missing","reason":"launcher"}}`
 }

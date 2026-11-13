@@ -502,21 +502,40 @@ var managedScriptExts = []string{".js", ".mjs", ".ts", ".tsx", ".jsx"}
 // claustrum's choice (not measured): the script check runs before the existence
 // check, so a missing x.js gets managedScript.
 func Check(argv []string, ownPath string) string {
+	_, reason := CheckFault(argv, ownPath)
+	return reason
+}
+
+// CheckFault is Check with the launcherFault that a process.spawn refusal carries
+// with no launcherCheck. c9125eb8 gave missing for a missing launcher and
+// not_absolute for an empty one (measured on Linux). The own path has no fault, as
+// with a launcherCheck. A relative argv[0] gets not_absolute and a script ending
+// script_suffix. Those three faults are claustrum's own, not measured. Off Linux the
+// fault is "" (checkFaultShown): no row shows one on macOS (not measured).
+func CheckFault(argv []string, ownPath string) (fault, reason string) {
+	fault, reason = checkFault(argv, ownPath)
+	if !checkFaultShown {
+		fault = ""
+	}
+	return fault, reason
+}
+
+func checkFault(argv []string, ownPath string) (fault, reason string) {
 	if len(argv) == 0 {
-		return managedNoLauncher
+		return FaultNotAbsolute, managedNoLauncher
 	}
 	a0 := argv[0]
 	switch {
 	case a0 == ownPath:
-		return managedOwnPath(a0)
+		return "", managedOwnPath(a0)
 	case !filepath.IsAbs(a0):
-		return managedNotAbsolute
+		return FaultNotAbsolute, managedNotAbsolute
 	case hasManagedScriptExt(a0):
-		return managedScript(a0)
+		return FaultScriptSuffix, managedScript(a0)
 	case !IsExecutableRegular(a0):
-		return managedNotExecutable(a0)
+		return FaultMissing, managedNotExecutable(a0)
 	}
-	return ""
+	return "", ""
 }
 
 func hasManagedScriptExt(p string) bool {

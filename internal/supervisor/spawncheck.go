@@ -58,6 +58,8 @@ type LauncherOpts struct {
 // SuppliesCannotUse and has no command to test. lo is nil for a spawn with neither
 // member.
 //
+// With no launcherCheck the refusal carries the fault of install.CheckFault.
+//
 // claustrum's own, not measured: the Windows refusal comes before the relative
 // command check, and so does the macOS one. With a launcherCheck, the own-path test
 // keeps its text and has no fault, and an empty launcher with a command gets the
@@ -84,8 +86,8 @@ func RefuseManagedLauncher(launcher []string, command string, lo *LauncherOpts) 
 		return &SpawnRefusal{Code: rpc.CodeInvalidParam, Msg: ManagedSpawnRelative}
 	}
 	if !checked {
-		if r := install.Check(launcher, command); r != "" {
-			return refuse("", r)
+		if f, r := install.CheckFault(launcher, command); r != "" {
+			return refuse(f, r)
 		}
 		return nil
 	}
