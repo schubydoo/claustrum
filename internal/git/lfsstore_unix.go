@@ -49,3 +49,13 @@ func removeFileAt(root *os.Root, name string) error {
 	defer func() { _ = d.Close() }()
 	return unix.Unlinkat(int(d.Fd()), name, 0)
 }
+
+// freeBytes is the space of the file system of path that a user can write,
+// and false when statfs fails.
+func freeBytes(path string) (uint64, bool) {
+	var st unix.Statfs_t
+	if unix.Statfs(path, &st) != nil {
+		return 0, false
+	}
+	return st.Bavail * uint64(st.Bsize), true
+}

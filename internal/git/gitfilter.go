@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"maps"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,9 +52,10 @@ const (
 	// no item (not measured).
 	lfsClean = "git-lfs clean -- %f"
 	// lfsFailedWords and lfsDownloadNote: with a settings copy, a failed
-	// checkout whose text holds the words after the cut gets the note after the
-	// text (measured on Linux). A text that the cut ends before the words gets no
-	// note (measured).
+	// checkout whose text holds the words gets the note after the text
+	// (measured on Linux). A text that the cut ends before the words gets no
+	// note (measured). On Windows 4c111e86 tests the whole stderr, so such a
+	// text gets the note (measured on Windows, sshNoteWholeStderr).
 	lfsFailedWords  = "smudge filter lfs failed"
 	lfsDownloadNote = ". Claude doesn't use ssh, credential, or proxy settings from this repository's own git config." +
 		" If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again."
@@ -581,6 +583,9 @@ type filterRule struct {
 	shadow bool
 	own    []byte
 	plan   filterPlan
+	// store is set when the read-tree call named the private LFS store of
+	// the checkout (hardenedGitCheckout). checkoutNote reads it.
+	store *storeUse
 }
 
 // planFor sets the plan of a rule with a settings copy from pin, the output of
@@ -674,6 +679,72 @@ func (f filterPlan) refusedFilter(stderr string) (string, bool) {
 		}
 	}
 	return name, at >= 0
+}
+
+// sshNoteWholeStderr says whether the test of lfsFailedWords for
+// lfsDownloadNote reads the whole stderr (Windows, measured on 4c111e86) or
+// the text after the cut (Linux and macOS keep the earlier rule). A test
+// changes it.
+var sshNoteWholeStderr = runtime.GOOS == "windows"
+
+// The notes of a failed checkout with the private LFS store (4c111e86, measured
+// on Linux and macOS, the quota on Linux). The texts of the disk and of the
+// quota name the folder of the socket.
+const (
+	lfsMissingNote = ". The repository's Git LFS server does not have that file; it may never have been pushed" +
+		" from the computer where it was committed. Turn off Worktree for this session, then try again."
+	lfsStoreHoldsText = ", where Claude keeps this checkout's Git LFS downloads while it runs." +
+		" Free some space there (or raise the quota), or turn off Worktree for this session, then try again."
+)
+
+// checkoutNote is the note after text, the text of a failed read-tree
+// checkout after the cut, or "". stderr is the whole stderr of git. With a
+// settings copy and the words lfsFailedWords the note is lfsDownloadNote
+// (sshNoteWholeStderr says where the words count). With the private LFS store
+// of the checkout (rule.store) and the words in stderr, one of three other
+// notes comes first:
+//
+//   - `no space left on device` in stderr gives the note of a full disk
+//     (measured on Linux and macOS), and `disk quota exceeded` the note of a
+//     quota (measured on Linux), in any letter case (measured on Linux).
+//   - A seed that left a copy out for seedSpare gives the note of the space,
+//     also before the words of a missing object (measured on Linux and macOS).
+//   - `Object does not exist` gives lfsMissingNote (measured on Linux and
+//     macOS with the text `Object does not exist on the server: [404]` of a
+//     stand-in git-lfs).
+//
+// Claustrum's own, not measured: the order of the full disk before the quota,
+// and of both before the space and the missing object. The note of the space
+// follows any failure text after a left-out copy. Each of these notes needs the words
+// in stderr. The test of `Object does not exist` minds letter case, and the
+// words of a real git-lfs are not measured.
+func checkoutNote(stderr, text string, rule *filterRule) string {
+	if rule == nil || !rule.shadow {
+		return ""
+	}
+	if s := rule.store; s != nil && strings.Contains(stderr, lfsFailedWords) {
+		lower := strings.ToLower(stderr)
+		switch {
+		case strings.Contains(lower, "no space left on device"):
+			return ". A disk on the remote machine filled up during the checkout: the one that holds the new worktree," +
+				" or the one that holds " + s.runDir + lfsStoreHoldsText
+		case strings.Contains(lower, "disk quota exceeded"):
+			return ". Your disk quota on the remote machine ran out during the checkout: on the disk that holds the new" +
+				" worktree, or on the one that holds " + s.runDir + lfsStoreHoldsText
+		case s.short:
+			return ". There isn't enough space on the remote machine (in " + s.runDir + ") for this repository's Git LFS files," +
+				" and downloading them failed. Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."
+		case strings.Contains(stderr, "Object does not exist"):
+			return lfsMissingNote
+		}
+	}
+	if !sshNoteWholeStderr {
+		stderr = text
+	}
+	if strings.Contains(stderr, lfsFailedWords) {
+		return lfsDownloadNote
+	}
+	return ""
 }
 
 // repositoryOnlyFilterText is the refusal text of errorCode repository_only_filter

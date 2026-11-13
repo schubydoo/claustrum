@@ -22,7 +22,8 @@ import (
 // lfs-smudge). It reads the pointer on stdin and the store from the item
 // lfs.storage that git passes on. It logs `<oid 8> present=<bool> store=<store>`
 // to log. A present object goes to stdout. Else it copies remote/<oid> into
-// the store, as git-lfs does after a download, or fails with exit 2.
+// the store, as git-lfs does after a download, or fails with exit 2 and the
+// text of remote/error, or a 404 text with no such file.
 func lfsSmudgeHelper(remote, log string) int {
 	body, _ := io.ReadAll(os.Stdin)
 	p, ok := readPointerBlob(body)
@@ -48,7 +49,11 @@ func lfsSmudgeHelper(remote, log string) int {
 	}
 	b, err := os.ReadFile(filepath.Join(remote, p.oid))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Object does not exist on the server: [404]")
+		text := "Object does not exist on the server: [404]\n"
+		if e, rerr := os.ReadFile(filepath.Join(remote, "error")); rerr == nil {
+			text = string(e)
+		}
+		fmt.Fprint(os.Stderr, text)
 		return 2
 	}
 	if os.MkdirAll(filepath.Dir(obj), 0o755) != nil || os.WriteFile(obj+".tmp", b, 0o644) != nil || os.Rename(obj+".tmp", obj) != nil {

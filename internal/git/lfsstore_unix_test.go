@@ -30,9 +30,15 @@ type lfsFixture struct {
 // newLFSFixture commits a pointer for each file of files, with the filter f.
 func newLFSFixture(t *testing.T, files map[string]string) lfsFixture {
 	t.Helper()
+	return newNamedLFSFixture(t, "f", files)
+}
+
+// newNamedLFSFixture is newLFSFixture with the filter name.
+func newNamedLFSFixture(t *testing.T, name string, files map[string]string) lfsFixture {
+	t.Helper()
 	f := lfsFixture{checkoutRuleFixture: newCheckoutRuleFixture(t), remote: t.TempDir(),
 		log: filepath.Join(t.TempDir(), "smudge.log"), oids: map[string]string{}, bodies: map[string][]byte{}}
-	mustWrite(t, filepath.Join(f.repo, ".gitattributes"), "*.bin filter=f\n")
+	mustWrite(t, filepath.Join(f.repo, ".gitattributes"), "*.bin filter="+name+"\n")
 	names := []string{".gitattributes"}
 	for name, body := range files {
 		sum := sha256.Sum256([]byte(body))
@@ -47,7 +53,7 @@ func newLFSFixture(t *testing.T, files map[string]string) lfsFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outside(t, "[filter \"f\"]\n\tsmudge = CLAUSTRUM_TEST_HELPER=lfs-smudge '"+filepath.ToSlash(exe)+"' '"+
+	outside(t, "[filter \""+name+"\"]\n\tsmudge = CLAUSTRUM_TEST_HELPER=lfs-smudge '"+filepath.ToSlash(exe)+"' '"+
 		filepath.ToSlash(f.remote)+"' '"+filepath.ToSlash(f.log)+"'\n\trequired = true\n")
 	return f
 }
@@ -398,6 +404,90 @@ func TestRemoveFileAtKeepsFolder(t *testing.T) {
 	}
 }
 
+// TestLFSFailureNotes: with the private store, a failed download of the filter
+// lfs gets the note of its text. The notes of a full disk and of a quota name
+// the folder of the socket (4c111e86, measured on Linux and macOS, the quota
+// on Linux).
+func TestLFSFailureNotes(t *testing.T) {
+	for _, row := range []struct {
+		name, error, want string
+	}{
+		{"missing object", "", lfsMissingNote},
+		{"full disk", "write x: no space left on device\n", ". A disk on the remote machine filled up during the checkout: the one that holds the new worktree, or the one that holds <run>" + lfsStoreHoldsText},
+		{"quota", "write x: Disk quota exceeded\n", ". Your disk quota on the remote machine ran out during the checkout: on the disk that holds the new worktree, or on the one that holds <run>" + lfsStoreHoldsText},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newNamedLFSFixture(t, "lfs", map[string]string{"b.bin": "beta-object"})
+			if row.error != "" {
+				mustWrite(t, filepath.Join(f.remote, "error"), row.error)
+			}
+			raw, _ := f.create(t, nil)
+			want := strings.Trim(jsonQuoted(t, strings.ReplaceAll(row.want, "<run>", f.run)), `"`) + `","errorCode":"worktree_add_failed"}}`
+			if !strings.HasSuffix(raw, want) {
+				t.Errorf("git.worktree_create = %s\nwant the end %s", raw, want)
+			}
+			f.wantGone(t)
+		})
+	}
+}
+
+// TestLFSSeedKeepsSpare: on a tiny file system the seed makes no copy, and
+// the failure gets the note of the space, not the note of a missing object
+// (4c111e86, measured on Linux and macOS). The bound of 1 GiB after the copy
+// is claustrum's own: one byte under it gives no copy, and at it the copy is
+// made. The rows write 1 GiB as a number, so they pin seedSpare.
+func TestLFSSeedKeepsSpare(t *testing.T) {
+	const body = "alpha-object"
+	for _, row := range []struct {
+		name   string
+		free   uint64
+		seeded bool
+	}{
+		{"one byte under the bound", 1<<30 + uint64(len(body)) - 1, false},
+		{"at the bound", 1<<30 + uint64(len(body)), true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			prevSeed, prevFree := seedLink, storeFreeBytes
+			seedLink = func(string, string) error { return os.ErrPermission }
+			storeFreeBytes = func(string) (uint64, bool) { return row.free, true }
+			t.Cleanup(func() { seedLink, storeFreeBytes = prevSeed, prevFree })
+			f := newNamedLFSFixture(t, "lfs", map[string]string{"a.bin": body})
+			f.local(t, "a.bin", body)
+			raw, _ := f.create(t, nil)
+			if row.seeded {
+				if !strings.Contains(raw, `"success":true`) {
+					t.Fatalf("git.worktree_create = %s, want success", raw)
+				}
+				if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
+					t.Errorf("smudge line of a.bin = %q, want the seeded copy", got)
+				}
+				return
+			}
+			note := ". There isn't enough space on the remote machine (in " + f.run + ") for this repository's Git LFS files," +
+				" and downloading them failed. Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."
+			want := strings.Trim(jsonQuoted(t, note), `"`) + `","errorCode":"worktree_add_failed"}}`
+			if !strings.HasSuffix(raw, want) {
+				t.Errorf("git.worktree_create = %s\nwant the end %s", raw, want)
+			}
+			if got := f.smudges(t)["a.bin"]; got != "present=false private=true" {
+				t.Errorf("smudge line of a.bin = %q, want no seeded copy", got)
+			}
+			f.wantGone(t)
+		})
+	}
+}
+
+// TestFreeBytes: statfs gives the free space of a folder, and a missing path
+// gives none.
+func TestFreeBytes(t *testing.T) {
+	if n, ok := freeBytes(t.TempDir()); !ok || n == 0 {
+		t.Errorf("freeBytes of a temp folder = %d, %v, want a free space", n, ok)
+	}
+	if _, ok := freeBytes(filepath.Join(t.TempDir(), "gone")); ok {
+		t.Error("freeBytes of a missing path is ok, want false")
+	}
+}
+
 // TestCommitPointersStopsAtDeadline: the scan of the seed runs under the
 // context of the caller. With no deadline it gives the pointers, and after
 // the deadline it gives none.
@@ -482,5 +572,23 @@ func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 	}
 	if len(removed) != 0 {
 		t.Errorf("removed %q, want no sweep", removed)
+	}
+}
+
+// TestSeedSpareMakesNoTemp: a copy left out for seedSpare makes no temp copy
+// in the checkout folder, and the seed reports it (claustrum's own).
+func TestSeedSpareMakesNoTemp(t *testing.T) {
+	prevSeed, prevFree := seedLink, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	storeFreeBytes = func(string) (uint64, bool) { return 0, true }
+	t.Cleanup(func() { seedLink, storeFreeBytes = prevSeed, prevFree })
+	store, private := filepath.Join(t.TempDir(), "lfs"), filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("a", 64)
+	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+	if !seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}}) {
+		t.Error("seedObjects = false, want a copy left out")
+	}
+	if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(private), seedTempPattern)); len(temps) != 0 || exists(storeObjectPath(private, oid)) {
+		t.Errorf("temps %q or the object exist, want neither", temps)
 	}
 }

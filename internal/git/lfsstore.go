@@ -59,6 +59,12 @@ const (
 	// minute old stays, and one 12 minutes old goes (measured on Linux and
 	// macOS). The bound of 10 minutes between them is claustrum's own.
 	staleTempAge = 10 * time.Minute
+	// seedSpare is the free space that a copy of the seed leaves on the file
+	// system of the private store. On an 8 MB file system (Linux) and a small
+	// disk image (macOS) 4c111e86 copies no object, and with 1100 MB (Linux)
+	// it does (measured). Its text names 1 GiB. The test of the space left
+	// after the copy is claustrum's own, not measured.
+	seedSpare = 1 << 30
 )
 
 var (
@@ -67,10 +73,21 @@ var (
 )
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
-// "" for the store of the git directory. seed runs the seed into path.
+// "" for the store of the git directory. seed runs the seed into path and
+// reports a copy that it left out for seedSpare. runDir is the folder of the
+// socket.
 type privateStore struct {
-	path string
-	seed func()
+	path   string
+	runDir string
+	seed   func() bool
+}
+
+// storeUse is what a checkout that named its private store gives the note of
+// its failure (checkoutNote). short reports a copy of the seed left out for
+// seedSpare.
+type storeUse struct {
+	runDir string
+	short  bool
 }
 
 // pointerRef is one LFS pointer of the commit of a checkout.
@@ -326,25 +343,28 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 // of gitDir that a pointer of rev names: a regular file with the size of the
 // pointer. It makes a hard link, or a copy when the link fails or a folder on
 // the way is a link. A failure leaves the object out, and git-lfs then
-// downloads it. At the deadline of ctx the seed stops, and the objects that it
-// did not reach stay out.
-func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private string) {
+// downloads it. A copy that would leave less than seedSpare free is left out
+// too, with no temp, and short reports it. A free space that cannot be read
+// does not stop a copy (claustrum's own, not measured). At the deadline of ctx
+// the seed stops, and the objects that it did not reach stay out.
+func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private string) (short bool) {
 	if ctx.Err() != nil {
-		return
+		return false
 	}
 	store := filepath.Join(gitDir, "lfs")
 	if fi, err := os.Stat(filepath.Join(store, "objects")); err != nil || !fi.IsDir() {
-		return
+		return false
 	}
-	seedObjects(ctx, store, private, commitPointers(ctx, u, dir, rev))
+	return seedObjects(ctx, store, private, commitPointers(ctx, u, dir, rev))
 }
 
-// seedObjects puts the objects of ps from the store store into private.
-func seedObjects(ctx context.Context, store, private string, ps []pointerRef) {
+// seedObjects puts the objects of ps from the store store into private. short
+// reports a copy left out for seedSpare.
+func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
 		if ctx.Err() != nil {
-			return
+			return short
 		}
 		src := storeObjectPath(store, p.oid)
 		fi, err := os.Lstat(src)
@@ -357,9 +377,14 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) {
 		}
 		shard := filepath.Dir(src)
 		if viaLink || pathIsLink(shard) || pathIsLink(filepath.Dir(shard)) || seedLink(src, dst) != nil {
+			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < uint64(p.size)+seedSpare {
+				short = true
+				continue
+			}
 			_ = copySeed(ctx, src, dst, filepath.Dir(private))
 		}
 	}
+	return short
 }
 
 // pathIsLink reports whether the last name of p is a symbolic link.
@@ -376,6 +401,10 @@ var (
 	keepHardLink = linkIntoRoot
 	seedCopy     = io.Copy
 )
+
+// storeFreeBytes is the free space of the file system of a folder, for the
+// test of seedSpare. A test replaces it.
+var storeFreeBytes = freeBytes
 
 // seedTempPattern is the pattern of the temp name of a copy of the seed in
 // the checkout folder. No oid has its form.

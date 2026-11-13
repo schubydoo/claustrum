@@ -26,3 +26,8 @@ func openObjectNoFollow(path string) (*os.File, error) {
 func removeFileAt(*os.Root, string) error {
 	return errors.ErrUnsupported
 }
+
+// freeBytes is not used on Windows.
+func freeBytes(string) (uint64, bool) {
+	return 0, false
+}
