@@ -40,6 +40,8 @@ func Handle(req *rpc.Request) rpc.Response {
 		fn = filesExtractTar
 	case "files.mkdir":
 		fn = mkdirHandler // nil on Windows
+	case "files.find":
+		fn = findHandler // nil on Windows
 	}
 	if fn == nil {
 		return rpc.UnknownMethod(req)

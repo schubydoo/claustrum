@@ -288,6 +288,8 @@ the linked pages.
   [launcher.resolve](protocol/launcher-resolve.md),
   [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
   and [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
+- `files.find` follows `4c111e86` on Linux and macOS. The pin `c9125eb8` has no
+  `files.find`. See [files.find](protocol/files-find.md).
 - The peer check follows `5fd08069`. `server.capabilities` carries the
   `peerCheck` and `peerCheckBy` members and the `server.peer_check` and
   `git.shadow_dir` features. On Linux with `CLAUDE_SSH_PEER_CHECK=1` the daemon refuses a caller in other

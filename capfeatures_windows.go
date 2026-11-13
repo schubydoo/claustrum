@@ -10,6 +10,6 @@ package main
 // c9125eb8 lists no files.mkdir.verified_parent there (measured on Windows).
 var osCapabilityFeatures []string
 
-// osCapabilityMethods is empty on Windows: c9125eb8 has no files.mkdir there
-// (measured on Windows).
+// osCapabilityMethods is empty on Windows: c9125eb8 has no files.mkdir there,
+// and 4c111e86 has no files.find there (measured on Windows).
 var osCapabilityMethods []string

@@ -49,6 +49,7 @@
         "process.killAndWait",
         "process.reattach",
         "plugins.prune",
+        "files.find",
         "files.mkdir",
         "files.realpath"
       ],

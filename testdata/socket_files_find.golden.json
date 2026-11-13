@@ -1,0 +1,225 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "paths": [
+        "<DIR>/r1/a/.claude/settings.json"
+      ],
+      "whole": true,
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "paths": [
+        "<DIR>/r1/a/.claude/settings.json"
+      ],
+      "whole": true,
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "result": {
+      "paths": [],
+      "whole": true,
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 11,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 12,
+    "result": {
+      "paths": [],
+      "whole": false,
+      "cut": "name",
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 13,
+    "result": {
+      "paths": [],
+      "whole": false,
+      "cut": "root",
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 14,
+    "result": {
+      "paths": [],
+      "whole": false,
+      "cut": "root",
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 15,
+    "result": {
+      "paths": [
+        "<DIR>/git/ok/t.txt"
+      ],
+      "whole": true,
+      "passedOver": [
+        "<DIR>/git/.git"
+      ],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 16,
+    "result": {
+      "paths": [
+        "<DIR>/link/b/t.txt"
+      ],
+      "whole": false,
+      "cut": "not_a_file",
+      "passedOver": [],
+      "links": [
+        {
+          "path": "<DIR>/link/t.txt",
+          "leadsTo": "other"
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 17,
+    "result": {
+      "paths": [
+        "<DIR>/chain/c1/c2/c3/c4/c5/c6/c7/c8/c9/c10/c11/c12/t12.txt"
+      ],
+      "whole": false,
+      "cut": "depth",
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 18,
+    "result": {
+      "paths": [],
+      "whole": false,
+      "cut": "depth",
+      "passedOver": [],
+      "links": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 19,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 20,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 21,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 22,
+    "result": {
+      "paths": [
+        "<DIR>/r1/top.txt"
+      ],
+      "whole": true,
+      "passedOver": [],
+      "links": []
+    }
+  }
+]
