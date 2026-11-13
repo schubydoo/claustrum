@@ -168,6 +168,12 @@ func TestCheckoutNote(t *testing.T) {
 		{"quota, upper case", "write x: Disk quota exceeded" + failed, store, quota},
 		{"missing object", "[x] Object does not exist on the server: [404] Object does not exist" + failed, store, missing},
 		{"another failure", "batch response: Fatal error: server broke" + failed, store, lfsDownloadNote},
+		{"a seed short of space", "[x] Object does not exist on the server: [404] Object does not exist" + failed,
+			&filterRule{shadow: true, store: &storeUse{runDir: run, short: true}},
+			". There isn't enough space on the remote machine (in " + run + ") for this repository's Git LFS files, and downloading them failed." +
+				" Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."},
+		{"a seed short of space and a full disk", "write x: no space left on device" + failed,
+			&filterRule{shadow: true, store: &storeUse{runDir: run, short: true}}, full},
 		{"missing object with no store", "[x] Object does not exist: [404] Object does not exist" + failed, &filterRule{shadow: true}, lfsDownloadNote},
 		{"no space with no store", "no space left on device" + failed, &filterRule{shadow: true}, lfsDownloadNote},
 		{"no words", "no space left on device\nfatal: b.bin: smudge filter f failed\n", store, ""},

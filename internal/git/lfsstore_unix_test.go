@@ -428,3 +428,60 @@ func TestLFSFailureNotes(t *testing.T) {
 		})
 	}
 }
+
+// TestLFSSeedKeepsSpare: on a tiny file system the seed makes no copy, and
+// the failure gets the note of the space, not the note of a missing object
+// (4c111e86, measured on Linux and macOS). The bound of 1 GiB after the copy
+// is claustrum's own: one byte under it gives no copy, and at it the copy is
+// made. The rows write 1 GiB as a number, so they pin seedSpare.
+func TestLFSSeedKeepsSpare(t *testing.T) {
+	const body = "alpha-object"
+	for _, row := range []struct {
+		name   string
+		free   uint64
+		seeded bool
+	}{
+		{"one byte under the bound", 1<<30 + uint64(len(body)) - 1, false},
+		{"at the bound", 1<<30 + uint64(len(body)), true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			prevSeed, prevFree := seedLink, storeFreeBytes
+			seedLink = func(string, string) error { return os.ErrPermission }
+			storeFreeBytes = func(string) (uint64, bool) { return row.free, true }
+			t.Cleanup(func() { seedLink, storeFreeBytes = prevSeed, prevFree })
+			f := newNamedLFSFixture(t, "lfs", map[string]string{"a.bin": body})
+			f.local(t, "a.bin", body)
+			raw, _ := f.create(t, nil)
+			if row.seeded {
+				if !strings.Contains(raw, `"success":true`) {
+					t.Fatalf("git.worktree_create = %s, want success", raw)
+				}
+				if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
+					t.Errorf("smudge line of a.bin = %q, want the seeded copy", got)
+				}
+				return
+			}
+			note := ". There isn't enough space on the remote machine (in " + f.run + ") for this repository's Git LFS files," +
+				" and downloading them failed. Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."
+			want := strings.Trim(jsonQuoted(t, note), `"`) + `","errorCode":"worktree_add_failed"}}`
+			if !strings.HasSuffix(raw, want) {
+				t.Errorf("git.worktree_create = %s\nwant the end %s", raw, want)
+			}
+			if got := f.smudges(t)["a.bin"]; got != "present=false private=true" {
+				t.Errorf("smudge line of a.bin = %q, want no seeded copy", got)
+			}
+			f.wantGone(t)
+		})
+	}
+}
+
+// TestFreeBytes: statfs gives the free space of a folder, and a missing path
+// gives none.
+func TestFreeBytes(t *testing.T) {
+	if n, ok := freeBytes(t.TempDir()); !ok || n == 0 {
+		t.Errorf("freeBytes of a temp folder = %d, %v, want a free space", n, ok)
+	}
+	if _, ok := freeBytes(filepath.Join(t.TempDir(), "gone")); ok {
+		t.Error("freeBytes of a missing path is ok, want false")
+	}
+}

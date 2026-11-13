@@ -57,6 +57,12 @@ const (
 	// minute old stays, and one 12 minutes old goes (measured on Linux and
 	// macOS). The bound of 10 minutes between them is claustrum's own.
 	staleTempAge = 10 * time.Minute
+	// seedSpare is the free space that a copy of the seed leaves on the file
+	// system of the private store. On an 8 MB file system (Linux) and a small
+	// disk image (macOS) 4c111e86 copies no object, and with 1100 MB (Linux)
+	// it does (measured). Its text names 1 GiB. The test of the space left
+	// after the copy is claustrum's own, not measured.
+	seedSpare = 1 << 30
 )
 
 var (
@@ -65,18 +71,21 @@ var (
 )
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
-// "" for the store of the git directory. seed runs the seed into path. runDir
-// is the folder of the socket.
+// "" for the store of the git directory. seed runs the seed into path and
+// reports a copy that it left out for seedSpare. runDir is the folder of the
+// socket.
 type privateStore struct {
 	path   string
 	runDir string
-	seed   func()
+	seed   func() bool
 }
 
 // storeUse is what a checkout that named its private store gives the note of
-// its failure (checkoutNote).
+// its failure (checkoutNote). short reports a copy of the seed left out for
+// seedSpare.
 type storeUse struct {
 	runDir string
+	short  bool
 }
 
 // pointerRef is one LFS pointer of the commit of a checkout.
@@ -202,11 +211,13 @@ func commitPointers(u gitUse, dir, rev string) []pointerRef {
 // of gitDir that a pointer of rev names: a regular file with the size of the
 // pointer. It makes a hard link, or a copy when the link fails or a folder on
 // the way is a link. A failure leaves the object out, and git-lfs then
-// downloads it.
-func fillCheckoutStore(u gitUse, dir, gitDir, rev, private string) {
+// downloads it. A copy that would leave less than seedSpare free is left out
+// too, and short reports it. A free space that cannot be read does not stop
+// a copy (claustrum's own, not measured).
+func fillCheckoutStore(u gitUse, dir, gitDir, rev, private string) (short bool) {
 	store := filepath.Join(gitDir, "lfs")
 	if fi, err := os.Stat(filepath.Join(store, "objects")); err != nil || !fi.IsDir() {
-		return
+		return false
 	}
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range commitPointers(u, dir, rev) {
@@ -221,9 +232,14 @@ func fillCheckoutStore(u gitUse, dir, gitDir, rev, private string) {
 		}
 		shard := filepath.Dir(src)
 		if viaLink || pathIsLink(shard) || pathIsLink(filepath.Dir(shard)) || seedLink(src, dst) != nil {
+			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < uint64(p.size)+seedSpare {
+				short = true
+				continue
+			}
 			_ = copySeed(src, dst)
 		}
 	}
+	return short
 }
 
 // pathIsLink reports whether the last name of p is a symbolic link.
@@ -238,6 +254,10 @@ var (
 	seedLink     = os.Link
 	keepHardLink = linkIntoRoot
 )
+
+// storeFreeBytes is the free space of the file system of a folder, for the
+// test of seedSpare. A test replaces it.
+var storeFreeBytes = freeBytes
 
 // copySeed copies the object src to dst, a new file.
 func copySeed(src, dst string) error {

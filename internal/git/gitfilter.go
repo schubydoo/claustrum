@@ -707,12 +707,15 @@ const (
 //   - `no space left on device` in stderr gives the note of a full disk
 //     (measured on Linux and macOS), and `disk quota exceeded` the note of a
 //     quota (measured on Linux), in any letter case (measured on Linux).
+//   - A seed that left a copy out for seedSpare gives the note of the space,
+//     also before the words of a missing object (measured on Linux and macOS).
 //   - `Object does not exist` gives lfsMissingNote (measured on Linux and
 //     macOS with the text `Object does not exist on the server: [404]` of a
 //     stand-in git-lfs).
 //
 // Claustrum's own, not measured: the order of the full disk before the quota,
-// and of both before the missing object. Each of these notes needs the words
+// and of both before the space and the missing object. The note of the space
+// follows any failure text after a left-out copy. Each of these notes needs the words
 // in stderr. The test of `Object does not exist` minds letter case, and the
 // words of a real git-lfs are not measured.
 func checkoutNote(stderr, text string, rule *filterRule) string {
@@ -728,6 +731,9 @@ func checkoutNote(stderr, text string, rule *filterRule) string {
 		case strings.Contains(lower, "disk quota exceeded"):
 			return ". Your disk quota on the remote machine ran out during the checkout: on the disk that holds the new" +
 				" worktree, or on the one that holds " + s.runDir + lfsStoreHoldsText
+		case s.short:
+			return ". There isn't enough space on the remote machine (in " + s.runDir + ") for this repository's Git LFS files," +
+				" and downloading them failed. Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."
 		case strings.Contains(stderr, "Object does not exist"):
 			return lfsMissingNote
 		}
