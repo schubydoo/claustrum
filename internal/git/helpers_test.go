@@ -122,6 +122,8 @@ func runHelper(mode string, args []string) int {
 			suffix = strconv.FormatInt(time.Now().UnixNano(), 10)
 		}
 		fmt.Print(suffix)
+	case "lfs-smudge":
+		return lfsSmudgeHelper(args[0], args[1])
 	case "stderr-exit5": // integration fixture: one stderr line, exit 5
 		fmt.Fprint(os.Stderr, "err\n")
 		return 5

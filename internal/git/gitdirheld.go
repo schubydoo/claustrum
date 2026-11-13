@@ -44,6 +44,8 @@ import (
 //     installIndex for a create with no tested registration.
 //   - The registration of a rollback: removeTestedRegistration with
 //     deleteRoot, and removeCreatedRegistration.
+//   - On Linux and macOS, the LFS store `lfs/objects`: returnDownloads
+//     (lfsstore.go).
 //
 // By the path stay:
 //
@@ -59,6 +61,8 @@ import (
 //     folder `worktrees` is not in the held folder, such as a daemon GIT_DIR
 //     of another repository (from the code, not measured).
 //   - The reads of the create that decide a refusal.
+//   - On Linux and macOS, the seed of the LFS store, read only
+//     (fillCheckoutStore, lfsstore.go).
 //
 // A create whose gate ran under the hold of the off switch takes the hold at a
 // later gate before its first good `worktree add` (keepLiveCreate). From then
