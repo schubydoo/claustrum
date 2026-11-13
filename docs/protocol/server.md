@@ -42,7 +42,7 @@ The members come in this order:
 | Member | Meaning |
 |---|---|
 | `version` | The version of the daemon. |
-| `methods` | The 23 methods, in the order of [Methods](../PROTOCOL.md#methods-23). `files.realpath` is last on every system (`683cc6a9`). On Windows (`c9125eb8`, measured) there is no `files.mkdir`, so claustrum lists 22. |
+| `methods` | The 24 methods, in the order of [Methods](../PROTOCOL.md#methods-24). `files.realpath` is last on every system (`683cc6a9`). On Windows there is no `files.mkdir` (`c9125eb8`, measured) and no `files.find` (`4c111e86`, measured), so claustrum lists 22. |
 | `instanceId` | 32 hexadecimal characters, new at each start of the daemon. claustrum makes it from 16 random bytes (claustrum's own). On Linux and macOS the owner record of `daemon.lock` holds the same value. The banner of the [daemon log](../DAEMON.md#daemon-log-remote-serverlog) holds it too (measured on `89cb6289`). |
 | `startedAt` | The start time of the daemon in unix milliseconds. claustrum sets it after its start steps and the bind of the socket (from the code). |
 | `features` | The optional extensions that this build supports. See [Features](#features). |

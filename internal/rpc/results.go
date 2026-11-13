@@ -75,6 +75,23 @@ type MkdirResult struct {
 	Errno int    `json:"errno,omitempty"`
 }
 
+// FindResult is the files.find result, in the member order of 4c111e86
+// (measured on Linux and macOS). Cut is absent when Whole is true. The three
+// lists are never null.
+type FindResult struct {
+	Paths      []string   `json:"paths"`
+	Whole      bool       `json:"whole"`
+	Cut        string     `json:"cut,omitempty"`
+	PassedOver []string   `json:"passedOver"`
+	Links      []FindLink `json:"links"`
+}
+
+// FindLink is one link that a files.find walk met and did not follow.
+type FindLink struct {
+	Path    string `json:"path"`
+	LeadsTo string `json:"leadsTo"`
+}
+
 type ValidateResult struct {
 	Valid bool   `json:"valid"`
 	IsDir bool   `json:"isDir"`
