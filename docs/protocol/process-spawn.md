@@ -207,7 +207,7 @@ A started launcher logs the start line of [Lines of child processes](../DAEMON.m
 With `launcherSuppliesCli` the child runs as `<launcher...> <args...>`, with no command, and step 5 does not run. With no `args` the launcher gets no args (measured on Linux).
 
 - On Windows step 1 adds the fault `windows_host`.
-- On macOS a `launcherCheck` gets `-32004 … sshHostLauncher cannot be used with a macOS host: …` with the fault `macos_host`, before any file test. The text is on [the resolve page](launcher-resolve.md#platform-notes).
+- On macOS a `launcherCheck` gets `-32004 … This launcher can't be used on a macOS host: …` with the fault `macos_host`, before any file test (the text of `4c111e86` on a spawn: claustrum's own, not measured). The text is on [the resolve page](launcher-resolve.md#platform-notes).
 - On Linux step 3 runs the file check. `[]` gets the text for no launcher, with the fault `not_absolute` (measured with `launcherSuppliesCli`).
 
 claustrum's own: the macOS refusal comes before step 2. With a command, the own-path test runs first and has no fault, and `[]` gets `not_absolute` too.

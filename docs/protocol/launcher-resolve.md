@@ -187,7 +187,7 @@ An unusable answer to a `launcherCheck` writes this line each time, a repeat too
 
     The settings folder is `/etc/claude-code` on Linux and `/Library/Application Support/ClaudeCode` on macOS. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is honored as in [Rare states](#rare-states).
 
-    On macOS each resolve with a `launcherCheck` answers unusable with the fault `macos_host`, before any file test. That holds with no `path` and with no settings file (`c9125eb8`). With a `path` it holds too (claustrum's own, not measured). The reason is `sshHostLauncher cannot be used with a macOS host: an access-control list there can let another account change the launcher without this file check seeing it.`
+    On macOS each resolve with a `launcherCheck` answers unusable with the fault `macos_host`, before any file test. That holds with no `path` and with no settings file (`c9125eb8`). With a `path` it holds too (claustrum's own, not measured). The reason is `This launcher can't be used on a macOS host: an access-control list there can let another account change it unseen. Use a Linux host.` (`4c111e86`, measured with no `path`).
 
 === "Windows"
 
