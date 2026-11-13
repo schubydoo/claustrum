@@ -143,8 +143,9 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `fault` | Case | `reason` |
 |---|---|---|
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
-| `writable` | NFS, FUSE or SMB, with no digest | `` `<D>` is on a file system (<fs>) whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256. `` |
-| `owner` | Owned by the uid of the daemon | `` `<D>` belongs to the account that signs in (uid <n>). Root, or another account named as ownerUid in the policy, must own the launcher and every folder above it. `` |
+| `writable` | NFS, FUSE or SMB, with no digest (`4c111e86`, the SMB text: claustrum's own) | `` `<D>` is on <fs>, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image. `` |
+| `writable` | Changed during the check (claustrum's own, not measured) | `` `<D>` changed while the launcher was checked, so the launcher can't be trusted. Keep the launcher somewhere that no other account can change. `` |
+| `owner` | Owned by the uid of the daemon (`4c111e86`) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
 | `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
 | `owner` | Owned by another uid | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. If you trust uid <n> with the launcher, you can name it as ownerUid in sshHostLauncher instead. `` |
 
@@ -156,8 +157,12 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
 - `<fs>` is `NFS`, `FUSE or virtiofs` for a FUSE mount, or `SMB` for CIFS. 9p passes (claustrum's own, not measured: 9p was not staged). The `statfs` type finds them (claustrum's own, not measured).
-- On these file systems with a digest the owner and write tests still run. An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
-- A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own. A change during the check is not guarded (claustrum's own).
+- On these file systems an `ownerUid` lifts nothing with no digest. With a digest the owner and write tests run (`4c111e86`, on FUSE). An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
+- A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own.
+
+#### The check by handle (Linux)
+
+Last, claustrum opens each item of the file after its links again, from the handle of the folder above, with no link followed. A device, inode or mount id that differs from a look before the walk gets the changed row. A later change is not guarded. All of this is claustrum's own, not measured.
 
 ### Log lines
 

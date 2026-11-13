@@ -84,6 +84,8 @@
         "git.worktree.external_root",
         "process.spawn.link_bound",
         "process.spawn.cli_temp_root",
+        "launcher.checked_by_handle",
+        "launcher.local_kinds_only",
         "server.instance_id"
       ],
       "peerCheck": "off"

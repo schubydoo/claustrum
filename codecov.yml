@@ -157,6 +157,9 @@ component_management:
         # OS-split server.capabilities feature: external_root advertised on unix only.
         - capfeatures_other.go
         - capfeatures_windows.go
+        # The two Linux launcher features of 4c111e86.
+        - capfeatures_launcher_linux.go
+        - capfeatures_launcher_other.go
         # The peer check, with its OS-split namespace read.
         - peercheck.go
         - peercheck_linux.go
@@ -185,6 +188,8 @@ component_management:
         - internal/install/launcherresolve.go
         - internal/install/launcherfacts_linux.go
         - internal/install/launcherfacts_other.go
+        - internal/install/launcherhandle_linux.go
+        - internal/install/launcherhandle_other.go
         - internal/install/launcherhost_darwin.go
         - internal/install/launcherhost_other.go
         - internal/install/launcherhost_windows.go

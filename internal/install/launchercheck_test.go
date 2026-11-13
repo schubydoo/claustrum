@@ -113,7 +113,7 @@ func TestCheckLauncherFileOwner(t *testing.T) {
 	L := writeLauncher(t, filepath.Join(d, "x", "launcher.sh"), "#!/bin/sh\n", 0o755)
 	x := filepath.Join(d, "x")
 	own := func(item string) string {
-		return "`" + item + "` belongs to the account that signs in (uid 1000). Root, or another account named as ownerUid in the policy, must own the launcher and every folder above it."
+		return "`" + item + "` belongs to the account that signs in (uid 1000). Root must own the launcher and every folder above it."
 	}
 	cases := []struct {
 		row  string
@@ -202,19 +202,36 @@ func TestCheckLauncherFileDigest(t *testing.T) {
 
 // TestCheckLauncherFileNFS pins the rule of NFS, FUSE (bindfs) and CIFS: with no digest
 // ({} or an empty list) the first item on that file system is refused with its text and
-// fault writable. With the right digest it passes, and a wrong digest gives digest.
+// fault writable. With the right digest it passes, and a wrong digest gives digest. The
+// NFS and FUSE texts follow 4c111e86 (measured on Linux). The SMB text is claustrum's own.
 func TestCheckLauncherFileNFS(t *testing.T) {
 	for _, fs := range []string{"NFS", "FUSE or virtiofs", "SMB"} {
 		d := launcherDir(t)
 		mnt := filepath.Join(d, "mnt")
 		L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
 		fakeLauncherFacts(t, map[string]launcherFacts{mnt: {mode: 0o755, fs: fs}, L: {mode: 0o755, fs: fs}})
-		text := "`" + mnt + "` is on a file system (" + fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+		text := "`" + mnt + "` is on " + fs + ", so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
 		checkFile(t, fs+" {}", L, LauncherCheck{}, FaultWritable, text)
 		checkFile(t, fs+" empty list", L, LauncherCheck{SHA256: []string{}}, FaultWritable, text)
 		checkFile(t, fs+" right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
 		checkFile(t, fs+" wrong", L, LauncherCheck{SHA256: []string{zeroDigest}}, FaultDigest, "launcher `"+L+"` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.")
 	}
+}
+
+// TestCheckLauncherFileOwnFUSE pins a FUSE mount that the uid of the daemon owns
+// (4c111e86, measured on Linux). With no digest it gets writable and the FUSE text, also
+// with that uid as ownerUid. With the right digest it gets owner.
+func TestCheckLauncherFileOwnFUSE(t *testing.T) {
+	d := launcherDir(t)
+	mnt := filepath.Join(d, "fusemnt")
+	L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
+	fakeLauncherFacts(t, map[string]launcherFacts{mnt: {uid: 1000, mode: 0o755, fs: "FUSE or virtiofs"}, L: {uid: 1000, mode: 0o755, fs: "FUSE or virtiofs"}})
+	fuse := "`" + mnt + "` is on FUSE or virtiofs, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
+	uid := uint32(1000)
+	checkFile(t, "own FUSE {}", L, LauncherCheck{}, FaultWritable, fuse)
+	checkFile(t, "own FUSE ownerUid", L, LauncherCheck{OwnerUID: &uid}, FaultWritable, fuse)
+	checkFile(t, "own FUSE right digest", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, FaultOwner,
+		"`"+mnt+"` belongs to the account that signs in (uid 1000). Root must own the launcher and every folder above it.")
 }
 
 // TestCheckLauncherFileLinks pins that a link to a good launcher and a chain of five

@@ -80,6 +80,11 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		t.Errorf("methods missing launcher.resolve between git.worktree_remove and process.spawn: %v", got.Methods)
 	}
 	wantFeatures := []string{"process.stdin.offset", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "git.outside_session_folders", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "process.spawn.cli_temp_root", "server.instance_id"}
+	if runtime.GOOS == "linux" {
+		// 4c111e86 lists the two launcher features before server.instance_id on Linux.
+		last := len(wantFeatures) - 1
+		wantFeatures = append(wantFeatures[:last:last], "launcher.checked_by_handle", "launcher.local_kinds_only", wantFeatures[last])
+	}
 	if runtime.GOOS == "windows" {
 		// external_root is gated off on Windows (capfeatures_windows.go), matching the
 		// reference, which drops the feature from its Windows capabilities frame.

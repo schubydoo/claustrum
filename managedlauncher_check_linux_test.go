@@ -108,8 +108,8 @@ func TestSpawnEnvOnlyIfSent(t *testing.T) {
 
 // TestSpawnLauncherCheckRefusals pins the -32004 frames of a checked spawn (c9125eb8,
 // measured on Linux): the two prefixes, launcherFault before reason, the em dash
-// text of an empty launcher, and the digest and owner faults. Each logs its
-// failed-start line.
+// text of an empty launcher, and the digest and owner faults. The owner text follows
+// 4c111e86 (measured on Linux). Each logs its failed-start line.
 func TestSpawnLauncherCheckRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -138,7 +138,7 @@ func TestSpawnLauncherCheckRefusals(t *testing.T) {
 		}
 	}
 	fakeFacts(t, map[string][2]uint32{L: {1000, 0o755}})
-	own := "`" + L + "` belongs to the account that signs in (uid 1000). Root, or another account named as ownerUid in the policy, must own the launcher and every folder above it."
+	own := "`" + L + "` belongs to the account that signs in (uid 1000). Root must own the launcher and every folder above it."
 	if got, want := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p2", "command": cli, "launcher": []string{L}, "launcherCheck": map[string]any{}})), faultFrame("the managed launcher cannot be used: "+own, "owner"); got != want {
 		t.Errorf("owner:\n got %s\nwant %s", got, want)
 	}
@@ -240,8 +240,9 @@ func TestLauncherCheckLinksFrames(t *testing.T) {
 	}
 }
 
-// TestLauncherCheckServerFSFrames pins the FUSE and SMB frames of c9125eb8 (measured on
-// Linux): a launcher in such a folder with launcherCheck {} gets writable.
+// TestLauncherCheckServerFSFrames pins the FUSE frames of 4c111e86 (measured on Linux):
+// a launcher in such a folder with launcherCheck {} gets writable. The SMB text uses the
+// same words (claustrum's own, not measured).
 func TestLauncherCheckServerFSFrames(t *testing.T) {
 	s, d, cli := launcherFrameFixture(t)
 	for _, fs := range []string{"FUSE or virtiofs", "SMB"} {
@@ -253,7 +254,7 @@ func TestLauncherCheckServerFSFrames(t *testing.T) {
 			}
 			return 0, 0o755, "", nil
 		}, 1000))
-		text := "`" + mnt + "` is on a file system (" + fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+		text := "`" + mnt + "` is on " + fs + ", so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
 		if got, want := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p2", "command": cli, "launcher": []string{L}, "launcherCheck": map[string]any{}})), faultFrame("the managed launcher cannot be used: "+text, "writable"); got != want {
 			t.Errorf("spawn %s:\n got %s\nwant %s", fs, got, want)
 		}
