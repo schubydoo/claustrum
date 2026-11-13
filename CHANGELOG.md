@@ -4,6 +4,19 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.21.0 (2026-11-13)
+
+[Compare with 1.20.0](https://github.com/schubydoo/claustrum/compare/v1.20.0...v1.21.0)
+
+### Features
+
+- On Linux and macOS the checkout of `git.worktree_create` in the state `shadow` keeps its index in a `.checkout-<n>` folder of the git-shadow folder of the daemon. ([#1058](https://github.com/schubydoo/claustrum/pull/1058))
+- On Linux the launcher check gives new texts for NFS, FUSE, SMB and the own uid, and refuses a path that changed during the check. `server.capabilities` lists two new launcher features there. ([#1055](https://github.com/schubydoo/claustrum/pull/1055))
+
+### Fixes
+
+- On macOS a launcherCheck is refused with a new text: "This launcher can't be used on a macOS host: an access-control list there can let another account change it unseen. Use a Linux host." ([#1057](https://github.com/schubydoo/claustrum/pull/1057))
+
 ## 1.20.0 (2026-11-08)
 
 [Compare with 1.19.0](https://github.com/schubydoo/claustrum/compare/v1.19.0...v1.20.0)
