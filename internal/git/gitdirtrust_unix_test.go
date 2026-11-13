@@ -234,7 +234,7 @@ func TestGitDirTrustHeadUnixKinds(t *testing.T) {
 			wantResult(t, "list_branches(T/a)", rep, notRepoList)
 			r1 := dispatchWithin(t, head, "git.worktree_create", map[string]any{
 				"baseRepo": a, "worktreePath": filepath.Join(a, ".claude", "worktrees", "w1"), "branchName": "w1"})
-			wantResult(t, "create(T/a)", r1, notRepoCreate)
+			wantResult(t, "create(T/a)", r1, unusableCreate(t, a))
 		})
 	}
 }
@@ -374,7 +374,7 @@ func TestGitDirTrustOperandQuoting(t *testing.T) {
 	initTrustMain(t, T)
 	cd := filepath.Join(T, ".git", "commondir")
 	writeFile(t, cd, "x\n", 0o644)
-	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir" holds something other than "." or "./"` + wantTRTail
+	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir" holds something other than ".", "./" or "./."` + wantTRTail
 	wantRPCError(t, "info(T)", info(t, T), want)
 }
 

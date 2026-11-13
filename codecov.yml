@@ -322,6 +322,8 @@ component_management:
         - internal/git/gitnorepo.go
         - internal/git/gitnorepo_unix.go
         - internal/git/gitnorepo_windows.go
+        # 4c111e86 the unusable-git refusal of git.worktree_create.
+        - internal/git/gitunusable.go
         # the object sources and the chain of links of the git methods on Windows (b3081b51).
         - internal/git/objectsources.go
         # the test of a repository path through a link to a network or device path on Windows (b3081b51).
