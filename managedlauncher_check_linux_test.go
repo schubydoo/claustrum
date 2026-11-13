@@ -166,8 +166,8 @@ func resolveCheckFrame(t *testing.T, s *server, path, check string) string {
 // TestLauncherResolveCheck pins launcher.resolve with path and launcherCheck
 // (c9125eb8, measured on Linux): the usable reply names path with no source, also
 // when the policy names another file. The unusable reply has reason, fault and
-// hostPolicySeen, and logs one line each time. Without path the reply is the old one
-// (claustrum's own, not measured).
+// hostPolicySeen, and logs one line each time. Without path the reply is unusable
+// with not_absolute (c9125eb8, measured on Linux).
 func TestLauncherResolveCheck(t *testing.T) {
 	logs := captureLogBuf(t)
 	fakeFacts(t, nil)
@@ -196,9 +196,9 @@ func TestLauncherResolveCheck(t *testing.T) {
 	if n := strings.Count(logs.String(), line); n != 2 {
 		t.Errorf("%d refusal lines, want 2 (one per resolve):\n%s", n, logs.String())
 	}
-	old := `{"jsonrpc":"2.0","id":1,"result":{"status":"usable","argv":["` + other + `"],"source":"` + base + `"}}`
-	if got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"/x/cli","launcherCheck":{}}}`)); got != old {
-		t.Errorf("no path:\n got %s\nwant %s", got, old)
+	noPath := `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"the launcher must be an absolute path, not a bare name resolved via PATH","fault":"not_absolute","hostPolicySeen":false}}`
+	if got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"/x/cli","launcherCheck":{}}}`)); got != noPath {
+		t.Errorf("no path:\n got %s\nwant %s", got, noPath)
 	}
 	writeFileMode(t, base, []byte(`{"processWrapper":`+jsonText(t, other)+`,"x":1}`), 0o644)
 	seen := `{"jsonrpc":"2.0","id":1,"result":{"status":"usable","argv":["` + L + `"],"hostPolicySeen":true}}`

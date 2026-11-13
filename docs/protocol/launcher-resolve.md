@@ -43,7 +43,7 @@ With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, me
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
 
-`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). It is `false` for a file that is not a JSON object, a file that cannot be read and a file over 2 MiB too (claustrum's own, not measured). A `launcherCheck` with no `path` on Linux and Windows gets one of the four shapes (claustrum's own, not measured).
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). It is `false` for a file that is not a JSON object, a file that cannot be read and a file over 2 MiB too (claustrum's own, not measured). On Linux a `launcherCheck` with no `path` gets the second shape with the fault `not_absolute` (`c9125eb8`, measured on Linux).
 
 The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
@@ -191,7 +191,7 @@ An unusable answer to a `launcherCheck` writes this line each time, a repeat too
 
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. A `path` with a `launcherCheck` answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host` (claustrum's own, not measured).
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. A `path` with a `launcherCheck` answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host` (claustrum's own, not measured). A `launcherCheck` with no `path` answers `none` (claustrum's own, not measured).
 
 ## Rare states
 

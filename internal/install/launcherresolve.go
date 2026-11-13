@@ -14,10 +14,10 @@ import (
 // processWrapper of the policy names another file (measured on Linux).
 //
 // macOS answers its host refusal with no p (measured). With p it does the same
-// (claustrum's own, not measured). On Linux and Windows a
-// request with no p does not come here (claustrum's own, not measured: it answers as
-// a request with no launcherCheck). On Windows p gets the Windows refusal
-// (claustrum's own, not measured).
+// (claustrum's own, not measured). On Linux a request with no p comes here and
+// gets not_absolute (measured on Linux). On Windows a request with no p does not come
+// here: it answers as a request with no launcherCheck. On Windows p gets the Windows
+// refusal. Both Windows rules are claustrum's own, not measured.
 func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckResult {
 	res := rpc.LauncherCheckResult{HostPolicySeen: policyHoldsOtherKey()}
 	fault, reason := LauncherCheckHostRefusal()
