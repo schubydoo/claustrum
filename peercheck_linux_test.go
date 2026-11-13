@@ -154,6 +154,41 @@ func TestPeerCheckLookupOfOwnAndExitedCaller(t *testing.T) {
 	}
 }
 
+// TestPeerCheckPidfdErrorNamesCaller: a SO_PEERPIDFD read that answers EMFILE
+// refuses the caller with lookup_failed. The line names the caller by its pid
+// (measured on Linux, c9125eb8 and 4c111e86). The caller is this process.
+func TestPeerCheckPidfdErrorNamesCaller(t *testing.T) {
+	own := nsText{user: "user:[1]", net: "net:1", pidfd: true}
+	old := peerPidfdOf
+	t.Cleanup(func() { peerPidfdOf = old })
+	peerPidfdOf = func(int) (int, error) { return -1, syscall.EMFILE }
+
+	sock := filepath.Join(shortTempDir(t), "p.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	cli, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	nc, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := captureLogBuf(t)
+	g := &peerGate{own: own}
+	if g.admit(nc) {
+		t.Fatal("admit served a caller whose pidfd read failed")
+	}
+	want := fmt.Sprintf("[Server] refused caller number 1 (lookup_failed): caller %d: too many open files; this server's namespaces are %q", os.Getpid(), own.String())
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("log lacks %q:\n%s", want, logs.String())
+	}
+}
+
 // peerNetnsResult is what the peer-netns fixture prints, as one JSON object.
 type peerNetnsResult struct {
 	Skip      string `json:"skip,omitempty"`
