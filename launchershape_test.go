@@ -59,7 +59,16 @@ func TestSocketLauncherShapeRefusals(t *testing.T) {
 		frames = append(frames, json.RawMessage(got))
 	}
 	assertGolden(t, "socket_process_launcher_shape.golden.json", encodeGolden(t, frames))
+	// The line cuts an id of more than 8 bytes to 8 bytes and "…" (c9125eb8 and
+	// 4c111e86, measured on Linux, macOS and Windows).
+	long := launcherShapeReq(t, 99, map[string]any{"id": "l_shape_long", "command": cmd, "launcherCheck": digest})
+	if got := string(cl.call(long)); got != `{"jsonrpc":"2.0","id":99,"error":`+shape+`}` {
+		t.Errorf("long id: reply = %s", got)
+	}
 	out := logs.String()
+	if want := "[process.Manager] Failed to start process l_shape_…: invalid process.spawn: "; !strings.Contains(out, want) || strings.Contains(out, "l_shape_long") {
+		t.Errorf("no cut shape line %q in:\n%s", want, out)
+	}
 	if want := "[process.Manager] Failed to start process l4: invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli\n"; !strings.Contains(out, want) {
 		t.Errorf("no shape line %q in:\n%s", want, out)
 	}

@@ -378,6 +378,8 @@ component_management:
       name: process supervisor
       paths:
         - internal/supervisor/process.go
+        # The cut of a long process id in four log lines.
+        - internal/supervisor/logid.go
         - internal/supervisor/sysproc_unix.go
         - internal/supervisor/sysproc_windows.go
         # The refused-signal error, the live-pid test and the test seams of the package.

@@ -107,7 +107,7 @@ func launcherShapeRefusal(req *request, p *spawnParams) *rpc.Response {
 	if (p.LauncherCheck != nil && p.Launcher == nil) ||
 		(p.LauncherSuppliesCli && (p.LauncherCheck == nil || p.Command != "")) ||
 		(p.EnvOnlyIfSent != nil && !p.LauncherSuppliesCli) {
-		logging.Errorf("[process.Manager] Failed to start process %s: %s", p.ID, launcherShapeText)
+		logging.Errorf("[process.Manager] Failed to start process %s: %s", supervisor.LogID(p.ID), launcherShapeText)
 		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, launcherShapeText, supervisor.SpawnReason{Reason: "other"}))
 	}
 	return nil

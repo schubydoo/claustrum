@@ -25,8 +25,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
-// The format text of the process exit line, claustrum's own, not measured. A
-// test checks its byte length.
+// The format text of the process exit line. A test checks its byte length.
 const (
 	FmtProcExited = "[process.Manager] Process %s exited with code %d%s"
 )
@@ -799,7 +798,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	supplies := lo != nil && lo.Supplies
 	if launcher != nil {
 		if err := RefuseManagedLauncher(*launcher, command, lo); err != nil {
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
 		path = (*launcher)[0]
@@ -851,11 +850,11 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	m.mu.Unlock()
 	if taken {
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), errSpentID)
 		return nil, errSpentID
 	}
 	if givenUp {
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errGivenUpID)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), errGivenUpID)
 		return nil, errGivenUpID
 	}
 	cmd := exec.Command(path, argv...)
@@ -876,18 +875,18 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		fi, err := os.Stat(cwd)
 		if err != nil {
 			err = &CwdError{Err: fmt.Errorf("chdir %s: %w", cwd, err)}
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
 		if !fi.IsDir() {
 			err = &CwdError{Err: fmt.Errorf("chdir %s: not a directory", cwd)}
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
 		cmd.Dir = cwd
 	}
 	if gitRead != nil && gitRead.refusal != nil {
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, gitRead.refusal)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), gitRead.refusal)
 		return nil, gitRead.refusal
 	}
 	// The launcher variables are stripped after the caller's env is merged, so the
@@ -922,7 +921,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	if gitRead != nil && cmd.Err == nil {
 		runArgs, childEnv, release, err := gitRead.step(cmd.Env)
 		if err != nil {
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, &GitReadStepError{Err: err}
 		}
 		releaseGitRead = release
@@ -940,7 +939,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		// after the env is built, as the reference's two [shellenv] lines come
 		// before this failure (measured log order).
 		if err := LaunchedCommandError(command); err != nil {
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
 	} else if sessionKey != "" {
@@ -948,7 +947,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		// before the supersede below, so the prior process of the session gets no
 		// signal (`89cb6289`, measured on Linux). A launched spawn has its own check above.
 		if err := missingCommandError(cmd); err != nil {
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
 	}
@@ -959,7 +958,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// the cwd and command tests and before the supersede is claustrum's own, not
 	// measured.
 	if err := sessiondirs.Remember(folders...); err != nil {
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 		return nil, err
 	}
 	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_linux.go).
@@ -1084,7 +1083,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		if launcher != nil {
 			err = ManagedLauncherStartError(path, err)
 		}
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 		sysproc.CloseAll(stdoutR, stdoutW, stderrR, stderrW)
 		closeExecErr()
 		return nil, err
@@ -1104,7 +1103,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			if launcher != nil {
 				execErr = ManagedLauncherStartError(path, execErr)
 			}
-			logging.Errorf("[process.Manager] Failed to start process %s: %v", id, execErr)
+			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), execErr)
 			_ = cmd.Wait() // reap the trampoline, which reported the error and exited
 			sysproc.CloseAll(stdoutR, stderrR)
 			return nil, execErr
@@ -1152,7 +1151,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// line (claustrum's own, not measured).
 	if err := resumeProc(cmd.Process, cmd.SysProcAttr); err != nil {
 		err = fmt.Errorf("resume after the job join: %w", err)
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, err)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 		endUnstarted()
 		return nil, err
 	}
@@ -1173,7 +1172,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		program = command
 		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
 	default:
-		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
 	}
 	metrics.Met.Spawns.Add(1)
 
@@ -1225,7 +1224,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// child and gets the spent-id refusal (claustrum's own, not measured).
 	if old := m.procs[id]; (old != nil && old != p && old.linked) || m.spentLocked(id) {
 		m.mu.Unlock()
-		logging.Errorf("[process.Manager] Failed to start process %s: %v", id, errSpentID)
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), errSpentID)
 		endUnstarted()
 		return nil, errSpentID
 	}
@@ -1362,7 +1361,7 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	// that job, so the close ends nothing.
 	p.group.Close()
 	sigName := sysproc.ExitSignalName(err)
-	logging.Infof(FmtProcExited, p.id, code, exitLogSuffix(sigName, killedBy))
+	logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
 	metrics.Met.ProcessExits.Add(1)
 	p.emit(StreamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
@@ -1407,7 +1406,7 @@ func exitLogSuffix(sigName, killedBy string) string {
 }
 
 func pumpStream(p *Proc, name string, r io.Reader) {
-	logging.Debugf("[process.Manager] Starting %s streaming for process %s", name, p.id)
+	logging.Debugf("[process.Manager] Starting %s streaming for process %s", name, LogID(p.id))
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := r.Read(buf)
