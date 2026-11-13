@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// macOSHostText is the macos_host reason of c9125eb8 (measured on macOS).
-const macOSHostText = "sshHostLauncher cannot be used with a macOS host: an access-control list there can let another account change the launcher without this file check seeing it."
+// macOSHostText is the macos_host reason of 4c111e86 (measured on macOS, a resolve with no path).
+const macOSHostText = "This launcher can't be used on a macOS host: an access-control list there can let another account change it unseen. Use a Linux host."
 
-// TestLauncherCheckRefusedOnMacOS pins the macOS rows of c9125eb8: every spawn with a
+// TestLauncherCheckRefusedOnMacOS pins the macos_host fault and order of the macOS rows of
+// c9125eb8, with the text of 4c111e86: every spawn with a
 // launcher and a launcherCheck gets macos_host, with the prefix of its shape, before
 // any file test. Every launcher.resolve with a launcherCheck answers unusable with
 // macos_host, also with no path and no settings file.
