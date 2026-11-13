@@ -179,6 +179,8 @@ component_management:
         - methods_launcher.go
         - internal/supervisor/spawncheck.go
         - internal/install/managedsettings.go
+        - internal/install/checkfault_linux.go
+        - internal/install/checkfault_other.go
         - internal/install/managedlauncher_unix.go
         - internal/install/managedlauncher_windows.go
         - internal/install/managedlauncherdir_darwin.go

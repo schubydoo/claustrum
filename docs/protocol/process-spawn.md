@@ -83,7 +83,7 @@ A failure starts no child and makes no record. It logs the failed-start line of 
 
 A start refusal adds `data` after `message`: `{"reason":"<reason>"}`. `Invalid params`, `Command is required` and `Process ID is required` (claustrum's own) carry none.
 
-A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"<fault>","reason":"launcher"}`. Windows adds `windows_host` to every launcher refusal. Linux adds a fault of [the file check](launcher-resolve.md#the-file-check-build-c9125eb8). A refusal with no `launcherCheck` on Linux and macOS keeps `{"reason":"launcher"}` (claustrum's own, not measured).
+A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"<fault>","reason":"launcher"}`. Windows adds `windows_host` to every launcher refusal. Linux adds a fault of [the file check](launcher-resolve.md#the-file-check-build-c9125eb8). On Linux with no `launcherCheck`, a missing launcher adds `missing` and an empty one `not_absolute` (`c9125eb8`, measured on Linux). The other Linux faults are claustrum's own: `not_absolute` for a relative launcher, `script_suffix` for a script and none for the own path. macOS keeps `{"reason":"launcher"}` there (not measured).
 
 | Reason | Linux | Windows |
 |---|---|---|

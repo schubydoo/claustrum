@@ -227,7 +227,7 @@ func TestLivePluginRefsNoProcManager(t *testing.T) {
 func TestPrunePluginRootUnreadable(t *testing.T) {
 	var res pruneResult
 	missing := filepath.Join(t.TempDir(), "never-created")
-	prunePluginRoot(missing, false, time.Now(), nil, &res)
+	prunePluginRoot(missing, false, time.Now(), nil, nil, &res)
 	if len(res.Errors) != 0 {
 		t.Errorf("a missing root reported errors: %v", res.Errors)
 	}
@@ -243,7 +243,7 @@ func TestPrunePluginRootUnreadable(t *testing.T) {
 	if err := os.WriteFile(notADir, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	prunePluginRoot(notADir, false, time.Now(), nil, &res)
+	prunePluginRoot(notADir, false, time.Now(), nil, nil, &res)
 	if len(res.Errors) != 1 {
 		t.Fatalf("Errors = %v, want one entry for an unreadable root", res.Errors)
 	}
@@ -272,7 +272,7 @@ func TestPruneOnePluginDirRemoveFails(t *testing.T) {
 	pluginRemoveAll = func(string) error { return syscall.EACCES }
 
 	var res pruneResult
-	prunePluginRoot(root, false, time.Now().Add(-30*24*time.Hour), nil, &res)
+	prunePluginRoot(root, false, time.Now().Add(-30*24*time.Hour), nil, nil, &res)
 
 	if len(res.Pruned) != 0 {
 		t.Errorf("Pruned = %v, want none — the removal failed", res.Pruned)

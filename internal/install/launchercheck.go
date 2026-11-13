@@ -89,13 +89,14 @@ var (
 //     own, not measured). A p that is missing, a dangling link or no regular file is
 //     missing.
 //
-//  4. The walk: "/", each folder down to the launcher, then the launcher. It walks the
+//  4. A launcher that this account cannot run is missing. This test comes before the
+//     walk: a mode-0644 file under /tmp got missing, not writable for /tmp (measured).
+//
+//  5. The walk: "/", each folder down to the launcher, then the launcher. It walks the
 //     folders of p as written, then the folders of p after its links (claustrum's own,
 //     not measured). Each item runs the file system test, then the owner test, then the write
 //     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
 //     before its own folders (measured).
-//
-//  5. A launcher that this account cannot run is missing.
 //
 //  6. With digests: the size limit, the read, and the compare. {} and an empty list
 //     pass (measured). Without digests the file is not read (claustrum's own, not
@@ -126,6 +127,9 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 	if err != nil {
 		return FaultMissing, managedNotExecutable(p)
 	}
+	if !IsExecutableRegular(p) {
+		return FaultMissing, "launcher `" + shown + "` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)"
+	}
 	digests := len(chk.SHA256) > 0
 	seen := map[string]bool{}
 	items := launcherFolders(filepath.Dir(filepath.Clean(p)))
@@ -144,9 +148,6 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 		if f, r := checkLauncherItem(p, item, chk.OwnerUID, digests); f != "" {
 			return f, r
 		}
-	}
-	if !IsExecutableRegular(p) {
-		return FaultMissing, "launcher `" + shown + "` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)"
 	}
 	if digests {
 		if f, r := checkLauncherDigest(target, shown, fi.Size(), chk.SHA256); f != "" {

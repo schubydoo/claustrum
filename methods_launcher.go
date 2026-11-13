@@ -84,22 +84,23 @@ type managedLauncherParams struct {
 // `~`-expanded, so the own-path check compares the caller's text.
 func (p *managedLauncherParams) ExpandPaths() {}
 
-// launcherCheckRefusedByHost is true on macOS, where a resolve with a launcherCheck
-// and no path gets the host refusal too (c9125eb8, measured on macOS). On Linux and
-// Windows such a resolve answers as one with no launcherCheck (claustrum's own, not
-// measured).
-func launcherCheckRefusedByHost() bool {
+// onWindowsHost is true on Windows, where a launcherCheck with no path keeps the
+// answer of a resolve with no launcherCheck (claustrum's own, not measured).
+func onWindowsHost() bool {
 	f, _ := install.LauncherCheckHostRefusal()
-	return f == install.FaultMacOSHost
+	return f == install.FaultWindowsHost
 }
 
 // handleLauncher serves the launcher namespace. Its one method is launcher.resolve.
 // No params member, a non-object params or a non-string cliPath is -32602 "Invalid
 // params". {}, null params, a null or empty cliPath and a wrong key are -32602
 // "cliPath is required". Any other string is a cliPath, a relative one too.
-// With a path and a launcherCheck the reply is the file check of c9125eb8
+// With a launcherCheck the reply is the file check of c9125eb8
 // (install.ResolveChecked). A path with no launcherCheck is -32602 "launcherCheck is
-// required with path", after the cliPath test (measured on Linux).
+// required with path", after the cliPath test (measured on Linux). A launcherCheck
+// with no path checks "": on Linux it is unusable with not_absolute (c9125eb8,
+// measured), on macOS macos_host (measured). On Windows it answers as one with no
+// launcherCheck (claustrum's own, not measured).
 func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
@@ -117,7 +118,7 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 	if p.Path != "" && p.LauncherCheck == nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "launcherCheck is required with path")
 	}
-	if p.LauncherCheck != nil && (p.Path != "" || launcherCheckRefusedByHost()) {
+	if p.LauncherCheck != nil && (p.Path != "" || !onWindowsHost()) {
 		res := install.ResolveChecked(p.Path, *p.LauncherCheck)
 		if res.Status == install.StatusUnusable {
 			// One line for each refusal, a repeat too (measured on macOS).

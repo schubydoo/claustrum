@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -684,6 +685,15 @@ func spawnErrFrame(code, msg, reason string) string {
 	return `{"jsonrpc":"2.0","id":1,"error":{"code":` + code + `,"message":"` + msg + `","data":{"reason":"` + reason + `"}}}`
 }
 
+// spawnFaultFrame is the -32004 launcher refusal of a spawn with no launcherCheck.
+// Its data carries launcherFault on Linux only. macOS keeps the old frame.
+func spawnFaultFrame(msg, fault string) string {
+	if runtime.GOOS != "linux" {
+		return spawnErrFrame("-32004", msg, "launcher")
+	}
+	return `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"` + msg + `","data":{"launcherFault":"` + fault + `","reason":"launcher"}}}`
+}
+
 func exitCodeOf(frames []supervisor.StreamFrame) int {
 	for _, f := range frames {
 		if f.Stream == "exit" && f.ExitCode != nil {
@@ -754,6 +764,9 @@ func TestSpawnThroughLauncher(t *testing.T) {
 // any launcher check; the launcher checks answer -32004 with the launcher texts, an empty launcher the
 // no-element text; both come before the cwd check, and a good launcher meets the cwd check with the
 // plain frame. Each refusal logs one [process.Manager] line and no [LauncherHandler] line.
+// On Linux the launcherFault of S3 (not_absolute) and of a missing launcher (missing)
+// follows c9125eb8 (measured on Linux). The faults of S5-wrap and S5-x.js are
+// claustrum's own. macOS keeps the frame with no launcherFault (not measured).
 func TestSpawnLauncherRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -772,12 +785,12 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 		{"S2-echo-W", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
 		{"S2-echo-empty", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
 		{"S11-relcmd-badlauncher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
-		{"S3", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32004", cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "launcher")},
-		{"S5-wrap", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnErrFrame("-32004", cannot+managedNotAbsolute, "launcher")},
+		{"S3", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnFaultFrame(cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "not_absolute")},
+		{"S5-wrap", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnFaultFrame(cannot+managedNotAbsolute, "not_absolute")},
 		{"S5-own-path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path", "launcher")},
-		{"S5-x.js", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnErrFrame("-32004", cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code", "launcher")},
-		{"S5-nope", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32004", cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "launcher")},
-		{"S11-badlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnErrFrame("-32004", cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "launcher")},
+		{"S5-x.js", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnFaultFrame(cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code", "script_suffix")},
+		{"S5-nope", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
+		{"S11-badlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
 		{"S11-goodlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{wrap}}, spawnErrFrame("-32603", "chdir "+nocwd+": stat "+nocwd+": no such file or directory", "cwd_missing")},
 	}
 	for _, c := range cases {

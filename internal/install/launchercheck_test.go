@@ -161,7 +161,12 @@ func TestCheckLauncherFileNames(t *testing.T) {
 	checkFile(t, "dangling", dangling, LauncherCheck{}, FaultMissing, missing(dangling))
 	checkFile(t, "folder", d, LauncherCheck{}, FaultMissing, missing(d))
 	p := writeLauncher(t, filepath.Join(d, "noexec.sh"), "#\n", 0o644)
-	checkFile(t, "0644", p, LauncherCheck{}, FaultMissing, "launcher `"+p+"` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)")
+	noExec := "launcher `" + p + "` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)"
+	checkFile(t, "0644", p, LauncherCheck{}, FaultMissing, noExec)
+	// The execute test comes before the walk: a 0644 file below a 1777 folder gets
+	// missing, not writable (c9125eb8, measured on Linux under /tmp).
+	fakeLauncherFacts(t, map[string]launcherFacts{d: {mode: 0o1777}})
+	checkFile(t, "0644 below 1777", p, LauncherCheck{}, FaultMissing, noExec)
 }
 
 // TestCheckLauncherFileDigest pins the digest test: a wrong and a short digest are

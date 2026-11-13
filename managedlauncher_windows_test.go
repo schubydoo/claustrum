@@ -103,3 +103,20 @@ func TestLauncherResolveNoneOnWindows(t *testing.T) {
 		}
 	}
 }
+
+// TestLauncherResolveCheckOnWindows pins claustrum's own rules (not measured): a
+// launcherCheck with a path answers the windows_host refusal, and one with no path
+// answers none, as a resolve with no launcherCheck.
+func TestLauncherResolveCheckOnWindows(t *testing.T) {
+	managedWindowsFixture(t)
+	s := newTestServer(t)
+	refused := `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"a launcher cannot be applied on a Windows host","fault":"windows_host","hostPolicySeen":false}}`
+	for params, want := range map[string]string{
+		`{"cliPath":"x","launcherCheck":{}}`:                    `{"jsonrpc":"2.0","id":1,"result":{"status":"none"}}`,
+		`{"cliPath":"x","path":"C:\\l.exe","launcherCheck":{}}`: refused,
+	} {
+		if got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":`+params+`}`)); got != want {
+			t.Errorf("%s:\n got %s\nwant %s", params, got, want)
+		}
+	}
+}
