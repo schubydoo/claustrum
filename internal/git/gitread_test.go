@@ -19,6 +19,8 @@ func TestPaneShapeRefusal(t *testing.T) {
 		want string
 	}{
 		{nil, "not one of the Changes pane's git commands (0 arguments)"},
+		// c9125eb8 and 4c111e86 run it (measured on Linux).
+		{[]string{"diff", "--no-color", "HEAD"}, ""},
 		{[]string{"status"}, "not one of the Changes pane's git commands (1 arguments)"},
 		{[]string{"ls-files", "--others", "--exclude-standard"}, "not one of the Changes pane's git commands (3 arguments)"},
 		{[]string{"-c", "core.pager=cat", "status", "--porcelain=v2"}, "not one of the Changes pane's git commands (4 arguments)"},
@@ -49,6 +51,7 @@ func TestPaneShapesList(t *testing.T) {
 		"hash-object -t tree /dev/null",
 		"diff <base>",
 		"diff --numstat <base>",
+		"diff --no-color HEAD",
 		"diff -z --no-color --name-status -M <base>",
 		"diff --inter-hunk-context=3 <base>",
 		"diff --src-prefix=a/ --dst-prefix=b/ <base>",
@@ -156,6 +159,9 @@ func TestPaneArgvLogRows(t *testing.T) {
 		{w("diff", "--name-status", "-M", "HEAD", "--", ":(top,exclude,literal)sub"), cat(w("diff-index"), opts, w("--name-status", "-M", "HEAD", "--", ":(top,exclude,literal)sub")), true},
 		{w("diff", "--src-prefix=a/", "--dst-prefix=b/", "HEAD"), cat(w("diff-index", "-p"), opts, w("--src-prefix=a/", "--dst-prefix=b/", "HEAD", "--")), true},
 		{w("rev-parse", "--show-toplevel"), w("rev-parse", "--show-toplevel"), false},
+		// claustrum's own, not measured: the run of `diff --no-color HEAD`, which c9125eb8
+		// and 4c111e86 accept (measured on Linux).
+		{w("diff", "--no-color", "HEAD"), cat(w("diff-index", "-p"), opts, w("--no-color", "HEAD", "--")), true},
 		// log with <A>...<B> and each diff shape with <A>..<B>.
 		{w("log", "--no-show-signature", format, "main...topic"), cat(w("log"), opts, w("--no-show-signature", format, "main...topic", "--")), false},
 		{w("diff", "main..topic"), cat(w("diff-tree", "-r", "-p"), opts, w("main", "topic", "--")), false},
@@ -212,6 +218,8 @@ func TestPaneShapeRows(t *testing.T) {
 		"diff -z --no-color --name-status -M HEAD", "diff --name-status -M main..topic",
 		"diff --inter-hunk-context=3 HEAD", "diff --name-status -M HEAD -- :(top,exclude)sub",
 		"diff --name-status -M HEAD -- :(top,exclude,literal)sub", "diff --src-prefix=a/ --dst-prefix=b/ HEAD",
+		// c9125eb8 and 4c111e86 (measured on Linux).
+		"diff --no-color HEAD",
 		// claustrum's own, not measured.
 		"rev-list --left-right --count main",
 	}
@@ -242,6 +250,7 @@ func TestPaneShapeRows(t *testing.T) {
 		"rev-list --left-right --count ..topic", "rev-list --left-right --count main...-x",
 		"diff --name-status -M main..", "diff --name-status -M a..b..c",
 		"diff --name-status -M HEAD -- :(top,exclude)", "diff --name-status -M HEAD -- :(exclude)sub",
+		"diff --no-color main",
 	}
 	for _, row := range allowed {
 		if got := PaneShapeRefusal(strings.Fields(row)); got != "" {

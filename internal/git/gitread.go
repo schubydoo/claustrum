@@ -87,6 +87,9 @@ var paneShapes = []paneShape{
 	{sent: []string{"hash-object", "-t", "tree", "/dev/null"}},
 	{sent: []string{"diff", slotBase}, run: paneDiffRun(true, slotBase, "--"), realIndex: true},
 	{sent: []string{"diff", "--numstat", slotBase}, run: paneDiffRun(false, "--numstat", slotBase, "--"), realIndex: true},
+	// c9125eb8 and 4c111e86 run `diff --no-color HEAD` (measured on Linux). claustrum's
+	// own, not measured: its run argv, and a ref other than HEAD gets the refusal.
+	{sent: []string{"diff", "--no-color", "HEAD"}, run: paneDiffRun(true, "--no-color", "HEAD", "--"), realIndex: true},
 	{sent: []string{"diff", "-z", "--no-color", "--name-status", "-M", slotBase},
 		run: paneDiffRun(false, "-z", "--no-color", "--name-status", "-M", slotBase, "--"), realIndex: true},
 	{sent: []string{"diff", "--inter-hunk-context=3", slotBase},
