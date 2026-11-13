@@ -67,6 +67,38 @@ func TestCheckLauncherFileLinkLoop(t *testing.T) {
 	checkFile(t, "loop in a folder of the path", mid, right, FaultLinks, links(mid))
 }
 
+// TestCheckLauncherFileMoved pins the check by handle (claustrum's own, not measured).
+// The facts seam swaps the folder x for a new one with the same launcher while the walk
+// tests x. The walk then passes, and the check by handle refuses x as changed. With no
+// swap, and with a digest, the same launcher passes.
+func TestCheckLauncherFileMoved(t *testing.T) {
+	d := launcherDir(t)
+	x := filepath.Join(d, "x")
+	L := writeLauncher(t, filepath.Join(x, "launcher.sh"), "#!/bin/sh\n", 0o755)
+	fakeLauncherFacts(t, nil)
+	right := LauncherCheck{SHA256: []string{digestOf(t, L)}}
+	checkFile(t, "no swap", L, LauncherCheck{}, "", "")
+	checkFile(t, "no swap, digest", L, right, "", "")
+	moved := "`" + x + "` changed while the launcher was checked, so the launcher can't be trusted. Keep the launcher somewhere that no other account can change."
+	for i, chk := range []LauncherCheck{{}, right} {
+		swapped := false
+		launcherPathFacts = func(p string) (launcherFacts, error) {
+			if p == x && !swapped {
+				swapped = true
+				if err := os.Rename(x, filepath.Join(d, fmt.Sprintf("old%d", i))); err != nil {
+					return launcherFacts{}, err
+				}
+				writeLauncher(t, L, "#!/bin/sh\n", 0o755)
+			}
+			return launcherFacts{mode: 0o755}, nil
+		}
+		checkFile(t, fmt.Sprintf("swap %d", i), L, chk, FaultWritable, moved)
+		if !swapped {
+			t.Fatalf("swap %d: the walk never tested %s", i, x)
+		}
+	}
+}
+
 // TestLauncherFSTypeReal pins that the f_type seam reads the real statfs: /proc gives
 // the proc f_type and no server file system name.
 func TestLauncherFSTypeReal(t *testing.T) {

@@ -15,8 +15,8 @@ import (
 // The file check of a launcherCheck (c9125eb8). process.spawn and launcher.resolve
 // run it on a launcher when the request carries a launcherCheck. Only Linux runs it:
 // macOS and Windows refuse first (LauncherCheckHostRefusal). Every text is copied byte
-// for byte from a capture of c9125eb8 on Linux, unless its comment says "claustrum's
-// own, not measured".
+// for byte from a capture of c9125eb8 on Linux, unless its comment names 4c111e86 or
+// says "claustrum's own, not measured".
 
 // LauncherCheck is the launcherCheck member of process.spawn and launcher.resolve. sha256
 // is a list of digests (a string gets Invalid params, measured on Windows). ownerUid
@@ -80,24 +80,29 @@ var (
 // claustrum's own, not measured, except where a row shows two faults of one launcher:
 //
 //  1. A relative p is not_absolute.
+//
 //  2. A name with a script ending is script_suffix (the endings of Check). X.JS passes.
+//
 //  3. A p that leads through too many links, or a loop, is links (a chain of 41, a loop
 //     of 2 and a self loop are measured with a digest, a chain of 40 passes). The system call gives
 //     ELOOP there, and a link loop in a folder of p gets the same fault (claustrum's
 //     own, not measured). A p that is missing, a dangling link or no regular file is
 //     missing.
+//
 //  4. The walk: "/", each folder down to the launcher, then the launcher. It walks the
 //     folders of p as written, then the folders of p after its links (claustrum's own,
 //     not measured). Each item runs the file system test, then the owner test, then the write
 //     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
 //     before its own folders (measured).
+//
 //  5. A launcher that this account cannot run is missing.
+//
 //  6. With digests: the size limit, the read, and the compare. {} and an empty list
 //     pass (measured). Without digests the file is not read (claustrum's own, not
 //     measured).
 //
-// A folder or a file that changes between the check and the start is not guarded
-// (claustrum's own, not measured).
+//  7. On Linux, the check by handle (launcherMoved). A folder or a file that changes
+//     after it, before the start, is not guarded (claustrum's own, not measured).
 func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 	shown := managedShown(p)
 	switch {
@@ -114,6 +119,10 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 		return FaultMissing, managedNotExecutable(p)
 	}
 	target, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return FaultMissing, managedNotExecutable(p)
+	}
+	look, err := lookLauncherPath(target)
 	if err != nil {
 		return FaultMissing, managedNotExecutable(p)
 	}
@@ -139,10 +148,12 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 	if !IsExecutableRegular(p) {
 		return FaultMissing, "launcher `" + shown + "` is there, but the account that signs in cannot run it (its mode, or a file system mounted noexec)"
 	}
-	if !digests {
-		return "", ""
+	if digests {
+		if f, r := checkLauncherDigest(target, shown, fi.Size(), chk.SHA256); f != "" {
+			return f, r
+		}
 	}
-	return checkLauncherDigest(target, shown, fi.Size(), chk.SHA256)
+	return launcherMoved(target, look)
 }
 
 // linkHolderFolders walks the absolute path p one name at a time, as the system does,
@@ -201,9 +212,11 @@ func launcherFolders(dir string) []string {
 // checkLauncherItem tests one item of the walk. Root owns a good item, or the
 // ownerUid of the launcherCheck does. A group or other write bit refuses it, the
 // sticky folder 1777 too. On NFS, FUSE or SMB with no digest the item is refused,
-// whatever its owner and mode. With a digest the owner and write tests still run there
-// (claustrum's own, not measured). An item whose facts cannot be read is missing
-// (claustrum's own, not measured).
+// whatever its owner and mode. A FUSE mount of the uid of the daemon gets writable
+// there, also with that uid as ownerUid. With a digest the owner test still
+// runs, and that mount gets owner (both rules: 4c111e86, measured on Linux). The write test
+// there is claustrum's own, not measured. An item whose
+// facts cannot be read is missing (claustrum's own, not measured).
 func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (fault, reason string) {
 	f, err := launcherPathFacts(item)
 	shown := "`" + managedShown(item) + "`"
@@ -211,14 +224,17 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 		return FaultMissing, managedNotExecutable(launcher)
 	}
 	if f.fs != "" && !digests {
-		return FaultWritable, shown + " is on a file system (" + f.fs + ") whose server decides who can change it, whatever its owner and mode show. Add the launcher's SHA-256 digest to sshHostLauncher as sha256."
+		// The NFS and the FUSE text follow 4c111e86 (measured on Linux). The SMB text
+		// uses the same words with its own name (claustrum's own, not measured).
+		return FaultWritable, shown + " is on " + f.fs + ", so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
 	}
 	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
 		// The order of the three texts, for a daemon that runs as uid 65534, is
-		// claustrum's own, not measured.
+		// claustrum's own, not measured. The first text follows 4c111e86 (measured on
+		// Linux, on a FUSE mount).
 		switch {
 		case int64(f.uid) == int64(launcherOwnUID()):
-			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root, or another account named as ownerUid in the policy, must own the launcher and every folder above it.", shown, f.uid)
+			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root must own the launcher and every folder above it.", shown, f.uid)
 		case f.uid == nobodyUID:
 			return FaultOwner, shown + " shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it."
 		default:

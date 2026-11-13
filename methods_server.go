@@ -68,7 +68,8 @@ var capabilityMethods = append(append([]string{
 // git.status.own_lfs_store after git.hooks_null_device (measured on Linux, macOS and
 // Windows). c9125eb8 inserted process.spawn.git_read after process.spawn.failure_reason
 // and launcher.supplies_cli after launcher.non_string_refused (measured on Linux, macOS
-// and Windows). The array is always emitted.
+// and Windows). 4c111e86 lists two launcher names before server.instance_id on Linux
+// (launcherOSFeatures, measured on Linux). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.kill.farewell",

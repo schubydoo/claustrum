@@ -117,11 +117,16 @@ func TestSocketResponseBattery(t *testing.T) {
 		normalized[i] = normResp(r)
 	}
 	golden := "socket_responses.golden.json"
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		// server.capabilities drops git.worktree.external_root on Windows (the
 		// external-worktree capability is gated off there — capfeatures_windows.go), so
 		// the battery's capabilities frame differs from the unix golden on that one field.
 		golden = "socket_responses_windows.golden.json"
+	case "darwin":
+		// Only Linux lists launcher.checked_by_handle and launcher.local_kinds_only
+		// (capfeatures_launcher_linux.go).
+		golden = "socket_responses_darwin.golden.json"
 	}
 	assertGolden(t, golden, encodeGolden(t, normalized))
 }
