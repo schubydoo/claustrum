@@ -945,7 +945,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	var lfs privateStore
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path = filepath.Join(idxDir, "lfs")
-		lfs.seed = func() { fillCheckoutStore(u, leaf, u.gitDir, rev, lfs.path) }
+		lfs.seed = func() { fillCheckoutStore(ctx, u, leaf, u.gitDir, rev, lfs.path) }
 	}
 	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, lfs, pin, rule,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",

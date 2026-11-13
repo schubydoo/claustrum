@@ -3,9 +3,11 @@
 package git
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -393,5 +395,92 @@ func TestRemoveFileAtKeepsFolder(t *testing.T) {
 	}
 	if err := removeFileAt(root, folder); err == nil || !exists(filepath.Join(dir, folder)) {
 		t.Errorf("removeFileAt of a folder = %v, want it kept", err)
+	}
+}
+
+// TestCommitPointersStopsAtDeadline: the scan of the seed runs under the
+// context of the caller. With no deadline it gives the pointers, and after
+// the deadline it gives none.
+func TestCommitPointersStopsAtDeadline(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
+	if got := commitPointers(context.Background(), gitUse{}, f.repo, "HEAD"); len(got) != 2 {
+		t.Fatalf("commitPointers = %+v, want the two pointers", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := pointerScanGit(ctx, gitUse{}, f.repo, nil, io.Discard, "ls-tree", "HEAD"); err == nil {
+		t.Error("the ls-tree call of the seed after the deadline = nil error, want a failure")
+	}
+	if got := commitPointers(ctx, gitUse{}, f.repo, "HEAD"); len(got) != 0 {
+		t.Errorf("commitPointers after the deadline = %+v, want none", got)
+	}
+}
+
+// TestSeedObjectsStopsAtDeadline: a seed after the deadline of the caller puts
+// no object into the private store, also by a hard link.
+func TestSeedObjectsStopsAtDeadline(t *testing.T) {
+	store, private := filepath.Join(t.TempDir(), "lfs"), filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("a", 64)
+	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	seedObjects(ctx, store, private, []pointerRef{{oid: oid, size: 12}})
+	if p := storeObjectPath(private, oid); exists(p) {
+		t.Errorf("%s exists, want no seed after the deadline", p)
+	}
+	seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
+	if p := storeObjectPath(private, oid); !exists(p) {
+		t.Errorf("%s is missing, want the seed with no deadline", p)
+	}
+}
+
+// TestLFSKeepRefusesSwappedShardFolder: a shard folder that turns into a link
+// after its Lstat, here to another folder of `lfs/objects`, gets no keep and
+// no sweep.
+func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
+	gitDir, private := t.TempDir(), t.TempDir()
+	oid := strings.Repeat("e", 64)
+	objects := filepath.Join(gitDir, "lfs", "objects")
+	for _, d := range []string{filepath.Join(objects, "ee", "ee"), filepath.Join(objects, "alt", "ee")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale := filepath.Join(objects, "alt", "ee", ".claude-aaaaaaaa-"+oid)
+	mustWrite(t, stale, "stale")
+	mustWrite(t, storeObjectPath(private, oid), "x")
+	var removed []string
+	seamLFSRemove(t, &removed)
+	prev := openShardFolder
+	swapped := false
+	openShardFolder = func(parent *os.Root, name string) (*os.Root, error) {
+		if name == "ee" && !swapped {
+			swapped = true
+			if err := os.Rename(filepath.Join(objects, "ee"), filepath.Join(objects, "moved")); err != nil {
+				t.Error(err)
+			}
+			if err := os.Symlink("alt", filepath.Join(objects, "ee")); err != nil {
+				t.Error(err)
+			}
+		}
+		return prev(parent, name)
+	}
+	t.Cleanup(func() { openShardFolder = prev })
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	returnDownload(root, gitDir, private, oid, time.Now())
+	if !swapped {
+		t.Fatal("the seam did not swap the shard folder")
+	}
+	for _, p := range []string{filepath.Join(objects, "alt", "ee", oid), filepath.Join(objects, "moved", "ee", oid)} {
+		if _, err := os.Lstat(p); err == nil {
+			t.Errorf("%s exists, want no keep", p)
+		}
+	}
+	if len(removed) != 0 {
+		t.Errorf("removed %q, want no sweep", removed)
 	}
 }

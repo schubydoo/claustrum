@@ -1,12 +1,18 @@
 package git
 
 import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -76,12 +82,38 @@ func TestReadPointerBlob(t *testing.T) {
 	}
 }
 
+// listBlobs feeds out to a blobLister in pieces of size step, as a pipe
+// gives it, and returns the ids.
+func listBlobs(out []byte, step int) []string {
+	var l blobLister
+	for len(out) > 0 {
+		k := min(step, len(out))
+		_, _ = l.Write(out[:k])
+		out = out[k:]
+	}
+	l.end()
+	return l.ids
+}
+
+// readBatch feeds out to a batchReader in pieces of size step.
+func readBatch(out []byte, step int) []pointerRef {
+	var b batchReader
+	for len(out) > 0 {
+		k := min(step, len(out))
+		_, _ = b.Write(out[:k])
+		out = out[k:]
+	}
+	return b.ps
+}
+
 // TestSmallBlobs: the blobs of at most pointerBlobMax bytes, each once.
 func TestSmallBlobs(t *testing.T) {
 	out := "100644 blob aaaa     120\ta.bin\x00100644 blob bbbb    1025\tbig\x00" +
 		"160000 commit cccc       -\tsub\x00100644 blob aaaa     120\tcopy.bin\x00100644 blob dddd    1024\tedge\x00"
-	if got, want := smallBlobs([]byte(out)), []string{"aaaa", "dddd"}; !slices.Equal(got, want) {
-		t.Errorf("smallBlobs = %q, want %q", got, want)
+	for _, step := range []int{1, 7, len(out)} {
+		if got, want := listBlobs([]byte(out), step), []string{"aaaa", "dddd"}; !slices.Equal(got, want) {
+			t.Errorf("step %d: ids = %q, want %q", step, got, want)
+		}
 	}
 }
 
@@ -92,9 +124,157 @@ func TestBatchPointers(t *testing.T) {
 	ptr := "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize 7\n"
 	out := "1111 missing\n" + fmt.Sprintf("2222 blob %d\n%s\n", len(ptr), ptr) + "3333 blob 3\nab\n\n" +
 		fmt.Sprintf("4444 blob %d\n%s\n", len(ptr), ptr)
-	got := batchPointers([]byte(out))
-	if len(got) != 1 || got[0].oid != oid || got[0].size != 7 {
-		t.Errorf("batchPointers = %+v, want the one pointer", got)
+	for _, step := range []int{1, 7, len(out)} {
+		got := readBatch([]byte(out), step)
+		if len(got) != 1 || got[0].oid != oid || got[0].size != 7 {
+			t.Errorf("step %d: pointers = %+v, want the one pointer", step, got)
+		}
+	}
+}
+
+// wholeSmallBlobs and wholeBatchPointers read a whole output at once, as the
+// seed did before it read the output as it comes. They are the reference of
+// TestLargeScanOutputs.
+func wholeSmallBlobs(out []byte) []string {
+	var ids []string
+	seen := map[string]bool{}
+	for rec := range bytes.SplitSeq(out, []byte{0}) {
+		head, _, ok := bytes.Cut(rec, []byte{'\t'})
+		f := strings.Fields(string(head))
+		if !ok || len(f) != 4 || f[1] != "blob" || seen[f[2]] {
+			continue
+		}
+		if n, err := strconv.Atoi(f[3]); err != nil || n > pointerBlobMax {
+			continue
+		}
+		seen[f[2]] = true
+		ids = append(ids, f[2])
+	}
+	return ids
+}
+
+func wholeBatchPointers(out []byte) []pointerRef {
+	var ps []pointerRef
+	seen := map[string]bool{}
+	r := bufio.NewReader(bytes.NewReader(out))
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return ps
+		}
+		f := strings.Fields(line)
+		if len(f) == 2 && f[1] == "missing" {
+			continue
+		}
+		if len(f) != 3 {
+			return ps
+		}
+		n, err := strconv.Atoi(f[2])
+		if err != nil || n < 0 {
+			return ps
+		}
+		body := make([]byte, n)
+		if _, err := io.ReadFull(r, body); err != nil {
+			return ps
+		}
+		_, _ = r.ReadByte()
+		if p, ok := readPointerBlob(body); ok && !seen[p.oid] {
+			seen[p.oid] = true
+			ps = append(ps, p)
+		}
+	}
+}
+
+// TestLargeScanOutputs: a large `ls-tree` output with long paths and a large
+// `cat-file --batch` output, read in pieces, give the result of a whole read.
+func TestLargeScanOutputs(t *testing.T) {
+	var lsTree, batch bytes.Buffer
+	long := strings.Repeat("p/", 3000)
+	for i := range 60000 {
+		id := fmt.Sprintf("%040x", i%50000)
+		size := []int{0, 120, 1024, 1025, 4096}[i%5]
+		path := fmt.Sprintf("f%d.bin", i)
+		if i%97 == 0 {
+			path = long + path
+		}
+		fmt.Fprintf(&lsTree, "100644 blob %s %7d\t%s\x00", id, size, path)
+		if i%11 == 0 {
+			fmt.Fprintf(&lsTree, "160000 commit %s       -\tsub%d\x00", id, i)
+		}
+		if i%13 == 0 {
+			fmt.Fprintf(&batch, "%s missing\n", id)
+			continue
+		}
+		body := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%064x\nsize %d\n", i%40000, i)
+		if i%7 == 0 {
+			body = "not a pointer"
+		}
+		fmt.Fprintf(&batch, "%s blob %d\n%s\n", id, len(body), body)
+	}
+	wantIDs, wantPs := wholeSmallBlobs(lsTree.Bytes()), wholeBatchPointers(batch.Bytes())
+	if len(wantIDs) == 0 || len(wantPs) == 0 {
+		t.Fatalf("the fixture gives %d ids and %d pointers, want some", len(wantIDs), len(wantPs))
+	}
+	for _, step := range []int{1, 4093, 65536, lsTree.Len()} {
+		if got := listBlobs(lsTree.Bytes(), step); !slices.Equal(got, wantIDs) {
+			t.Errorf("step %d: %d ids, want the %d ids of a whole read", step, len(got), len(wantIDs))
+		}
+	}
+	for _, step := range []int{1, 4093, 65536, batch.Len()} {
+		if got := readBatch(batch.Bytes(), step); !slices.Equal(got, wantPs) {
+			t.Errorf("step %d: %d pointers, want the %d pointers of a whole read", step, len(got), len(wantPs))
+		}
+	}
+}
+
+// TestIDLines: the stdin of `cat-file --batch` is each id on its own line.
+func TestIDLines(t *testing.T) {
+	b, err := io.ReadAll(&idLines{ids: []string{"aaaa", "bbbb", "cccc"}})
+	if err != nil || string(b) != "aaaa\nbbbb\ncccc\n" {
+		t.Errorf("idLines = %q, %v", b, err)
+	}
+}
+
+// TestCopySeedLeavesNoPartialObject: a copy of the seed that fails midway
+// leaves no file at the name of the object. Its temp stays in the checkout
+// folder.
+func TestCopySeedLeavesNoPartialObject(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "obj")
+	mustWrite(t, src, "alpha-object")
+	checkout := t.TempDir()
+	dst := filepath.Join(checkout, "lfs", "obj")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	prev := seedCopy
+	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		n, _ := io.CopyN(w, r, 3)
+		return n, io.ErrUnexpectedEOF
+	}
+	t.Cleanup(func() { seedCopy = prev })
+	if err := copySeed(context.Background(), src, dst, checkout); err == nil {
+		t.Fatal("copySeed with a failed copy = nil, want the error")
+	}
+	if _, err := os.Lstat(dst); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s after a failed copy: %v, want no file", dst, err)
+	}
+	seedCopy = prev
+	if err := copySeed(context.Background(), src, dst, checkout); err != nil || mustRead(t, dst) != "alpha-object" {
+		t.Errorf("copySeed = %v, want the whole object at its name", err)
+	}
+}
+
+// TestCopySeedStopsAtDeadline: a copy of the seed after the deadline of the
+// caller makes no object.
+func TestCopySeedStopsAtDeadline(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "obj")
+	mustWrite(t, src, "alpha-object")
+	checkout := t.TempDir()
+	dst := filepath.Join(checkout, "obj")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := copySeed(ctx, src, dst, checkout); err == nil || exists(dst) {
+		t.Errorf("copySeed after the deadline = %v, exists %v, want an error and no object", err, exists(dst))
 	}
 }
 
