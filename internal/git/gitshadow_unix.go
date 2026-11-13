@@ -5,6 +5,7 @@ package git
 import (
 	"errors"
 	"os"
+	"runtime"
 	"syscall"
 )
 
@@ -78,22 +79,63 @@ func (gitUse) listedSwap() (fileSwap, changed bool) {
 // openShadowLockFile makes the lock file of the daemon (0600, 0 bytes) and
 // takes the lock of the daemon on it. The daemon holds the lock until it closes
 // the file. On Linux /proc/locks shows `FLOCK ADVISORY WRITE <daemon pid>` for
-// that file of 5fd08069 (measured). macOS has no such record. A lock that the
-// system refuses is not measured: its text is claustrum's own. The open follows
-// no link at the last name, as on 5fd08069 (`O_NOFOLLOW`, Linux).
+// that file of 5fd08069 (measured). macOS has no such record. A lock held
+// elsewhere fails the step. On a mount whose flock answers ENOLCK, c9125eb8
+// goes on and every git request succeeds (measured on Linux). claustrum
+// follows: after the errors of flockGoesOn it keeps the open file with no lock
+// (takeFlock). The open follows no link at the last name, as on 5fd08069
+// (`O_NOFOLLOW`, Linux).
 func openShadowLockFile(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	if err := flockNoWait(f); err != nil {
+	if _, err := takeFlock(f); err != nil {
 		_ = f.Close()
 		return nil, &os.PathError{Op: "flock", Path: path, Err: err}
 	}
 	return f, nil
 }
 
-func flockNoWait(f *os.File) error {
+// flockTries is the most flock calls of takeFlock while each answers EINTR
+// (claustrum's own, not measured).
+const flockTries = 8
+
+// takeFlock takes a lock with no wait on f. locked is false with no error
+// after an error of flockGoesOn. Every other error comes back, so the caller
+// keeps its refusal. After EINTR the lock is tried again, up to flockTries
+// calls, and then the EINTR comes back (claustrum's own, not measured).
+func takeFlock(f *os.File) (locked bool, err error) {
+	for range flockTries {
+		err = flockNoWait(f)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, syscall.EINTR):
+			continue
+		case flockGoesOn(err):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+	return false, err
+}
+
+// flockGoesOn reports whether a flock error lets the step go on with no lock.
+// c9125eb8 goes on after ENOLCK on Linux and after ENOTSUP of a FIFO lock on
+// macOS (measured). Any other error keeps the refusal (claustrum's own, not
+// measured).
+func flockGoesOn(err error) bool {
+	if runtime.GOOS == "darwin" {
+		return errors.Is(err, syscall.ENOTSUP)
+	}
+	return errors.Is(err, syscall.ENOLCK)
+}
+
+// flockNoWait is the flock call with no wait. A variable, so that a test can
+// give an error of the system.
+var flockNoWait = func(f *os.File) error {
 	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 }
 
@@ -131,19 +173,24 @@ func isSweepLink(fi os.FileInfo) bool {
 // root, with create and mode 0600, and takes a lock with no wait on it. The
 // open fails at a lock in use by another daemon or by another process with
 // flock, and the folder then stays (measured on Linux). A file that is open
-// with no flock does not stop it (measured). Any other error of the lock keeps
-// the folder too (claustrum's own, not measured).
-func takeSweepLock(root *os.Root, _, rel string) (*os.File, error) {
-	f, err := root.OpenFile(rel, os.O_CREATE|os.O_RDWR, 0o600)
+// with no flock does not stop it (measured). After an error of flockGoesOn,
+// locked is false (takeFlock), and sweepEntry decides by name and age.
+func takeSweepLock(root *os.Root, _, rel string) (f *os.File, locked bool, err error) {
+	f, err = root.OpenFile(rel, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if err := flockNoWait(f); err != nil {
+	if locked, err = takeFlock(f); err != nil {
 		_ = f.Close()
-		return nil, err
+		return nil, false, err
 	}
-	return f, nil
+	return f, locked, nil
 }
+
+// sweepLockMayBeFIFO is true on macOS. There c9125eb8 removes a stale folder
+// whose lock is a FIFO (flock gives ENOTSUP) at 10 days, and keeps a new one
+// (measured). On Linux a FIFO lock keeps the folder (not measured).
+const sweepLockMayBeFIFO = runtime.GOOS == "darwin"
 
 // linkedLockOpen tests the lock file at path with a read open and a lock with
 // no wait, and gives both back at once. The open follows no link at the last

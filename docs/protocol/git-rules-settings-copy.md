@@ -130,7 +130,9 @@ written as `_` (measured for `-` and `.` on Linux and macOS). On Linux and macOS
 folder and each folder of a copy have mode `0700`, and the files of a copy have
 `0600`. The daemon makes the folder at the first request that runs the test. It holds
 an exclusive lock on the file `lock` in it for its whole life. On Windows the hold is
-an open handle with no sharing.
+an open handle with no sharing. On a mount whose `flock` answers `ENOLCK`, `c9125eb8`
+goes on with no lock, and each git request succeeds (measured on Linux). claustrum
+follows. Any other `flock` error still fails the request (claustrum's own, not measured).
 
 - At `-stop` and at `server.shutdown` the daemon removes its folder. The empty
   `git-shadow` stays (Linux, macOS and Windows).
@@ -193,9 +195,15 @@ held lock keeps the folder of a live daemon.
   days goes.
 - On Windows the held lock keeps the folder of a live daemon from a remove by hand,
   so no later request sweeps again.
-- A lock error other than a held lock keeps the entry. A folder with no lock file
-  that is less than 1 minute old stays and gets none. Both are claustrum's own, not
-  measured.
+- `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
+  follows. After such an error a folder of either name goes past 7 days. The 7 days
+  are claustrum's own, not measured.
+- The rows show 8 days removed and 1 hour kept. Linux measured a folder of another
+  host's name, and macOS one of this host's name form.
+- Another lock error keeps the entry, and so does a FIFO lock on Linux. A link whose
+  target lock gives an error stays. All three are claustrum's own, not measured.
+- A folder with no lock file that is less than 1 minute old stays and gets none
+  (claustrum's own, not measured).
 - A planted link, or a junction on Windows, goes as a link, and claustrum makes no
   lock file in its target ([D8](../DIVERGENCES.md#d8)).
 

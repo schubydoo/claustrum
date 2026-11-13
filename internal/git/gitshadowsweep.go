@@ -45,7 +45,12 @@ var errSweepLockKind = errors.New("the lock entry is not a regular file")
 // so a new lock file makes the folder new (measured). On Windows it is read
 // before (sweepAgeBeforeLock). A folder whose lock is held stays (measured).
 // An entry whose lock cannot be opened stays: a folder of mode 000, a regular
-// file and a lock that is a link (measured). A remove that fails part way
+// file and a lock that is a link (measured). c9125eb8 goes on after ENOLCK on
+// Linux and a FIFO lock on macOS, and claustrum follows (flockGoesOn). The rows
+// show 8 days removed and 1 hour kept: on Linux for a folder of another
+// host's name, on macOS (10 days) for one of this host's name form. After such
+// an error a folder of either name goes past shadowSweepAge. The 7 days are
+// claustrum's own (not measured). A remove that fails part way
 // leaves the rest, and the request goes on (measured). With git-shadow a link
 // to a folder, the sweep works in that folder (measured). A folder with no
 // lock file that is less than shadowSweepNewAge old stays (claustrum's own,
@@ -91,11 +96,11 @@ func (h *ShadowHost) sweepEntry(root *os.Root, base, name, prefix string) {
 	if err != nil || missing && time.Since(fi.ModTime()) < shadowSweepNewAge {
 		return
 	}
-	lock, err := takeSweepLock(root, base, rel)
+	lock, locked, err := takeSweepLock(root, base, rel)
 	if err != nil {
 		return
 	}
-	if !strings.HasPrefix(name, prefix) {
+	if !locked || !strings.HasPrefix(name, prefix) {
 		if !sweepAgeBeforeLock {
 			fi, err = root.Lstat(name)
 		}
@@ -104,20 +109,29 @@ func (h *ShadowHost) sweepEntry(root *os.Root, base, name, prefix string) {
 			return
 		}
 	}
-	if sweepClosesLockFirst {
+	if sweepClosesLockFirst || !locked {
 		_ = lock.Close()
-		_ = h.removeEntry(name)
+		_ = sweepRemove(h, name)
 		return
 	}
-	_ = h.removeEntry(name)
+	_ = sweepRemove(h, name)
 	_ = lock.Close()
 }
+
+// sweepRemove is the remove of one swept folder (removeEntry). A variable, so
+// that a test can see the state of the lock file at the remove.
+//
+// A lock that was not taken is closed before the remove. On a FUSE mount whose
+// flock answers ENOLCK, the folder of a lock file that is open is not empty at
+// its rmdir after the unlink of that file. c9125eb8 still removes the folder
+// (measured on Linux). The close first is claustrum's own.
+var sweepRemove = (*ShadowHost).removeEntry
 
 // sweepLockKind refuses a lock entry at rel that is there and is no regular
 // file, or whose look fails. A missing entry passes with missing true: the
 // lock step makes it. On 5fd08069 the open of a lock that is a link fails with
-// ELOOP, and the folder stays (measured). Another kind of entry is not
-// measured.
+// ELOOP, and the folder stays (measured). A FIFO passes on macOS
+// (sweepLockMayBeFIFO). Another kind of entry is not measured.
 func sweepLockKind(root *os.Root, rel string) (missing bool, err error) {
 	fi, err := root.Lstat(rel)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -126,7 +140,8 @@ func sweepLockKind(root *os.Root, rel string) (missing bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	if !fi.Mode().IsRegular() {
+	fifo := sweepLockMayBeFIFO && fi.Mode()&fs.ModeNamedPipe != 0
+	if !fi.Mode().IsRegular() && !fifo {
 		return false, errSweepLockKind
 	}
 	return false, nil
@@ -138,7 +153,8 @@ func sweepLockKind(root *os.Root, rel string) (missing bool, err error) {
 // target and removes the link. The content of the target stays (measured on
 // Linux). claustrum makes no file in the target (D8). It tests the lock of the
 // target with a read open, which makes nothing. A lock that is held keeps the
-// link (not measured). Then the link goes with one plain remove (removeLink).
+// link (not measured). A link whose target lock gives any error stays
+// (claustrum's own). Then the link goes with one plain remove (removeLink).
 // On Windows 5fd08069 does the same for a directory symbolic link and for a
 // junction, and it makes the lock file in the target too (measured). The age of
 // a link with another name is the mtime of its target (not measured). A link to
