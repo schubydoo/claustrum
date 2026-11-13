@@ -6,11 +6,11 @@ import "testing"
 
 // On Windows the reference gates the custom-worktree-location (worktreeRoot) capability
 // off, refusing worktree_create and worktree_remove with a fixed message naming the
-// root. Assert claustrum emits that exact refusal for both verbs. A remove puts the
-// root in backticks (b3081b51, measured on Windows). A create keeps it plain
-// (claustrum's own, not measured).
+// root. Assert claustrum emits that exact refusal for both verbs. The root is in
+// backticks on remove (b3081b51) and on create (c9125eb8 and 4c111e86), measured on
+// Windows.
 func TestExternalWorktreeUnsupportedOnWindows(t *testing.T) {
-	for verb, shown := range map[string]string{"create": `C:\ext`, "remove": "`C:\\ext`"} {
+	for verb, shown := range map[string]string{"create": "`C:\\ext`", "remove": "`C:\\ext`"} {
 		got := externalWorktreeUnsupportedRefusal(`C:\ext`, verb)
 		want := "refusing to " + verb + " worktree: " + shown + " cannot be used: a custom worktree location is not supported on Windows hosts yet"
 		if got != want {

@@ -17,7 +17,7 @@ An untagged rule on this page matches the reference as measured on `5fd08069` or
 | `worktreePath` | yes | The directory of the new worktree. It must not exist. |
 | `sourceBranch` | no | The name that the new branch starts from. The default is the current branch. An attach does not use it. |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, or the attach fails, the daemon creates `branchName` instead. |
-| `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path` and `refusing to create worktree: <root> cannot be used: a custom worktree location is not supported on Windows hosts yet`, with `<root>` plain (claustrum's own, not measured). |
+| `worktreeRoot` | no | A location outside the repository. Windows refuses it with `unsafe_path` and `` refusing to create worktree: `<root>` cannot be used: a custom worktree location is not supported on Windows hosts yet `` (`c9125eb8` and `4c111e86`, measured on Windows). |
 | `timeoutMs` | no | A deadline that starts before the first git call. It stops the read-tree call. The daemon tests it after the add and the copy step. The stop of the settle step from that start is measured (`683cc6a9`, Linux). For the other tests that start is claustrum's own, not measured. A wait behind another create of the repository does not count (claustrum's own). No value or `0` sets none. |
 | `shadowDirOff` | no | `true` turns off, for this request, the filter rule of the checkout, the daemon's own read of the repository's git config, the settings copy and the content check. Git requests that start meanwhile get the same. A command that starts meanwhile gets no copy (measured on Linux). Other values do nothing. |
 
