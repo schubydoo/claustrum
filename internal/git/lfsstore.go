@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 )
@@ -35,6 +36,7 @@ import (
 //     and a folder `lfs/objects` that cannot be written, keep nothing, and the
 //     create succeeds (measured on Linux). No object is kept after a failed or
 //     a stopped checkout (claustrum's own, not measured).
+//   - The sweep of stale temp names (sweepShardTemps).
 //
 // Claustrum's own, not measured: the seed reads the pointers with `ls-tree`
 // and `cat-file --batch` in the new worktree, and only when the repository
@@ -47,9 +49,20 @@ const (
 	// pointerBlobMax is the largest blob that the seed reads as a pointer
 	// (claustrum's own, the cutoff of git-lfs).
 	pointerBlobMax = 1024
+	// shardReadMax is the most entries that the sweep reads in one shard.
+	// Of 4300 old names, 205 or 206 stayed (measured on Linux). Claustrum
+	// reads at most 4096 entries.
+	shardReadMax = 4096
+	// staleTempAge is the age of a stale temp name of another object. A name 1
+	// minute old stays, and one 12 minutes old goes (measured on Linux and
+	// macOS). The bound of 10 minutes between them is claustrum's own.
+	staleTempAge = 10 * time.Minute
 )
 
-var oidPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var (
+	oidPattern    = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	staleTempName = regexp.MustCompile(`^\.claude-[0-9a-f]{8}-([0-9a-f]{64})$`)
+)
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
 // "" for the store of the git directory. seed runs the seed into path.
@@ -267,7 +280,7 @@ func returnDownloads(u gitUse, private string) {
 		return
 	}
 	for _, oid := range downloadedOIDs(private) {
-		returnDownload(a.root, a.path, private, oid)
+		returnDownload(a.root, a.path, private, oid, time.Now())
 	}
 }
 
@@ -292,9 +305,12 @@ func realShard(root *os.Root, rel string) bool {
 }
 
 // returnDownload keeps the object oid of the private store in the store of the
-// git directory root at dir. An object that the store already has is left. A
-// shard folder that is not the folder that realShard tested keeps nothing.
-func returnDownload(root *os.Root, dir, private, oid string) {
+// git directory root at dir. After the object has its name it sweeps the
+// shard (sweepShardTemps). An object that the store already has is left, with
+// no sweep: the shard of a seeded object keeps its temp names (measured on
+// Linux). A shard folder that is not the folder that realShard tested keeps
+// nothing.
+func returnDownload(root *os.Root, dir, private, oid string, now time.Time) {
 	rel := filepath.Join("lfs", "objects", oid[:2], oid[2:4])
 	if !realShard(root, rel) {
 		return
@@ -324,9 +340,12 @@ func returnDownload(root *os.Root, dir, private, oid string) {
 	if keepHardLink(shard, src, temp) != nil && !copyIntoRoot(shard, shardPath, src, temp) {
 		return
 	}
-	_ = shard.Link(temp, oid)
+	err = shard.Link(temp, oid)
 	// temp is the name that the keep built above, not a name from a read.
 	removeLFSStoreEntry(shard, shardPath, temp)
+	if err == nil {
+		sweepShardTemps(shard, shardPath, oid, now)
+	}
 }
 
 // copyIntoRoot copies the file src to the new file name of root, with mode
@@ -351,6 +370,38 @@ func copyIntoRoot(root *os.Root, rootPath, src, name string) bool {
 		return false
 	}
 	return true
+}
+
+// sweepShardTemps removes stale temp names from the shard of the object oid
+// that the keep just put in the store. It reads at most shardReadMax
+// entries. A regular file named `.claude-<8 hex>-<64 hex>` goes when its oid
+// is oid, or when it is older than staleTempAge (measured on Linux and macOS).
+// A name in upper case, a short oid and every other name stay (measured).
+// Only a regular file goes: that test is claustrum's own. Each remove is one
+// `unlinkat` of a file by a name from the directory read
+// (removeLFSStoreEntry). A name that turns into an empty folder after the
+// Lstat stays, because the remove takes only a file.
+func sweepShardTemps(shard *os.Root, shardPath, oid string, now time.Time) {
+	d, err := shard.Open(".")
+	if err != nil {
+		return
+	}
+	entries, _ := d.ReadDir(shardReadMax)
+	_ = d.Close()
+	for _, e := range entries {
+		m := staleTempName.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		fi, err := shard.Lstat(e.Name())
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if m[1] != oid && now.Sub(fi.ModTime()) <= staleTempAge {
+			continue
+		}
+		removeLFSStoreEntry(shard, shardPath, e.Name())
+	}
 }
 
 // removeLFSStoreFile is the one remove of the LFS store of a repository: one

@@ -44,8 +44,8 @@ import (
 //     installIndex for a create with no tested registration.
 //   - The registration of a rollback: removeTestedRegistration with
 //     deleteRoot, and removeCreatedRegistration.
-//   - On Linux and macOS, the LFS store `lfs/objects`: returnDownloads
-//     (lfsstore.go).
+//   - On Linux and macOS, the LFS store `lfs/objects`: returnDownloads and
+//     sweepShardTemps (lfsstore.go).
 //
 // By the path stay:
 //

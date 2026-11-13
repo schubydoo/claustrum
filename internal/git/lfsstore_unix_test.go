@@ -92,6 +92,12 @@ func (f lfsFixture) wantSuccess(t *testing.T) {
 	}
 }
 
+// shard is the shard folder of the object of name in the store of the
+// repository.
+func (f lfsFixture) shard(name string) string {
+	return filepath.Dir(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids[name]))
+}
+
 // TestLFSSeedIntoPrivateStore: the filter reads the store of the checkout
 // folder. A local object with the size of its pointer is there, also with
 // wrong bytes. An object of another size or a link is not, and git-lfs
@@ -168,6 +174,69 @@ func TestLFSKeepRefusesLink(t *testing.T) {
 	f.wantSuccess(t)
 	if names, _ := os.ReadDir(inner); len(names) != 0 {
 		t.Errorf("%s holds %v, want nothing behind the link", inner, names)
+	}
+}
+
+// TestLFSSweepStaleTempNames: after the keep, the shard of the kept object
+// loses the temp names of that object and those of another object older than
+// 10 minutes. A newer one, upper case, a short oid, another name, a link and a
+// folder stay. The shard of a seeded object keeps its names (measured on
+// Linux, the link and the folder are claustrum's own). A name that only holds
+// the pattern stays.
+func TestLFSSweepStaleTempNames(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
+	f.local(t, "a.bin", "alpha-object")
+	f.onServer(t, "b.bin")
+	ob, oa := f.oids["b.bin"], f.oids["a.bin"]
+	sb, sa := f.shard("b.bin"), f.shard("a.bin")
+	if err := os.MkdirAll(sb, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-12 * time.Minute)
+	files := []struct {
+		dir, name string
+		at        time.Time
+		goes      bool
+	}{
+		{sb, ".claude-aaaaaaaa-" + ob, time.Now(), true},
+		{sb, ".claude-bbbbbbbb-" + strings.Repeat("0", 64), old, true},
+		{sb, ".claude-cccccccc-" + strings.Repeat("1", 64), time.Now().Add(-time.Minute), false},
+		{sb, ".claude-dddddddd-" + strings.ToUpper(ob), old, false},
+		{sb, ".claude-eeeeeeee-" + ob[:60], old, false},
+		{sb, "other-file", old, false},
+		{sb, "x.claude-aaaaaaaa-" + ob, old, false},
+		{sb, ".claude-aaaaaaaa-" + ob + ".tmp", old, false},
+		{sb, ".claude-aaaaaaa-" + ob, old, false},
+		{sb, ".claude-aaaaaaaaa-" + ob, old, false},
+		{sa, ".claude-aaaaaaaa-" + oa, old, false},
+	}
+	for _, x := range files {
+		mustWrite(t, filepath.Join(x.dir, x.name), "stale")
+		if err := os.Chtimes(filepath.Join(x.dir, x.name), x.at, x.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(sb, ".claude-ffffffff-"+ob)
+	if err := os.Symlink("other-file", link); err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Join(sb, ".claude-11111111-"+ob)
+	if err := os.Mkdir(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.wantSuccess(t)
+	for _, x := range files {
+		if gone := !exists(filepath.Join(x.dir, x.name)); gone != x.goes {
+			t.Errorf("%s gone %v, want %v", x.name, gone, x.goes)
+		}
+	}
+	for _, p := range []string{link, folder} {
+		if _, err := os.Lstat(p); err != nil {
+			t.Errorf("%s: %v, want it kept", p, err)
+		}
+	}
+	if !exists(filepath.Join(sb, ob)) {
+		t.Error("the downloaded object is not in the store of the repository")
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // lfsSmudgeHelper is a stand-in git-lfs smudge filter (the helper mode
@@ -148,4 +149,53 @@ func seamLFSRemove(t *testing.T, removed *[]string) {
 		return nil
 	}
 	t.Cleanup(func() { removeLFSStoreFile = prev })
+}
+
+// TestLFSSweepReadsAtMost4096Entries: the sweep reads at most
+// shardReadMax entries of a shard (measured on Linux: of 4300 old names
+// 205 or 206 stay). The remove is the seam, so nothing goes.
+func TestLFSSweepReadsAtMost4096Entries(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-time.Hour)
+	for i := range 4100 {
+		p := filepath.Join(dir, fmt.Sprintf(".claude-%08x-%s", i, strings.Repeat("5", 64)))
+		mustWrite(t, p, "")
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var removed []string
+	seamLFSRemove(t, &removed)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	sweepShardTemps(root, dir, strings.Repeat("6", 64), time.Now())
+	if len(removed) != shardReadMax {
+		t.Errorf("the sweep removed %d names, want %d", len(removed), shardReadMax)
+	}
+}
+
+// TestLFSNoSweepAfterFailedKeep: a keep that makes no object sweeps nothing,
+// also a temp name of the same oid.
+func TestLFSNoSweepAfterFailedKeep(t *testing.T) {
+	gitDir := t.TempDir()
+	oid := strings.Repeat("e", 64)
+	shard := filepath.Join(gitDir, "lfs", "objects", "ee", "ee")
+	if err := os.MkdirAll(shard, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(shard, ".claude-aaaaaaaa-"+oid), "stale")
+	var removed []string
+	seamLFSRemove(t, &removed)
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	returnDownload(root, gitDir, t.TempDir(), oid, time.Now())
+	if len(removed) != 0 {
+		t.Errorf("removed %q, want no sweep after a failed keep", removed)
+	}
 }
