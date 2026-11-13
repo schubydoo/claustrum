@@ -369,7 +369,9 @@ the linked pages.
   working directory and variables. Without the member these are equal: the
   folder variables and the six heavy values of the light calls of a create. So
   is the `lfs.storage` item of the checkout. That is measured
-  on Linux and macOS in the state `shadow`. On Windows the variables and the
+  on Linux and macOS in the state `shadow`. On Linux and macOS the index folder
+  follows `4c111e86` (`.checkout-<n>`), and the `lfs.storage` item keeps
+  `<git dir>/lfs` where `4c111e86` names `.checkout-<n>/lfs`. On Windows the variables and the
   names of the short-lived entries are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
   The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries and the config call of the ssh

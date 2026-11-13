@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
 // gitUse says how the git calls of one request name their repository.
@@ -778,7 +780,8 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 //
 //   - `.gitdir-<n>` for one git.status (measured on Linux and Windows).
 //   - `.index-<n>` for the checkout of one create (measured). It has mode 0700
-//     on Linux (measured).
+//     on Linux (measured). On Linux and macOS 4c111e86 names it
+//     `.checkout-<n>` (checkoutDirPrefix, measured).
 //   - `.worktreeinclude-<n>` with the file `patterns` for one include step
 //     (measured).
 //
@@ -811,7 +814,8 @@ var requestDirMkdir = os.Mkdir
 // The error of a folder that cannot be made in the folder of the daemon names
 // its full path, with the operation `mkdir`. With a folder of the daemon of
 // mode 0500 a create of 5fd08069 answers `git worktree add failed (checkout):
-// mkdir <S>/.index-<n>: permission denied` (measured on Linux). On Windows
+// mkdir <S>/.index-<n>: permission denied` (measured on Linux). On Linux and
+// macOS claustrum prints `.checkout-<n>` there. On Windows
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
 // A folder of the daemon that cannot be opened is not measured: it gives the
@@ -832,7 +836,7 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		if err != nil {
 			return "", func() {}, err
 		}
-		return dir, func() { _ = os.RemoveAll(dir) }, nil
+		return dir, func() { removeTempRequestDir(dir) }, nil
 	}
 	root, err := os.OpenRoot(u.folder)
 	if err != nil {
@@ -860,4 +864,19 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		return filepath.Join(u.folder, name), func() { _ = u.host.removeEntry(rel) }, nil
 	}
 	return "", func() {}, err
+}
+
+// removeTempTree removes the temporary folder of a request as a tree. It is a
+// variable so that a test can see the call and make it inert.
+var removeTempTree = os.RemoveAll
+
+// removeTempRequestDir removes dir, a folder that requestDir made with
+// os.MkdirTemp in the temporary folder. homeguard.WipesHomeDir refuses a dir
+// that is home or holds home first, as for each delete of the folder
+// git-shadow (removeEntry). The guard is claustrum's own.
+func removeTempRequestDir(dir string) {
+	if homeguard.WipesHomeDir(dir) {
+		return
+	}
+	_ = removeTempTree(dir)
 }

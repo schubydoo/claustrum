@@ -39,7 +39,8 @@ func includeFixture(t *testing.T, repo string) {
 // It also pins that each is gone at the reply, after a good request and after a
 // failed one. In the state shadow 5fd08069 has them in the folder of the daemon:
 // `.gitdir-<n>` for a git.status (measured), `.index-<n>` for a checkout and
-// `.worktreeinclude-<n>/patterns` for the include step (measured on Linux). At
+// `.worktreeinclude-<n>/patterns` for the include step (measured on Linux).
+// 4c111e86 names the checkout folder `.checkout-<n>` (measured). At
 // the reply the folder of the daemon holds none of them. With
 // "shadowDirOff":true they are in the temporary folder (measured), and nothing
 // is left there.
@@ -77,8 +78,8 @@ func TestShadowRequestEntries(t *testing.T) {
 		if !strings.Contains(raw, `"success":true`) {
 			t.Fatalf("git.worktree_create = %s", raw)
 		}
-		if got := argOf(calls, "GIT_INDEX_FILE="+dir+"/"); !regexp.MustCompile(`^\.index-[0-9]+/index$`).MatchString(got) {
-			t.Errorf("GIT_INDEX_FILE of the checkout = %q, want .index-<n>/index in %s", got, dir)
+		if got := argOf(calls, "GIT_INDEX_FILE="+dir+"/"); !regexp.MustCompile(`^\.checkout-[0-9]+/index$`).MatchString(got) {
+			t.Errorf("GIT_INDEX_FILE of the checkout = %q, want .checkout-<n>/index in %s", got, dir)
 		}
 		if got := argOf(calls, "--exclude-from="+dir+"/"); !regexp.MustCompile(`^\.worktreeinclude-[0-9]+/patterns$`).MatchString(got) {
 			t.Errorf("the pattern file of the include step = %q, want .worktreeinclude-<n>/patterns in %s", got, dir)
@@ -122,7 +123,7 @@ func TestShadowRequestEntries(t *testing.T) {
 		if !strings.Contains(raw, `"error":"git worktree add failed (checkout): fatal: forced failure"`) {
 			t.Fatalf("git.worktree_create = %s", raw)
 		}
-		if got := argOf(calls, "GIT_INDEX_FILE="+daemonFolder(t, f.run)+"/"); !strings.HasPrefix(got, ".index-") {
+		if got := argOf(calls, "GIT_INDEX_FILE="+daemonFolder(t, f.run)+"/"); !strings.HasPrefix(got, ".checkout-") {
 			t.Errorf("GIT_INDEX_FILE of the checkout = %q", got)
 		}
 		if got, want := left(t, f), []string{shadowProbeName, shadowRepoName(f.gitDir), shadowLockName}; !slices.Equal(got, want) {

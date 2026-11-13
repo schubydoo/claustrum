@@ -54,6 +54,13 @@ const statusFollowsPrintedGitDir = false
 // test after a good answer (askGit).
 const probeConfigFreeRun = true
 
+// checkoutDirPrefix starts the name of the folder of the checkout of one create
+// in the folder of the daemon (runWorktreeCheckout). On Linux and macOS
+// 4c111e86 names it `.checkout-<n>` with a decimal number, and the index of the
+// checkout is in it (measured). claustrum uses the same name in the state
+// fallback-git (claustrum's own, not measured).
+const checkoutDirPrefix = ".checkout-"
+
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // the folder of the daemon. On Linux and macOS it goes through root, the root
 // at folder (requestDir). No row has a deny entry with enabled privileges on

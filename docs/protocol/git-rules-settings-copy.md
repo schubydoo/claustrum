@@ -150,14 +150,22 @@ an open handle with no sharing.
 - [The call about the repository](#the-call-about-the-repository) names a folder
   `.probe` of the daemon.
 - One request also keeps short-lived entries in the folder of the daemon:
-  `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a
-  create. Also `.config-<n>` for a create in a repository with a `config.worktree`
-  file, and `.s<n>`. In the state `fallback-git` the first three are there
+  `.gitdir-<n>` for a `git.status`, and `.index-<n>` (`.checkout-<n>` on Linux and
+  macOS, below) and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
+  create in a repository with a `config.worktree` file, and `.s<n>`. In the state `fallback-git` the first three are there
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
   `claude-ssh-worktreeinclude-<n>`. On Linux and macOS the index name is as on
   `89cb6289`. On Windows it is claustrum's own (not measured).
+- On Linux and macOS `4c111e86` names the index folder of a create
+  `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and gone
+  1 s later. claustrum removes it before the reply (claustrum's own). A killed
+  daemon leaves it. The next daemon removes it at its first request that uses the
+  copy (measured on Linux and macOS).
+  claustrum removes it with the folder of the old daemon in [the
+  sweep](#the-sweep-of-git-shadow) (from the code). On Windows `4c111e86` makes no
+  `.checkout-<n>` folder (measured), and claustrum keeps `.index-<n>`.
 - In the state `shadow` a create keeps `.readback-objects-<n>` there for its
   content check (`b3081b51`, measured on Linux).
 - On Windows, if the folder of the daemon denies new folders, a create still works

@@ -291,6 +291,15 @@ func TestGitTempNames(t *testing.T) {
 			t.Errorf("name %q, want %q", got, want)
 		}
 	}
+	// 4c111e86 names the checkout folder `.checkout-<n>` on Linux and macOS, and
+	// makes none on Windows (measured). claustrum keeps `.index-<n>` there.
+	want := ".checkout-"
+	if runtime.GOOS == "windows" {
+		want = ".index-"
+	}
+	if checkoutDirPrefix != want {
+		t.Errorf("checkoutDirPrefix = %q, want %q", checkoutDirPrefix, want)
+	}
 }
 
 // TestShadowRepoFailureRefusesTheRequest pins the answer of each method when
@@ -467,5 +476,52 @@ func TestShadowCreateWithBareInConfigWorktree(t *testing.T) {
 	raw = gitDispatch(t, d, rpcLine(t, "git.status", map[string]any{"path": leaf, "baseRepo": f.repo}))
 	if !strings.Contains(raw, `"result":{"isRepo":true,"clean":true}`) {
 		t.Errorf("git.status on the new worktree = %s", raw)
+	}
+}
+
+// TestTempRequestDirRemoveRefusesHome: the remove of a temporary request folder
+// asks for no tree delete of a folder that is home or holds home
+// (homeguard.WipesHomeDir). A folder below home is the control: its delete is
+// asked. The delete is a recorder and home is a folder below t.TempDir, so a
+// test without the guard deletes nothing. From the code, not measured.
+func TestTempRequestDirRemoveRefusesHome(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "claude-ssh-index-1")
+	mustWrite(t, filepath.Join(dir, "home", "file.txt"), "a file of home\n")
+	var asked []string
+	old := removeTempTree
+	removeTempTree = func(p string) error { asked = append(asked, p); return nil }
+	t.Cleanup(func() { removeTempTree = old })
+	for _, tc := range []struct {
+		name, home string
+		want       bool
+	}{
+		{"the folder is home", dir, false},
+		{"the folder holds home", filepath.Join(dir, "home"), false},
+		{"home is elsewhere", t.TempDir(), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked = nil
+			t.Setenv(homeEnvVar(), tc.home)
+			removeTempRequestDir(dir)
+			if got := len(asked) == 1 && asked[0] == dir; got != tc.want || len(asked) > 1 {
+				t.Errorf("with home %s the remove asked %q, want a delete of %s: %v", tc.home, asked, dir, tc.want)
+			}
+		})
+	}
+	if _, err := os.Stat(filepath.Join(dir, "home", "file.txt")); err != nil {
+		t.Errorf("the file below the folder: %v, want it kept", err)
+	}
+
+	// The remove of a folder that requestDir made in the temporary folder
+	// goes through that guarded step.
+	tmp, remove, err := (gitUse{}).requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(tmp) })
+	asked = nil
+	remove()
+	if !slices.Equal(asked, []string{tmp}) {
+		t.Errorf("the remove of the temporary folder asked %q, want a delete of %s", asked, tmp)
 	}
 }
