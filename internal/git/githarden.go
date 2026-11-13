@@ -487,16 +487,16 @@ var reapCheckoutGroup = sysproc.ReapProcessGroup
 //     listing, and the listing carries the five entries of the door too
 //     (c9125eb8, measured on Linux and macOS). Windows keeps the old order
 //     (doorReadBeforeListing).
-//   - The read-tree call has the item lfs.storage=<git directory>/lfs before the
-//     list of the profile. The pairs of the filter rule come before that item
-//     (measured on Linux). For a baseRepo that is a linked worktree the value is
-//     not measured: claustrum names the git directory of the repository. A user
+//   - The read-tree call has the item lfs.storage=<git directory>/lfs (Linux
+//     and macOS: `<checkout folder>/lfs`) before the list of the profile. The
+//     pairs of the filter rule come before that item (measured on Linux). For
+//     a baseRepo that is a linked worktree the value is not measured:
+//     claustrum names the git directory of the repository. A user
 //     config that sets lfs.storage removes the item (measured on Linux, macOS
-//     and Windows). On Linux and macOS the filter of a 4c111e86 checkout reads
-//     lfs.storage as `<checkout folder>/lfs` (measured). It finds the local
-//     objects in that store, and a new object reaches the store of the
-//     repository too (measured on Linux). claustrum keeps the store of the git
-//     directory, because it copies no object in or back yet.
+//     and Windows). On Linux and macOS the item names lfs.path, the store
+//     `<checkout folder>/lfs` (measured on 4c111e86). The seed into it runs
+//     right before the item (storeInCheckout, lfsstore.go). The moment of the
+//     seed is claustrum's own, not measured.
 //   - The read-tree call has LANGUAGE=C, and then the five entries of the
 //     ssh door (sshDoorEnv, measured on Linux).
 //
@@ -532,7 +532,7 @@ var reapCheckoutGroup = sysproc.ReapProcessGroup
 // every system can drive the two answers of the Windows test.
 var checkoutListedSwap = gitUse.listedSwap
 
-func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, pin []string, rule *filterRule, args ...string) (stderr string, drained bool, err error) {
+func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile string, lfs privateStore, pin []string, rule *filterRule, args ...string) (stderr string, drained bool, err error) {
 	if err := u.stop.halted(); err != nil {
 		return "", false, err
 	}
@@ -622,7 +622,12 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 			return "", false, checkoutRefusal(filters.refusal)
 		}
 		if !filters.userLfsStorage {
-			list = append(list, "-c", "lfs.storage="+filepath.Join(u.gitDir, "lfs"))
+			storage := filepath.Join(u.gitDir, "lfs")
+			if lfs.path != "" {
+				storage = lfs.path
+				lfs.seed()
+			}
+			list = append(list, "-c", "lfs.storage="+storage)
 		}
 		// The items of the `config.worktree` file come after that item and
 		// before the list of the profile (gitUse.checkoutFront).
@@ -937,7 +942,12 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		defer removeIdxDir()
 	}
 	idx := filepath.Join(idxDir, "index")
-	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, pin, rule,
+	var lfs privateStore
+	if storeInCheckout && u.shadow() && u.inFolder() {
+		lfs.path = filepath.Join(idxDir, "lfs")
+		lfs.seed = func() { fillCheckoutStore(ctx, u, leaf, u.gitDir, rev, lfs.path) }
+	}
+	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, lfs, pin, rule,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
@@ -945,6 +955,12 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	if err == nil || drained {
 		if u.swapped("index") {
 			return stderr, drained, errGitDirNotReal, nil
+		}
+		// The keep of the objects that git-lfs downloaded into the private
+		// store (lfsstore.go). It runs after a checkout that exited 0, before the
+		// settle step. The moment is claustrum's own, not measured.
+		if err == nil && lfs.path != "" && (rule == nil || !rule.plan.userLfsStorage) {
+			returnDownloads(u, lfs.path)
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the

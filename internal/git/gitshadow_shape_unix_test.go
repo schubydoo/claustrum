@@ -176,7 +176,6 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 	}
 	p20, p28 := fill(shapeList20), fill(shapeList28)
 	list := "?" + strings.Join(items, " ")
-	lfs := "lfs.storage=" + filepath.Join(f.gitDir, "lfs")
 	switch {
 	case len(items) == 0:
 		list = "none"
@@ -188,8 +187,8 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 		list = "P21"
 	case slices.Equal(items, append(slices.Clone(p20), "core.splitIndex=false", "core.commitGraph=false")):
 		list = "P22"
-	case slices.Equal(items, append(append([]string{lfs}, p20...), "core.splitIndex=false", "core.commitGraph=false")):
-		list = "lfs.storage=<repo>/.git/lfs+P22"
+	case len(items) > 0 && lfsStorageItemOK(items[0], f.gitDir) && slices.Equal(items[1:], append(slices.Clone(p20), "core.splitIndex=false", "core.commitGraph=false")):
+		list = "lfs.storage=<P>/lfs+P22"
 	}
 	var vars []string
 	for _, kv := range c.env {
@@ -382,7 +381,7 @@ func createRows() []shapeRow {
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list", cwd: leaf,
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
-			{list: "lfs.storage=<repo>/.git/lfs+P22", cwd: leaf,
+			{list: "lfs.storage=<P>/lfs+P22", cwd: leaf,
 				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules <id>",
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "P22", cwd: leaf,

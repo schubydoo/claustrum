@@ -244,6 +244,10 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - internal/git/worktreesource.go
         - internal/git/githarden.go
+        # the private LFS store of the checkout of git.worktree_create (4c111e86).
+        - internal/git/lfsstore.go
+        - internal/git/lfsstore_unix.go
+        - internal/git/lfsstore_windows.go
         # the core.hooksPath value of each git call that sets it (be1c1ca5).
         - internal/git/hooksdevice_unix.go
         - internal/git/hooksdevice_windows.go

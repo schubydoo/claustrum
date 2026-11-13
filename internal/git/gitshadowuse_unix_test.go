@@ -203,8 +203,9 @@ func TestShadowFilterRuleReadsTheRepositoryConfig(t *testing.T) {
 		}
 	}
 	want := []string{"-c", "filter.m.process=", "-c", "filter.m.required=true", "-c", "filter.m.smudge=false",
-		"-c", "lfs.storage=" + filepath.Join(f.gitDir, "lfs"), "-c", "core.hooksPath=/dev/null"}
-	if len(readTree) < len(want) || !slices.Equal(readTree[:len(want)], want) {
+		"-c", "lfs.storage=<store>", "-c", "core.hooksPath=/dev/null"}
+	if len(readTree) < len(want) || !slices.Equal(readTree[:7], want[:7]) || !lfsStorageItemOK(readTree[7], f.gitDir) ||
+		!slices.Equal(readTree[8:len(want)], want[8:]) {
 		t.Errorf("the read-tree call starts %q\nwant %q", readTree[:min(len(readTree), len(want))], want)
 	}
 	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
