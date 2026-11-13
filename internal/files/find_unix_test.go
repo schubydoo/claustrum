@@ -626,3 +626,13 @@ func TestFindWalkPanic(t *testing.T) {
 		t.Errorf("log %q, want one line %q", logs.String(), want)
 	}
 }
+
+// TestFindJoinSlashRoot: the root "/" joins a name with one "/" (4c111e86,
+// measured on Linux). Another folder joins with one "/" too.
+func TestFindJoinSlashRoot(t *testing.T) {
+	for _, c := range [][3]string{{"/", "x", "/x"}, {"/a/b", "x", "/a/b/x"}} {
+		if got := findJoin(c[0], c[1]); got != c[2] {
+			t.Errorf("findJoin(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
+		}
+	}
+}
