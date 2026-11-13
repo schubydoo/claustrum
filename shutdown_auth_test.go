@@ -80,9 +80,9 @@ func TestEveryOtherMethodStillRequiresAuth(t *testing.T) {
 		"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
 		"plugins.prune", "files.realpath",
 	}
-	// Linux and macOS have files.mkdir (c9125eb8).
+	// Linux and macOS have files.mkdir (c9125eb8) and files.find (4c111e86).
 	if runtime.GOOS != "windows" {
-		methods = append(methods, "files.mkdir")
+		methods = append(methods, "files.mkdir", "files.find")
 	}
 
 	want := map[string]bool{}

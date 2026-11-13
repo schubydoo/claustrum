@@ -24,6 +24,7 @@ var capabilityMethods = append(append([]string{
 	// plugins.prune (19f30c46) is appended last.
 	"plugins.prune",
 	// c9125eb8 lists files.mkdir here on Linux and macOS (osCapabilityMethods).
+	// 4c111e86 lists files.find before it there.
 	// 683cc6a9 lists files.realpath after plugins.prune (measured on Linux, macOS
 	// and Windows). It takes the method count to 21.
 }, osCapabilityMethods...), "files.realpath")

@@ -48,13 +48,13 @@ func wantCapabilityFeatures() string {
 }
 
 // wantCapabilityMethods is the methods array text of the server. Windows has no
-// files.mkdir (c9125eb8, measured on Windows).
+// files.mkdir (c9125eb8) and no files.find (4c111e86), measured on Windows.
 func wantCapabilityMethods() string {
 	const head = `"server.ping","server.capabilities","server.shutdown","server.adoptEnv","files.list","files.validate","files.stat","files.read","files.extract_tar","git.info","git.status","git.list_branches","git.worktree_create","git.worktree_remove","launcher.resolve","process.spawn","process.stdin","process.kill","process.killAndWait","process.reattach","plugins.prune",`
 	if runtime.GOOS == "windows" {
 		return head + `"files.realpath"`
 	}
-	return head + `"files.mkdir","files.realpath"`
+	return head + `"files.find","files.mkdir","files.realpath"`
 }
 
 // wantCapabilitiesFrame is the whole frame of a test server, byte for byte. by is

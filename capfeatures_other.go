@@ -13,5 +13,6 @@ package main
 var osCapabilityFeatures = append([]string{"files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "process.spawn.cli_temp_root"}, launcherOSFeatures...)
 
 // osCapabilityMethods is files.mkdir, which c9125eb8 lists after plugins.prune and
-// before files.realpath on Linux and macOS (measured).
-var osCapabilityMethods = []string{"files.mkdir"}
+// before files.realpath on Linux and macOS (measured). 4c111e86 lists files.find
+// before files.mkdir there (measured on Linux and macOS).
+var osCapabilityMethods = []string{"files.find", "files.mkdir"}

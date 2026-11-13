@@ -1,6 +1,6 @@
 # claustrum protocol reference
 
-This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [23 methods](#methods-23) with the page of each.
+This page gives the rules that more than one method shares: the transport, the authentication, the message shapes, the error codes and the path handling. It lists the [24 methods](#methods-24) with the page of each.
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
@@ -287,7 +287,7 @@ other two stat it:
   path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
   macOS.
 
-## Methods (23)
+## Methods (24)
 
 `server.capabilities` lists the methods in the order of this table. The
 [reference build history](REFERENCE-BUILDS.md) records the builds that added or
@@ -296,7 +296,7 @@ removed a method.
 | Method | Params → result | Page |
 |---|---|---|
 | `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
-| `server.capabilities` | none → `{"version","methods":[…23…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
+| `server.capabilities` | none → `{"version","methods":[…24…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
 | `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
 | `server.adoptEnv` | `{env[,noLoginShell][,kept]}` → `{"ok":true}` | [server.adoptEnv](protocol/server-adopt-env.md) |
 | `files.list` | `{path[,includeDotNames,junctionsAsDirs]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |
@@ -316,6 +316,7 @@ removed a method.
 | `process.killAndWait` | `{id[,signal][,timeoutMs][,escalate][,farewell,graceMs]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true][,"farewellEnd":<end>]}` | [process.killAndWait](protocol/process-killandwait.md) |
 | `process.reattach` | `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}` | [process.reattach](protocol/process-reattach.md) |
 | `plugins.prune` | `{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"<state>","minAgeDays":<clamped>}` | [plugins.prune](protocol/plugins-prune.md) |
+| `files.find` | `{roots,suffix[,limit][,timeoutMs]}` → `{"paths":[…],"whole":<bool>[,"cut":"<word>"],"passedOver":[…],"links":[{"path","leadsTo"},…]}`, Linux and macOS only (`4c111e86`) | [files.find](protocol/files-find.md) |
 | `files.mkdir` | `{parent,name}` → `{"code":"<code>"[,"errno":<n>]}`, Linux and macOS only (`c9125eb8`) | [files.mkdir](protocol/files-mkdir.md) |
 | `files.realpath` | `{path[,missingLeaf]}` → `{"exists":<bool>[,"real"][,"wouldBe"][,"dangling":true]}` | [files.realpath](protocol/files-realpath.md) |
 
