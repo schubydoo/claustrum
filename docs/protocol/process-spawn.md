@@ -196,7 +196,7 @@ These are not measured:
 - `cliTempRoot` comes before `pid` and `startTime`.
 - A failed registry write is not logged. A failed hold does not stop the spawn.
 
-On macOS and Windows the flag changes nothing (measured).
+On macOS and Windows claustrum's `cliTempRoot` and `cliTempRootEnd` change nothing, as on `b3081b51` (measured). `c9125eb8` and `4c111e86` make the folder on macOS too (measured). claustrum does not follow that, but lists both features there.
 
 #### A lost folder (build `4c111e86`)
 
