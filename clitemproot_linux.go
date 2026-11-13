@@ -134,7 +134,8 @@ var tempRoots = struct {
 	mu   sync.Mutex
 	held map[string]*heldTempRoot // by the path of the folder
 	live int
-}{held: map[string]*heldTempRoot{}}
+	lost map[string]bool // the path of each folder that a check found lost, for the life of the daemon
+}{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
 // tempRootsLost is the lost list that the next reply with a cliTempRoot member
 // carries. It has its own lock, so a step that a stuck mount holds does not hold it.
@@ -197,24 +198,57 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 			a = <-done // the step kept its folder right before the limit
 		}
 	}
-	return a.env, addGoneList(a.res), a.release, a.bind
+	res, taken := addGoneList(a.res)
+	// A spawn binds only once its child runs. A release before the bind is a spawn
+	// that failed, and its reply has no member, so the list goes back.
+	var mu sync.Mutex
+	bound := false
+	bind := func(end func()) {
+		mu.Lock()
+		bound = true
+		mu.Unlock()
+		a.bind(end)
+	}
+	release := func() {
+		mu.Lock()
+		if !bound {
+			putBackGoneList(taken)
+			taken = nil
+		}
+		mu.Unlock()
+		a.release()
+	}
+	return a.env, res, release, bind
 }
 
-// addGoneList moves the lost list into a member of a reply. A reply with no member
-// leaves the list for a later one. The list goes out once (claustrum's own, not
-// measured). The why "changed" is measured on macOS for a link at the name. The
-// same word for the other losses and the seconds rounded down are claustrum's own.
-func addGoneList(res *rpc.CLITempRoot) *rpc.CLITempRoot {
+// addGoneList moves the lost list into a member of a reply and returns the entries
+// that it took. A reply with no member leaves the list for a later one. The list goes
+// out once, in a reply of a spawn whose child starts (claustrum's own, not measured).
+// The why "changed" is measured on macOS for a link at the name. The same word for the
+// other losses and the seconds rounded down are claustrum's own.
+func addGoneList(res *rpc.CLITempRoot) (*rpc.CLITempRoot, []goneTempRoot) {
 	if res == nil {
-		return nil
+		return nil, nil
 	}
 	tempRootsLost.mu.Lock()
 	defer tempRootsLost.mu.Unlock()
 	for _, l := range tempRootsLost.list {
 		res.Gone = append(res.Gone, rpc.GoneTempRootEntry{Name: l.name, Why: "changed", AgoSeconds: int64(time.Since(l.at) / time.Second)})
 	}
+	taken := tempRootsLost.list
 	tempRootsLost.list = nil
-	return res
+	return res, taken
+}
+
+// putBackGoneList puts the entries that addGoneList took back before the list, for
+// the next reply with a member.
+func putBackGoneList(taken []goneTempRoot) {
+	if len(taken) == 0 {
+		return
+	}
+	tempRootsLost.mu.Lock()
+	defer tempRootsLost.mu.Unlock()
+	tempRootsLost.list = append(taken, tempRootsLost.list...)
 }
 
 // childTempDir is the temp dir of the child: the first value that is not empty of
@@ -459,6 +493,9 @@ func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int, canA
 	name = string(b)
 	if err != nil || !tempRootNameRE.MatchString(name) {
 		return nil, "", false
+	}
+	if tempRoots.lost[filepath.Join(dir, name)] {
+		return nil, "", false // a lost folder is not given again (claustrum's own)
 	}
 	var st unix.Stat_t
 	if err := unix.Fstatat(xfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
@@ -725,13 +762,15 @@ func fitTempRoot(fd int) {
 }
 
 // loseTempRoot marks h lost. The next spawn in its temp dir makes a new folder, and
-// the next reply with a member lists it. Each child that asked with cliTempRootEnd
+// the next good reply with a member lists it. Each child that asked with cliTempRootEnd
 // is ended. For the others one line counts them (4c111e86, see checkTempRoot). The
 // caller holds tempRoots.mu.
 func loseTempRoot(h *heldTempRoot, why string) {
 	logging.Infof(tempRootLostLine, h.name, why)
 	h.lost.Store(true)
-	if key := filepath.Join(h.dir, h.name); tempRoots.held[key] == h {
+	key := filepath.Join(h.dir, h.name)
+	tempRoots.lost[key] = true
+	if tempRoots.held[key] == h {
 		delete(tempRoots.held, key)
 	}
 	tempRootsLost.mu.Lock()

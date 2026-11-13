@@ -1,8 +1,10 @@
 package supervisor
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -60,5 +62,67 @@ func TestNoTempRootGroupKillAfterAClientEnd(t *testing.T) {
 	nextLine(t, lines, `"stream":"exit"`, 15*time.Second)
 	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
 		t.Errorf("signals = %q, want the TERM alone", got)
+	}
+}
+
+// TestLostTempRootKillsTheGroupOfAChildThatEndsAtTheKill: a child that ends after the
+// wait of the end, before its SIGKILL, still has its group killed once. The stub sends
+// no SIGTERM, so the child runs to the wait. The seam then kills the child alone and
+// waits for its reap. The grandchild is the test's own (claustrum's own rule).
+func TestLostTempRootKillsTheGroupOfAChildThatEndsAtTheKill(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	setTempRootEndGraceForTest(t, 200*time.Millisecond)
+	realSignal := signalGroup
+	var mu sync.Mutex
+	var sent []string
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		mu.Lock()
+		sent = append(sent, signame)
+		mu.Unlock()
+		if signame == "TERM" {
+			return nil
+		}
+		return realSignal(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = realSignal })
+	oldSeam := tempRootBeforeKill
+	tempRootBeforeKill = func(p *Proc) {
+		_ = syscall.Kill(p.cmd.Process.Pid, syscall.SIGKILL)
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+			p.mu.Lock()
+			reaped := p.reaped
+			p.mu.Unlock()
+			if reaped || time.Now().After(deadline) {
+				return
+			}
+		}
+	}
+	t.Cleanup(func() { tempRootBeforeKill = oldSeam })
+	pidFile := filepath.Join(t.TempDir(), "kid")
+	c, lines := rawLineConn(t)
+	_, bound := spawnHelperTempRoot(t, m, c, TempRootAsk{Folder: true, End: true}, "term-exit0-kid", pidFile)
+	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+	kid := waitPIDFile(t, pidFile)
+	gone := false
+	t.Cleanup(func() {
+		if !gone {
+			_ = syscall.Kill(kid, syscall.SIGKILL)
+		}
+	})
+	end, _ := bound()
+	end()
+	nextLine(t, lines, `"stream":"exit"`, 15*time.Second)
+	for deadline := time.Now().Add(5 * time.Second); !gone; time.Sleep(20 * time.Millisecond) {
+		if syscall.Kill(kid, 0) != nil {
+			gone = true
+		} else if time.Now().After(deadline) {
+			t.Fatalf("the process %d in the group lives on", kid)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(sent, []string{"TERM", "KILL"}) {
+		t.Errorf("signals = %q, want TERM, then one group KILL", sent)
 	}
 }

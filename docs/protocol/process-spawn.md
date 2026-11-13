@@ -222,7 +222,7 @@ claustrum's rule on Linux: a child that ends on the SIGTERM gets a SIGKILL to it
 - On Linux a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
 
 ??? note "claustrum's own rules of a lost folder"
-    These are not measured. The why `changed` for each kind of loss. The list goes out once, in the next reply with a member, in whole seconds. A group or other write bit counts as open. A file at the name changes nothing. One line for a run of failed checks, and a temp dir that is gone counts as a failed check. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.
+    These are not measured. The why `changed` for each kind of loss. The list goes out once, in the next good reply's member, in whole seconds. A group or other write bit counts as open. A file at the name changes nothing. One line for a run of failed checks, and a temp dir that is gone counts as a failed check. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.
 
 ### The managed launcher
 

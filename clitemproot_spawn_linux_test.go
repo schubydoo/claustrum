@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -104,6 +105,33 @@ func TestSpawnCLITempRootStartFailureGivesItBack(t *testing.T) {
 	if got := ccdFolders(t, x); len(got) != 1 {
 		t.Errorf("folders %v, want one", got)
 	}
+}
+
+// A spawn that does not start leaves the lost list for the next good reply, which
+// carries it once (claustrum's own, not measured).
+func TestSpawnCLITempRootStartFailureKeepsTheLostList(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, _ := tempRootDir(t, true)
+	tempRootsLost.mu.Lock()
+	tempRootsLost.list = []goneTempRoot{{name: "ccd-0123456789", at: time.Now()}}
+	tempRootsLost.mu.Unlock()
+	_, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	if raw := cl.call(spawnLine(t, "gone", filepath.Join(x, "no-such-program"), map[string]string{"TMPDIR": x}, true)); !strings.Contains(string(raw), `"error"`) {
+		t.Fatalf("reply %s, want an error", raw)
+	}
+	exe, env := helperCommand(t, "environ")
+	env["TMPDIR"] = x
+	for i, want := range []int{1, 0} {
+		id := "ok" + strconv.Itoa(i)
+		raw := string(cl.call(spawnLine(t, id, exe, env, true)))
+		if got := strings.Count(raw, `"lost":[{"name":"ccd-0123456789","why":"changed"`); got != want {
+			t.Errorf("reply %d %s: lost lists %d, want %d", i, raw, got, want)
+		}
+		cl.waitExit(id)
+	}
+	waitTempRootsLive(t, 0)
 }
 
 // A launched spawn skips the step: the reply has no member, no folder is made and

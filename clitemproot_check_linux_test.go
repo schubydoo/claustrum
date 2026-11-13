@@ -328,7 +328,7 @@ func TestCLITempRootCheckEveryValue(t *testing.T) {
 }
 
 // A lost folder is not given again, also when the old folder comes back to its name
-// (claustrum's own, not measured).
+// and its last spawn gave it back (claustrum's own, not measured).
 func TestCLITempRootLostFolderIsNotGivenAgain(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -351,6 +351,8 @@ func TestCLITempRootLostFolderIsNotGivenAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rel[0]()
+	waitTempRootsLive(t, 0)
 	if b := runTempRootBound(t, x, runDir, &rel, nil); b == nil || b.Name == a.Name {
 		t.Errorf("answer %+v, want a new folder in place of the lost %s", b, a.Name)
 	}

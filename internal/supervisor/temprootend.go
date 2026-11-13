@@ -38,11 +38,21 @@ func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
 		return
 	case <-t.C:
 	}
+	tempRootBeforeKill(p)
+	// The SIGKILL and the flag go under one hold of p.mu, so the exit path never takes
+	// a pending SIGKILL for a sent one. A group SIGKILL of the exit path sets the flag
+	// too, so the group gets one SIGKILL.
 	p.mu.Lock()
-	p.tempRootKilled = true
-	p.mu.Unlock()
-	p.signalIfLive("KILL", "temp_root")
+	defer p.mu.Unlock()
+	if !p.tempRootKilled {
+		live, _ := p.signalIfLiveLocked("KILL", "temp_root")
+		p.tempRootKilled = live
+	}
 }
+
+// tempRootBeforeKill runs after the wait of endForLostTempRoot, before its SIGKILL. A
+// seam for the tests. Production never reassigns it.
+var tempRootBeforeKill = func(*Proc) {}
 
 // killGroupOnTempRootExit runs in the exit goroutine of a child whose spawn asked with
 // cliTempRootEnd, before the reap. Once the child has exited, while it is not reaped
@@ -61,4 +71,5 @@ func (p *Proc) killGroupOnTempRootExit() {
 		return
 	}
 	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+	p.tempRootKilled = true
 }
