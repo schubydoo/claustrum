@@ -492,7 +492,11 @@ var reapCheckoutGroup = sysproc.ReapProcessGroup
 //     (measured on Linux). For a baseRepo that is a linked worktree the value is
 //     not measured: claustrum names the git directory of the repository. A user
 //     config that sets lfs.storage removes the item (measured on Linux, macOS
-//     and Windows).
+//     and Windows). On Linux and macOS the filter of a 4c111e86 checkout reads
+//     lfs.storage as `<checkout folder>/lfs` (measured). It finds the local
+//     objects in that store, and a new object reaches the store of the
+//     repository too (measured on Linux). claustrum keeps the store of the git
+//     directory, because it copies no object in or back yet.
 //   - The read-tree call has LANGUAGE=C, and then the five entries of the
 //     ssh door (sshDoorEnv, measured on Linux).
 //
@@ -917,13 +921,16 @@ var (
 // failed checkout. On Windows it is nil unless the staging step moved the
 // registration (installTestedWorktreeIndex).
 func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool) (stderr string, drained bool, err, installErr error) {
-	idxDir, removeIdxDir, err := u.requestDir(shadowIndexDirPrefix, checkoutIndexTempPrefix)
+	idxDir, removeIdxDir, err := u.requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err, nil
 	}
-	// In the folder of the daemon the index folder stays until the reply of the
-	// create (gitCall.runAtReply). In the temporary folder the moment is not
-	// measured: it goes at the end of this step, as before.
+	// In the folder of the daemon claustrum removes the index folder before the
+	// reply of the create is written (gitCall.runAtReply). 4c111e86 shows its
+	// `.checkout-<n>` at the reply, and 1 s later it is gone (measured on Linux
+	// and macOS). Two creates at once get two such folders (measured). In the
+	// temporary folder the moment is not measured: it goes at the end of this
+	// step, as before.
 	if u.inFolder() && u.atReply != nil {
 		*u.atReply = append(*u.atReply, removeIdxDir)
 	} else {

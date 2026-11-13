@@ -85,6 +85,12 @@ const statusFollowsPrintedGitDir = true
 // git-directory test follows a good answer there.
 const probeConfigFreeRun = false
 
+// checkoutDirPrefix starts the name of the folder of the checkout of one create
+// in the folder of the daemon (runWorktreeCheckout). On Windows 4c111e86 makes
+// no `.checkout-<n>` folder (measured), so claustrum keeps the name
+// `.index-<n>` there.
+const checkoutDirPrefix = shadowIndexDirPrefix
+
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // folder, the folder of the daemon (requestDir). On Windows it is a plain
 // mkdir by its full path through requestDirMkdir, not through root. With a

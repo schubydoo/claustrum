@@ -132,15 +132,16 @@ func leafListings(calls []envCall, leaf string, from, to int) int {
 }
 
 // wantIndexIn tests the GIT_INDEX_FILE of the read-tree call c. With inCopy
-// set it is in `.index-<n>` of the folder of the daemon, else in a folder
+// set it is in the checkout folder of the folder of the daemon
+// (checkoutDirPrefix), else in a folder
 // `claude-ssh-index-<n>` outside the run folder.
 func wantIndexIn(t *testing.T, c envCall, inCopy bool) {
 	t.Helper()
 	v, _ := lookupExact(c.env, "GIT_INDEX_FILE")
 	dir := filepath.Base(filepath.Dir(v))
 	switch {
-	case inCopy && (!strings.HasPrefix(dir, shadowIndexDirPrefix) || !strings.Contains(v, shadowRootName)):
-		t.Errorf("read-tree has GIT_INDEX_FILE=%q, want it in %s<n> of the folder of the daemon", v, shadowIndexDirPrefix)
+	case inCopy && (!strings.HasPrefix(dir, checkoutDirPrefix) || !strings.Contains(v, shadowRootName)):
+		t.Errorf("read-tree has GIT_INDEX_FILE=%q, want it in %s<n> of the folder of the daemon", v, checkoutDirPrefix)
 	case !inCopy && (!strings.HasPrefix(dir, checkoutIndexTempPrefix) || strings.Contains(v, shadowRootName)):
 		t.Errorf("read-tree has GIT_INDEX_FILE=%q, want it in %s<n> of the temporary folder", v, checkoutIndexTempPrefix)
 	}

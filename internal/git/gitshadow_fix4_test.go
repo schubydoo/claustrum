@@ -295,8 +295,8 @@ func TestShadowFallbackKeepsItsFoldersInTheDaemonFolder(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	if got := valueWith(calls, "GIT_INDEX_FILE="+dir+sep); !regexp.MustCompile(`^\.index-[0-9]+[/\\]index$`).MatchString(got) {
-		t.Errorf("GIT_INDEX_FILE of the checkout = %q, want .index-<n>/index in the folder of the daemon", got)
+	if got := valueWith(calls, "GIT_INDEX_FILE="+dir+sep); !regexp.MustCompile(`^` + regexp.QuoteMeta(checkoutDirPrefix) + `[0-9]+[/\\]index$`).MatchString(got) {
+		t.Errorf("GIT_INDEX_FILE of the checkout = %q, want %s<n>/index in the folder of the daemon", got, checkoutDirPrefix)
 	}
 	// The light calls of the create carry six values, and no call names a copy.
 	for _, c := range calls {

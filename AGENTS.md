@@ -206,7 +206,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeOneEntry`). Do not
   build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
-  ([D8](docs/DIVERGENCES.md#d8)).
+  ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by
+  `removeTempRequestDir`, after `homeguard.WipesHomeDir`.
 - **`session-folders`.** One plain `os.Root.Remove` by name, of the temp file of a failed write and in the prune ([session
   folders](docs/protocol/git-rules-session-folders.md)). Never widen: Never make either
   remove a tree delete. Never build the name of a remove there from a request value, a
