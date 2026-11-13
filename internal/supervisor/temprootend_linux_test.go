@@ -126,3 +126,58 @@ func TestLostTempRootKillsTheGroupOfAChildThatEndsAtTheKill(t *testing.T) {
 		t.Errorf("signals = %q, want TERM, then one group KILL", sent)
 	}
 }
+
+// TestLostTempRootKillsTheGroupAfterAClientKill: a process.kill that the child
+// survives keeps the killedBy "client". The SIGTERM of the end then ends the child,
+// and its group still gets one SIGKILL before the reap. The stub drops the first
+// SIGTERM. The grandchild is the test's own (claustrum's own rule).
+func TestLostTempRootKillsTheGroupAfterAClientKill(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	setTempRootEndGraceForTest(t, 10*time.Second)
+	realSignal := signalGroup
+	var mu sync.Mutex
+	var sent []string
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		mu.Lock()
+		sent = append(sent, signame)
+		first := len(sent) == 1
+		mu.Unlock()
+		if first {
+			return nil
+		}
+		return realSignal(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = realSignal })
+	pidFile := filepath.Join(t.TempDir(), "kid")
+	c, lines := rawLineConn(t)
+	p, bound := spawnHelperTempRoot(t, m, c, TempRootAsk{Folder: true, End: true}, "term-exit0-kid", pidFile)
+	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+	kid := waitPIDFile(t, pidFile)
+	gone := false
+	t.Cleanup(func() {
+		if !gone {
+			_ = syscall.Kill(kid, syscall.SIGKILL)
+		}
+	})
+	p.signalIfLive("TERM", "client")
+	end, _ := bound()
+	end()
+	exit := withoutEndAt(nextLine(t, lines, `"stream":"exit"`, 15*time.Second))
+	const want = `{"type":"stream","processId":"tr","stream":"exit","seq":2,"exitCode":0,"killedBy":"client","end":{"at":<n>,"len":90}}`
+	if exit != want {
+		t.Errorf("exit frame = %s\nwant %s", exit, want)
+	}
+	for deadline := time.Now().Add(5 * time.Second); !gone; time.Sleep(20 * time.Millisecond) {
+		if syscall.Kill(kid, 0) != nil {
+			gone = true
+		} else if time.Now().After(deadline) {
+			t.Fatalf("the process %d in the group lives on", kid)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(sent, []string{"TERM", "TERM", "KILL"}) {
+		t.Errorf("signals = %q, want the client TERM, the TERM of the end, then one group KILL", sent)
+	}
+}

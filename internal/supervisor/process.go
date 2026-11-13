@@ -205,8 +205,9 @@ type Proc struct {
 	askEnd bool
 	// tempRootEnd is set once at spawn: the spawn asked with cliTempRootEnd. The exit
 	// goroutine then runs killGroupOnTempRootExit before the reap. tempRootKilled is
-	// set under p.mu once a group SIGKILL of the temp_root end goes out.
-	tempRootEnd, tempRootKilled bool
+	// set under p.mu once a group SIGKILL of the temp_root end goes out, and
+	// tempRootTermed once the SIGTERM of that end went out.
+	tempRootEnd, tempRootKilled, tempRootTermed bool
 	// forgetRecord removes the child's registry record. The exit goroutine calls it
 	// as soon as the wait on the child returns, before the pipe drain, and then
 	// closes recordDone. Both are set once at spawn. A nil value means there is

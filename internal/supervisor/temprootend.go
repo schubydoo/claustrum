@@ -19,8 +19,8 @@ var tempRootEndGrace = 3 * time.Second
 // (measured on Linux and macOS, the SIGKILL and the line order on macOS). A
 // process.kill in the wait keeps the killedBy "temp_root" (measured on macOS).
 //
-// Each signal goes through signalIfLive, so no signal reaches a reaped child, and
-// the SIGKILL goes to the group as in watchGitReadLimit. A child that ends on the
+// Each signal goes through signalIfLiveLocked, so no signal reaches a reaped child,
+// and the SIGKILL goes to the group as in watchGitReadLimit. A child that ends on the
 // SIGTERM gets a group SIGKILL before its reap (killGroupOnTempRootExit). Once the
 // shutdown began, no end starts (claustrum's own, not measured).
 func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
@@ -28,7 +28,14 @@ func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
 		return
 	}
 	logging.Infof("[process.Manager] Process %s is being ended: its private temp folder is lost", p.id)
-	if !p.signalIfLive("TERM", "temp_root") {
+	// The SIGTERM and its flag go under one hold of p.mu. The flag, not killedBy,
+	// tells the exit path that this end signalled: a process.kill before it keeps
+	// the killedBy "client".
+	p.mu.Lock()
+	live, err := p.signalIfLiveLocked("TERM", "temp_root")
+	p.tempRootTermed = p.tempRootTermed || (live && err == nil)
+	p.mu.Unlock()
+	if !live {
 		return
 	}
 	t := time.NewTimer(grace)
@@ -56,7 +63,7 @@ var tempRootBeforeKill = func(*Proc) {}
 
 // killGroupOnTempRootExit runs in the exit goroutine of a child whose spawn asked with
 // cliTempRootEnd, before the reap. Once the child has exited, while it is not reaped
-// yet, it sends SIGKILL to the group of a child that the temp_root end signalled and
+// yet, it sends SIGKILL to the group of a child that the temp_root end sent SIGTERM and
 // that did not get the SIGKILL of that end. The child that is not reaped holds its
 // pid, so the group id cannot be reused. The group must be the one that the spawn
 // made: its id is the pid of the child. This is claustrum's own rule (decision-099).
@@ -67,7 +74,7 @@ func (p *Proc) killGroupOnTempRootExit() {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.killedBy != "temp_root" || p.tempRootKilled || !groupMadeAtSpawn(p.cmd.Process.Pid) {
+	if !p.tempRootTermed || p.tempRootKilled || !groupMadeAtSpawn(p.cmd.Process.Pid) {
 		return
 	}
 	_ = signalGroup(p.group, p.cmd.Process, "KILL")
