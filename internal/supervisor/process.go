@@ -203,6 +203,11 @@ type Proc struct {
 	// askEnd is set once at spawn: the args of the request ask for stream-json
 	// (argsAskEnd). The shutdown sweep asks such a child to end first (KillAllCount).
 	askEnd bool
+	// tempRootEnd is set once at spawn: the spawn asked with cliTempRootEnd. The exit
+	// goroutine then runs killGroupOnTempRootExit before the reap. tempRootKilled is
+	// set under p.mu once a group SIGKILL of the temp_root end goes out, and
+	// tempRootTermed once the SIGTERM of that end went out.
+	tempRootEnd, tempRootKilled, tempRootTermed bool
 	// forgetRecord removes the child's registry record. The exit goroutine calls it
 	// as soon as the wait on the child returns, before the pipe drain, and then
 	// closes recordDone. Both are set once at spawn. A nil value means there is
@@ -741,14 +746,19 @@ func (m *Manager) Spawn(c *conn.Conn, id, command string, args []string, cwd str
 // launcher is then the process, and its stream frames are its own. A linkTTL above
 // 0 makes a link-bound process with that unattended time (linkbound.go).
 func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*Proc, error) {
-	return m.SpawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, false, nil)
+	return m.SpawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, TempRootAsk{}, nil)
 }
 
-// SpawnWithTempRoot is spawnVia with the cliTempRoot param of process.spawn. When
-// tempRoot is true, the step of clitemproot_linux.go runs after the env is built,
-// and the process keeps its answer in cliTempRoot. folders are the session folders
-// of the spawn (sessionfolders.go), recorded before the start.
-func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string) (*Proc, error) {
+// TempRootAsk holds the two temp-folder members of a process.spawn request: Folder is
+// "cliTempRoot":true, and End is "cliTempRootEnd":true, which asks the daemon to end
+// the child when its private temp folder is lost (endForLostTempRoot).
+type TempRootAsk struct{ Folder, End bool }
+
+// SpawnWithTempRoot is spawnVia with the cliTempRoot params of process.spawn. When
+// tempRoot.Folder is true, the step of clitemproot_linux.go runs after the env is
+// built, and the process keeps its answer in cliTempRoot. folders are the session
+// folders of the spawn (sessionfolders.go), recorded before the start.
+func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string) (*Proc, error) {
 	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil, nil)
 }
 
@@ -756,7 +766,7 @@ func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []str
 // or envOnlyIfSent members (c9125eb8, LauncherOpts). A launched spawn takes no
 // link-bound time and no private temp folder, as in SpawnWithTempRoot.
 func (m *Manager) SpawnLaunched(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher []string, lo LauncherOpts, folders []string) (*Proc, error) {
-	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, &launcher, 0, false, folders, nil, &lo)
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, &launcher, 0, TempRootAsk{}, folders, nil, &lo)
 }
 
 // GitReadStep builds the run of a "gitRead":true spawn. It gets the environment
@@ -779,12 +789,12 @@ type gitReadStart struct {
 // a spent id wins over the shape refusal (claustrum's own, not measured). step
 // runs after the env is built. A step error fails the spawn.
 func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, refusal error, step GitReadStep) (*Proc, error) {
-	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, false, nil, &gitReadStart{refusal: refusal, step: step}, nil)
+	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, TempRootAsk{}, nil, &gitReadStart{refusal: refusal, step: step}, nil)
 }
 
 // spawnWith is SpawnWithTempRoot with the start of a gitRead spawn, or nil, and the
 // launcher members of SpawnLaunched, or nil.
-func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot bool, folders []string, gitRead *gitReadStart, lo *LauncherOpts) (*Proc, error) {
+func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string, gitRead *gitReadStart, lo *LauncherOpts) (*Proc, error) {
 	path, argv := command, args
 	supplies := lo != nil && lo.Supplies
 	if launcher != nil {
@@ -809,6 +819,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	grace := exitDrainGrace
 	endGrace := unattendedEndGrace
 	readLimit, readEndGrace := gitReadLimit, gitReadEndGrace
+	tempEndGrace := tempRootEndGrace
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
@@ -956,9 +967,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// skips the step (b3081b51, measured on Linux). The place after the command
 	// tests is claustrum's own, not measured.
 	var tempAnswer *rpc.CLITempRoot
-	releaseTemp := func() {}
-	if tempRoot && launcher == nil {
-		cmd.Env, tempAnswer, releaseTemp = privateTempRoot(cmd.Env, m.RunDir)
+	releaseTemp, bindTemp := func() {}, func(func()) {}
+	if tempRoot.Folder && launcher == nil {
+		cmd.Env, tempAnswer, releaseTemp, bindTemp = privateTempRoot(cmd.Env, m.RunDir)
 	}
 	keptTemp := false
 	defer func() {
@@ -1167,18 +1178,19 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	metrics.Met.Spawns.Add(1)
 
 	p := &Proc{
-		id:         id,
-		pid:        cmd.Process.Pid,
-		startTime:  startTime,
-		sessionKey: sessionKey,
-		askEnd:     argsAskEnd(args),
-		subs:       map[*conn.Conn]struct{}{c: {}},
-		running:    true,
-		stdin:      stdin,
-		cmd:        cmd,
-		group:      group,
-		done:       make(chan struct{}),
-		recordDone: make(chan struct{}),
+		id:          id,
+		pid:         cmd.Process.Pid,
+		startTime:   startTime,
+		sessionKey:  sessionKey,
+		askEnd:      argsAskEnd(args),
+		tempRootEnd: tempRoot.End,
+		subs:        map[*conn.Conn]struct{}{c: {}},
+		running:     true,
+		stdin:       stdin,
+		cmd:         cmd,
+		group:       group,
+		done:        make(chan struct{}),
+		recordDone:  make(chan struct{}),
 
 		cliTempRoot: tempAnswer,
 		releaseTemp: releaseTemp,
@@ -1244,8 +1256,14 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	wg.Add(2)
 	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
 	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
-	// From here the exit of the child gives the folder back.
+	// From here the exit of the child gives the folder back. A loss of the folder
+	// ends the child only if the request asked for it.
 	keptTemp = true
+	if tempRoot.End {
+		bindTemp(func() { go m.endForLostTempRoot(p, tempEndGrace) })
+	} else {
+		bindTemp(nil)
+	}
 	gitReadKept = true
 	p.afterWait = releaseGitRead
 	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
@@ -1262,6 +1280,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 // tears down stdin and the OS group handle, then emits the exit frame. Extracted
 // from spawn so the lifecycle reads as one-level steps; behavior is unchanged.
 func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, grace time.Duration) {
+	if p.tempRootEnd {
+		p.killGroupOnTempRootExit()
+	}
 	// cmd.Wait returns the moment the process itself exits — it no longer
 	// waits on the pipes, because they are ours now.
 	err := p.cmd.Wait()

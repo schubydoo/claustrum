@@ -62,7 +62,7 @@ modes and the OS splits is in
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
 | `internal/git/gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` | the deletes in the folder `git-shadow` |
 | `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
-| `clitemproot_linux.go` | the rmdir of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
+| `clitemproot_linux.go` | the two rmdirs of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
 | `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
 | `internal/git/gitcommand.go` | the start of every git call, which passes over a git in a session folder |
 
@@ -226,9 +226,17 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **The temp-folder test** (Linux and macOS) removes its own `.claude-ssh-<n>` file by one plain `os.Remove`
   ([process.spawn](docs/protocol/process-spawn.md)). Never widen: Do not make or remove
   the file in any folder but the inherited folder or its nearest existing parent.
-- **`cliTempRoot`.** On Linux it removes the `ccd-<12 hex>` folder that it just made and found unfit, by one rmdir
+
+#### The private temp folder of a spawn
+
+- **`cliTempRoot`.** On Linux it removes the `ccd-<10 hex>` folder that it just made and found unfit, by one rmdir
   after `homeguard.WipesHomeDir` (`removeMadeTempRoot`, [the
-  rules](docs/protocol/process-spawn.md#the-private-temp-folder-build-b3081b51)). Never widen: Remove no other name and never a tree.
+  rules](docs/protocol/process-spawn.md#the-private-temp-folder-build-b3081b51)). Before it, one rmdir removes the `t`
+  that it just made, through the handle of the new folder. Never widen: Remove no other name and never a tree.
+- **A lost temp folder** (Linux). A child that asked with `cliTempRootEnd` gets SIGTERM through `signalIfLive`, then,
+  if it still runs 3 s later, a group SIGKILL (`endForLostTempRoot`). A child that ended on the SIGTERM gets a group
+  SIGKILL before its reap (`killGroupOnTempRootExit`). Never widen: Signal no other child, send no group SIGKILL
+  after the reap, and none to a group that the spawn did not make.
 
 ### The held git directory
 

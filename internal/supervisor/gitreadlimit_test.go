@@ -95,7 +95,7 @@ func spawnHelperGitRead(t *testing.T, m *Manager, c *conn.Conn, mode string, arg
 	step := func(env []string) ([]string, []string, func(), error) {
 		return args, append(env, "CLAUSTRUM_TEST_HELPER="+mode), func() {}, nil
 	}
-	p, err := m.spawnWith(c, "gr", exe, nil, "", nil, false, nil, 0, false, nil, &gitReadStart{step: step}, nil)
+	p, err := m.spawnWith(c, "gr", exe, nil, "", nil, false, nil, 0, TempRootAsk{}, nil, &gitReadStart{step: step}, nil)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}

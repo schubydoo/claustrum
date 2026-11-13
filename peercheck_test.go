@@ -32,15 +32,15 @@ func wantPeerCheckLine() string {
 }
 
 // wantCapabilityFeatures is the features array in the order of the frame. Windows
-// lists no git.worktree.external_root, process.spawn.link_bound or
-// process.spawn.cli_temp_root. Only Linux lists launcher.checked_by_handle and
+// lists no git.worktree.external_root, process.spawn.link_bound,
+// process.spawn.cli_temp_root or process.spawn.cli_temp_root_end. Only Linux lists launcher.checked_by_handle and
 // launcher.local_kinds_only.
 func wantCapabilityFeatures() string {
 	const head = `"process.stdin.offset","process.spawn.refuses_given_up_id","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","process.spawn.git_read","server.line_end","launcher.managed","launcher.non_string_refused","launcher.supplies_cli","server.peer_check","git.outside_session_folders","git.worktree_create.unusable_git_refused","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
-	const unix = `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","git.worktree_create.own_lfs_store","process.spawn.cli_temp_root",`
+	const unix = `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","git.worktree_create.own_lfs_store","process.spawn.cli_temp_root","process.spawn.cli_temp_root_end",`
 	if runtime.GOOS == "linux" {
 		return head + unix + `"launcher.checked_by_handle","launcher.local_kinds_only","server.instance_id"`
 	}
