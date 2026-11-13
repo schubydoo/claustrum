@@ -158,7 +158,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
 - `<fs>` is `NFS`, `FUSE or virtiofs` for a FUSE mount, or `SMB` for CIFS. 9p passes (claustrum's own, not measured: 9p was not staged). The `statfs` type finds them (claustrum's own, not measured).
 - On these file systems an `ownerUid` lifts nothing with no digest. With a digest the owner test runs (`4c111e86`, on FUSE). The write test runs too (claustrum's own, not measured). An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
-- A folder high in the path is refused before a lower one. The other order of the tests is claustrum's own.
+- A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The other order of the tests is claustrum's own.
 
 #### The check by handle (Linux)
 
