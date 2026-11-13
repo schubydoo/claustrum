@@ -38,7 +38,8 @@ the daemon walks up from the request folder:
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
   entry of any type, it is the git directory, and the rules of a stray
   `commondir` judge it. Otherwise the answer is "no repository". Git itself walks
-  on to an outer repository here.
+  on to an outer repository here. `git.worktree_create` then gives the
+  [unusable-git refusal](git-worktree-create.md#request-path-folder-and-post-add-refusals).
 - A regular `.git` file up to 1 MiB starts with `gitdir: `, one blank. First
   trailing CRs and LFs go. Other trailing white space stays. An empty rest means
   "no repository". Then a NUL ends the path. Blank, white-space and NUL rules:
@@ -124,8 +125,10 @@ these steps:
    its reason. A relative symlink inside G is followed. A dangling symlink
    that is absolute, or that leaves G, gets S2 with `path escapes
    from parent` (`683cc6a9`, measured on Linux for an absolute target).
-3. The content with every trailing CR and LF removed, up to a NUL, is exactly `.`
-   or `./` (the NUL is claustrum's own, not measured). A space or a tab is not trimmed. Any other content gets S1, which does not quote it. So
+3. The content with every trailing CR and LF removed, up to a NUL, is exactly `.`,
+   `./` or `./.` (the NUL is claustrum's own, not measured). `4c111e86` takes `./.`
+   on `git.worktree_create` (measured on Linux, macOS and Windows). The other methods
+   share the step (not measured). A space or a tab is not trimmed. Any other content gets S1, which does not quote it. So
    ` .`, `. `, `.<TAB>`, `./x`, `..`, an empty file, `.\` and the absolute path of
    G itself are all refused.
 4. G then passes the git-directory test, or it gets S3. When both S2 and S3 apply,
@@ -161,7 +164,7 @@ The daemon's own environment changes the check as follows:
 
 ### Trust refusal texts and frames
 
-M2 to M5 are texts of `f6010b97`, S1 and S2 of `683cc6a9`, M6 and S3 of `52d82f0a`.
+M2 to M5 are texts of `f6010b97`, S1 of `4c111e86`, S2 of `683cc6a9`, M6 and S3 of `52d82f0a`.
 M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
 quoting of the path cut to its first 300 runes. A non-ASCII path is cut by runes, not bytes. An invalid
@@ -173,7 +176,7 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 | M3 | `worktree entry %q has none (git always writes one there, containing ../..); the entry is damaged or was not made by git — recreate the worktree with git worktree add, or remove the entry` | `<entry>` |
 | M4 | `%q is not a small plain file (<reason>); remove it, or remove that worktree entry and add the worktree again so git rewrites it` | `<entry>/commondir` |
 | M6 | `this worktree's repository, %q, has a missing or damaged HEAD, objects or refs, or your account on the remote machine cannot open them; repair that directory or its permissions` | `<repo git dir>` |
-| S1 | `%q holds something other than "." or "./"; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
+| S1 | `%q holds something other than ".", "./" or "./."; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one holding "." or "./."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
 | S2 | `%q is not a small plain file (<reason>); git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
 | S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 

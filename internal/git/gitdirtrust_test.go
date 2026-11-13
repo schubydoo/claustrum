@@ -20,17 +20,17 @@ import (
 // The texts, written out here independently of the implementation's constants.
 const (
 	wantTrustPrefix = "the repository's git directory could not be trusted; git not run: commondir not as git writes it: "
-	wantTRTail      = `; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did`
+	wantTRTail      = `; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one holding "." or "./."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did`
 	wantTPTail      = "; git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did"
 	wantShapeTail   = " sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)"
 	wantM5          = "config-defined hooks could not be pinned off; git not run: the worktree entry this folder's .git names no longer exists"
 )
 
 // wantTR is the refusal of a stray commondir whose content (trailing CR and LF
-// removed) is not "." or "./". The text does not quote the content (683cc6a9), so
+// removed) is not ".", "./" or "./.". The text does not quote the content (683cc6a9), so
 // the second argument, the content, is unused.
 func wantTR(cd, _ string) string {
-	return wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than "." or "./"` + wantTRTail
+	return wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than ".", "./" or "./."` + wantTRTail
 }
 
 // wantTP is the refusal of a stray commondir that is not a small plain file
@@ -268,6 +268,23 @@ const (
 	notRepoCreate = `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}`
 )
 
+// unusableCreate is the create result of 4c111e86 for a `.git` in the folder holder
+// that git cannot use. The path is holder with its symlinks resolved, as the walk
+// spells it.
+func unusableCreate(t *testing.T, holder string) string {
+	t.Helper()
+	h, err := filepath.EvalSymlinks(holder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := json.Marshal("Git can't use `" + filepath.Join(h, ".git") + "`, so Claude made no worktree. " +
+		"A Claude session can damage it, so check it first. Then repair it, or turn off Worktree if this isn't meant to be a repository.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return `{"success":false,"error":` + string(text) + `,"errorCode":"worktree_add_failed"}`
+}
+
 // The refusal shape of each method: a commondir in a main
 // repository's git directory is refused with S1 on every method that runs in that
 // repository. For git.status the check is on baseRepo, not on path. A linked worktree
@@ -487,7 +504,9 @@ func wantEntryGoneFrames(t *testing.T, d *Deps, r trustRepo, extra map[string]an
 	wantResult(t, "list_branches(TW)", trustCallOn(t, d, "git.list_branches", params(map[string]any{"path": r.TW})), notRepoList)
 	wt := filepath.Join(r.TW, ".claude", "worktrees", "w1")
 	rc := trustCallOn(t, d, "git.worktree_create", params(map[string]any{"baseRepo": r.TW, "worktreePath": wt, "branchName": "w1"}))
-	wantResult(t, "create(TW)", rc, notRepoCreate)
+	// 4c111e86 refuses the `.git` file of TW, which names a gone path (measured on
+	// Windows, Linux and macOS not measured).
+	wantResult(t, "create(TW)", rc, unusableCreate(t, r.TW))
 	if exists(wt) {
 		t.Errorf("create(TW) left %s", wt)
 	}
@@ -562,7 +581,7 @@ func TestGitDirTrustBrokenNestedDotGitStopsTheWalk(t *testing.T) {
 		wantResult(t, "list_branches(T/a)", listBranches(t, a), notRepoList)
 		wantResult(t, "status(SA,T/a)", status(t, sa, a), notRepoStatus)
 		r1, wt := create(t, a)
-		wantResult(t, "create(T/a)", r1, notRepoCreate)
+		wantResult(t, "create(T/a)", r1, unusableCreate(t, a))
 		if exists(wt) {
 			t.Errorf("create(T/a) left %s", wt)
 		}
@@ -756,7 +775,7 @@ func TestGitDirTrustGitFile(t *testing.T) {
 			wantResult(t, "info(TW)", rep, notRepoInfo)
 			wantResult(t, "list_branches(TW)", listBranches(t, r.TW), notRepoList)
 			r1, _ := create(t, r.TW)
-			wantResult(t, "create(TW)", r1, notRepoCreate)
+			wantResult(t, "create(TW)", r1, unusableCreate(t, r.TW))
 		})
 	}
 }
@@ -965,7 +984,7 @@ func TestGitDirTrustOperandIsCutTo300Runes(t *testing.T) {
 				t.Fatalf("fixture path %d runes, want > 300", utf8.RuneCountInString(cd))
 			}
 			cut := string([]rune(cd)[:300])
-			wantRPCError(t, "info(T)", info(t, T), wantTrustPrefix+fmt.Sprintf("%q", cut)+` holds something other than "." or "./"`+wantTRTail)
+			wantRPCError(t, "info(T)", info(t, T), wantTrustPrefix+fmt.Sprintf("%q", cut)+` holds something other than ".", "./" or "./."`+wantTRTail)
 		})
 	}
 }

@@ -30,7 +30,7 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 		{"git.info", map[string]any{"path": g}, resultOf(info)},
 		{"git.status", map[string]any{"path": g, "baseRepo": g}, resultOf(notRepoStatus)},
 		{"git.list_branches", map[string]any{"path": g}, resultOf(notRepoList)},
-		{"git.worktree_create", map[string]any{"baseRepo": g, "worktreePath": leaf, "branchName": "w1"}, resultOf(notRepoCreate)},
+		{"git.worktree_create", map[string]any{"baseRepo": g, "worktreePath": leaf, "branchName": "w1"}, resultOf(unusableCreate(t, g))},
 	}
 	if off {
 		for _, r := range rows {

@@ -12,7 +12,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build.
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `id` | yes | The id of the process, as given to `process.spawn`. |
+| `id` | yes | The id of the process, as given to `process.spawn`. An unknown `id` of up to 128 bytes is [given up](process-spawn.md#a-given-up-id). |
 | `signal` | no | The first signal, named as for [process.kill](process-kill.md#request). On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
 | `timeoutMs` | no | How long the daemon waits for the process to end after the signal, in milliseconds. The default is 3000. A value of `0` or below means the default. The daemon limits a larger value to 30000. |
 | `escalate` | no | What the daemon does at the end of that time. With `true`, the default, it ends the process by force. With `false`, it leaves the process alone. |

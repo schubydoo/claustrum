@@ -850,13 +850,25 @@ func runGitHelper(mode string, args []string) (int, bool) {
 			return 2, true
 		}
 		defer func() { _ = f.Close() }()
-		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-			_ = tty.Close()
-			fmt.Println("terminal")
-		} else {
-			fmt.Println("no terminal")
-		}
+		printTerminal()
+		return 0, true
+	case "git-dir-unusable":
+		// Runs gitDirUnusable on args[0], which opens its HEAD. Then it prints as
+		// open-repo-file does.
+		_ = gitDirUnusable(args[0])
+		printTerminal()
 		return 0, true
 	}
 	return 0, false
+}
+
+// printTerminal prints "terminal" if this process has a controlling terminal, and
+// "no terminal" if it has none: an open of /dev/tty answers that.
+func printTerminal() {
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		_ = tty.Close()
+		fmt.Println("terminal")
+	} else {
+		fmt.Println("no terminal")
+	}
 }

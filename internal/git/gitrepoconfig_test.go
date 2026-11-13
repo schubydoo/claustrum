@@ -902,8 +902,8 @@ func TestGitDirFileRefusalShape(t *testing.T) {
 }
 
 // TestRepoConfigBadHeadKeepsItsAnswers pins the order of a measured result: a `HEAD`
-// that is no ref keeps the "not a repository" answers of the five methods, also with
-// format version 2 (measured).
+// that is no ref keeps the "not a repository" answers of four methods, also with
+// format version 2 (measured). The create answers the unusable-git refusal of 4c111e86.
 func TestRepoConfigBadHeadKeepsItsAnswers(t *testing.T) {
 	f := newRefusalFixture(t)
 	setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
@@ -912,6 +912,8 @@ func TestRepoConfigBadHeadKeepsItsAnswers(t *testing.T) {
 	}
 	h := newTestGitDeps()
 	want := f.noRepositoryAnswers()
+	// 4c111e86 refuses the create with the unusable-git text (measured on Linux).
+	want[3] = `"result":` + unusableCreate(t, filepath.Dir(f.gitDir))
 	for i, m := range f.fiveRequests(nil) {
 		if raw := gitDispatch(t, h, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
 			t.Errorf("%s with a HEAD that is no ref = %s, want %s", m.method, raw, want[i])

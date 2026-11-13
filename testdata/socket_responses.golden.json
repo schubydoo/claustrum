@@ -57,6 +57,7 @@
       "startedAt": "<T>",
       "features": [
         "process.stdin.offset",
+        "process.spawn.refuses_given_up_id",
         "process.kill.farewell",
         "files.extract_tar.execBit",
         "files.list.includeDotNames",
@@ -77,6 +78,7 @@
         "launcher.supplies_cli",
         "server.peer_check",
         "git.outside_session_folders",
+        "git.worktree_create.unusable_git_refused",
         "git.shadow_dir",
         "git.hooks_null_device",
         "git.status.own_lfs_store",

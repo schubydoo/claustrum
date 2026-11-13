@@ -116,8 +116,6 @@ func createOK(wt, branch string) string {
 		`","sourceBranch":"main","branch":"` + branch + `"}}`
 }
 
-const createNotARepo = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
-
 // wantCreatedIn asserts the disk state of a create that succeeded: the entry name in
 // the repository at repo names the leaf wt, the `.git` file of wt names that entry,
 // and the branch exists there.
@@ -374,7 +372,9 @@ func TestFifoDotGitReadMethods(t *testing.T) {
 }
 
 // Measured: a FIFO `.git` with no repository above it, and a `.git` file of 0
-// bytes. Both answer not_a_repo, and nothing is made.
+// bytes. Both answered not_a_repo on older builds. 4c111e86 answers the unusable-git
+// refusal that names that `.git` (measured on Linux and macOS for the FIFO, and on
+// Linux, macOS and Windows for a `.git` file with no gitdir line). Nothing is made.
 func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 	t.Run("FIFO and no outer repository", func(t *testing.T) {
 		tmp := realTempDir(t)
@@ -382,7 +382,7 @@ func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 		T := filepath.Join(tmp, "P5", "T")
 		mkfifo(t, filepath.Join(T, ".git"))
 		wt := filepath.Join(T, ".claude", "worktrees", "w1")
-		wantFifoFrame(t, "create(T)", frameWithin(t, "git.worktree_create", createParams(T, wt, "w1")), createNotARepo)
+		wantFifoFrame(t, "create(T)", frameWithin(t, "git.worktree_create", createParams(T, wt, "w1")), `{"jsonrpc":"2.0","id":1,"result":`+unusableCreate(t, T)+`}`)
 		mustBeGone(t, filepath.Join(T, ".claude"))
 	})
 	t.Run("file of 0 bytes", func(t *testing.T) {
@@ -391,7 +391,7 @@ func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 		a := filepath.Join(T, "a")
 		writeFile(t, filepath.Join(a, ".git"), "", 0o644)
 		wt := filepath.Join(a, ".claude", "worktrees", "w1")
-		wantFifoFrame(t, "create(T/a)", frameWithin(t, "git.worktree_create", createParams(a, wt, "w1")), createNotARepo)
+		wantFifoFrame(t, "create(T/a)", frameWithin(t, "git.worktree_create", createParams(a, wt, "w1")), `{"jsonrpc":"2.0","id":1,"result":`+unusableCreate(t, a)+`}`)
 		mustBeGone(t, filepath.Join(a, ".claude"))
 		mustBeGone(t, filepath.Join(T, ".git", "worktrees"))
 	})

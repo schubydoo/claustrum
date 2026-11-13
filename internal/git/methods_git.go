@@ -1136,7 +1136,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if msg := noRepoCreateCalls(t, req.stop, !bool(p.ShadowDirOff) && req.shadow.active(), bool(p.ShadowDirOff), repo); msg != "" {
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+		return notARepoResult(req.ID, repo)
 	}
 	// On Windows the alternates file is checked before any git call, and
 	// nothing is created (alternatesRefusal).
@@ -1148,7 +1148,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+		return notARepoResult(req.ID, repo)
 	}
 	// The create holds the git directory that its gate accepted until it answers
 	// (acceptedGitDir). A git directory that changed during the gate is not
@@ -1205,11 +1205,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if err := req.stop.halted(); err != nil {
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
 		}
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
-			Success:   false,
-			Error:     "not a git repository",
-			ErrorCode: "not_a_repo",
-		})
+		return notARepoResult(req.ID, repo)
 	}
 	// With a worktreeRoot the session folder is created OUTSIDE the repo, so the
 	// in-repo containment is replaced by the external-location checks: absolute /
@@ -2788,7 +2784,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// answers its text after a colon (`b3081b51`, measured on Linux and macOS
 			// with a bad HEAD and a dangling commondir link). `89cb6289` answered the
 			// lock-check text there on Linux. Windows is claustrum's own, not
-			// measured. A stray commondir whose content is not "." or "./" answers
+			// measured. A stray commondir whose content is not ".", "./" or "./." answers
 			// so too, with a bad HEAD and a good one (`b3081b51`, measured on Linux,
 			// macOS and Windows). Every other refusal keeps the lock-check text (not
 			// measured on b3081b51).

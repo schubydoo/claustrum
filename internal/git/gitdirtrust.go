@@ -19,7 +19,7 @@ import (
 //
 // The check finds the git directory, then judges it. A linked-worktree entry must carry
 // a `commondir` file that names its own repository. Any other git directory carries no
-// `commondir`, or one that reads "." or "./". A dangling relative symlink that stays
+// `commondir`, or one that reads ".", "./" or "./.". A dangling relative symlink that stays
 // in that directory counts as none (judgeStrayCommondir). Three verdicts come out:
 //
 //   - trusted: git runs with GIT_COMMON_DIR pinned to the repository git directory.
@@ -148,7 +148,7 @@ func quoteCut(s string, n int) string {
 // text is literal.
 const (
 	strayContentTail = "; git writes that file only inside .git/worktrees/<name>/, and Claude Code's " +
-		"sandbox may leave one containing just \".\"; anything else sends git's configuration and hooks " +
+		"sandbox may leave one holding \".\" or \"./.\"; anything else sends git's configuration and hooks " +
 		"elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did"
 	strayFileTail = "; git writes that file only inside .git/worktrees/<name>/; one here can send git's " +
 		"configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not " +
@@ -160,10 +160,13 @@ const (
 )
 
 // refuseStrayContent refuses a stray commondir whose value (commondirValue) is not
-// "." or "./". The text does not quote the value (build 683cc6a9, measured on Linux).
+// ".", "./" or "./.". The text does not quote the value (build 683cc6a9, measured on
+// Linux). The text with "./." and strayContentTail are those of 4c111e86, measured on
+// git.worktree_create on Linux and Windows. git.worktree_remove shows the text on
+// Windows. git.info, git.status and git.list_branches share it (not measured).
 func refuseStrayContent(cd string) gitDirTrust {
 	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustPrefix + quoteOperand(cd) +
-		` holds something other than "." or "./"` + strayContentTail}
+		` holds something other than ".", "./" or "./."` + strayContentTail}
 }
 
 // refuseStrayFile refuses a stray commondir that is not a small plain file.
@@ -666,7 +669,9 @@ func isWorktreeEntry(g string) bool {
 //     A dangling symlink that is absolute, or that leaves g, is refused here with "path
 //     escapes from parent" (measured on Linux). Their targets were `/nonexistent` and
 //     `../nothing`. 683cc6a9 drops `openat commondir: `.
-//  3. The content with every trailing CR and LF removed is exactly "." or "./". A space
+//  3. The content with every trailing CR and LF removed is exactly ".", "./" or "./."
+//     ("./." since 4c111e86, measured on git.worktree_create on Linux, macOS and
+//     Windows, and not measured on the other methods that share the step). A space
 //     or a tab is not trimmed in the measured rows. Anything else is refused (quoted there, unquoted since 683cc6a9)
 //     (measured). The content test comes before the shape test. The value also ends at its first NUL
 //     (commondirValue). That cut is claustrum's own here, not measured.
@@ -703,7 +708,7 @@ func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
 		return refuseStrayFile(cd, reason), true
 	}
 	v := commondirValue(content)
-	if v != "." && v != "./" {
+	if v != "." && v != "./" && v != "./." {
 		return refuseStrayContent(cd), true
 	}
 	if !isGitDirShape(g) {
