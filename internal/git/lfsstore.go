@@ -65,10 +65,18 @@ var (
 )
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
-// "" for the store of the git directory. seed runs the seed into path.
+// "" for the store of the git directory. seed runs the seed into path. runDir
+// is the folder of the socket.
 type privateStore struct {
-	path string
-	seed func()
+	path   string
+	runDir string
+	seed   func()
+}
+
+// storeUse is what a checkout that named its private store gives the note of
+// its failure (checkoutNote).
+type storeUse struct {
+	runDir string
 }
 
 // pointerRef is one LFS pointer of the commit of a checkout.

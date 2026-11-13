@@ -28,9 +28,15 @@ type lfsFixture struct {
 // newLFSFixture commits a pointer for each file of files, with the filter f.
 func newLFSFixture(t *testing.T, files map[string]string) lfsFixture {
 	t.Helper()
+	return newNamedLFSFixture(t, "f", files)
+}
+
+// newNamedLFSFixture is newLFSFixture with the filter name.
+func newNamedLFSFixture(t *testing.T, name string, files map[string]string) lfsFixture {
+	t.Helper()
 	f := lfsFixture{checkoutRuleFixture: newCheckoutRuleFixture(t), remote: t.TempDir(),
 		log: filepath.Join(t.TempDir(), "smudge.log"), oids: map[string]string{}, bodies: map[string][]byte{}}
-	mustWrite(t, filepath.Join(f.repo, ".gitattributes"), "*.bin filter=f\n")
+	mustWrite(t, filepath.Join(f.repo, ".gitattributes"), "*.bin filter="+name+"\n")
 	names := []string{".gitattributes"}
 	for name, body := range files {
 		sum := sha256.Sum256([]byte(body))
@@ -45,7 +51,7 @@ func newLFSFixture(t *testing.T, files map[string]string) lfsFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outside(t, "[filter \"f\"]\n\tsmudge = CLAUSTRUM_TEST_HELPER=lfs-smudge '"+filepath.ToSlash(exe)+"' '"+
+	outside(t, "[filter \""+name+"\"]\n\tsmudge = CLAUSTRUM_TEST_HELPER=lfs-smudge '"+filepath.ToSlash(exe)+"' '"+
 		filepath.ToSlash(f.remote)+"' '"+filepath.ToSlash(f.log)+"'\n\trequired = true\n")
 	return f
 }
@@ -393,5 +399,32 @@ func TestRemoveFileAtKeepsFolder(t *testing.T) {
 	}
 	if err := removeFileAt(root, folder); err == nil || !exists(filepath.Join(dir, folder)) {
 		t.Errorf("removeFileAt of a folder = %v, want it kept", err)
+	}
+}
+
+// TestLFSFailureNotes: with the private store, a failed download of the filter
+// lfs gets the note of its text. The notes of a full disk and of a quota name
+// the folder of the socket (4c111e86, measured on Linux and macOS, the quota
+// on Linux).
+func TestLFSFailureNotes(t *testing.T) {
+	for _, row := range []struct {
+		name, error, want string
+	}{
+		{"missing object", "", lfsMissingNote},
+		{"full disk", "write x: no space left on device\n", ". A disk on the remote machine filled up during the checkout: the one that holds the new worktree, or the one that holds <run>" + lfsStoreHoldsText},
+		{"quota", "write x: Disk quota exceeded\n", ". Your disk quota on the remote machine ran out during the checkout: on the disk that holds the new worktree, or on the one that holds <run>" + lfsStoreHoldsText},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newNamedLFSFixture(t, "lfs", map[string]string{"b.bin": "beta-object"})
+			if row.error != "" {
+				mustWrite(t, filepath.Join(f.remote, "error"), row.error)
+			}
+			raw, _ := f.create(t, nil)
+			want := strings.Trim(jsonQuoted(t, strings.ReplaceAll(row.want, "<run>", f.run)), `"`) + `","errorCode":"worktree_add_failed"}}`
+			if !strings.HasSuffix(raw, want) {
+				t.Errorf("git.worktree_create = %s\nwant the end %s", raw, want)
+			}
+			f.wantGone(t)
+		})
 	}
 }
