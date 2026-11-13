@@ -12,7 +12,7 @@ An untagged rule on this page matches build `89cb6289`.
 
 | Parameter | Required | Meaning |
 |---|---|---|
-| `id` | no | The id of the process, as given to `process.spawn`. An absent, empty, unknown or [spent](process-link-bound.md#the-spent-id) `id` signals nothing. |
+| `id` | no | The id of the process, as given to `process.spawn`. An absent, empty, unknown or [spent](process-link-bound.md#the-spent-id) `id` signals nothing. An unknown `id` of up to 128 bytes is [given up](process-spawn.md#a-given-up-id). |
 | `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
 | `farewell`, `graceMs` | no | The [farewell](process-farewell.md) for the stdin of the child, and the wait before the signal. |
 

@@ -179,6 +179,8 @@ component_management:
         - methods_launcher.go
         - internal/supervisor/spawncheck.go
         - internal/install/managedsettings.go
+        - internal/install/checkfault_linux.go
+        - internal/install/checkfault_other.go
         - internal/install/managedlauncher_unix.go
         - internal/install/managedlauncher_windows.go
         - internal/install/managedlauncherdir_darwin.go
@@ -322,6 +324,8 @@ component_management:
         - internal/git/gitnorepo.go
         - internal/git/gitnorepo_unix.go
         - internal/git/gitnorepo_windows.go
+        # 4c111e86 the unusable-git refusal of git.worktree_create.
+        - internal/git/gitunusable.go
         # the object sources and the chain of links of the git methods on Windows (b3081b51).
         - internal/git/objectsources.go
         # the test of a repository path through a link to a network or device path on Windows (b3081b51).
@@ -416,6 +420,8 @@ component_management:
         - internal/supervisor/farewell.go
         # 683cc6a9 link-bound processes: the link, the unattended end and the spent ids.
         - internal/supervisor/linkbound.go
+        # 4c111e86 the given-up ids of process.spawn.
+        - internal/supervisor/givenup.go
         # c9125eb8 the time limit of the pane's git of a gitRead spawn.
         - internal/supervisor/gitreadlimit.go
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the

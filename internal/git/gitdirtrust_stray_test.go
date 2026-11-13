@@ -19,14 +19,16 @@ func wantShapeRefusal(cd string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + wantShapeTail
 }
 
-// "." and "./", with any run of trailing CR and LF, are trusted. All five
+// ".", "./" and "./.", with any run of trailing CR and LF, are trusted. All five
 // methods are served, and git runs with the main git directory pinned (measured).
-// Mutation: keep refusing every commondir.
+// 4c111e86 takes "./." with and without its LF on git.worktree_create (measured on
+// Linux, macOS and Windows). Mutation: keep refusing every commondir, or drop "./."
+// from judgeStrayCommondir.
 func TestStrayCommondirDotIsTrusted(t *testing.T) {
 	// A row sets no environment variable and no working folder, and it writes
 	// package state only through caches that hold a lock. So the rows run in
 	// parallel.
-	for _, content := range []string{".", "./", ".\n", ".\r\n", "./\r\n", ".\n\n"} {
+	for _, content := range []string{".", "./", ".\n", ".\r\n", "./\r\n", ".\n\n", "./.", "./.\n"} {
 		t.Run(strings.NewReplacer("\n", `\n`, "\r", `\r`).Replace(content), func(t *testing.T) {
 			t.Parallel()
 			r := newTrustRepo(t)
@@ -50,8 +52,9 @@ func TestStrayCommondirDotIsTrusted(t *testing.T) {
 
 // Any other content is refused, with only the trailing CR and LF removed
 // before the compare (measured). A lone LF reads as "". A backslash is not a slash,
-// on every OS (measured on Windows). Mutations: trim spaces or tabs, clean the
-// path, map `\` to `/` before the compare.
+// on every OS (measured on Windows). "./..", ".//" and "../" are refused by 4c111e86
+// (measured on Windows and Linux). Mutations: trim spaces or tabs, clean the path, map
+// `\` to `/` before the compare.
 func TestStrayCommondirOtherContentIsRefused(t *testing.T) {
 	for _, tc := range []struct{ content string }{
 		{" ."},
@@ -62,6 +65,9 @@ func TestStrayCommondirOtherContentIsRefused(t *testing.T) {
 		{""},
 		{"\n"},
 		{`.\`},
+		{"./..\n"},
+		{".//\n"},
+		{"../\n"},
 	} {
 		t.Run(strings.NewReplacer("\n", `\n`, "\t", `\t`).Replace(tc.content), func(t *testing.T) {
 			r := newTrustRepo(t)
@@ -87,7 +93,7 @@ func TestStrayCommondirQuotedValue(t *testing.T) {
 			r := newTrustRepo(t)
 			cd := filepath.Join(r.T, ".git", "commondir")
 			writeFile(t, cd, tc.content, 0o644)
-			want := wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than "." or "./"` + wantTRTail
+			want := wantTrustPrefix + fmt.Sprintf("%q", cd) + ` holds something other than ".", "./" or "./."` + wantTRTail
 			wantRPCError(t, "info(T)", info(t, r.T), want)
 		})
 	}

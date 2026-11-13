@@ -59,6 +59,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
+| `-32602` | `this id was asked after, or asked to be ended, while no process had it: take a fresh one` | A [given-up](#a-given-up-id) `id` (`4c111e86`). |
 
 ### Start failures
 
@@ -315,6 +316,19 @@ A spawn with the `id` and the session of a running process only replaces it, as 
 
 ??? note "A -stop during the wait"
     A `-stop` can come while a spawn waits for the old process (measured on Linux and macOS). The spawn then gets no reply, and the new process never starts. The daemon sends `SIGKILL` to the group of the old process, and no connection gets its `exit` frame.
+
+### A given-up `id`
+
+Build `4c111e86`, measured on Linux, macOS and Windows:
+
+- `process.kill`, `process.killAndWait` and `process.reattach` of an `id` that no process has give that `id` up. Their replies stay as before.
+- A spawn of a given-up `id` gets `-32602` with the text of [Errors](#errors) and `"data":{"reason":"other"}`. The command does not run. The daemon log gets `[process.Manager] Failed to start process <id>: <text>`.
+- An `id` of 1 to 128 bytes is given up, and a longer one is not. Letter case and a trailing blank make another `id` (measured on Windows).
+- The `id` is free again between 840 and 910 seconds after it was given up (measured on Linux and Windows). On macOS it is refused at 14 minutes and free at 16. A refused spawn does not renew the time (measured on Windows).
+
+claustrum's own, not measured: the `id` stays given up for 15 minutes, and each new give-up sets the time anew. The test comes right after the test of a spent `id`. A reattach with a `proof` gives the `id` up too.
+
+After 4100 give-ups, `4c111e86` refused the first `id` in both runs and started `id` 4095 in both. It refused `id` 4099 in one run and started it in the other (Linux). claustrum refuses all of them, a known gap.
 
 ### A spawn during a shutdown
 

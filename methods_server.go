@@ -70,9 +70,13 @@ var capabilityMethods = append(append([]string{
 // Windows). c9125eb8 inserted process.spawn.git_read after process.spawn.failure_reason
 // and launcher.supplies_cli after launcher.non_string_refused (measured on Linux, macOS
 // and Windows). 4c111e86 lists two launcher names before server.instance_id on Linux
-// (launcherOSFeatures, measured on Linux). The array is always emitted.
+// (launcherOSFeatures, measured on Linux). It inserted
+// git.worktree_create.unusable_git_refused after git.outside_session_folders, and
+// process.spawn.refuses_given_up_id after process.stdin.offset (measured on Linux,
+// macOS and Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
+	"process.spawn.refuses_given_up_id",
 	"process.kill.farewell",
 	"files.extract_tar.execBit",
 	"files.list.includeDotNames",
@@ -93,6 +97,7 @@ var capabilityFeatures = append(append([]string{
 	"launcher.supplies_cli",
 	"server.peer_check",
 	"git.outside_session_folders",
+	"git.worktree_create.unusable_git_refused",
 	"git.shadow_dir",
 	"git.hooks_null_device",
 	"git.status.own_lfs_store",
