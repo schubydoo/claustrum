@@ -51,7 +51,7 @@ func TestSpawnCLITempRootFrame(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	old := newTempRootName
-	newTempRootName = func() string { return "ccd-a5247ffbe09b" }
+	newTempRootName = func() string { return "ccd-a5247ffbe0" }
 	t.Cleanup(func() { newTempRootName = old })
 	x, _ := tempRootDir(t, true)
 	_, sock := newRunningServer(t)
@@ -59,12 +59,12 @@ func TestSpawnCLITempRootFrame(t *testing.T) {
 	exe, env := helperCommand(t, "environ")
 	env["TMPDIR"] = x
 	raw := cl.call(spawnLine(t, "f1b", exe, env, true))
-	want := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"cliTempRoot":{"refused":"a link","name":"ccd-a5247ffbe09b"}}}`
-	if string(raw) != want || len(want)-1 != 110 {
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"cliTempRoot":{"refused":"not readable by its owner","name":"ccd-a5247ffbe0"}}}`
+	if string(raw) != want {
 		t.Fatalf("reply %s, want %s", raw, want)
 	}
 	lines := strings.Split(streamBytes(t, cl.waitExit("f1b"), "stdout"), "\n")
-	if !slices.Contains(lines, "CLAUDE_CODE_TMPDIR="+filepath.Join(x, "ccd-a5247ffbe09b")) || !slices.Contains(lines, "TMPDIR="+x) {
+	if !slices.Contains(lines, "CLAUDE_CODE_TMPDIR="+filepath.Join(x, "ccd-a5247ffbe0", "t")) || !slices.Contains(lines, "TMPDIR="+x) {
 		t.Errorf("child env %q, want the folder and TMPDIR", lines)
 	}
 	waitTempRootsLive(t, 0)

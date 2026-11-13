@@ -2,14 +2,15 @@ package main
 
 // The private temp folder of a spawn with "cliTempRoot":true (b3081b51, measured on
 // Linux). Claude Code keeps its own temp files in <temp dir>/claude-<uid>. When that
-// entry is unfit, the daemon gives the child a folder ccd-<12 hex> beside it in
-// CLAUDE_CODE_TMPDIR, and the reply names the kind and the folder.
+// entry is unfit, the daemon makes a folder ccd-<10 hex> beside it, with an inner
+// folder t, and gives the child <temp dir>/ccd-<10 hex>/t in CLAUDE_CODE_TMPDIR. The
+// reply names the kind and the folder (4c111e86, measured on Linux).
 //
-// The one remove of a folder here is one plain rmdir of the name that this call
-// made, through a handle of the temp dir, after a failed test of the new folder
-// (removeMadeTempRoot). It never deletes a tree, another name or a moved folder.
-// The other remove is one plain remove of the registry name in the run dir before
-// it is written again.
+// The removes of a folder here are two plain rmdirs after a failed test of the new
+// folder (removeMadeTempRoot): the inner folder t through the handle of the new
+// folder, then the name that this call made through a handle of the temp dir. They
+// never delete a tree, another name or a moved folder. The other remove is one
+// plain remove of the registry name in the run dir before it is written again.
 
 import (
 	"crypto/rand"
@@ -40,7 +41,14 @@ const (
 	tempRootTooMany = "too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute"
 	tempRootRemoved = "the new folder was not this account's own with mode 0700, and was removed"
 	tempRootNoReply = "the temp dir did not answer in time"
+	// tempRootSteppedAround answers a link or a file at the entry (4c111e86, measured
+	// on Linux and macOS).
+	tempRootSteppedAround = "only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this"
 )
+
+// tempRootChildDir is the name of the inner folder that the child gets (4c111e86,
+// measured on Linux and macOS).
+const tempRootChildDir = "t"
 
 // tempRootLimit is the time that the step gets for its answer. After it the reply
 // says tempRootNoReply and the child gets the env as it was. On a stuck NFS mount
@@ -48,10 +56,11 @@ const (
 // claustrum's own. A variable for the tests.
 var tempRootLimit = 2 * time.Second
 
-// tempRootLiveCap is the count of live spawns with a private folder. The next spawn
-// gets tempRootTooMany (measured on Linux). The count is of this daemon, and a spawn
-// gives its place back at its exit frame, or, while a step or a refresh holds the lock,
-// once it ends (claustrum's own, not measured).
+// tempRootLiveCap is the count of held folders. A spawn that needs one more folder
+// gets tempRootTooMany (c9125eb8 and 4c111e86, measured on macOS). Spawns that share
+// a held folder take no new place (measured on Linux). The count is of this daemon,
+// and a folder gives its place back when its last spawn gives it back, or, while a
+// step or a refresh holds the lock, once it ends (claustrum's own, not measured).
 const tempRootLiveCap = 8
 
 // tempRootMaxAge is the age of a folder that a later daemon no longer takes. A
@@ -63,19 +72,21 @@ const tempRootMaxAge = 24 * time.Hour
 // Linux: 600 s from the first hold). A variable for the tests.
 var tempRootRefresh = 600 * time.Second
 
-// tempRootNameRE is the shape of a folder name of this step. The 12 hex come from
-// crypto/rand (claustrum's own, not measured).
-var tempRootNameRE = regexp.MustCompile(`^ccd-[0-9a-f]{12}$`)
+// tempRootNameRE is the shape of a folder name of this step: 10 hex (4c111e86,
+// measured on Linux and macOS). They come from crypto/rand (claustrum's own, not
+// measured).
+var tempRootNameRE = regexp.MustCompile(`^ccd-[0-9a-f]{10}$`)
 
 // Seams for the tests. Production never reassigns them.
 var (
-	tempRootUID        = os.Getuid
-	newTempRootName    = randomTempRootName
-	afterTempRootMkdir = func(dir, name string) {}
+	tempRootUID             = os.Getuid
+	newTempRootName         = randomTempRootName
+	afterTempRootMkdir      = func(dir, name string) {}
+	afterTempRootChildMkdir = func(dir, name string) {}
 )
 
 func randomTempRootName() string {
-	b := make([]byte, 6)
+	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	return "ccd-" + hex.EncodeToString(b)
 }
@@ -203,11 +214,14 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	if otherAccount {
 		return refuse(tempRootOther)
 	}
+	// A link or a file gets no folder (4c111e86, measured on Linux and macOS). The
+	// place after the account test is claustrum's own, not measured.
+	if kind == "a link" || kind == "not a folder" {
+		return refuse(tempRootSteppedAround)
+	}
 	tempRoots.mu.Lock()
 	defer tempRoots.mu.Unlock()
-	if tempRoots.live >= tempRootLiveCap {
-		return refuse(tempRootTooMany)
-	}
+	canAdd := len(tempRoots.held) < tempRootLiveCap
 	var root *os.Root
 	if runDir != "" {
 		if r, err := os.OpenRoot(runDir); err == nil {
@@ -216,9 +230,12 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		}
 	}
 	reg := tempRootRegistryName(dir)
-	h, name, fresh := reuseTempRoot(xfd, dir, root, reg, uid)
+	h, name, fresh := reuseTempRoot(xfd, dir, root, reg, uid, canAdd)
 	made := false
 	if h == nil {
+		if !canAdd {
+			return refuse(tempRootTooMany)
+		}
 		var removed bool
 		h, name, removed = makeTempRoot(xfd, dir, uid)
 		if removed {
@@ -246,8 +263,8 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	}
 	h.users++
 	tempRoots.live++
-	logging.Infof("[process.Manager] Claude Code's temp folder is unfit (it is %s): Claude Code gets %s beside it", kind, name)
-	env = sysproc.ReplaceOrAppendEnv(env, "CLAUDE_CODE_TMPDIR", filepath.Join(dir, name))
+	logging.Infof("[process.Manager] Claude Code's temp folder is unfit (it is %s): Claude Code gets %s/%s beside it", kind, name, tempRootChildDir)
+	env = sysproc.ReplaceOrAppendEnv(env, "CLAUDE_CODE_TMPDIR", filepath.Join(dir, name, tempRootChildDir))
 	giveBack := func() { // the caller holds tempRoots.mu
 		defer tempRoots.mu.Unlock()
 		tempRoots.live--
@@ -357,11 +374,13 @@ func tempRootRegistryName(dir string) string {
 }
 
 // reuseTempRoot returns the folder that the registry names when the daemon can take
-// it: one that this daemon holds already, or an own 0700 folder younger than
-// tempRootMaxAge that no other process holds (measured on Linux). fresh is true for
-// a folder that this daemon did not hold yet: the caller adds it to tempRoots.held
-// or closes it. The caller holds tempRoots.mu.
-func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int) (h *heldTempRoot, name string, fresh bool) {
+// it: one that this daemon holds already, or an own folder younger than
+// tempRootMaxAge that no other process holds (measured on Linux). With canAdd false
+// it takes only a held folder. fresh is true for a folder that this daemon did not
+// hold yet: the caller adds it to tempRoots.held or closes it. The caller holds
+// tempRoots.mu. The shape of a folder that the daemon did not hold, mode 0500 with an
+// own inner folder t of mode 0700, is claustrum's own, not measured.
+func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int, canAdd bool) (h *heldTempRoot, name string, fresh bool) {
 	if root == nil {
 		return nil, "", false
 	}
@@ -381,8 +400,14 @@ func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int) (h *
 		holdTempRoot(h.f)
 		return h, name, false
 	}
-	f, ok := openTempRoot(xfd, name, uid)
-	if !ok {
+	if !canAdd {
+		return nil, "", false
+	}
+	f, ok := openTempRoot(xfd, name, uid, 0o500)
+	if !ok || !childDirFit(int(f.Fd()), uid) {
+		if ok {
+			_ = f.Close()
+		}
 		return nil, "", false
 	}
 	fd := int(f.Fd())
@@ -397,49 +422,79 @@ func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int) (h *
 }
 
 // openTempRoot opens the folder name of the temp dir with no link followed. ok is
-// true for a folder of uid with mode 0700. A changed mode is measured on Linux. The
-// owner test is claustrum's own, not measured: a racer chown came too late there.
-func openTempRoot(xfd int, name string, uid int) (*os.File, bool) {
+// true for a folder of uid with the given mode. A changed mode is measured on Linux.
+// The owner test is claustrum's own, not measured: a racer chown came too late there.
+func openTempRoot(xfd int, name string, uid int, mode uint32) (*os.File, bool) {
 	fd, err := unix.Openat(xfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, false
 	}
 	f := os.NewFile(uintptr(fd), name)
 	var st unix.Stat_t
-	if unix.Fstat(fd, &st) != nil || int(st.Uid) != uid || st.Mode&0o7777 != 0o700 {
+	if unix.Fstat(fd, &st) != nil || int(st.Uid) != uid || st.Mode&0o7777 != mode {
 		_ = f.Close()
 		return nil, false
 	}
 	return f, true
 }
 
-// makeTempRoot makes a new folder ccd-<12 hex> with mode 0700. If the new folder is
-// not an own folder of mode 0700 after the mkdir, the name goes by one rmdir and
-// removed is true. The reply then says "removed" whether the rmdir worked or not
-// (measured on Linux).
+// makeTempRoot makes a new folder ccd-<10 hex> with mode 0700, then its inner folder
+// t with mode 0700, then sets the new folder to mode 0500. The child gets t
+// (4c111e86, measured on Linux and macOS: the folder has mode 0500, t mode 0700).
+// If the new folder is not an own folder of mode 0700 after the mkdir, the name goes
+// by one rmdir and removed is true. The reply then says "removed" whether the rmdir
+// worked or not (measured on Linux, b3081b51). A t that cannot be made, or that is
+// no own folder of mode 0700, or a failed mode change, removes t and then the name
+// in the same way (claustrum's own, not measured).
 func makeTempRoot(xfd int, dir string, uid int) (h *heldTempRoot, name string, removed bool) {
 	name = newTempRootName()
 	if !tempRootNameRE.MatchString(name) || unix.Mkdirat(xfd, name, 0o700) != nil {
 		return nil, "", false
 	}
 	afterTempRootMkdir(dir, name)
-	f, ok := openTempRoot(xfd, name, uid)
+	f, ok := openTempRoot(xfd, name, uid, 0o700)
 	if !ok {
-		removeMadeTempRoot(xfd, dir, name)
+		removeMadeTempRoot(xfd, -1, dir, name)
+		return nil, "", true
+	}
+	fd := int(f.Fd())
+	if unix.Mkdirat(fd, tempRootChildDir, 0o700) != nil {
+		_ = f.Close()
+		removeMadeTempRoot(xfd, -1, dir, name)
+		return nil, "", true
+	}
+	afterTempRootChildMkdir(dir, name)
+	if !childDirFit(fd, uid) || unix.Fchmod(fd, 0o500) != nil {
+		removeMadeTempRoot(xfd, fd, dir, name)
+		_ = f.Close()
 		return nil, "", true
 	}
 	var st unix.Stat_t
-	_ = unix.Fstat(int(f.Fd()), &st)
+	_ = unix.Fstat(fd, &st)
 	return &heldTempRoot{f: f, dev: st.Dev, ino: st.Ino, stop: make(chan struct{})}, name, false
 }
 
-// removeMadeTempRoot is the one remove of a folder of this step: one rmdir of the
-// name that makeTempRoot just made, through the handle of the temp dir. An rmdir
-// removes no link and no folder with content. The name must have the shape of this
-// step, and homeguard.WipesHomeDir must pass on the full path.
-func removeMadeTempRoot(xfd int, dir, made string) {
+// childDirFit reports whether the folder of fd holds t as an own folder of
+// mode 0700, with no link followed.
+func childDirFit(fd, uid int) bool {
+	var st unix.Stat_t
+	return unix.Fstatat(fd, tempRootChildDir, &st, unix.AT_SYMLINK_NOFOLLOW) == nil &&
+		st.Mode&unix.S_IFMT == unix.S_IFDIR && int(st.Uid) == uid && st.Mode&0o7777 == 0o700
+}
+
+// removeMadeTempRoot holds the removes of a folder of this step, each one plain
+// rmdir. With madeFd at 0 or more it first removes the inner folder t through
+// madeFd, the handle of the folder that makeTempRoot just made and opened. Then it
+// removes the name that makeTempRoot just made, through the handle of the temp dir.
+// An rmdir removes no link and no folder with content. The name must have the shape
+// of this step, and homeguard.WipesHomeDir must pass on the full path of the name.
+// That test covers t too: a t that is home lies in the name, which then holds home.
+func removeMadeTempRoot(xfd, madeFd int, dir, made string) {
 	if !tempRootNameRE.MatchString(made) || homeguard.WipesHomeDir(filepath.Join(dir, made)) {
 		return
+	}
+	if madeFd >= 0 {
+		_ = unix.Unlinkat(madeFd, tempRootChildDir, unix.AT_REMOVEDIR)
 	}
 	_ = unix.Unlinkat(xfd, made, unix.AT_REMOVEDIR)
 }

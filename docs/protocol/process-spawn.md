@@ -141,11 +141,11 @@ On Linux a spawn with `"cliTempRoot": true` tests the entry `claude-<uid>` in th
 - A temp dir that does not exist or a relative `TMPDIR` gives no member. So does a spawn with a `launcher`.
 - With no entry, or an own folder of mode 0700 or 0755, the result has no member and the child gets nothing.
 - An unfit entry gives `refused`: `a link`, `not a folder`, `another account's`, `on another file system` or `not readable by its owner`. The entry stays.
-- The child then gets `CLAUDE_CODE_TMPDIR=<temp dir>/ccd-<12 hex>`, an own folder of mode 0700, and the result names it.
-- The daemon logs `[process.Manager] Claude Code's temp folder is unfit (it is <kind>): Claude Code gets <name> beside it`.
+- For the other three kinds the daemon then makes `ccd-<10 hex>` beside the entry, with mode 0500 and an inner folder `t` of mode 0700. The child gets `CLAUDE_CODE_TMPDIR=<temp dir>/ccd-<10 hex>/t`, and the result names `ccd-<10 hex>` (`4c111e86`).
+- The daemon logs `[process.Manager] Claude Code's temp folder is unfit (it is <kind>): Claude Code gets <name>/t beside it` (`4c111e86`).
 
 ```json
-{"success":true,"cliTempRoot":{"refused":"a link","name":"ccd-a5247ffbe09b"}}
+{"success":true,"cliTempRoot":{"refused":"not readable by its owner","name":"ccd-a5247ffbe0"}}
 ```
 
 #### When no folder is given
@@ -156,11 +156,14 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 |---|---|
 | `the temp dir or a folder above it could not be opened for reading` | A temp dir of mode 0333. This test comes first, so `refused` is absent and no line is logged. |
 | `the temp dir or a folder above it belongs to, or can be written by, another account` | A temp dir of mode 0777. `/tmp` passes. |
-| `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | 8 live spawns have a folder. |
+| `only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this` | The entry is a link or a file (`4c111e86`). |
+| `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | The daemon holds 8 folders (`c9125eb8` and `4c111e86`, measured on macOS). Spawns that share a folder take one place (measured on Linux). |
 | `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. A folder that the step makes later stays. `refused` is absent. |
 | `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
 
-In the last case the daemon removes that one new name by one `rmdir` through a handle of the temp dir. A link at the name stays, and the text still says `removed`.
+#### The removes of a new folder
+
+With the `removed` text, the daemon removes the new name by one `rmdir` through a handle of the temp dir. A link at the name stays, and the text still says `removed`. If the daemon made `t`, one `rmdir` of `t` through the handle of the new folder comes first.
 
 #### The record of the folder
 
@@ -170,16 +173,19 @@ The run dir holds `cli-temp-root-<16 hex>`, mode 0600, with the folder name and 
 - A folder that another process holds by `flock`, a folder of 25 h, or another content in the file gives a new name. The old folder stays.
 - While a child runs, the daemon holds the folder by `flock` and sets its write time to now, at the hold and every 600 s.
 
-claustrum's own, not measured:
+#### claustrum's own rules
 
-- Random 12 hex, an age bound of 24 h, and the order of the `refused` tests.
+These are not measured:
+
+- Random hex, an age bound of 24 h, and the order of the `refused` tests. The link and file test comes after the account test.
+- The test of `t` and its `rmdir`. A `t` that is not an own folder of mode 0700 gives the `removed` text too. A later daemon takes again only a folder of mode 0500 with an own `t` of mode 0700.
 - The rest of the order of the four names. With none of them set, the temp dir is `/tmp`. A relative value of `CLAUDE_CODE_TMPDIR`, `TMP` or `TEMP` gives no member too, and the next name is not tried.
 - The limit is 2 s. After it the step goes on, writes no record and holds no folder. The limit also covers the wait for the step of another spawn, so a spawn can get this text for a temp dir that answers.
 - The reply of the time limit logs no line. A late step can log the refuse line of its own `whyNot`.
 - An entry that cannot be read gives no member. So does a failed mkdir, with no log line.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
 - The owner test of the new folder.
-- The count is per daemon. The hold and the count end at the exit frame, or, while a step or a refresh holds the lock, once it ends.
+- The count is per daemon. A folder gives its place back at the exit frame of its last spawn, or, while a step or a refresh holds the lock, once it ends.
 - The step runs after the `cwd`, launcher and session command tests, and before the start.
 - `cliTempRoot` comes before `pid` and `startTime`.
 - A failed registry write is not logged. A failed hold does not stop the spawn.
