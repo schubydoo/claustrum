@@ -120,7 +120,9 @@ func gitDirUnusable(g string) bool {
 			return false
 		}
 	}
-	if f, err := os.OpenFile(filepath.Join(g, "HEAD"), os.O_RDONLY|openNonBlocking, 0); errors.Is(err, fs.ErrPermission) {
+	// The open never makes HEAD the controlling terminal of the daemon, as in
+	// openRepoFile. A HEAD that links to a pty slave is claustrum's own, not measured.
+	if f, err := os.OpenFile(filepath.Join(g, "HEAD"), os.O_RDONLY|openNonBlocking|openNoTerminal, 0); errors.Is(err, fs.ErrPermission) {
 		return false
 	} else if err == nil {
 		_ = f.Close()
