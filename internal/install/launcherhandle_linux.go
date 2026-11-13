@@ -51,11 +51,30 @@ func lookLauncherPath(target string) ([]launcherID, error) {
 }
 
 func statxPath(p string) (launcherID, error) {
+	return launcherIDAt(unix.AT_FDCWD, p, unix.AT_SYMLINK_NOFOLLOW)
+}
+
+// statxCall is unix.Statx, a variable so a test can refuse it.
+var statxCall = unix.Statx
+
+// launcherIDAt reads the launcherID of path below dirfd. Where statx is refused with
+// ENOSYS (a kernel before 4.11) or EPERM (a seccomp filter), it falls back to fstatat,
+// with no mount id. Both looks of one check take the same path, so they stay comparable.
+// The fallback is claustrum's own, not measured.
+func launcherIDAt(dirfd int, path string, flags int) (launcherID, error) {
 	var st unix.Statx_t
-	if err := unix.Statx(unix.AT_FDCWD, p, unix.AT_SYMLINK_NOFOLLOW, launcherIDMask, &st); err != nil {
+	err := statxCall(dirfd, path, flags, launcherIDMask, &st)
+	if err == nil {
+		return launcherIDOf(&st), nil
+	}
+	if err != unix.ENOSYS && err != unix.EPERM {
 		return launcherID{}, err
 	}
-	return launcherIDOf(&st), nil
+	var s unix.Stat_t
+	if err := unix.Fstatat(dirfd, path, &s, flags); err != nil {
+		return launcherID{}, err
+	}
+	return launcherID{dev: unix.Mkdev(unix.Major(s.Dev), unix.Minor(s.Dev)), ino: s.Ino}, nil
 }
 
 // launcherMoved walks target by handle and compares each item with look. The first
@@ -83,9 +102,9 @@ func launcherMoved(target string, look []launcherID) (fault, reason string) {
 				unix.Close(fd)
 			}
 			fd = next
-			var st unix.Statx_t
-			err = unix.Statx(fd, "", unix.AT_EMPTY_PATH, launcherIDMask, &st)
-			if err == nil && (i >= len(look) || launcherIDOf(&st) != look[i]) {
+			var id launcherID
+			id, err = launcherIDAt(fd, "", unix.AT_EMPTY_PATH)
+			if err == nil && (i >= len(look) || id != look[i]) {
 				err = unix.ESTALE
 			}
 		}

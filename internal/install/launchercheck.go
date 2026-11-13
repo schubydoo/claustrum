@@ -213,8 +213,9 @@ func launcherFolders(dir string) []string {
 // ownerUid of the launcherCheck does. A group or other write bit refuses it, the
 // sticky folder 1777 too. On NFS, FUSE or SMB with no digest the item is refused,
 // whatever its owner and mode. A FUSE mount of the uid of the daemon gets writable
-// there, also with that uid as ownerUid. With a digest the owner and write tests still
-// run, and that mount gets owner (both rules: 4c111e86, measured on Linux). An item whose
+// there, also with that uid as ownerUid. With a digest the owner test still
+// runs, and that mount gets owner (both rules: 4c111e86, measured on Linux). The write test
+// there is claustrum's own, not measured. An item whose
 // facts cannot be read is missing (claustrum's own, not measured).
 func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (fault, reason string) {
 	f, err := launcherPathFacts(item)
@@ -230,7 +231,7 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
 		// The order of the three texts, for a daemon that runs as uid 65534, is
 		// claustrum's own, not measured. The first text follows 4c111e86 (measured on
-		// Linux).
+		// Linux, on a FUSE mount).
 		switch {
 		case int64(f.uid) == int64(launcherOwnUID()):
 			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root must own the launcher and every folder above it.", shown, f.uid)

@@ -109,7 +109,7 @@ func TestSpawnEnvOnlyIfSent(t *testing.T) {
 // TestSpawnLauncherCheckRefusals pins the -32004 frames of a checked spawn (c9125eb8,
 // measured on Linux): the two prefixes, launcherFault before reason, the em dash
 // text of an empty launcher, and the digest and owner faults. The owner text follows
-// 4c111e86 (measured on Linux). Each logs its failed-start line.
+// 4c111e86 (measured on Linux, on a FUSE mount). Each logs its failed-start line.
 func TestSpawnLauncherCheckRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
