@@ -419,20 +419,20 @@ func hardenedGit(u gitUse, dir string, heavy bool, args ...string) (string, bool
 
 // statusGitDirTempPrefix and checkoutIndexTempPrefix start the names of the
 // temporary git dir of git.status and the temporary index directory of the
-// git.worktree_create checkout. Each has the length of the prefix in the f6010b97
-// argv and env, measured on Linux, macOS and Windows: 18 and 17 bytes.
+// git.worktree_create checkout. The status prefix has the length of the prefix
+// in the f6010b97 argv and env, measured on Linux, macOS and Windows: 18 bytes.
 // os.MkdirTemp adds a random decimal suffix, as f6010b97 does.
 //
-// The index prefix is the one of 89cb6289 on Linux and macOS. A measurement
-// shows it in a frame: "open <tmp>/claude-ssh-index-<n>/index: no such file or
-// directory". It is also in the GIT_INDEX_FILE of each read-tree there. The
-// constant is the same on Windows, where the name of 89cb6289 is not measured.
+// The index prefix is the one of 4c111e86 (measured on Linux and macOS). Its
+// folder has mode 0700. It is also in the GIT_INDEX_FILE
+// of each read-tree there. c9125eb8 and 89cb6289 name it claude-ssh-index-<n>. The
+// constant is the same on Windows, where 4c111e86 is not measured.
 // The prefix of git.status is the one of 5fd08069 with "shadowDirOff":true
 // (measured on Linux). In the state shadow both folders are in the folder of
 // the daemon, with other names (gitUse.requestDir).
 const (
 	statusGitDirTempPrefix  = "claude-ssh-gitdir-"
-	checkoutIndexTempPrefix = "claude-ssh-index-"
+	checkoutIndexTempPrefix = "claude-ssh-checkout-"
 )
 
 // worktreeCreateDrainCap bounds the post-exit pipe drain of git.worktree_create's

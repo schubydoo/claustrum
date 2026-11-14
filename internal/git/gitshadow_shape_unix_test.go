@@ -348,7 +348,7 @@ func statusRowsFor(state shapeState) []shapeRow {
 // pair (claustrum's own, not measured).
 func createRows() []shapeRow {
 	const leaf = "<leaf>"
-	index := map[bool]string{true: " GIT_INDEX_FILE=<S>/.checkout-<n>/index", false: " GIT_INDEX_FILE=<tmp>/claude-ssh-index-<n>/index"}
+	index := map[bool]string{true: " GIT_INDEX_FILE=<S>/.checkout-<n>/index", false: " GIT_INDEX_FILE=<tmp>/claude-ssh-checkout-<n>/index"}
 	// light is a light pair outside the new worktree: six values in the states
 	// shadow and fallback-git, four with the member.
 	light := func(argv string) []shapeRow {

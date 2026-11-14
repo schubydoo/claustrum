@@ -54,7 +54,7 @@ A client sees the hardening here:
   `LANGUAGE` and `LANG`. The checkout in the state `shadow` is an exception too: it
   ends with `LANGUAGE=C`.
 - On Linux and macOS, with `"shadowDirOff":true`, a create can answer the text
-  `open <tmp>/claude-ssh-index-<n>/index: no such file or directory`. `<n>` is
+  `open <tmp>/claude-ssh-checkout-<n>/index: no such file or directory`. `<n>` is
   decimal digits.
 
 ### Refusal texts

@@ -777,11 +777,12 @@ func TestHardenedGitCallShape(t *testing.T) {
 }
 
 // TestGitTempPrefixLengths pins the lengths of the temp name prefixes. The
-// f6010b97 prefixes are 18 bytes (the status git dir) and 17 bytes (the checkout
-// index directory), measured on Linux, macOS and Windows.
+// f6010b97 prefix of the status git dir is 18 bytes, measured on Linux, macOS
+// and Windows. The 4c111e86 prefix of the checkout index directory is 20 bytes,
+// measured on Linux and macOS.
 func TestGitTempPrefixLengths(t *testing.T) {
-	if len(statusGitDirTempPrefix) != 18 || len(checkoutIndexTempPrefix) != 17 {
-		t.Errorf("len(%q) = %d, len(%q) = %d, want 18 and 17 (f6010b97)",
+	if len(statusGitDirTempPrefix) != 18 || len(checkoutIndexTempPrefix) != 20 {
+		t.Errorf("len(%q) = %d, len(%q) = %d, want 18 and 20",
 			statusGitDirTempPrefix, len(statusGitDirTempPrefix), checkoutIndexTempPrefix, len(checkoutIndexTempPrefix))
 	}
 }
