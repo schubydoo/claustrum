@@ -365,10 +365,9 @@ Build `4c111e86`, measured on Linux, macOS and Windows:
 - A spawn of a given-up `id` gets `-32602` with the text of [Errors](#errors) and `"data":{"reason":"other"}`. The command does not run. The daemon log gets `[process.Manager] Failed to start process <id>: <text>`.
 - An `id` of 1 to 128 bytes is given up, and a longer one is not. Letter case and a trailing blank make another `id` (measured on Windows).
 - The `id` is free again between 840 and 910 seconds after it was given up (measured on Linux and Windows). On macOS it is refused at 14 minutes and free at 16. A refused spawn does not renew the time (measured on Windows).
+- On Linux, at most 4096 `id`s are given up, and a new give-up past that is dropped. The cap counts every given-up `id`. After 4100 give-ups one at a time, `id`s 0 to 4095 are refused and later ones start. In a burst of give-ups, the `id`s near the cap varied from run to run. A full set first drops the `id`s past their time, and then a new give-up gets in. While the set stays full, a new give-up of a given-up `id` does not renew its time.
 
-claustrum's own, not measured: the `id` stays given up for 15 minutes, and each new give-up sets the time anew. The test comes right after the test of a spent `id`. A reattach with a `proof` gives the `id` up too.
-
-After 4100 give-ups, `4c111e86` refused the first `id` in both runs and started `id` 4095 in both. It refused `id` 4099 in one run and started it in the other (Linux). claustrum refuses all of them, a known gap.
+claustrum's own, not measured: the `id` stays given up for 15 minutes, and a new give-up renews it outside a full set. The test comes right after the test of a spent `id`. A reattach with a `proof` gives the `id` up too. In a burst, the kept `id`s are its own.
 
 ### A spawn during a shutdown
 

@@ -13,9 +13,15 @@ import (
 //
 // Not built: an end of a child that started while its id was given up. No row shows
 // such an end on any build (Linux 90 pairs, macOS 40, Windows), so claustrum registers
-// that child as before. After 4100 give-ups, 4c111e86 refused the first id in both
-// runs and started id 4095 in both. It refused id 4099 in one run and started it in
-// the other (Linux). claustrum refuses all of them. TASK-542 follows this up.
+// that child as before.
+
+// givenUpIDCap is the most ids that are given up at once. Once the set is full, a
+// new give-up is dropped. After 4100 give-ups one at a time, 4c111e86 refuses ids
+// 0 to 4095 and starts the later ones (measured on Linux). The cap counts every
+// given-up id: after 20 other give-ups, ids 0 to 4075 are refused. In a burst of
+// give-ups the ids near the cap varied from run to run (measured on Linux).
+// claustrum's order in a burst is its own.
+const givenUpIDCap = 4096
 
 // givenUpIDAge is how long an id stays given up. 4c111e86 refuses the spawn at 840 s
 // and starts it at 910 s (measured on Linux and Windows), and on macOS it refuses at
@@ -33,9 +39,12 @@ const givenUpIDMaxBytes = 128
 var errGivenUpID = &SpawnRefusal{Code: rpc.CodeInvalidParam, Msg: "this id was asked after, or asked to be ended, while no process had it: take a fresh one"}
 
 // GiveUpUnknown gives id up when no process of the table has it and no link-bound
-// spawn of id is starting. It signals nothing. Each call sets the time anew
-// (claustrum's own, not measured). The id must match exactly: case and a trailing
-// blank make another id (measured on Windows).
+// spawn of id is starting, and the set has room (givenUpIDCap). It signals nothing.
+// A full set first drops the ids past their time. If it is still full, a new id is
+// dropped, and an id already in the set keeps its old time (4c111e86, measured on
+// Linux). In a set that is not full, each call sets the time anew (claustrum's
+// own, not measured). The id must match exactly: case and a trailing blank make
+// another id (measured on Windows).
 func (m *Manager) GiveUpUnknown(id string) {
 	if id == "" || len(id) > givenUpIDMaxBytes {
 		return
@@ -48,7 +57,14 @@ func (m *Manager) GiveUpUnknown(id string) {
 	if _, ok := m.linkStarting[id]; ok {
 		return
 	}
-	m.givenUp[id] = time.Now()
+	now := time.Now()
+	if len(m.givenUp) >= givenUpIDCap {
+		m.pruneGivenUpLocked(now)
+		if len(m.givenUp) >= givenUpIDCap {
+			return
+		}
+	}
+	m.givenUp[id] = now
 }
 
 // givenUpLocked reports whether id is given up. A refused spawn does not renew the
