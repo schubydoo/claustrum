@@ -661,7 +661,7 @@ The main `<reason>` texts of a dropped record and of a group that fails the test
 
 #### A long id in a line
 
-Four lines cut an `<id>` of more than 8 bytes to the first 8 bytes and `…`: the start, failed-start, exit and `Starting <stream> streaming` lines. This holds for `c9125eb8` and `4c111e86`, measured on Linux, macOS and Windows. claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
+Four lines cut an `<id>` of more than 8 bytes to the first 8 bytes and `…`. They are the start, failed-start, exit and `Starting <stream> streaming` lines. This holds for `c9125eb8` and `4c111e86`, measured on Linux, macOS and Windows. claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
 
 ## Orphan-exit self-probe
 
