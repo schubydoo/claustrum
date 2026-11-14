@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -98,5 +99,83 @@ func TestGivenUpIDSkipsLinkBoundStart(t *testing.T) {
 	m.mu.Unlock()
 	if given {
 		t.Error("a give-up during a link-bound start gave the id up")
+	}
+}
+
+// TestGivenUpIDCap: the set holds 4096 ids, and a new give-up past that is dropped.
+// After 4100 give-ups ids 0 to 4095 are refused and ids 4096 to 4099 start
+// (4c111e86, measured on Linux). Mutation: drop the cap test in GiveUpUnknown.
+func TestGivenUpIDCap(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	exe, env := helperCommand(t, "sleep")
+	c, _ := pipeConn(t)
+	id := func(i int) string { return fmt.Sprintf("cap%05d", i) }
+	for i := range 4100 {
+		m.GiveUpUnknown(id(i))
+	}
+	m.mu.Lock()
+	for i := range 4100 {
+		if got, want := m.givenUpLocked(id(i)), i < 4096; got != want {
+			t.Errorf("%s given up = %v, want %v", id(i), got, want)
+		}
+	}
+	m.mu.Unlock()
+	for _, i := range []int{0, 2050, 4095} {
+		if _, err := m.spawnVia(c, id(i), exe, []string{"60"}, "", env, false, nil, 0); err != errGivenUpID {
+			t.Errorf("spawn of %s = %v, want the given-up refusal", id(i), err)
+		}
+	}
+	for _, i := range []int{4096, 4099} {
+		if _, err := m.spawnVia(c, id(i), exe, []string{"60"}, "", env, false, nil, 0); err != nil {
+			t.Errorf("spawn of %s = %v, want a start", id(i), err)
+		}
+	}
+}
+
+// TestGivenUpIDFullSet: a full set first drops the ids past their time. If it is
+// still full, a give-up of an id already in the set keeps its old time (4c111e86,
+// measured on Linux). After a drop, a new id is given up (measured on Linux). In a
+// set that is not full a give-up sets the time anew (claustrum's own, not
+// measured). Mutations: renew an id in a full set, drop the prune of a full set,
+// renew no id.
+func TestGivenUpIDFullSet(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	id := func(i int) string { return fmt.Sprintf("cap%05d", i) }
+	m.GiveUpUnknown("small")
+	early := time.Now().Add(-time.Minute)
+	m.mu.Lock()
+	m.givenUp["small"] = early
+	m.mu.Unlock()
+	m.GiveUpUnknown("small")
+	m.mu.Lock()
+	renewed := m.givenUp["small"].After(early)
+	delete(m.givenUp, "small")
+	m.mu.Unlock()
+	if !renewed {
+		t.Error("a give-up again in a set that is not full kept the old time")
+	}
+	for i := range givenUpIDCap {
+		m.GiveUpUnknown(id(i))
+	}
+	fresh := time.Now().Add(-m.givenUpAge + time.Minute)
+	m.mu.Lock()
+	m.givenUp[id(0)] = fresh
+	m.mu.Unlock()
+	m.GiveUpUnknown(id(0))
+	m.mu.Lock()
+	kept := m.givenUp[id(0)]
+	m.givenUp[id(1)] = time.Now().Add(-m.givenUpAge - time.Minute)
+	m.mu.Unlock()
+	if !kept.Equal(fresh) {
+		t.Errorf("a give-up again in the full set moved the time from %v to %v", fresh, kept)
+	}
+	m.GiveUpUnknown("late")
+	m.mu.Lock()
+	stale, late, n := m.givenUpLocked(id(1)), m.givenUpLocked("late"), len(m.givenUp)
+	m.mu.Unlock()
+	if stale || !late || n != givenUpIDCap {
+		t.Errorf("stale id kept %v, new id given up %v, set size %d: want false, true, %d", stale, late, n, givenUpIDCap)
 	}
 }

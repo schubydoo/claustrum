@@ -68,7 +68,7 @@ A reply gives `not_a_file` over `links` and `many_links`, and `unreadable` over 
 
 ### Links
 
-A relative link target that stays in the root leads to `folder` for a folder. For a regular file the link is left out of the list. Every other link leads to `other`: an absolute target, a missing target and a target whose last name is a link. These link rules are measured on Linux, and an absolute target on macOS too. The in-root test of a target and a relative target out of the root are claustrum's own, not measured.
+A relative link target that stays in the root leads to `folder` for a folder. For a regular file the link is left out of the list. Every other link leads to `other`: an absolute target, a missing target and a target whose last name is a link. A relative target out of the root leads to `other` too. A target through a linked parent folder leads to `other`, unless that parent leads to `folder` itself. These link rules are measured on Linux. An absolute target, a target out of the root and a linked parent are measured on macOS too.
 
 ## Platform notes
 
@@ -84,7 +84,7 @@ A relative link target that stays in the root leads to `folder` for a folder. Fo
 ## Rare states
 
 ??? note "Choices that no row settles"
-    These rules are claustrum's own, not measured: a walk that finds exactly `limit` matches stays whole. The first cut that the walk meets wins, and `links` and `many_links` come last. The entry bound is exactly 50000 entries. A change is found by the stamps of the open folder, and the walk goes on after `changed`. A link that is left out does not count toward the 20. The pass test comes before the depth test. A link to a folder alone gives the cut `links`. A root that fails to open for another reason gets `root`. Other format characters, U+2029, other blanks and a blank at the edge of an inner name give `name`. The suffix is matched against the whole path, so it can reach above the root. A full walk slot comes after the `name` test. A reply at the bound keeps a cut that the walk met before it.
+    These rules are claustrum's own, not measured: a walk that finds exactly `limit` matches stays whole. The first cut that the walk meets wins, and `links` and `many_links` come last. The entry bound is exactly 50000 entries. A change is found by the stamps of the open folder, and the walk goes on after `changed`. A link that is left out does not count toward the 20. A target through more than 40 linked parents leads to `other`, and so does a linked parent whose target is a link. A `..` in a target is joined by its text before the parent test, so `jump/../hit.txt` names `<root>/hit.txt`. The pass test comes before the depth test. A link to a folder alone gives the cut `links`. A root that fails to open for another reason gets `root`. Other format characters, U+2029, other blanks and a blank at the edge of an inner name give `name`. The suffix is matched against the whole path, so it can reach above the root. A full walk slot comes after the `name` test. A reply at the bound keeps a cut that the walk met before it.
 
 ## Differences from the reference
 

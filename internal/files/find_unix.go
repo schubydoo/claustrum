@@ -460,21 +460,25 @@ func findOpenSub(fd int, name string) (int, error) {
 // relative target is joined to the folder of the link. If that path stays in
 // the root and is a folder, the link leads to "folder". If it is a regular
 // file, the link is left out. Every other link leads to "other": an absolute
-// target, a missing target and a target whose last name is a link (4c111e86,
-// measured on Linux, an absolute target on macOS too). The in-root test, a
-// relative target out of the root and a link that does not read are claustrum's
-// own, not measured. A link past the 20 sets the overflow, and the walk goes on
-// (measured on Linux). A link that is left out does not count toward the 20
-// (claustrum's own, not measured).
+// target, a missing target, a target out of the root and a target whose last
+// name is a link (4c111e86, measured on Linux, an absolute target and a target
+// out of the root on macOS too). A parent name of the target that is a link
+// counts only if it leads to "folder" itself (parentLinks). A link that
+// does not read is claustrum's own, not measured. A link past the 20 sets the
+// overflow, and the walk goes on (measured on Linux). A link that is left out
+// does not count toward the 20 (claustrum's own, not measured).
 func (w *findState) link(fd int, dir, name, full, root string) {
 	if w.seen[full] {
 		return
 	}
 	leadsTo := "other"
 	if target, err := findReadlink(fd, name); err == nil && !filepath.IsAbs(target) {
-		at := filepath.Join(dir, target)
+		at, ok := w.parentLinks(filepath.Join(dir, target), root)
+		if w.stop {
+			return
+		}
 		var st unix.Stat_t
-		if findInRoot(at, root) && unix.Lstat(at, &st) == nil {
+		if ok && findInRoot(at, root) && unix.Lstat(at, &st) == nil {
 			switch st.Mode & unix.S_IFMT {
 			case unix.S_IFDIR:
 				leadsTo = "folder"
@@ -491,6 +495,61 @@ func (w *findState) link(fd int, dir, name, full, root string) {
 	}
 	w.seen[full] = true
 	w.links = append(w.links, rpc.FindLink{Path: full, LeadsTo: leadsTo})
+}
+
+// findMaxParentLinks is the most linked parents that a target passes through.
+// 40 pass, and the 41st gives "other" (claustrum's own, not measured).
+const findMaxParentLinks = 40
+
+// parentLinks puts the target of each linked parent name of at in its place. A
+// linked parent passes only if it leads to "folder" itself: a relative target
+// that stays in the root and is a folder. Any other linked parent gives false,
+// and the link leads to "other" (4c111e86, measured on Linux and macOS: an
+// absolute parent link, also one to a folder in the root, and a relative one out
+// of the root). These parts are claustrum's own, not measured: the test of each
+// name from the root down, the limit of findMaxParentLinks, and a parent whose
+// target is itself a link, which gives false. A ".." is joined by its text before
+// the parent test, so "jump/../hit.txt" names root/hit.txt even when jump is an
+// absolute link. Past the time bound it notes "time" and stops the walk, as an
+// entry does. at is clean and absolute.
+func (w *findState) parentLinks(at, root string) (string, bool) {
+	for range findMaxParentLinks + 1 {
+		if !findInRoot(at, root) {
+			return "", false
+		}
+		names := strings.Split(strings.TrimPrefix(at[len(root):], "/"), "/")
+		cur, moved := root, false
+		for i, n := range names[:len(names)-1] {
+			if w.now().After(w.deadline) {
+				w.note("time")
+				w.stop = true
+				return "", false
+			}
+			next := findJoin(cur, n)
+			var st unix.Stat_t
+			if unix.Lstat(next, &st) != nil {
+				return "", false
+			}
+			if st.Mode&unix.S_IFMT != unix.S_IFLNK {
+				cur = next
+				continue
+			}
+			target, err := os.Readlink(next)
+			if err != nil || filepath.IsAbs(target) {
+				return "", false
+			}
+			to := filepath.Join(cur, target)
+			if !findInRoot(to, root) || unix.Lstat(to, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFDIR {
+				return "", false
+			}
+			at, moved = filepath.Join(append([]string{to}, names[i+1:]...)...), true
+			break
+		}
+		if !moved {
+			return at, true
+		}
+	}
+	return "", false
 }
 
 // findReadlink reads the target of the link name in the folder fd.

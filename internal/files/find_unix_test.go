@@ -314,6 +314,84 @@ func TestFindLinks(t *testing.T) {
 	}
 }
 
+// TestFindLinksThroughLinkedParent: a relative target whose parent name is a link
+// leads to "other" unless that parent leads to "folder" itself. An absolute parent
+// link gives "other", also one to a folder in the root, and so does a relative one
+// out of the root. A relative parent link to a folder in the root keeps the rules of
+// the target (4c111e86, measured on Linux and macOS). Mutations: drop the
+// parentLinks call in link, drop the folder test of a parent target.
+func TestFindLinksThroughLinkedParent(t *testing.T) {
+	cases := []struct {
+		name  string
+		links [][2]string // the link in the root and its target. <O> is the outside folder, <R> the root
+		want  string
+	}{
+		{"a abs out file", [][2]string{{"jump", "<O>"}, {"ref", "jump/file.txt"}}, "[{jump other} {ref other}]"},
+		{"b abs out dir", [][2]string{{"jump", "<O>"}, {"ref", "jump/dir"}}, "[{jump other} {ref other}]"},
+		{"c abs in file", [][2]string{{"jump", "<R>/real"}, {"ref", "jump/file.txt"}}, "[{jump other} {ref other}]"},
+		{"d abs in dir", [][2]string{{"jump", "<R>/real"}, {"ref", "jump/dir"}}, "[{jump other} {ref other}]"},
+		{"e rel out file", [][2]string{{"jump", "../outside"}, {"ref", "jump/file.txt"}}, "[{jump other} {ref other}]"},
+		{"f rel out dir", [][2]string{{"jump", "../outside"}, {"ref", "jump/dir"}}, "[{jump other} {ref other}]"},
+		{"g rel in file", [][2]string{{"jump", "real"}, {"ref", "jump/file.txt"}}, "[{jump folder}]"},
+		{"h rel in dir", [][2]string{{"jump", "real"}, {"ref", "jump/dir"}}, "[{jump folder} {ref folder}]"},
+		{"i abs out missing", [][2]string{{"jump", "<O>"}, {"ref", "jump/missing"}}, "[{jump other} {ref other}]"},
+		{"l abs out last is link", [][2]string{{"jump", "<O>"}, {"ref", "jump/last"}}, "[{jump other} {ref other}]"},
+		{"m sub dotdot", [][2]string{{"jump", "<O>"}, {"sub/ref", "../jump/file.txt"}}, "[{jump other} {sub/ref other}]"},
+		{"j no linked parent", [][2]string{{"ref", "real/file.txt"}, {"ref2", "real/dir"}}, "[{ref2 folder}]"},
+		{"k rel out plain", [][2]string{{"ref", "../outside/file.txt"}, {"ref2", "../outside/dir"}}, "[{ref other} {ref2 other}]"},
+		// claustrum's own, not measured: a parent whose target is a link gives
+		// other, and a ".." is joined by its text before the parent test.
+		{"parent to a link", [][2]string{{"jump", "link2"}, {"link2", "real"}, {"ref", "jump/dir"}}, "[{jump other} {link2 folder} {ref other}]"},
+		{"dotdot after jump", [][2]string{{"jump", "<O>"}, {"ref", "jump/../hit.txt"}}, "[{jump other}]"},
+	}
+	for _, c := range cases {
+		base := resolveTestRoot(t, t.TempDir())
+		root, out := base+"/root", base+"/outside"
+		findTree(t, out, "file.txt", "dir/in.txt")
+		findLink(t, out, "last", "file.txt")
+		findTree(t, root, "real/file.txt", "real/dir/in.txt", "hit.txt")
+		for _, l := range c.links {
+			findLink(t, root, l[0], strings.NewReplacer("<O>", out, "<R>", root).Replace(l[1]))
+		}
+		res := findResult(t, map[string]any{"roots": []string{root}, "suffix": "hit.txt"})
+		if got := strings.ReplaceAll(fmt.Sprint(res.Links), root+"/", ""); got != c.want || len(res.Paths) != 1 {
+			t.Errorf("%s: links %s and %d paths, want %s and 1", c.name, got, len(res.Paths), c.want)
+		}
+	}
+}
+
+// TestFindParentLinkBounds: 40 linked parents pass and the 41st gives false, and
+// the time bound holds inside the parent test: it notes "time" and stops the walk
+// (claustrum's own, not measured). Mutations: loop findMaxParentLinks times, drop
+// the deadline test in parentLinks.
+func TestFindParentLinkBounds(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	for i := range findMaxParentLinks + 2 {
+		findTree(t, root, fmt.Sprintf("d%02d/dir/", i))
+		findLink(t, root, fmt.Sprintf("d%02d/n", i), fmt.Sprintf("../d%02d", i+1))
+	}
+	through := func(hops int) string { return root + "/d00/" + strings.Repeat("n/", hops) + "dir" }
+	w := &findState{now: time.Now, deadline: time.Now().Add(time.Hour)}
+	if at, ok := w.parentLinks(through(40), root); !ok || at != fmt.Sprintf("%s/d40/dir", root) {
+		t.Errorf("40 hops: %q, %v, want %s/d40/dir", at, ok, root)
+	}
+	if _, ok := w.parentLinks(through(41), root); ok || w.stop {
+		t.Errorf("41 hops: ok %v, stop %v, want false and no stop", ok, w.stop)
+	}
+	start := time.Now()
+	calls := 0
+	w = &findState{deadline: start.Add(time.Second), now: func() time.Time {
+		calls++
+		if calls > 5 {
+			return start.Add(2 * time.Second)
+		}
+		return start
+	}}
+	if _, ok := w.parentLinks(through(40), root); ok || !w.stop || w.cut != "time" {
+		t.Errorf("past the bound: ok %v, stop %v, cut %q, want false, true and time", ok, w.stop, w.cut)
+	}
+}
+
 // TestFindCuts: the cut words of one walk (4c111e86, measured on Linux).
 func TestFindCuts(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
