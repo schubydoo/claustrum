@@ -200,9 +200,10 @@ func spawnTreeFor(t *testing.T, owner testing.TB, m *supervisor.Manager, id, mod
 	return p, gpid
 }
 
-// exitLineOf is the start of the exit line of the child id with code 1.
+// exitLineOf is the start of the exit line of the child id with code 1. The line shows
+// the id as supervisor.LogID cuts it.
 func exitLineOf(id string) string {
-	return "[process.Manager] Process " + id + " exited with code 1"
+	return "[process.Manager] Process " + supervisor.LogID(id) + " exited with code 1"
 }
 
 // exitLinesOf returns each log line that holds the exit line of the child id with code 1,
