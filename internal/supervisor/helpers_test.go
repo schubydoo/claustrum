@@ -127,6 +127,13 @@ func runHelper(mode string, args []string) int {
 		exitZeroOnSigterm()
 		fmt.Print("ready\n")
 		time.Sleep(60 * time.Second)
+	case "leave-group-term-exit0":
+		// Leave the group of the spawn (Unix), exit with code 0 on SIGTERM (Unix), then
+		// announce readiness and linger.
+		leaveSpawnGroup()
+		exitZeroOnSigterm()
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
 	case "term-exit0-kid":
 		// Start a grandchild in the group with no stdio that sleeps 60 s, record its
 		// PID in args[0], exit with code 0 on SIGTERM (Unix), then announce

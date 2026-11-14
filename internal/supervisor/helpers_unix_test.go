@@ -41,3 +41,11 @@ func exitZeroOnSigterm() {
 		os.Exit(0)
 	}()
 }
+
+// leaveSpawnGroup moves the helper child into the group of its parent, the test
+// binary, out of the group that its spawn made (the "leave-group-term-exit0" mode).
+func leaveSpawnGroup() {
+	if g, err := syscall.Getpgid(os.Getppid()); err == nil {
+		_ = syscall.Setpgid(0, g)
+	}
+}

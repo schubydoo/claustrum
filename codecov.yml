@@ -416,6 +416,7 @@ component_management:
         # 4c111e86 the end of a cliTempRootEnd child whose private temp folder is lost.
         - internal/supervisor/temprootend.go
         - internal/supervisor/temprootend_linux.go
+        - internal/supervisor/temprootend_darwin.go
         - internal/supervisor/temprootend_other.go
         # the session folders: the record and its prune, the git skip, the PATH cut.
         - sessionfolders.go

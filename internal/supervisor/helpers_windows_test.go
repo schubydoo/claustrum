@@ -34,3 +34,4 @@ func resolveTestRoot(t *testing.T, p string) string {
 func ignoreSigterm()     {}
 func ignoreSighup()      {}
 func exitZeroOnSigterm() {}
+func leaveSpawnGroup()   {}

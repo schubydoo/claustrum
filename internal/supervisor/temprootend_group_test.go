@@ -1,3 +1,5 @@
+//go:build linux || darwin
+
 package supervisor
 
 import (
@@ -179,5 +181,43 @@ func TestLostTempRootKillsTheGroupAfterAClientKill(t *testing.T) {
 	defer mu.Unlock()
 	if !slices.Equal(sent, []string{"TERM", "TERM", "KILL"}) {
 		t.Errorf("signals = %q, want the client TERM, the TERM of the end, then one group KILL", sent)
+	}
+}
+
+// TestNoTempRootGroupKillAfterTheChildLeftItsGroup: a child that left the group of its
+// spawn gets no group SIGKILL at its exit after the SIGTERM of the end (claustrum's
+// own rule, decision-099). The seam sends the SIGTERM to the child alone and delivers
+// no other signal.
+func TestNoTempRootGroupKillAfterTheChildLeftItsGroup(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	setTempRootEndGraceForTest(t, 10*time.Second)
+	realSignal := signalGroup
+	var mu sync.Mutex
+	var sent []string
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		mu.Lock()
+		sent = append(sent, signame)
+		mu.Unlock()
+		if signame == "TERM" {
+			_ = proc.Signal(syscall.SIGTERM)
+		}
+		return nil
+	}
+	t.Cleanup(func() { signalGroup = realSignal })
+	c, lines := rawLineConn(t)
+	p, bound := spawnHelperTempRoot(t, m, c, TempRootAsk{Folder: true, End: true}, "leave-group-term-exit0")
+	t.Cleanup(func() { _ = p.cmd.Process.Kill() })
+	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+	if groupMadeAtSpawn(p.cmd.Process.Pid) {
+		t.Fatal("the child is still in the group of its spawn")
+	}
+	end, _ := bound()
+	end()
+	nextLine(t, lines, `"stream":"exit"`, 15*time.Second)
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(sent, []string{"TERM"}) {
+		t.Errorf("signals = %q, want the TERM alone", sent)
 	}
 }
