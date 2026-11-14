@@ -60,15 +60,36 @@ func junctionParentRefusal(repo, worktreePath string) string {
 	return ""
 }
 
-// rmdirWorktreeLeaf removes worktreePath only if it is an empty directory.
+// removeWorktreeLeaf removes worktreePath only if it is an empty directory.
 // RemoveDirectory never deletes a file or a directory that holds an entry, so the
-// emptiness test and the removal are one step. undoFailedAdd uses it.
-func rmdirWorktreeLeaf(worktreePath string) error {
+// emptiness test and the removal are one step. undoFailedAdd uses it. Linux and
+// macOS also remove a file or a link at the leaf. Windows keeps both (not measured).
+// parent is not used on Windows, which keeps its rule.
+func removeWorktreeLeaf(worktreePath string, _ os.FileInfo) error {
 	p, err := syscall.UTF16PtrFromString(worktreePath)
 	if err != nil {
 		return err
 	}
 	return syscall.RemoveDirectory(p)
+}
+
+// rmdirWorktreeLeaf removes worktreePath only if it is an empty directory. On
+// Windows it is removeWorktreeLeaf.
+func rmdirWorktreeLeaf(worktreePath string) error {
+	return removeWorktreeLeaf(worktreePath, nil)
+}
+
+// failedAddLeafResolve is the path that undoFailedAdd compares with the
+// checkpoint. On Windows it is leafResolve, so a link at the leaf stays (not
+// measured).
+func failedAddLeafResolve(worktreePath string) (string, error) {
+	return leafResolve(worktreePath)
+}
+
+// heldLeafLacksGitFile is false on Windows, where the tests after the add do not
+// run (adminRecordChecked).
+func heldLeafLacksGitFile(worktreeCheckpoint) bool {
+	return false
 }
 
 // holdWorktreeDir opens the directory at path and returns the handle, or nil when
