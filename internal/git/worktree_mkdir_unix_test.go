@@ -40,3 +40,71 @@ func TestWorktreeCreateMkdirLeafFailure(t *testing.T) {
 		t.Errorf("create with unwritable parent = %s, want mkdir_failed with 'mkdirat wt:'", raw)
 	}
 }
+
+// rmdirWorktreeLeaf removes the leaf by its name through a handle of the parent
+// that it opened. The hook moves that parent away and puts a new parent with an
+// empty leaf at the old path. The leaf inside the opened parent goes, and the new
+// one stays. A removal by the full path takes the new leaf instead. A parent of mode
+// 0300 gives the handle, and its empty leaf goes. A file at the leaf stays. All paths
+// are in a t.TempDir().
+func TestRmdirWorktreeLeafRemovesThroughTheParentHandle(t *testing.T) {
+	t.Run("the_opened_parent", func(t *testing.T) {
+		dir := t.TempDir()
+		parent := filepath.Join(dir, "p")
+		moved := filepath.Join(dir, "moved")
+		leaf := filepath.Join(parent, "w1")
+		if err := os.MkdirAll(leaf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		leafParentOpenedHook = func() {
+			if err := os.Rename(parent, moved); err != nil {
+				t.Error(err)
+			}
+			if err := os.MkdirAll(leaf, 0o755); err != nil {
+				t.Error(err)
+			}
+		}
+		t.Cleanup(func() { leafParentOpenedHook = nil })
+		if err := rmdirWorktreeLeaf(leaf + "/"); err != nil {
+			t.Fatalf("rmdirWorktreeLeaf: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(moved, "w1")); !os.IsNotExist(err) {
+			t.Errorf("the leaf in the opened parent survived: Lstat err %v", err)
+		}
+		if _, err := os.Lstat(leaf); err != nil {
+			t.Errorf("the leaf in the new parent went: %v", err)
+		}
+	})
+	t.Run("a_parent_with_no_read_permission", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root reads a folder of mode 0300")
+		}
+		parent := filepath.Join(t.TempDir(), "p")
+		leaf := filepath.Join(parent, "w1")
+		if err := os.MkdirAll(leaf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(parent, 0o300); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+		if err := rmdirWorktreeLeaf(leaf); err != nil {
+			t.Fatalf("rmdirWorktreeLeaf in a parent of mode 0300: %v", err)
+		}
+		if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+			t.Errorf("the leaf in a parent of mode 0300 survived: Lstat err %v", err)
+		}
+	})
+	t.Run("keeps_a_file", func(t *testing.T) {
+		leaf := filepath.Join(t.TempDir(), "w1")
+		if err := os.WriteFile(leaf, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := rmdirWorktreeLeaf(leaf); err == nil {
+			t.Error("rmdirWorktreeLeaf on a file: no error")
+		}
+		if _, err := os.Lstat(leaf); err != nil {
+			t.Errorf("the file at the leaf went: %v", err)
+		}
+	})
+}

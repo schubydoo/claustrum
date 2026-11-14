@@ -223,6 +223,8 @@ component_management:
         - internal/git/worktreelock.go
         - internal/git/worktreemkdir_unix.go
         - internal/git/worktreemkdir_windows.go
+        - internal/git/worktreeleafparent_darwin.go
+        - internal/git/worktreeleafparent_linux.go
         - internal/git/worktreestale.go
         - internal/git/worktreestale_unix.go
         - internal/git/worktreestale_windows.go

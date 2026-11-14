@@ -9,7 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // mkdirWorktreeLeaf creates the final worktree directory component (the caller has
@@ -128,12 +129,30 @@ func junctionParentRefusal(repo, worktreePath string) string {
 	return ""
 }
 
-// rmdirWorktreeLeaf removes worktreePath only if it is an empty directory. rmdir(2)
-// never deletes a file or a directory that holds an entry, so the emptiness test and
-// the removal are one step. undoFailedAdd uses it.
+// rmdirWorktreeLeaf removes worktreePath only if it is an empty directory. It opens
+// the parent folder and removes the leaf by its name through that handle, with one
+// unlinkat and AT_REMOVEDIR. c9125eb8 and 4c111e86 remove the leaf of a failed add
+// by its name through a handle of its parent (measured on Linux). macOS runs the same
+// code (claustrum's own, not measured). The removal never deletes a file or a
+// directory that holds an entry, so the emptiness test and the removal are one step.
+// The handle needs no read permission on the parent (openLeafParent), as an rmdir by
+// path needs none. undoFailedAdd uses it.
 func rmdirWorktreeLeaf(worktreePath string) error {
-	return syscall.Rmdir(worktreePath)
+	leaf := filepath.Clean(worktreePath)
+	fd, err := openLeafParent(filepath.Dir(leaf))
+	if err != nil {
+		return &fs.PathError{Op: "open", Path: filepath.Dir(leaf), Err: err}
+	}
+	defer func() { _ = unix.Close(fd) }()
+	if leafParentOpenedHook != nil {
+		leafParentOpenedHook()
+	}
+	return unix.Unlinkat(fd, filepath.Base(leaf), unix.AT_REMOVEDIR)
 }
+
+// leafParentOpenedHook is a test seam. It runs after rmdirWorktreeLeaf opens the
+// parent of the leaf and before the unlinkat. Production never reassigns it.
+var leafParentOpenedHook func()
 
 // holdWorktreeDir opens the directory at path and returns the handle, or nil when
 // the open fails. checkpointCreatedWorktree holds the leaf and its parent open this
