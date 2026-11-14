@@ -2338,7 +2338,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// git's graft-file hint: lines do not start the text. On f6010b97 the text
 			// starts with the hint where git prints it. In attach mode
 			// createdBranch is "", so the attached branch is kept, as measured against
-			// f6010b97. With a settings copy a text that holds lfsFailedWords
+			// f6010b97. With a settings copy a text that holds one of lfsNoteWords
 			// gets a note after it (checkoutNote). The note goes only in this
 			// reply, before any undo text (claustrum's own, not measured beside
 			// a failed undo).
