@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -46,7 +47,7 @@ import (
 // Claustrum's own, not measured: the seed reads the pointers with `ls-tree`
 // and `cat-file --batch` in the new worktree, and only when the repository
 // has a folder `lfs/objects`. It reads the store of the repository by path,
-// read only. It stops at the deadline of the caller. A link at a shard folder on the way gives a copy too. The keep
+// read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too. The keep
 // makes the object by a hard link, or by a copy with mode 0644 across file
 // systems. It keeps no object that the store already has. A link at
 // `lfs/objects` or at a shard folder keeps nothing. The keep tests the bytes
@@ -81,21 +82,36 @@ var (
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
 // "" for the store of the git directory. seed runs the seed into path and
-// reports a copy that it left out for seedSpare. runDir is the folder of the
-// socket.
+// reports a copy that it left out for seedSpare and the time of its copies.
+// runDir is the folder of the socket.
 type privateStore struct {
 	path   string
 	runDir string
-	seed   func() bool
+	seed   func() (short bool, copied time.Duration)
 }
 
 // storeUse is what a checkout that named its private store gives the reply of
-// its failure (checkoutNote, storeFullStart). path is the store, <P>/lfs.
-// short reports a copy of the seed left out for seedSpare.
+// its failure (checkoutNote, storeFullStart, notKeptText). path is the store,
+// <P>/lfs. short reports a copy of the seed left out for seedSpare. copied is
+// the time that the copies of the seed took.
 type storeUse struct {
 	runDir string
 	path   string
 	short  bool
+	copied time.Duration
+}
+
+// seedContext is the bound of the seed of a create with timeoutMs: half of
+// timeoutMs from the start of the seed. On 4c111e86 a seed whose copy needs
+// more time stops, the object stays out, and git-lfs then fails to find it
+// (measured on Linux: timeoutMs 1300 to 1944 ms, a reply after 0.7 to 1.1 s).
+// The start of that bound is claustrum's own, not measured. With no timeoutMs
+// the seed has only the bound of ctx.
+func seedContext(ctx context.Context, timeoutMs int) (context.Context, context.CancelFunc) {
+	if timeoutMs <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond/2)
 }
 
 // pointerRef is one LFS pointer of the commit of a checkout.
@@ -354,25 +370,28 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 // downloads it. A copy that would leave less than seedSpare free is left out
 // too, with no temp, and short reports it. A free space that cannot be read
 // does not stop a copy (claustrum's own, not measured). At the deadline of ctx
-// the seed stops, and the objects that it did not reach stay out.
-func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private string) (short bool) {
+// the seed stops, and the objects that it did not reach stay out. copied is
+// the time of its copies.
+func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private string) (short bool, copied time.Duration) {
 	if ctx.Err() != nil {
-		return false
+		return false, 0
 	}
 	store := filepath.Join(gitDir, "lfs")
 	if fi, err := os.Stat(filepath.Join(store, "objects")); err != nil || !fi.IsDir() {
-		return false
+		return false, 0
 	}
 	return seedObjects(ctx, store, private, commitPointers(ctx, u, dir, rev))
 }
 
 // seedObjects puts the objects of ps from the store store into private. short
-// reports a copy left out for seedSpare.
-func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool) {
+// reports a copy left out for seedSpare. copied is the sum of the times of
+// the copies, a failed copy too. A hard link adds no time (claustrum's own,
+// not measured). The time of a copy holds the sha256 of its bytes (copySeed).
+func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
 		if ctx.Err() != nil {
-			return short
+			return short, copied
 		}
 		src := storeObjectPath(store, p.oid)
 		fi, err := os.Lstat(src)
@@ -389,10 +408,71 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 				short = true
 				continue
 			}
+			start := time.Now()
 			_ = copySeed(ctx, src, dst, filepath.Dir(private))
+			copied += time.Since(start)
 		}
 	}
-	return short
+	return short, copied
+}
+
+// The text of worktree_lfs_not_kept, around the words of the deadline
+// (4c111e86, measured on Linux and macOS).
+const (
+	notKeptStart = "Turn off Worktree for this session, then try again. A plain retry won't help: git worktree add timed out after "
+	notKeptEnd   = ", and copying the repository's Git LFS files into a folder of Claude's own took a large part of that time," +
+		" as it does when Claude can't hard-link them there (a repository on another disk, a store reached through a link," +
+		" a relative lfs.storage); a retry copies them again."
+)
+
+// notKeptText is the text of a create whose timeoutMs ended during the
+// checkout, when 4c111e86 blames the copies of the seed. 4c111e86 answers it
+// when the copies took a large part of timeoutMs and git-lfs began no
+// download. Then the private store has no entry `incomplete` (measured on
+// Linux and macOS). The bound of claustrum is a quarter of timeoutMs
+// (claustrum's own). On macOS the seed time that claustrum counts is shorter
+// than that of 4c111e86, so the boundary differs (claustrum's own, not
+// settled). An `incomplete` folder in the store of the repository
+// does not count (measured on macOS). An empty `incomplete` folder counts
+// (measured on Linux). Claustrum's own, not measured: any kind of entry there
+// counts, and an Lstat that fails counts as no entry. ok is false in every
+// other case.
+func notKeptText(timeoutMs int, rule *filterRule) (text string, ok bool) {
+	if timeoutMs <= 0 || rule == nil || rule.store == nil || rule.store.path == "" {
+		return "", false
+	}
+	s := rule.store
+	if 4*s.copied < time.Duration(timeoutMs)*time.Millisecond {
+		return "", false
+	}
+	if _, err := os.Lstat(filepath.Join(s.path, "incomplete")); err == nil {
+		return "", false
+	}
+	return notKeptStart + deadlineWords(timeoutMs) + notKeptEnd, true
+}
+
+// deadlineWords are the words of timeoutMs in the text of notKeptText. A whole
+// number of minutes gives minutes, and every other value seconds, in the %v
+// form of a float of Go: 60000 gives "1 minute", 120000 "2 minutes", 90000
+// "90 seconds", 2389 "2.3890000000000002 seconds" (measured on Linux and
+// macOS). The singular "1 second" for 1000 is not measured.
+func deadlineWords(timeoutMs int) string {
+	if timeoutMs%60000 == 0 {
+		return plural(timeoutMs/60000, "minute")
+	}
+	secs := (time.Duration(timeoutMs) * time.Millisecond).Seconds()
+	if secs == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%v seconds", secs)
+}
+
+// plural is n and word, with an s unless n is 1.
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return strconv.Itoa(n) + " " + word + "s"
 }
 
 // pathIsLink reports whether the last name of p is a symbolic link.
@@ -403,11 +483,13 @@ func pathIsLink(p string) bool {
 
 // seedLink and keepHardLink make the hard links of the seed and of the keep. A
 // test replaces them to reach the copy. seedCopy is the copy of the seed, which
-// a test replaces to fail it.
+// a test replaces to fail it. seedHash is the hash of a copy of the seed, which
+// a test replaces to slow it.
 var (
 	seedLink     = os.Link
 	keepHardLink = linkIntoRoot
 	seedCopy     = io.Copy
+	seedHash     = func() io.Writer { return sha256.New() }
 )
 
 // storeFreeBytes is the free space of the file system of a folder, for the
@@ -422,6 +504,11 @@ const seedTempPattern = "lfs-seed-*"
 // name in the folder tmpDir, the checkout folder, and gets the name dst only
 // when it is whole. A failed temp stays in that folder and goes with it. The
 // copy stops at the deadline of ctx.
+//
+// The copy computes the sha256 of the bytes in the same pass, so its time is
+// near the seed time of 4c111e86 in the rows (notKeptText).
+// Claustrum's own, not measured: the result is not used, and an object whose
+// bytes do not match its oid still goes into the store.
 func copySeed(ctx context.Context, src, dst, tmpDir string) error {
 	if _, err := os.Lstat(dst); !errors.Is(err, fs.ErrNotExist) {
 		if err == nil {
@@ -438,7 +525,7 @@ func copySeed(ctx context.Context, src, dst, tmpDir string) error {
 	if err != nil {
 		return err
 	}
-	_, err = seedCopy(out, ctxReader{ctx, in})
+	_, err = seedCopy(io.MultiWriter(out, seedHash()), ctxReader{ctx, in})
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
