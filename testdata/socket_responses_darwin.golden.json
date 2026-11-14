@@ -89,6 +89,7 @@
         "git.worktree.external_root",
         "process.spawn.link_bound",
         "git.worktree_create.own_lfs_store",
+        "git.worktree_create.lfs_error_codes",
         "process.spawn.cli_temp_root",
         "process.spawn.cli_temp_root_end",
         "server.instance_id"
