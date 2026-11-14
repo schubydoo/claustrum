@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -55,7 +56,7 @@ func TestBuildEnvMergesOverEnviron(t *testing.T) {
 // new measurement.
 func TestNewCallerKeysComeInARotation(t *testing.T) {
 	request := []string{"CLAUSTRUM_TEST_ZZ", "CLAUSTRUM_TEST_MM", "CLAUSTRUM_TEST_AA"}
-	for _, k := range request {
+	for _, k := range append(slices.Clone(request), placeholderName) {
 		if _, had := os.LookupEnv(k); had {
 			t.Skipf("%s is set in the environment of this test", k)
 		}
@@ -71,7 +72,12 @@ func TestNewCallerKeysComeInARotation(t *testing.T) {
 		if err := json.Unmarshal([]byte(`{"`+request[0]+`":"1","`+request[1]+`":"2","`+request[2]+`":"3"}`), &env); err != nil {
 			t.Fatal(err)
 		}
+		// The placeholder entry of 4c111e86 comes after the new caller keys.
 		got := supervisor.BuildEnv(env)
+		if got[len(got)-1] != placeholderEntry {
+			t.Fatalf("the last entry is %q, want %s", got[len(got)-1], placeholderEntry)
+		}
+		got = got[:len(got)-1]
 		var order []string
 		for _, e := range got[len(got)-3:] {
 			k, _, _ := strings.Cut(e, "=")
@@ -161,3 +167,80 @@ func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
 		})
 	}
 }
+
+// placeholderName is the env entry that 4c111e86 puts in the environment of a spawned
+// child, and placeholderEntry is its value when the request gives none.
+const (
+	placeholderName  = "CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER"
+	placeholderEntry = placeholderName + "=1"
+)
+
+// TestBuildEnvAddsThePlaceholderEntry pins the rows of 4c111e86, measured on Linux and
+// macOS. With no request value the child gets the entry with 1, once, after the new
+// caller keys (measured on Linux). A request value wins. A daemon entry takes the value
+// 1 in place, unless the request gives a value. On Windows the rule is claustrum's own,
+// not measured.
+func TestBuildEnvAddsThePlaceholderEntry(t *testing.T) {
+	cases := []struct {
+		name    string
+		daemon  *string // the value in the environment of the daemon, nil for none
+		request *string // the value in the env of the request, nil for none
+		want    string
+	}{
+		{"no value anywhere", nil, nil, "1"},
+		{"request 0", nil, ptr("0"), "0"},
+		{"request empty", nil, ptr(""), ""},
+		{"request 1", nil, ptr("1"), "1"},
+		{"request yes", nil, ptr("yes"), "yes"},
+		{"daemon 0", ptr("0"), nil, "1"},
+		{"daemon 1", ptr("1"), nil, "1"},
+		{"daemon 1 and request 0", ptr("1"), ptr("0"), "0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, k := range []string{placeholderName, "CLAUSTRUM_TEST_NEXT", "CLAUSTRUM_TEST_NEW"} {
+				t.Setenv(k, "") // restores the old state at the end
+				os.Unsetenv(k)
+			}
+			if tc.daemon != nil {
+				t.Setenv(placeholderName, *tc.daemon)
+			}
+			t.Setenv("CLAUSTRUM_TEST_NEXT", "x")
+			req := map[string]string{"CLAUSTRUM_TEST_NEW": "y"}
+			if tc.request != nil {
+				req[placeholderName] = *tc.request
+			}
+			got := supervisor.BuildEnv(req)
+			var at []int
+			for i, e := range got {
+				if strings.HasPrefix(e, placeholderName+"=") {
+					at = append(at, i)
+				}
+			}
+			if len(at) != 1 || got[at[0]] != placeholderName+"="+tc.want {
+				t.Fatalf("the entries of %s are at %v in %q, want one with %q", placeholderName, at, got, tc.want)
+			}
+			next := slices.Index(got, "CLAUSTRUM_TEST_NEXT=x")
+			switch {
+			case tc.daemon != nil:
+				// The daemon entry keeps its place, before the later daemon entry. The
+				// order of the environment of this test process is fixed on Unix only.
+				if runtime.GOOS != "windows" && at[0] != next-1 {
+					t.Errorf("the entry is at %d, want %d, the place of the daemon entry: %q", at[0], next-1, got)
+				}
+			case tc.request == nil:
+				// After the new caller key, as the last entry.
+				if at[0] != len(got)-1 || got[at[0]-1] != "CLAUSTRUM_TEST_NEW=y" {
+					t.Errorf("the entry is at %d of %d, want it last, after the new caller key: %q", at[0], len(got), got)
+				}
+			default:
+				// A request value is a new caller key, after the daemon entries.
+				if at[0] < len(got)-2 {
+					t.Errorf("the entry is at %d of %d, want it among the new caller keys: %q", at[0], len(got), got)
+				}
+			}
+		})
+	}
+}
+
+func ptr(s string) *string { return &s }
