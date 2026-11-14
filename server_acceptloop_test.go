@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // TestStartAcceptLoopsServesBothListeners drives startAcceptLoops with a pipe
@@ -184,9 +185,13 @@ func TestAcceptLoopServesAndReturnsOnShutdown(t *testing.T) {
 // TestAcceptLoopRetryLine: a failed accept logs `[Server] accept error
 // (retrying): <error>`, with no delay in the text, as 4c111e86 and c9125eb8 do
 // (measured on Linux). The capture is shared, so the test reads only the lines
-// that end with its own error text.
+// that end with its own error text. The test lets warnings through, also under
+// CLAUSTRUM_LOG_LEVEL=error.
 func TestAcceptLoopRetryLine(t *testing.T) {
 	logs := captureLogBuf(t)
+	oldLevel := logging.Threshold.Load()
+	logging.Threshold.Store(int32(logging.LevelWarn))
+	t.Cleanup(func() { logging.Threshold.Store(oldLevel) })
 	const own = "accept retry line test error"
 	ln := &erroringListener{err: errors.New(own)}
 	s := &server{

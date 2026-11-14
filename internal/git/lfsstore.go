@@ -496,6 +496,14 @@ var (
 // test of seedSpare. A test replaces it.
 var storeFreeBytes = freeBytes
 
+// keepBudget bounds the reads of the bytes test of one keep step
+// (objectHoldsOID). After it an object is not kept. The bound is claustrum's
+// own, not measured. newObjectHash is the hash of that test. A test replaces both.
+var (
+	keepBudget    = 5 * time.Second
+	newObjectHash = sha256.New
+)
+
 // seedTempPattern is the pattern of the temp name of a copy of the seed in
 // the checkout folder. No oid has its form.
 const seedTempPattern = "lfs-seed-*"
@@ -578,8 +586,12 @@ func returnDownloads(u gitUse, private string, failed bool) {
 	if a == nil || a.root == nil {
 		return
 	}
+	// The budget has its own context, so a keep after a deadline of the
+	// checkout still runs.
+	ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
+	defer cancel()
 	for _, oid := range downloadedOIDs(private) {
-		returnDownload(a.root, a.path, private, oid, time.Now(), failed)
+		returnDownload(ctx, a.root, a.path, private, oid, time.Now(), failed)
 	}
 }
 
@@ -643,7 +655,7 @@ var openShardFolder = (*os.Root).OpenRoot
 // `lfs/objects` is made first. An object whose bytes do not give its oid then
 // stops the keep, with no shard folder (objectHoldsOID). After a failed or a
 // stopped checkout (failed) the keep is one hard link at the name oid.
-func returnDownload(root *os.Root, dir, private, oid string, now time.Time, failed bool) {
+func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, failed bool) {
 	objects := openShard(root, filepath.Join("lfs", "objects"))
 	if objects == nil {
 		return
@@ -654,7 +666,7 @@ func returnDownload(root *os.Root, dir, private, oid string, now time.Time, fail
 		return
 	}
 	src := storeObjectPath(private, oid)
-	if !objectHoldsOID(src, oid) {
+	if !objectHoldsOID(ctx, src, oid) {
 		return
 	}
 	shard := openShard(objects, rel)
@@ -693,14 +705,15 @@ func returnDownload(root *os.Root, dir, private, oid string, now time.Time, fail
 // the sha256 oid. An object whose bytes and size differ from its pointer gets
 // no shard folder and no keep (4c111e86, measured on Linux and macOS). The
 // test of the bytes, and not of the size, is claustrum's own, not measured.
-func objectHoldsOID(path, oid string) bool {
+// A read after the end of ctx fails the test, so the object is not kept.
+func objectHoldsOID(ctx context.Context, path, oid string) bool {
 	f, err := openObjectNoFollow(path)
 	if err != nil {
 		return false
 	}
 	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	h := newObjectHash()
+	if _, err := io.Copy(h, ctxReader{ctx, f}); err != nil {
 		return false
 	}
 	return hex.EncodeToString(h.Sum(nil)) == oid

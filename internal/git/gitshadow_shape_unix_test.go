@@ -146,8 +146,11 @@ func (f shapeFixture) request(t *testing.T, method string, params map[string]any
 
 var (
 	shapeNumber = regexp.MustCompile(`-[0-9]{6,}`)
-	shapeAddDir = regexp.MustCompile(`/\.s[0-9]{1,10}\b`)
-	shapeCommit = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
+	// shapeTempName is a name of os.MkdirTemp with a claude-ssh- prefix. Its
+	// random suffix has any number of digits.
+	shapeTempName = regexp.MustCompile(`(claude-ssh-[a-z]+(?:-[a-z]+)*-)[0-9]+\b`)
+	shapeAddDir   = regexp.MustCompile(`/\.s[0-9]{1,10}\b`)
+	shapeCommit   = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
 )
 
 // line is one call as a row: "<list> | <argv> | <cwd> | <variables>".
@@ -212,11 +215,30 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 		// the row away (measured on macOS).
 		filepath.Clean(resolveTestRoot(t, os.TempDir())), "<tmp>", filepath.Clean(os.TempDir()), "<tmp>")
 	text = strings.NewReplacer(masks...).Replace(text)
-	text = shapeNumber.ReplaceAllString(text, "-<n>")
+	text = maskShapeNumbers(text)
 	text = shapeAddDir.ReplaceAllString(text, "/.s<n>")
 	text = shapeCommit.ReplaceAllString(text, "<id>")
 	return strings.NewReplacer(shapeA, "{A}", shapeA2, "{A2}", shapeC, "{C}", shapeD, "{D}", shapeW, "{W}",
 		shapeG, "{G}", shapeH, "{H}", shapeL, "{L}").Replace(text)
+}
+
+// maskShapeNumbers puts <n> for the random number of a temp name.
+func maskShapeNumbers(text string) string {
+	text = shapeTempName.ReplaceAllString(text, "${1}<n>")
+	return shapeNumber.ReplaceAllString(text, "-<n>")
+}
+
+// TestMaskShapeNumbers: a temp name with a claude-ssh- prefix gets <n> for a
+// suffix of any length.
+func TestMaskShapeNumbers(t *testing.T) {
+	for _, n := range []string{"7", "20563", "4294967295"} {
+		for _, prefix := range []string{"claude-ssh-gitdir-", "claude-ssh-index-", "claude-ssh-readback-objects-"} {
+			got := maskShapeNumbers("--git-dir=<tmp>/" + prefix + n + "/x")
+			if want := "--git-dir=<tmp>/" + prefix + "<n>/x"; got != want {
+				t.Errorf("maskShapeNumbers = %q, want %q", got, want)
+			}
+		}
+	}
 }
 
 // check compares the calls of one request with the rows of its state.
