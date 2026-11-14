@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // TestStartAcceptLoopsServesBothListeners drives startAcceptLoops with a pipe
@@ -64,12 +65,16 @@ func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
 type erroringListener struct {
 	mu    sync.Mutex
 	calls int
+	err   error // nil: "boom"
 }
 
 func (l *erroringListener) Accept() (net.Conn, error) {
 	l.mu.Lock()
 	l.calls++
 	l.mu.Unlock()
+	if l.err != nil {
+		return nil, l.err
+	}
 	return nil, errors.New("boom")
 }
 func (l *erroringListener) Close() error   { return nil }
@@ -174,5 +179,40 @@ func TestAcceptLoopServesAndReturnsOnShutdown(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("acceptLoop did not return after shutdown + listener close")
+	}
+}
+
+// TestAcceptLoopRetryLine: a failed accept logs `[Server] accept error
+// (retrying): <error>`, with no delay in the text, as 4c111e86 and c9125eb8 do
+// (measured on Linux). The capture is shared, so the test reads only the lines
+// that end with its own error text. The test lets warnings through, also under
+// CLAUSTRUM_LOG_LEVEL=error.
+func TestAcceptLoopRetryLine(t *testing.T) {
+	logs := captureLogBuf(t)
+	oldLevel := logging.Threshold.Load()
+	logging.Threshold.Store(int32(logging.LevelWarn))
+	t.Cleanup(func() { logging.Threshold.Store(oldLevel) })
+	const own = "accept retry line test error"
+	ln := &erroringListener{err: errors.New(own)}
+	s := &server{
+		procs:    newTestProcManager(t),
+		conns:    make(map[*conn.Conn]struct{}),
+		shutdown: make(chan struct{}),
+	}
+	done := make(chan struct{})
+	go func() { s.acceptLoop(ln); close(done) }()
+	var line string
+	for end := time.Now().Add(5 * time.Second); line == "" && time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+		for _, l := range strings.SplitAfter(logs.String(), "\n") {
+			if strings.Contains(l, "[Server] accept error") && strings.HasSuffix(l, ": "+own+"\n") {
+				line = l
+				break
+			}
+		}
+	}
+	s.signalShutdown()
+	<-done
+	if want := "WARN  [Server] accept error (retrying): " + own + "\n"; line != want {
+		t.Errorf("line = %q, want %q", line, want)
 	}
 }

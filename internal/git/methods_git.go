@@ -3385,9 +3385,13 @@ func pruneGitDir(repo string) string {
 // "retry": b3081b51 answers `... is locked: git cannot run on this host; git not
 // run: exit status 1` (measured on Linux, for a plain folder and a repository, a
 // gone and an empty leaf). On macOS and Windows the colon form is claustrum's own,
-// not measured. Other reasons keep the parentheses.
+// not measured. A trust refusal of the git directory follows a colon too, with no
+// "retry": 4c111e86 and c9125eb8 answer `... is locked: the repository's git
+// directory could not be trusted; ...` for a stray commondir (measured on Linux).
+// An older macOS row put that text in parentheses. The newer row wins on every
+// system. Other reasons keep the parentheses.
 func goneLockCheckText(worktreePath, reason string) string {
-	if strings.HasPrefix(reason, gitCannotRunPrefix) {
+	if strings.HasPrefix(reason, gitCannotRunPrefix) || strings.HasPrefix(reason, gitDirTrustLead) {
 		return "failed to remove worktree: could not check whether " + worktreePath + " is locked: " + reason
 	}
 	return "failed to remove worktree: could not check whether " + worktreePath +

@@ -844,7 +844,9 @@ func (s *server) acceptLoop(ln net.Listener) {
 			if maxDelay := 1 * time.Second; tempDelay > maxDelay {
 				tempDelay = maxDelay
 			}
-			logging.Warnf("[Server] accept error (retrying in %v): %v", tempDelay, err)
+			// 4c111e86 and c9125eb8 log `[Server] accept error (retrying): <error>`
+			// (measured on Linux). claustrum keeps its level tag and its backoff.
+			logging.Warnf("[Server] accept error (retrying): %v", err)
 			time.Sleep(tempDelay)
 			continue
 		}

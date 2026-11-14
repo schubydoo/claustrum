@@ -299,8 +299,9 @@ func peerRefusalLogged(n int64) bool {
 // returns true for a caller that the daemon serves. A refused caller gets the
 // refusal frame, and then the connection closes with no read. A caller that
 // wrote first then reads a reset (measured). A refusal of a caller that
-// exited writes no line (measured) but counts (not measured). A gate that
-// names no namespace serves every caller.
+// exited writes no line but counts: after it, 4c111e86 and c9125eb8 log the
+// next refusal as number 2 (measured on Linux). A gate that names no namespace
+// serves every caller.
 //
 // After a failed start naming, each connection reads the own namespaces again
 // (4c111e86, measured on Linux). A read that fails refuses the caller with that

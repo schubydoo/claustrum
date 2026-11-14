@@ -228,8 +228,10 @@ func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 		writeFile(t, filepath.Join(f.repo, ".git", "commondir"), "x\n", 0o644)
 		wp := filepath.Join(filepath.Dir(f.wt), "gone")
 		got := removeErrorField(t, removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": wp}))
-		want := "failed to remove worktree: could not check whether " + wp + " is locked (" +
-			refuseStrayContent(filepath.Join(f.repo, ".git", "commondir")).refusal + "); retry"
+		// 4c111e86 and c9125eb8 put the trust refusal after a colon, with no
+		// "retry" (measured on Linux).
+		want := "failed to remove worktree: could not check whether " + wp + " is locked: " +
+			refuseStrayContent(filepath.Join(f.repo, ".git", "commondir")).refusal
 		if got != want {
 			t.Errorf("error = %q\nwant  %q", got, want)
 		}
