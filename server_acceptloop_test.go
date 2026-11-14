@@ -85,35 +85,52 @@ type fakeAddr struct{}
 func (fakeAddr) Network() string { return "fake" }
 func (fakeAddr) String() string  { return "fake" }
 
-// TestAcceptLoopBacksOffOnErrors: when Accept keeps failing while shutdown is
-// still open, the loop retries (not spinning is asserted indirectly — it must
-// still make progress) and, once shutdown is signalled, returns via the shutdown
-// branch instead of looping forever. Covers the tempDelay backoff arm added for
-// the optional pipe listener.
-func TestAcceptLoopBacksOffOnErrors(t *testing.T) {
+// TestAcceptLoopRetriesAtASteadyPace: while Accept keeps failing, each retry
+// waits acceptRetryWait, the same each time, as 4c111e86 and c9125eb8 keep
+// a steady pace (measured on Linux). Once shutdown is signalled, the loop
+// returns via the shutdown branch instead of looping forever.
+func TestAcceptLoopRetriesAtASteadyPace(t *testing.T) {
 	ln := &erroringListener{}
+	var mu sync.Mutex
+	var waits []time.Duration
 	s := &server{
 		procs:    newTestProcManager(t),
 		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
+		retrySleep: func(d time.Duration) {
+			mu.Lock()
+			waits = append(waits, d)
+			mu.Unlock()
+			time.Sleep(time.Millisecond)
+		},
 	}
 	done := make(chan struct{})
 	go func() { s.acceptLoop(ln); close(done) }()
 
-	// Let a few backoff cycles elapse (5ms, 10ms, 20ms, …) so the retry arm runs.
-	time.Sleep(60 * time.Millisecond)
-	ln.mu.Lock()
-	n := ln.calls
-	ln.mu.Unlock()
-	if n < 2 {
-		t.Fatalf("acceptLoop made %d Accept calls, want >= 2 (it should retry)", n)
+	const want = 12
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+		mu.Lock()
+		n := len(waits)
+		mu.Unlock()
+		if n >= want {
+			break
+		}
 	}
-
 	s.signalShutdown()
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("acceptLoop did not return after shutdown despite persistent accept errors")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(waits) < want {
+		t.Fatalf("acceptLoop waited %d times, want >= %d (it should retry)", len(waits), want)
+	}
+	for i, d := range waits {
+		if d != 100*time.Millisecond {
+			t.Fatalf("wait %d = %v, want 100ms each time (all waits %v)", i, d, waits)
+		}
 	}
 }
 

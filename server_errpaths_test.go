@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/metrics"
@@ -39,46 +38,5 @@ func TestStartMetricsServerBadAddr(t *testing.T) {
 	if ln, err := metrics.StartServer("127.0.0.1:99999999"); err == nil {
 		_ = ln.Close()
 		t.Error("metrics.StartServer on an invalid port succeeded, want error")
-	}
-}
-
-// The backoff in acceptLoop must stop doubling at the 1s ceiling: after enough
-// consecutive failures (5ms·2^n crosses 1s on the 9th), each retry waits the
-// capped 1s instead of growing without bound. Slow by construction (~2.3s of
-// deliberate backoff sleeps), so skipped under -short.
-func TestAcceptLoopBackoffCapsAtOneSecond(t *testing.T) {
-	if testing.Short() {
-		t.Skip("waits through ~2.3s of real backoff; skipped under -short")
-	}
-	ln := &erroringListener{}
-	s := &server{
-		procs:    newTestProcManager(t),
-		conns:    make(map[*conn.Conn]struct{}),
-		shutdown: make(chan struct{}),
-	}
-	done := make(chan struct{})
-	go func() { s.acceptLoop(ln); close(done) }()
-
-	// The 9th Accept failure is the first whose doubled delay (1.28s) trips the
-	// cap; the preceding sleeps sum to ~1.28s.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		ln.mu.Lock()
-		n := ln.calls
-		ln.mu.Unlock()
-		if n >= 9 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("only %d Accept calls before deadline, want >= 9", n)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	s.signalShutdown()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("acceptLoop did not return after shutdown")
 	}
 }

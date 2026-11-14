@@ -621,6 +621,7 @@ These line rules are claustrum's own unless an item names a build. `89cb6289` an
 - A connection with no mark counts on the close counter and logs `[Server] Connection number <n> that never showed the token: <label>`, only if it sent a byte (measured on Linux, `683cc6a9`).
 - The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. The older text is `Unauthorized request: method=…, id=…`.
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
+- A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later each time (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
 - The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
 - The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error. During the shutdown they are not logged. A connection with no mark logs no `writeResponse` and no `scanner error` line.
 
