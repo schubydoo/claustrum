@@ -29,7 +29,8 @@ import (
 //
 // The "not inside" text shows worktreePath in backticks (tickPath) and the
 // repository as it is, on create and remove (be1c1ca5, measured on Linux and
-// macOS). The spelling texts before it keep the path as it is (not measured).
+// macOS). The spelling texts before it keep the path as it is (not measured),
+// except the relative-path text (worktreePathSpellingRefusal).
 //
 // This containment is also why it subsumes the D2 home-wipe guard: a "~"-expanded
 // home path is not strictly under a repo, so it is refused here — with the
@@ -39,7 +40,7 @@ import (
 // name a directory" text before they call this.
 func worktreePathRefusal(repo, worktreePath, verb string) string {
 	const guidance = "session worktrees are only created and removed under <repository>/.claude/worktrees"
-	if msg := sessionFolderSpellingRefusal(worktreePath, verb); msg != "" {
+	if msg := worktreePathSpellingRefusal(worktreePath, verb); msg != "" {
 		return msg
 	}
 	if windowsPathSpellingHazard(worktreePath) {
@@ -208,11 +209,29 @@ func baseRepoWalkFails(repo string) bool {
 
 // sessionFolderSpellingRefusal is the refusal of a relative path, an empty one
 // included, or of a path with a ".." component, or "" if p is neither. The text
-// names p as sent. verb is "create" or "remove".
+// names p as sent. verb is "create" or "remove". A relative baseRepo with
+// worktreeRoot gets this text (f6010b97, measured on Linux and macOS).
 func sessionFolderSpellingRefusal(p, verb string) string {
+	return spellingRefusal(p, verb, p)
+}
+
+// worktreePathSpellingRefusal is sessionFolderSpellingRefusal for worktreePath
+// without worktreeRoot. Its relative-path text puts the path in backticks.
+// 4c111e86 and c9125eb8 answer that text for the worktreePath "commondir" on
+// create and remove (measured on Linux). macOS, Windows and a path with a
+// backtick are claustrum's own, not measured. With worktreeRoot, f6010b97 named
+// a relative worktreePath with no backticks (measured on Linux and macOS), so
+// that path keeps sessionFolderSpellingRefusal.
+func worktreePathSpellingRefusal(p, verb string) string {
+	return spellingRefusal(p, verb, "`"+p+"`")
+}
+
+// spellingRefusal is the text of both spelling refusals. rel is p as the
+// relative-path text names it.
+func spellingRefusal(p, verb, rel string) string {
 	if !filepath.IsAbs(p) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
-			"session folder by its absolute path, without %q", verb, p, "..")
+			"session folder by its absolute path, without %q", verb, rel, "..")
 	}
 	if pathHasDotDot(p) {
 		return fmt.Sprintf("refusing to %s worktree: %s contains a %q component; choose the "+
