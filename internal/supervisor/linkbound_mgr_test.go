@@ -272,6 +272,35 @@ func TestLinkBoundDetachTakesNoLinkLock(t *testing.T) {
 	}
 }
 
+// TestLinkBoundSpawnKeepsAReattachHold: a connection that reattaches a link-bound
+// process after it entered the table, before the spawn tests its link, holds it. A
+// link that is gone by that test starts no unattended clock then (claustrum's own).
+func TestLinkBoundSpawnKeepsAReattachHold(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	exe, env := helperCommand(t, "sleep")
+	link, _ := pipeConn(t)
+	other, _ := pipeConn(t)
+	found := false
+	old := afterTableEntry
+	afterTableEntry = func(id string) {
+		_, found, _, _, _, _ = m.Reattach(other, id, 0)
+		closedConn(link)
+	}
+	t.Cleanup(func() { afterTableEntry = old })
+	p, err := m.spawnVia(link, "spawn-hold", exe, []string{"60"}, "", env, false, nil, time.Minute)
+	afterTableEntry = old
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("reattach found nothing")
+	}
+	if d := p.unattendedFor(time.Now().Add(time.Second)); d != 0 {
+		t.Errorf("unattendedFor = %s while a reattached connection is open, want 0", d)
+	}
+}
+
 // TestPlainSpawnDoesNotReplaceLinkBound: a plain spawn that passed its id test
 // before a link-bound spawn of that id put its record in the table ends its own
 // child, gets the spent-id refusal and leaves the link-bound record in place.
