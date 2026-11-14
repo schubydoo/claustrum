@@ -609,7 +609,9 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// daemonChildEnv is our private re-exec sentinel (detected in runServe);
 	// daemonChildMarker is set only to mirror the reference daemon's environ so
 	// it propagates into process.spawn children (TestSpawnInheritsDaemonChildMarker).
-	cmd.Env = append(os.Environ(), daemonChildEnv+"=1", daemonChildMarker+"=1")
+	// daemonChildMarker is the last entry, and daemonChildEnv stands right before it.
+	// daemonStartEnv drops the names that the daemon does not keep (detach_*.go).
+	cmd.Env = append(daemonStartEnv(os.Environ()), daemonChildEnv+"=1", daemonChildMarker+"=1")
 	// Detach from the controlling terminal/session (OS-specific).
 	cmd.SysProcAttr = detachSysProcAttr()
 	cmd.Stdin = nil

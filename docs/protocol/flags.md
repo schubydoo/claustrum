@@ -91,6 +91,14 @@ claustrum unsets its own marker before it spawns. The daemon still sets
 `CLAUDE_SSH_DAEMON_CHILD=1` in its environment, so `process.spawn` children
 inherit it as on the reference.
 
+The daemon drops `CLAUDE_SSH_CHILD` and `CLAUDE_SSH_RUN_DIR` of the launcher from its
+environment, and `CLAUDE_SSH_DAEMON_CHILD=1` is its last entry. A launcher value `0`
+gives way to `1` there. This is measured on Linux against `c9125eb8` and `4c111e86`. On
+macOS it is claustrum's own, not measured. Windows keeps both names (claustrum's own). On
+Linux and macOS a `process.spawn` child still gets both names from the spawn.
+`CLAUSTRUM_DAEMON_CHILD=1` stands right before the last entry, because the re-exec test
+reads it.
+
 #### Flags of claustrum alone
 
 These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry in
