@@ -3,12 +3,15 @@
 package git
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
 // argOf is the first argument or variable of the calls that starts with
@@ -210,5 +213,57 @@ func TestShadowFilterRuleReadsTheRepositoryConfig(t *testing.T) {
 	}
 	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
 		t.Errorf("the worktree after the refusal: %v, want it gone", err)
+	}
+}
+
+// TestCreateCheckoutFolderGoesAfterTheWrite: the folder of the checkout of a
+// good create is still there when Handle returns the reply, and it goes in the
+// step after the write (rpc.Response.AfterWrite). 4c111e86 shows `.checkout-<n>`
+// and `claude-ssh-checkout-<n>` at the reply and removes each 13 to 20 ms later
+// (measured on Linux).
+func TestCreateCheckoutFolderGoesAfterTheWrite(t *testing.T) {
+	for _, off := range []bool{false, true} {
+		t.Run(map[bool]string{false: "state shadow", true: "with the member"}[off], func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			tmp := resolveTestRoot(t, t.TempDir())
+			t.Setenv("TMPDIR", tmp)
+			params := map[string]any{"baseRepo": f.repo, "branchName": "w1",
+				"worktreePath": filepath.Join(f.repo, ".claude", "worktrees", "w1")}
+			dir, prefix := "", checkoutDirPrefix
+			if off {
+				params["shadowDirOff"] = true
+				dir, prefix = tmp, checkoutIndexTempPrefix
+			}
+			var req rpc.Request
+			if err := json.Unmarshal([]byte(rpcLine(t, "git.worktree_create", params)), &req); err != nil {
+				t.Fatal(err)
+			}
+			resp := Handle(f.d, &req)
+			if b, _ := json.Marshal(resp); !strings.Contains(string(b), `"success":true`) {
+				t.Fatalf("git.worktree_create = %s", b)
+			}
+			if dir == "" {
+				dir = daemonFolder(t, f.run)
+			}
+			held := func() []string {
+				var out []string
+				for _, n := range entryNames(t, dir) {
+					if strings.HasPrefix(n, prefix) {
+						out = append(out, n)
+					}
+				}
+				return out
+			}
+			if got := held(); len(got) != 1 {
+				t.Fatalf("at the reply %s holds %v, want one %s<n> folder", dir, got, prefix)
+			}
+			if resp.AfterWrite == nil {
+				t.Fatal("the reply has no step after the write")
+			}
+			resp.AfterWrite()
+			if got := held(); len(got) != 0 {
+				t.Errorf("after the write %s holds %v, want no %s<n> folder", dir, got, prefix)
+			}
+		})
 	}
 }

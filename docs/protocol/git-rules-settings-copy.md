@@ -161,8 +161,10 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
   Linux and macOS). On Windows it is not measured.
 - On Linux and macOS `4c111e86` names the index folder of a create
-  `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and gone
-  1 s later. claustrum removes it before the reply (claustrum's own). A killed
+  `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
+  13 to 20 ms later, as does `claude-ssh-checkout-<n>` (measured on Linux). claustrum
+  removes either right after the write of the reply, or at the shutdown if that write
+  has not ended (claustrum's own). A killed
   daemon leaves it. The next daemon removes it at its first request that uses the
   copy (measured on Linux and macOS).
   claustrum removes it with the folder of the old daemon in [the

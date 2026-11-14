@@ -74,7 +74,13 @@ func (s *server) dispatch(c *conn.Conn, raw []byte) *rpc.Response {
 	if resp != nil {
 		return resp
 	}
-	return s.route(c, req)
+	resp = s.route(c, req)
+	// No frame is written here, so the step after the write runs at once.
+	if resp != nil && resp.AfterWrite != nil {
+		resp.AfterWrite()
+		resp.AfterWrite = nil
+	}
+	return resp
 }
 
 // route handles a request that already passed gate. serveConn calls it with the

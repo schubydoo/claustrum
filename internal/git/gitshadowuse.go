@@ -168,6 +168,8 @@ func (u gitUse) formNow(ask bool) (f gitUse, off bool) {
 func (u gitUse) fixedForm(ask bool) (f gitUse, off bool) {
 	f, off = u.formNow(ask)
 	f.live = nil
+	// The folders that wait for the reply stay with the request in each form.
+	f.atReply = u.atReply
 	if f.accepted == nil && u.accepted != nil {
 		f.accepted, f.gitDir = u.accepted, u.gitDir
 	}

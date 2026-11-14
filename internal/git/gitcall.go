@@ -70,6 +70,7 @@ func (req *gitCall) offLive() bool {
 // runAtReply removes the short-lived folders that stay until the reply. On
 // 5fd08069 the folder `.index-<n>` of a create goes at the reply, also with an
 // include step and after a failed read-tree (measured on Linux, macOS and Windows).
+// A create runs it after the write of its reply (gitWorktreeCreate).
 func (req *gitCall) runAtReply() {
 	for _, remove := range req.atReply {
 		remove()

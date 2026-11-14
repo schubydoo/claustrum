@@ -102,6 +102,11 @@ type server struct {
 	// nil uses time.Sleep.
 	retrySleep func(time.Duration)
 
+	// afterWrites are the steps of replies that wait for their write
+	// (holdAfterWrite). afterMu guards it.
+	afterMu     sync.Mutex
+	afterWrites map[*afterWrite]struct{}
+
 	wlog    *wirelog.Log  // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
@@ -1059,10 +1064,62 @@ func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bo
 		resp = dispatchRequest(s, c, raw, req)
 	}()
 	if resp != nil {
+		after := s.holdAfterWrite(resp.AfterWrite)
 		if awaits, _ := s.shutdownReply(); method == methodShutdown && awaits && isChanClosed(s.shutdown) {
 			s.awaitDropStart()
 		}
 		c.WriteResponse(*resp)
+		s.runAfterWrite(after)
+	}
+}
+
+// afterWrite is the step of one reply that waits for the write of its frame
+// (rpc.Response.AfterWrite). It runs once: after the write, or in closeAll if
+// the shutdown comes first.
+type afterWrite struct {
+	once sync.Once
+	fn   func()
+}
+
+// holdAfterWrite takes fn into the steps that wait for a write, or returns nil
+// for a nil fn.
+func (s *server) holdAfterWrite(fn func()) *afterWrite {
+	if fn == nil {
+		return nil
+	}
+	a := &afterWrite{fn: fn}
+	s.afterMu.Lock()
+	if s.afterWrites == nil {
+		s.afterWrites = make(map[*afterWrite]struct{})
+	}
+	s.afterWrites[a] = struct{}{}
+	s.afterMu.Unlock()
+	return a
+}
+
+// runAfterWrite runs the step a, if it has not run yet, and drops it.
+func (s *server) runAfterWrite(a *afterWrite) {
+	if a == nil {
+		return
+	}
+	a.once.Do(a.fn)
+	s.afterMu.Lock()
+	delete(s.afterWrites, a)
+	s.afterMu.Unlock()
+}
+
+// runPendingAfterWrites runs each step that still waits for its write. A step
+// that a request runs now is waited for. The shutdown calls it, so a write that
+// does not end leaves no folder behind (claustrum's own, not measured).
+func (s *server) runPendingAfterWrites() {
+	s.afterMu.Lock()
+	pending := make([]*afterWrite, 0, len(s.afterWrites))
+	for a := range s.afterWrites {
+		pending = append(pending, a)
+	}
+	s.afterMu.Unlock()
+	for _, a := range pending {
+		s.runAfterWrite(a)
 	}
 }
 
@@ -1240,6 +1297,9 @@ func (s *server) closeAll(socket string) {
 	// handler returns its reply as soon as the stop has started, so the reply write
 	// races this close. On Windows the write waits for the start of this drop.
 	closed := s.dropConns()
+	// The steps of the replies that still wait for their write run now, after
+	// the drop, so a blocked write no longer holds them (runPendingAfterWrites).
+	s.runPendingAfterWrites()
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
 	}
