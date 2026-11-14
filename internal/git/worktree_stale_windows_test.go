@@ -35,7 +35,7 @@ func TestStaleStepIgnoresLetterCase(t *testing.T) {
 			mustWrite(t, filepath.Join(old, "gitdir"), record+"\n")
 			other := filepath.Join(repo, ".git", "worktrees", "other")
 			mustWrite(t, filepath.Join(other, "gitdir"), filepath.ToSlash(filepath.Join(repo, "elsewhere"))+"/.git\n")
-			if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+			if m, _ := removeStaleWorktreeEntry(repo, leaf, nil); !m {
 				t.Error("the step reports no match, want one")
 			}
 			if exists(old) {
@@ -84,7 +84,7 @@ func TestStaleStepKeepsALiveRecord(t *testing.T) {
 		mustWrite(t, filepath.Join(live, ".git"), "gitdir: x\n")
 		entry := filepath.Join(repo, ".git", "worktrees", "W1")
 		mustWrite(t, filepath.Join(entry, "gitdir"), filepath.ToSlash(live)+"/.git\n")
-		if !dropStaleWorktreeRegistration(repo, filepath.Join(repo, ".claude", "worktrees", "w1"), nil) {
+		if m, _ := removeStaleWorktreeEntry(repo, filepath.Join(repo, ".claude", "worktrees", "w1"), nil); !m {
 			t.Error("the step reports no match, want one")
 		}
 		if !exists(entry) {
@@ -121,7 +121,7 @@ func TestStaleStepOfSeparateGitDir(t *testing.T) {
 	}
 	t.Run("by the path", func(t *testing.T) {
 		repo, _, leaf, old := setup(t)
-		if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+		if m, _ := removeStaleWorktreeEntry(repo, leaf, nil); !m {
 			t.Error("the step reports no match, want one")
 		}
 		if exists(old) {
@@ -136,7 +136,7 @@ func TestStaleStepOfSeparateGitDir(t *testing.T) {
 		}
 		t.Cleanup(held.release)
 		removals := recordHeldRemovals(t, held.info)
-		if !dropStaleWorktreeRegistration(repo, leaf, held) {
+		if m, _ := removeStaleWorktreeEntry(repo, leaf, held); !m {
 			t.Error("the step reports no match, want one")
 		}
 		if got := strings.Join(*removals, ","); got != "old other" {
@@ -160,7 +160,7 @@ func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 		old := filepath.Join(gd, "worktrees", "old")
 		mustWrite(t, filepath.Join(old, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
 		mustWrite(t, filepath.Join(old, "locked"), "t lock\n")
-		if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+		if m, _ := removeStaleWorktreeEntry(repo, leaf, nil); !m {
 			t.Error("the step reports no match, want one")
 		}
 		if !exists(filepath.Join(old, "locked")) {
@@ -172,7 +172,7 @@ func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 		for _, name := range []string{"old", "old2"} {
 			mustWrite(t, filepath.Join(gd, "worktrees", name, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
 		}
-		if !dropStaleWorktreeRegistration(repo, leaf, nil) {
+		if m, _ := removeStaleWorktreeEntry(repo, leaf, nil); !m {
 			t.Error("the step reports no match, want one")
 		}
 		for _, name := range []string{"old", "old2"} {
@@ -204,7 +204,7 @@ func TestStaleStepActsNothingBehindALink(t *testing.T) {
 				t.Fatal(err)
 			}
 			kind.link(t, filepath.Join(repo, ".git", "worktrees"), target)
-			dropStaleWorktreeRegistration(repo, leaf, nil)
+			removeStaleWorktreeEntry(repo, leaf, nil)
 			for _, p := range []string{filepath.Join(target, "old", "gitdir"), filepath.Join(target, "MARK")} {
 				if !exists(p) {
 					t.Errorf("%s behind the link is gone, want it kept", p)

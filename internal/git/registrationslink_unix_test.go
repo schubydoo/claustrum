@@ -54,7 +54,7 @@ func wantEntryKept(t *testing.T, target string) {
 func TestCreateDeletesNothingBehindALinkedRegistrationsFolder(t *testing.T) {
 	t.Run("the step before the add", func(t *testing.T) {
 		repo, leaf, target := linkedRegistrations(t)
-		dropStaleWorktreeRegistration(repo, leaf, nil)
+		removeStaleWorktreeEntry(repo, leaf, nil)
 		wantEntryKept(t, target)
 	})
 	t.Run("the rollback of a tested registration", func(t *testing.T) {

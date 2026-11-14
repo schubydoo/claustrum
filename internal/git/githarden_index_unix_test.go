@@ -524,15 +524,15 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 // git stub runs the real read-tree and then deletes the temporary index. The
 // request answers worktree_add_failed "(checkout)" with the stderr of the checkout
 // and the open text, and the whole rollback runs: the leaf, the registration and
-// branch w1 go. The temporary folder in the text has the prefix of the cell,
-// claude-ssh-index-, and a decimal number after it.
+// branch w1 go. The temporary folder in the text has the prefix of 4c111e86,
+// claude-ssh-checkout-, and a decimal number after it.
 func TestWorktreeCreateTempIndexGone(t *testing.T) {
 	f, h, tmp := indexInstallFixture(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "rmindex")
 	slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
 	raw, _ := f.create(t, h, "w1", "", 0)
-	tail := regexp.MustCompile(regexp.QuoteMeta(strings.Trim(jsonString(t, " open "+tmp+"/claude-ssh-index-"), `"`)) +
+	tail := regexp.MustCompile(regexp.QuoteMeta(strings.Trim(jsonString(t, " open "+tmp+"/claude-ssh-checkout-"), `"`)) +
 		`[0-9]+/index: no such file or directory","errorCode":"worktree_add_failed"\}\}$`)
 	if !strings.HasPrefix(raw, checkoutFailedHead) || !tail.MatchString(raw) {
 		t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
