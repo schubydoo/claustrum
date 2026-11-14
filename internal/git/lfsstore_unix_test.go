@@ -336,15 +336,23 @@ func TestLFSKeepAfterFailedCheckout(t *testing.T) {
 // TestLFSKeepNeedsItsBytes: an object that git-lfs wrote with bytes that do
 // not give its oid stays out of the store of the repository. The folder
 // `lfs/objects` is made, and no shard folder (4c111e86, measured on Linux and
-// macOS for bytes and a size that differ from the pointer).
+// macOS for bytes and a size that differ from the pointer). The row with the
+// size of the pointer is claustrum's own, not measured.
 func TestLFSKeepNeedsItsBytes(t *testing.T) {
 	seamFreeSpace(t)
-	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
-	mustWrite(t, filepath.Join(f.remote, f.oids["a.bin"]), "other-bytes-of-another-size")
-	f.wantSuccess(t)
-	objects := filepath.Join(f.gitDir, "lfs", "objects")
-	if names, err := os.ReadDir(objects); err != nil || len(names) != 0 {
-		t.Errorf("%s = %v, %v, want a made folder with no shard", objects, names, err)
+	for _, row := range []struct{ name, body string }{
+		{"another size", "other-bytes-of-another-size"},
+		{"the same size", "ALPHA-OBJECT"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+			mustWrite(t, filepath.Join(f.remote, f.oids["a.bin"]), row.body)
+			f.wantSuccess(t)
+			objects := filepath.Join(f.gitDir, "lfs", "objects")
+			if names, err := os.ReadDir(objects); err != nil || len(names) != 0 {
+				t.Errorf("%s = %v, %v, want a made folder with no shard", objects, names, err)
+			}
+		})
 	}
 }
 
