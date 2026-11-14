@@ -117,12 +117,13 @@ The child gets the environment of the daemon with the `env` of the request merge
 
 1. The entries of the daemon, with `CLAUDE_SSH_DAEMON_CHILD=1` last. A caller key that the daemon has replaces that entry in place. An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty (measured on Linux).
 2. The new caller keys, in no fixed order (measured on Linux).
-3. `SSH_AUTH_SOCK` from [the hand-off](#the-ssh-agent-hand-off-linux-and-macos). Without that step there is no entry here.
-4. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD`, the two [identity markers](#the-identity-markers-linux-and-macos). A caller value of either does not reach the child.
+3. `CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER`. If `env` holds no value of that name, the value is 1 (`4c111e86`, measured on Linux and macOS). A value in `env` wins, with no second entry. A daemon entry of the name gets the value 1 at its place. The place after the new caller keys is measured on Linux. The place before `SSH_AUTH_SOCK` is claustrum's own. On Windows the entry is not measured.
+4. `SSH_AUTH_SOCK` from [the hand-off](#the-ssh-agent-hand-off-linux-and-macos). Without that step there is no entry here.
+5. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD`, the two [identity markers](#the-identity-markers-linux-and-macos). A caller value of either does not reach the child.
 
 After a good read, the child gets the login-shell `PATH` of the user. A `PATH` in `env` wins over it. See [The login-shell PATH](#the-login-shell-path-linux-and-macos). The value never changes how the daemon looks up `command`.
 
-The daemon removes these names:
+#### Names with their own rule
 
 | Name | Removed from |
 |---|---|

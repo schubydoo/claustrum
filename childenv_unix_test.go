@@ -79,13 +79,14 @@ func unsetEnv(t *testing.T, keys ...string) {
 // TestChildEnvOnAnotherSocketShape pins the child environment of a daemon whose socket
 // is not run/<id>/rpc.sock (89cb6289, measured on Linux and macOS, with the
 // caller keys). The environment ends with CLAUDE_SSH_RUN_DIR and then
-// CLAUDE_SSH_CHILD. A caller key that the daemon environment holds keeps the place of
+// CLAUDE_SSH_CHILD. Before them 4c111e86 puts the placeholder entry (measured on Linux
+// and macOS). A caller key that the daemon environment holds keeps the place of
 // that entry. A new caller key comes after the daemon entries. A caller value and a
 // daemon value of the two entries do not reach the child.
 func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 	// The daemon environment of the rows: EFX, then copies of the two entries, then
 	// CLAUDE_SSH_DAEMON_CHILD as the last entry.
-	unsetEnv(t, "EFX", supervisor.EnvChildMarker, supervisor.EnvRunDir, daemonChildMarker, "ZZNEW")
+	unsetEnv(t, "EFX", supervisor.EnvChildMarker, supervisor.EnvRunDir, daemonChildMarker, "ZZNEW", placeholderName)
 	os.Setenv("EFX", "old")
 	os.Setenv(supervisor.EnvChildMarker, "x")
 	os.Setenv(supervisor.EnvRunDir, "/y")
@@ -96,18 +97,18 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 		pid, got := spawnEnviron(t, cl, "e"+strconv.Itoa(i), map[string]string{
 			"ZZNEW": "1", "EFX": "q", daemonChildMarker: "", supervisor.EnvChildMarker: "caller", supervisor.EnvRunDir: "/caller",
 		})
-		if len(got) < 5 {
+		if len(got) < 6 {
 			t.Fatalf("child environment has %d lines: %q", len(got), got)
 		}
 		// The key of the test helper is a new caller key too. The two new keys have no
 		// fixed order between them (measured).
-		tail := got[len(got)-5:]
+		tail := got[len(got)-6:]
 		start := regexp.MustCompile(`^` + supervisor.EnvChildMarker + `=` + strconv.Itoa(pid) + `:\S.*$`)
 		newKeys := slices.Sorted(slices.Values(tail[1:3]))
 		if tail[0] != daemonChildMarker+"=" || newKeys[0] != "CLAUSTRUM_TEST_HELPER=environ" || newKeys[1] != "ZZNEW=1" ||
-			tail[3] != supervisor.EnvRunDir+"="+dir || !start.MatchString(tail[4]) {
-			t.Fatalf("spawn %d: the environment ends %q\nwant %s=, the helper key, ZZNEW=1, %s=%s, %s=%d:<start>",
-				i, tail, daemonChildMarker, supervisor.EnvRunDir, dir, supervisor.EnvChildMarker, pid)
+			tail[3] != placeholderEntry || tail[4] != supervisor.EnvRunDir+"="+dir || !start.MatchString(tail[5]) {
+			t.Fatalf("spawn %d: the environment ends %q\nwant %s=, the helper key, ZZNEW=1, %s, %s=%s, %s=%d:<start>",
+				i, tail, daemonChildMarker, placeholderEntry, supervisor.EnvRunDir, dir, supervisor.EnvChildMarker, pid)
 		}
 		for _, name := range []string{supervisor.EnvRunDir, supervisor.EnvChildMarker, "EFX"} {
 			n := 0
@@ -123,7 +124,7 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 		// EFX keeps its place in the daemon environment, before the daemon's
 		// CLAUDE_SSH_DAEMON_CHILD. A caller key that is added, not replaced in place,
 		// comes after that entry.
-		if at := slices.Index(got, "EFX=q"); at < 0 || at >= len(got)-5 {
+		if at := slices.Index(got, "EFX=q"); at < 0 || at >= len(got)-6 {
 			t.Errorf("spawn %d: EFX=q is at place %d of %d, want it before %s: %q", i, at, len(got), daemonChildMarker, got)
 		}
 	}
@@ -132,9 +133,9 @@ func TestChildEnvOnAnotherSocketShape(t *testing.T) {
 // TestChildEnvKeepsThePlaceOfAGoRuntimeVariable pins a rule of 89cb6289, measured on Linux.
 // A GOGC of the daemon environment keeps its place there. A GOMAXPROCS of the spawn env
 // stands where a new caller key stands. CLAUDE_SSH_RUN_DIR and CLAUDE_SSH_CHILD are the
-// last two entries.
+// last two entries. The placeholder entry of 4c111e86 comes before them.
 func TestChildEnvKeepsThePlaceOfAGoRuntimeVariable(t *testing.T) {
-	unsetEnv(t, "EFX", "GOGC", "GOMAXPROCS", supervisor.EnvChildMarker, supervisor.EnvRunDir, daemonChildMarker)
+	unsetEnv(t, "EFX", "GOGC", "GOMAXPROCS", supervisor.EnvChildMarker, supervisor.EnvRunDir, daemonChildMarker, placeholderName)
 	os.Setenv("EFX", "old")
 	os.Setenv("GOGC", "50")
 	os.Setenv(daemonChildMarker, "1")
@@ -144,7 +145,7 @@ func TestChildEnvKeepsThePlaceOfAGoRuntimeVariable(t *testing.T) {
 	// The key of the test helper is a new caller key too. The two new keys have no
 	// fixed order between them (measured), so the test puts them in name order.
 	want := []string{"EFX=old", "GOGC=50", daemonChildMarker + "=1", "CLAUSTRUM_TEST_HELPER=environ",
-		"GOMAXPROCS=2", supervisor.EnvRunDir + "=" + dir}
+		"GOMAXPROCS=2", placeholderEntry, supervisor.EnvRunDir + "=" + dir}
 	if len(got) < len(want)+1 {
 		t.Fatalf("child environment has %d lines: %q", len(got), got)
 	}
@@ -196,4 +197,63 @@ func TestChildRecordOnARelativeSocket(t *testing.T) {
 		t.Errorf("no record in the working folder: %v", err)
 	}
 	killChild(t, cl, "c1")
+}
+
+// TestChildEnvPlaceholderRows pins the rows of 4c111e86 for the placeholder entry in the
+// environment of a spawned child, measured on Linux and macOS. The child gets one entry.
+// With no daemon entry it stands after CLAUDE_SSH_DAEMON_CHILD and before
+// CLAUDE_SSH_RUN_DIR. A daemon entry keeps its place before CLAUDE_SSH_DAEMON_CHILD.
+func TestChildEnvPlaceholderRows(t *testing.T) {
+	unsetEnv(t, placeholderName, daemonChildMarker, supervisor.EnvRunDir, supervisor.EnvChildMarker)
+	os.Setenv(daemonChildMarker, "1")
+	cl, _ := otherShapeServer(t)
+
+	cases := []struct {
+		name    string
+		daemon  *string
+		request *string
+		want    string
+	}{
+		{"none", nil, nil, "1"},
+		{"request 0", nil, ptr("0"), "0"},
+		{"request empty", nil, ptr(""), ""},
+		{"request 1", nil, ptr("1"), "1"},
+		{"request yes", nil, ptr("yes"), "yes"},
+		{"daemon 0", ptr("0"), nil, "1"},
+		{"daemon 1", ptr("1"), nil, "1"},
+		{"daemon 1 and request 0", ptr("1"), ptr("0"), "0"},
+	}
+	for i, tc := range cases {
+		// The daemon entry comes before CLAUDE_SSH_DAEMON_CHILD, as in the rows.
+		os.Unsetenv(placeholderName)
+		os.Unsetenv(daemonChildMarker)
+		if tc.daemon != nil {
+			os.Setenv(placeholderName, *tc.daemon)
+		}
+		os.Setenv(daemonChildMarker, "1")
+		req := map[string]string{}
+		if tc.request != nil {
+			req[placeholderName] = *tc.request
+		}
+		_, got := spawnEnviron(t, cl, "p"+strconv.Itoa(i), req)
+		var at []int
+		for j, e := range got {
+			if strings.HasPrefix(e, placeholderName+"=") {
+				at = append(at, j)
+			}
+		}
+		if len(at) != 1 || got[at[0]] != placeholderName+"="+tc.want {
+			t.Errorf("%s: the entries of %s are at %v in %q, want one with %q", tc.name, placeholderName, at, got, tc.want)
+			continue
+		}
+		child := slices.Index(got, daemonChildMarker+"=1")
+		run := slices.IndexFunc(got, func(e string) bool { return strings.HasPrefix(e, supervisor.EnvRunDir+"=") })
+		if tc.daemon != nil {
+			if at[0] != child-1 {
+				t.Errorf("%s: the entry is at %d, want %d, right before %s: %q", tc.name, at[0], child-1, daemonChildMarker, got)
+			}
+		} else if at[0] <= child || at[0] >= run {
+			t.Errorf("%s: the entry is at %d, want it after %s (%d) and before %s (%d): %q", tc.name, at[0], daemonChildMarker, child, supervisor.EnvRunDir, run, got)
+		}
+	}
 }

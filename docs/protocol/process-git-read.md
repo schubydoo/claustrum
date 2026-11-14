@@ -55,7 +55,7 @@ claustrum's own, not measured: the other bytes below `0x20` get the refusal. A r
 
 ## The run
 
-The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. After a good [server.adoptEnv](server-adopt-env.md) the git starts from the environment of the daemon, with no adopted name (measured on Linux, macOS and Windows). Some commands get extra arguments (measured on Linux, macOS and Windows):
+The daemon takes the steps of the git methods first: the start test, the settings copy and one `config -z --list` in the `cwd` (measured on Linux). The git then gets 37 `-c` items, the hook pins and `GIT_OPTIONAL_LOCKS=0`. Most commands get `GIT_INDEX_FILE=<copy>/no-index`. After a good [server.adoptEnv](server-adopt-env.md) the git starts from the environment of the daemon, with no adopted name (measured on Linux, macOS and Windows). The git gets `CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER` as a plain spawn does (claustrum's own, not measured). Some commands get extra arguments (measured on Linux, macOS and Windows):
 
 - `diff` with one ref runs as `diff-index` with the real index. A patch shape adds `-p`, and a trailing `--` follows the ref.
 - `diff --name-status -M <A>..<B>` runs as `diff-tree -r --ignore-submodules=dirty --submodule=short --no-ext-diff --no-textconv --name-status -M <A> <B> --`. The other `diff` shapes with `<A>..<B>` run as `diff-tree -r` too.

@@ -2203,8 +2203,21 @@ func buildSpawnEnvOn(adoptedEnv []string, adopted bool, env map[string]string, n
 	for k, v := range env {
 		base = sysproc.ReplaceOrAppendEnv(base, k, v)
 	}
+	// With no request value of the name, the child gets it with the value 1. A daemon
+	// entry of the name takes the value 1 in place. Otherwise the entry goes after the new
+	// caller keys (measured on Linux). A request value wins, with no second entry.
+	// 4c111e86, measured on Linux and macOS. On Windows, after an adopt and for a
+	// launcher or gitRead spawn this is claustrum's own, not measured. Its place before
+	// SSH_AUTH_SOCK is not measured.
+	if _, ok := env[placeholderEnvName]; !ok {
+		base = sysproc.ReplaceOrAppendEnv(base, placeholderEnvName, "1")
+	}
 	return base
 }
+
+// placeholderEnvName is the name of the entry that 4c111e86 adds to the environment of
+// a spawned child.
+const placeholderEnvName = "CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER"
 
 // writeFramesLocked writes the replay frames of a reattach on c, with the write
 // lock of c already held, each as Conn.WriteJSON marshals it. It stops at the first error.
