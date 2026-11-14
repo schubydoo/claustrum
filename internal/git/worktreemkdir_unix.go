@@ -135,18 +135,19 @@ func junctionParentRefusal(repo, worktreePath string) string {
 // by its name through a handle of its parent (measured on Linux). macOS runs the same
 // code (claustrum's own, not measured). The removal never deletes a file or a
 // directory that holds an entry, so the emptiness test and the removal are one step.
-// undoFailedAdd uses it.
+// The handle needs no read permission on the parent (openLeafParent), as an rmdir by
+// path needs none. undoFailedAdd uses it.
 func rmdirWorktreeLeaf(worktreePath string) error {
 	leaf := filepath.Clean(worktreePath)
-	parent, err := os.Open(filepath.Dir(leaf))
+	fd, err := openLeafParent(filepath.Dir(leaf))
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "open", Path: filepath.Dir(leaf), Err: err}
 	}
-	defer func() { _ = parent.Close() }()
+	defer func() { _ = unix.Close(fd) }()
 	if leafParentOpenedHook != nil {
 		leafParentOpenedHook()
 	}
-	return unix.Unlinkat(int(parent.Fd()), filepath.Base(leaf), unix.AT_REMOVEDIR)
+	return unix.Unlinkat(fd, filepath.Base(leaf), unix.AT_REMOVEDIR)
 }
 
 // leafParentOpenedHook is a test seam. It runs after rmdirWorktreeLeaf opens the

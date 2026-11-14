@@ -44,8 +44,9 @@ func TestWorktreeCreateMkdirLeafFailure(t *testing.T) {
 // rmdirWorktreeLeaf removes the leaf by its name through a handle of the parent
 // that it opened. The hook moves that parent away and puts a new parent with an
 // empty leaf at the old path. The leaf inside the opened parent goes, and the new
-// one stays. A removal by the full path takes the new leaf instead. A file at the
-// leaf stays. All paths are in a t.TempDir().
+// one stays. A removal by the full path takes the new leaf instead. A parent of mode
+// 0300 gives the handle, and its empty leaf goes. A file at the leaf stays. All paths
+// are in a t.TempDir().
 func TestRmdirWorktreeLeafRemovesThroughTheParentHandle(t *testing.T) {
 	t.Run("the_opened_parent", func(t *testing.T) {
 		dir := t.TempDir()
@@ -72,6 +73,26 @@ func TestRmdirWorktreeLeafRemovesThroughTheParentHandle(t *testing.T) {
 		}
 		if _, err := os.Lstat(leaf); err != nil {
 			t.Errorf("the leaf in the new parent went: %v", err)
+		}
+	})
+	t.Run("a_parent_with_no_read_permission", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root reads a folder of mode 0300")
+		}
+		parent := filepath.Join(t.TempDir(), "p")
+		leaf := filepath.Join(parent, "w1")
+		if err := os.MkdirAll(leaf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(parent, 0o300); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+		if err := rmdirWorktreeLeaf(leaf); err != nil {
+			t.Fatalf("rmdirWorktreeLeaf in a parent of mode 0300: %v", err)
+		}
+		if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+			t.Errorf("the leaf in a parent of mode 0300 survived: Lstat err %v", err)
 		}
 	})
 	t.Run("keeps_a_file", func(t *testing.T) {
