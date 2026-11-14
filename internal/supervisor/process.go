@@ -406,6 +406,11 @@ var (
 	afterChildStart  = func(id string, pid int) {}
 )
 
+// afterTableEntry runs in spawnWith right after p entered m.procs, before the test
+// of a gone link. It is a seam for a test that reattaches p there. Production never
+// reassigns it.
+var afterTableEntry = func(id string) {}
+
 // RefuseStarts makes each spawn that has not passed the check before the start give
 // up before it starts a child. It does not block. signalShutdown calls it at the
 // start of the shutdown.
@@ -1240,14 +1245,20 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+	afterTableEntry(id)
 	// A link whose connection is already gone makes the process detached at once,
 	// so its clock starts at the spawn. DetachConn runs after the connection is
-	// marked closed, so one of the two marks it.
+	// marked closed, so one of the two marks it. A connection that reattached p
+	// since it entered the table holds it, and then the clock does not start
+	// (claustrum's own, not measured). connGone runs before p.mu: no connection lock
+	// under p.mu.
 	if linkTTL > 0 {
 		if connGone(c) {
 			p.mu.Lock()
 			p.linkGone = true
-			p.markDetachedLocked(time.Now())
+			if len(p.reattached) == 0 {
+				p.markDetachedLocked(time.Now())
+			}
 			p.mu.Unlock()
 		}
 		go m.watchUnattended(p, linkTTL, unattendedTick(linkTTL), endGrace)

@@ -610,8 +610,9 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// daemonChildMarker is set only to mirror the reference daemon's environ so
 	// it propagates into process.spawn children (TestSpawnInheritsDaemonChildMarker).
 	// daemonChildMarker is the last entry, and daemonChildEnv stands right before it.
-	// daemonStartEnv drops the names that the daemon does not keep (detach_*.go).
-	cmd.Env = append(daemonStartEnv(os.Environ()), daemonChildEnv+"=1", daemonChildMarker+"=1")
+	// Both go on after the token pipe below. daemonStartEnv drops the names that the
+	// daemon does not keep (detach_*.go).
+	cmd.Env = daemonStartEnv(os.Environ())
 	// Detach from the controlling terminal/session (OS-specific).
 	cmd.SysProcAttr = detachSysProcAttr()
 	cmd.Stdin = nil
@@ -651,9 +652,11 @@ func daemonizeWithToken(socket, forwardToken string) {
 		pipeW = pw
 		// ExtraFiles[0] becomes fd 3 in the child; tell it where to read.
 		cmd.ExtraFiles = []*os.File{pr}
+		// The child looks it up by name (childToken), so it stands before the markers.
 		cmd.Env = append(cmd.Env, tokenPipeEnv+"=3")
 		defer pr.Close() // parent's copy of the read end; the child has its own
 	}
+	cmd.Env = append(cmd.Env, daemonChildEnv+"=1", daemonChildMarker+"=1")
 
 	// The pid of a daemon that answers on the socket path now, before the child
 	// starts. The wait below does not take a socket of that pid for the new one.
