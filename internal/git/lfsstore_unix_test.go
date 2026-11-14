@@ -657,3 +657,43 @@ func TestLFSKeepNeedsSpare(t *testing.T) {
 		})
 	}
 }
+
+// TestLFSStoreFullCodes: a failed download whose write below the private store
+// meets a full disk or a quota answers worktree_no_space or worktree_quota. Its
+// start names the folder of the socket, and no note follows git's text. A
+// write outside the store keeps worktree_add_failed and the note of a full disk
+// (4c111e86, measured on Linux and macOS).
+func TestLFSStoreFullCodes(t *testing.T) {
+	for _, row := range []struct {
+		name, write, words, start, code string
+	}{
+		{"full disk", "<store>/tmp/123456", "no space left on device", "The disk that holds <run> on the remote machine filled up during the checkout: Claude keeps this checkout's Git LFS downloads there while it runs." +
+			" Free some space on that disk, or turn off Worktree for this session, then try again. git worktree add failed (checkout): ", "worktree_no_space"},
+		{"quota", "<store>/tmp/123456", "Disk quota exceeded", "Your disk quota ran out during the checkout on the disk that holds <run> on the remote machine: Claude keeps this checkout's Git LFS downloads there while it runs." +
+			" Free some space on that disk or raise the quota, or turn off Worktree for this session, then try again. git worktree add failed (checkout): ", "worktree_quota"},
+		{"outside the store", "/outside/tmp/123456", "no space left on device", "", "worktree_add_failed"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newNamedLFSFixture(t, "lfs", map[string]string{"b.bin": "beta-object"})
+			mustWrite(t, filepath.Join(f.remote, "error"), "Error downloading object: b.bin: Smudge error: write "+row.write+": "+row.words+"\n")
+			raw, _ := f.create(t, nil)
+			if row.start == "" {
+				note := ". A disk on the remote machine filled up during the checkout: the one that holds the new worktree, or the one that holds <run>" + lfsStoreHoldsText
+				want := strings.Trim(jsonQuoted(t, strings.ReplaceAll(note, "<run>", f.run)), `"`) + `","errorCode":"` + row.code + `"}}`
+				if !strings.HasSuffix(raw, want) {
+					t.Errorf("git.worktree_create = %s\nwant the end %s", raw, want)
+				}
+				f.wantGone(t)
+				return
+			}
+			start := strings.Trim(jsonQuoted(t, strings.ReplaceAll(row.start, "<run>", f.run)), `"`)
+			if !strings.Contains(raw, `"error":"`+start+"Error downloading object: b.bin: Smudge error: write ") {
+				t.Errorf("git.worktree_create = %s\nwant the start %s", raw, start)
+			}
+			if !strings.HasSuffix(raw, `","errorCode":"`+row.code+`"}}`) || strings.Contains(raw, lfsStoreHoldsText) {
+				t.Errorf("git.worktree_create = %s\nwant git's text with no note, then errorCode %s", raw, row.code)
+			}
+			f.wantGone(t)
+		})
+	}
+}

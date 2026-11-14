@@ -83,11 +83,12 @@ type privateStore struct {
 	seed   func() bool
 }
 
-// storeUse is what a checkout that named its private store gives the note of
-// its failure (checkoutNote). short reports a copy of the seed left out for
-// seedSpare.
+// storeUse is what a checkout that named its private store gives the reply of
+// its failure (checkoutNote, storeFullStart). path is the store, <P>/lfs.
+// short reports a copy of the seed left out for seedSpare.
 type storeUse struct {
 	runDir string
+	path   string
 	short  bool
 }
 

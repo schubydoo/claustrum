@@ -12,11 +12,11 @@ package main
 // external_root, on Linux and macOS (measured).
 // 4c111e86 lists git.worktree_create.own_lfs_store after link_bound on Linux and
 // macOS (measured), for the private LFS store of a create (lfsstore.go). It lists
-// one more name after it, for LFS codes that claustrum does not build.
+// git.worktree_create.lfs_error_codes after it (measured on Linux and macOS).
 // 4c111e86 lists cli_temp_root_end right after cli_temp_root on Linux and macOS,
 // and not on Windows (measured).
 // On Linux the two launcher features of launcherOSFeatures follow.
-var osCapabilityFeatures = append([]string{"files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end"}, launcherOSFeatures...)
+var osCapabilityFeatures = append([]string{"files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "git.worktree_create.lfs_error_codes", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end"}, launcherOSFeatures...)
 
 // osCapabilityMethods is files.mkdir, which c9125eb8 lists after plugins.prune and
 // before files.realpath on Linux and macOS (measured). 4c111e86 lists files.find

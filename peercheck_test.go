@@ -41,7 +41,7 @@ func wantCapabilityFeatures() string {
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
-	const unix = `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","git.worktree_create.own_lfs_store","process.spawn.cli_temp_root","process.spawn.cli_temp_root_end",`
+	const unix = `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","git.worktree_create.own_lfs_store","git.worktree_create.lfs_error_codes","process.spawn.cli_temp_root","process.spawn.cli_temp_root_end",`
 	if runtime.GOOS == "linux" {
 		return head + unix + `"launcher.checked_by_handle","launcher.local_kinds_only","server.instance_id"`
 	}

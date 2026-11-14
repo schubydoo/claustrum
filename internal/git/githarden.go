@@ -627,7 +627,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 				storage = lfs.path
 				short := lfs.seed()
 				if rule != nil {
-					rule.store = &storeUse{runDir: lfs.runDir, short: short}
+					rule.store = &storeUse{runDir: lfs.runDir, path: lfs.path, short: short}
 				}
 			}
 			list = append(list, "-c", "lfs.storage="+storage)
