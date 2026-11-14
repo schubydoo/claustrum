@@ -1756,6 +1756,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return refuseAdd(msg)
 		}
 	}
+	// A create of a plain repository makes <repo>/.git a session folder
+	// (b3081b51, measured on Linux, macOS and Windows). The record stays after
+	// git.worktree_remove. c9125eb8 and 4c111e86 write it before the add, so a
+	// failed add keeps it (measured on Linux and macOS). A failed record logs its
+	// line and the create goes on (measured on Linux and macOS). They write it
+	// before the listing of `rev-parse --absolute-git-dir` (measured on Linux).
+	// claustrum writes it here, after the refusals before the add (claustrum's
+	// own, not measured). The pin for a linked worktree, the folder of the git
+	// answer when no pin is known and no record with the off switch are
+	// claustrum's own, not measured.
+	if !sessiondirs.OffSwitchSet(req.Params) {
+		recorded := t.pinCommonDir
+		if recorded == "" {
+			recorded = gitDir
+		}
+		_ = sessiondirs.RememberCreate(recorded)
+	}
 	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
 	added = addErr == nil
@@ -2477,19 +2494,6 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			ErrorCode:  "timeout",
 			BranchKept: kept,
 		})
-	}
-	// A good create of a plain repository makes <repo>/.git a session folder
-	// (b3081b51, measured on Linux, macOS and Windows). The record stays after
-	// git.worktree_remove. A failed record logs its line and the create answers
-	// success (measured on Linux and macOS). The place at the reply, the pin for a
-	// linked worktree, the folder of the git answer when no pin is known and no
-	// record with the off switch are claustrum's own, not measured.
-	if !sessiondirs.OffSwitchSet(req.Params) {
-		recorded := t.pinCommonDir
-		if recorded == "" {
-			recorded = gitDir
-		}
-		_ = sessiondirs.RememberCreate(recorded)
 	}
 	return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
