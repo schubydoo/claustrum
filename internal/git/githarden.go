@@ -955,6 +955,13 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	readEnd := time.Now()
+	keep := lfs.path != "" && (rule == nil || !rule.plan.userLfsStorage)
+	// After a failed or a stopped checkout the keep runs too (lfsstore.go).
+	// 4c111e86 keeps a downloaded object after a deadline, and makes its shard
+	// folders after a failed write of git (measured on Linux and macOS).
+	if err != nil && keep {
+		returnDownloads(u, lfs.path, true)
+	}
 	if err == nil || drained {
 		if u.swapped("index") {
 			return stderr, drained, errGitDirNotReal, nil
@@ -962,8 +969,8 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// The keep of the objects that git-lfs downloaded into the private
 		// store (lfsstore.go). It runs after a checkout that exited 0, before the
 		// settle step. The moment is claustrum's own, not measured.
-		if err == nil && lfs.path != "" && (rule == nil || !rule.plan.userLfsStorage) {
-			returnDownloads(u, lfs.path)
+		if err == nil && keep {
+			returnDownloads(u, lfs.path, false)
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the

@@ -308,10 +308,13 @@ func TestLFSSeedCopiesThroughLink(t *testing.T) {
 	}
 }
 
-// TestLFSNoKeepAfterFailedCheckout: git-lfs downloads a.bin, then b.bin is on
-// no server and the checkout fails. The store of the repository lacks a.bin
-// (claustrum's own, not measured).
-func TestLFSNoKeepAfterFailedCheckout(t *testing.T) {
+// TestLFSKeepAfterFailedCheckout: git-lfs downloads a.bin, then b.bin is on
+// no server and the checkout fails. a.bin reaches the store of the repository
+// by a hard link at its name, and no temp name stays (4c111e86 keeps after a
+// deadline, measured on Linux. A failed filter is claustrum's own, not
+// measured).
+func TestLFSKeepAfterFailedCheckout(t *testing.T) {
+	seamFreeSpace(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
 	f.onServer(t, "a.bin")
 	if raw, _ := f.create(t, nil); strings.Contains(raw, `"success":true`) {
@@ -320,8 +323,12 @@ func TestLFSNoKeepAfterFailedCheckout(t *testing.T) {
 	if got := f.smudges(t)["a.bin"]; got != "present=false private=true" {
 		t.Fatalf("smudge line of a.bin = %q, want a download", got)
 	}
-	if p := storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"]); exists(p) {
-		t.Errorf("%s exists, want no keep after a failed checkout", p)
+	p := storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])
+	if b, err := os.ReadFile(p); err != nil || string(b) != "alpha-object" {
+		t.Fatalf("the object in the store of the repository = %q, %v, want it kept after a failed checkout", b, err)
+	}
+	if names, _ := os.ReadDir(filepath.Dir(p)); len(names) != 1 {
+		t.Errorf("the shard holds %v, want only the object", names)
 	}
 }
 
@@ -367,7 +374,7 @@ func TestLFSNoKeepWithoutHeldDir(t *testing.T) {
 	gitDir, private := t.TempDir(), t.TempDir()
 	oid := strings.Repeat("d", 64)
 	mustWrite(t, storeObjectPath(private, oid), "x")
-	returnDownloads(gitUse{gitDir: gitDir}, private)
+	returnDownloads(gitUse{gitDir: gitDir}, private, false)
 	if names, _ := os.ReadDir(gitDir); len(names) != 0 {
 		t.Errorf("%s holds %v, want nothing", gitDir, names)
 	}
@@ -581,7 +588,7 @@ func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownload(root, gitDir, private, oid, time.Now())
+	returnDownload(root, gitDir, private, oid, time.Now(), false)
 	if !swapped {
 		t.Fatal("the seam did not swap the shard folder")
 	}
@@ -592,6 +599,32 @@ func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 	}
 	if len(removed) != 0 {
 		t.Errorf("removed %q, want no sweep", removed)
+	}
+}
+
+// TestLFSFailedKeepAddsNoRemove: after a failed checkout a hard link that
+// fails keeps nothing. No copy is made, no name is removed and the stale temp
+// name of the same oid stays (claustrum's own, not measured).
+func TestLFSFailedKeepAddsNoRemove(t *testing.T) {
+	seamFreeSpace(t)
+	prev := keepHardLink
+	keepHardLink = func(*os.Root, string, string) error { return os.ErrPermission }
+	t.Cleanup(func() { keepHardLink = prev })
+	gitDir, private := t.TempDir(), t.TempDir()
+	oid := putObject(t, private, "alpha-object")
+	shard := filepath.Dir(storeObjectPath(filepath.Join(gitDir, "lfs"), oid))
+	stale := filepath.Join(shard, ".claude-aaaaaaaa-"+oid)
+	mustWrite(t, stale, "stale")
+	var removed []string
+	seamLFSRemove(t, &removed)
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	returnDownload(root, gitDir, private, oid, time.Now(), true)
+	if names, _ := os.ReadDir(shard); len(names) != 1 || len(removed) != 0 {
+		t.Errorf("the shard holds %v and %q was removed, want only the stale name and no remove", names, removed)
 	}
 }
 
@@ -626,21 +659,24 @@ func seamFreeSpace(t *testing.T) {
 // repository only when the file system of its shard has 1 GiB free plus the
 // size of the object, also when both stores share a file system. Under the
 // bound the empty shard folder stays (4c111e86, measured on Linux and macOS).
+// After a failed checkout the same holds (measured on Linux and macOS).
 // The rows run the bound by a hard link and by a copy. The exact byte of the
 // bound is inferred. A free space that cannot be read keeps the object
 // (claustrum's own). The rows write 1 GiB as a number, so they pin seedSpare.
 func TestLFSKeepNeedsSpare(t *testing.T) {
 	const body = "beta-object"
 	for _, row := range []struct {
-		name       string
-		link, kept bool
-		free       uint64
+		name               string
+		link, kept, failed bool
+		free               uint64
 	}{
-		{"a hard link one byte under the bound", true, false, 1<<30 + uint64(len(body)) - 1},
-		{"a hard link at the bound", true, true, 1<<30 + uint64(len(body))},
-		{"a copy one byte under the bound", false, false, 1<<30 + uint64(len(body)) - 1},
-		{"a copy at the bound", false, true, 1<<30 + uint64(len(body))},
-		{"a free space that cannot be read", true, true, 0},
+		{"a hard link one byte under the bound", true, false, false, 1<<30 + uint64(len(body)) - 1},
+		{"a hard link at the bound", true, true, false, 1<<30 + uint64(len(body))},
+		{"a copy one byte under the bound", false, false, false, 1<<30 + uint64(len(body)) - 1},
+		{"a copy at the bound", false, true, false, 1<<30 + uint64(len(body))},
+		{"a free space that cannot be read", true, true, false, 0},
+		{"after a failed checkout one byte under the bound", true, false, true, 1<<30 + uint64(len(body)) - 1},
+		{"after a failed checkout at the bound", true, true, true, 1<<30 + uint64(len(body))},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			var asked []string
@@ -657,7 +693,7 @@ func TestLFSKeepNeedsSpare(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = root.Close() }()
-			returnDownload(root, gitDir, private, oid, time.Now())
+			returnDownload(root, gitDir, private, oid, time.Now(), row.failed)
 			p := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
 			if want := []string{filepath.Dir(p)}; !slices.Equal(asked, want) {
 				t.Errorf("free space asked for %q, want %q", asked, want)

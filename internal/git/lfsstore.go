@@ -39,8 +39,8 @@ import (
 //     and a folder `lfs/objects` that cannot be written, keep nothing, and the
 //     create succeeds (measured on Linux). An object whose bytes and size
 //     differ from its pointer gets `lfs/objects` but no shard folder (measured
-//     on Linux and macOS). No object is kept after a failed or a stopped
-//     checkout (claustrum's own, not measured).
+//     on Linux and macOS). The keep also runs after a failed or a stopped
+//     checkout (measured on Linux and macOS).
 //   - The sweep of stale temp names (sweepShardTemps).
 //
 // Claustrum's own, not measured: the seed reads the pointers with `ls-tree`
@@ -50,7 +50,9 @@ import (
 // makes the object by a hard link, or by a copy with mode 0644 across file
 // systems. It keeps no object that the store already has. A link at
 // `lfs/objects` or at a shard folder keeps nothing. The keep tests the bytes
-// of an object against its oid, not its size.
+// of an object against its oid, not its size. After a failed or a stopped
+// checkout it makes only a hard link at the name of the object, with no temp
+// name, no copy and no sweep, so that path has no remove.
 const (
 	// pointerBlobMax is the largest blob that the seed reads as a pointer
 	// (claustrum's own, the cutoff of git-lfs).
@@ -483,14 +485,14 @@ func downloadedOIDs(private string) []string {
 // returnDownloads puts each object of the private store private that the store
 // of the repository lacks into that store. The writes go through the held git
 // directory of the create. A create that holds none keeps nothing (claustrum's
-// own, not measured).
-func returnDownloads(u gitUse, private string) {
+// own, not measured). failed says that the checkout failed or stopped.
+func returnDownloads(u gitUse, private string, failed bool) {
 	a := u.accepted
 	if a == nil || a.root == nil {
 		return
 	}
 	for _, oid := range downloadedOIDs(private) {
-		returnDownload(a.root, a.path, private, oid, time.Now())
+		returnDownload(a.root, a.path, private, oid, time.Now(), failed)
 	}
 }
 
@@ -552,8 +554,9 @@ var openShardFolder = (*os.Root).OpenRoot
 // (measured on Linux and macOS).
 //
 // `lfs/objects` is made first. An object whose bytes do not give its oid then
-// stops the keep, with no shard folder (objectHoldsOID).
-func returnDownload(root *os.Root, dir, private, oid string, now time.Time) {
+// stops the keep, with no shard folder (objectHoldsOID). After a failed or a
+// stopped checkout (failed) the keep is one hard link at the name oid.
+func returnDownload(root *os.Root, dir, private, oid string, now time.Time, failed bool) {
 	objects := openShard(root, filepath.Join("lfs", "objects"))
 	if objects == nil {
 		return
@@ -577,6 +580,10 @@ func returnDownload(root *os.Root, dir, private, oid string, now time.Time) {
 	}
 	shardPath := filepath.Join(dir, "lfs", "objects", rel)
 	if !keepHasSpace(shardPath, src) {
+		return
+	}
+	if failed {
+		_ = keepHardLink(shard, src, oid)
 		return
 	}
 	var n [4]byte
