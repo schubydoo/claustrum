@@ -205,12 +205,12 @@ func TestCheckLauncherFileDigest(t *testing.T) {
 	checkFile(t, "64 MiB + 1", big, LauncherCheck{SHA256: []string{zeroDigest}}, FaultUnreadable, "launcher `"+big+"` is larger than 64 MiB, the most that can be checked against a digest")
 }
 
-// TestCheckLauncherFileNFS pins the rule of NFS, FUSE (bindfs) and CIFS: with no digest
+// TestCheckLauncherFileNFS pins the rule of an untrusted file system kind: with no digest
 // ({} or an empty list) the first item on that file system is refused with its text and
 // fault writable. With the right digest it passes, and a wrong digest gives digest. The
-// NFS and FUSE texts follow 4c111e86 (measured on Linux). The SMB text is claustrum's own.
+// texts follow 4c111e86 (measured on Linux), also those of 9p, of AFS and of an unknown kind.
 func TestCheckLauncherFileNFS(t *testing.T) {
-	for _, fs := range []string{"NFS", "FUSE or virtiofs", "SMB"} {
+	for _, fs := range []string{"NFS", "FUSE or virtiofs", "SMB", "9p", "AFS", "an unknown kind of file system (0x4d44)"} {
 		d := launcherDir(t)
 		mnt := filepath.Join(d, "mnt")
 		L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
@@ -221,6 +221,21 @@ func TestCheckLauncherFileNFS(t *testing.T) {
 		checkFile(t, fs+" right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
 		checkFile(t, fs+" wrong", L, LauncherCheck{SHA256: []string{zeroDigest}}, FaultDigest, "launcher `"+L+"` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.")
 	}
+}
+
+// TestCheckLauncherFileLike9p pins a trusted disk kind with no real device while a 9p
+// mount is listed (4c111e86, measured on Linux with btrfs): with no digest the folder
+// gets writable and the 9p text, also with a right ownerUid. With the right digest it passes.
+func TestCheckLauncherFileLike9p(t *testing.T) {
+	d := launcherDir(t)
+	mnt := filepath.Join(d, "btrfs")
+	L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
+	fakeLauncherFacts(t, map[string]launcherFacts{mnt: {mode: 0o755, like9p: true}, L: {mode: 0o755, like9p: true}})
+	text := "`" + mnt + "` can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
+	uid := uint32(0)
+	checkFile(t, "like 9p {}", L, LauncherCheck{}, FaultWritable, text)
+	checkFile(t, "like 9p ownerUid", L, LauncherCheck{OwnerUID: &uid}, FaultWritable, text)
+	checkFile(t, "like 9p right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
 }
 
 // TestCheckLauncherFileOwnFUSE pins a FUSE mount that the uid of the daemon owns

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -100,25 +101,99 @@ func TestCheckLauncherFileMoved(t *testing.T) {
 }
 
 // TestLauncherFSTypeReal pins that the f_type seam reads the real statfs: /proc gives
-// the proc f_type and no server file system name.
+// the proc f_type, which is no trusted kind.
 func TestLauncherFSTypeReal(t *testing.T) {
 	magic, err := launcherFSType("/proc")
 	if err != nil || magic != unix.PROC_SUPER_MAGIC {
 		t.Fatalf("f_type of /proc: got %#x, %v, want %#x", magic, err, unix.PROC_SUPER_MAGIC)
 	}
 	f, err := statLauncherFacts("/proc")
-	if err != nil || f.fs != "" {
-		t.Errorf("facts of /proc: got %q, %v, want no name", f.fs, err)
+	if want := "an unknown kind of file system (0x9fa0)"; err != nil || f.fs != want {
+		t.Errorf("facts of /proc: got %q, %v, want %q", f.fs, err, want)
 	}
 }
 
-// TestStatLauncherFactsFileSystem pins the f_type test through the statfs seam: NFS,
-// FUSE, CIFS and SMB2 get their names, ext4 and tmpfs get none. A failed statfs is an
-// error.
+// TestStatLauncherFactsLike9p pins the 9p rule through the seams (4c111e86, measured on
+// Linux with btrfs and with the ext4 f_type on a tmpfs). /proc is on a device with major
+// 0. The folder of the test gives a real device where it has one.
+func TestStatLauncherFactsLike9p(t *testing.T) {
+	old, oldNine := launcherFSType, launcherNinePMounted
+	t.Cleanup(func() { launcherFSType, launcherNinePMounted = old, oldNine })
+	type row struct {
+		p     string
+		magic uint32
+		nine  bool
+		want  bool
+	}
+	rows := []row{
+		{"/proc", unix.EXT4_SUPER_MAGIC, true, true},
+		{"/proc", unix.BTRFS_SUPER_MAGIC, true, true},
+		{"/proc", unix.XFS_SUPER_MAGIC, true, true},
+		{"/proc", unix.EXT4_SUPER_MAGIC, false, false},
+		{"/proc", unix.TMPFS_MAGIC, true, false},
+		{"/proc", unix.OVERLAYFS_SUPER_MAGIC, true, false},
+		{"/proc", 0x2fc12fc1, true, false},
+		{"/proc", unix.SQUASHFS_MAGIC, true, false},
+		{"/proc", unix.NFS_SUPER_MAGIC, true, false},
+	}
+	d, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(d, &st); err != nil {
+		t.Fatal(err)
+	}
+	if unix.Major(st.Dev) != 0 {
+		rows = append(rows, row{d, unix.EXT4_SUPER_MAGIC, true, false})
+	}
+	for _, c := range rows {
+		launcherFSType = func(string) (uint32, error) { return c.magic, nil }
+		launcherNinePMounted = func() bool { return c.nine }
+		f, err := statLauncherFacts(c.p)
+		if err != nil || f.like9p != c.want {
+			t.Errorf("%s, f_type %#x, 9p %v: got %v, %v, want %v", c.p, c.magic, c.nine, f.like9p, err, c.want)
+		}
+	}
+}
+
+// TestMountInfoType pins the read of the type field of a mountinfo line, and of the
+// real table of the test.
+func TestMountInfoType(t *testing.T) {
+	for line, want := range map[string]string{
+		"36 35 0:44 / /mnt/share rw,relatime shared:1 - 9p 127.0.0.1 rw,trans=tcp": "9p",
+		"22 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw":                             "ext4",
+		"22 1 8:1 / / rw,relatime":                                                 "",
+	} {
+		if got := mountInfoType(line); got != want {
+			t.Errorf("%q: got %q, want %q", line, got, want)
+		}
+	}
+	table := "22 1 8:1 / / rw - ext4 /dev/sda1 rw\n36 35 0:44 / /mnt/share rw - 9p 127.0.0.1 rw\n"
+	if !ninePListed(strings.NewReader(table)) {
+		t.Error("a table with a 9p line lists none")
+	}
+	if ninePListed(strings.NewReader("22 1 8:1 / / rw - ext4 /dev/sda1 rw\n36 35 0:45 / /9p rw - tmpfs 9p rw\n")) {
+		t.Error("a table with no 9p type lists one")
+	}
+	b, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		t.Skip(err)
+	}
+	want := strings.Contains(string(b), " - 9p ")
+	if got := ninePInMountTable(); got != want {
+		t.Errorf("the real table: got %v, want %v", got, want)
+	}
+}
+
+// TestStatLauncherFactsFileSystem pins the f_type test through the statfs seam: each
+// kind that 4c111e86 names gets its name (measured on Linux), the trusted kinds get none,
+// and any other f_type gets the unknown text with its hex. A failed statfs is an error.
 func TestStatLauncherFactsFileSystem(t *testing.T) {
 	d := launcherDir(t)
-	old := launcherFSType
-	t.Cleanup(func() { launcherFSType = old })
+	old, oldNine := launcherFSType, launcherNinePMounted
+	t.Cleanup(func() { launcherFSType, launcherNinePMounted = old, oldNine })
+	launcherNinePMounted = func() bool { return false }
 	for _, c := range []struct {
 		magic uint32
 		want  string
@@ -127,8 +202,35 @@ func TestStatLauncherFactsFileSystem(t *testing.T) {
 		{unix.FUSE_SUPER_MAGIC, "FUSE or virtiofs"},
 		{unix.CIFS_SUPER_MAGIC, "SMB"},
 		{unix.SMB2_SUPER_MAGIC, "SMB"},
+		{unix.V9FS_MAGIC, "9p"},
+		{0x5346414f, "AFS"},
+		{0x00c36400, "Ceph"},
+		{0x01161970, "GFS2"},
+		{0x0bd00bd0, "Lustre"},
+		{0x47504653, "GPFS"},
+		{0x7461636f, "OCFS2"},
+		{0xa501fcf5, "VxFS"},
+		{0x4d44, "an unknown kind of file system (0x4d44)"},
+		{0x15013346, "an unknown kind of file system (0x15013346)"},
+		{0x9660, "an unknown kind of file system (0x9660)"},
+		{0x12345678, "an unknown kind of file system (0x12345678)"},
 		{unix.EXT4_SUPER_MAGIC, ""},
+		{unix.XFS_SUPER_MAGIC, ""},
+		{unix.EROFS_SUPER_MAGIC_V1, ""},
+		{unix.BTRFS_SUPER_MAGIC, ""},
 		{unix.TMPFS_MAGIC, ""},
+		{unix.OVERLAYFS_SUPER_MAGIC, ""},
+		{0x2fc12fc1, ""},
+		{unix.SQUASHFS_MAGIC, ""},
+		{unix.F2FS_SUPER_MAGIC, ""},
+		{unix.RAMFS_MAGIC, ""},
+		{0xf15f, ""},
+		{0x3153464a, ""},
+		{0x52654973, ""},
+		{0xca451a4e, ""},
+		{0x2011bab0, "an unknown kind of file system (0x2011bab0)"},
+		{0x7366746e, "an unknown kind of file system (0x7366746e)"},
+		{0x6b414653, "an unknown kind of file system (0x6b414653)"},
 	} {
 		launcherFSType = func(p string) (uint32, error) {
 			if p != d {
