@@ -969,10 +969,14 @@ const managedWorktreesMarkerBody = "This directory holds Claude Code session wor
 // of any kind keeps its content and its mode, and a failed add keeps the marker.
 // Any other open error stops the create with "cannot mark <dir> as a worktree
 // location: openat .claude-managed-worktrees: <errno>". f6010b97 does the same on
-// Linux and macOS. Not measured: a write or close that fails after the open. The
-// create goes on then.
+// Linux and macOS. A failed write keeps the create going. On
+// Linux a failed close stops the create with "cannot mark <dir> as a worktree
+// location: close <name>: <errno>", and the marker stays. c9125eb8 and 4c111e86
+// do both on Linux (measured). The name of the file is that of openMarkerFile.
+// Not measured: a close that fails after the open on macOS. The
+// create goes on there (markerCloseStops).
 func ensureManagedWorktreesMarker(dir string) error {
-	f, err := os.OpenFile(filepath.Join(dir, managedWorktreesMarker), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, release, err := openMarkerFile(dir)
 	if errors.Is(err, fs.ErrExist) {
 		return nil
 	}
@@ -983,7 +987,13 @@ func ensureManagedWorktreesMarker(dir string) error {
 		}
 		return fmt.Errorf("cannot mark %s as a worktree location: openat %s: %w", dir, managedWorktreesMarker, err)
 	}
+	defer release()
 	_, _ = f.WriteString(managedWorktreesMarkerBody)
-	_ = f.Close()
+	if err := closeMarkerFile(f); err != nil && markerCloseStops {
+		return fmt.Errorf("cannot mark %s as a worktree location: %w", dir, err)
+	}
 	return nil
 }
+
+// closeMarkerFile closes the new marker. A test sets it to fail the close.
+var closeMarkerFile = (*os.File).Close
