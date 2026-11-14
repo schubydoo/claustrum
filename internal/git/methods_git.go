@@ -2341,14 +2341,22 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// f6010b97. With a settings copy a text that holds one of lfsNoteWords
 			// gets a note after it (checkoutNote). The note goes only in this
 			// reply, before any undo text (claustrum's own, not measured beside
-			// a failed undo).
+			// a failed undo). A write below the private LFS store on a full disk
+			// or a quota puts its own start before the text, with no note
+			// (storeFullStart).
 			text := worktreeGitText(rtStderr, rtErr)
-			msg := "git worktree add failed (checkout): " + text + checkoutNote(rtStderr, text, rule)
+			msg := "git worktree add failed (checkout): " + text
+			code := "worktree_add_failed"
+			if start, c := storeFullStart(rtStderr, rule); c != "" {
+				msg, code = start+msg, c
+			} else {
+				msg += checkoutNote(rtStderr, text, rule)
+			}
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{
 				Success:    false,
 				Error:      msg + undo,
-				ErrorCode:  "worktree_add_failed",
+				ErrorCode:  code,
 				BranchKept: kept,
 			})
 		}

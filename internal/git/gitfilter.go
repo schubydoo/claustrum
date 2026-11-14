@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -750,6 +751,61 @@ func checkoutNote(stderr, text string, rule *filterRule) string {
 		}
 	}
 	return ""
+}
+
+// The starts of the texts of worktree_no_space and worktree_quota, before the
+// run folder (4c111e86, measured on Linux and macOS).
+const (
+	storeNoSpaceStart = "The disk that holds "
+	storeNoSpaceEnd   = " on the remote machine filled up during the checkout: Claude keeps this checkout's Git LFS downloads there while it runs." +
+		" Free some space on that disk, or turn off Worktree for this session, then try again. "
+	storeQuotaStart = "Your disk quota ran out during the checkout on the disk that holds "
+	storeQuotaEnd   = " on the remote machine: Claude keeps this checkout's Git LFS downloads there while it runs." +
+		" Free some space on that disk or raise the quota, or turn off Worktree for this session, then try again. "
+)
+
+// storeFullStart is the start of the text and the errorCode of a failed
+// checkout whose stderr names a write in the private LFS store with a full
+// disk or a quota. It is "", "" for any other checkout. The text then holds no
+// note after git's text. On 4c111e86 a line with `Error downloading object: `
+// and `write <store>/…` that ends in `: no space left on device` gives
+// worktree_no_space, and one that ends in `: disk quota exceeded` gives
+// worktree_quota, in any letter case. A path outside the store, a quoted path
+// and an empty path give worktree_add_failed (measured on Linux and macOS).
+//
+// Claustrum's own, not measured: the first such line counts, a path must be
+// below the store and not the store itself, and the words of lfsFailedWords are
+// not needed.
+func storeFullStart(stderr string, rule *filterRule) (start, code string) {
+	if rule == nil || !rule.shadow || rule.store == nil || rule.store.path == "" {
+		return "", ""
+	}
+	s := rule.store
+	mark := "write " + s.path + string(filepath.Separator)
+	for line := range strings.SplitSeq(stderr, "\n") {
+		i := strings.Index(line, "Error downloading object: ")
+		if i < 0 {
+			continue
+		}
+		j := strings.Index(line[i:], mark)
+		if j < 0 {
+			continue
+		}
+		rest := strings.TrimSuffix(line[i+j+len(mark):], "\r")
+		switch {
+		case hasFoldSuffix(rest, ": no space left on device"):
+			return storeNoSpaceStart + s.runDir + storeNoSpaceEnd, "worktree_no_space"
+		case hasFoldSuffix(rest, ": disk quota exceeded"):
+			return storeQuotaStart + s.runDir + storeQuotaEnd, "worktree_quota"
+		}
+	}
+	return "", ""
+}
+
+// hasFoldSuffix reports whether s ends with suffix in any letter case, after
+// at least one other byte.
+func hasFoldSuffix(s, suffix string) bool {
+	return len(s) > len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
 }
 
 // repositoryOnlyFilterText is the refusal text of errorCode repository_only_filter
