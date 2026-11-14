@@ -207,7 +207,8 @@ var errPeerExited = errors.New("the caller has exited")
 // empty reason for a caller that the daemon serves. A lookup error that is a
 // permission error gives "unreadable" (measured). An exited caller gets
 // "lookup_failed" (measured). claustrum gives every other failure "lookup_failed"
-// too (claustrum's own, not measured). A peer text that is not the own text gives
+// too (claustrum's own, not measured). EMFILE in the log line is measured (Linux).
+// A peer text that is not the own text gives
 // "other_namespace" with the peer text in quotes (measured).
 // Measured on Linux.
 func judgePeer(own, peer nsText, err error) (reason, detail string) {

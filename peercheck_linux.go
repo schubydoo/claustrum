@@ -64,6 +64,12 @@ func lookupPeer(nc net.Conn, own nsText) (peer nsText, exited bool, err error) {
 	return peer, exited, lookErr
 }
 
+// peerPidfdOf reads SO_PEERPIDFD of the socket fd. A test replaces it to give
+// the read an errno.
+var peerPidfdOf = func(fd int) (int, error) {
+	return unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_PEERPIDFD)
+}
+
 func lookupPeerFD(fd int, own nsText) (peer nsText, exited bool, err error) {
 	cred, err := unix.GetsockoptUcred(fd, unix.SOL_SOCKET, unix.SO_PEERCRED)
 	if err != nil {
@@ -76,10 +82,12 @@ func lookupPeerFD(fd int, own nsText) (peer nsText, exited bool, err error) {
 	if own.pidfd {
 		// A Linux 6.12 host answers EINVAL for a caller that is gone (no test
 		// pins the errno). ESRCH counts as gone too (claustrum's own, not measured).
-		pfd, err = unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_PEERPIDFD)
+		// For EMFILE the text is "caller <pid>: too many open files" (measured on
+		// Linux, c9125eb8 and 4c111e86). The text of another errno is not measured.
+		pfd, err = peerPidfdOf(fd)
 		if err != nil {
 			gone := errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ESRCH)
-			return peer, gone, fmt.Errorf("SO_PEERPIDFD: %w", err)
+			return peer, gone, fmt.Errorf("caller %d: %w", cred.Pid, err)
 		}
 		defer unix.Close(pfd)
 	}
