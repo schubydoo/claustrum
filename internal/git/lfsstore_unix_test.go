@@ -696,7 +696,7 @@ func TestSeedSpareMakesNoTemp(t *testing.T) {
 	store, private := filepath.Join(t.TempDir(), "lfs"), filepath.Join(t.TempDir(), "lfs")
 	oid := strings.Repeat("a", 64)
 	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
-	if !seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}}) {
+	if short, _ := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}}); !short {
 		t.Error("seedObjects = false, want a copy left out")
 	}
 	if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(private), seedTempPattern)); len(temps) != 0 || exists(storeObjectPath(private, oid)) {
@@ -814,4 +814,51 @@ func putObject(t *testing.T, store, body string) string {
 	oid := hex.EncodeToString(sum[:])
 	mustWrite(t, storeObjectPath(store, oid), body)
 	return oid
+}
+
+// TestLFSNotKeptAfterDeadline: a create whose timeoutMs ends during the
+// checkout, after copies of the seed that took a large part of it, answers
+// worktree_lfs_not_kept. The copy of 3 s is over the bound of a quarter of
+// 10 s (claustrum's own) and under half. An `incomplete` folder that git-lfs made in
+// the private store keeps timeout. A copy past half of timeoutMs stops, and
+// git-lfs then fails to find the object (4c111e86, measured on Linux and
+// macOS).
+func TestLFSNotKeptAfterDeadline(t *testing.T) {
+	for _, row := range []struct {
+		name       string
+		copyTime   time.Duration
+		hang, inc  bool
+		code, text string
+	}{
+		{"long copy", 3000 * time.Millisecond, true, false, "worktree_lfs_not_kept", "timed out after 10 seconds, and copying"},
+		{"download begun", 3000 * time.Millisecond, true, true, "timeout", "git worktree add timed out after 10000ms (deadline expired during the checkout)"},
+		{"copy past half", 6000 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
+			f.local(t, "a.bin", "alpha-object")
+			if row.hang {
+				mustWrite(t, filepath.Join(f.remote, "hang"), "")
+			}
+			if row.inc {
+				mustWrite(t, filepath.Join(f.remote, "incomplete"), "")
+			}
+			seamFreeSpace(t)
+			prevLink, prevCopy := seedLink, seedCopy
+			seedLink = func(string, string) error { return os.ErrPermission }
+			seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+				time.Sleep(row.copyTime)
+				return io.Copy(w, r)
+			}
+			t.Cleanup(func() { seedLink, seedCopy = prevLink, prevCopy })
+			raw, _ := f.create(t, map[string]any{"timeoutMs": 10000})
+			if !strings.Contains(raw, `"errorCode":"`+row.code+`"`) || !strings.Contains(raw, row.text) {
+				t.Errorf("git.worktree_create = %s\nwant errorCode %s and %q", raw, row.code, row.text)
+			}
+			if got := f.smudges(t)["a.bin"]; row.name == "copy past half" && !strings.HasPrefix(got, "present=false") {
+				t.Errorf("smudge line of a.bin = %q, want no seeded copy after half of timeoutMs", got)
+			}
+			f.wantGone(t)
+		})
+	}
 }
