@@ -215,6 +215,8 @@ component_management:
         - internal/git/worktreeexternal.go
         - internal/git/worktreeexternal_unix.go
         - internal/git/worktreeexternal_windows.go
+        - internal/git/worktreemarker_linux.go
+        - internal/git/worktreemarker_other.go
         # Windows gates the custom-worktree-location (worktreeRoot) capability off.
         - internal/git/externalunsupported_windows.go
         - internal/git/externalunsupported_other.go

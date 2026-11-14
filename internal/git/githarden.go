@@ -967,10 +967,12 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the
-		// state fallback-git (c9125eb8 and b3081b51, measured on Linux). With
-		// the member on macOS and Windows it is claustrum's own, not measured.
-		// In the state fallback-git, also with the member, and after a drain
-		// overrun no call runs (claustrum's own, not measured).
+		// state fallback-git (c9125eb8 and b3081b51, measured on Linux). In the
+		// state fallback-git without the member it is set too (c9125eb8 and
+		// 4c111e86, measured on Linux). On macOS and Windows both are
+		// claustrum's own, not measured. In the state fallback-git with the
+		// member, and after a drain overrun, no call runs (claustrum's own, not
+		// measured).
 		if err == nil && settle {
 			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, pin, readEnd)
 			// The test of the held git directory runs again right before the

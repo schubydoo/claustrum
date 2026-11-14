@@ -468,6 +468,22 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 		"nothing was removed — retry once it is available, or remove the worktree by hand", worktreeRoot, reason)
 }
 
+// recheckLocation runs the three location calls of a create with worktreeRoot
+// again in repo: a light `rev-parse --show-toplevel`, a heavy `rev-parse
+// --absolute-git-dir` and a light `worktree list --porcelain -z`, each with its
+// listing. In the state shadow c9125eb8 and 4c111e86 run them after the call
+// about the repository that follows the add, and again after the settle step
+// (measured on Linux). The answers are not used. A call that its time limit
+// stops stops the request, so no later git call of it starts (gitstop.go). Any
+// other failure changes nothing (claustrum's own, not measured). So is the
+// absence of the calls in the other states, and of the first run after an add
+// of a commit id.
+func recheckLocation(u gitUse, repo string) {
+	_ = repoTopLevel(u, repo, nil)
+	_ = repositoryCheckError(u, repo, nil)
+	_, _ = worktreeListTwice(u, repo)
+}
+
 // repoTopLevel is the answer of a light `rev-parse --show-toplevel` in repo, or ""
 // when the call fails. pre is nil when the call gets its own listing, else the
 // listing it pins (see hardenedGitCmd).
@@ -969,10 +985,14 @@ const managedWorktreesMarkerBody = "This directory holds Claude Code session wor
 // of any kind keeps its content and its mode, and a failed add keeps the marker.
 // Any other open error stops the create with "cannot mark <dir> as a worktree
 // location: openat .claude-managed-worktrees: <errno>". f6010b97 does the same on
-// Linux and macOS. Not measured: a write or close that fails after the open. The
-// create goes on then.
+// Linux and macOS. A failed write keeps the create going. On
+// Linux a failed close stops the create with "cannot mark <dir> as a worktree
+// location: close <name>: <errno>", and the marker stays. c9125eb8 and 4c111e86
+// do both on Linux (measured). The name of the file is that of openMarkerFile.
+// Not measured: a close that fails after the open on macOS. The
+// create goes on there (markerCloseStops).
 func ensureManagedWorktreesMarker(dir string) error {
-	f, err := os.OpenFile(filepath.Join(dir, managedWorktreesMarker), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, release, err := openMarkerFile(dir)
 	if errors.Is(err, fs.ErrExist) {
 		return nil
 	}
@@ -983,7 +1003,13 @@ func ensureManagedWorktreesMarker(dir string) error {
 		}
 		return fmt.Errorf("cannot mark %s as a worktree location: openat %s: %w", dir, managedWorktreesMarker, err)
 	}
+	defer release()
 	_, _ = f.WriteString(managedWorktreesMarkerBody)
-	_ = f.Close()
+	if err := closeMarkerFile(f); err != nil && markerCloseStops {
+		return fmt.Errorf("cannot mark %s as a worktree location: %w", dir, err)
+	}
 	return nil
 }
+
+// closeMarkerFile closes the new marker. A test sets it to fail the close.
+var closeMarkerFile = (*os.File).Close
