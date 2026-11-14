@@ -21,29 +21,30 @@ import (
 func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 	type result struct{ found, died, already, escalated bool }
 	// Each row has its own child id, so a child that another test or row left alive cannot
-	// add a matching exit line. The row id is the child id.
+	// add a matching exit line. The row id is the child id. The exit line cuts an id to 8
+	// bytes, so the first 8 bytes differ in each row.
 	actions := []struct {
 		id      string
 		act     func(m *supervisor.Manager, id string) result
 		wantLog string
 	}{
-		{"kd-kill-default", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, ""); return result{} },
+		{"kd1-kill-default", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, ""); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-kill-term", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "TERM"); return result{} },
+		{"kd2-kill-term", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "TERM"); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-kill-kill", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "KILL"); return result{} },
+		{"kd3-kill-kill", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "KILL"); return result{} },
 			", asked to end by this daemon (client)"},
-		{"kd-killAndWait-default", func(m *supervisor.Manager, id string) result {
+		{"kd4-killAndWait-default", func(m *supervisor.Manager, id string) result {
 			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
-		{"kd-killAndWait-no-escalate", func(m *supervisor.Manager, id string) result {
+		{"kd5-killAndWait-no-escalate", func(m *supervisor.Manager, id string) result {
 			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, false)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
 		// The exit line of a clean stop is not measured on Windows. Only the code is, so
 		// the empty wantLog checks the code alone.
-		{"kd-clean-stop", func(m *supervisor.Manager, _ string) result { m.KillAll(); return result{} }, ""},
+		{"kd6-clean-stop", func(m *supervisor.Manager, _ string) result { m.KillAll(); return result{} }, ""},
 	}
 	// The grandchild of each row, by its child id. The parent test ends each one at its
 	// end, so a grandchild lives past its row until the check below.
@@ -62,7 +63,7 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("the direct child did not end")
 			}
-			if strings.HasPrefix(tc.id, "kd-killAndWait") && got != (result{found: true, died: true}) {
+			if strings.Contains(tc.id, "-killAndWait-") && got != (result{found: true, died: true}) {
 				t.Errorf("killAndWait = %+v, want found and died only", got)
 			}
 			// A child left alive by another test can add its own exit line after this one,
