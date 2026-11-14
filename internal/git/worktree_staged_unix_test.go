@@ -361,3 +361,21 @@ func TestStagedCreateKeepsAFolderThatReplacedTheEntryInASecondRepository(t *test
 		t.Errorf("the folder at w1 = %q, want it kept", got)
 	}
 }
+
+// TestStagedCreateWithAnEmptyCommonDirInAnotherEntry: the entry of a worktree w
+// holds an empty `commondir`. A create of w2 succeeds on 4c111e86 and c9125eb8
+// (measured on Linux). Without the skip of that file in the staged copy, git
+// stops with `failed to read <S>/.s<n>/worktrees/w/commondir: Success`.
+func TestStagedCreateWithAnEmptyCommonDirInAnotherEntry(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	runGit(t, f.repo, "worktree", "add", "-q", "-b", "w", filepath.Join(f.repo, ".claude", "worktrees", "w"))
+	mustWrite(t, filepath.Join(f.gitDir, "worktrees", "w", "commondir"), "")
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w2")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w2", "worktreePath": leaf})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+}
