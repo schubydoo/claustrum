@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -51,7 +52,7 @@ func TestSpawnCLITempRootFrame(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	old := newTempRootName
-	newTempRootName = func() string { return "ccd-a5247ffbe09b" }
+	newTempRootName = func() string { return "ccd-a5247ffbe0" }
 	t.Cleanup(func() { newTempRootName = old })
 	x, _ := tempRootDir(t, true)
 	_, sock := newRunningServer(t)
@@ -59,12 +60,12 @@ func TestSpawnCLITempRootFrame(t *testing.T) {
 	exe, env := helperCommand(t, "environ")
 	env["TMPDIR"] = x
 	raw := cl.call(spawnLine(t, "f1b", exe, env, true))
-	want := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"cliTempRoot":{"refused":"a link","name":"ccd-a5247ffbe09b"}}}`
-	if string(raw) != want || len(want)-1 != 110 {
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":true,"cliTempRoot":{"refused":"not readable by its owner","name":"ccd-a5247ffbe0"}}}`
+	if string(raw) != want {
 		t.Fatalf("reply %s, want %s", raw, want)
 	}
 	lines := strings.Split(streamBytes(t, cl.waitExit("f1b"), "stdout"), "\n")
-	if !slices.Contains(lines, "CLAUDE_CODE_TMPDIR="+filepath.Join(x, "ccd-a5247ffbe09b")) || !slices.Contains(lines, "TMPDIR="+x) {
+	if !slices.Contains(lines, "CLAUDE_CODE_TMPDIR="+filepath.Join(x, "ccd-a5247ffbe0", "t")) || !slices.Contains(lines, "TMPDIR="+x) {
 		t.Errorf("child env %q, want the folder and TMPDIR", lines)
 	}
 	waitTempRootsLive(t, 0)
@@ -104,6 +105,33 @@ func TestSpawnCLITempRootStartFailureGivesItBack(t *testing.T) {
 	if got := ccdFolders(t, x); len(got) != 1 {
 		t.Errorf("folders %v, want one", got)
 	}
+}
+
+// A spawn that does not start leaves the lost list for the next good reply, which
+// carries it once (claustrum's own, not measured).
+func TestSpawnCLITempRootStartFailureKeepsTheLostList(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, _ := tempRootDir(t, true)
+	tempRootsLost.mu.Lock()
+	tempRootsLost.list = []goneTempRoot{{name: "ccd-0123456789", at: time.Now()}}
+	tempRootsLost.mu.Unlock()
+	_, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	if raw := cl.call(spawnLine(t, "gone", filepath.Join(x, "no-such-program"), map[string]string{"TMPDIR": x}, true)); !strings.Contains(string(raw), `"error"`) {
+		t.Fatalf("reply %s, want an error", raw)
+	}
+	exe, env := helperCommand(t, "environ")
+	env["TMPDIR"] = x
+	for i, want := range []int{1, 0} {
+		id := "ok" + strconv.Itoa(i)
+		raw := string(cl.call(spawnLine(t, id, exe, env, true)))
+		if got := strings.Count(raw, `"lost":[{"name":"ccd-0123456789","why":"changed"`); got != want {
+			t.Errorf("reply %d %s: lost lists %d, want %d", i, raw, got, want)
+		}
+		cl.waitExit(id)
+	}
+	waitTempRootsLive(t, 0)
 }
 
 // A launched spawn skips the step: the reply has no member, no folder is made and
@@ -177,5 +205,41 @@ func TestSpawnCLITempRootExitDoesNotWaitForTheLock(t *testing.T) {
 		t.Errorf("live count %d while the lock is held, want 1", n)
 	}
 	free()
+	waitTempRootsLive(t, 0)
+}
+
+// A spawn with cliTempRoot and cliTempRootEnd is ended when its folder is lost, and
+// its exit frame carries the killedBy "temp_root" (4c111e86, measured on Linux and
+// macOS). The child is the helper, which ends on the SIGTERM.
+func TestSpawnCLITempRootEndOnALoss(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 20*time.Millisecond)
+	x, _ := tempRootDir(t, true)
+	_, sock := newRunningServer(t)
+	cl := dial(t, sock)
+	exe, env := helperCommand(t, "cat")
+	env["TMPDIR"] = x
+	b, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{"id": "te", "command": exe, "env": env, "cliTempRoot": true, "cliTempRootEnd": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reply struct {
+		Result struct {
+			CLITempRoot struct{ Name string } `json:"cliTempRoot"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(cl.call(string(b)), &reply); err != nil || reply.Result.CLITempRoot.Name == "" {
+		t.Fatalf("spawn reply %+v %v, want a folder", reply, err)
+	}
+	if err := os.Chmod(filepath.Join(x, reply.Result.CLITempRoot.Name), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	frames := cl.waitExit("te")
+	exit := frames[len(frames)-1]
+	if exit.Stream != "exit" || exit.KilledBy != "temp_root" || exit.Signal != "SIGTERM" {
+		t.Errorf("exit frame %+v, want SIGTERM and killedBy temp_root", exit)
+	}
 	waitTempRootsLive(t, 0)
 }

@@ -2324,14 +2324,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// git's graft-file hint: lines do not start the text. On f6010b97 the text
 			// starts with the hint where git prints it. In attach mode
 			// createdBranch is "", so the attached branch is kept, as measured against
-			// f6010b97. With a settings copy a text that holds lfsFailedWords gets
-			// lfsDownloadNote after it, as on 5fd08069 (measured on Linux). The note
-			// goes only in this reply, before any undo text (claustrum's own, not
-			// measured beside a failed undo).
-			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
-			if rule != nil && rule.shadow && strings.Contains(msg, lfsFailedWords) {
-				msg += lfsDownloadNote
-			}
+			// f6010b97. With a settings copy a text that holds lfsFailedWords
+			// gets a note after it (checkoutNote). The note goes only in this
+			// reply, before any undo text (claustrum's own, not measured beside
+			// a failed undo).
+			text := worktreeGitText(rtStderr, rtErr)
+			msg := "git worktree add failed (checkout): " + text + checkoutNote(rtStderr, text, rule)
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeResult{
 				Success:    false,

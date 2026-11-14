@@ -86,7 +86,9 @@
         "files.mkdir.verified_parent",
         "git.worktree.external_root",
         "process.spawn.link_bound",
+        "git.worktree_create.own_lfs_store",
         "process.spawn.cli_temp_root",
+        "process.spawn.cli_temp_root_end",
         "launcher.checked_by_handle",
         "launcher.local_kinds_only",
         "server.instance_id"

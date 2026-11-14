@@ -73,6 +73,10 @@ type spawnParams struct {
 	// macOS and Windows it changes nothing (b3081b51, measured with true, false and
 	// absent). Any other value counts as absent (claustrum's own, not measured).
 	CLITempRoot rpc.JSONTrueSwitch `json:"cliTempRoot"`
+	// CLITempRootEnd asks the daemon to end the child when its private temp folder is
+	// lost (4c111e86, measured on Linux and macOS with true). Any other value counts
+	// as absent (claustrum's own, not measured).
+	CLITempRootEnd rpc.JSONTrueSwitch `json:"cliTempRootEnd"`
 	// GitRead asks for the pane's git (gitReadRefusal, git.PaneGitRun). It is a
 	// bool. Another JSON type fails the decode. false gives a plain spawn
 	// (c9125eb8, measured on Linux). null counts as absent (claustrum's own, not
@@ -261,7 +265,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			}
 			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, bool(p.CLITempRoot), folders)
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: bool(p.CLITempRoot), End: bool(p.CLITempRootEnd)}, folders)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {

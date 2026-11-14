@@ -327,8 +327,8 @@ func TestCheckoutRepositoryRequiresUserSmudge(t *testing.T) {
 				t.Fatalf("git.worktree_create = %s\nwant the failed checkout with git's text", raw)
 			}
 			args := readTreeArgs(calls)
-			want := []string{"-c", "filter.f.required=true", "-c", "lfs.storage=" + filepath.Join(f.gitDir, "lfs")}
-			if len(args) < len(want) || !slices.Equal(args[:len(want)], want) {
+			want := []string{"-c", "filter.f.required=true", "-c", "lfs.storage=<store>"}
+			if len(args) < len(want) || !slices.Equal(args[:3], want[:3]) || !lfsStorageItemOK(args[3], f.gitDir) {
 				t.Errorf("the read-tree call starts %q\nwant %q", args[:min(len(args), len(want))], want)
 			}
 			f.wantGone(t)

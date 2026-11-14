@@ -362,6 +362,10 @@ the linked pages.
     listing before the `-b` add, and `5fd08069` none.
   - With a git filter or git-lfs, the read-tree of claustrum can carry filter
     items before its list.
+  - On Linux and macOS, with a folder `lfs/objects` in the git directory and
+    no user `lfs.storage`, a create in the state `shadow` runs `ls-tree`, and
+    `cat-file --batch` for its small blobs, before the read-tree, each after a
+    listing (claustrum's own).
   - In the state `shadow` the read-tree call of a create names the commit id,
     after one `rev-parse --verify --quiet <ref>^{commit}` with no start commit
     (claustrum's own), and the `status` call of git.status carries `lfs.storage` (`b3081b51`, [What
@@ -372,8 +376,8 @@ the linked pages.
   folder variables and the six heavy values of the light calls of a create. So
   is the `lfs.storage` item of the checkout. That is measured
   on Linux and macOS in the state `shadow`. On Linux and macOS the index folder
-  follows `4c111e86` (`.checkout-<n>`), and the `lfs.storage` item keeps
-  `<git dir>/lfs` where `4c111e86` names `.checkout-<n>/lfs`. On Windows the variables and the
+  follows `4c111e86` (`.checkout-<n>`), and so does the `lfs.storage` item
+  ([the private LFS store](protocol/git-worktree-create.md#the-private-lfs-store)). On Windows the variables and the
   names of the short-lived entries are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
   The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries and the config call of the ssh

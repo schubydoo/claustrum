@@ -89,7 +89,7 @@ func TestGivenUpIDSkipsLinkBoundStart(t *testing.T) {
 		m.GiveUpUnknown("linked1")
 		return nil, nil, nil, stop
 	}
-	_, err := m.spawnWith(c, "linked1", exe, nil, "", nil, false, nil, time.Minute, false, nil, &gitReadStart{step: step}, nil)
+	_, err := m.spawnWith(c, "linked1", exe, nil, "", nil, false, nil, time.Minute, TempRootAsk{}, nil, &gitReadStart{step: step}, nil)
 	if !errors.Is(err, stop) {
 		t.Fatalf("spawn = %v, want the error of the step", err)
 	}
