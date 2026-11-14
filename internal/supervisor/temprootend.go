@@ -27,7 +27,8 @@ func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
 	if !p.IsLive() || m.startsStopped.Load() {
 		return
 	}
-	logging.Infof("[process.Manager] Process %s is being ended: its private temp folder is lost", p.id)
+	// The id is cut (4c111e86, measured on Linux and macOS).
+	logging.Infof("[process.Manager] Process %s is being ended: its private temp folder is lost", LogID(p.id))
 	// The SIGTERM and its flag go under one hold of p.mu. The flag, not killedBy,
 	// tells the exit path that this end signalled: a process.kill before it keeps
 	// the killedBy "client".

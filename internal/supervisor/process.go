@@ -240,11 +240,13 @@ type Proc struct {
 
 	// linked marks a link-bound spawn, and link is its connection. Both are set
 	// once at spawn and never mutated. detachedAt is the moment the link went, and
-	// zero while it is there. Read and written under p.mu. onExit runs once after
-	// the exit frame. See linkbound.go.
+	// zero while it is there. reattached holds the open connections that reattached
+	// the process, which count as attached too. Both are read and written under
+	// p.mu. onExit runs once after the exit frame. See linkbound.go.
 	linked     bool
 	link       *conn.Conn
 	detachedAt time.Time
+	reattached map[*conn.Conn]struct{}
 	onExit     func()
 
 	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
@@ -1928,7 +1930,8 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 	// A reattach of a link-bound process from another connection gets found true
 	// with the firstSeq and lastSeq of the link (683cc6a9, measured on Linux). That
 	// the stream stays on the link, that this connection gets the replay and no live
-	// frame, and that the link stays open, is claustrum's own, not measured.
+	// frame, and that the link stays open, is claustrum's own, not measured. Such a
+	// reattach on an open connection stops the unattended clock (holdByReattachLocked).
 	var superseded []*conn.Conn
 	attached := true
 	if p.TakesFrom(c) {
@@ -1940,6 +1943,8 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 		}
 		_, attached = p.subs[c]
 		p.subs = map[*conn.Conn]struct{}{c: {}}
+	} else {
+		p.holdByReattachLocked(c)
 	}
 	// On 90fca6e6 a reattach inside the exit drain answers running:false
 	// (measured). The process was already waited on, so it is not resumable.
@@ -2013,9 +2018,7 @@ func (m *Manager) DetachConn(c *conn.Conn) {
 	for _, p := range procs {
 		p.mu.Lock()
 		delete(p.subs, c)
-		if p.linked && p.link == c {
-			p.markDetachedLocked(now)
-		}
+		p.dropAttachedLocked(c, now)
 		p.mu.Unlock()
 	}
 }

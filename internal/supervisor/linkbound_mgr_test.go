@@ -193,6 +193,51 @@ func TestLinkBoundOtherConnCloseKeepsClock(t *testing.T) {
 	}
 }
 
+// TestLinkBoundReattachHoldsTheChild: after the link closed, a reattach from another
+// open connection stops the clock, and the child stays (c9125eb8 and 4c111e86,
+// measured on Linux). The close of that connection starts the clock again
+// (claustrum's own, not measured), and the ending line shows the cut id (c9125eb8
+// and 4c111e86, measured on Linux).
+func TestLinkBoundReattachHoldsTheChild(t *testing.T) {
+	buf := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	exe, env := helperCommand(t, "sleep")
+	link, _ := pipeConn(t)
+	p, err := m.spawnVia(link, "held-by-reattach", exe, []string{"60"}, "", env, false, nil, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.DetachConn(closedConn(link))
+	if p.unattendedFor(time.Now().Add(time.Second)) == 0 {
+		t.Fatal("the close of the link started no clock, so the test proves nothing")
+	}
+	other, _ := pipeConn(t)
+	if _, found, running, _, _, _ := m.Reattach(other, "held-by-reattach", 0); !found || !running {
+		t.Fatalf("reattach found %v, running %v, want both true", found, running)
+	}
+	select {
+	case <-p.done:
+		t.Fatal("the child of a reattached connection ended")
+	case <-time.After(2500 * time.Millisecond):
+	}
+	// The log buffer is shared, so only the lines of this child count.
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if strings.Contains(line, "Process held-by-…:") && strings.Contains(line, "no connection attached") {
+			t.Errorf("log holds an ending line while a reattached connection is open:\n%s", line)
+		}
+	}
+	m.DetachConn(closedConn(other))
+	select {
+	case <-p.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the child did not end after the reattached connection closed")
+	}
+	if want := "[process.Manager] Process held-by-…: no connection attached for 1s; ending it\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log has no %q:\n%s", want, buf.String())
+	}
+}
+
 // TestPlainSpawnDoesNotReplaceLinkBound: a plain spawn that passed its id test
 // before a link-bound spawn of that id put its record in the table ends its own
 // child, gets the spent-id refusal and leaves the link-bound record in place.
