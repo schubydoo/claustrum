@@ -632,7 +632,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 			map[string]any{"baseRepo": missing, "worktreePath": filepath.Join(missing, "w1"), "branchName": "w1"},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`, addFrame},
 		{"create relative path", "git.worktree_create", map[string]any{"baseRepo": f.top, "worktreePath": "rel/w1", "branchName": "w1"},
-			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"refusing to create worktree: rel/w1 is a relative path; choose the session folder by its absolute path, without \"..\"","errorCode":"unsafe_path"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"refusing to create worktree: ` + "`rel/w1`" + ` is a relative path; choose the session folder by its absolute path, without \"..\"","errorCode":"unsafe_path"}}`,
 			addFrame},
 		{"remove base N", "git.worktree_remove", map[string]any{"baseRepo": n, "worktreePath": nLeaf},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":true}}`, func(m string) string { return lockFrame(nLeaf, m) }},
@@ -803,7 +803,7 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 	success := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 	statusBare := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`
 	statusRefused := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` + jsonString(t, refusal) + `}}`
-	relative := removeFrame(`refusing to remove worktree: rel/w1 is a relative path; choose the session folder by its absolute path, without ".."`)
+	relative := removeFrame("refusing to remove worktree: `rel/w1`" + ` is a relative path; choose the session folder by its absolute path, without ".."`)
 	outside := func(p string) string {
 		return removeFrame("refusing to remove worktree: " + tickPath(p) + " is not inside the repository " + f.top +
 			"; session worktrees are only created and removed under <repository>/.claude/worktrees")
@@ -1166,7 +1166,7 @@ func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 	resetUserExcludesCache(t)
 	lockCheck := func(wt, reason string) string {
 		b, err := json.Marshal(worktreeRemoveResult{Success: false,
-			Error: "failed to remove worktree: could not check whether " + wt + " is locked (" + reason + "); retry"})
+			Error: "failed to remove worktree: could not check whether " + wt + " is locked: " + reason})
 		if err != nil {
 			t.Fatal(err)
 		}

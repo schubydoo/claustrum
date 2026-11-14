@@ -361,13 +361,23 @@ func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 		}
 		reg := registrationCopy{name: name}
 		for _, file := range registrationFiles {
-			if data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes); ok {
+			if data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes); ok && !emptyCommonDirFile(file, data) {
 				reg.files = append(reg.files, copyEntry{path: file, data: data})
 			}
 		}
 		regs = append(regs, reg)
 	}
 	return regs, nil
+}
+
+// emptyCommonDirFile reports whether file is a `commondir` with no bytes. Such
+// a file gets no copy in `.s<n>`. Git stops on an empty `commondir` with
+// `failed to read <file>: Success`. With an empty `commondir` in the entry of
+// another worktree, 4c111e86 and c9125eb8 add the new worktree (measured on
+// Linux). How the references avoid that stop is not measured: the skip is
+// claustrum's own.
+func emptyCommonDirFile(file string, data []byte) bool {
+	return file == "commondir" && len(data) == 0
 }
 
 // rootDirNames lists the folder dir through root and returns its names in

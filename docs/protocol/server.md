@@ -96,7 +96,7 @@ The daemon reads no request from a refused connection. So an unauthenticated `se
 [Server] refused caller number 1 (other_namespace): "user:[4026532385] net:1 pidfd"; this server's namespaces are "user:[4026531837] net:1 pidfd"
 ```
 
-A caller that exited before the check gets no line. If the daemon has too many open files, the line gives `lookup_failed` and `caller <pid>: too many open files` (measured on Linux, c9125eb8 and 4c111e86).
+A caller that exited before the check gets no line, but it takes a number: the next refusal logs number 2 (measured on Linux, c9125eb8 and 4c111e86). If the daemon has too many open files, the line gives `lookup_failed` and `caller <pid>: too many open files` (measured on Linux, c9125eb8 and 4c111e86).
 
 ### Out of resources (Linux)
 

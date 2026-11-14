@@ -96,11 +96,15 @@ func TestStartTestWithNoOtherGit(t *testing.T) {
 	}
 }
 
-// The refusal of a remove of a gone worktree puts a cannot-run reason after a
-// colon, and keeps the parentheses for another reason.
+// The refusal of a remove of a gone worktree puts a cannot-run reason and a trust
+// refusal after a colon, and keeps the parentheses for another reason.
 func TestGoneLockCheckText(t *testing.T) {
 	got := goneLockCheckText("/w", gitCannotRunPrefix+"exit status 1")
 	if want := "failed to remove worktree: could not check whether /w is locked: git cannot run on this host; git not run: exit status 1"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	got = goneLockCheckText("/w", gitDirTrustPrefix+"x")
+	if want := "failed to remove worktree: could not check whether /w is locked: the repository's git directory could not be trusted; git not run: commondir not as git writes it: x"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
 	}
 	got = goneLockCheckText("/w", "boom")

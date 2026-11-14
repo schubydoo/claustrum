@@ -101,8 +101,9 @@ func TestPeerCheckRefusesOtherUserNamespace(t *testing.T) {
 
 // TestPeerCheckLookupOfOwnAndExitedCaller: a caller in this process has the own
 // text and is served. A caller that exited before the check gets lookup_failed
-// and no log line (measured on Linux). The exited caller is a child of this test
-// that connects to the test's own socket and exits before the accept.
+// and no log line, and it counts (measured on Linux). The exited caller is a
+// child of this test that connects to the test's own socket and exits before
+// the accept.
 func TestPeerCheckLookupOfOwnAndExitedCaller(t *testing.T) {
 	own, _ := daemonNSText()
 	if !own.names() {
