@@ -139,14 +139,18 @@ func (p *Proc) holdByReattachLocked(c *conn.Conn) {
 
 // dropAttachedLocked takes c off p. Once neither the link nor a connection that
 // reattached p is open, the unattended clock starts again from now (claustrum's
-// own, not measured). The caller holds p.mu.
+// own, not measured). The caller holds p.mu. It reads linkGone and takes no lock of
+// a connection: Reattach takes the write lock of a connection before p.mu.
 func (p *Proc) dropAttachedLocked(c *conn.Conn, now time.Time) {
 	if !p.linked {
 		return
 	}
+	if c == p.link {
+		p.linkGone = true
+	}
 	_, held := p.reattached[c]
 	delete(p.reattached, c)
-	if len(p.reattached) == 0 && (c == p.link || (held && connGone(p.link))) {
+	if len(p.reattached) == 0 && (c == p.link || (held && p.linkGone)) {
 		p.markDetachedLocked(now)
 	}
 }

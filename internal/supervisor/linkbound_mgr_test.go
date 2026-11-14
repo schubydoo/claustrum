@@ -238,6 +238,40 @@ func TestLinkBoundReattachHoldsTheChild(t *testing.T) {
 	}
 }
 
+// TestLinkBoundDetachTakesNoLinkLock: the close of a connection that reattached a
+// link-bound process returns while another goroutine holds the write lock of the
+// open link, as a reattach of the link does before it takes p.mu. A read of the
+// link state under p.mu that took that lock would hang here (claustrum's own).
+func TestLinkBoundDetachTakesNoLinkLock(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	exe, env := helperCommand(t, "sleep")
+	link, _ := pipeConn(t)
+	p, err := m.spawnVia(link, "lock-order", exe, []string{"60"}, "", env, false, nil, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _ := pipeConn(t)
+	if _, found, _, _, _, _ := m.Reattach(other, "lock-order", 0); !found {
+		t.Fatal("reattach found nothing")
+	}
+	closedConn(other)
+	link.LockWrites()
+	done := make(chan struct{})
+	go func() { m.DetachConn(other); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		link.UnlockWrites()
+		<-done
+		t.Fatal("DetachConn waited for the write lock of the link")
+	}
+	link.UnlockWrites()
+	if d := p.unattendedFor(time.Now()); d != 0 {
+		t.Errorf("unattendedFor = %s while the link is open, want 0", d)
+	}
+}
+
 // TestPlainSpawnDoesNotReplaceLinkBound: a plain spawn that passed its id test
 // before a link-bound spawn of that id put its record in the table ends its own
 // child, gets the spent-id refusal and leaves the link-bound record in place.

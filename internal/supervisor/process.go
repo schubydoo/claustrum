@@ -240,12 +240,14 @@ type Proc struct {
 
 	// linked marks a link-bound spawn, and link is its connection. Both are set
 	// once at spawn and never mutated. detachedAt is the moment the link went, and
-	// zero while it is there. reattached holds the open connections that reattached
-	// the process, which count as attached too. Both are read and written under
-	// p.mu. onExit runs once after the exit frame. See linkbound.go.
+	// zero while it is there. linkGone is set once the link is gone. reattached
+	// holds the open connections that reattached the process, which count as
+	// attached too. These three are read and written under p.mu. onExit runs once
+	// after the exit frame. See linkbound.go.
 	linked     bool
 	link       *conn.Conn
 	detachedAt time.Time
+	linkGone   bool
 	reattached map[*conn.Conn]struct{}
 	onExit     func()
 
@@ -1244,6 +1246,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	if linkTTL > 0 {
 		if connGone(c) {
 			p.mu.Lock()
+			p.linkGone = true
 			p.markDetachedLocked(time.Now())
 			p.mu.Unlock()
 		}
