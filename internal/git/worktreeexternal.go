@@ -468,6 +468,22 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 		"nothing was removed — retry once it is available, or remove the worktree by hand", worktreeRoot, reason)
 }
 
+// recheckLocation runs the three location calls of a create with worktreeRoot
+// again in repo: a light `rev-parse --show-toplevel`, a heavy `rev-parse
+// --absolute-git-dir` and a light `worktree list --porcelain -z`, each with its
+// listing. In the state shadow c9125eb8 and 4c111e86 run them after the call
+// about the repository that follows the add, and again after the settle step
+// (measured on Linux). The answers are not used. A call that its time limit
+// stops stops the request, so no later git call of it starts (gitstop.go). Any
+// other failure changes nothing (claustrum's own, not measured). So is the
+// absence of the calls in the other states, and of the first run after an add
+// of a commit id.
+func recheckLocation(u gitUse, repo string) {
+	_ = repoTopLevel(u, repo, nil)
+	_ = repositoryCheckError(u, repo, nil)
+	_, _ = worktreeListTwice(u, repo)
+}
+
 // repoTopLevel is the answer of a light `rev-parse --show-toplevel` in repo, or ""
 // when the call fails. pre is nil when the call gets its own listing, else the
 // listing it pins (see hardenedGitCmd).
