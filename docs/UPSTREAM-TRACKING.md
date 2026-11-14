@@ -295,7 +295,7 @@ the linked pages.
   `git.shadow_dir` features. On Linux with `CLAUDE_SSH_PEER_CHECK=1` the daemon refuses a caller in other
   namespaces with `-32006`. The frames of `89cb6289` have none of these. The
   peer check log lines differ from `5fd08069` by a level tag only (measured on
-  Linux).
+  Linux). Its `out_of_resources` refusals follow `4c111e86`.
 - `files.extract_tar` follows `5fd08069`, and `89cb6289` differs in each of these
   points:
   - the `files.extract_tar.execBit` feature

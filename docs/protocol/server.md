@@ -32,7 +32,7 @@ The reply is always this result.
   "methods": ["server.ping", "server.capabilities", "server.shutdown", "…"],
   "instanceId": "<32 hex characters>",
   "startedAt": 1760000000000,
-  "features": ["process.stdin.offset", "process.spawn.refuses_given_up_id", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end", "launcher.checked_by_handle", "launcher.local_kinds_only", "server.instance_id"],
+  "features": ["process.stdin.offset", "process.spawn.refuses_given_up_id", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end", "launcher.checked_by_handle", "launcher.local_kinds_only", "server.instance_id"],
   "peerCheck": "off"
 }
 ```
@@ -53,7 +53,7 @@ A request for `server.capabilities` does not count as activity for the idle exit
 
 ### Features
 
-The `features` array is always present. The example above shows the Linux members in the order of `b3081b51`, less `process.spawn.pty`, plus `process.spawn.git_read` and `launcher.supplies_cli` of `c9125eb8`. They follow `process.spawn.failure_reason` and `launcher.non_string_refused` on Linux, macOS and Windows. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. `b3081b51` adds five names of the example on the three systems, and `process.spawn.cli_temp_root` on Linux and macOS only. `c9125eb8` adds `files.mkdir.verified_parent` after `files.read.real` on Linux and macOS only (measured), and the example holds that name too. On Linux and macOS `4c111e86` adds `git.worktree_create.own_lfs_store` after `process.spawn.link_bound` (measured). It lists one more name after it, for LFS codes that claustrum does not build. `4c111e86` adds `process.spawn.cli_temp_root_end` after `process.spawn.cli_temp_root` on Linux and macOS (measured). On Linux `4c111e86` adds `launcher.checked_by_handle` and `launcher.local_kinds_only` before `server.instance_id` (measured). claustrum lists them on Linux only. `4c111e86` adds `git.worktree_create.unusable_git_refused` after `git.outside_session_folders`, and `process.spawn.refuses_given_up_id` after `process.stdin.offset`, on Linux, macOS and Windows (measured). Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
+The `features` array is always present. The example above shows the Linux members in the order of `b3081b51`, less `process.spawn.pty`, plus `process.spawn.git_read` and `launcher.supplies_cli` of `c9125eb8`. They follow `process.spawn.failure_reason` and `launcher.non_string_refused` on Linux, macOS and Windows. `be1c1ca5` adds `git.hooks_null_device` after `git.shadow_dir` on Linux, macOS and Windows. `b3081b51` adds five names of the example on the three systems, and `process.spawn.cli_temp_root` on Linux and macOS only. `c9125eb8` adds `files.mkdir.verified_parent` after `files.read.real` on Linux and macOS only (measured), and the example holds that name too. On Linux and macOS `4c111e86` adds `git.worktree_create.own_lfs_store` after `process.spawn.link_bound` (measured). It lists one more name after it, for LFS codes that claustrum does not build. `4c111e86` adds `process.spawn.cli_temp_root_end` after `process.spawn.cli_temp_root` on Linux and macOS (measured). On Linux `4c111e86` adds `launcher.checked_by_handle` and `launcher.local_kinds_only` before `server.instance_id` (measured). claustrum lists them on Linux only. On Linux and Windows `4c111e86` adds `server.peer_check.out_of_resources` and `server.peer_check.absence_shown` after `server.peer_check` (measured). claustrum lists them on macOS too (not measured). `4c111e86` adds `git.worktree_create.unusable_git_refused` after `git.outside_session_folders`, and `process.spawn.refuses_given_up_id` after `process.stdin.offset`, on Linux, macOS and Windows (measured). Windows sends no `git.worktree.external_root` and no `process.spawn.link_bound` (`683cc6a9`), and with jobs on adds `process.spawn.job` last (`52d82f0a`). On Linux with a `/proc` that holds only `self`, `683cc6a9` drops `files.read.real`. claustrum drops it after a failed start test, whose exact steps are claustrum's own.
 
 `CLAUDE_SSH_MANAGED_LAUNCHER` does not change the list (measured on macOS). Windows lists `launcher.managed` too, although a Windows `process.spawn` refuses every launcher. The peer check changes only the `peerCheck` and `peerCheckBy` members.
 
@@ -87,7 +87,8 @@ On Linux with the check on, the daemon checks each new connection before it read
 |---|---|
 | `other_namespace` | The caller is in other namespaces. |
 | `unreadable` | The daemon cannot read the namespace link of the caller. |
-| `lookup_failed` | The caller exited before the check. claustrum gives every other failure of the lookup this reason too (not measured). |
+| `out_of_resources` | A step of the check got `ENFILE` or `ENOMEM`. Or a user link of the daemon or the caller is gone, on a system that has user namespaces (`4c111e86`). |
+| `lookup_failed` | The caller exited before the check, or the daemon got `EACCES` when it read its own namespaces (`4c111e86`). There `ENFILE` and `ENOMEM` give `out_of_resources`. claustrum gives every other failure of the lookup this reason too (not measured). |
 
 The daemon reads no request from a refused connection. So an unauthenticated `server.shutdown` on that connection does nothing. A caller that wrote first reads the frame and then a reset. A refused connection gets no `New connection` log line. Refusals 1 to 10 each log one WARN line (the level is claustrum's own). Later refusals log none:
 
@@ -96,6 +97,16 @@ The daemon reads no request from a refused connection. So an unauthenticated `se
 ```
 
 A caller that exited before the check gets no line. If the daemon has too many open files, the line gives `lookup_failed` and `caller <pid>: too many open files` (measured on Linux, c9125eb8 and 4c111e86).
+
+### Out of resources (Linux)
+
+A line of `out_of_resources` (measured on Linux, `4c111e86`):
+
+```
+[Server] refused caller number 1 (out_of_resources): readlink /proc/4711/ns/user: cannot allocate memory; this server's namespaces are "user:[4026531837] net:1 pidfd"
+```
+
+At each connection the daemon reads its own user link again (`4c111e86`). If that read fails at the start, the daemon refuses every caller and tries the read again for each one. Its lines then show the namespaces `""`. claustrum serves again after the first read that works (claustrum's own, not measured).
 
 ## server.shutdown
 

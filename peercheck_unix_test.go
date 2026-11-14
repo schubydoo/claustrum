@@ -73,7 +73,8 @@ func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 	reply := roundTrip(t, nc, `{"jsonrpc":"2.0","id":1,"method":"server.capabilities","auth":"`+token+`"}`)
 	_ = nc.Close()
 	result, _ := reply["result"].(map[string]any)
-	if got, want := result["peerCheck"], daemonNSText().state(); got != want {
+	own, _ := daemonNSText()
+	if got, want := result["peerCheck"], own.state(); got != want {
 		t.Errorf("peerCheck = %v, want %q: %s", got, want, mustJSON(reply))
 	}
 

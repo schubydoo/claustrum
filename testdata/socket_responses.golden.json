@@ -77,6 +77,8 @@
         "launcher.non_string_refused",
         "launcher.supplies_cli",
         "server.peer_check",
+        "server.peer_check.out_of_resources",
+        "server.peer_check.absence_shown",
         "git.outside_session_folders",
         "git.worktree_create.unusable_git_refused",
         "git.shadow_dir",

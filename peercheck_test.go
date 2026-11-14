@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -25,7 +26,7 @@ import (
 // (measured on macOS and Windows). The Linux text is the one of 5fd08069 too
 // (measured on Linux), with the own text of this host.
 func wantPeerCheckLine() string {
-	if own := daemonNSText(); own.names() {
+	if own, _ := daemonNSText(); own.names() {
 		return "INFO  [Server] serving only callers in \"" + own.String() + "\"\n"
 	}
 	return "WARN  [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all\n"
@@ -36,7 +37,7 @@ func wantPeerCheckLine() string {
 // process.spawn.cli_temp_root or process.spawn.cli_temp_root_end. Only Linux lists launcher.checked_by_handle and
 // launcher.local_kinds_only.
 func wantCapabilityFeatures() string {
-	const head = `"process.stdin.offset","process.spawn.refuses_given_up_id","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","process.spawn.git_read","server.line_end","launcher.managed","launcher.non_string_refused","launcher.supplies_cli","server.peer_check","git.outside_session_folders","git.worktree_create.unusable_git_refused","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
+	const head = `"process.stdin.offset","process.spawn.refuses_given_up_id","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","process.spawn.git_read","server.line_end","launcher.managed","launcher.non_string_refused","launcher.supplies_cli","server.peer_check","server.peer_check.out_of_resources","server.peer_check.absence_shown","git.outside_session_folders","git.worktree_create.unusable_git_refused","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
 	if runtime.GOOS == "windows" {
 		return head + `"server.instance_id"`
 	}
@@ -72,7 +73,7 @@ func stubDaemonNSText(t *testing.T, own nsText) {
 	t.Helper()
 	old := readDaemonNSText
 	t.Cleanup(func() { readDaemonNSText = old })
-	readDaemonNSText = func() nsText { return own }
+	readDaemonNSText = func() (nsText, error) { return own, nil }
 }
 
 // measuredOwn is the own text of 5fd08069 (measured on Linux).
@@ -148,7 +149,7 @@ func TestPeerCheckStartServesEveryCaller(t *testing.T) {
 	if n := strings.Count(logs.String(), wantPeerCheckLine()); n != 1 {
 		t.Errorf("the peer check line appears %d times in the start, want 1. Log:\n%s", n, logs.String())
 	}
-	own := daemonNSText()
+	own, _ := daemonNSText()
 	if runtime.GOOS != "linux" && own.names() {
 		t.Errorf("own text = %q on %s, want none", own.String(), runtime.GOOS)
 	}
@@ -191,8 +192,9 @@ func TestPeerCheckFailedRemovalLogsOneLine(t *testing.T) {
 }
 
 // TestPeerCheckOwnTextAndStates: the own text joins its parts with one space, as
-// 5fd08069 logs it (measured on Linux). All parts give "on" with
-// ["network","pidfd"] (measured). The other rows are claustrum's own names.
+// 5fd08069 logs it (measured on Linux). A text with no user part shows no pidfd
+// part (4c111e86, measured on Linux). All parts give "on" with
+// ["network","pidfd"] (measured). The other states are claustrum's own names.
 func TestPeerCheckOwnTextAndStates(t *testing.T) {
 	cases := []struct {
 		own         nsText
@@ -200,10 +202,10 @@ func TestPeerCheckOwnTextAndStates(t *testing.T) {
 		by          []string
 	}{
 		{measuredOwn, "user:[4026531837] net:1 pidfd", "on", []string{"network", "pidfd"}},
-		{nsText{net: "net:1", pidfd: true}, "net:1 pidfd", "network_only", []string{"network", "pidfd"}},
+		{nsText{net: "net:1", pidfd: true}, "net:1", "network_only", []string{"network", "pidfd"}},
 		{nsText{user: "user:[4026531837]", net: "net:1"}, "user:[4026531837] net:1", "by_pid", []string{"network"}},
 		{nsText{user: "user:[4026531837]", pidfd: true}, "user:[4026531837] pidfd", "on", []string{"pidfd"}},
-		{nsText{pidfd: true}, "pidfd", "unavailable", nil},
+		{nsText{pidfd: true}, "", "unavailable", nil},
 		{nsText{}, "", "unavailable", nil},
 	}
 	for _, tc := range cases {
@@ -282,6 +284,12 @@ func TestJudgePeerReasons(t *testing.T) {
 		{"permission", nsText{}, denied, "unreadable", "readlink /proc/2308/ns/user: permission denied"},
 		{"exited", nsText{}, errPeerExited, "lookup_failed", "the caller has exited"},
 		{"gone", nsText{}, gone, "lookup_failed", gone.Error()},
+		// The rows of 4c111e86 (measured on Linux).
+		{"pidfd ENFILE", nsText{}, fmt.Errorf("caller %d: %w", 9, syscall.ENFILE), "out_of_resources", "caller 9: " + syscall.ENFILE.Error()},
+		{"cookie ENOMEM", nsText{}, syscall.ENOMEM, "out_of_resources", syscall.ENOMEM.Error()},
+		{"own ENFILE", nsText{}, ownNamingError{&fs.PathError{Op: "readlink", Path: "/proc/self/ns/user", Err: syscall.ENFILE}}, "out_of_resources", "cannot name this server's own namespaces: readlink /proc/self/ns/user: " + syscall.ENFILE.Error()},
+		{"own EACCES", nsText{}, ownNamingError{&fs.PathError{Op: "readlink", Path: "/proc/self", Err: syscall.EACCES}}, "lookup_failed", "cannot name this server's own namespaces: readlink /proc/self: permission denied"},
+		{"no user part", nsText{net: "net:1", pidfd: true}, nil, "out_of_resources", `"net:1"`},
 	}
 	for _, tc := range cases {
 		reason, detail := judgePeer(measuredOwn, tc.peer, tc.err)
@@ -406,5 +414,58 @@ func TestPeerRefusalLineCarriesEndMember(t *testing.T) {
 	want := `{"jsonrpc":"2.0","id":null,"error":{"code":-32006,"message":"Refused: this server could not confirm that the caller is in its own namespaces","data":{"reason":"unreadable"}},"end":{"at":0,"len":173}}` + "\n"
 	if got := string(peerRefusalLine("unreadable")); got != want {
 		t.Errorf("peerRefusalLine = %q, want %q", got, want)
+	}
+}
+
+// TestPeerGateStartNamingFailure: a start whose own naming fails logs one line and
+// refuses every caller (4c111e86, measured on Linux). ENFILE gives
+// out_of_resources and EACCES gives lookup_failed. The line of each refusal shows
+// the own text "". Each connection reads the own namespaces again (measured). A
+// read that works then serves the caller (claustrum's own, not measured).
+func TestPeerGateStartNamingFailure(t *testing.T) {
+	t.Setenv(peerCheckEnv, "1")
+	enfile := ownNamingError{&fs.PathError{Op: "readlink", Path: "/proc/self/ns/user", Err: syscall.ENFILE}}
+	eacces := ownNamingError{&fs.PathError{Op: "readlink", Path: "/proc/self/ns/user", Err: syscall.EACCES}}
+	nameErr := error(enfile)
+	reads := 0
+	old := readDaemonNSText
+	t.Cleanup(func() { readDaemonNSText = old })
+	readDaemonNSText = func() (nsText, error) {
+		reads++
+		if nameErr != nil {
+			return nsText{}, nameErr
+		}
+		return measuredOwn, nil
+	}
+	oldLook := lookupPeerOf
+	t.Cleanup(func() { lookupPeerOf = oldLook })
+	lookupPeerOf = func(net.Conn, nsText) (nsText, bool, error) { return measuredOwn, false, nil }
+	logs := captureLogBuf(t)
+	g := startPeerCheck()
+	start := "WARN  [Server] refusing every caller for now: " + enfile.Error() + "\n"
+	if n := strings.Count(logs.String(), start); n != 1 {
+		t.Errorf("the start line appears %d times, want 1. Log:\n%s", n, logs.String())
+	}
+	if ok, b := peerAdmitOnce(t, g); ok || b != string(peerRefusalLine("out_of_resources")) {
+		t.Errorf("first caller: admit = %v, read %q", ok, b)
+	}
+	nameErr = eacces
+	if ok, b := peerAdmitOnce(t, g); ok || b != string(peerRefusalLine("lookup_failed")) {
+		t.Errorf("second caller: admit = %v, read %q", ok, b)
+	}
+	want := "WARN  [Server] refused caller number 1 (out_of_resources): " + enfile.Error() + "; this server's namespaces are \"\"\n" +
+		"WARN  [Server] refused caller number 2 (lookup_failed): " + eacces.Error() + "; this server's namespaces are \"\"\n"
+	if got := refusalLines(logs); got != want {
+		t.Errorf("refusal lines =\n%s\nwant\n%s", got, want)
+	}
+	nameErr = nil
+	if ok, b := peerAdmitOnce(t, g); !ok || b != "" {
+		t.Errorf("caller after a good read: admit = %v, read %q, want true and nothing", ok, b)
+	}
+	if ok, _ := peerAdmitOnce(t, g); !ok || reads != 4 {
+		t.Errorf("caller after the good read: admit = %v and %d reads, want true and 4", ok, reads)
+	}
+	if got := g.ownText(); got != measuredOwn {
+		t.Errorf("own text after the good read = %q, want %q", got.String(), measuredOwn.String())
 	}
 }

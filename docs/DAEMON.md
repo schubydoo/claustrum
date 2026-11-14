@@ -570,7 +570,14 @@ measured:
 ```
 
 A Linux kernel that names no namespace gets that line too (claustrum's own, not
-measured).
+measured). With no user link, the Linux line names only the net part, as
+`"net:1"` (measured on Linux, `4c111e86`). If the daemon cannot read its own
+user link, the Linux line is at WARN level instead (the level is claustrum's
+own, the text measured on Linux, `4c111e86`):
+
+```
+[Server] refusing every caller for now: cannot name this server's own namespaces: readlink /proc/self/ns/user: too many open files in system
+```
 
 At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). The level tag, and the place and count of line two, are claustrum's own, not measured:
 
