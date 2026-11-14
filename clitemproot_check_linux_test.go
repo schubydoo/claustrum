@@ -15,14 +15,6 @@ import (
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
-// setTempRootCheckEvery shortens the time between two checks until the test ends.
-func setTempRootCheckEvery(t *testing.T, d time.Duration) {
-	t.Helper()
-	old := tempRootCheckEvery
-	tempRootCheckEvery = d
-	t.Cleanup(func() { tempRootCheckEvery = old })
-}
-
 // runTempRootBound runs the step for a temp dir x and binds its end at once, as a
 // spawn does after the start. A nil end stands for a spawn with no cliTempRootEnd.
 func runTempRootBound(t *testing.T, x, runDir string, releases *[]func(), end func()) *rpc.CLITempRoot {

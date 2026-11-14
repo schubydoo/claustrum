@@ -7,7 +7,7 @@ import (
 )
 
 // Two steps of a spawn live in package main: the private temp folder of a
-// "cliTempRoot":true spawn (clitemproot_linux.go) and the session folders of a
+// "cliTempRoot":true spawn (clitemproot_unix.go) and the session folders of a
 // bare command name (sessionfolders.go). main sets both once in an init function,
 // with SetSpawnSteps. The defaults do nothing. Only the tests of this package run
 // a spawn with the defaults.

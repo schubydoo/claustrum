@@ -245,7 +245,7 @@ type Proc struct {
 	onExit     func()
 
 	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
-	// releaseTemp gives that folder back after the exit frame (clitemproot_linux.go).
+	// releaseTemp gives that folder back after the exit frame (clitemproot_unix.go).
 	cliTempRoot *rpc.CLITempRoot
 	releaseTemp func()
 }
@@ -754,7 +754,7 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 type TempRootAsk struct{ Folder, End bool }
 
 // SpawnWithTempRoot is spawnVia with the cliTempRoot params of process.spawn. When
-// tempRoot.Folder is true, the step of clitemproot_linux.go runs after the env is
+// tempRoot.Folder is true, the step of clitemproot_unix.go runs after the env is
 // built, and the process keeps its answer in cliTempRoot. folders are the session
 // folders of the spawn (sessionfolders.go), recorded before the start.
 func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string) (*Proc, error) {
@@ -961,7 +961,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 		return nil, err
 	}
-	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_linux.go).
+	// The private temp folder of a "cliTempRoot":true spawn (clitemproot_unix.go).
 	// A spawn that does not keep its child gives the folder back. A launched spawn
 	// skips the step (b3081b51, measured on Linux). The place after the command
 	// tests is claustrum's own, not measured.
