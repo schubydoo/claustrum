@@ -69,8 +69,8 @@ type spawnParams struct {
 	// only for the refusal below, and a value other than true counts as absent.
 	LinkBound *supervisor.LinkBoundParams `json:"linkBound"`
 	Pty       rpc.JSONTrueSwitch          `json:"pty"`
-	// CLITempRoot asks for the private temp folder step (clitemproot_linux.go). On
-	// macOS and Windows it changes nothing (b3081b51, measured with true, false and
+	// CLITempRoot asks for the private temp folder step (clitemproot_unix.go) on Linux
+	// and macOS. On Windows it changes nothing (b3081b51, measured with true, false and
 	// absent). Any other value counts as absent (claustrum's own, not measured).
 	CLITempRoot rpc.JSONTrueSwitch `json:"cliTempRoot"`
 	// CLITempRootEnd asks the daemon to end the child when its private temp folder is

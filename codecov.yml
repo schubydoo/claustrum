@@ -410,12 +410,15 @@ component_management:
         - internal/supervisor/adoptenv.go
         - internal/supervisor/adoptenv_other.go
         - internal/supervisor/adoptenv_windows.go
-        # the private temp folder of a spawn with cliTempRoot (Linux).
+        # the private temp folder of a spawn with cliTempRoot (Linux and macOS).
+        - clitemproot_unix.go
         - clitemproot_linux.go
+        - clitemproot_darwin.go
         - clitemproot_other.go
         # 4c111e86 the end of a cliTempRootEnd child whose private temp folder is lost.
         - internal/supervisor/temprootend.go
         - internal/supervisor/temprootend_linux.go
+        - internal/supervisor/temprootend_darwin.go
         - internal/supervisor/temprootend_other.go
         # the session folders: the record and its prune, the git skip, the PATH cut.
         - sessionfolders.go

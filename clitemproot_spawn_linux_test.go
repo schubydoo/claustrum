@@ -28,24 +28,6 @@ func spawnLine(t *testing.T, id, command string, env map[string]string, flag boo
 	return string(b)
 }
 
-func tempRootsLive() int {
-	tempRoots.mu.Lock()
-	defer tempRoots.mu.Unlock()
-	return tempRoots.live
-}
-
-// waitTempRootsLive polls the live count until it is n, with a limit.
-func waitTempRootsLive(t *testing.T, n int) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for tempRootsLive() != n {
-		if time.Now().After(deadline) {
-			t.Fatalf("live count %d, want %d", tempRootsLive(), n)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 // The frame of the spawn is the measured one, the child gets the folder, and the
 // exit of the child gives the folder back.
 func TestSpawnCLITempRootFrame(t *testing.T) {

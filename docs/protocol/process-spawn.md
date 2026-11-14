@@ -33,8 +33,8 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `linkBound` | no | See [its page](process-link-bound.md). |
 | `gitRead` | no | See [its page](process-git-read.md). |
 | `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
-| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux. Without `gitRead`, any other value counts as absent (claustrum's own). |
-| `cliTempRootEnd` | no | `true` asks the daemon to end the child on Linux when [its private temp folder is lost](#a-lost-folder-build-4c111e86) (`4c111e86`). Any other value counts as absent (claustrum's own). |
+| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux and macOS. Without `gitRead`, any other value counts as absent (claustrum's own). |
+| `cliTempRootEnd` | no | `true` asks the daemon to end the child on Linux and macOS when [its private temp folder is lost](#a-lost-folder-build-4c111e86) (`4c111e86`). Any other value counts as absent (claustrum's own). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
 ## Response
@@ -47,7 +47,7 @@ With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<n
 
 `startTime` is an opaque token that detects a reused pid, not an OS start time.
 
-With `"cliTempRoot": true` on Linux the result can carry a `cliTempRoot` member after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
+With `"cliTempRoot": true` on Linux and macOS the result can carry a `cliTempRoot` member after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
 
 After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
 
@@ -141,7 +141,7 @@ On Linux and macOS a daemon value of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` or `T
 
 ### The private temp folder (build `b3081b51`)
 
-On Linux a spawn with `"cliTempRoot": true` tests the entry `claude-<uid>` in the temp dir of the child. These rules are measured on Linux:
+On Linux and macOS a spawn with `"cliTempRoot": true` tests the entry `claude-<uid>` in the temp dir of the child. On macOS `CLAUDE_CODE_TMPDIR` alone names the temp dir, with no `/tmp` fallback. `TMPDIR` gives no member (measured on macOS). `TMP`, `TEMP` and the missing fallback are claustrum's own there. These rules are measured on Linux:
 
 - The temp dir is the first value that is not empty of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` and `TEMP` in the env of the child. `CLAUDE_CODE_TMPDIR` comes before `TMPDIR`, an empty `TMPDIR` goes on to `TMP`, and `TMP` or `TEMP` alone is taken.
 - A temp dir that does not exist or a relative `TMPDIR` gives no member. So does a spawn with a `launcher`.
@@ -196,11 +196,13 @@ These are not measured:
 - `cliTempRoot` comes before `pid` and `startTime`.
 - A failed registry write is not logged. A failed hold does not stop the spawn.
 
-On macOS and Windows claustrum's `cliTempRoot` and `cliTempRootEnd` change nothing, as on `b3081b51` (measured). `c9125eb8` and `4c111e86` make the folder on macOS too (measured). claustrum does not follow that, but lists both features there.
+On macOS the kinds `a link`, `not a folder` and `another account's` are measured too. So are the folder with its `t`, the log line, the link and file text and the 0333 text. The other rules are claustrum's own on macOS. There the record takes `kern.bootsessionuuid` as the boot id, with no pid namespace.
+
+On Windows `cliTempRoot` and `cliTempRootEnd` change nothing, as on `b3081b51` (measured).
 
 #### A lost folder (build `4c111e86`)
 
-On Linux, while a child runs, claustrum checks its folder by name every 2 s. These rules are measured on Linux and macOS unless marked:
+On Linux and macOS, while a child runs, claustrum checks its folder by name every 2 s. These rules are measured on Linux and macOS unless marked:
 
 - A link at the name, a folder of another account or a folder of mode 0777 counts as lost. The daemon logs `[process.Manager] Claude Code's private temp folder <name> counts as lost: <why>`. The why is `it is a link`, `it is another account's (uid <n>)` or `it is open to other accounts`.
 - A child whose spawn had `"cliTempRootEnd": true` gets SIGTERM, and the daemon logs `[process.Manager] Process <id> is being ended: its private temp folder is lost`. If it still runs 3 s later, it gets SIGKILL (measured on macOS).
@@ -212,14 +214,14 @@ On Linux, while a child runs, claustrum checks its folder by name every 2 s. The
 {"refused":"another account's","name":"ccd-7c9ad7b07c","lost":[{"name":"ccd-ac02b40227","why":"changed","agoSeconds":7}]}
 ```
 
-claustrum's rule on Linux: a child that ends on the SIGTERM gets a SIGKILL to its group before claustrum reaps it. The SIGKILL of the wait goes to the group too.
+claustrum's rule on Linux and macOS: a child that ends on the SIGTERM gets a SIGKILL to its group before claustrum reaps it. The SIGKILL of the wait goes to the group too.
 
 #### Changes that end no child (build `4c111e86`)
 
 - An own folder that took the place of the held one is held instead and gets `t` and mode 0500. The line ends `was no longer at its name: this account's folder that stands there is held instead` (measured on Linux and macOS).
 - With no entry at the name, a new folder of that name is made. The line ends `was no longer at its name: it is made anew` (measured on macOS).
 - A held folder whose `t` is gone gets `t` again (measured on macOS). A `t` of mode 0777 stays (measured on Linux and macOS).
-- On Linux a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
+- On Linux (on macOS claustrum's own) a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
 
 ??? note "claustrum's own rules of a lost folder"
     These are not measured. The why `changed` for each kind of loss. The list goes out once, in the next good reply's member, in whole seconds. A group or other write bit counts as open. A file at the name changes nothing. One line for a run of failed checks, and a temp dir that is gone counts as a failed check. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.

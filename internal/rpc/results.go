@@ -128,7 +128,7 @@ type AdoptEnvResult struct {
 // supervisor.Proc.startTime.
 type SpawnResult struct {
 	Success bool `json:"success"`
-	// CLITempRoot answers a spawn with "cliTempRoot":true on Linux (b3081b51). It is
+	// CLITempRoot answers a spawn with "cliTempRoot":true on Linux and macOS. It is
 	// nil when the daemon has nothing to say, so the frame stays {"success":true}.
 	// Its place before the CT-1 members is claustrum's own.
 	CLITempRoot *CLITempRoot `json:"cliTempRoot,omitempty"`
