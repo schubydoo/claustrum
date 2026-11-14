@@ -284,7 +284,7 @@ the linked pages.
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
   measured. `f6010b97` has none of these. `launcherFault`, `macos_host` (its text: `4c111e86`), the file
-  check (its NFS, FUSE and owner texts: `4c111e86`) and `launcher.supplies_cli` follow the pin. See
+  check (its file system and owner texts: `4c111e86`) and `launcher.supplies_cli` follow the pin. See
   [launcher.resolve](protocol/launcher-resolve.md),
   [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
   and [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).

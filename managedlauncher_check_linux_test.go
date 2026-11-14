@@ -241,8 +241,7 @@ func TestLauncherCheckLinksFrames(t *testing.T) {
 }
 
 // TestLauncherCheckServerFSFrames pins the FUSE frames of 4c111e86 (measured on Linux):
-// a launcher in such a folder with launcherCheck {} gets writable. The SMB text uses the
-// same words (claustrum's own, not measured).
+// a launcher in such a folder with launcherCheck {} gets writable.
 func TestLauncherCheckServerFSFrames(t *testing.T) {
 	s, d, cli := launcherFrameFixture(t)
 	for _, fs := range []string{"FUSE or virtiofs", "SMB"} {

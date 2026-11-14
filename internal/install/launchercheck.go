@@ -56,13 +56,15 @@ const nobodyUID = 65534
 const NoLauncherText = managedNoLauncher
 
 // launcherFacts are the facts of one path that the walk tests: its owner, its mode
-// bits (the 12 low bits of st_mode) and fs. fs names a file system whose server decides
-// who can change a file, as the refusal text shows it: "NFS", "FUSE or virtiofs" or
-// "SMB". It is "" for any other file system.
+// bits (the 12 low bits of st_mode), fs and like9p. fs names a file system that the walk
+// does not trust, as the refusal text shows it, such as "NFS" or "an unknown kind of file
+// system (0x4d44)". It is "" for a trusted file system. like9p marks a trusted disk kind
+// with no real device while a 9p mount is listed.
 type launcherFacts struct {
-	uid  uint32
-	mode uint32
-	fs   string
+	uid    uint32
+	mode   uint32
+	fs     string
+	like9p bool
 }
 
 // launcherPathFacts and launcherOwnUID are seams, so a test fakes the owner, the mode
@@ -212,9 +214,9 @@ func launcherFolders(dir string) []string {
 
 // checkLauncherItem tests one item of the walk. Root owns a good item, or the
 // ownerUid of the launcherCheck does. A group or other write bit refuses it, the
-// sticky folder 1777 too. On NFS, FUSE or SMB with no digest the item is refused,
-// whatever its owner and mode. A FUSE mount of the uid of the daemon gets writable
-// there, also with that uid as ownerUid. With a digest the owner test still
+// sticky folder 1777 too. On a file system that the walk does not trust, with no
+// digest, the item is refused, whatever its owner and mode. A FUSE mount of the uid of
+// the daemon gets writable there, also with that uid as ownerUid. With a digest the owner test still
 // runs, and that mount gets owner (both rules: 4c111e86, measured on Linux). The write test
 // there is claustrum's own, not measured. An item whose
 // facts cannot be read is missing (claustrum's own, not measured).
@@ -225,9 +227,12 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 		return FaultMissing, managedNotExecutable(launcher)
 	}
 	if f.fs != "" && !digests {
-		// The NFS and the FUSE text follow 4c111e86 (measured on Linux). The SMB text
-		// uses the same words with its own name (claustrum's own, not measured).
+		// The texts follow 4c111e86 (measured on Linux).
 		return FaultWritable, shown + " is on " + f.fs + ", so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
+	}
+	if f.like9p && !digests {
+		// 4c111e86, measured on Linux.
+		return FaultWritable, shown + " can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
 	}
 	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
 		// The order of the three texts, for a daemon that runs as uid 65534, is

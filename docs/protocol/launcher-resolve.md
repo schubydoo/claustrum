@@ -143,7 +143,6 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `fault` | Case | `reason` |
 |---|---|---|
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
-| `writable` | NFS, FUSE or SMB, with no digest (`4c111e86`, the SMB text: claustrum's own) | `` `<D>` is on <fs>, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image. `` |
 | `writable` | Changed during the check (claustrum's own, not measured) | `` `<D>` changed while the launcher was checked, so the launcher can't be trusted. Keep the launcher somewhere that no other account can change. `` |
 | `owner` | Owned by the uid of the daemon (`4c111e86`, measured on a FUSE mount) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
 | `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
@@ -156,9 +155,21 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
 - Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
-- `<fs>` is `NFS`, `FUSE or virtiofs` for a FUSE mount, or `SMB` for CIFS. 9p passes (claustrum's own, not measured: 9p was not staged). The `statfs` type finds them (claustrum's own, not measured).
-- On these file systems an `ownerUid` lifts nothing with no digest. With a digest the owner test runs (`4c111e86`, on FUSE). The write test runs too (claustrum's own, not measured). An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
 - A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The other order of the tests is claustrum's own.
+
+#### File system kinds (Linux)
+
+| `fault` | Case | `reason` |
+|---|---|---|
+| `writable` | A file system that the walk does not trust, with no digest (`4c111e86`, measured on Linux) | `` `<D>` is on <fs>, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image. `` |
+| `writable` | A trusted disk kind with no real device while a 9p mount is listed, with no digest (`4c111e86`, measured on Linux) | `` `<D>` can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS. `` |
+
+#### Rules of the kinds
+
+- ext4, XFS and erofs pass (`4c111e86`, measured on Linux). tmpfs, overlayfs, ZFS, squashfs, f2fs, ramfs, eCryptfs, JFS, ReiserFS and bcachefs pass too (claustrum's own, not measured). exFAT and NTFS3 keep no Unix owner and get the unknown text, like the measured vfat (claustrum's own, not measured).
+- `<fs>` is `NFS`, `SMB`, `9p`, `AFS`, `Ceph`, `GFS2`, `Lustre`, `GPFS`, `OCFS2` or `VxFS` (`4c111e86`, measured on Linux), or `FUSE or virtiofs`. Any other type is `an unknown kind of file system (0x4d44)`, with its hex. kAFS (0x6b414653) has no row and gets that text.
+- The 9p row is measured with btrfs and an ext4 type on a tmpfs. The device test (major 0) and the read of `/proc/self/mountinfo` are claustrum's own. With no 9p mount, btrfs passes (not measured).
+- On these file systems an `ownerUid` lifts nothing with no digest. With a digest the owner test runs (`4c111e86`, on FUSE). The write test runs too (claustrum's own, not measured). An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
 
 #### The check by handle (Linux)
 
