@@ -27,7 +27,7 @@ const unlockQuote = "'"
 // Linux).
 const genericHintChars = "$'\\"
 
-// dropStaleWorktreeRegistration is the step of git.worktree_create before `git
+// removeStaleWorktreeEntry is the step of git.worktree_create before `git
 // worktree add`, on Linux and macOS. It works on the folder `worktrees` of the
 // common git directory of repo (staleRegistryDir). An entry of that folder is stale for
 // this request if its gitdir record names the .git of the new leaf. The caller runs
@@ -98,22 +98,23 @@ const genericHintChars = "$'\\"
 //
 // matched reports that an entry is stale, also one that stays (pairBeforeAdd).
 // With two stale entries 5fd08069 removes neither and runs no pair (measured
-// on Linux and macOS).
-func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (matched bool) {
+// on Linux and macOS). removed reports that the step removed the one stale
+// entry.
+func removeStaleWorktreeEntry(repo, worktreePath string, held *acceptedGitDir) (matched, removed bool) {
 	base := staleRegistryDir(repo)
 	root, err := held.deleteRoot(base)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer func() { _ = root.Close() }()
 	dir, err := root.Open(".")
 	if err != nil {
-		return false
+		return false, false
 	}
 	ents, err := dir.ReadDir(-1)
 	_ = dir.Close()
 	if err != nil {
-		return false
+		return false, false
 	}
 	// The order of os.ReadDir, which this step had before it used a root.
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
@@ -141,16 +142,17 @@ func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitD
 	}
 	// Two or more stale entries: every one stays (measured).
 	if len(stale) == 1 {
-		removeStaleRegistration(root, stale[0], filepath.Join(base, stale[0]))
+		removed = removeStaleRegistration(root, stale[0], filepath.Join(base, stale[0]))
 	}
-	return len(stale) > 0
+	return len(stale) > 0, removed
 }
 
 // removeStaleRegistration removes the entry name of root, the opened registrations
 // folder, unless it holds a `locked` file. entry is the path of the entry, for the
-// home guard.
-func removeStaleRegistration(root *os.Root, name, entry string) {
+// home guard. It reports that the remove ran and gave no error.
+func removeStaleRegistration(root *os.Root, name, entry string) bool {
 	if _, err := root.Lstat(name + "/locked"); errors.Is(err, fs.ErrNotExist) && !homeguard.WipesHomeDir(entry) {
-		_ = removeHeldEntry(root, name)
+		return removeHeldEntry(root, name) == nil
 	}
+	return false
 }

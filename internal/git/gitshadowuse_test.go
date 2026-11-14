@@ -209,8 +209,8 @@ func TestRequestDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !samePath(resolveTestRoot(t, filepath.Dir(dir)), resolveTestRoot(t, os.TempDir())) ||
-		!strings.HasPrefix(filepath.Base(dir), "claude-ssh-index-") {
-		t.Errorf("folder with no copy = %s, want %s/claude-ssh-index-<n>", dir, os.TempDir())
+		!strings.HasPrefix(filepath.Base(dir), "claude-ssh-checkout-") {
+		t.Errorf("folder with no copy = %s, want %s/claude-ssh-checkout-<n>", dir, os.TempDir())
 	}
 	remove()
 	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
@@ -275,12 +275,12 @@ func TestRequestDirMakesTheAddCopyByPath(t *testing.T) {
 
 // TestGitTempNames pins the names of the short-lived entries. With
 // "shadowDirOff":true 5fd08069 has them in the temporary folder
-// (measured, also the index name). Without it they are in the folder
-// of the daemon (measured).
+// (measured). The index name there is the one of 4c111e86 (measured on
+// Linux and macOS). Without the member they are in the folder of the daemon (measured).
 func TestGitTempNames(t *testing.T) {
 	for got, want := range map[string]string{
 		statusGitDirTempPrefix:  "claude-ssh-gitdir-",
-		checkoutIndexTempPrefix: "claude-ssh-index-",
+		checkoutIndexTempPrefix: "claude-ssh-checkout-",
 		includeTempPrefix:       "claude-ssh-worktreeinclude-",
 		includePatternsName:     "patterns",
 		shadowStatusDirPrefix:   ".gitdir-",
@@ -485,7 +485,7 @@ func TestShadowCreateWithBareInConfigWorktree(t *testing.T) {
 // asked. The delete is a recorder and home is a folder below t.TempDir, so a
 // test without the guard deletes nothing. From the code, not measured.
 func TestTempRequestDirRemoveRefusesHome(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "claude-ssh-index-1")
+	dir := filepath.Join(t.TempDir(), "claude-ssh-checkout-1")
 	mustWrite(t, filepath.Join(dir, "home", "file.txt"), "a file of home\n")
 	var asked []string
 	old := removeTempTree

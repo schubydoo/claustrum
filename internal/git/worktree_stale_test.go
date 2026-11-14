@@ -48,16 +48,16 @@ func TestWorktreeCreateDropsStaleRegistration(t *testing.T) {
 	}
 }
 
-// dropStaleWorktreeRegistration is a no-op on a repo that has no worktree
+// removeStaleWorktreeEntry is a no-op on a repo that has no worktree
 // registrations at all (no .git/worktrees) — the ReadDir simply fails and returns.
-func TestDropStaleWorktreeRegistrationNoWorktrees(t *testing.T) {
-	repo := t.TempDir()                                                       // not even a git repo — .git/worktrees absent
-	dropStaleWorktreeRegistration(repo, filepath.Join(repo, "whatever"), nil) // must not panic
+func TestRemoveStaleWorktreeEntryNoWorktrees(t *testing.T) {
+	repo := t.TempDir()                                                  // not even a git repo — .git/worktrees absent
+	removeStaleWorktreeEntry(repo, filepath.Join(repo, "whatever"), nil) // must not panic
 }
 
 // The stale-registration scan skips non-directory entries and directories with no
 // gitdir file rather than failing; unrelated registrations survive untouched.
-func TestDropStaleWorktreeRegistrationSkipsMalformedEntries(t *testing.T) {
+func TestRemoveStaleWorktreeEntrySkipsMalformedEntries(t *testing.T) {
 	repo := t.TempDir()
 	base := filepath.Join(repo, ".git", "worktrees")
 	if err := os.MkdirAll(filepath.Join(base, "nogitdir"), 0o755); err != nil {
@@ -67,7 +67,7 @@ func TestDropStaleWorktreeRegistrationSkipsMalformedEntries(t *testing.T) {
 	if err := os.WriteFile(junk, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	dropStaleWorktreeRegistration(repo, filepath.Join(t.TempDir(), "w"), nil)
+	removeStaleWorktreeEntry(repo, filepath.Join(t.TempDir(), "w"), nil)
 	for _, p := range []string{junk, filepath.Join(base, "nogitdir")} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("%s was removed: %v", p, err)

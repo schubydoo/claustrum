@@ -157,9 +157,9 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   create in a repository with a `config.worktree` file, and `.s<n>`. In the state `fallback-git` the first three are there
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
-  are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
-  `claude-ssh-worktreeinclude-<n>`. On Linux and macOS the index name is as on
-  `89cb6289`. On Windows it is claustrum's own (not measured).
+  are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
+  `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
+  Linux and macOS). On Windows it is not measured.
 - On Linux and macOS `4c111e86` names the index folder of a create
   `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and gone
   1 s later. claustrum removes it before the reply (claustrum's own). A killed

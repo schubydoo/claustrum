@@ -578,7 +578,7 @@ func TestStaleRegistryDir(t *testing.T) {
 			}
 			entry := filepath.Join(root, filepath.FromSlash(tc.registry), "old")
 			writeFile(t, filepath.Join(entry, "gitdir"), leaf+"/.git\n", 0o644)
-			dropStaleWorktreeRegistration(repo, leaf, nil)
+			removeStaleWorktreeEntry(repo, leaf, nil)
 			if _, err := os.Lstat(entry); !os.IsNotExist(err) {
 				t.Errorf("the stale entry stays (Lstat err %v), want it removed", err)
 			}

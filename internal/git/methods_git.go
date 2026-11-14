@@ -994,7 +994,8 @@ func gitListBranches(req *gitCall) rpc.Response {
 // found no entry that names the new leaf. They run when the folder of the
 // registrations of gitDir is a real folder, empty or not (measured on Linux, macOS and Windows). With
 // the member 5fd08069 runs them in a repository with a linked worktree (measured). An entry that
-// names the leaf gives no pair (measured). On 5fd08069 a missing folder gives none. b3081b51 and
+// names the leaf gives no pair (measured). In the state shadow one such entry that the stale step
+// removed gives the pair (c9125eb8 and 4c111e86, measured on Linux). On 5fd08069 a missing folder gives none. b3081b51 and
 // c9125eb8 run the pair in the first create of a repository with no such folder (measured on Linux,
 // macOS and Windows, in the state shadow), so there a missing folder gives the pair (missingRuns).
 // With the member a missing folder still gives none: no row of those builds has it. The state
@@ -1016,7 +1017,8 @@ func gitListBranches(req *gitCall) rpc.Response {
 //
 // The calls are gitDirWorkTreeToplevel in gitDir, with workTree as the work
 // tree. That is repo, or with a worktreeRoot the worktreePath (c9125eb8 and
-// 4c111e86, measured on Linux). A worktreePath with a final slash or a link
+// 4c111e86, measured on Linux). After a removed stale entry it is the parent
+// of gitDir (4c111e86, measured on Linux with a baseRepo through a link). A worktreePath with a final slash or a link
 // keeps its spelling (claustrum's own, not measured). Their answers are not used, and a failure changes nothing (measured on
 // Linux). The timeoutMs of the caller does not end them. With the second call
 // held 10 s and a timeoutMs of 3000, 5fd08069 sends no signal, then runs the
@@ -1026,7 +1028,9 @@ func gitListBranches(req *gitCall) rpc.Response {
 //
 // member is the hold of the off switch at the bind (bindGitParams). Under the
 // hold of another request it is claustrum's own, not measured (pairSSHUse).
-func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, member bool) (afterListing func()) {
+//
+// late puts the pair after the listing of the add, as a missing folder does.
+func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, member, late bool) (afterListing func()) {
 	fi, err := os.Lstat(gitDirRegistryDir(gitDir))
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
 	if !missing && (err != nil || !fi.IsDir()) {
@@ -1036,7 +1040,7 @@ func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, mem
 		u := pairSSHUse(req, member).atGitDirCommand()
 		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, workTree, u.gitDirPin(repo), u.gitDirFront())
 	}
-	if missing && !stagedAddWindowsSteps {
+	if (missing || late) && !stagedAddWindowsSteps {
 		return run
 	}
 	run()
@@ -1386,19 +1390,19 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// The target is confirmed missing above, so a worktree registration still
 	// naming it is stale (on Windows not always, D27). Drop
 	// such a registration if it is the only one and is not locked
-	// (dropStaleWorktreeRegistration). Windows runs the step later, after
+	// (removeStaleWorktreeEntry). Windows runs the step later, after
 	// `rev-parse --absolute-git-dir` (staleStepAfterGitDir).
 	// On Linux and macOS a create that holds its git directory runs the step
 	// through the held folder (gitdirheld.go). Windows runs it by the path.
-	staleStep := func() bool {
+	staleStep := func() (bool, bool) {
 		if createStepHook != nil && req.use.accepted != nil {
 			createStepHook("stale")
 		}
-		return dropStaleWorktreeRegistration(repo, p.WorktreePath, req.use.accepted)
+		return removeStaleWorktreeEntry(repo, p.WorktreePath, req.use.accepted)
 	}
-	staleMatched := false
+	staleMatched, staleRemoved := false, false
 	if !staleStepAfterGitDir {
-		staleMatched = staleStep()
+		staleMatched, staleRemoved = staleStep()
 	}
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
@@ -1619,7 +1623,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// refusal between the mkdir of the leaf and this point leaves the stale
 	// entry in place (not measured).
 	if staleStepAfterGitDir {
-		staleMatched = staleStep()
+		staleMatched, staleRemoved = staleStep()
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the checkout, and the daemon
 	// tests it after the add and after the copy step. At timeoutMs 0 both
@@ -1627,14 +1631,25 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs, arrival)
 	defer cancelCtx()
 	var afterAddListing func()
-	if (req.use.shadow() || bool(p.ShadowDirOff)) && !staleMatched {
+	// In the state shadow a stale entry that the step removed does not stop the
+	// pair. c9125eb8 and 4c111e86 then run it after the listing of the add, right
+	// before the add (measured on Linux). macOS follows Linux (not measured).
+	// Windows keeps the old rule (not measured).
+	staleGone := staleRemoved && req.use.shadow() && !stagedAddWindowsSteps
+	if (req.use.shadow() || bool(p.ShadowDirOff)) && (!staleMatched || staleGone) {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
 		pairTree := repo
 		if p.WorktreeRoot != "" {
 			pairTree = p.WorktreePath
+		} else if staleGone && filepath.Base(gitDir) == ".git" {
+			// After a removed stale entry 4c111e86 gives the pair the resolved top
+			// of the repository, the parent of the git directory, also for a
+			// baseRepo through a link (measured on Linux). The other pairs keep
+			// repo, and the test of the name .git is claustrum's own (not measured).
+			pairTree = filepath.Dir(gitDir)
 		}
-		afterAddListing = pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff))
+		afterAddListing = pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff), staleGone)
 	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.
@@ -1740,6 +1755,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if msg := registeredLeafRefusal(regDir, p.WorktreePath); msg != "" {
 			return refuseAdd(msg)
 		}
+	}
+	// A create of a plain repository makes <repo>/.git a session folder
+	// (b3081b51, measured on Linux, macOS and Windows). The record stays after
+	// git.worktree_remove. c9125eb8 and 4c111e86 write it before the add, so a
+	// failed add keeps it (measured on Linux and macOS). A failed record logs its
+	// line and the create goes on (measured on Linux and macOS). They write it
+	// before the listing of `rev-parse --absolute-git-dir` (measured on Linux).
+	// claustrum writes it here, after the refusals before the add (claustrum's
+	// own, not measured). The pin for a linked worktree, the folder of the git
+	// answer when no pin is known and no record with the off switch are
+	// claustrum's own, not measured.
+	if !sessiondirs.OffSwitchSet(req.Params) {
+		recorded := t.pinCommonDir
+		if recorded == "" {
+			recorded = gitDir
+		}
+		_ = sessiondirs.RememberCreate(recorded)
 	}
 	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
@@ -2161,9 +2193,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		// The checkout takes the form of the off switch at its first listing and
 		// keeps it to its end (fixedForm, claustrum's own, not measured: no cell
-		// changes the hold inside the checkout). Under a live hold 5fd08069 puts
-		// the index in a new folder `claude-ssh-index-<n>` of the temporary
-		// folder and runs one listing before the read-tree call. With no hold it
+		// changes the hold inside the checkout). Under a live hold the index goes
+		// in a new folder `claude-ssh-checkout-<n>` of the temporary folder
+		// (4c111e86, Linux and macOS. c9125eb8 used `claude-ssh-index-<n>`).
+		// 5fd08069 runs one listing there before the read-tree call. With no hold it
 		// puts the index in `.index-<n>` of the folder of the daemon and runs two
 		// (measured on Linux). The filter rule follows that form too (claustrum's
 		// own, not measured). The index goes into the registration through the
@@ -2461,19 +2494,6 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			ErrorCode:  "timeout",
 			BranchKept: kept,
 		})
-	}
-	// A good create of a plain repository makes <repo>/.git a session folder
-	// (b3081b51, measured on Linux, macOS and Windows). The record stays after
-	// git.worktree_remove. A failed record logs its line and the create answers
-	// success (measured on Linux and macOS). The place at the reply, the pin for a
-	// linked worktree, the folder of the git answer when no pin is known and no
-	// record with the off switch are claustrum's own, not measured.
-	if !sessiondirs.OffSwitchSet(req.Params) {
-		recorded := t.pinCommonDir
-		if recorded == "" {
-			recorded = gitDir
-		}
-		_ = sessiondirs.RememberCreate(recorded)
 	}
 	return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }

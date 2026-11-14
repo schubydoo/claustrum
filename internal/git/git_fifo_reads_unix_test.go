@@ -408,7 +408,7 @@ func TestDropStaleRegistrationGoesPastFifoRecord(t *testing.T) {
 	stale := filepath.Join(T, ".git", "worktrees", "zz")
 	wt := filepath.Join(T, ".claude", "worktrees", "w1")
 	writeFile(t, filepath.Join(stale, "gitdir"), filepath.Join(wt, ".git")+"\n", 0o644)
-	doneWithin(t, "dropStaleWorktreeRegistration", func() { dropStaleWorktreeRegistration(T, wt, nil) })
+	doneWithin(t, "removeStaleWorktreeEntry", func() { removeStaleWorktreeEntry(T, wt, nil) })
 	wantFifo(t, old)
 	mustBeGone(t, stale)
 }

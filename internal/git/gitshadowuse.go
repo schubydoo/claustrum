@@ -785,10 +785,11 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 //   - `.worktreeinclude-<n>` with the file `patterns` for one include step
 //     (measured).
 //
-// With the member the folders are in the temporary folder. 5fd08069 has
-// `claude-ssh-gitdir-<n>`, `claude-ssh-index-<n>` and
-// `claude-ssh-worktreeinclude-<n>` there. The last one holds the file
-// `patterns` (measured on Linux).
+// With the member the folders are in the temporary folder:
+// `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
+// `claude-ssh-worktreeinclude-<n>`. The last one holds the file `patterns`
+// (5fd08069, measured on Linux). The index folder is the one of 4c111e86
+// (measured on Linux and macOS). c9125eb8 used `claude-ssh-index-<n>`.
 const (
 	shadowStatusDirPrefix  = ".gitdir-"
 	shadowIndexDirPrefix   = ".index-"

@@ -40,7 +40,7 @@ func TestStaleStepThroughTheHeldGitDir(t *testing.T) {
 	mustWrite(t, filepath.Join(f.gitDir, "worktrees", "old", "gitdir"), record)
 	mustWrite(t, filepath.Join(f.other, "worktrees", "old", "gitdir"), record)
 	f.swap(t)
-	dropStaleWorktreeRegistration(f.repo, leaf, f.u.accepted)
+	removeStaleWorktreeEntry(f.repo, leaf, f.u.accepted)
 	if got := strings.Join(*removals, ","); got != "old held" {
 		t.Errorf("the step asked to remove %q, want the old registration of the held folder", got)
 	}
@@ -127,7 +127,7 @@ func TestStaleStepAndTheFolderOfItsRoot(t *testing.T) {
 			if r.noHold {
 				held = nil
 			}
-			dropStaleWorktreeRegistration(repo, leaf, held)
+			removeStaleWorktreeEntry(repo, leaf, held)
 			if got := strings.Join(*removals, ","); got != r.want {
 				t.Errorf("the step asked to remove %q, want %q", got, r.want)
 			}

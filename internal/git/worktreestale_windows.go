@@ -22,7 +22,7 @@ const unlockQuote = `"`
 // no path: `$` (measured on Windows) and `'` (not measured on Windows).
 const genericHintChars = "$'"
 
-// dropStaleWorktreeRegistration removes the repo's worktree registration for
+// removeStaleWorktreeEntry removes the repo's worktree registration for
 // worktreePath when that path is registered but missing on disk — a "prunable"
 // registration left when a session folder is deleted out from under git. Without
 // this, `git worktree add` at the same path fails "missing but already registered"
@@ -68,24 +68,24 @@ const genericHintChars = "$'"
 // exists stays (staleRecordLive, D27).
 //
 // matched reports that an entry names the leaf, also one that stays
-// (pairBeforeAdd).
-func dropStaleWorktreeRegistration(repo, worktreePath string, _ *acceptedGitDir) (matched bool) {
+// (pairBeforeAdd). removed reports that the step removed that entry.
+func removeStaleWorktreeEntry(repo, worktreePath string, _ *acceptedGitDir) (matched, removed bool) {
 	base := staleRegistryDir(repo)
 	fi, err := os.Lstat(base)
 	if err != nil || !goesAsTree(fi.Mode()) {
-		return false
+		return false, false
 	}
 	root, err := os.OpenRoot(base)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer func() { _ = root.Close() }()
 	if !sameOpenedFolder(root, fi) {
-		return false
+		return false, false
 	}
 	names, records := windowsStaleEntries(root, ".", worktreePath)
 	if windowsStaleEntryGoes(root, ".", names, records) && !homeguard.WipesHomeDir(filepath.Join(base, names[0])) {
-		_ = removeHeldEntry(root, names[0])
+		removed = removeHeldEntry(root, names[0]) == nil
 	}
-	return len(names) > 0
+	return len(names) > 0, removed
 }

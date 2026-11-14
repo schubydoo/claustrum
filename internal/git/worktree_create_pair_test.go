@@ -60,9 +60,12 @@ func TestCreatePairPastTheDeadline(t *testing.T) {
 
 // TestCreatePairCases is the portable table of the pair. It runs for an entry
 // of another worktree, in the state shadow (measured) and with
-// "shadowDirOff":true. It does not run for a stale entry of the leaf (measured)
-// or with the member and no registrations folder (5fd08069, measured). In the
+// "shadowDirOff":true. On 5fd08069 it does not run for a stale entry of the leaf
+// (measured) or with the member and no registrations folder (measured). In the
 // state shadow a missing folder gives the pair (b3081b51 and c9125eb8, measured).
+// On Linux and macOS a stale entry that the step removed gives the pair in the
+// state shadow and none with the member (c9125eb8 and 4c111e86, measured on
+// Linux). Windows keeps no pair there (not measured).
 func TestCreatePairCases(t *testing.T) {
 	stale := func(t *testing.T, f checkoutRuleFixture) {
 		old := filepath.Join(f.gitDir, worktreesSubdir, "old")
@@ -81,7 +84,8 @@ func TestCreatePairCases(t *testing.T) {
 	}{
 		{"R-Q2b", false, nil, true},
 		{"50a with the member", true, nil, true},
-		{"a stale entry", false, stale, false},
+		{"a stale entry", false, stale, !stagedAddWindowsSteps},
+		{"with the member and a stale entry", true, stale, false},
 		{"no registrations folder", false, noFolder, true},
 		{"with the member and no folder", true, noFolder, false},
 	} {
@@ -102,6 +106,30 @@ func TestCreatePairCases(t *testing.T) {
 				t.Errorf("the pair ran = %v, want %v", got, row.pair)
 			}
 		})
+	}
+}
+
+// TestCreatePairAfterStaleEntryResolvesALinkedBase: in the state shadow, after
+// the stale step removed an entry of the leaf, the pair of a baseRepo given
+// through a link has the resolved top of the repository as its work tree, as
+// 4c111e86 does (measured on Linux). The link is in a t.TempDir(). Mutation:
+// keep repo as the work tree of that pair (the link path shows).
+func TestCreatePairAfterStaleEntryResolvesALinkedBase(t *testing.T) {
+	if stagedAddWindowsSteps {
+		t.Skip("Windows keeps no pair after a stale entry (not measured)")
+	}
+	f := newCheckoutRuleFixture(t)
+	link := filepath.Join(resolveTestRoot(t, t.TempDir()), "lnk")
+	if err := os.Symlink(f.repo, link); err != nil {
+		t.Skipf("no symlink: %v", err)
+	}
+	mustWrite(t, filepath.Join(f.gitDir, worktreesSubdir, "old", "gitdir"), filepath.Join(f.leaf, ".git")+"\n")
+	raw, calls := f.create(t, map[string]any{"baseRepo": link, "worktreePath": filepath.Join(link, ".claude", "worktrees", "w1")})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if !ranPair(calls, f.repo) || ranPair(calls, link) {
+		t.Errorf("the pair work tree: resolved top %v, link %v, want only the resolved top", ranPair(calls, f.repo), ranPair(calls, link))
 	}
 }
 

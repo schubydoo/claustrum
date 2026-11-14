@@ -134,7 +134,7 @@ func leafListings(calls []envCall, leaf string, from, to int) int {
 // wantIndexIn tests the GIT_INDEX_FILE of the read-tree call c. With inCopy
 // set it is in the checkout folder of the folder of the daemon
 // (checkoutDirPrefix), else in a folder
-// `claude-ssh-index-<n>` outside the run folder.
+// `claude-ssh-checkout-<n>` outside the run folder.
 func wantIndexIn(t *testing.T, c envCall, inCopy bool) {
 	t.Helper()
 	v, _ := lookupExact(c.env, "GIT_INDEX_FILE")
@@ -223,7 +223,7 @@ func TestShadowStatusFollowsAHoldThatEnds(t *testing.T) {
 
 // C1: a hold that starts while `rev-parse --absolute-git-dir` of a create runs.
 // The add and the read-tree use the git directory itself, the index is in
-// `claude-ssh-index-<n>` of the temporary folder, and one listing comes
+// `claude-ssh-checkout-<n>` of the temporary folder, and one listing comes
 // before the read-tree (measured on Linux). Mutation: drop the call of
 // req.keepLiveForm in gitWorktreeCreateLocked. Every call then names the copy,
 // with two listings and the index in `.index-<n>`. A second mutation gives the

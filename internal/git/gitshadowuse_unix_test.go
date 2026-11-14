@@ -152,8 +152,8 @@ func TestShadowRequestEntries(t *testing.T) {
 		if !strings.Contains(raw, `"success":true`) {
 			t.Fatalf("git.worktree_create = %s", raw)
 		}
-		if got := argOf(calls, "GIT_INDEX_FILE="+tmp+"/"); !regexp.MustCompile(`^claude-ssh-index-[0-9]+/index$`).MatchString(got) {
-			t.Errorf("GIT_INDEX_FILE of the checkout = %q, want claude-ssh-index-<n>/index in %s", got, tmp)
+		if got := argOf(calls, "GIT_INDEX_FILE="+tmp+"/"); !regexp.MustCompile(`^claude-ssh-checkout-[0-9]+/index$`).MatchString(got) {
+			t.Errorf("GIT_INDEX_FILE of the checkout = %q, want claude-ssh-checkout-<n>/index in %s", got, tmp)
 		}
 		if got := argOf(calls, "--exclude-from="+tmp+"/"); !regexp.MustCompile(`^claude-ssh-worktreeinclude-[0-9]+/patterns$`).MatchString(got) {
 			t.Errorf("the pattern file of the include step = %q, want claude-ssh-worktreeinclude-<n>/patterns in %s", got, tmp)

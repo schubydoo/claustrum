@@ -83,3 +83,31 @@ func TestCreateWithTheOffSwitchRecordsNothing(t *testing.T) {
 		t.Errorf("a create with the off switch: record folder %v %v, want empty", entries, err)
 	}
 }
+
+// A create whose `git worktree add` fails keeps the record of its git
+// directory, because the record is written before the add. c9125eb8 and
+// 4c111e86 keep it so (measured on Linux and macOS). The git stub fails the add.
+func TestCreateRecordsBeforeTheAdd(t *testing.T) {
+	f := newCheckoutRuleFixture(t)
+	dir := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessiondirs.UseForTest(dir))
+	slowGit(t, "worktree,add", "fail", 0, "fatal: the stub fails the add\n", "")
+	raw, _ := f.create(t, nil)
+	if !strings.Contains(raw, `"success":false`) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Fatalf("git.worktree_create = %s, want a failed add", raw)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("after the failed add the record folder holds %v %v, want one record", entries, err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, path, _ := strings.Cut(string(b), "\n"); canonicalPath(path) != canonicalPath(f.gitDir) {
+		t.Errorf("the record holds the path %q, want %q", path, f.gitDir)
+	}
+}

@@ -32,7 +32,7 @@ import (
 // open.
 //
 //   - The stale registration before the add on Linux and macOS:
-//     dropStaleWorktreeRegistration with deleteRoot.
+//     removeStaleWorktreeEntry with deleteRoot.
 //   - The folder `worktrees`: makeWorktreesFolder, openAddStage, and the mkdir
 //     of addStage.finish in a folder that the staging step took the hold on.
 //   - The staging steps: openAddStage, addStage.move with
@@ -127,7 +127,7 @@ func (a *acceptedGitDir) removeRegistration(name string) {
 // dropStaleRegistration is a test seam, and production never calls it. It is
 // the former held form of the Windows step before the add. It removes the
 // registration whose `gitdir` record names worktreePath. The rule
-// is that of the Windows step (dropStaleWorktreeRegistration): the one entry
+// is that of the Windows step (removeStaleWorktreeEntry): the one entry
 // that names the leaf goes, if it holds no `locked` file. The listing, the
 // read of each record and the delete go through the held root. The folder
 // `worktrees` must be a real folder by its Lstat through the held root. A link
