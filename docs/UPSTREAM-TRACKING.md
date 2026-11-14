@@ -196,8 +196,8 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags of claustrum alone](protocol/flags.md#flags-of-claustrum-alone)).
 claustrum lacks the terminal of `52d82f0a`, `683cc6a9`, `be1c1ca5` and `b3081b51`, and of the pinned `c9125eb8`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
-gets `-32601`, and on Windows a `process.spawn` with `pty` runs its command
-(measured on macOS and Windows). Check those
+gets `-32601` (measured on macOS and Windows), and a keyed `pty` object runs the
+command (claustrum's own). Check those
 before you conclude that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table

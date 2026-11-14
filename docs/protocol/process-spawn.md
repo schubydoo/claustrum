@@ -58,12 +58,14 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | No `params`, or a member that the method reads has the wrong type. A `launcher` that is not an array, or that holds an element that is not a string, gets it too. A `null` element becomes an empty argument. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | A `pty` that is present and is no object and not `null`, such as `true` or `false` (`4c111e86` and `c9125eb8`, measured on Linux, Windows and macOS). Its place before the `id` test is claustrum's own. |
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
 | `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. |
 | `-32602` | `Command is required` | `command` is absent or empty, with no `launcherSuppliesCli`. |
 | `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
+| `-32602` | `A terminal needs a key of 32 bytes in hex` | A `pty` object with no `key` of 64 hex digits, such as `{}` (`4c111e86` and `c9125eb8`, measured on Linux). On macOS and Windows this text is claustrum's own. |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
 | `-32602` | `this id was asked after, or asked to be ended, while no process had it: take a fresh one` | A [given-up](#a-given-up-id) `id` (`4c111e86`). |
 
@@ -384,4 +386,4 @@ A spawn whose child starts after the shutdown began gets no reply. The daemon en
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): the Windows environment order.
 
-claustrum lacks the terminal of the pinned `c9125eb8` and ignores its `pty` member without `linkBound` or `gitRead`. On Windows `c8e2f083` refuses `pty` with `-32602`, and claustrum runs the command (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+claustrum lacks the terminal of the pinned `c9125eb8`. A `pty` object with a valid key runs the command with no terminal (claustrum's own). On Windows `c8e2f083` refuses `pty` with `-32602` (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
