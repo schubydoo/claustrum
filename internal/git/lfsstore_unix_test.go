@@ -325,6 +325,21 @@ func TestLFSNoKeepAfterFailedCheckout(t *testing.T) {
 	}
 }
 
+// TestLFSKeepNeedsItsBytes: an object that git-lfs wrote with bytes that do
+// not give its oid stays out of the store of the repository. The folder
+// `lfs/objects` is made, and no shard folder (4c111e86, measured on Linux and
+// macOS for bytes and a size that differ from the pointer).
+func TestLFSKeepNeedsItsBytes(t *testing.T) {
+	seamFreeSpace(t)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	mustWrite(t, filepath.Join(f.remote, f.oids["a.bin"]), "other-bytes-of-another-size")
+	f.wantSuccess(t)
+	objects := filepath.Join(f.gitDir, "lfs", "objects")
+	if names, err := os.ReadDir(objects); err != nil || len(names) != 0 {
+		t.Errorf("%s = %v, %v, want a made folder with no shard", objects, names, err)
+	}
+}
+
 // TestDownloadedOIDs: only a regular file named by its oid in its own shard
 // counts as a download. A link and a file in another shard do not.
 func TestDownloadedOIDs(t *testing.T) {
@@ -534,27 +549,27 @@ func TestSeedObjectsStopsAtDeadline(t *testing.T) {
 // no sweep.
 func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 	gitDir, private := t.TempDir(), t.TempDir()
-	oid := strings.Repeat("e", 64)
+	oid := putObject(t, private, "x")
+	a, b := oid[:2], oid[2:4]
 	objects := filepath.Join(gitDir, "lfs", "objects")
-	for _, d := range []string{filepath.Join(objects, "ee", "ee"), filepath.Join(objects, "alt", "ee")} {
+	for _, d := range []string{filepath.Join(objects, a, b), filepath.Join(objects, "alt", b)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	stale := filepath.Join(objects, "alt", "ee", ".claude-aaaaaaaa-"+oid)
+	stale := filepath.Join(objects, "alt", b, ".claude-aaaaaaaa-"+oid)
 	mustWrite(t, stale, "stale")
-	mustWrite(t, storeObjectPath(private, oid), "x")
 	var removed []string
 	seamLFSRemove(t, &removed)
 	prev := openShardFolder
 	swapped := false
 	openShardFolder = func(parent *os.Root, name string) (*os.Root, error) {
-		if name == "ee" && !swapped {
+		if name == a && !swapped {
 			swapped = true
-			if err := os.Rename(filepath.Join(objects, "ee"), filepath.Join(objects, "moved")); err != nil {
+			if err := os.Rename(filepath.Join(objects, a), filepath.Join(objects, "moved")); err != nil {
 				t.Error(err)
 			}
-			if err := os.Symlink("alt", filepath.Join(objects, "ee")); err != nil {
+			if err := os.Symlink("alt", filepath.Join(objects, a)); err != nil {
 				t.Error(err)
 			}
 		}
@@ -570,7 +585,7 @@ func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 	if !swapped {
 		t.Fatal("the seam did not swap the shard folder")
 	}
-	for _, p := range []string{filepath.Join(objects, "alt", "ee", oid), filepath.Join(objects, "moved", "ee", oid)} {
+	for _, p := range []string{filepath.Join(objects, "alt", b, oid), filepath.Join(objects, "moved", b, oid)} {
 		if _, err := os.Lstat(p); err == nil {
 			t.Errorf("%s exists, want no keep", p)
 		}
@@ -636,8 +651,7 @@ func TestLFSKeepNeedsSpare(t *testing.T) {
 			}
 			t.Cleanup(func() { storeFreeBytes, keepHardLink = prevFree, prevKeep })
 			gitDir, private := t.TempDir(), t.TempDir()
-			oid := strings.Repeat("f", 64)
-			mustWrite(t, storeObjectPath(private, oid), body)
+			oid := putObject(t, private, body)
 			root, err := os.OpenRoot(gitDir)
 			if err != nil {
 				t.Fatal(err)
@@ -696,4 +710,14 @@ func TestLFSStoreFullCodes(t *testing.T) {
 			f.wantGone(t)
 		})
 	}
+}
+
+// putObject writes body into the store store at the name of its sha256 oid,
+// and returns that oid.
+func putObject(t *testing.T, store, body string) string {
+	t.Helper()
+	sum := sha256.Sum256([]byte(body))
+	oid := hex.EncodeToString(sum[:])
+	mustWrite(t, storeObjectPath(store, oid), body)
+	return oid
 }
