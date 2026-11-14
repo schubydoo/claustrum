@@ -1,6 +1,6 @@
 # files.find
 
-`files.find` walks up to 8 folders and lists the regular files whose path ends with a suffix. It reads only. A reply that is not whole names the cut that the walk met.
+`files.find` walks up to 8 folders and lists the regular files whose path ends with a suffix, and it reads only. A reply that is not whole names the cut that the walk met.
 
 An untagged rule on this page matches build `4c111e86`, measured on Linux and macOS. Windows answers `-32601` `Unknown method: files.find` (measured on Windows).
 
@@ -84,7 +84,7 @@ A relative link target that stays in the root leads to `folder` for a folder. Fo
 ## Rare states
 
 ??? note "Choices that no row settles"
-    These rules are claustrum's own, not measured. A walk that finds exactly `limit` matches stays whole. The first cut that the walk meets wins, and `links` and `many_links` come last. The entry bound is exactly 50000 entries. A change is found by the stamps of the open folder, and the walk goes on after `changed`. A link that is left out does not count toward the 20. The pass test comes before the depth test. A link to a folder alone gives the cut `links`. A root that fails to open for another reason gets `root`. Other format characters, U+2029, other blanks and a blank at the edge of an inner name give `name`. The suffix is matched against the whole path, so it can reach above the root. A full walk slot comes after the `name` test. A reply at the bound keeps a cut that the walk met before it.
+    These rules are claustrum's own, not measured: a walk that finds exactly `limit` matches stays whole. The first cut that the walk meets wins, and `links` and `many_links` come last. The entry bound is exactly 50000 entries. A change is found by the stamps of the open folder, and the walk goes on after `changed`. A link that is left out does not count toward the 20. The pass test comes before the depth test. A link to a folder alone gives the cut `links`. A root that fails to open for another reason gets `root`. Other format characters, U+2029, other blanks and a blank at the edge of an inner name give `name`. The suffix is matched against the whole path, so it can reach above the root. A full walk slot comes after the `name` test. A reply at the bound keeps a cut that the walk met before it.
 
 ## Differences from the reference
 
