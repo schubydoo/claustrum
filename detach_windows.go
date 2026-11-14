@@ -35,6 +35,11 @@ func detachSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: detachedProcess | syscall.CREATE_NEW_PROCESS_GROUP | createBreakawayFromJob}
 }
 
+// daemonStartEnv is the environment of the launcher, unchanged on Windows. A Windows child
+// of process.spawn gets no run-dir marker from the spawn, so the daemon keeps the names
+// of the launcher there. This is claustrum's own, not measured.
+func daemonStartEnv(env []string) []string { return env }
+
 // startDetached starts the daemonized child. A job that does not allow breakaway refuses
 // the start with ERROR_ACCESS_DENIED. The start then runs once more without the breakaway
 // flag, so the daemon starts inside the job, as it did before claustrum set the flag.

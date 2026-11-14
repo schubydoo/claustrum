@@ -6,12 +6,24 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/schubydoo/claustrum/internal/supervisor"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // detachSysProcAttr starts the daemonized child in a new session (reparented to
 // init), detaching it from the controlling terminal.
 func detachSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setsid: true}
+}
+
+// daemonStartEnv is the environment of the launcher without CLAUDE_SSH_CHILD and
+// CLAUDE_SSH_RUN_DIR. It is the base of the environment of the daemonized child.
+// Measured on Linux against c9125eb8 and 4c111e86: the daemon keeps neither name of the
+// launcher. On macOS this is claustrum's own, not measured. A process.spawn child still
+// gets both names, because the spawn adds them (runDirEnv).
+func daemonStartEnv(env []string) []string {
+	return sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(env, supervisor.EnvChildMarker), supervisor.EnvRunDir)
 }
 
 // startDetached starts the daemonized child. On unix it is cmd.Start. Windows has its own.

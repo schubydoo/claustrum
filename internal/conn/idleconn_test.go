@@ -74,10 +74,12 @@ func TestCloseWhenIdle(t *testing.T) {
 		shutdown := make(chan struct{})
 		done := make(chan struct{})
 		defer close(done)
-		go CloseWhenIdle(ac, 120*time.Millisecond, shutdown, done)
+		go CloseWhenIdle(ac, time.Second, shutdown, done)
 
-		// Keep stamping activity for ~300ms; the watcher must NOT close it.
-		deadline := time.Now().Add(300 * time.Millisecond)
+		// Keep stamping activity every 20 ms for 1.5 s, longer than the idle limit and
+		// its poll. The watcher must NOT close it. The 1 s limit leaves a slow sleep of
+		// a loaded runner a wide margin.
+		deadline := time.Now().Add(1500 * time.Millisecond)
 		for time.Now().Before(deadline) {
 			ac.stamp()
 			time.Sleep(20 * time.Millisecond)
