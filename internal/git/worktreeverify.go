@@ -831,7 +831,7 @@ func gitDirRegistryDir(gitDir string) string {
 //     answers the "does not name" text (measured on Linux and macOS). The old
 //     entry of that case is gone at the reply there. Its record names the .git of
 //     the new leaf with a slash at its end, so the step before the add removes it
-//     (dropStaleWorktreeRegistration). Not measured: a worktrees folder that holds
+//     (removeStaleWorktreeEntry). Not measured: a worktrees folder that holds
 //     entries of other names and none of this name. claustrum answers the "does
 //     not name" text there, from this rule. With GIT_DIR of that repository too,
 //     the create succeeds (measured with git.worktree_remove, 89cb6289, Linux and

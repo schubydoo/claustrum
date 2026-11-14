@@ -44,7 +44,7 @@ func pathsBelow(t *testing.T, dir string) []string {
 	return out
 }
 
-// TestDropStaleWorktreeRegistrationRecords pins the step before the add, one case
+// TestRemoveStaleWorktreeEntryRecords pins the step before the add, one case
 // for each record of the A cells. <L> is the real path of the leaf.
 //
 //   - Removed: A1 to A5c, A7 (a relative record), A8 (the entry has another name)
@@ -62,7 +62,7 @@ func pathsBelow(t *testing.T, dir string) []string {
 //
 // The last case is not a cell. HOME is a folder in the stale entry, so the home
 // guard keeps the entry (claustrum's own guard, D2).
-func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
+func TestRemoveStaleWorktreeEntryRecords(t *testing.T) {
 	all := append([]string{"logs"}, staleRegFiles...)
 	slices.Sort(all)
 	for _, tc := range []struct {
@@ -144,7 +144,7 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 				sentLeaf = filepath.Join(sentRepo, ".claude", "worktrees", "w1")
 			}
 
-			doneWithin(t, "dropStaleWorktreeRegistration", func() { dropStaleWorktreeRegistration(sentRepo, sentLeaf, nil) })
+			doneWithin(t, "removeStaleWorktreeEntry", func() { removeStaleWorktreeEntry(sentRepo, sentLeaf, nil) })
 			_ = os.Chmod(registry, 0o755)
 			_ = os.Chmod(entry, 0o755)
 
@@ -818,10 +818,10 @@ func TestTestedRegistrationErrorArms(t *testing.T) {
 	})
 }
 
-// TestDropStaleWorktreeRegistrationFolderGone pins the step before the add where the
+// TestRemoveStaleWorktreeEntryFolderGone pins the step before the add where the
 // registrations folder goes right after its open: the step ends and removes
 // nothing. The state has no cell of 89cb6289.
-func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
+func TestRemoveStaleWorktreeEntryFolderGone(t *testing.T) {
 	repo := realTempDir(t)
 	base := filepath.Join(repo, ".git", "worktrees")
 	mkdirForTest(t, base)
@@ -837,7 +837,7 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 		return r, err
 	}
 	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
-	dropStaleWorktreeRegistration(repo, leaf, nil)
+	removeStaleWorktreeEntry(repo, leaf, nil)
 	if _, err := os.Lstat(base); !os.IsNotExist(err) {
 		t.Errorf("the registrations folder after the step: %v, want it still gone", err)
 	}
@@ -846,7 +846,7 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 	}
 }
 
-// TestDropStaleWorktreeRegistrationCount pins how many stale entries the step
+// TestRemoveStaleWorktreeEntryCount pins how many stale entries the step
 // before the add removes: one, and only if it is the only stale entry of the
 // folder. The cases are measured on 89cb6289 on Linux and macOS. "stale" is
 // the record <L>/.git/ of a measured case.
@@ -858,7 +858,7 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 //     worktree. The stale one goes.
 //   - S7, S7b and S7c: beside the stale old9, w1 is a regular file, a folder with
 //     no gitdir record, or an empty folder. old9 goes.
-func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
+func TestRemoveStaleWorktreeEntryCount(t *testing.T) {
 	type entries map[string]string
 	for _, tc := range []struct {
 		name string
@@ -902,7 +902,7 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 					mkdirForTest(t, entry)
 				}
 			}
-			dropStaleWorktreeRegistration(repo, leaf, nil)
+			removeStaleWorktreeEntry(repo, leaf, nil)
 			ents, err := os.ReadDir(registry)
 			if err != nil {
 				t.Fatal(err)
@@ -1060,7 +1060,7 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 	}
 }
 
-// TestDropStaleWorktreeRegistrationRetargetedRegistry pins that the step before the
+// TestRemoveStaleWorktreeEntryRetargetedRegistry pins that the step before the
 // add lists, reads and removes in one opened registrations folder. That folder is
 // a real folder, and the test puts a symlink to another folder in its place around
 // the open. One entry w1 has a record that names the leaf, and the other names
@@ -1074,7 +1074,7 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 //
 // A registrations folder that is a symlink before the step is not opened at all
 // (TestCreateDeletesNothingBehindALinkedRegistrationsFolder).
-func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
+func TestRemoveStaleWorktreeEntryRetargetedRegistry(t *testing.T) {
 	for _, when := range []string{"before the open", "after the open"} {
 		t.Run(when, func(t *testing.T) {
 			root := realTempDir(t)
@@ -1115,7 +1115,7 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 				}
 				return r, err
 			}
-			dropStaleWorktreeRegistration(repo, leaf, nil)
+			removeStaleWorktreeEntry(repo, leaf, nil)
 			if opens != 1 {
 				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
 			}

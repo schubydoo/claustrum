@@ -571,8 +571,11 @@ func TestShadowVersionCallAfterAFailedListing(t *testing.T) {
 // TestShadowPairBeforeAdd pins the pair of 5fd08069 before the add of a create
 // in the state shadow (pairBeforeAdd). The pair runs right after `rev-parse
 // --absolute-git-dir` when the folder of the registrations exists and no entry
-// names the leaf (measured). An entry that names the leaf gives no pair, and it
-// goes before the add (measured). With the member the pair runs too (measured).
+// names the leaf (measured). On 5fd08069 an entry that names the leaf gives no
+// pair, and it goes before the add (measured). In the state shadow c9125eb8 and
+// 4c111e86 run the pair after the listing of the add when the stale step
+// removed that entry (measured on Linux). With the member they run none there
+// (measured on Linux). With the member the pair runs too (measured).
 // A missing folder gives the pair: b3081b51 and c9125eb8 run it in the first
 // create of a repository (measured on Linux, macOS and Windows). With the member
 // a missing folder still gives none (5fd08069, measured). In the state shadow
@@ -585,6 +588,13 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	staleEntry := func(t *testing.T, f shapeFixture) {
+		old := filepath.Join(f.gitDir, "worktrees", "old")
+		if err := os.Mkdir(old, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n", 0o644)
+	}
 	for _, row := range []struct {
 		cell  string
 		state shapeState
@@ -594,13 +604,8 @@ func TestShadowPairBeforeAdd(t *testing.T) {
 		afterAddListing bool
 	}{
 		{"an entry of another worktree", stateShadow, func(*testing.T, shapeFixture) {}, true, false},
-		{"a stale entry of the leaf", stateShadow, func(t *testing.T, f shapeFixture) {
-			old := filepath.Join(f.gitDir, "worktrees", "old")
-			if err := os.Mkdir(old, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n", 0o644)
-		}, false, false},
+		{"a stale entry of the leaf", stateShadow, staleEntry, true, true},
+		{"with the member and a stale entry of the leaf", stateOff, staleEntry, false, false},
 		{"no registrations folder", stateShadow, noFolder, true, true},
 		{"50a with the member and an entry of another worktree", stateOff, func(*testing.T, shapeFixture) {}, true, false},
 		{"with the member and no registrations folder", stateOff, noFolder, false, false},
