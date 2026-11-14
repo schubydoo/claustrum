@@ -171,7 +171,7 @@ follows the reference. Do not widen it.
 
 #### Path 3: the `git.worktree_create` rollback
 
-After a failed add, only an empty leaf goes. After a good add, the rollback
+After a failed add, only an empty leaf goes, or on Linux and macOS a file or link in its place. After a good add, the rollback
 deletes the leaf and the registration and runs the branch step. Some states keep the
 registration or the branch (method page). Before the add, the stale step removes at most
 one stale `worktrees` entry, and only one with no `locked` file. The one tree delete with no home guard is the

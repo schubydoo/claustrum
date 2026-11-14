@@ -433,6 +433,54 @@ func TestWorktreeCreateLeafReplaced(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateLeafReplacedBeforeAdd pins a measured case of c9125eb8 and
+// 4c111e86 on Linux. Right before the add the leaf is deleted and a new empty
+// folder is put at its path, and git writes its .git file there. The create answers
+// the text of a gone .git file in backticks. The new folder holds .git, so it stays
+// with it. The registration and the branch stay. All paths are in a t.TempDir().
+// Mutations: drop the heldLeafLacksGitFile branch (the "is no longer" text), or
+// remove the leaf with os.RemoveAll in its place (the folder goes).
+func TestWorktreeCreateLeafReplacedBeforeAdd(t *testing.T) {
+	f, h := postAddFixture(t)
+	f.stubAction(t, "repl")
+	slowGit(t, "worktree,add", "pre", 0, "", "")
+	raw, _ := f.create(t, h, "w1", "", 0)
+	wantError(t, raw, "refusing to create worktree: `"+namedLeaf(f.leaf())+"` has no .git file", "unsafe_path")
+	f.wantKept(t, []string{".git"}, []string{"w1"}, "w1")
+}
+
+// TestWorktreeCreateEntryInPlaceOfLeafBeforeAdd pins measured cases of c9125eb8
+// and 4c111e86 on Linux. Right before the add the leaf is deleted and a file, or a
+// link to a folder, is put at its path. git fails the add, and the create answers
+// worktree_add_failed. The file goes, or the link goes and its target stays. All
+// paths are in a t.TempDir(). Mutation: an unlinkat with AT_REMOVEDIR alone in
+// removeWorktreeLeaf (the file and the link stay).
+func TestWorktreeCreateEntryInPlaceOfLeafBeforeAdd(t *testing.T) {
+	for _, kind := range []string{"file", "link"} {
+		t.Run(kind, func(t *testing.T) {
+			f, h := postAddFixture(t)
+			target := filepath.Join(f.realRoot(t), "tg")
+			writeFile(t, filepath.Join(target, "keep.txt"), "keep\n", 0o644)
+			put := []string{"write", f.leaf(), "hello\n"}
+			if kind == "link" {
+				put = []string{"symlink", target, f.leaf()}
+			}
+			stubSteps(t, []string{"rm", f.leaf()}, put)
+			slowGit(t, "worktree,add", "pre", 0, "", "")
+			raw, _ := f.create(t, h, "w1", "", 0)
+			if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) || !strings.Contains(raw, "already exists") {
+				t.Fatalf("reply = %s, want worktree_add_failed with git's already exists text", raw)
+			}
+			if _, err := os.Lstat(f.leaf()); !os.IsNotExist(err) {
+				t.Errorf("the %s at the leaf survived: Lstat err %v", kind, err)
+			}
+			if b, err := os.ReadFile(filepath.Join(target, "keep.txt")); err != nil || string(b) != "keep\n" {
+				t.Errorf("the target folder lost keep.txt: %q, %v", b, err)
+			}
+		})
+	}
+}
+
 // TestWorktreeCreateStaleEntryOfMainRepository pins measured cases. The main
 // repository holds a stale entry `old` whose record names the new leaf.
 //

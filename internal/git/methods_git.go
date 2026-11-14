@@ -1822,7 +1822,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if addErr != nil {
 		// A failed add answers this frame even when the caller's deadline already
 		// expired. The rollback runs no git call and removes the leaf only if it is
-		// empty (undoFailedAdd). A branch that existed before the call is kept.
+		// empty, or on Linux and macOS a file or a link in its place (undoFailedAdd). A branch that existed before the call is kept.
 		// Measured against f6010b97 and 90fca6e6 on macOS.
 		//
 		// An add that its time limit stopped gets this rollback too, with the stop
@@ -2036,8 +2036,20 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// is no folder gets the same text (claustrum's own, not measured). Without an
 	// answer of git to rev-parse --absolute-git-dir, and on Windows, the test stays
 	// after the checkout alone, with its old frame (not measured).
+	//
+	// A leaf can be deleted and replaced by a new empty folder right before the
+	// add. git then writes its .git file into the new folder. The create answers
+	// the text of a gone .git file, with the path in backticks. The rollback of a
+	// failed add runs, and the new folder stays because it is not empty. The registration and the branch
+	// stay. c9125eb8 and 4c111e86 do so (measured on Linux with shadowDirOff).
+	// claustrum reads the .git entry through the held leaf (heldLeafLacksGitFile).
+	// How the references read it is not measured, and neither is macOS.
 	if registrationTests {
 		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+			if heldLeafLacksGitFile(checkpoint) {
+				undoFailedAdd(p.WorktreePath, checkpoint)
+				return refuseUnsafe("refusing to create worktree: " + tickPath(parentResolvedPath(p.WorktreePath)) + " has no .git file")
+			}
 			return refuseUnsafe(fmt.Sprintf("refusing to create worktree: %s is no longer the directory that was created for the worktree",
 				parentResolvedPath(p.WorktreePath)))
 		}

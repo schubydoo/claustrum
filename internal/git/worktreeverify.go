@@ -88,23 +88,33 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 // failures (a branch that already exists, a ref lock), which leave the leaf empty and
 // unregistered.
 //
-// The removal is an rmdir, so it can never delete a file or a directory with an
-// entry in it. It still keeps the always-on home guard (D2) and the part of the leaf
-// identity check that catches an ancestor swapped for a symlink: the path must still
-// resolve to where the leaf was created. A leaf that the failed add replaced with a
-// new empty directory at that same place is removed, as measured against both
-// references.
+// On Linux and macOS a file or a link that took the place of the leaf goes too. A
+// link goes as a link, and its target stays. c9125eb8 and 4c111e86 do so when the
+// entry appears right before the add (measured on Linux). macOS is claustrum's own,
+// not measured. Windows keeps a file or a link (not measured).
+//
+// The removal (removeWorktreeLeaf) never deletes a directory with an entry in it.
+// It still keeps the always-on home guard (D2) and the part of the leaf identity
+// check that catches an ancestor swapped for a symlink: the path must still resolve
+// to where the leaf was created (failedAddLeafResolve). A leaf that the failed add
+// replaced with a new empty directory at that same place is removed, as measured
+// against both references.
 //
 // The leaf's parent must also still be the directory that the checkpoint holds. If
 // the failed add replaced the parent and made a new empty leaf in it, the new leaf
 // stays. f6010b97 and 90fca6e6 keep it after a failed attach add, in 20 of 20 runs
 // on Linux and macOS.
+//
+// An empty checkpoint keeps the old rule: only an empty folder goes, and a file or
+// a link stays. The wider rule needs the tests of the leaf path and of the parent
+// handle, and those need the identity of the leaf and of its parent (claustrum's
+// own, not measured).
 func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 	if worktreePath == "" || homeguard.WipesHomeDir(worktreePath) {
 		return
 	}
 	if cp.info != nil {
-		if resolved, err := leafResolve(worktreePath); err != nil || resolved != cp.resolved {
+		if resolved, err := failedAddLeafResolve(worktreePath); err != nil || resolved != cp.resolved {
 			return
 		}
 	}
@@ -114,7 +124,11 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 			return
 		}
 	}
-	_ = rmdirWorktreeLeaf(worktreePath)
+	if cp.info == nil || cp.parentInfo == nil {
+		_ = rmdirWorktreeLeaf(worktreePath)
+		return
+	}
+	_ = removeWorktreeLeaf(worktreePath, cp.parentInfo)
 }
 
 // undoFailedCheckout rolls back git.worktree_create after the add succeeded: after
