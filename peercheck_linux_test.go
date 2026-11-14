@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/schubydoo/claustrum/internal/wirelog"
 )
 
@@ -41,7 +43,7 @@ func peerDialCmd(t *testing.T, sock, arg string) *exec.Cmd {
 // rest.
 func TestPeerCheckRefusesOtherUserNamespace(t *testing.T) {
 	t.Setenv(peerCheckEnv, "1")
-	if !daemonNSText().names() || daemonNSText().user == "" {
+	if own, _ := daemonNSText(); !own.names() || own.user == "" {
 		t.Skip("this kernel gives no user namespace text, so no caller can differ by it")
 	}
 	logs := captureLogBuf(t)
@@ -89,7 +91,7 @@ func TestPeerCheckRefusesOtherUserNamespace(t *testing.T) {
 		}
 	}
 	want := "WARN  [Server] refused caller number 1 (other_namespace): \"user:["
-	if len(refusals) != 1 || !strings.HasPrefix(refusals[0], want) || !strings.HasSuffix(refusals[0], "; this server's namespaces are "+`"`+daemonNSText().String()+`"`) {
+	if len(refusals) != 1 || !strings.HasPrefix(refusals[0], want) || !strings.HasSuffix(refusals[0], "; this server's namespaces are "+`"`+s.peerCheck.ownText().String()+`"`) {
 		t.Errorf("the refusal lines are %q, want one line %q…", refusals, want)
 	}
 	if n := s.peerCheck.refused.Load(); n != 1 {
@@ -102,7 +104,7 @@ func TestPeerCheckRefusesOtherUserNamespace(t *testing.T) {
 // and no log line (measured on Linux). The exited caller is a child of this test
 // that connects to the test's own socket and exits before the accept.
 func TestPeerCheckLookupOfOwnAndExitedCaller(t *testing.T) {
-	own := daemonNSText()
+	own, _ := daemonNSText()
 	if !own.names() {
 		t.Skip("this kernel gives no own text")
 	}
@@ -251,7 +253,10 @@ func cloneRefused(err error) bool {
 
 func runPeerNetns() (peerNetnsResult, error) {
 	var res peerNetnsResult
-	own := daemonNSText()
+	own, err := daemonNSText()
+	if err != nil {
+		return res, err
+	}
 	res.OwnUser, res.OwnNet, res.OwnPidfd = own.user, own.net, own.pidfd
 	if own.user == "" || own.net == "" {
 		res.Skip = "this kernel gives no user or no net part, own text " + strconv.Quote(own.String())
@@ -403,5 +408,142 @@ func TestPeerCheckRefusesOtherNetworkNamespace(t *testing.T) {
 	}
 	if res.Refused != 1 || res.Conns != 1 {
 		t.Errorf("refused = %d and connections = %d, want 1 and 1", res.Refused, res.Conns)
+	}
+}
+
+// TestPeerLookupStepErrors: an errno at each step of the lookup gives the reason
+// and the text of 4c111e86 (measured on Linux). ENFILE and ENOMEM give
+// out_of_resources. A failed own naming gives lookup_failed for EACCES. A gone own
+// user link gives the own text with no user part. A gone caller link sends the
+// check to /proc/<pid>/ns. The caller is this process.
+func TestPeerLookupStepErrors(t *testing.T) {
+	real, err := daemonNSText()
+	if err != nil || real.net == "" || !real.pidfd {
+		t.Skipf("this kernel gives no net or pidfd part (own text %q, %v)", real.String(), err)
+	}
+	own := nsText{user: "user:[1]", net: real.net, pidfd: true}
+	pid := os.Getpid()
+	callerLink := fmt.Sprintf("/proc/%d/ns/user", pid)
+	callerDir := fmt.Sprintf("/proc/%d/ns", pid)
+	enfile, enomem := syscall.ENFILE.Error(), syscall.ENOMEM.Error()
+	cases := []struct {
+		name           string
+		cookie, cred   error
+		pidfd          error
+		link           map[string]error
+		names          []string
+		namesErr       error
+		reason, detail string
+		exited         bool
+	}{
+		{name: "cookie ENFILE", cookie: syscall.ENFILE, reason: "out_of_resources", detail: enfile},
+		{name: "cred ENOMEM", cred: syscall.ENOMEM, reason: "out_of_resources", detail: enomem},
+		{name: "pidfd ENFILE", pidfd: syscall.ENFILE, reason: "out_of_resources", detail: fmt.Sprintf("caller %d: %s", pid, enfile)},
+		{name: "own pid ENOMEM", link: map[string]error{"/proc/self": syscall.ENOMEM}, reason: "out_of_resources", detail: "cannot name this server's own namespaces: readlink /proc/self: " + enomem},
+		{name: "own user ENFILE", link: map[string]error{"/proc/self/ns/user": syscall.ENFILE}, reason: "out_of_resources", detail: "cannot name this server's own namespaces: readlink /proc/self/ns/user: " + enfile},
+		{name: "own user EACCES", link: map[string]error{"/proc/self/ns/user": syscall.EACCES}, reason: "lookup_failed", detail: "cannot name this server's own namespaces: readlink /proc/self/ns/user: permission denied"},
+		{name: "own user gone", link: map[string]error{"/proc/self/ns/user": syscall.ENOENT}, reason: "out_of_resources", detail: `"` + real.net + `"`},
+		{name: "own pid gone", link: map[string]error{"/proc/self": syscall.ENOENT}, reason: "out_of_resources", detail: `"` + real.net + `"`},
+		{name: "caller ENOMEM", link: map[string]error{callerLink: syscall.ENOMEM}, reason: "out_of_resources", detail: "readlink " + callerLink + ": " + enomem},
+		{name: "caller EACCES", link: map[string]error{callerLink: syscall.EACCES}, reason: "unreadable", detail: "readlink " + callerLink + ": permission denied"},
+		{name: "caller gone, user listed", link: map[string]error{callerLink: syscall.ENOENT}, names: []string{"net", "user"}, reason: "out_of_resources", detail: callerDir + ` lists "user", which cannot be read: ` + enomem},
+		{name: "caller gone, no user listed", link: map[string]error{callerLink: syscall.ENOENT}, names: []string{"net"}, reason: "out_of_resources", detail: callerDir + " shows no user namespace, on a system that has them: " + enomem},
+		{name: "caller exited", link: map[string]error{callerLink: syscall.ENOENT}, namesErr: &os.PathError{Op: "open", Path: callerDir, Err: syscall.ENOENT}, reason: "lookup_failed", detail: "readlink " + callerLink + ": " + syscall.ENOENT.Error(), exited: true},
+	}
+	sock := filepath.Join(shortTempDir(t), "p.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	cli, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	nc, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = nc.Close() })
+	oldLink, oldNames, oldCookie, oldCred, oldPidfd := peerReadlink, peerNSNames, peerCookieOf, peerCredOf, peerPidfdOf
+	t.Cleanup(func() {
+		peerReadlink, peerNSNames, peerCookieOf, peerCredOf, peerPidfdOf = oldLink, oldNames, oldCookie, oldCred, oldPidfd
+	})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			peerReadlink = func(path string) (string, error) {
+				if e := tc.link[path]; e != nil {
+					return "", &os.PathError{Op: "readlink", Path: path, Err: e}
+				}
+				return oldLink(path)
+			}
+			peerNSNames = func(dir string) ([]string, error) {
+				if tc.namesErr != nil {
+					return nil, tc.namesErr
+				}
+				if tc.names != nil {
+					return tc.names, nil
+				}
+				return oldNames(dir)
+			}
+			peerCookieOf = func(fd int) (uint64, error) {
+				if tc.cookie != nil {
+					return 0, tc.cookie
+				}
+				return oldCookie(fd)
+			}
+			peerCredOf = func(fd int) (*unix.Ucred, error) {
+				if tc.cred != nil {
+					return nil, tc.cred
+				}
+				return oldCred(fd)
+			}
+			peerPidfdOf = func(fd int) (int, error) {
+				if tc.pidfd != nil {
+					return -1, tc.pidfd
+				}
+				return oldPidfd(fd)
+			}
+			peer, exited, lookErr := lookupPeer(nc, own)
+			reason, detail := judgePeer(own, peer, lookErr)
+			if reason != tc.reason || detail != tc.detail || exited != tc.exited {
+				t.Errorf("lookup = (%q, %q, exited %v), want (%q, %q, exited %v)", reason, detail, exited, tc.reason, tc.detail, tc.exited)
+			}
+		})
+	}
+}
+
+// TestDaemonNSTextStartNaming: the start naming of the own user link. A gone link
+// with "user" in /proc/self/ns and a failed read are an ownNamingError with the
+// text of 4c111e86 (measured on Linux). A gone link with no "user" listed gives no
+// user part and no error (measured).
+func TestDaemonNSTextStartNaming(t *testing.T) {
+	oldLink, oldNames := peerReadlink, peerNSNames
+	t.Cleanup(func() { peerReadlink, peerNSNames = oldLink, oldNames })
+	fail := func(e error) func(string) (string, error) {
+		return func(path string) (string, error) {
+			if path == "/proc/self/ns/user" {
+				return "", &os.PathError{Op: "readlink", Path: path, Err: e}
+			}
+			return oldLink(path)
+		}
+	}
+	peerReadlink = fail(syscall.ENFILE)
+	if _, err := daemonNSText(); err == nil || err.Error() != "cannot name this server's own namespaces: readlink /proc/self/ns/user: "+syscall.ENFILE.Error() {
+		t.Errorf("ENFILE: err = %v", err)
+	}
+	peerReadlink = fail(syscall.ENOENT)
+	peerNSNames = func(string) ([]string, error) { return []string{"net", "user"}, nil }
+	if _, err := daemonNSText(); err == nil || err.Error() != `cannot name this server's own namespaces: /proc/self/ns lists "user", which cannot be read: `+syscall.ENOMEM.Error() {
+		t.Errorf("gone link, user listed: err = %v", err)
+	}
+	peerNSNames = func(string) ([]string, error) { return []string{"net"}, nil }
+	own, err := daemonNSText()
+	if err != nil || own.user != "" {
+		t.Errorf("gone link, no user listed: (%q, %v), want no user part and no error", own.String(), err)
+	}
+	if own.net != "" && strings.Contains(own.String(), "pidfd") {
+		t.Errorf("own text %q shows pidfd with no user part", own.String())
 	}
 }

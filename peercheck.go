@@ -8,7 +8,9 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
@@ -51,7 +53,18 @@ const (
 	peerReasonOther      = "other_namespace"
 	peerReasonUnreadable = "unreadable"
 	peerReasonLookup     = "lookup_failed"
+	peerReasonResources  = "out_of_resources"
 )
+
+// ownNamingError is a failed read of the daemon's own namespaces. Its text is the
+// one of 4c111e86 (measured on Linux).
+type ownNamingError struct{ err error }
+
+func (e ownNamingError) Error() string {
+	return "cannot name this server's own namespaces: " + e.err.Error()
+}
+
+func (e ownNamingError) Unwrap() error { return e.err }
 
 // peerRefusalWriteLimit is the write deadline of the refusal frame (claustrum's
 // own, not measured).
@@ -67,7 +80,9 @@ type nsText struct {
 }
 
 // String joins the parts with one space, as "user:[4026531837] net:1 pidfd".
-// That is the measured text of 5fd08069 (measured on Linux).
+// That is the measured text of 5fd08069 (measured on Linux). A text with no user
+// part shows no pidfd part: 4c111e86 logs "net:<cookie>" alone there (measured on
+// Linux, with pidfd on).
 func (t nsText) String() string {
 	var parts []string
 	if t.user != "" {
@@ -76,7 +91,7 @@ func (t nsText) String() string {
 	if t.net != "" {
 		parts = append(parts, t.net)
 	}
-	if t.pidfd {
+	if t.pidfd && t.user != "" {
 		parts = append(parts, "pidfd")
 	}
 	return strings.Join(parts, " ")
@@ -119,7 +134,13 @@ func (t nsText) by() []string {
 
 // peerGate is the peer check of a daemon that started with the variable at 1.
 type peerGate struct {
+	// mu guards own and namingErr. A failed start naming is tried again at each
+	// connection, and a read that works sets both.
+	mu  sync.Mutex
 	own nsText
+	// namingErr is the failed naming of the own namespaces at the start. While it
+	// is set, the gate refuses every caller.
+	namingErr error
 	// refused counts the refused callers of this daemon, from 1.
 	refused atomic.Int64
 }
@@ -139,7 +160,7 @@ var unsetenv = os.Unsetenv
 var lookupPeerOf = lookupPeer
 
 // readDaemonNSText is daemonNSText. A test replaces it to give a daemon
-// another own text.
+// another own text or a failed naming.
 var readDaemonNSText = daemonNSText
 
 // startPeerCheck reads the variable once, at the start of the daemon, and then
@@ -174,7 +195,14 @@ func startPeerCheck() *peerGate {
 	if !asked {
 		return nil
 	}
-	g := &peerGate{own: readDaemonNSText()}
+	own, err := readDaemonNSText()
+	g := &peerGate{own: own, namingErr: err}
+	if err != nil {
+		// The text is the one of 4c111e86 (measured on Linux). The level is
+		// claustrum's own.
+		logging.Warnf("[Server] refusing every caller for now: %v", err)
+		return g
+	}
 	if !g.own.names() {
 		logging.Warnf("%s", peerCheckUnavailableLine)
 		return g
@@ -188,7 +216,7 @@ func (s *server) peerCheckAnswer() string {
 	if s.peerCheck == nil {
 		return peerCheckOff
 	}
-	return s.peerCheck.own.state()
+	return s.peerCheck.ownText().state()
 }
 
 // peerCheckByAnswer is the peerCheckBy member of server.capabilities.
@@ -196,7 +224,7 @@ func (s *server) peerCheckByAnswer() []string {
 	if s.peerCheck == nil {
 		return nil
 	}
-	return s.peerCheck.own.by()
+	return s.peerCheck.ownText().by()
 }
 
 // errPeerExited is the error of a caller that exited before the check. The text
@@ -204,19 +232,29 @@ func (s *server) peerCheckByAnswer() []string {
 var errPeerExited = errors.New("the caller has exited")
 
 // judgePeer gives the reason of a refusal and the detail of its log line, or the
-// empty reason for a caller that the daemon serves. A lookup error that is a
+// empty reason for a caller that the daemon serves. An ENFILE or ENOMEM at any
+// step gives "out_of_resources", also for the own namespaces (4c111e86). A failed
+// read of the own namespaces gives "lookup_failed" for EACCES (4c111e86). Another
 // permission error gives "unreadable" (measured). An exited caller gets
 // "lookup_failed" (measured). claustrum gives every other failure "lookup_failed"
 // too (claustrum's own, not measured). EMFILE in the log line is measured (Linux).
-// A peer text that is not the own text gives
-// "other_namespace" with the peer text in quotes (measured).
-// Measured on Linux.
+// A peer text with no user part, where the own text has one, gives
+// "out_of_resources" with the peer text in quotes (4c111e86). Another peer text
+// that is not the own text gives "other_namespace" with the peer text in quotes
+// (measured). Measured on Linux.
 func judgePeer(own, peer nsText, err error) (reason, detail string) {
+	var naming ownNamingError
 	switch {
+	case err != nil && (errors.Is(err, syscall.ENFILE) || errors.Is(err, syscall.ENOMEM)):
+		return peerReasonResources, err.Error()
+	case err != nil && errors.As(err, &naming):
+		return peerReasonLookup, err.Error()
 	case err != nil && errors.Is(err, fs.ErrPermission):
 		return peerReasonUnreadable, err.Error()
 	case err != nil:
 		return peerReasonLookup, err.Error()
+	case peer != own && peer.user == "" && own.user != "":
+		return peerReasonResources, fmt.Sprintf("%q", peer.String())
 	case peer != own:
 		return peerReasonOther, fmt.Sprintf("%q", peer.String())
 	}
@@ -263,12 +301,25 @@ func peerRefusalLogged(n int64) bool {
 // wrote first then reads a reset (measured). A refusal of a caller that
 // exited writes no line (measured) but counts (not measured). A gate that
 // names no namespace serves every caller.
+//
+// After a failed start naming, each connection reads the own namespaces again
+// (4c111e86, measured on Linux). A read that fails refuses the caller with that
+// error, and the line shows the own text "". A read that works ends the refusals
+// from then on (claustrum's own, not measured).
 func (g *peerGate) admit(nc net.Conn) bool {
-	if g == nil || !g.own.names() {
+	if g == nil {
 		return true
 	}
-	peer, exited, err := lookupPeerOf(nc, g.own)
-	reason, detail := judgePeer(g.own, peer, err)
+	own, err := g.ownOrRetry()
+	if err == nil && !own.names() {
+		return true
+	}
+	var peer nsText
+	exited := false
+	if err == nil {
+		peer, exited, err = lookupPeerOf(nc, own)
+	}
+	reason, detail := judgePeer(own, peer, err)
 	if reason == "" {
 		return true
 	}
@@ -277,7 +328,30 @@ func (g *peerGate) admit(nc net.Conn) bool {
 	_ = nc.Close()
 	n := g.refused.Add(1)
 	if !exited && peerRefusalLogged(n) {
-		logging.Warnf("[Server] refused caller number %d (%s): %s; this server's namespaces are %q", n, reason, detail, g.own.String())
+		logging.Warnf("[Server] refused caller number %d (%s): %s; this server's namespaces are %q", n, reason, detail, own.String())
 	}
 	return false
+}
+
+// ownText is the own text of the gate.
+func (g *peerGate) ownText() nsText {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.own
+}
+
+// ownOrRetry gives the own text of the gate. After a failed start naming it
+// reads the own namespaces again, and keeps a read that works.
+func (g *peerGate) ownOrRetry() (nsText, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.namingErr == nil {
+		return g.own, nil
+	}
+	own, err := readDaemonNSText()
+	if err != nil {
+		return nsText{}, err
+	}
+	g.own, g.namingErr = own, nil
+	return own, nil
 }
