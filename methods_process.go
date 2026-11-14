@@ -65,10 +65,11 @@ type spawnParams struct {
 	// LinkBound binds the process to the connection of the spawn (683cc6a9, see
 	// internal/supervisor/linkbound.go). A pointer, so absent or null is a plain spawn. A value that is
 	// no object, or an unattendedSeconds that is no integer, gets Invalid params
-	// (claustrum's own, not measured: before, the member was ignored). Pty is read
-	// only for the refusal below, and a value other than true counts as absent.
+	// (claustrum's own, not measured: before, the member was ignored).
 	LinkBound *supervisor.LinkBoundParams `json:"linkBound"`
-	Pty       rpc.JSONTrueSwitch          `json:"pty"`
+	// Pty is the terminal member, read only for its refusals (ptyBare,
+	// ptyKeyRefusal). Absent and null give a plain spawn (measured on Linux).
+	Pty json.RawMessage `json:"pty"`
 	// CLITempRoot asks for the private temp folder step (clitemproot_unix.go) on Linux
 	// and macOS. On Windows it changes nothing (b3081b51, measured with true, false and
 	// absent). Any other value counts as absent (claustrum's own, not measured).
@@ -131,21 +132,17 @@ const gitReadCombineText = `gitRead needs the command "git" and a cwd, and canno
 // object with no valid key gets its own text (measured on Linux and macOS).
 func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
 	var raw struct {
-		Pty         json.RawMessage `json:"pty"`
 		CLITempRoot json.RawMessage `json:"cliTempRoot"`
 	}
 	_ = json.Unmarshal(req.Params, &raw)
-	pty, ptyBad := gitReadMember(raw.Pty, false)
-	temp, tempBad := gitReadMember(raw.CLITempRoot, true)
-	if ptyBad || tempBad {
+	temp, tempBad := gitReadTempRoot(raw.CLITempRoot)
+	if tempBad {
 		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
 	}
-	// A pty object with no valid key gets this text with or without gitRead
-	// (c9125eb8, measured on Linux and macOS). The order against the other tests is
-	// claustrum's own, not measured.
-	if pty && !gitReadPtyKeyOK(raw.Pty) {
-		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "A terminal needs a key of 32 bytes in hex"))
+	if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
+		return bad
 	}
+	pty := ptyObject(p.Pty)
 	if p.Command != "git" || p.Cwd == "" || len(p.Env) > 0 || p.Launcher != nil || p.LinkBound != nil ||
 		pty || temp || sessiondirs.OffSwitchSet(req.Params) {
 		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, gitReadCombineText, supervisor.SpawnReason{Reason: "other"}))
@@ -164,8 +161,34 @@ func gitReadShape(args []string) error {
 	return nil
 }
 
-// gitReadPtyKeyOK is true when the pty object v holds a "key" of 64 hex digits.
-func gitReadPtyKeyOK(v json.RawMessage) bool {
+// ptyObject is true when the pty member v is a JSON object.
+func ptyObject(v json.RawMessage) bool {
+	return strings.HasPrefix(string(bytes.TrimSpace(v)), "{")
+}
+
+// ptyBare is true when the pty member v is present, not null and no object. Such a
+// spawn gets Invalid params and starts no child. Measured on a plain spawn: true,
+// false, 1 and "yes" on Linux, true and false on Windows, true on macOS (4c111e86
+// and c9125eb8). The test comes right after the decode, as for a member of the
+// wrong type. Its place before the id test is claustrum's own, not measured.
+func ptyBare(v json.RawMessage) bool {
+	s := string(bytes.TrimSpace(v))
+	return s != "" && s != "null" && !ptyObject(v)
+}
+
+// ptyKeyRefusal is the refusal of a pty object with no "key" of 64 hex digits, or
+// nil. Measured: {} and an object with only cols and rows, on a plain spawn on Linux
+// (4c111e86 and c9125eb8) and with gitRead on Linux and macOS (c9125eb8). The text
+// on a plain spawn on macOS and Windows is claustrum's own, not measured.
+func ptyKeyRefusal(req *request, v json.RawMessage) *rpc.Response {
+	if !ptyObject(v) || ptyKeyOK(v) {
+		return nil
+	}
+	return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "A terminal needs a key of 32 bytes in hex"))
+}
+
+// ptyKeyOK is true when the pty object v holds a "key" of 64 hex digits.
+func ptyKeyOK(v json.RawMessage) bool {
 	var o struct {
 		Key string `json:"key"`
 	}
@@ -176,21 +199,18 @@ func gitReadPtyKeyOK(v json.RawMessage) bool {
 	return err == nil
 }
 
-// gitReadMember reads a pty or cliTempRoot member of a gitRead spawn. set is true
-// for a member that the combine test counts. bad is true for a value that gets
-// Invalid params. An absent member, null and false count as absent. For pty, true
-// is bad and an object is set. For cliTempRoot, true is set and an object is bad.
-// Every other value is bad. Only the values that gitReadRefusal names are
-// measured: the rest is claustrum's own, not measured.
-func gitReadMember(v json.RawMessage, temp bool) (set, bad bool) {
+// gitReadTempRoot reads the cliTempRoot member of a gitRead spawn. set is true for
+// true, which the combine test counts. bad is true for a value that gets Invalid
+// params. An absent member, null and false count as absent, and every other value
+// is bad. Only the values that gitReadRefusal names are measured: the rest is
+// claustrum's own, not measured.
+func gitReadTempRoot(v json.RawMessage) (set, bad bool) {
 	s := string(bytes.TrimSpace(v))
-	switch {
-	case s == "" || s == "null" || s == "false":
+	switch s {
+	case "", "null", "false":
 		return false, false
-	case s == "true":
-		return temp, !temp
-	case strings.HasPrefix(s, "{"):
-		return !temp, temp
+	case "true":
+		return true, false
 	}
 	return false, true
 }
@@ -222,6 +242,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
+	if ptyBare(p.Pty) {
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
+	}
 	if p.ID == "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Process ID is required")
 	}
@@ -231,16 +254,13 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if p.Command == "" && !p.LauncherSuppliesCli {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Command is required")
 	}
-	// 683cc6a9 refuses linkBound with a launcher by this text and with "pty":true by
-	// plain Invalid params (measured on Linux). The order of the two tests and their
-	// place after the id and command tests are claustrum's own, not measured.
+	// 683cc6a9 refuses linkBound with a launcher by this text (measured on Linux).
+	// The place of the test after the id and command tests is claustrum's own, not
+	// measured. "pty":true got Invalid params from the ptyBare test above.
 	var linkTTL time.Duration
 	if p.LinkBound != nil {
 		if p.Launcher != nil {
 			return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, "linkBound cannot be combined with pty or launcher", supervisor.SpawnReason{Reason: "other"})
-		}
-		if p.Pty {
-			return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 		}
 		linkTTL = supervisor.UnattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
@@ -252,6 +272,12 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		}
 		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, gitReadShape(p.Args), s.gitReadStep(p.Cwd, p.Args))
 	} else {
+		// The place of this test after the id, launcher, command and linkBound
+		// tests is claustrum's own, not measured. A pty object with a valid key
+		// gives a plain spawn with no terminal (claustrum's own: it has none).
+		if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
+			return *bad
+		}
 		// The session folders of a Claude Code spawn get their records in the spawn,
 		// unless the request carries the off switch (sessionfolders.go).
 		var folders []string

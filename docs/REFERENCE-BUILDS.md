@@ -412,7 +412,7 @@ These items stay open:
   `process.spawn.pty` on Windows (Linux, macOS and Windows VMs). For an unknown
   id, `c8e2f083` answers `process.resize` with `{"found":false}`, and claustrum
   answers `-32601` (macOS and Windows VMs). On Windows `c8e2f083` answers a
-  `process.spawn` with `pty` with `-32602`, and claustrum runs the command
+  `process.spawn` with `pty` with `-32602`, and claustrum then ran the command
   (Windows VM).
 - `plugins.prune` on Windows: for the run folder of the battery this build
   answered with the skip reply, and claustrum found its roots (Windows VM). PR 783
@@ -475,7 +475,7 @@ Two items stay open:
   `process.spawn.pty` on Windows). For an unknown id, this build answers
   `process.resize` with `{"found":false}`, and claustrum answers `-32601`
   (macOS and Windows VMs). On Windows this build answers a `process.spawn` with
-  `pty` with `-32602`, and claustrum runs the command and answers success
+  `pty` with `-32602`, and claustrum then ran the command and answered success
   (Windows VM).
 - A second owner probe run that exits non-zero gets the same `-32603` reply as a
   killed run. That reply is claustrum's own, not measured.
