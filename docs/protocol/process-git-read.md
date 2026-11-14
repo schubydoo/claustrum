@@ -24,7 +24,7 @@ The combine test comes before the shape test (measured on Linux). The `cwd` test
 
 ### Other members
 
-With `gitRead`, `"pty":true` gets `Invalid params` (measured on Linux and Windows). So does a `cliTempRoot` text or object (measured on Linux). A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex`, with or without `gitRead` (measured on Linux and macOS).
+With `gitRead`, `"pty":true` gets `Invalid params` (measured on Linux and Windows). So does a `cliTempRoot` text or object (measured on Linux). A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex` with `gitRead` (measured on Linux and macOS). A plain spawn has [its own row](process-spawn.md#errors).
 
 claustrum's own: a `launcher` array gets the combine text. The [linkBound](process-link-bound.md#the-refusals) tests come before these tests. So `gitRead` with a `linkBound` object and a `launcher` gets the `linkBound` text. A spent `id` gets its refusal before the shape test.
 
