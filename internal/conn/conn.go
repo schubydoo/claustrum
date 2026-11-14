@@ -257,6 +257,9 @@ func (c *Conn) ClosedNow() bool {
 	return c.closed
 }
 
+// ClosedLocked is ClosedNow for a caller that holds the write lock of c.
+func (c *Conn) ClosedLocked() bool { return c.closed }
+
 // WriteLineLocked is WriteLine with c.wmu already held.
 func (c *Conn) WriteLineLocked(b []byte) error {
 	if c.closed {

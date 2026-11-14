@@ -283,6 +283,7 @@ The read starts in the background with the daemon. These rules are measured agai
 - `CLAUDE_SSH_NO_LOGIN_PATH_WARM=1` moves the start of the read to the first spawn. The value 0 does not.
 - A spawn waits for a running read at most 4 s, and not past 8 s after its start. Until a good read, children get the inherited `PATH`.
 - A later spawn tries a failed read again after 30 s, then 1m0s and 2m0s. A good read is kept.
+- The failure line says `until one works, programs keep the last PATH that was read, or sshd's if none was`, also before a good read (measured on Linux, `c9125eb8` and `4c111e86`).
 - `"disableShellAgentSocket":true` kills the shell group of a read that still runs after the wait, and after a failure starts no read. The shutdown kills it too.
 - The read runs `$SHELL -l -i -c …` if `$SHELL` is an executable file, or else the first usable of `/bin/zsh`, `/bin/bash` and `/bin/sh`.
 - The `PATH` is the line after a fresh sentinel line, on stdout or on stderr, with a final newline and an absolute directory.

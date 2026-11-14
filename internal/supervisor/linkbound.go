@@ -121,6 +121,40 @@ func (p *Proc) markDetachedLocked(now time.Time) {
 	}
 }
 
+// holdByReattachLocked counts c as attached to p after a reattach from a connection
+// that is not the link. Then the unattended clock stops. c9125eb8 and 4c111e86 keep
+// such a child alive and log nothing while c stays open (measured on Linux). A closed
+// c changes nothing: the server marks c closed before DetachConn, and the mark waits
+// for the write lock of c. The caller holds p.mu and the write lock of a non-nil c.
+func (p *Proc) holdByReattachLocked(c *conn.Conn) {
+	if !p.linked || c == nil || c == p.link || c.ClosedLocked() {
+		return
+	}
+	if p.reattached == nil {
+		p.reattached = map[*conn.Conn]struct{}{}
+	}
+	p.reattached[c] = struct{}{}
+	p.detachedAt = time.Time{}
+}
+
+// dropAttachedLocked takes c off p. Once neither the link nor a connection that
+// reattached p is open, the unattended clock starts again from now (claustrum's
+// own, not measured). The caller holds p.mu. It reads linkGone and takes no lock of
+// a connection: Reattach takes the write lock of a connection before p.mu.
+func (p *Proc) dropAttachedLocked(c *conn.Conn, now time.Time) {
+	if !p.linked {
+		return
+	}
+	if c == p.link {
+		p.linkGone = true
+	}
+	_, held := p.reattached[c]
+	delete(p.reattached, c)
+	if len(p.reattached) == 0 && (c == p.link || (held && p.linkGone)) {
+		p.markDetachedLocked(now)
+	}
+}
+
 // connGone reports whether c is closed. A nil c counts as gone.
 func connGone(c *conn.Conn) bool {
 	if c == nil {
@@ -164,7 +198,8 @@ func (m *Manager) watchUnattended(p *Proc, ttl, tick, grace time.Duration) {
 		if m.startsStopped.Load() {
 			return
 		}
-		logging.Infof("[process.Manager] Process %s: no connection attached for %s; ending it", p.id, ttl)
+		// The id is cut (c9125eb8 and 4c111e86, measured on Linux).
+		logging.Infof("[process.Manager] Process %s: no connection attached for %s; ending it", LogID(p.id), ttl)
 		m.killAndWaitAs(p, "HUP", "unattended", grace, true)
 		return
 	}

@@ -355,9 +355,8 @@ func (s *loginPATHState) extract(ctx context.Context) (path string, err error) {
 }
 
 // failureNoteLocked records when the next read can start, and renders the note of
-// the failure line. After a good read the note of c9125eb8 follows (measured on
-// Linux for the first failure of a read again). Before one the older note stays
-// (claustrum's own for c9125eb8, not measured).
+// the failure line. The note of c9125eb8 and 4c111e86 follows, with or without an
+// earlier good read (measured on Linux for the first failure).
 func (s *loginPATHState) failureNoteLocked() string {
 	if s.failures >= loginPATHMaxFailures {
 		// The text of this note is claustrum's own (not measured).
@@ -368,11 +367,7 @@ func (s *loginPATHState) failureNoteLocked() string {
 	}
 	pause := loginPATHFirstPause << (s.failures - 1)
 	s.nextTry = s.clock().Add(pause)
-	keep := "programs get the daemon's own PATH"
-	if s.good {
-		keep = "programs keep the last PATH that was read, or sshd's if none was"
-	}
-	return fmt.Sprintf("failure %d; next try in %s at the earliest; until one works, %s", s.failures, pause, keep)
+	return fmt.Sprintf("failure %d; next try in %s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was", s.failures, pause)
 }
 
 // rfc3339UTC renders t in UTC to the second, as the line of the cap does.

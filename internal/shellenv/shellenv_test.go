@@ -201,9 +201,9 @@ func TestLoginPATHFailedReadIsTriedAgainLater(t *testing.T) {
 	AwaitLoginPATH(false)
 	noReadStarted(t, f, "a spawn after a good read")
 
-	want := "WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 1; next try in 30s at the earliest; until one works, programs get the daemon's own PATH): boom 1\n" +
-		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 2; next try in 1m0s at the earliest; until one works, programs get the daemon's own PATH): boom 2\n" +
-		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 3; next try in 2m0s at the earliest; until one works, programs get the daemon's own PATH): boom 3\n"
+	want := "WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 1; next try in 30s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was): boom 1\n" +
+		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 2; next try in 1m0s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was): boom 2\n" +
+		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 3; next try in 2m0s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was): boom 3\n"
 	// Windows reads no login shell, so it logs no success line.
 	if loginPATHFromShell {
 		want += "DEBUG [shellenv] Extracted shell PATH (10 chars) in 0s, after 3 failed read(s)\n"
@@ -253,7 +253,7 @@ func TestLoginPATHFlaggedSpawnStopsTheRead(t *testing.T) {
 	}
 	awaitReadEnd(t, r)
 	want := "INFO  [shellenv] Stopping the read of the login shell's PATH at the desktop's word (disableShellAgentSocket); spawns that carry it start no other after a failure\n" +
-		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 1; next try in 30s at the earliest; until one works, programs get the daemon's own PATH): shell PATH extraction timed out (/fake/sh)\n"
+		"WARN  [shellenv] Could not read PATH from the login shell after 0s (failure 1; next try in 30s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was): shell PATH extraction timed out (/fake/sh)\n"
 	if got := shellenvLines(buf); got != want {
 		t.Errorf("log =\n%s\nwant\n%s", got, want)
 	}
@@ -326,7 +326,7 @@ func TestLoginPATHReadPanicFailsTheRead(t *testing.T) {
 		t.Fatal("no read started")
 	}
 	awaitReadEnd(t, r)
-	if !strings.Contains(shellenvLines(buf), "(failure 1; next try in 30s at the earliest; until one works, programs get the daemon's own PATH): recovered panic: boom") {
+	if !strings.Contains(shellenvLines(buf), "(failure 1; next try in 30s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was): recovered panic: boom") {
 		t.Errorf("log has no failure line for the panic:\n%s", shellenvLines(buf))
 	}
 }

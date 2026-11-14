@@ -19,6 +19,12 @@ import (
 // whether the spawn bound at all.
 func spawnHelperTempRoot(t *testing.T, m *Manager, c *conn.Conn, ask TempRootAsk, mode string, args ...string) (*Proc, func() (func(), bool)) {
 	t.Helper()
+	return spawnHelperTempRootID(t, m, c, "tr", ask, mode, args...)
+}
+
+// spawnHelperTempRootID is spawnHelperTempRoot with the id id.
+func spawnHelperTempRootID(t *testing.T, m *Manager, c *conn.Conn, id string, ask TempRootAsk, mode string, args ...string) (*Proc, func() (func(), bool)) {
+	t.Helper()
 	var mu sync.Mutex
 	var end func()
 	bound := false
@@ -32,7 +38,7 @@ func spawnHelperTempRoot(t *testing.T, m *Manager, c *conn.Conn, ask TempRootAsk
 	}
 	t.Cleanup(func() { privateTempRoot = old })
 	exe, env := helperCommand(t, mode)
-	p, err := m.spawnWith(c, "tr", exe, args, "", env, false, nil, 0, ask, nil, nil, nil)
+	p, err := m.spawnWith(c, id, exe, args, "", env, false, nil, 0, ask, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -146,6 +152,39 @@ func TestLostTempRootStartsNoEndAtShutdown(t *testing.T) {
 	}
 	if end, _ := bound(); end == nil {
 		t.Error("the spawn bound no end")
+	}
+}
+
+// TestShutdownDuringLostTempRootEndLogsNoExitLine: the shutdown sweep ends a child
+// whose temp_root end still waits, and no exited line comes (4c111e86, measured on
+// Linux). The ended line stays, with the cut id (4c111e86, measured on Linux and
+// macOS).
+func TestShutdownDuringLostTempRootEndLogsNoExitLine(t *testing.T) {
+	logs := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	setTempRootEndGraceForTest(t, 20*time.Second)
+	sent := recordSignalsByProc(t)
+	c, lines := rawLineConn(t)
+	p, bound := spawnHelperTempRootID(t, m, c, "tr-long-id", TempRootAsk{Folder: true, End: true}, "ignore-term")
+	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+	end, _ := bound()
+	end()
+	for deadline := time.Now().Add(5 * time.Second); len(sent(p.cmd.Process)) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("no SIGTERM from the end")
+		}
+	}
+	if n := m.KillAllCount(); n != 1 {
+		t.Fatalf("the sweep ended %d children, want 1", n)
+	}
+	nextLine(t, lines, `"stream":"exit"`, 15*time.Second)
+	got := logs.String()
+	if !strings.Contains(got, "[process.Manager] Process tr-long-… is being ended: its private temp folder is lost\n") {
+		t.Errorf("log %q, want the ended line", got)
+	}
+	if strings.Contains(got, "Process tr-long-… exited") {
+		t.Errorf("log %q, want no exited line", got)
 	}
 }
 

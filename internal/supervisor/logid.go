@@ -15,6 +15,10 @@ const logIDMax = 8
 //   - Process <id> exited with code ...
 //   - Failed to start process <id>: <text>
 //
+// c9125eb8 and 4c111e86 cut it in "Process <id>: no connection attached for ..." too
+// (measured on Linux), and 4c111e86 in "Process <id> is being ended: its private
+// temp folder is lost" (measured on Linux and macOS).
+//
 // claustrum's own, not measured: an id with a byte above 0x7f. claustrum cuts it
 // at 8 bytes too and drops a character that the cut splits. Every other log line
 // shows the whole id, also the two launcher forms of the started line.

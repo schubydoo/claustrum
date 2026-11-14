@@ -184,6 +184,9 @@ type Proc struct {
 	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
 	// A count, so one call that returns leaves another call's wait marked.
 	waiting int
+	// endedByShutdown is set when the shutdown sweep delivers its signal. Such a child
+	// logs no exited line on Linux and macOS (see waitReapAndDrain). Under p.mu.
+	endedByShutdown bool
 	// signalled is set when signalIfLive delivers a signal. A farewell on a
 	// signalled record is not said (see holdFarewell). farewell is the pending
 	// farewell, or nil. Both are read and written under p.mu.
@@ -237,11 +240,15 @@ type Proc struct {
 
 	// linked marks a link-bound spawn, and link is its connection. Both are set
 	// once at spawn and never mutated. detachedAt is the moment the link went, and
-	// zero while it is there. Read and written under p.mu. onExit runs once after
-	// the exit frame. See linkbound.go.
+	// zero while it is there. linkGone is set once the link is gone. reattached
+	// holds the open connections that reattached the process, which count as
+	// attached too. These three are read and written under p.mu. onExit runs once
+	// after the exit frame. See linkbound.go.
 	linked     bool
 	link       *conn.Conn
 	detachedAt time.Time
+	linkGone   bool
+	reattached map[*conn.Conn]struct{}
 	onExit     func()
 
 	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
@@ -398,6 +405,11 @@ var (
 	pastStartCheck   = func(id string) {}
 	afterChildStart  = func(id string, pid int) {}
 )
+
+// afterTableEntry runs in spawnWith right after p entered m.procs, before the test
+// of a gone link. It is a seam for a test that reattaches p there. Production never
+// reassigns it.
+var afterTableEntry = func(id string) {}
 
 // RefuseStarts makes each spawn that has not passed the check before the start give
 // up before it starts a child. It does not block. signalShutdown calls it at the
@@ -596,6 +608,9 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 		p.killedBy = killedBy
 	}
 	p.signalled = true
+	if killedBy == "shutdown" {
+		p.endedByShutdown = true
+	}
 	return true, nil
 }
 
@@ -1230,13 +1245,20 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+	afterTableEntry(id)
 	// A link whose connection is already gone makes the process detached at once,
 	// so its clock starts at the spawn. DetachConn runs after the connection is
-	// marked closed, so one of the two marks it.
+	// marked closed, so one of the two marks it. A connection that reattached p
+	// since it entered the table holds it, and then the clock does not start
+	// (claustrum's own, not measured). connGone runs before p.mu: no connection lock
+	// under p.mu.
 	if linkTTL > 0 {
 		if connGone(c) {
 			p.mu.Lock()
-			p.markDetachedLocked(time.Now())
+			p.linkGone = true
+			if len(p.reattached) == 0 {
+				p.markDetachedLocked(time.Now())
+			}
 			p.mu.Unlock()
 		}
 		go m.watchUnattended(p, linkTTL, unattendedTick(linkTTL), endGrace)
@@ -1349,6 +1371,7 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	p.running = false
 	p.exitedAt = time.Now() // starts the procPruneAge clock
 	killedBy := p.killedBy
+	quiet := p.endedByShutdown && quietShutdownExit
 	p.mu.Unlock()
 	// Stop the stdin writer and wake it if it is parked on an empty queue; the
 	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
@@ -1361,7 +1384,15 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	// that job, so the close ends nothing.
 	p.group.Close()
 	sigName := sysproc.ExitSignalName(err)
-	logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
+	// On Linux and macOS a child that the shutdown sweep ended logs no exited line,
+	// measured on Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs
+	// of the references still log it. One whose temp-root end still ran logs none too
+	// (4c111e86, measured on Linux). A child that ended before the sweep keeps its
+	// line. On Windows the line stays (quietShutdownExit). claustrum's own, not
+	// measured: Windows, and a stream-json child that the sweep sent SIGTERM.
+	if !quiet {
+		logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
+	}
 	metrics.Met.ProcessExits.Add(1)
 	p.emit(StreamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
@@ -1389,9 +1420,10 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 // at shutdown request" in a measurement, a server.shutdown request with two children.
 //
 // That shutdown line is a race on the reference, not a rule. 89cb6289 printed it in
-// that measurement, and printed no exited line in two runs. claustrum prints it when the
-// exit goroutine reaches the line before the daemon exits. The shutdown wait
-// (shutdownRecordWait) ends earlier, at the removal of the record.
+// that measurement, and printed no exited line in two runs. c9125eb8 and 4c111e86
+// print none (measured on Linux). On macOS 1 or 2 of 8 runs of the references still
+// print it. On Linux and macOS claustrum prints none for a child that the shutdown
+// sweep ended (endedByShutdown). Windows keeps it (claustrum's own, not measured).
 func exitLogSuffix(sigName, killedBy string) string {
 	suffix := ""
 	if sigName != "" {
@@ -1912,7 +1944,8 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 	// A reattach of a link-bound process from another connection gets found true
 	// with the firstSeq and lastSeq of the link (683cc6a9, measured on Linux). That
 	// the stream stays on the link, that this connection gets the replay and no live
-	// frame, and that the link stays open, is claustrum's own, not measured.
+	// frame, and that the link stays open, is claustrum's own, not measured. Such a
+	// reattach on an open connection stops the unattended clock (holdByReattachLocked).
 	var superseded []*conn.Conn
 	attached := true
 	if p.TakesFrom(c) {
@@ -1924,6 +1957,8 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 		}
 		_, attached = p.subs[c]
 		p.subs = map[*conn.Conn]struct{}{c: {}}
+	} else {
+		p.holdByReattachLocked(c)
 	}
 	// On 90fca6e6 a reattach inside the exit drain answers running:false
 	// (measured). The process was already waited on, so it is not resumable.
@@ -1997,9 +2032,7 @@ func (m *Manager) DetachConn(c *conn.Conn) {
 	for _, p := range procs {
 		p.mu.Lock()
 		delete(p.subs, c)
-		if p.linked && p.link == c {
-			p.markDetachedLocked(now)
-		}
+		p.dropAttachedLocked(c, now)
 		p.mu.Unlock()
 	}
 }
