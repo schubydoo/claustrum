@@ -134,11 +134,33 @@ func Open(sock string) {
 		return
 	}
 	s := newStore(dir)
-	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := makeRecordDir(dir); err != nil && !errors.Is(err, os.ErrExist) {
 		logging.Warnf("[sessiondirs] cannot make %q: %v", filepath.ToSlash(dir), err)
 	}
 	s.load()
 	current.Store(s)
+}
+
+// openRecordParent opens the folder that holds the record folder. A variable,
+// so a test can act between the open and the mkdir.
+var openRecordParent = os.OpenRoot
+
+// makeRecordDir makes the record folder dir with mode 0700 by its name, through
+// a handle of the folder that holds it. At the start 4c111e86 makes it so
+// (measured on Linux). The same form for a folder that is gone at a write is
+// claustrum's own, not measured. An error is a mkdir error of the whole path,
+// as the error of os.Mkdir was.
+func makeRecordDir(dir string) error {
+	root, err := openRecordParent(filepath.Dir(dir))
+	if err == nil {
+		err = root.Mkdir(filepath.Base(dir), 0o700)
+		_ = root.Close()
+	}
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return &os.PathError{Op: "mkdir", Path: dir, Err: pe.Err}
+	}
+	return err
 }
 
 // openDir opens a root at the record folder. The folder must be a real folder
@@ -391,7 +413,7 @@ func (s *store) write(p string) (renamed bool, err error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		// A record folder that is gone is made again, with the mode of Open (b3081b51
 		// makes it and writes the record, measured on Linux).
-		if merr := os.Mkdir(s.dir, 0o700); merr == nil || errors.Is(merr, fs.ErrExist) {
+		if merr := makeRecordDir(s.dir); merr == nil || errors.Is(merr, fs.ErrExist) {
 			root, err = s.openDir()
 		}
 	}
