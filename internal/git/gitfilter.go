@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"maps"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,10 +51,8 @@ const (
 	// no item (not measured).
 	lfsClean = "git-lfs clean -- %f"
 	// lfsFailedWords and lfsDownloadNote: with a settings copy, a failed
-	// checkout whose text holds the words gets the note after the text
-	// (measured on Linux). A text that the cut ends before the words gets no
-	// note (measured). On Windows 4c111e86 tests the whole stderr, so such a
-	// text gets the note (measured on Windows, sshNoteWholeStderr).
+	// checkout whose text holds one of lfsNoteWords gets the note after the
+	// text (checkoutNote).
 	lfsFailedWords  = "smudge filter lfs failed"
 	lfsDownloadNote = ". Claude doesn't use ssh, credential, or proxy settings from this repository's own git config." +
 		" If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again."
@@ -681,11 +678,17 @@ func (f filterPlan) refusedFilter(stderr string) (string, bool) {
 	return name, at >= 0
 }
 
-// sshNoteWholeStderr says whether the test of lfsFailedWords for
-// lfsDownloadNote reads the whole stderr (Windows, measured on 4c111e86) or
-// the text after the cut (Linux and macOS keep the earlier rule). A test
-// changes it.
-var sshNoteWholeStderr = runtime.GOOS == "windows"
+// lfsNoteWords are the words of the text after the cut that give
+// lfsDownloadNote. On 4c111e86 the words of git or the download words of
+// git-lfs in the cut text give the note (measured on Linux and macOS). Words
+// past the cut give none, and so does a cut that ends inside `Error
+// downloading object` (measured). The Windows rows hold `Error downloading
+// object` in the cut, so they fit the same rule. On Windows the words past
+// the cut are claustrum's own, not measured. A stand-in text
+// `Smudge error: f.bin: [404] Object does not exist` gets the note (measured).
+// Which of its words counts is not measured: claustrum's own choice is
+// `Smudge error`.
+var lfsNoteWords = [...]string{lfsFailedWords, "Error downloading object", "Smudge error"}
 
 // The notes of a failed checkout with the private LFS store (4c111e86, measured
 // on Linux and macOS, the quota on Linux). The texts of the disk and of the
@@ -693,30 +696,33 @@ var sshNoteWholeStderr = runtime.GOOS == "windows"
 const (
 	lfsMissingNote = ". The repository's Git LFS server does not have that file; it may never have been pushed" +
 		" from the computer where it was committed. Turn off Worktree for this session, then try again."
+	// lfsMissingWords are the words of stderr that give lfsMissingNote. The
+	// measured text is `Object does not exist on the server: [404]`. Which
+	// part of it counts is claustrum's own choice, not measured.
+	lfsMissingWords   = "Object does not exist on the server"
 	lfsStoreHoldsText = ", where Claude keeps this checkout's Git LFS downloads while it runs." +
 		" Free some space there (or raise the quota), or turn off Worktree for this session, then try again."
 )
 
 // checkoutNote is the note after text, the text of a failed read-tree
 // checkout after the cut, or "". stderr is the whole stderr of git. With a
-// settings copy and the words lfsFailedWords the note is lfsDownloadNote
-// (sshNoteWholeStderr says where the words count). With the private LFS store
-// of the checkout (rule.store) and the words in stderr, one of three other
-// notes comes first:
+// settings copy and one of lfsNoteWords in text the note is lfsDownloadNote.
+// With the private LFS store of the checkout (rule.store) and the words
+// lfsFailedWords in stderr, one of three other notes comes first:
 //
 //   - `no space left on device` in stderr gives the note of a full disk
 //     (measured on Linux and macOS), and `disk quota exceeded` the note of a
 //     quota (measured on Linux), in any letter case (measured on Linux).
 //   - A seed that left a copy out for seedSpare gives the note of the space,
 //     also before the words of a missing object (measured on Linux and macOS).
-//   - `Object does not exist` gives lfsMissingNote (measured on Linux and
-//     macOS with the text `Object does not exist on the server: [404]` of a
-//     stand-in git-lfs).
+//   - lfsMissingWords give lfsMissingNote (measured on Linux and macOS with
+//     a stand-in git-lfs). `Object does not exist` with no `on the server`
+//     gives no lfsMissingNote (measured).
 //
 // Claustrum's own, not measured: the order of the full disk before the quota,
 // and of both before the space and the missing object. The note of the space
 // follows any failure text after a left-out copy. Each of these notes needs the words
-// in stderr. The test of `Object does not exist` minds letter case, and the
+// in stderr. The test of lfsMissingWords minds letter case, and the
 // words of a real git-lfs are not measured.
 func checkoutNote(stderr, text string, rule *filterRule) string {
 	if rule == nil || !rule.shadow {
@@ -734,15 +740,14 @@ func checkoutNote(stderr, text string, rule *filterRule) string {
 		case s.short:
 			return ". There isn't enough space on the remote machine (in " + s.runDir + ") for this repository's Git LFS files," +
 				" and downloading them failed. Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."
-		case strings.Contains(stderr, "Object does not exist"):
+		case strings.Contains(stderr, lfsMissingWords):
 			return lfsMissingNote
 		}
 	}
-	if !sshNoteWholeStderr {
-		stderr = text
-	}
-	if strings.Contains(stderr, lfsFailedWords) {
-		return lfsDownloadNote
+	for _, w := range lfsNoteWords {
+		if strings.Contains(text, w) {
+			return lfsDownloadNote
+		}
 	}
 	return ""
 }

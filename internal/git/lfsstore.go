@@ -63,7 +63,8 @@ const (
 	// system of the private store. On an 8 MB file system (Linux) and a small
 	// disk image (macOS) 4c111e86 copies no object, and with 1100 MB (Linux)
 	// it does (measured). Its text names 1 GiB. The test of the space left
-	// after the copy is claustrum's own, not measured.
+	// after the copy is claustrum's own, not measured. The keep tests the
+	// same bound (keepHasSpace).
 	seedSpare = 1 << 30
 )
 
@@ -541,7 +542,9 @@ var openShardFolder = (*os.Root).OpenRoot
 // shard (sweepShardTemps). An object that the store already has is left, with
 // no sweep: the shard of a seeded object keeps its temp names (measured on
 // Linux). The keep and the sweep act through the handle of openShard, and a
-// folder that openShard refuses keeps nothing.
+// folder that openShard refuses keeps nothing. A keep with too little space
+// (keepHasSpace) leaves the shard folder that openShard made, with no object
+// (measured on Linux and macOS).
 func returnDownload(root *os.Root, dir, private, oid string, now time.Time) {
 	rel := filepath.Join("lfs", "objects", oid[:2], oid[2:4])
 	shard := openShard(root, rel)
@@ -553,12 +556,15 @@ func returnDownload(root *os.Root, dir, private, oid string, now time.Time) {
 		return
 	}
 	shardPath := filepath.Join(dir, rel)
+	src := storeObjectPath(private, oid)
+	if !keepHasSpace(shardPath, src) {
+		return
+	}
 	var n [4]byte
 	if _, err := rand.Read(n[:]); err != nil {
 		return
 	}
 	temp := ".claude-" + hex.EncodeToString(n[:]) + "-" + oid
-	src := storeObjectPath(private, oid)
 	if keepHardLink(shard, src, temp) != nil && !copyIntoRoot(shard, shardPath, src, temp) {
 		return
 	}
@@ -568,6 +574,22 @@ func returnDownload(root *os.Root, dir, private, oid string, now time.Time) {
 	if err == nil {
 		sweepShardTemps(shard, shardPath, oid, now)
 	}
+}
+
+// keepHasSpace reports whether the file system of the shard folder shardPath
+// has seedSpare free plus the size of the object src. 4c111e86 keeps no
+// object below that bound, also when both stores share a file system
+// (measured on Linux and macOS). The rows fit a test of the space after the checkout wrote its
+// files, as here. That moment and the bound at its exact byte are inferred,
+// not measured. The free space is read by the path, with no write. A size or a
+// free space that cannot be read does not stop the keep (claustrum's own).
+func keepHasSpace(shardPath, src string) bool {
+	fi, err := os.Lstat(src)
+	if err != nil {
+		return true
+	}
+	free, ok := storeFreeBytes(shardPath)
+	return !ok || free >= uint64(fi.Size())+seedSpare
 }
 
 // copyIntoRoot copies the file src to the new file name of root, with mode

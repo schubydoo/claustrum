@@ -141,6 +141,7 @@ func TestLFSSeedIntoPrivateStore(t *testing.T) {
 // private store reaches the store of the repository, also with no folder
 // `lfs` there before (measured on Linux). No temp name stays.
 func TestLFSKeepDownloadedObject(t *testing.T) {
+	seamFreeSpace(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
 	f.onServer(t, "a.bin")
 	f.wantSuccess(t)
@@ -170,6 +171,7 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 // own: 4c111e86 keeps nothing behind a link to a folder outside, measured on
 // Linux). The create succeeds.
 func TestLFSKeepRefusesLink(t *testing.T) {
+	seamFreeSpace(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
 	f.onServer(t, "a.bin")
 	inner := filepath.Join(f.gitDir, "otherlfs")
@@ -192,6 +194,7 @@ func TestLFSKeepRefusesLink(t *testing.T) {
 // Linux, the link and the folder are claustrum's own). A name that only holds
 // the pattern stays.
 func TestLFSSweepStaleTempNames(t *testing.T) {
+	seamFreeSpace(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
 	f.local(t, "a.bin", "alpha-object")
 	f.onServer(t, "b.bin")
@@ -252,6 +255,7 @@ func TestLFSSweepStaleTempNames(t *testing.T) {
 // seed and the keep copy the object (the seed is measured on Linux, the copy
 // of the keep and its mode 0644 are claustrum's own).
 func TestLFSCopyWhenNoLink(t *testing.T) {
+	seamFreeSpace(t)
 	prevSeed, prevKeep := seedLink, keepHardLink
 	seedLink = func(string, string) error { return os.ErrPermission }
 	keepHardLink = func(*os.Root, string, string) error { return os.ErrPermission }
@@ -280,6 +284,7 @@ func TestLFSCopyWhenNoLink(t *testing.T) {
 // repository gives the seed as a copy, with no hard link (4c111e86, measured
 // on Linux).
 func TestLFSSeedCopiesThroughLink(t *testing.T) {
+	seamFreeSpace(t)
 	for _, at := range []string{"lfs", filepath.Join("lfs", "objects")} {
 		t.Run(filepath.ToSlash(at), func(t *testing.T) {
 			links := 0
@@ -590,5 +595,65 @@ func TestSeedSpareMakesNoTemp(t *testing.T) {
 	}
 	if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(private), seedTempPattern)); len(temps) != 0 || exists(storeObjectPath(private, oid)) {
 		t.Errorf("temps %q or the object exist, want neither", temps)
+	}
+}
+
+// seamFreeSpace makes the free space of every folder 1 TiB for one test, so
+// the keep does not read the free space of the host.
+func seamFreeSpace(t *testing.T) {
+	t.Helper()
+	prev := storeFreeBytes
+	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
+	t.Cleanup(func() { storeFreeBytes = prev })
+}
+
+// TestLFSKeepNeedsSpare: the keep puts an object into the store of the
+// repository only when the file system of its shard has 1 GiB free plus the
+// size of the object, also when both stores share a file system. Under the
+// bound the empty shard folder stays (4c111e86, measured on Linux and macOS).
+// The rows run the bound by a hard link and by a copy. The exact byte of the
+// bound is inferred. A free space that cannot be read keeps the object
+// (claustrum's own). The rows write 1 GiB as a number, so they pin seedSpare.
+func TestLFSKeepNeedsSpare(t *testing.T) {
+	const body = "beta-object"
+	for _, row := range []struct {
+		name       string
+		link, kept bool
+		free       uint64
+	}{
+		{"a hard link one byte under the bound", true, false, 1<<30 + uint64(len(body)) - 1},
+		{"a hard link at the bound", true, true, 1<<30 + uint64(len(body))},
+		{"a copy one byte under the bound", false, false, 1<<30 + uint64(len(body)) - 1},
+		{"a copy at the bound", false, true, 1<<30 + uint64(len(body))},
+		{"a free space that cannot be read", true, true, 0},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			var asked []string
+			prevFree, prevKeep := storeFreeBytes, keepHardLink
+			storeFreeBytes = func(p string) (uint64, bool) { asked = append(asked, p); return row.free, row.free != 0 }
+			if !row.link {
+				keepHardLink = func(*os.Root, string, string) error { return os.ErrPermission }
+			}
+			t.Cleanup(func() { storeFreeBytes, keepHardLink = prevFree, prevKeep })
+			gitDir, private := t.TempDir(), t.TempDir()
+			oid := strings.Repeat("f", 64)
+			mustWrite(t, storeObjectPath(private, oid), body)
+			root, err := os.OpenRoot(gitDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+			returnDownload(root, gitDir, private, oid, time.Now())
+			p := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
+			if want := []string{filepath.Dir(p)}; !slices.Equal(asked, want) {
+				t.Errorf("free space asked for %q, want %q", asked, want)
+			}
+			if exists(p) != row.kept {
+				t.Errorf("object kept = %v, want %v", exists(p), row.kept)
+			}
+			if names, err := os.ReadDir(filepath.Dir(p)); err != nil || (!row.kept && len(names) != 0) {
+				t.Errorf("the shard folder = %v, %v, want it made and empty when nothing is kept", names, err)
+			}
+		})
 	}
 }
