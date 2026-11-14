@@ -380,7 +380,7 @@ func TestLFSNoSweepAfterFailedKeep(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownload(root, gitDir, t.TempDir(), oid, time.Now())
+	returnDownload(context.Background(), root, gitDir, t.TempDir(), oid, time.Now(), false)
 	if len(removed) != 0 {
 		t.Errorf("removed %q, want no sweep after a failed keep", removed)
 	}
