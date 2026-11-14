@@ -625,9 +625,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 			storage := filepath.Join(u.gitDir, "lfs")
 			if lfs.path != "" {
 				storage = lfs.path
-				short := lfs.seed()
+				short, copied := lfs.seed()
 				if rule != nil {
-					rule.store = &storeUse{runDir: lfs.runDir, path: lfs.path, short: short}
+					rule.store = &storeUse{runDir: lfs.runDir, path: lfs.path, short: short, copied: copied}
 				}
 			}
 			list = append(list, "-c", "lfs.storage="+storage)
@@ -928,7 +928,7 @@ var (
 // installErr is the error of a placement that failed. The caller answers it as a
 // failed checkout. On Windows it is nil unless the staging step moved the
 // registration (installTestedWorktreeIndex).
-func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool) (stderr string, drained bool, err, installErr error) {
+func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, err, installErr error) {
 	idxDir, removeIdxDir, err := u.requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err, nil
@@ -948,7 +948,11 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	var lfs privateStore
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path, lfs.runDir = filepath.Join(idxDir, "lfs"), u.host.runDir
-		lfs.seed = func() bool { return fillCheckoutStore(ctx, u, leaf, u.gitDir, rev, lfs.path) }
+		lfs.seed = func() (bool, time.Duration) {
+			seedCtx, cancel := seedContext(ctx, timeoutMs)
+			defer cancel()
+			return fillCheckoutStore(seedCtx, u, leaf, u.gitDir, rev, lfs.path)
+		}
 	}
 	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, lfs, pin, rule,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",

@@ -24,7 +24,7 @@ import (
 // to log. A present object goes to stdout. Else it copies remote/<oid> into
 // the store, as git-lfs does after a download, or fails with exit 2 and the
 // text of remote/error, or a 404 text with no such file. `<store>` in that text
-// is the store.
+// is the store. With a file remote/hang it waits for its kill.
 func lfsSmudgeHelper(remote, log string) int {
 	body, _ := io.ReadAll(os.Stdin)
 	p, ok := readPointerBlob(body)
@@ -47,6 +47,16 @@ func lfsSmudgeHelper(remote, log string) int {
 		}
 		_, _ = os.Stdout.Write(b)
 		return 0
+	}
+	if exists(filepath.Join(remote, "hang")) {
+		// A download that does not end, as a slow server. With remote/incomplete
+		// it first makes <store>/incomplete, as git-lfs does when a download
+		// begins. The deadline of the create kills it with its process group.
+		if exists(filepath.Join(remote, "incomplete")) {
+			_ = os.MkdirAll(filepath.Join(store, "incomplete"), 0o755)
+		}
+		time.Sleep(time.Minute)
+		return 2
 	}
 	b, err := os.ReadFile(filepath.Join(remote, p.oid))
 	if err != nil {
@@ -384,4 +394,141 @@ func TestLFSNoSweepAfterFailedKeep(t *testing.T) {
 	if len(removed) != 0 {
 		t.Errorf("removed %q, want no sweep after a failed keep", removed)
 	}
+}
+
+// TestNotKeptText: a deadline during the checkout blames the copies of the
+// seed when they took a large part of timeoutMs and the private store has no
+// `incomplete` entry (4c111e86, measured on Linux and macOS). The bound of a
+// quarter is claustrum's own. An `incomplete` folder in the store of the
+// repository does not count (measured on macOS). An empty one in the private
+// store counts (measured on Linux).
+func TestNotKeptText(t *testing.T) {
+	private := filepath.Join(t.TempDir(), "lfs")
+	repoStore := filepath.Join(t.TempDir(), "lfs")
+	if err := os.MkdirAll(filepath.Join(repoStore, "incomplete"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rule := func(copied time.Duration) *filterRule {
+		return &filterRule{store: &storeUse{path: private, copied: copied}}
+	}
+	for _, row := range []struct {
+		name      string
+		timeoutMs int
+		copied    time.Duration
+		want      bool
+	}{
+		{"a copy of a quarter", 4000, time.Second, true},
+		{"a copy just under a quarter", 4000, time.Second - time.Millisecond, false},
+		{"a copy of more than a quarter", 4145, 1150 * time.Millisecond, true},
+		{"a copy of less than a quarter", 4560, 1100 * time.Millisecond, false},
+		{"a hard link only", 4000, 0, false},
+		{"no timeoutMs", 0, time.Second, false},
+	} {
+		got, ok := notKeptText(row.timeoutMs, rule(row.copied))
+		if ok != row.want {
+			t.Errorf("%s: notKeptText(%d, %v) = %q, %v, want %v", row.name, row.timeoutMs, row.copied, got, ok, row.want)
+		}
+	}
+	const want = "Turn off Worktree for this session, then try again. A plain retry won't help: git worktree add timed out after 4 seconds," +
+		" and copying the repository's Git LFS files into a folder of Claude's own took a large part of that time, as it does when Claude" +
+		" can't hard-link them there (a repository on another disk, a store reached through a link, a relative lfs.storage); a retry copies them again."
+	if got, _ := notKeptText(4000, rule(time.Second)); got != want {
+		t.Errorf("notKeptText = %q\nwant %q", got, want)
+	}
+	if _, ok := notKeptText(4000, nil); ok {
+		t.Error("notKeptText with no rule = ok, want no text")
+	}
+	if err := os.MkdirAll(filepath.Join(private, "incomplete"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := notKeptText(4000, rule(time.Second)); ok {
+		t.Errorf("notKeptText with an empty incomplete folder in the private store = %q, want no text", got)
+	}
+}
+
+// TestDeadlineWords: the words of timeoutMs in the text of
+// worktree_lfs_not_kept, each from a reply of 4c111e86 (measured on Linux and
+// macOS). 1000 is not measured.
+func TestDeadlineWords(t *testing.T) {
+	for ms, want := range map[int]string{
+		4000: "4 seconds", 3000: "3 seconds", 2763: "2.763 seconds", 2389: "2.3890000000000002 seconds",
+		2986: "2.9859999999999998 seconds", 4300: "4.3 seconds", 11713: "11.713 seconds", 15129: "15.129 seconds",
+		60000: "1 minute", 90000: "90 seconds", 120000: "2 minutes", 1000: "1 second",
+	} {
+		if got := deadlineWords(ms); got != want {
+			t.Errorf("deadlineWords(%d) = %q, want %q", ms, got, want)
+		}
+	}
+}
+
+// TestSeedContext: the seed of a create with timeoutMs ends at half of it
+// (4c111e86, measured on Linux and macOS). With no timeoutMs it keeps ctx.
+func TestSeedContext(t *testing.T) {
+	start := time.Now()
+	ctx, cancel := seedContext(context.Background(), 4000)
+	defer cancel()
+	d, ok := ctx.Deadline()
+	if !ok || d.Sub(start) < 2*time.Second-500*time.Millisecond || d.Sub(start) > 2*time.Second+500*time.Millisecond {
+		t.Errorf("seedContext(4000) deadline after %v, %v, want 2 s", d.Sub(start), ok)
+	}
+	plain, cancelPlain := seedContext(context.Background(), 0)
+	defer cancelPlain()
+	if _, ok := plain.Deadline(); ok {
+		t.Error("seedContext(0) has a deadline, want none")
+	}
+}
+
+// TestSeedCopyTime: the seed counts the time of its copies. A hard link adds
+// no time (claustrum's own, not measured).
+func TestSeedCopyTime(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("a", 64)
+	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+	ps := []pointerRef{{oid: oid, size: 12}}
+	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied != 0 {
+		t.Errorf("seed by a hard link counts %v, want 0", copied)
+	}
+	prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		time.Sleep(30 * time.Millisecond)
+		return io.Copy(w, r)
+	}
+	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
+	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
+	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied < 30*time.Millisecond {
+		t.Errorf("seed by a copy of 30 ms counts %v, want at least 30 ms", copied)
+	}
+}
+
+// TestSeedCopyTimeHoldsHash: the time of a copy of the seed holds the sha256
+// of its bytes, computed in the same pass, so its time is near the seed time
+// of 4c111e86 in the rows (claustrum's own).
+func TestSeedCopyTimeHoldsHash(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("a", 64)
+	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+	prevLink, prevHash, prevFree := seedLink, seedHash, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	hashed := 0
+	seedHash = func() io.Writer { return slowWriter{&hashed} }
+	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
+	t.Cleanup(func() { seedLink, seedHash, storeFreeBytes = prevLink, prevHash, prevFree })
+	private := filepath.Join(t.TempDir(), "lfs")
+	_, copied := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
+	if hashed != 12 || copied < 30*time.Millisecond {
+		t.Errorf("seed by a copy with a hash of 30 ms: %d bytes hashed, %v counted, want 12 bytes and at least 30 ms", hashed, copied)
+	}
+	if got := mustRead(t, storeObjectPath(private, oid)); got != "alpha-object" {
+		t.Errorf("seeded object = %q, want the whole object", got)
+	}
+}
+
+// slowWriter counts the bytes that it takes and waits 30 ms on each write.
+type slowWriter struct{ n *int }
+
+func (w slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(30 * time.Millisecond)
+	*w.n += len(p)
+	return len(p), nil
 }

@@ -2250,7 +2250,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit)
+			indexDir, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit, p.TimeoutMs)
 		var filters filterPlan
 		if rule != nil {
 			filters = rule.plan
@@ -2297,6 +2297,19 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// itself before the deadline takes the failure arm below, also when the
 			// deadline expires during the drain of its pipes (b3081b51, measured on
 			// Linux and macOS).
+			//
+			// A deadline after a long copy of the seed answers
+			// worktree_lfs_not_kept (notKeptText). It reads the private store
+			// before the rollback.
+			if text, ok := notKeptText(p.TimeoutMs, rule); ok {
+				undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+				return rpc.OKResult(req.ID, rpc.WorktreeResult{
+					Success:    false,
+					Error:      text + undo,
+					ErrorCode:  "worktree_lfs_not_kept",
+					BranchKept: kept,
+				})
+			}
 			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
