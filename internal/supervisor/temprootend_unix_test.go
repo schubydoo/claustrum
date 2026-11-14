@@ -149,6 +149,38 @@ func TestLostTempRootStartsNoEndAtShutdown(t *testing.T) {
 	}
 }
 
+// TestShutdownDuringLostTempRootEndLogsNoExitLine: the shutdown sweep ends a child
+// whose temp_root end still waits, and no exited line comes (4c111e86, measured on
+// Linux). The ended line stays.
+func TestShutdownDuringLostTempRootEndLogsNoExitLine(t *testing.T) {
+	logs := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	setTempRootEndGraceForTest(t, 20*time.Second)
+	sent := recordSignalsByProc(t)
+	c, lines := rawLineConn(t)
+	p, bound := spawnHelperTempRoot(t, m, c, TempRootAsk{Folder: true, End: true}, "ignore-term")
+	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+	end, _ := bound()
+	end()
+	for deadline := time.Now().Add(5 * time.Second); len(sent(p.cmd.Process)) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("no SIGTERM from the end")
+		}
+	}
+	if n := m.KillAllCount(); n != 1 {
+		t.Fatalf("the sweep ended %d children, want 1", n)
+	}
+	nextLine(t, lines, `"stream":"exit"`, 15*time.Second)
+	got := logs.String()
+	if !strings.Contains(got, "[process.Manager] Process tr is being ended: its private temp folder is lost") {
+		t.Errorf("log %q, want the ended line", got)
+	}
+	if strings.Contains(got, "Process tr exited") {
+		t.Errorf("log %q, want no exited line", got)
+	}
+}
+
 // TestTempRootEndGraceValue pins the wait after the SIGTERM at 3 s (4c111e86,
 // measured on macOS).
 func TestTempRootEndGraceValue(t *testing.T) {

@@ -68,8 +68,11 @@ func TestExitLineAfterClientKill(t *testing.T) {
 }
 
 // TestShutdownSweepRelabelsAWaitingKill pins the label of a child whose kill still
-// waits when the shutdown sweep ends it: killedBy and the exited line say shutdown,
-// not client (measured on Linux). The child ignores TERM, so the killAndWait waits.
+// waits when the shutdown sweep ends it: killedBy and the exit frame say shutdown,
+// not client (an older build, measured on Linux in the log). The child ignores TERM,
+// so the killAndWait waits. A child that the shutdown ends logs no exited line,
+// measured on Linux (c9125eb8 and 4c111e86 log none), so the line is gone. On macOS 1
+// or 2 of 8 runs of the references still log it.
 func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -104,10 +107,68 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	if got := killedByOf(p); got != "shutdown" {
 		t.Errorf("killedBy after the shutdown sweep = %q, want %q", got, "shutdown")
 	}
-	untilExit(t, frames)
+	if got := exitFrame(t, frames); got.KilledBy != "shutdown" {
+		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "shutdown")
+	}
 	<-done
-	if want := "exited with code -1, terminated by SIGKILL, asked to end by this daemon (shutdown)\n"; !strings.Contains(logs.String(), want) {
+	if strings.Contains(logs.String(), "Process c1 exited") {
+		t.Errorf("log = %q\nwant no exited line for c1", logs.String())
+	}
+}
+
+// exitFrame reads frames until the exit frame and returns it.
+func exitFrame(t *testing.T, frames <-chan StreamFrame) StreamFrame {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case f := <-frames:
+			if f.Stream == "exit" {
+				return f
+			}
+		case <-deadline:
+			t.Fatal("no exit frame")
+		}
+	}
+}
+
+// TestShutdownEndedChildLogsNoExitLine: a child that the shutdown sweep ends logs no
+// exited line, and a child that exited before the sweep keeps its line, measured on
+// Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs of the references
+// still log it.
+func TestShutdownEndedChildLogsNoExitLine(t *testing.T) {
+	logs := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	c, frames := pipeConn(t)
+	exe, env := helperCommand(t, "echo")
+	if _, err := m.Spawn(c, "early", exe, nil, "", env, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	exitFrame(t, frames)
+	exe, env = helperCommand(t, "ignore-term")
+	if _, err := m.Spawn(c, "sweep-ended", exe, nil, "", env, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	select {
+	case f := <-frames:
+		if f.Stream != "stdout" {
+			t.Fatalf("first frame is %q, want the ready line on stdout", f.Stream)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the helper never became ready")
+	}
+	if n := m.KillAllCount(); n != 1 {
+		t.Fatalf("the sweep ended %d children, want 1", n)
+	}
+	if got := exitFrame(t, frames); got.KilledBy != "shutdown" {
+		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "shutdown")
+	}
+	if want := "[process.Manager] Process early exited with code 0\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
+	}
+	if strings.Contains(logs.String(), "Process sweep-en… exited") {
+		t.Errorf("log = %q\nwant no exited line for the child of the sweep", logs.String())
 	}
 }
 
@@ -154,8 +215,10 @@ func TestShutdownSweepRelabelsWhenOneOfTwoWaitsEnded(t *testing.T) {
 }
 
 // TestShutdownSweepKeepsReasonOfPlainKill pins a plain process.kill on a child that
-// ignores TERM: nothing waits, so the shutdown sweep keeps "client" (claustrum's own,
-// not measured).
+// ignores TERM: nothing waits, so the shutdown sweep keeps "client" in the exit frame
+// (claustrum's own, not measured). The sweep ended the child, so it logs no exited
+// line, measured on Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs
+// of the references still log it.
 func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -182,9 +245,11 @@ func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	if got := killedByOf(p); got != "client" {
 		t.Errorf("killedBy after the shutdown sweep = %q, want %q", got, "client")
 	}
-	untilExit(t, frames)
-	if want := "terminated by SIGKILL, asked to end by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
-		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
+	if got := exitFrame(t, frames); got.KilledBy != "client" {
+		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "client")
+	}
+	if strings.Contains(logs.String(), "Process c1 exited") {
+		t.Errorf("log = %q\nwant no exited line for c1", logs.String())
 	}
 }
 

@@ -184,6 +184,9 @@ type Proc struct {
 	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
 	// A count, so one call that returns leaves another call's wait marked.
 	waiting int
+	// endedByShutdown is set when the shutdown sweep delivers its signal. Such a
+	// child logs no exited line (see waitReapAndDrain). Read and written under p.mu.
+	endedByShutdown bool
 	// signalled is set when signalIfLive delivers a signal. A farewell on a
 	// signalled record is not said (see holdFarewell). farewell is the pending
 	// farewell, or nil. Both are read and written under p.mu.
@@ -596,6 +599,9 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 		p.killedBy = killedBy
 	}
 	p.signalled = true
+	if killedBy == "shutdown" {
+		p.endedByShutdown = true
+	}
 	return true, nil
 }
 
@@ -1349,6 +1355,7 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	p.running = false
 	p.exitedAt = time.Now() // starts the procPruneAge clock
 	killedBy := p.killedBy
+	quiet := p.endedByShutdown
 	p.mu.Unlock()
 	// Stop the stdin writer and wake it if it is parked on an empty queue; the
 	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
@@ -1361,7 +1368,15 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	// that job, so the close ends nothing.
 	p.group.Close()
 	sigName := sysproc.ExitSignalName(err)
-	logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
+	// A child that the shutdown sweep ended logs no exited line, measured on Linux
+	// (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs of the references
+	// still log it. One whose temp-root end still ran logs none too (4c111e86,
+	// measured on Linux). A child that ended before the sweep keeps its line.
+	// claustrum's own, not measured: Windows, and a stream-json child that the sweep
+	// sent SIGTERM.
+	if !quiet {
+		logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
+	}
 	metrics.Met.ProcessExits.Add(1)
 	p.emit(StreamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
@@ -1389,9 +1404,10 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 // at shutdown request" in a measurement, a server.shutdown request with two children.
 //
 // That shutdown line is a race on the reference, not a rule. 89cb6289 printed it in
-// that measurement, and printed no exited line in two runs. claustrum prints it when the
-// exit goroutine reaches the line before the daemon exits. The shutdown wait
-// (shutdownRecordWait) ends earlier, at the removal of the record.
+// that measurement, and printed no exited line in two runs. c9125eb8 and 4c111e86
+// print none (measured on Linux). On macOS 1 or 2 of 8 runs of the references still
+// print it. claustrum prints none for a child that the shutdown sweep ended
+// (endedByShutdown).
 func exitLogSuffix(sigName, killedBy string) string {
 	suffix := ""
 	if sigName != "" {
