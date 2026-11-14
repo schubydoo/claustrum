@@ -3,10 +3,14 @@
 package git
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // 7d193f89 creates the worktree directory itself before `git worktree add`, so
@@ -294,4 +298,92 @@ func TestUndoFailedAddKeepsAnEntryOfASwappedParent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeFileInfo is an os.FileInfo whose Sys is no *syscall.Stat_t.
+type fakeFileInfo struct{}
+
+func (fakeFileInfo) Name() string       { return "fake" }
+func (fakeFileInfo) Size() int64        { return 0 }
+func (fakeFileInfo) Mode() fs.FileMode  { return fs.ModeDir }
+func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (fakeFileInfo) IsDir() bool        { return true }
+func (fakeFileInfo) Sys() any           { return nil }
+
+// TestFailedAddLeafRemovalErrorArms: the error arms of the leaf removal of a
+// failed add. Each keeps the entries and answers an error or false. All paths
+// are in a t.TempDir() (from the code).
+func TestFailedAddLeafRemovalErrorArms(t *testing.T) {
+	t.Run("the parent does not open", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "gone")
+		var pe *fs.PathError
+		err := removeWorktreeLeaf(filepath.Join(parent, "w1"), nil)
+		if !errors.As(err, &pe) || pe.Op != "open" || pe.Path != parent || !errors.Is(err, syscall.ENOENT) {
+			t.Errorf("removeWorktreeLeaf = %v, want open %s: ENOENT", err, parent)
+		}
+	})
+	t.Run("the leaf is gone", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := removeWorktreeLeaf(filepath.Join(dir, "w1"), nil); !errors.Is(err, syscall.ENOENT) {
+			t.Errorf("removeWorktreeLeaf = %v, want the ENOENT of the first unlinkat", err)
+		}
+		if err := rmdirWorktreeLeaf(filepath.Join(dir, "w1")); !errors.Is(err, syscall.ENOENT) {
+			t.Errorf("rmdirWorktreeLeaf = %v, want ENOENT", err)
+		}
+	})
+	t.Run("handleIs", func(t *testing.T) {
+		dir := t.TempDir()
+		fi, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = f.Close() }()
+		if !handleIs(int(f.Fd()), fi) {
+			t.Error("handleIs of the same folder = false, want true")
+		}
+		if handleIs(int(f.Fd()), fakeFileInfo{}) {
+			t.Error("handleIs with no Stat_t = true, want false")
+		}
+		if handleIs(-1, fi) {
+			t.Error("handleIs of a bad handle = true, want false")
+		}
+	})
+	t.Run("a link leaf whose parent does not resolve", func(t *testing.T) {
+		dir := t.TempDir()
+		leaf := filepath.Join(dir, "w1")
+		if err := os.Symlink(filepath.Join(dir, "target"), leaf); err != nil {
+			t.Fatal(err)
+		}
+		old := evalSymlinks
+		evalSymlinks = func(string) (string, error) { return "", errors.New("no resolve") }
+		t.Cleanup(func() { evalSymlinks = old })
+		if got, err := failedAddLeafResolve(leaf); err == nil {
+			t.Errorf("failedAddLeafResolve = %q, want the error of the parent", got)
+		}
+	})
+	t.Run("heldLeafLacksGitFile", func(t *testing.T) {
+		dir := t.TempDir()
+		fi, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if heldLeafLacksGitFile(worktreeCheckpoint{}) {
+			t.Error("no checkpoint = true, want false")
+		}
+		if heldLeafLacksGitFile(worktreeCheckpoint{info: fi, held: []*os.File{nil}}) {
+			t.Error("a nil handle = true, want false")
+		}
+		f, err := os.Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+		if heldLeafLacksGitFile(worktreeCheckpoint{info: fi, held: []*os.File{f}}) {
+			t.Error("a closed handle = true, want false")
+		}
+	})
 }

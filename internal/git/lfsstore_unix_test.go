@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -335,15 +336,72 @@ func TestLFSKeepAfterFailedCheckout(t *testing.T) {
 // TestLFSKeepNeedsItsBytes: an object that git-lfs wrote with bytes that do
 // not give its oid stays out of the store of the repository. The folder
 // `lfs/objects` is made, and no shard folder (4c111e86, measured on Linux and
-// macOS for bytes and a size that differ from the pointer).
+// macOS for bytes and a size that differ from the pointer). The row with the
+// size of the pointer is claustrum's own, not measured.
 func TestLFSKeepNeedsItsBytes(t *testing.T) {
 	seamFreeSpace(t)
-	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
-	mustWrite(t, filepath.Join(f.remote, f.oids["a.bin"]), "other-bytes-of-another-size")
-	f.wantSuccess(t)
-	objects := filepath.Join(f.gitDir, "lfs", "objects")
-	if names, err := os.ReadDir(objects); err != nil || len(names) != 0 {
-		t.Errorf("%s = %v, %v, want a made folder with no shard", objects, names, err)
+	for _, row := range []struct{ name, body string }{
+		{"another size", "other-bytes-of-another-size"},
+		{"the same size", "ALPHA-OBJECT"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+			mustWrite(t, filepath.Join(f.remote, f.oids["a.bin"]), row.body)
+			f.wantSuccess(t)
+			objects := filepath.Join(f.gitDir, "lfs", "objects")
+			if names, err := os.ReadDir(objects); err != nil || len(names) != 0 {
+				t.Errorf("%s = %v, %v, want a made folder with no shard", objects, names, err)
+			}
+		})
+	}
+}
+
+// slowSumHash is a hash whose first Sum waits for twice keepBudget, so the
+// budget of the keep is spent after the bytes test of the first object.
+type slowSumHash struct {
+	hash.Hash
+	slept *bool
+}
+
+func (h slowSumHash) Sum(b []byte) []byte {
+	if !*h.slept {
+		*h.slept = true
+		time.Sleep(2 * keepBudget)
+	}
+	return h.Hash.Sum(b)
+}
+
+// TestLFSKeepBudget: the bytes tests of one keep step share a time budget.
+// The object whose test ends the budget is kept, and the next object is not
+// (claustrum's own, not measured).
+func TestLFSKeepBudget(t *testing.T) {
+	seamFreeSpace(t)
+	prevBudget, prevHash := keepBudget, newObjectHash
+	slept := false
+	keepBudget = 50 * time.Millisecond
+	newObjectHash = func() hash.Hash { return slowSumHash{sha256.New(), &slept} }
+	t.Cleanup(func() { keepBudget, newObjectHash = prevBudget, prevHash })
+	gitDir, private := t.TempDir(), t.TempDir()
+	var oids []string
+	for _, body := range []string{"alpha-object", "beta-object"} {
+		sum := sha256.Sum256([]byte(body))
+		oid := hex.EncodeToString(sum[:])
+		mustWrite(t, storeObjectPath(private, oid), body)
+		oids = append(oids, oid)
+	}
+	slices.Sort(oids)
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, false)
+	store := filepath.Join(gitDir, "lfs")
+	if _, err := os.Lstat(storeObjectPath(store, oids[0])); err != nil {
+		t.Errorf("the first object: %v, want it kept", err)
+	}
+	if _, err := os.Lstat(storeObjectPath(store, oids[1])); !os.IsNotExist(err) {
+		t.Errorf("the second object: %v, want it not kept after the budget", err)
 	}
 }
 
@@ -588,7 +646,7 @@ func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownload(root, gitDir, private, oid, time.Now(), false)
+	returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), false)
 	if !swapped {
 		t.Fatal("the seam did not swap the shard folder")
 	}
@@ -622,7 +680,7 @@ func TestLFSFailedKeepAddsNoRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownload(root, gitDir, private, oid, time.Now(), true)
+	returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), true)
 	if names, _ := os.ReadDir(shard); len(names) != 1 || len(removed) != 0 {
 		t.Errorf("the shard holds %v and %q was removed, want only the stale name and no remove", names, removed)
 	}
@@ -693,7 +751,7 @@ func TestLFSKeepNeedsSpare(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = root.Close() }()
-			returnDownload(root, gitDir, private, oid, time.Now(), row.failed)
+			returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), row.failed)
 			p := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
 			if want := []string{filepath.Dir(p)}; !slices.Equal(asked, want) {
 				t.Errorf("free space asked for %q, want %q", asked, want)
