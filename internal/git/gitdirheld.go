@@ -63,6 +63,8 @@ import (
 //   - The reads of the create that decide a refusal.
 //   - On Linux and macOS, the seed of the LFS store, read only
 //     (fillCheckoutStore, lfsstore.go).
+//   - On Linux and macOS, the read of the free space before a keep of the
+//     LFS store (keepHasSpace, lfsstore.go).
 //
 // A create whose gate ran under the hold of the off switch takes the hold at a
 // later gate before its first good `worktree add` (keepLiveCreate). From then
