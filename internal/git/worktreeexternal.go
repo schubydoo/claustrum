@@ -185,17 +185,6 @@ func worktreeRootInRepoRefusal(worktreeRoot, baseRepo, verb string) string {
 		"a worktree location must be outside the repository", verb, tickPath(worktreeRoot), baseRepo)
 }
 
-// removeTickPath shows p in backticks (tickPath) for the verb "remove" and plain for
-// "create". The Windows "custom worktree location" text uses it. A remove quotes the
-// root there (`b3081b51`, measured on Windows). The plain create text is claustrum's
-// own, not measured.
-func removeTickPath(p, verb string) string {
-	if verb == "remove" {
-		return tickPath(p)
-	}
-	return p
-}
-
 // listedWorktree is one entry of `git worktree list --porcelain`, with or without -z.
 // It holds the
 // path as git lists it, and whether the entry has a "bare" line.

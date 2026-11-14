@@ -42,6 +42,7 @@ Each fixed word has a fixed place. A slot takes a ref or a path from the request
 - `hash-object -t tree /dev/null`
 - `diff <base>`, `diff --numstat <base>`, `diff -z --no-color --name-status -M <base>`
 - `diff --inter-hunk-context=3 <base>`, `diff --src-prefix=a/ --dst-prefix=b/ <base>`
+- `diff --no-color HEAD`, measured on Linux with `c9125eb8` and `4c111e86`. claustrum's own: its run, and the refusal of another ref
 - `diff --name-status -M <base>`, the same with `-- :(top,exclude)<path>` or `-- :(top,exclude,literal)<path>`, and `diff --name-status -M <ref> <ref>`
 
 A `<rev>` is a ref, `<A>..<B>` or `<A>...<B>`. A `<base>` is a ref or `<A>..<B>`. In `diff --name-status -M` a `<base>` with three dots gets the shape refusal, and so does `--inter-hunk-context=10` (measured on Linux, macOS and Windows).

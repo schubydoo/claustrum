@@ -19,7 +19,7 @@ func TestExternalWorktreeUnsupportedGuardBranch(t *testing.T) {
 	orig := externalWorktreeUnsupportedRefusal
 	t.Cleanup(func() { externalWorktreeUnsupportedRefusal = orig })
 	externalWorktreeUnsupportedRefusal = func(root, verb string) string {
-		return fmt.Sprintf("refusing to %s worktree: %s cannot be used: a custom worktree location is not supported on Windows hosts yet", verb, removeTickPath(root, verb))
+		return fmt.Sprintf("refusing to %s worktree: %s cannot be used: a custom worktree location is not supported on Windows hosts yet", verb, tickPath(root))
 	}
 
 	base := t.TempDir()
@@ -45,11 +45,11 @@ func TestExternalWorktreeUnsupportedGuardBranch(t *testing.T) {
 	if !strings.Contains(remove, "a custom worktree location is not supported on Windows hosts yet") {
 		t.Errorf("remove with worktreeRoot = %s, want the unsupported refusal", remove)
 	}
-	// This checks the stub above, so it proves only that removeTickPath quotes on remove.
-	// TestExternalWorktreeUnsupportedOnWindows guards the production text.
+	// This checks the stub above. TestExternalWorktreeUnsupportedOnWindows guards the
+	// production text.
 	if !strings.Contains(worktreeErrorField(t, remove), "worktree: `"+root+"` cannot be used") ||
-		!strings.Contains(worktreeErrorField(t, create), "worktree: "+root+" cannot be used") {
-		t.Errorf("remove = %s, create = %s, want the root in backticks on remove only", remove, create)
+		!strings.Contains(worktreeErrorField(t, create), "worktree: `"+root+"` cannot be used") {
+		t.Errorf("remove = %s, create = %s, want the root in backticks", remove, create)
 	}
 	if strings.Contains(remove, "errorCode") {
 		t.Errorf("remove refusal must carry no errorCode, got %s", remove)
