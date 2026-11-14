@@ -190,15 +190,20 @@ const sweepClosesLockFirst = true
 // with no sharing refuses both opens, and the folder then stays. A lock that
 // opens is the lock of a daemon that is gone (measured on Windows). The create
 // goes through root, so it follows no link out of git-shadow. The second open
-// makes nothing and follows no link at the last name.
-func takeSweepLock(root *os.Root, base, rel string) (*os.File, error) {
+// makes nothing and follows no link at the last name. An open that works is
+// the lock, so locked is true then.
+func takeSweepLock(root *os.Root, base, rel string) (*os.File, bool, error) {
 	f, err := root.OpenFile(rel, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	_ = f.Close()
-	return openNoShare(filepath.Join(base, rel), syscall.GENERIC_READ|syscall.GENERIC_WRITE)
+	f, err = openNoShare(filepath.Join(base, rel), syscall.GENERIC_READ|syscall.GENERIC_WRITE)
+	return f, err == nil, err
 }
+
+// sweepLockMayBeFIFO is false on Windows, which has no FIFO.
+const sweepLockMayBeFIFO = false
 
 // linkedLockOpen tests the lock file at path with an open with no sharing,
 // and closes it at once. The open makes nothing (claustrum's own, not
