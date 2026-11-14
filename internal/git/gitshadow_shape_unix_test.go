@@ -418,9 +418,14 @@ func createRows() []shapeRow {
 			same("none", "--git-dir=<repo>/.git config -z --list", "<cwd>", "{A} {D} {L}", "{A} {G} {L}"),
 			same("P28", "--git-dir=<repo>/.git hash-object -t tree /dev/null", "<cwd>", "{A} {D} {H}", "{A} {G} {H}"),
 			same("none", "--git-dir=<repo>/.git config -z --list", leaf, "{A} {D} {L}", "{A} {G} {L}"),
+			// In the state shadow the settle call names the LFS store of the
+			// checkout folder after --work-tree (4c111e86, measured on Linux).
 			{list: "ATTR+P28", cwd: leaf,
-				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
-				shadow: "{A} {D} {H}" + index[true], off: "{A} {G} {H}" + index[false], fallback: "{A} {G} {H}" + index[true]},
+				argv:   "--git-dir=<repo>/.git --work-tree=<leaf> -c lfs.storage=<S>/.checkout-<n>/lfs diff-files --quiet --ignore-submodules=all",
+				shadow: "{A} {D} {H}" + index[true]},
+			{list: "ATTR+P28", cwd: leaf,
+				argv: "--git-dir=<repo>/.git --work-tree=<leaf> diff-files --quiet --ignore-submodules=all",
+				off:  "{A} {G} {H}" + index[false], fallback: "{A} {G} {H}" + index[true]},
 		},
 		// The content check of c9125eb8 (worktreecontent.go), in the state shadow
 		// only. The commit has no file of the check, so no hash-object

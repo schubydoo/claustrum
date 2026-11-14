@@ -13,7 +13,8 @@ import (
 
 // rowArgv is the argv of one call without its -c items, with the paths masked.
 // A leading --attr-source stays. <repo> is the repository, <root> the
-// worktreeRoot, <S>/.s<n> the staging folder and <id> a commit id.
+// worktreeRoot, <S>/.s<n> the staging folder, <S>/.checkout-<n> the folder of
+// the checkout and <id> a commit id.
 func rowArgv(c envCall, repo, root string) string {
 	argv := c.argv
 	var out []string
@@ -29,6 +30,7 @@ func rowArgv(c envCall, repo, root string) string {
 	}
 	text = strings.ReplaceAll(text, repo, "<repo>")
 	text = regexp.MustCompile(`\S*/\.s[0-9]+/leaf/`).ReplaceAllString(text, "<S>/.s<n>/leaf/")
+	text = regexp.MustCompile(`=\S*/\.checkout-[0-9]+/`).ReplaceAllString(text, "=<S>/.checkout-<n>/")
 	return shapeCommit.ReplaceAllString(text, "<id>")
 }
 
@@ -48,9 +50,11 @@ func TestWorktreeCreateCallsOfTheRows(t *testing.T) {
 	)
 	location := []string{listing, "rev-parse --show-toplevel", listing, "rev-parse --absolute-git-dir",
 		listing, "worktree list --porcelain -z"}
-	settle := func(leaf string) []string {
+	// In the state shadow the settle call names the LFS store of the checkout
+	// folder (4c111e86, measured on Linux).
+	settle := func(leaf, lfs string) []string {
 		return []string{"--attr-source=<id> version", gitDirLs, "--git-dir=<repo>/.git hash-object -t tree /dev/null",
-			gitDirLs, "--attr-source=<id> --git-dir=<repo>/.git --work-tree=" + leaf + " diff-files --quiet --ignore-submodules=all"}
+			gitDirLs, "--attr-source=<id> --git-dir=<repo>/.git --work-tree=" + leaf + lfs + " diff-files --quiet --ignore-submodules=all"}
 	}
 	for _, row := range []struct {
 		name  string
@@ -66,7 +70,7 @@ func TestWorktreeCreateCallsOfTheRows(t *testing.T) {
 				listing, "worktree add --no-track --no-checkout -b wt1 " + leaf,
 				listing, "rev-parse --verify --quiet refs/heads/wt1^{commit}",
 				gitDirLs, "--git-dir=<repo>/.git --work-tree=" + leaf + " read-tree -u --reset --no-recurse-submodules <id>",
-			}, settle(leaf))
+			}, settle(leaf, ""))
 		}},
 		{"shadow with worktreeRoot", stateShadow, true, func(leaf string) []string {
 			return slices.Concat([]string{listing, "rev-parse --is-inside-work-tree"}, location, []string{
@@ -79,7 +83,7 @@ func TestWorktreeCreateCallsOfTheRows(t *testing.T) {
 				listing, "rev-parse --verify --quiet refs/heads/wt1^{commit}",
 				gitDirLs, `--git-dir=<repo>/.git config -z --get-regexp ^(core\.sshcommand|ssh\.variant)$`,
 				gitDirLs, "--git-dir=<repo>/.git --work-tree=" + leaf + " read-tree -u --reset --no-recurse-submodules <id>",
-			}, settle(leaf), location, []string{
+			}, settle(leaf, " -c lfs.storage=<S>/.checkout-<n>/lfs"), location, []string{
 				listing, "cat-file --batch",
 				listing, "hash-object -t commit --literally --no-filters --stdin-paths -w",
 				listing, "hash-object -t tree --literally --no-filters --stdin-paths -w",

@@ -985,7 +985,13 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// member, and after a drain overrun, no call runs (claustrum's own, not
 		// measured).
 		if err == nil && settle {
-			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, pin, readEnd)
+			// The settle call names the private store as the read-tree call
+			// named it (settleCheckout).
+			storage := ""
+			if keep {
+				storage = lfs.path
+			}
+			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, storage, pin, readEnd)
 			// The test of the held git directory runs again right before the
 			// placement, so a swap during the settle step gets the same answer
 			// (claustrum's own, not measured).

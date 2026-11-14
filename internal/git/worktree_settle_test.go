@@ -398,7 +398,7 @@ func TestSettleCheckoutStopsWithTheContext(t *testing.T) {
 	start := time.Now()
 	stop := time.AfterFunc(100*time.Millisecond, cancel)
 	defer stop.Stop()
-	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), nil, start)
+	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), "", nil, start)
 	if leaf != dir {
 		t.Fatalf("settleWaitFor got leaf %q, want %q: the wait did not run", leaf, dir)
 	}
@@ -546,7 +546,7 @@ func TestSettleCheckoutReadsTheLimitAfterTheProbe(t *testing.T) {
 	deadline := start.Add(probe + 1500*time.Millisecond)
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), nil, start)
+	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), "", nil, start)
 	took := time.Since(start)
 	attrSourceMu.Lock()
 	ok := attrSourceOK
@@ -596,7 +596,7 @@ func TestSettleCheckoutReadsTheLimitAfterTheListing(t *testing.T) {
 	start := time.Now()
 	ctx, cancel := context.WithDeadline(context.Background(), start.Add(settleMargin+500*time.Millisecond))
 	defer cancel()
-	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), nil, start)
+	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), "", nil, start)
 	if took := time.Since(start); took < listing {
 		t.Fatalf("settleCheckout took %v, want at least the listing delay %v: the listing did not run", took, listing)
 	}
