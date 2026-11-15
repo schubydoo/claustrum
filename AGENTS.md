@@ -203,8 +203,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
-  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeOneEntry`). Do not
-  build a name below it from a request value ([The
+  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeOneEntry`), except the seed copy remove
+  (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
   ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by
   `removeTempRequestDir`, after `homeguard.WipesHomeDir`.
