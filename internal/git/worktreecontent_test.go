@@ -832,6 +832,27 @@ func TestContentCheckFilters(t *testing.T) {
 	}
 }
 
+// TestContentCheckPointerTextOtherFilter: a blob in the form of a Git LFS
+// pointer whose path has a filter other than lfs keeps the filter call, and a
+// smudge with the same output at each run passes (claustrum's own, not
+// measured).
+func TestContentCheckPointerTextOtherFilter(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ptr := "version https://git-lfs.github.com/spec/v1\noid sha256:" + strings.Repeat("ab", 32) + "\nsize 3\n"
+	f := newContentFixture(t, map[string]string{".claude/p.txt": ptr, ".gitattributes": ".claude/p.txt filter=s\n"})
+	outside(t, "[filter \"s\"]\n\tsmudge = CLAUSTRUM_TEST_HELPER=filter-suffix '"+filepath.ToSlash(exe)+"' baa\n")
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if !slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--filters") }) {
+		t.Error("no cat-file --filters call ran, want one")
+	}
+}
+
 // TestContentCheckNotWithTheOffSwitch: a create with "shadowDirOff":true runs
 // no check (claustrum's own, not measured).
 func TestContentCheckNotWithTheOffSwitch(t *testing.T) {
