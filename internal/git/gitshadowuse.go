@@ -351,7 +351,9 @@ func (e *addSwappedAfterListing) Error() string { return "cannot add a worktree:
 //   - The link leads to a copy of the git directory: `git worktree add failed:
 //     cannot prepare the repository's worktrees directory: ".git" is a link or
 //     a file where Claude needs a real directory; put the directory itself in
-//     its place` (cells swap-copy and swap-copyold, 7 of 7 runs).
+//     its place` (cells swap-copy and swap-copyold, 7 of 7 runs). On
+//     4c111e86 the create goes on in the copy instead (askedAgain, measured
+//     on Linux).
 //   - The link leads to a folder with one marker file: `git worktree add
 //     failed: cannot list the repository's worktree entries: ".git" is a link
 //     …`, with the same end (cells swap-marker, 4 of 4 runs). The listing

@@ -18,8 +18,8 @@ import (
 // file write inside that directory through the held folder
 // (acceptedGitDir.root), not through the path. A link, a junction or another
 // folder that is put at the path while the create runs gets none of them,
-// except the directory that the hold moves to (movedTo or replacedAtPath,
-// below) and the Windows stale step.
+// except the directory that the hold moves to (movedTo, askedAgain or
+// replacedAtPath, below) and the Windows stale step.
 //
 // The hold stops no rename of the folder by another process. On Windows its
 // handle shares delete access for that (openHeldGitDir): on 5fd08069 a rename
@@ -78,6 +78,12 @@ import (
 // the gate (acceptedGitDir.replacedAtPath). In a staged add addStage.finish
 // takes it before the move (adopt). The steps above then act through that
 // folder.
+//
+// The maintainer approved a third step on 2026-11-14. A symbolic link is put
+// at `.git` right after an answer of `rev-parse --absolute-git-dir` that named
+// the held folder. The create then makes that call again and takes the folder
+// of the second answer (acceptedGitDir.askedAgain, measured on Linux). The
+// steps above then act through that folder.
 //
 // After a junction at `.git` right before `rev-parse --absolute-git-dir` on
 // Windows, the stale step goes by the path and removes the old registration

@@ -254,7 +254,9 @@ On Linux and macOS, `acceptedGitDir.movedTo` and `replacedAtPath` take a new fol
 step that resolves the path of the git directory again, and never widen a delete of these
 steps. The maintainer approved two exceptions: the Windows stale step, and the rollback
 of the registration after the staging step took the hold ([Rare
-states](docs/protocol/git-worktree-create.md#rare-states)).
+states](docs/protocol/git-worktree-create.md#rare-states)). The maintainer approved a third on
+Linux and macOS: `acceptedGitDir.askedAgain`, for a link at `.git` right after the answer of
+`rev-parse --absolute-git-dir`.
 
 ### Other rules
 

@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -33,7 +34,7 @@ import (
 //   - Each later step tests that the path still names that folder (stands). A
 //     step that fails the test refuses the create with the text of that step,
 //     leaves the refusal to a later step (swapRefusal, answeredElsewhere), or
-//     moves the hold (movedTo, replacedAtPath).
+//     moves the hold (movedTo, askedAgain, replacedAtPath).
 //   - The acts of the create inside the git directory go through the held
 //     folder, never through the path. The list is at the top of gitdirheld.go.
 //     The test of a step is therefore no guard of such an act. It decides the
@@ -320,6 +321,41 @@ func (a *acceptedGitDir) movedTo(gitDir, repo string) *acceptedGitDir {
 	return a.takeOver(gitDir, gitDirIdentity(gitDir), repo)
 }
 
+// askedAgain is the hold of a create on the git directory that git answers in
+// a second `rev-parse --absolute-git-dir` call, with that answer. It is for a
+// path that changed right after a first answer that named the held folder. It
+// is nil when the first answer named another folder or the `commondir` test of
+// the step fails. It is nil too when the trust check of repo pins no other git
+// directory, the second call fails, or movedTo gives no hold. The caller
+// releases the new hold.
+//
+// The rows are measured on Linux. A symbolic link to a copy of the git
+// directory is put at `.git` right after the first answer. 4c111e86 then asks
+// git again, goes on in the copy and answers success, and the record of the
+// session folder names the copy. A filter in the config of the copy does not
+// run. Not measured: a link to the git directory of another repository, and
+// macOS, which follows Linux.
+func (a *acceptedGitDir) askedAgain(u gitUse, gitDir, repo string) (string, *acceptedGitDir) {
+	if a == nil || !a.isAt(gitDir) {
+		return "", nil
+	}
+	if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if t := gitDirTrustFor(repo); t.verdict != gitDirTrusted || t.pinCommonDir == "" || a.isAt(t.pinCommonDir) {
+		return "", nil
+	}
+	again, _, answered, err := worktreeBaseGitDir(u, repo)
+	if err != nil || !answered {
+		return "", nil
+	}
+	next := a.movedTo(again, repo)
+	if next == nil {
+		return "", nil
+	}
+	return again, next
+}
+
 // replacedAtPath is the hold of a create on a new real directory at the path
 // of the held git directory, right after a good `worktree add`. It is nil when
 // the path names no real directory, still names the held folder, or names a
@@ -437,7 +473,8 @@ func (u gitUse) swapped(step string) bool {
 //     then the listing of the add, and refuses at the step before the add
 //     (measured on macOS, 7 of 7 runs). The refusal
 //     is in worktreeAdd. With that link before the call, git answers the copy,
-//     and the create goes on in it (movedTo).
+//     and the create goes on in it (movedTo). With that link right after the
+//     call, 4c111e86 goes on in the copy too (askedAgain, measured on Linux).
 func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.swapped(step) {
 		return ""

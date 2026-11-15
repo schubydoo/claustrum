@@ -1608,11 +1608,24 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// macOS). The record after the second call of a wrong answer, no record after
 	// a failed call that stops the create, the folder of the git answer when no pin is known, no
 	// record with the off switch and Windows are claustrum's own, not measured.
-	if !sessiondirs.OffSwitchSet(req.Params) {
-		recorded := t.pinCommonDir
-		if recorded == "" {
-			recorded = gitDir
+	//
+	// On Linux and macOS a path that changed right after an answer that named the
+	// held folder gets one more call, and the create goes on in the folder of the
+	// second answer (acceptedGitDir.askedAgain). The record then names that folder
+	// (measured on Linux).
+	answeredSwap := gitAnswered && req.use.swapped("answered")
+	recorded := t.pinCommonDir
+	if recorded == "" {
+		recorded = gitDir
+	}
+	if answeredSwap && !stagedAddWindowsSteps && req.use.shadow() {
+		if again, next := req.use.accepted.askedAgain(pairSSHUse(req, bool(p.ShadowDirOff)), gitDir, repo); next != nil {
+			defer next.release()
+			req.use.accepted = next
+			gitDir, recorded = again, again
 		}
+	}
+	if !sessiondirs.OffSwitchSet(req.Params) {
 		_ = sessiondirs.RememberCreate(recorded)
 	}
 	// After a call that answered, the path of the git directory must still name
@@ -1639,7 +1652,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	//   - Git answered another real directory than the held one, because the
 	//     path leads to it since a step before the call: the create goes on in
 	//     that directory (acceptedGitDir.movedTo).
-	if gitAnswered && req.use.swapped("answered") {
+	if answeredSwap {
 		switch {
 		case stagedAddWindowsSteps && answeredElsewhere(req.use, gitDir):
 			// No refusal here: the step of the add comes next.
