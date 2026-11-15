@@ -252,6 +252,8 @@ component_management:
         - internal/git/lfsstore.go
         - internal/git/lfsstore_unix.go
         - internal/git/lfsstore_windows.go
+        # the stop of a checkout whose Git LFS download fills the disk (4c111e86).
+        - internal/git/lfsroom.go
         # the core.hooksPath value of each git call that sets it (be1c1ca5).
         - internal/git/hooksdevice_unix.go
         - internal/git/hooksdevice_windows.go

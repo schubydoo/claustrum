@@ -39,7 +39,8 @@ import (
 //     create succeeds (measured on Linux). An object whose bytes and size
 //     differ from its pointer gets `lfs/objects` but no shard folder (measured
 //     on Linux and macOS). The keep also runs after a failed or a stopped
-//     checkout (measured on Linux and macOS).
+//     checkout (measured on Linux and macOS). A stop for the space keeps
+//     nothing (lfsroom.go, measured on Linux).
 //   - The sweep of stale temp names (sweepShardTemps).
 //
 // Claustrum's own, not measured: the seed reads the pointers with `ls-tree`

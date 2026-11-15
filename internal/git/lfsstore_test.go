@@ -22,7 +22,8 @@ import (
 // to log. A present object goes to stdout. Else it copies remote/<oid> into
 // the store, as git-lfs does after a download, or fails with exit 2 and the
 // text of remote/error, or a 404 text with no such file. `<store>` in that text
-// is the store. With a file remote/hang it waits for its kill.
+// is the store. With a file remote/hang it waits for its kill or for a file
+// remote/end.
 func lfsSmudgeHelper(remote, log string) int {
 	body, _ := io.ReadAll(os.Stdin)
 	p, ok := readPointerBlob(body)
@@ -53,7 +54,13 @@ func lfsSmudgeHelper(remote, log string) int {
 		if exists(filepath.Join(remote, "incomplete")) {
 			_ = os.MkdirAll(filepath.Join(store, "incomplete"), 0o755)
 		}
-		time.Sleep(time.Minute)
+		// A file remote/end ends the download at once, with no text.
+		for range 1200 {
+			if exists(filepath.Join(remote, "end")) {
+				return 2
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 		return 2
 	}
 	b, err := os.ReadFile(filepath.Join(remote, p.oid))
