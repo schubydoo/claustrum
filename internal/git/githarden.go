@@ -694,6 +694,13 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		var exitErr *exec.ExitError
 		return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
 	}
+	// The keep while the read-tree call runs (keepTicker). It ends at the
+	// return, also after a panic, so before the keep after the checkout.
+	var keeper *keepTicker
+	if room != nil {
+		keeper = startKeepTicker(u, lfs.path)
+	}
+	defer keeper.end()
 	err = runHeld(cmd, func() error {
 		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, gate)
 	})
@@ -1043,9 +1050,9 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	readEnd := time.Now()
 	keep := lfs.path != "" && (rule == nil || !rule.plan.userLfsStorage)
-	// A stop of the watch keeps nothing. 4c111e86 frees the space of the
-	// fetched files before the reply, also of a whole object (measured on
-	// Linux).
+	// A stop of the watch runs no keep after the checkout. 4c111e86 frees the
+	// space of the fetched files before the reply, also of a whole object
+	// (measured on Linux).
 	var room *lfsRoomStop
 	if errors.As(err, &room) {
 		room.fetched, room.runDir, room.removeStore = storeBytes(lfs.path), lfs.runDir, removeIdxDir

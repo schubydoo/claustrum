@@ -42,8 +42,9 @@ import (
 //     create succeeds (measured on Linux). An object whose bytes and size
 //     differ from its pointer gets `lfs/objects` but no shard folder (measured
 //     on Linux and macOS). The keep also runs after a failed or a stopped
-//     checkout (measured on Linux and macOS). A stop for the space keeps
-//     nothing (lfsroom.go, measured on Linux).
+//     checkout (measured on Linux and macOS). A stop for the space runs no
+//     keep after the checkout (lfsroom.go, measured on Linux). While the
+//     checkout runs, ticks keep the objects too (keepTicker).
 //   - The sweep of stale temp names (sweepShardTemps).
 //
 // The seed reads the pointers with `ls-tree` and `cat-file` in baseRepo, with
@@ -761,6 +762,10 @@ const (
 	// keepAfterFailure is a checkout that failed by itself, or that another
 	// stop ended (claustrum's own, not measured).
 	keepAfterFailure
+	// keepDuringCheckout is a keep while the read-tree call runs
+	// (keepTicker). It copies as after a deadline, with no sweep (claustrum's
+	// own, not measured).
+	keepDuringCheckout
 )
 
 // copySeed copies the object src to dst, a new file. The copy writes dst at
@@ -861,6 +866,78 @@ func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
 		cancel()
 	}
 	return l
+}
+
+// keepTickEvery is the time between two keeps of keepTicker. On 4c111e86 the
+// first of two objects reached the store of the repository 1.0 s after its
+// download, while the checkout still ran (measured on Linux). The second
+// reached it at the reply. The period is claustrum's own, from that row. A
+// test shrinks it.
+var keepTickEvery = time.Second
+
+// keepTicker keeps the objects that git-lfs downloaded into a private store
+// while the read-tree call runs. Each tick keeps each new object of the store
+// once, as returnDownloads does, in the form keepDuringCheckout. An object
+// that a tick did not keep waits for the keep after the checkout. Claustrum's
+// own, not measured: macOS, and the ticks after a stop for the space, until
+// git exits.
+type keepTicker struct {
+	quit  chan struct{}
+	ended chan struct{}
+	once  sync.Once
+}
+
+// keepTickerMade sees each new keepTicker. A test replaces it.
+var keepTickerMade = func(*keepTicker) {}
+
+// startKeepTicker starts the ticks for the private store private of the
+// create u. A create that holds no git directory gets no tick.
+func startKeepTicker(u gitUse, private string) *keepTicker {
+	a := u.accepted
+	if a == nil || a.root == nil {
+		return nil
+	}
+	k := &keepTicker{quit: make(chan struct{}), ended: make(chan struct{})}
+	keepTickerMade(k)
+	every := keepTickEvery
+	go func() {
+		defer close(k.ended)
+		tick := time.NewTicker(every)
+		defer tick.Stop()
+		tried := map[string]bool{}
+		for {
+			select {
+			case <-k.quit:
+				return
+			case <-tick.C:
+			}
+			for _, oid := range downloadedOIDs(private) {
+				if tried[oid] {
+					continue
+				}
+				select {
+				case <-k.quit:
+					return
+				default:
+				}
+				tried[oid] = true
+				ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
+				returnDownload(ctx, a.root, a.path, private, oid, time.Now(), keepDuringCheckout)
+				cancel()
+			}
+		}
+	}()
+	return k
+}
+
+// end stops the ticks and waits for the keep that runs. A second call only
+// waits. A nil k does nothing.
+func (k *keepTicker) end() {
+	if k == nil {
+		return
+	}
+	k.once.Do(func() { close(k.quit) })
+	<-k.ended
 }
 
 // openShard opens the shard folder rel of root one folder at a time, each from

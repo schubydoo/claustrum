@@ -21,7 +21,8 @@ import (
 //     folder counts.
 //   - The stop is one SIGKILL to the process group of the read-tree call.
 //     Then the rollback of a failed checkout runs, and the private folder goes
-//     before the reply. The objects that git-lfs fetched are not kept.
+//     before the reply. The keep after the checkout does not run. An object
+//     that a tick kept before the stop stays (keepTicker, not measured).
 //   - A private store on another disk than the one that fills gives no stop.
 //
 // Claustrum's own, not measured: the first read of the free space comes right

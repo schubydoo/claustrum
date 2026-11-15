@@ -112,6 +112,8 @@ func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {
 // gitWorktreeCreateLocked (the second create waits for the first).
 func TestLFSTwoCreatesCheckOutAtOnce(t *testing.T) {
 	seamFreeSpace(t)
+	// No tick keeps a.bin into the store of the repository during the hold.
+	setKeepTick(t, time.Hour)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
 	f.onServer(t, "a.bin")
 	f.onServer(t, "b.bin")
