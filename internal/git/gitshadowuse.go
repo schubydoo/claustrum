@@ -293,7 +293,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		// (measured on Linux, for a link to a copy). A refusal of that read is not
 		// measured: the text stays.
 		if heldAtListing && !stagedAddWindowsSteps {
-			_ = rereadConfigRefusal(f, repo)
+			_, _ = rereadConfigRefusal(f, repo)
 			if afterListing != nil {
 				afterListing()
 			}
@@ -303,11 +303,14 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	// A hold that askedAgain took reads its config again after the listing
 	// (4c111e86, measured on Linux). A refusal there is claustrum's own (not
-	// measured).
+	// measured). The read then gets its own folder in the folder of the daemon
+	// (takeGitDirCopy).
 	if f.accepted != nil && f.accepted.reread && !stagedAddWindowsSteps {
-		if msg := rereadConfigRefusal(f, repo); msg != "" {
+		msg, read := rereadConfigRefusal(f, repo)
+		if msg != "" {
 			return "", errors.New(msg)
 		}
+		f.accepted.takeGitDirCopy(f, repo, read)
 	}
 	if named {
 		if text := f.worktreesFolderRefusal(); text != "" {
@@ -363,15 +366,15 @@ func addListingThenPair(ctx context.Context, u gitUse, repo string, pair func())
 
 // rereadConfigRefusal reads the config of the git directory that the trust
 // check of repo pins, also when a read of it is kept, and returns the refusal
-// of the gate, or "". It runs only in the state shadow.
-func rereadConfigRefusal(u gitUse, repo string) string {
+// of the gate, or "", and the read that the gate accepted, or nil. It runs
+// only in the state shadow.
+func rereadConfigRefusal(u gitUse, repo string) (string, *repoVerdict) {
 	t := gitDirTrustFor(repo)
 	if !u.shadow() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return ""
+		return "", nil
 	}
 	forgetRepoVerdict(t.pinCommonDir)
-	msg, _ := repoConfigGate(t, false, u.stop)
-	return msg
+	return repoConfigGate(t, false, u.stop)
 }
 
 // addSwappedAfterListing is the error of a `worktree add` that does not run,
@@ -783,9 +786,15 @@ func (u gitUse) gitDirPin(dir string) []string {
 		return commonDirPinEnv(dir)
 	}
 	// After a create moved its hold, a call with --git-dir= names the objects
-	// of that folder (measured on Linux).
-	u.renewCopy()
-	return []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.heldGitDir(), "objects")}
+	// of that folder (measured on Linux). After askedAgain it names the folder
+	// of the new hold in the folder of the daemon (takeGitDirCopy).
+	c := u
+	if u.accepted != nil && u.accepted.gitDirCopy != nil {
+		c = *u.accepted.gitDirCopy
+		c.noRenew = u.noRenew
+	}
+	c.renewCopy()
+	return []string{"GIT_COMMON_DIR=" + c.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.heldGitDir(), "objects")}
 }
 
 // profileEnv is profileEnv for a call of this request. In the state shadow a

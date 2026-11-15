@@ -69,6 +69,10 @@ type acceptedGitDir struct {
 	// reread is true for a hold that askedAgain took: the add reads its config
 	// again after the listing (rereadConfigRefusal).
 	reread bool
+	// gitDirCopy is the folder in the folder of the daemon of a hold that
+	// askedAgain took, or nil. The calls with --git-dir= name it
+	// (takeGitDirCopy).
+	gitDirCopy *gitUse
 	// addBranch is the branch that the staged add made (`-b`), and addTip its
 	// tip in the held folder right after the add, or "" (addStage.finish).
 	addBranch, addTip string
@@ -366,6 +370,24 @@ func (a *acceptedGitDir) askedAgain(u gitUse, repo string) (string, *acceptedGit
 	}
 	next.reread = true
 	return again, next
+}
+
+// takeGitDirCopy makes the folder of the git directory that the trust check of
+// repo pins in the folder of the daemon, with the read of its config. It is
+// the step of the first gate of a request (syncRepo), and it writes and
+// deletes nothing else. The hold a took it at askedAgain. After that answer
+// 4c111e86 gives each call with --git-dir=<copy> its own folder of the copy
+// as GIT_COMMON_DIR. Its calls with no --git-dir= keep the folder of the first
+// gate (measured on Linux). A step that fails keeps the folder of the first
+// gate (claustrum's own, not measured).
+func (a *acceptedGitDir) takeGitDirCopy(u gitUse, repo string, read *repoVerdict) {
+	t := gitDirTrustFor(repo)
+	if read == nil || u.host == nil || t.pinCommonDir == "" {
+		return
+	}
+	if use, err := u.host.syncRepo(t.pinCommonDir, read); err == nil {
+		a.gitDirCopy = &use
+	}
 }
 
 // replacedAtPath is the hold of a create on a new real directory at the path
