@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -440,7 +439,7 @@ const (
 // descendant (a smudge/hook filter, or something it backgrounds) holding one of the
 // daemon's output pipes, the reference caps the drain at a FIXED ~5.0s from the checkout git's
 // OWN exit — independent of the caller timeoutMs (measured 5.004 / 5.007 / 5.009s) —
-// then reaps the descendant (so the reply arrives at ~5s, not at the descendant's
+// then answers (so the reply arrives at ~5s, not at the descendant's
 // lifetime), and only then gates the reply on timeoutMs (measured against 4534d86).
 //
 // This is the drain-cap grace period of exec.Cmd.WaitDelay, whose timer for a
@@ -449,22 +448,74 @@ const (
 var worktreeCreateDrainCap = 5 * time.Second
 
 // reapCheckoutGroup is the group kill of a read-tree call that the deadline stops
-// (hardenedGitCheckout), or that the watch of the private LFS store stops
+// (hardenedGitCheckout), whose drain overran its cap after an exit 0
+// (runCheckoutPipes), or that the watch of the private LFS store stops
 // (lfsroom.go). A test replaces it.
 var reapCheckoutGroup = sysproc.ReapProcessGroup
 
+// checkoutStop is the state that the deadline stop of a read-tree call
+// (deadlineStop) shares with runCheckoutPipes. gate closes after the exit of git
+// and before its reap.
+type checkoutStop struct {
+	gate       sysproc.LeaderGate
+	mu         sync.Mutex
+	cancelled  bool
+	drainFirst bool
+}
+
+func newCheckoutStop() *checkoutStop {
+	return &checkoutStop{}
+}
+
+// begin marks the stop. It reports false when the drain runs before the reap:
+// the stop then comes after the exit of git and does nothing.
+func (s *checkoutStop) begin() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.drainFirst {
+		return false
+	}
+	s.cancelled = true
+	return true
+}
+
+// holdForDrain lets the drain run before the reap of git. It reports false
+// when the stop ran first: then the wait comes first, as before.
+func (s *checkoutStop) holdForDrain() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelled {
+		return false
+	}
+	s.drainFirst = true
+	return true
+}
+
+// stopped reports that the stop ran.
+func (s *checkoutStop) stopped() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cancelled
+}
+
 // deadlineStop is the cmd.Cancel of a read-tree call with a deadline. It marks
-// the stop, sends the group kill through gate, and kills git through its handle.
-// The handle of a reaped git sends nothing. runCheckoutPipes closes the gate
-// after the exit of git and before the wait (sysproc.AwaitExit), as the LFS
-// stop ends its watch. On Windows the gate closes right after the start, and
+// the stop, sends the group kill through the gate of s, and kills git through
+// its handle. The handle of a reaped git sends nothing. runCheckoutPipes closes
+// the gate after the exit of git and before the wait (sysproc.AwaitExitStatus),
+// as the LFS stop ends its watch. On Windows the gate closes right after the start, and
 // the group kill is a no-op there. If the wait for the exit fails, for example
 // on a kqueue that cannot be made on macOS, the gate stays open while git
 // surely runs (sysproc.SurelyRuns).
-func deadlineStop(cmd *exec.Cmd, gate *sysproc.LeaderGate, cancelled *atomic.Bool) func() error {
+//
+// A stop during a drain that runs before the reap (holdForDrain) marks nothing
+// and sends nothing. It returns os.ErrProcessDone. The wait of exec.Cmd then
+// gets no error from the stop, as when the stop came after the reap.
+func deadlineStop(cmd *exec.Cmd, s *checkoutStop) func() error {
 	return func() error {
-		cancelled.Store(true)
-		gate.Do(func() { reapCheckoutGroup(cmd.Process) })
+		if !s.begin() {
+			return os.ErrProcessDone
+		}
+		s.gate.Do(func() { reapCheckoutGroup(cmd.Process) })
 		_ = cmd.Process.Kill()
 		return nil
 	}
@@ -667,12 +718,10 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	cmd.Dir = leaf
 	cmd.Env = env
 	// Own process group so the teardown below can SIGKILL the whole group and reap a
-	// descendant the checkout left holding the pipe — reproducing 4534d86's observed
-	// descendant reap.
+	// descendant the checkout left holding the pipe.
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	_, deadlined := ctx.Deadline()
-	var cancelled atomic.Bool
-	var gate *sysproc.LeaderGate
+	var stop *checkoutStop
 	if !deadlined {
 		cmd.WaitDelay = gitDrainWait
 	} else {
@@ -686,13 +735,13 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// and answer the caller ~worktreeCreateDrainCap late. WaitDelay still bounds any
 		// post-kill pipe drain. Returning nil marks the interrupt as successful; Wait still
 		// prefers git's own "signal: killed" *ExitError, so the wire suffix is unchanged.
-		gate = &sysproc.LeaderGate{}
-		cmd.Cancel = deadlineStop(cmd, gate, &cancelled)
+		stop = newCheckoutStop()
+		cmd.Cancel = deadlineStop(cmd, stop)
 	}
 	var errBuf bytes.Buffer
 	failedAlone := func(werr error) bool {
 		var exitErr *exec.ExitError
-		return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
+		return failedCheckoutSkipsStdoutDrain && deadlined && !stop.stopped() && errors.As(werr, &exitErr)
 	}
 	// The keep while the read-tree call runs (keepTicker). It ends at the
 	// return, also after a panic, so before the keep after the checkout. The
@@ -710,7 +759,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	}
 	defer endKeeper()
 	err = runHeld(cmd, func() error {
-		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, gate)
+		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, stop)
 	})
 	if failedAlone(err) {
 		err = checkoutFailedAlone{err}
@@ -718,21 +767,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	if room != nil && room.fired && err != nil {
 		err = &lfsRoomStop{err: err, free: room.free}
 	}
+	// After an exit 0 with a deadline, runCheckoutPipes sends the group kill of a
+	// drain overrun before the reap of git.
 	drained = errors.Is(err, exec.ErrWaitDelay)
-	if drained && deadlined {
-		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
-		// the daemon's own pipe ends but killed nothing; SIGKILL the group to reap the
-		// descendant, matching the reference's observed descendant reap.
-		//
-		// This kill comes after the reap of git. It reaches the right group only
-		// while a member of the group still lives and keeps its number. The
-		// overrun shows that a pipe end is still open, not that a member lives.
-		// No test here proves a member alive at the kill: a probe before it
-		// leaves a gap. A safe form holds the leader unreaped until after the
-		// drain, so it needs the exit status before the wait. That form is not
-		// built (claustrum's own, from the code).
-		sysproc.ReapProcessGroup(cmd.Process)
-	}
 	return errBuf.String(), drained, err
 }
 
@@ -755,11 +792,20 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 //
 // room is the watch of the private LFS store (lfsroom.go), or nil. It starts
 // after a good start of git. It ends after git exited and before the wait for
-// git reaps it (sysproc.AwaitExit).
+// git reaps it (sysproc.AwaitExitStatus).
 //
-// gate is the gate of the deadline stop (deadlineStop), or nil. It closes at
-// the same point as the watch ends, after the exit of git and before its reap.
-func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch, gate *sysproc.LeaderGate) error {
+// stop is the state of the deadline stop (deadlineStop), or nil. Its gate
+// closes at the same point as the watch ends, after the exit of git and before
+// its reap.
+//
+// With a stop, a git that exited 0 stays unreaped through the drain
+// (sysproc.AwaitExitStatus gives the status before the wait). A drain that
+// overruns its cap then sends one SIGKILL to the group of git, and the wait
+// reaps git after it. A stop that ran first, a failed exit
+// and a wait with no status keep the old order: the wait, then the drain. That
+// order sends no kill after an overrun (claustrum's own, from the code). On
+// Windows the wait has no status, and the group kill is a no-op there.
+func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch, stop *checkoutStop) error {
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		return err
@@ -785,23 +831,28 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	outDone, errDone := make(chan struct{}), make(chan struct{})
 	go func() { _, _ = io.Copy(io.Discard, outR); close(outDone) }()
 	go func() { _, _ = io.Copy(errBuf, errR); close(errDone) }()
-	seen := true
-	if room != nil || gate != nil {
+	seen, clean := true, false
+	if room != nil || stop != nil {
 		// The watch ends and the gate closes after the exit of git and before
 		// its reap, so their group kills reach only a group that this call
 		// still holds.
-		seen = leaderExitWait(cmd.Process.Pid)
+		seen, clean = leaderExitWait(cmd.Process.Pid)
 	}
 	if room != nil {
 		room.end()
 	}
-	if gate != nil {
+	drainFirst := false
+	if stop != nil {
 		// A step that did not see the exit leaves the gate open while git
 		// surely runs, so a deadline still sends its group kill.
-		gate.CloseAfterExit(cmd.Process, seen)
+		stop.gate.CloseAfterExit(cmd.Process, seen)
+		drainFirst = clean && stop.holdForDrain()
 	}
-	werr := cmd.Wait()
-	checkoutWaited(cmd)
+	var werr error
+	if !drainFirst {
+		werr = cmd.Wait()
+		checkoutWaited(cmd)
+	}
 	limit := time.NewTimer(cmd.WaitDelay)
 	defer limit.Stop()
 	overrun := false
@@ -824,6 +875,17 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	_ = errR.Close()
 	<-outDone
 	<-errDone
+	if drainFirst {
+		if overrun {
+			// git exited 0 but a descendant held a pipe past the cap. Closing
+			// the read ends killed nothing. git is not reaped yet, so the
+			// group still has its number, and the kill reaches the descendants
+			// in it.
+			reapCheckoutGroup(cmd.Process)
+		}
+		werr = cmd.Wait()
+		checkoutWaited(cmd)
+	}
 	if werr == nil && overrun {
 		return exec.ErrWaitDelay
 	}
@@ -835,12 +897,14 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 var checkoutWaited = func(*exec.Cmd) {}
 
 // leaderExitWait is the wait for the exit of the read-tree call
-// (sysproc.AwaitExit). A test replaces it to see a wait that fails. On a
-// system other than Linux and macOS it returns at once. Windows makes no
-// private LFS store (storeInCheckout), so no watch runs there. A wait that
-// does not see the exit ends the watch before the exit, and the watch then
-// sends no kill (claustrum's own, not measured).
-var leaderExitWait = sysproc.AwaitExit
+// (sysproc.AwaitExitStatus). The watch of the private LFS store ends after it,
+// the gate of the deadline stop closes after it, and its status decides that
+// the drain comes before the reap. A test replaces it to see a wait that fails.
+// On a system other than Linux and macOS it returns at once with no status.
+// Windows makes no private LFS store (storeInCheckout), so no watch runs there.
+// A wait that does not see the exit ends the watch before the exit, and the
+// watch then sends no kill (claustrum's own, not measured).
+var leaderExitWait = sysproc.AwaitExitStatus
 
 // failedKeepForm is the form of the keep after the failed read-tree call err
 // with the context ctx of the caller. A deadline of timeoutMs gives the copy
