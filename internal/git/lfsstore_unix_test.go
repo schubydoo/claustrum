@@ -168,28 +168,30 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 	}
 }
 
-// TestLFSKeepShardModeFollowsUmask: the keep makes missing shard folders with
-// mode 0777 less the umask, so umask 0002 gives 0775 (4c111e86, measured on
-// Linux). The test sets the umask of the process, so it does not run in
-// parallel.
+// TestLFSKeepShardModeFollowsUmask: 4c111e86 asks for mode 0777 for the two
+// shard levels (measured on Linux), so umask 0002 gives 0775. A missing `lfs`
+// and `lfs/objects` get 0755 less the umask (claustrum's own, not measured).
+// The test sets the umask of the process, so it does not run in parallel.
 func TestLFSKeepShardModeFollowsUmask(t *testing.T) {
 	seamFreeSpace(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
 	f.onServer(t, "a.bin")
-	if err := os.MkdirAll(filepath.Join(f.gitDir, "lfs", "objects"), 0o755); err != nil {
+	lfs := filepath.Join(f.gitDir, "lfs")
+	if err := os.RemoveAll(lfs); err != nil {
 		t.Fatal(err)
 	}
 	old := unix.Umask(0o002)
 	t.Cleanup(func() { unix.Umask(old) })
 	f.wantSuccess(t)
 	shard := f.shard("a.bin")
-	for _, d := range []string{shard, filepath.Dir(shard)} {
+	for d, want := range map[string]os.FileMode{lfs: 0o755, filepath.Join(lfs, "objects"): 0o755,
+		filepath.Dir(shard): 0o775, shard: 0o775} {
 		fi, err := os.Stat(d)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := fi.Mode().Perm(); got != 0o775 {
-			t.Errorf("the shard folder %s has mode %#o, want 0775", d, got)
+		if got := fi.Mode().Perm(); got != want {
+			t.Errorf("the folder %s has mode %#o, want %#o", d, got, want)
 		}
 	}
 }

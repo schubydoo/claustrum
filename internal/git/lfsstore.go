@@ -34,8 +34,9 @@ import (
 //   - The keep. After a good checkout, an object that git-lfs downloaded into
 //     P reaches the store of the repository. Its shard folders are made when
 //     they are missing, with mode 0777 less the umask (measured on Linux). On
-//     macOS they got 0755 (measured). The same mode for a missing `lfs` and
-//     `lfs/objects` is claustrum's own, not measured. A link at `lfs`,
+//     macOS they got 0755 under the default umask (measured). macOS under
+//     another umask is claustrum's own. A missing `lfs` and `lfs/objects` get
+//     0755 less the umask (claustrum's own, not measured). A link at `lfs`,
 //     and a folder `lfs/objects` that cannot be written, keep nothing, and the
 //     create succeeds (measured on Linux). An object whose bytes and size
 //     differ from its pointer gets `lfs/objects` but no shard folder (measured
@@ -669,13 +670,14 @@ func returnDownloads(u gitUse, private string, form keepForm) {
 }
 
 // openShard opens the shard folder rel of root one folder at a time, each from
-// the handle of its parent (shardStep). The caller closes the handle. A folder
-// that is a link, no folder or not the folder that its Lstat saw gives nil. The
-// path of the git directory is not read again.
-func openShard(root *os.Root, rel string) *os.Root {
+// the handle of its parent (shardStep). A missing folder gets mode, less the
+// umask. The caller closes the handle. A folder that is a link, no folder or not
+// the folder that its Lstat saw gives nil. The path of the git directory is not
+// read again.
+func openShard(root *os.Root, rel string, mode os.FileMode) *os.Root {
 	cur := root
 	for _, name := range strings.Split(filepath.ToSlash(rel), "/") {
-		next := shardStep(cur, name)
+		next := shardStep(cur, name, mode)
 		if cur != root {
 			_ = cur.Close()
 		}
@@ -688,12 +690,12 @@ func openShard(root *os.Root, rel string) *os.Root {
 }
 
 // shardStep opens the folder name of parent. It makes the folder when it is
-// missing, with mode 0777 less the umask. The folder must be a real folder by Lstat through
+// missing, with mode. The folder must be a real folder by Lstat through
 // parent, and the opened folder must be that folder.
-func shardStep(parent *os.Root, name string) *os.Root {
+func shardStep(parent *os.Root, name string, mode os.FileMode) *os.Root {
 	fi, err := parent.Lstat(name)
 	if os.IsNotExist(err) {
-		if parent.Mkdir(name, 0o777) != nil {
+		if parent.Mkdir(name, mode) != nil {
 			return nil
 		}
 		fi, err = parent.Lstat(name)
@@ -734,7 +736,9 @@ var openShardFolder = (*os.Root).OpenRoot
 // own, not measured). After a checkout that failed by itself the keep is one
 // hard link at the name oid (claustrum's own, not measured).
 func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) {
-	objects := openShard(root, filepath.Join("lfs", "objects"))
+	// A missing `lfs` and `lfs/objects` get 0755 (claustrum's own, not
+	// measured). The two shard levels get 0777 (measured on Linux).
+	objects := openShard(root, filepath.Join("lfs", "objects"), 0o755)
 	if objects == nil {
 		return
 	}
@@ -747,7 +751,7 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 	if !objectHoldsOID(ctx, src, oid) {
 		return
 	}
-	shard := openShard(objects, rel)
+	shard := openShard(objects, rel, 0o777)
 	if shard == nil {
 		return
 	}
@@ -838,7 +842,7 @@ func swapInKept(shard *os.Root, private, oid, temp string) {
 		return
 	}
 	defer func() { _ = store.Close() }()
-	dir := openShard(store, filepath.Join("objects", oid[:2], oid[2:4]))
+	dir := openShard(store, filepath.Join("objects", oid[:2], oid[2:4]), 0o755)
 	if dir == nil {
 		return
 	}
