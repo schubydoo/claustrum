@@ -151,6 +151,11 @@ jobs:
       - name: docs tests
         run: go test -count=1 -run '^TestDocs' .
 
+      # The test shards of this file and of the Makefile together run every
+      # test once. The check lists the tests with go test -list.
+      - name: test shards run every test once
+        run: python3 scripts/check_git_shards.py
+
   test:
     needs: changes
     if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
@@ -163,9 +168,11 @@ jobs:
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 17 || 15 }}
     strategy:
       fail-fast: false
-      # Windows runs the suite in four shards, because the top-level tests run
-      # one at a time and are slowest there. Three shards run a -run pattern and
-      # the fourth skips all three, so together they run every test once.
+      # Windows runs the suite in five shards, because the top-level tests run
+      # one at a time and are slowest there. Four shards run a -run pattern and
+      # the fifth skips all of them, so together they run every test once.
+      # scripts/check_git_shards.py checks that each shard set of this file and
+      # of the Makefile runs every test once.
       # macOS runs three shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
       # of the go test step. The git shard runs the worktree, the git.status,
@@ -200,9 +207,14 @@ jobs:
           # The Windows worktree shard also takes the tests named TestCreate and
           # TestCheckout. On main the go test step took 11.0 min in the rest
           # shard, 7.8 min in the status shard and 5.4 min in this one.
+          # The tests named TestWorktreeCreate have their own shard. The go test
+          # step of the worktree shard took 512 to 651 s of its 720 s with them.
           - os: windows-latest
             shard: worktree
-            select: -run=^(TestWorktree|TestCreate|TestCheckout)
+            select: -run=^(TestWorktree|TestCreate|TestCheckout) -skip=^TestWorktreeCreate
+          - os: windows-latest
+            shard: create
+            select: -run=^TestWorktreeCreate
           # The status and install shards were one shard. It ran 7.8 to 11.9
           # minutes of the 12, so it is now two. On 0997cf1 the Windows tests of
           # the status half ran 201 s in sum, and those of the install half 247 s.
