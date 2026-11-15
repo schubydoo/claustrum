@@ -714,7 +714,8 @@ const (
 //   - `no space left on device` in stderr gives the note of a full disk
 //     (measured on Linux and macOS), and `disk quota exceeded` the note of a
 //     quota (measured on Linux), in any letter case (measured on Linux).
-//   - A seed that left a copy out for seedSpare gives the note of the space,
+//   - A seed that left a copy out for seedSpare, or whose copy failed on a
+//     disk below the spare (seedRoomLow), gives the note of the space,
 //     also before the words of a missing object (measured on Linux and macOS).
 //   - lfsMissingWords give lfsMissingNote (measured on Linux and macOS with
 //     a stand-in git-lfs). `Object does not exist` with no `on the server`

@@ -686,9 +686,9 @@ func TestLFSFailedKeepAddsNoRemove(t *testing.T) {
 	}
 }
 
-// TestSeedSpareMakesNoTemp: a copy left out for seedSpare makes no temp copy
-// in the checkout folder, and the seed reports it (claustrum's own).
-func TestSeedSpareMakesNoTemp(t *testing.T) {
+// TestSeedSpareMakesNoFile: a copy left out for seedSpare makes no file in
+// the checkout folder, and the seed reports it (claustrum's own).
+func TestSeedSpareMakesNoFile(t *testing.T) {
 	prevSeed, prevFree := seedLink, storeFreeBytes
 	seedLink = func(string, string) error { return os.ErrPermission }
 	storeFreeBytes = func(string) (uint64, bool) { return 0, true }
@@ -699,8 +699,8 @@ func TestSeedSpareMakesNoTemp(t *testing.T) {
 	if short, _ := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}}); !short {
 		t.Error("seedObjects = false, want a copy left out")
 	}
-	if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(private), seedTempPattern)); len(temps) != 0 || exists(storeObjectPath(private, oid)) {
-		t.Errorf("temps %q or the object exist, want neither", temps)
+	if names, _ := os.ReadDir(filepath.Dir(storeObjectPath(private, oid))); len(names) != 0 {
+		t.Errorf("the shard of the private store holds %v, want nothing", names)
 	}
 }
 
@@ -864,10 +864,10 @@ func TestLFSNotKeptAfterDeadline(t *testing.T) {
 }
 
 // TestSeedChecksObjectWithSecondLink: an object of the store with a link count
-// above 1 is read once in full before the link or the copy (4c111e86, measured
-// on macOS). Claustrum's own, not measured: its sha256 is tested against the
-// oid, so with wrong bytes it stays out. An object with link count 1 gets no
-// such read, and wrong bytes still go in.
+// above 1 is read once in full before the link or the copy. With content that
+// does not match its oid it is neither linked nor copied. With link count 1
+// such content is linked (4c111e86, measured on Linux, the read also on
+// macOS). The content is tested against the oid (claustrum's own form).
 func TestSeedChecksObjectWithSecondLink(t *testing.T) {
 	seamFreeSpace(t)
 	right := "alpha-object"
@@ -966,4 +966,106 @@ type slowHash struct{ hash.Hash }
 func (h slowHash) Write(p []byte) (int, error) {
 	time.Sleep(30 * time.Millisecond)
 	return h.Hash.Write(p)
+}
+
+// copySeedCase makes an object and the folder of its copy for a test of
+// copySeed. dst is the name of the copy in that folder.
+func copySeedCase(t *testing.T) (src, dst string) {
+	t.Helper()
+	src = filepath.Join(t.TempDir(), "obj")
+	mustWrite(t, src, "alpha-object")
+	dst = filepath.Join(t.TempDir(), "lfs", "objects", "ab", "cd", "obj")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return src, dst
+}
+
+// TestCopySeedRemovesTheFileOfAFailedWrite: a copy of the seed writes at the
+// name of the object. When a write fails midway, that one file is removed at
+// once, by its name (4c111e86, measured on Linux). A good copy then makes the
+// whole object there.
+func TestCopySeedRemovesTheFileOfAFailedWrite(t *testing.T) {
+	src, dst := copySeedCase(t)
+	prev := seedCopy
+	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		n, _ := io.CopyN(w, r, 3)
+		return n, unix.ENOSPC
+	}
+	t.Cleanup(func() { seedCopy = prev })
+	if err := copySeed(context.Background(), src, dst); err == nil {
+		t.Fatal("copySeed with a failed write = nil, want the error")
+	}
+	if names, _ := os.ReadDir(filepath.Dir(dst)); len(names) != 0 {
+		t.Errorf("the folder after a failed write holds %v, want nothing", names)
+	}
+	seedCopy = prev
+	if err := copySeed(context.Background(), src, dst); err != nil || mustRead(t, dst) != "alpha-object" {
+		t.Errorf("copySeed = %v, want the whole object at its name", err)
+	}
+	if err := copySeed(context.Background(), src, dst); err == nil || mustRead(t, dst) != "alpha-object" {
+		t.Errorf("copySeed onto an object = %v, want an error and the object kept", err)
+	}
+}
+
+// TestCopySeedRemovesTheFileOfAStoppedCopy: a copy of the seed after the
+// deadline of the caller leaves no file. The one remove names the object.
+func TestCopySeedRemovesTheFileOfAStoppedCopy(t *testing.T) {
+	src, dst := copySeedCase(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := copySeed(ctx, src, dst); err == nil {
+		t.Fatal("copySeed after the deadline = nil, want an error")
+	}
+	if names, _ := os.ReadDir(filepath.Dir(dst)); len(names) != 0 {
+		t.Errorf("the folder after a stopped copy holds %v, want nothing", names)
+	}
+	var removed []string
+	seamLFSRemove(t, &removed)
+	_ = copySeed(ctx, src, dst)
+	if !slices.Equal(removed, []string{"obj"}) {
+		t.Errorf("removes %q, want one of the object name", removed)
+	}
+}
+
+// TestSeedFailedCopyOnAFullDiskReportsTheSpace: after a failed copy of the seed
+// the free space is read again. Below the spare the seed reports the copy as
+// left out, so the reply gets the note of the space (4c111e86, measured on
+// Linux). With room after the failure it does not.
+func TestSeedFailedCopyOnAFullDiskReportsTheSpace(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		after     uint64
+		wantShort bool
+	}{
+		{"full disk", 4096, true},
+		{"room left", 1 << 40, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := filepath.Join(t.TempDir(), "lfs")
+			oid := strings.Repeat("a", 64)
+			mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+			reads := 0
+			prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
+			seedLink = func(string, string) error { return unix.EXDEV }
+			seedCopy = func(io.Writer, io.Reader) (int64, error) { return 0, unix.ENOSPC }
+			storeFreeBytes = func(string) (uint64, bool) {
+				reads++
+				if reads == 1 {
+					return 1 << 40, true
+				}
+				return tc.after, true
+			}
+			t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
+			short, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: 12}})
+			if short != tc.wantShort || reads != 2 {
+				t.Errorf("short %v after %d reads of the free space, want %v after 2", short, reads, tc.wantShort)
+			}
+			rule := &filterRule{shadow: true, store: &storeUse{runDir: "/run/c1", short: short}}
+			note := checkoutNote("error: smudge filter lfs failed", "smudge filter lfs failed", rule)
+			if got := strings.Contains(note, "There isn't enough space on the remote machine (in /run/c1)"); got != tc.wantShort {
+				t.Errorf("note %q, want the note of the space %v", note, tc.wantShort)
+			}
+		})
+	}
 }

@@ -2,4 +2,4 @@
 default: patch
 ---
 
-The Git LFS seed of `git.worktree_create` checks the sha256 of an object with a second hard link, and leaves out an object that fails.
+The `git.worktree_create` LFS seed reads an object with a second hard link in full and leaves out content that fails its oid.

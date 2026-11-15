@@ -6,10 +6,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -250,49 +248,6 @@ func TestIDLines(t *testing.T) {
 	b, err := io.ReadAll(&idLines{ids: []string{"aaaa", "bbbb", "cccc"}})
 	if err != nil || string(b) != "aaaa\nbbbb\ncccc\n" {
 		t.Errorf("idLines = %q, %v", b, err)
-	}
-}
-
-// TestCopySeedLeavesNoPartialObject: a copy of the seed that fails midway
-// leaves no file at the name of the object. Its temp stays in the checkout
-// folder.
-func TestCopySeedLeavesNoPartialObject(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "obj")
-	mustWrite(t, src, "alpha-object")
-	checkout := t.TempDir()
-	dst := filepath.Join(checkout, "lfs", "obj")
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	prev := seedCopy
-	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
-		n, _ := io.CopyN(w, r, 3)
-		return n, io.ErrUnexpectedEOF
-	}
-	t.Cleanup(func() { seedCopy = prev })
-	if err := copySeed(context.Background(), src, dst, checkout); err == nil {
-		t.Fatal("copySeed with a failed copy = nil, want the error")
-	}
-	if _, err := os.Lstat(dst); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("%s after a failed copy: %v, want no file", dst, err)
-	}
-	seedCopy = prev
-	if err := copySeed(context.Background(), src, dst, checkout); err != nil || mustRead(t, dst) != "alpha-object" {
-		t.Errorf("copySeed = %v, want the whole object at its name", err)
-	}
-}
-
-// TestCopySeedStopsAtDeadline: a copy of the seed after the deadline of the
-// caller makes no object.
-func TestCopySeedStopsAtDeadline(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "obj")
-	mustWrite(t, src, "alpha-object")
-	checkout := t.TempDir()
-	dst := filepath.Join(checkout, "obj")
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := copySeed(ctx, src, dst, checkout); err == nil || exists(dst) {
-		t.Errorf("copySeed after the deadline = %v, exists %v, want an error and no object", err, exists(dst))
 	}
 }
 

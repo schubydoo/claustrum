@@ -6,10 +6,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -81,7 +79,7 @@ var (
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
 // "" for the store of the git directory. seed runs the seed into path and
-// reports a copy that it left out for seedSpare and the time of its copies.
+// reports a copy that it left out for the space and the time of its copies.
 // runDir is the folder of the socket.
 type privateStore struct {
 	path   string
@@ -91,7 +89,7 @@ type privateStore struct {
 
 // storeUse is what a checkout that named its private store gives the reply of
 // its failure (checkoutNote, storeFullStart, notKeptText). path is the store,
-// <P>/lfs. short reports a copy of the seed left out for seedSpare. copied is
+// <P>/lfs. short reports a copy of the seed left out for the space. copied is
 // the time that the copies of the seed took.
 type storeUse struct {
 	runDir string
@@ -383,14 +381,18 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 }
 
 // seedObjects puts the objects of ps from the store store into private. short
-// reports a copy left out for seedSpare. copied is the sum of the times of
-// the copies, a failed copy too. A hard link adds no time (claustrum's own,
-// not measured). The time of a copy holds the sha256 of its bytes (copySeed).
+// reports a copy left out for seedSpare, or a failed copy with less than the
+// spare of seedNeeds free after it (seedRoomLow). copied is the sum of the
+// times of the copies, a failed copy too. A hard link adds no time (claustrum's
+// own, not measured). The time of a copy holds the sha256 of its bytes
+// (copySeed).
 //
 // An object with a link count above 1 is read once in full before the link or
-// the copy (4c111e86, measured on macOS). Claustrum's own, not measured: Linux,
-// the time of that read in copied, also before a link, its sha256 is tested
-// against the oid, and an object that fails the test stays out.
+// the copy, so a copy reads it twice. Content that does not match its oid is
+// neither linked nor copied. With link count 1 such content is linked
+// (4c111e86, measured on Linux, the read also on macOS). Claustrum's own, not
+// measured: the time of that read in copied, also before a link, and the
+// content is tested against the oid (claustrum's own form).
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
@@ -421,8 +423,11 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 				continue
 			}
 			start := time.Now()
-			_ = copySeed(ctx, src, dst, filepath.Dir(private))
+			err := copySeed(ctx, src, dst)
 			copied += time.Since(start)
+			if err != nil && seedRoomLow(filepath.Dir(dst), p.size) {
+				short = true
+			}
 		}
 	}
 	return short, copied
@@ -437,6 +442,16 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 func seedNeeds(size int64) uint64 {
 	s := uint64(size)
 	return s + max(seedSpare, s/10)
+}
+
+// seedRoomLow reports whether the file system of dir has less free space than
+// the spare of seedNeeds for an object of size bytes. After a failed copy of
+// the seed 4c111e86 reads the free space, and a full disk then gives the note
+// of the space (measured on Linux). The spare of that test is claustrum's own,
+// not measured. A free space that cannot be read gives false.
+func seedRoomLow(dir string, size int64) bool {
+	free, ok := storeFreeBytes(dir)
+	return ok && free < seedNeeds(size)-uint64(size)
 }
 
 // The text of worktree_lfs_not_kept, around the words of the deadline
@@ -527,32 +542,29 @@ var (
 	newObjectHash = sha256.New
 )
 
-// seedTempPattern is the pattern of the temp name of a copy of the seed in
-// the checkout folder. No oid has its form.
-const seedTempPattern = "lfs-seed-*"
-
-// copySeed copies the object src to dst, a new file. The copy goes to a temp
-// name in the folder tmpDir, the checkout folder, and gets the name dst only
-// when it is whole. A failed temp stays in that folder and goes with it. The
-// copy stops at the deadline of ctx.
+// copySeed copies the object src to dst, a new file. The copy writes dst at
+// its own name, in 32 KiB chunks, through a handle of its folder
+// (createSeedFile). When the copy stops at the deadline of ctx or a write or
+// the close fails, the file is closed and removed at once by one unlinkat of
+// that name through the same handle (removeLFSStoreEntry). 4c111e86 does so on
+// Linux (measured). The mode 0600 of the file is claustrum's own.
 //
 // The copy computes the sha256 of the bytes in the same pass, so its time is
 // near the seed time of 4c111e86 in the rows (notKeptText).
-// Claustrum's own, not measured: the result is not used, and an object with
-// link count 1 whose bytes do not match its oid still goes into the store.
-func copySeed(ctx context.Context, src, dst, tmpDir string) error {
-	if _, err := os.Lstat(dst); !errors.Is(err, fs.ErrNotExist) {
-		if err == nil {
-			err = fs.ErrExist
-		}
-		return err
-	}
+// Claustrum's own, not measured: the result is not used.
+func copySeed(ctx context.Context, src, dst string) error {
 	in, err := openObjectNoFollow(src)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.CreateTemp(tmpDir, seedTempPattern)
+	dir, err := os.OpenRoot(filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dir.Close() }()
+	name := filepath.Base(dst)
+	out, err := createSeedFile(dir, name)
 	if err != nil {
 		return err
 	}
@@ -561,9 +573,10 @@ func copySeed(ctx context.Context, src, dst, tmpDir string) error {
 		err = cerr
 	}
 	if err != nil {
-		return err
+		// name is the file that this call just made, not a name from a read.
+		removeLFSStoreEntry(dir, filepath.Dir(dst), name)
 	}
-	return os.Rename(out.Name(), dst)
+	return err
 }
 
 // ctxReader is r that fails each read after the end of ctx.
@@ -814,13 +827,13 @@ func sweepShardTemps(shard *os.Root, shardPath, oid string, now time.Time) {
 	}
 }
 
-// removeLFSStoreFile is the one remove of the LFS store of a repository: one
-// unlinkat of a file (removeFileAt), so a folder at name stays. A test
-// replaces it.
+// removeLFSStoreFile is the one remove of the LFS store of a repository and
+// of the object that a failed copy of the seed made: one unlinkat of a file
+// (removeFileAt), so a folder at name stays. A test replaces it.
 var removeLFSStoreFile = removeFileAt
 
 // removeLFSStoreEntry removes name from the shard folder shard, at
-// shardPath. homeguard.WipesHomeDir on the full path comes first, as for each
+// shardPath, or from the folder of a copy of the seed. homeguard.WipesHomeDir on the full path comes first, as for each
 // delete in the folder git-shadow (removeEntry).
 func removeLFSStoreEntry(shard *os.Root, shardPath, name string) {
 	if homeguard.WipesHomeDir(filepath.Join(shardPath, name)) {
