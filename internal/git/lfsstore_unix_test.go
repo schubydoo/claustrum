@@ -1415,3 +1415,64 @@ func (w slowWriter) Write(p []byte) (int, error) {
 	*w.n += len(p)
 	return len(p), nil
 }
+
+// TestLFSKeepPastTheDeadlineAnswersSuccess: a keep whose copy runs past
+// timeoutMs does not turn the reply into a timeout. A copy that ends in its
+// budget keeps the object, and one that its budget stops keeps nothing. Both
+// answer success (4c111e86, measured on Linux. The rule that leaves out the
+// time of the keep is claustrum's own).
+func TestLFSKeepPastTheDeadlineAnswersSuccess(t *testing.T) {
+	seamFreeSpace(t)
+	for _, row := range []struct {
+		name   string
+		budget time.Duration
+		kept   bool
+	}{
+		{"a copy that ends in its budget", 10 * time.Second, true},
+		{"a copy that its budget stops", 4200 * time.Millisecond, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			prevBudget, prevCopy := keepBudget, keepCopy
+			keepBudget = row.budget
+			keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+				time.Sleep(4500 * time.Millisecond)
+				return io.Copy(w, r)
+			}
+			t.Cleanup(func() { keepBudget, keepCopy = prevBudget, prevCopy })
+			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+			f.onServer(t, "a.bin")
+			raw, _ := f.create(t, map[string]any{"timeoutMs": 4000})
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want success", raw)
+			}
+			if got := exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])); got != row.kept {
+				t.Errorf("object kept = %v, want %v", got, row.kept)
+			}
+		})
+	}
+}
+
+// TestKeepWithinDeadline: the deadline counts as passed only by the keep when
+// it passed no earlier than the time of the keep before now.
+func TestKeepWithinDeadline(t *testing.T) {
+	dl := time.Now()
+	ctx, cancel := context.WithDeadline(context.Background(), dl)
+	defer cancel()
+	for _, row := range []struct {
+		name string
+		ctx  context.Context
+		took time.Duration
+		at   time.Time
+		want bool
+	}{
+		{"the deadline in the keep", ctx, 2 * time.Second, dl.Add(time.Second), true},
+		{"the deadline at the start of the keep", ctx, time.Second, dl.Add(time.Second), true},
+		{"the deadline before the keep", ctx, time.Second, dl.Add(2 * time.Second), false},
+		{"no keep", ctx, 0, dl.Add(time.Millisecond), false},
+		{"no deadline", context.Background(), time.Second, dl, false},
+	} {
+		if got := keepWithinDeadline(row.ctx, row.took, row.at); got != row.want {
+			t.Errorf("%s: keepWithinDeadline = %v, want %v", row.name, got, row.want)
+		}
+	}
+}

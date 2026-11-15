@@ -961,10 +961,13 @@ var (
 // installErr is the error of a placement that failed. The caller answers it as a
 // failed checkout. On Windows it is nil unless the staging step moved the
 // registration (installTestedWorktreeIndex).
-func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, err, installErr error) {
+//
+// keepTook is the time of the keep after a checkout that exited 0
+// (keepWithinDeadline).
+func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, keepTook time.Duration, err, installErr error) {
 	idxDir, removeIdxDir, err := u.requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
-		return "", false, err, nil
+		return "", false, 0, err, nil
 	}
 	// The remove runs once: a stop of the watch runs it before the reply too
 	// (lfsRoomStop).
@@ -1012,13 +1015,15 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	}
 	if err == nil || drained {
 		if u.swapped("index") {
-			return stderr, drained, errGitDirNotReal, nil
+			return stderr, drained, 0, errGitDirNotReal, nil
 		}
 		// The keep of the objects that git-lfs downloaded into the private
 		// store (lfsstore.go). It runs after a checkout that exited 0, before the
 		// settle step. The moment is claustrum's own, not measured.
 		if err == nil && keep {
+			start := time.Now()
 			returnDownloads(u, lfs.path, keepAfterGood)
+			keepTook = time.Since(start)
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the
@@ -1040,7 +1045,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 			// placement, so a swap during the settle step gets the same answer
 			// (claustrum's own, not measured).
 			if u.swapped("settled") {
-				return stderr, drained, errGitDirNotReal, nil
+				return stderr, drained, keepTook, errGitDirNotReal, nil
 			}
 		}
 		if u.accepted != nil && tested.path == "" {
@@ -1052,7 +1057,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 			installErr = guardedInstallWorktreeIndex(idx, adminDir, leaf, tested)
 		}
 	}
-	return stderr, drained, err, installErr
+	return stderr, drained, keepTook, err, installErr
 }
 
 // guardedInstallWorktreeIndex is installWorktreeIndex behind a guard. The guard has
