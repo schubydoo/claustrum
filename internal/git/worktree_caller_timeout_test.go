@@ -14,9 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // These tests pin how git.worktree_create answers when the caller's timeoutMs
@@ -306,26 +307,28 @@ func (c markerCtx) Err() error {
 	return context.DeadlineExceeded
 }
 
-// reapedFor reports true once the stub call whose pid is in pidFile was reaped
-// and d has passed since. Right at the reap exec.Cmd can still watch the
+// exitedFor reports true once the stub call whose pid is in pidFile has exited
+// and d has passed since. After an exit 0 with a deadline the daemon reaps the
+// read-tree call only after the drain (runCheckoutPipes), so the test waits for
+// the exit, not the reap. Right at the exit exec.Cmd can still watch the
 // context. A deadline there gave the frame "during the checkout" in one run.
-func reapedFor(pidFile string, d time.Duration) func() bool {
-	var reaped time.Time
+func exitedFor(pidFile string, d time.Duration) func() bool {
+	var exited time.Time
 	return func() bool {
-		if reaped.IsZero() && stubReaped(pidFile) {
-			reaped = time.Now()
+		if exited.IsZero() && stubExited(pidFile) {
+			exited = time.Now()
 		}
-		return !reaped.IsZero() && time.Since(reaped) >= d
+		return !exited.IsZero() && time.Since(exited) >= d
 	}
 }
 
-// stubReaped reports whether the stub call whose pid is in the file pidFile
-// (CLAUSTRUM_GITSTUB_HOLDSELF) has exited and was reaped.
-// Signal 0 is not a liveness test on Windows: every signal except Kill fails
-// there, so the stub would read as reaped while it still runs.
-func stubReaped(pidFile string) bool {
+// stubExited reports whether the stub call whose pid is in the file pidFile
+// (CLAUSTRUM_GITSTUB_HOLDSELF) has exited. The stub is a child of this test
+// process. sysproc.SurelyRuns tests it with no signal, and it counts an exited
+// child that waits for its reap as exited. It has no test on Windows.
+func stubExited(pidFile string) bool {
 	if runtime.GOOS == "windows" {
-		panic("stubReaped is Unix-only")
+		panic("stubExited is Unix-only")
 	}
 	b, err := os.ReadFile(pidFile)
 	if err != nil {
@@ -340,7 +343,7 @@ func stubReaped(pidFile string) bool {
 		return true
 	}
 	defer func() { _ = p.Release() }()
-	return p.Signal(syscall.Signal(0)) != nil
+	return !sysproc.SurelyRuns(p)
 }
 
 // gateStub makes the stub hold each call that match names in the mode "gate"
@@ -798,9 +801,9 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 				t.Setenv("CLAUSTRUM_GITSTUB_HOLDSELF", self)
 				timeLog := filepath.Join(t.TempDir(), "git.times")
 				t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
-				// The deadline fires 300 ms after a poll saw the reap of the stub.
+				// The deadline fires 300 ms after a poll saw the exit of the stub.
 				// No check below uses a poll time.
-				fired := deadlineAt(t, reapedFor(self, 300*time.Millisecond), nil)
+				fired := deadlineAt(t, exitedFor(self, 300*time.Millisecond), nil)
 				raw, elapsed := f.create(t, h, "w1", tc.existing, lateMs)
 				want := `"error":"git worktree add timed out after ` + strconv.Itoa(lateMs) +
 					`ms (deadline expired after the checkout finished)","errorCode":"timeout"`
@@ -808,7 +811,7 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 					t.Fatalf("reply = %s, want %s", raw, want)
 				}
 				// The stub logs its own times. The drain cap starts when the daemon
-				// reaps the checkout, and that comes after the end time of the stub.
+				// sees the exit of the checkout, and that comes after the end time of the stub.
 				// The copy step starts after its start time. So a full drain gives a
 				// gap of at least the cap. On Linux a full drain gave 1.008 s to
 				// 1.059 s in 60 rows, and a drain that the deadline cut gave 309 to
