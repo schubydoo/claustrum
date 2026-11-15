@@ -1696,8 +1696,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// In the state shadow one stale entry that stays for its `locked` file gives
 	// the pair too. 4c111e86 runs the listing of the add and the pair, and then
 	// it answers the locked refusal below (measured on macOS). Linux follows macOS
-	// (not measured). With the member it gives no pair (measured on macOS).
-	staleLockedPair := staleLocked && req.use.shadow()
+	// (not measured). With the member it gives no pair (measured on macOS). A
+	// daemon GIT_COMMON_DIR skips the refusal below, so it gives no pair either
+	// (claustrum's own, not measured).
+	staleLockedPair := staleLocked && req.use.shadow() && !daemonCommonDirSet()
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && (!staleMatched || staleGone || staleLockedPair) {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
