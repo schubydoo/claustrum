@@ -22,7 +22,8 @@ import (
 //   - The stop is one SIGKILL to the process group of the read-tree call.
 //     Then the rollback of a failed checkout runs, and the private folder goes
 //     before the reply. The keep after the checkout does not run. An object
-//     that a tick kept before the stop stays (keepTicker, not measured).
+//     that a keep during the checkout kept stays (keepTicker, 4c111e86,
+//     measured on Linux). On a small disk nothing is kept before the stop.
 //   - A private store on another disk than the one that fills gives no stop.
 //
 // Claustrum's own, not measured: the first read of the free space comes right
