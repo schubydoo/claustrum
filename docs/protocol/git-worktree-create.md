@@ -171,7 +171,7 @@ Each text starts `Claude could not confirm that the new worktree matches its com
 ## The main steps
 
 A create records the git directory of `baseRepo` as a [session
-folder](git-rules-session-folders.md#a-create) before the add.
+folder](git-rules-session-folders.md#a-create) after `rev-parse --absolute-git-dir`.
 
 ```mermaid
 flowchart TD

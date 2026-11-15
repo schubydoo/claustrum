@@ -84,6 +84,55 @@ func TestCreateWithTheOffSwitchRecordsNothing(t *testing.T) {
 	}
 }
 
+// recordedPaths returns the paths that the record files of the folder dir name.
+func recordedPaths(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, path, _ := strings.Cut(string(b), "\n")
+		out = append(out, canonicalPath(path))
+	}
+	return out
+}
+
+// A refusal after `rev-parse --absolute-git-dir` keeps the record, because the
+// record is written right after that call. 4c111e86 keeps it so (measured on
+// Linux and macOS). Here two unlocked entries name the gone leaf, so the
+// refusal of a registered leaf comes before the add.
+func TestCreateRecordsBeforeARefusalAfterTheGitDirCall(t *testing.T) {
+	f := newRmFixture(t)
+	dir := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessiondirs.UseForTest(dir))
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w")
+	for _, name := range []string{"x1", "x2"} {
+		gone := filepath.Join(filepath.Dir(f.repo), "gone", name)
+		runGit(t, f.repo, "worktree", "add", "-q", "-b", name, gone)
+		writeFile(t, filepath.Join(f.repo, ".git", "worktrees", name, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+	}
+	if err := os.RemoveAll(filepath.Join(filepath.Dir(f.repo), "gone")); err != nil {
+		t.Fatal(err)
+	}
+	raw := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": f.repo, "branchName": "b", "worktreePath": leaf}))
+	if text, _ := createErrorField(t, raw); !strings.Contains(text, "is still registered in this repository as a worktree") {
+		t.Fatalf("git.worktree_create = %s, want the refusal of a registered leaf", raw)
+	}
+	if got, want := recordedPaths(t, dir), canonicalPath(filepath.Join(f.repo, ".git")); len(got) != 1 || got[0] != want {
+		t.Errorf("after the refusal the records name %q, want %q", got, want)
+	}
+}
+
 // A create whose `git worktree add` fails keeps the record of its git
 // directory, because the record is written before the add. c9125eb8 and
 // 4c111e86 keep it so (measured on Linux and macOS). The git stub fails the add.

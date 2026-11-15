@@ -1594,6 +1594,24 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if gitDirMustBeReal && req.use.shadow() && gitDirErr != nil {
 		return refuseAdd(gitDirAddWrap + gitDirErr.Error())
 	}
+	// A create of a plain repository makes <repo>/.git a session folder
+	// (b3081b51, measured on Linux, macOS and Windows). The record stays after
+	// git.worktree_remove. c9125eb8 and 4c111e86 write it before the add, so a
+	// failed add keeps it (measured on Linux and macOS). A failed record logs its
+	// line and the create goes on (measured on Linux and macOS). 4c111e86 writes
+	// it right after the answer of `rev-parse --absolute-git-dir`, before the next
+	// git call, so each later refusal keeps it (measured on Linux and macOS). For a
+	// linked worktree the record names the main `.git` (measured on Linux and
+	// macOS). The record after the second call of a wrong answer, no record after
+	// a failed call that stops the create, the folder of the git answer when no pin is known, no
+	// record with the off switch and Windows are claustrum's own, not measured.
+	if !sessiondirs.OffSwitchSet(req.Params) {
+		recorded := t.pinCommonDir
+		if recorded == "" {
+			recorded = gitDir
+		}
+		_ = sessiondirs.RememberCreate(recorded)
+	}
 	// After a call that answered, the path of the git directory must still name
 	// the held folder. On Windows the create is refused here (measured: a
 	// junction that was put at `.git` after the call). The text names the git
@@ -1770,23 +1788,6 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if msg := registeredLeafRefusal(regDir, p.WorktreePath); msg != "" {
 			return refuseAdd(msg)
 		}
-	}
-	// A create of a plain repository makes <repo>/.git a session folder
-	// (b3081b51, measured on Linux, macOS and Windows). The record stays after
-	// git.worktree_remove. c9125eb8 and 4c111e86 write it before the add, so a
-	// failed add keeps it (measured on Linux and macOS). A failed record logs its
-	// line and the create goes on (measured on Linux and macOS). They write it
-	// before the listing of `rev-parse --absolute-git-dir` (measured on Linux).
-	// claustrum writes it here, after the refusals before the add (claustrum's
-	// own, not measured). The pin for a linked worktree, the folder of the git
-	// answer when no pin is known and no record with the off switch are
-	// claustrum's own, not measured.
-	if !sessiondirs.OffSwitchSet(req.Params) {
-		recorded := t.pinCommonDir
-		if recorded == "" {
-			recorded = gitDir
-		}
-		_ = sessiondirs.RememberCreate(recorded)
 	}
 	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
