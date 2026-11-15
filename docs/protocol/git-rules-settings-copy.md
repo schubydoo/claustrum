@@ -181,6 +181,11 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   content check (`b3081b51`, measured on Linux).
 - On Windows, if the folder of the daemon denies new folders, a create still works
   with the backup and restore privileges on. With both off it fails at `.s<n>`.
+- On Linux and macOS a folder of the daemon with mode `0300` (write and search, no
+  read) still takes a create. The daemon makes `.probe` and `.s<n>` by their paths, and
+  its request folders stay after it (`.s<n>`, `.checkout-<n>` and `.readback-objects-<n>`,
+  `4c111e86`, measured on Linux). The other methods get the same steps (claustrum's own,
+  not measured). macOS is claustrum's own.
 
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:

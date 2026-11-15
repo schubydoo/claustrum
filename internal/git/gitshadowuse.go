@@ -868,8 +868,8 @@ var requestDirMkdir = os.Mkdir
 // requestDir makes a new folder for one request and returns its path and the
 // function that removes it. In the state shadow the folder is
 // <S>/<shadowPrefix><n>, made with mode 0700 through a root at the folder of
-// the daemon (by its path on Windows, see below), and removed through
-// removeEntry. In every other state it is a new folder with tempPrefix in the
+// the daemon (by its path on Windows and with mode 0300, see below), and
+// removed through removeEntry. In every other state it is a new folder with tempPrefix in the
 // temporary folder, as before.
 //
 // The shutdown of the daemon removes its folder with every such entry in it,
@@ -894,8 +894,7 @@ var requestDirMkdir = os.Mkdir
 // (measured) and at `.index-<n>`. With both privileges disabled both builds
 // fail with the text above (measured). By path the create of claustrum
 // succeeds (measured). The prefixes .config-, .worktreeinclude- and the
-// .gitdir- of git.status are not measured there (claustrum's own). Linux and
-// macOS keep the root.
+// .gitdir- of git.status are not measured there (claustrum's own).
 func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove func(), err error) {
 	if !u.inFolder() {
 		dir, err = os.MkdirTemp("", tempPrefix)
@@ -910,28 +909,40 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there
 		// (measured on Linux). claustrum runs no mkdir and gives that error with
 		// a new name. Only a folder whose owner bits allow search and no write
-		// gets it. With mode 0300 4c111e86 makes `.s<n>`, and the create
-		// succeeds (measured on Linux). claustrum keeps the error of the open
-		// there: its probe step removes old entries through a root that needs
-		// the read bit (not built). macOS and the other prefixes are not
-		// measured.
+		// gets it. With mode 0300 4c111e86 makes `.s<n>` by its path, and the
+		// create succeeds (measured on Linux). claustrum makes it by its path
+		// too. The remove through removeEntry then fails at the open of the
+		// folder, and each such folder stays. On 4c111e86 `.s<n>`,
+		// `.checkout-<n>` and `.readback-objects-<n>` stay (measured on Linux).
+		// macOS and the other prefixes are not measured.
 		var pe *os.PathError
-		if !stagedAddWindowsSteps && errors.Is(err, fs.ErrPermission) && errors.As(err, &pe) && searchOnlyFolder(u.folder) {
+		if stagedAddWindowsSteps || !errors.Is(err, fs.ErrPermission) || !errors.As(err, &pe) {
+			return "", func() {}, err
+		}
+		if searchOnlyFolder(u.folder) {
 			name, nameErr := requestDirName(shadowPrefix)
 			if nameErr != nil {
 				return "", func() {}, nameErr
 			}
 			return "", func() {}, &os.PathError{Op: "mkdir", Path: filepath.Join(u.folder, name), Err: pe.Err}
 		}
-		return "", func() {}, err
+		if !writeSearchFolder(u.folder) {
+			return "", func() {}, err
+		}
+		root = nil
+	} else {
+		defer func() { _ = root.Close() }()
 	}
-	defer func() { _ = root.Close() }()
 	for range 10000 {
 		var name string
 		if name, err = requestDirName(shadowPrefix); err != nil {
 			return "", func() {}, err
 		}
-		err = makeRequestDir(root, u.folder, name)
+		if root == nil {
+			err = os.Mkdir(filepath.Join(u.folder, name), 0o700)
+		} else {
+			err = makeRequestDir(root, u.folder, name)
+		}
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}
@@ -953,6 +964,13 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 func searchOnlyFolder(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Mode().Perm()&0o300 == 0o100
+}
+
+// writeSearchFolder reports whether the owner bits of the folder path allow a
+// write and a search, as with mode 0300.
+func writeSearchFolder(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().Perm()&0o300 == 0o300
 }
 
 // requestDirName is a new name for a folder of a request: prefix and a

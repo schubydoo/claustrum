@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/homeguard"
 )
 
 // The call that asks git itself about a repository, as 5fd08069 makes it in the
@@ -188,23 +190,30 @@ var probeRebaseFolders = []string{"rebase-merge", "rebase-apply"}
 // cell does not record. Git needs the folder: without it the call answers "not a
 // git repository" (git 2.47.3 on the development host).
 //
-// Each delete goes through removeEntry or removeOneEntry, with fixed names
-// below the folder of the daemon. An error names its full path
-// (probePathError).
+// Each delete goes through removeProbeEntry, with fixed names in `.probe`. An
+// error names its full path (probePathError).
+//
+// On Linux and macOS a folder of the daemon whose owner bits allow write and
+// search but no read cannot be opened as a root. `.probe` is then made and
+// opened by its path (probeFolderBySearch). With mode 0300 4c111e86 opens the
+// files of `.probe` by their paths, and the create succeeds (measured on
+// Linux). macOS is claustrum's own.
 func (h *ShadowHost) prepareProbeFolder(dir string) error {
 	probe := filepath.Join(dir, shadowProbeName)
-	rel := filepath.Join(filepath.Base(dir), shadowProbeName)
+	var root *os.Root
 	base, err := os.OpenRoot(dir)
 	if err != nil {
-		return err
-	}
-	defer func() { _ = base.Close() }()
-	if err := base.Mkdir(shadowProbeName, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-		return probePathError(dir, err)
-	}
-	root, err := base.OpenRoot(shadowProbeName)
-	if err != nil {
-		return probePathError(dir, err)
+		if root, err = probeFolderBySearch(dir, err); err != nil {
+			return err
+		}
+	} else {
+		defer func() { _ = base.Close() }()
+		if err := base.Mkdir(shadowProbeName, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+			return probePathError(dir, err)
+		}
+		if root, err = base.OpenRoot(shadowProbeName); err != nil {
+			return probePathError(dir, err)
+		}
 	}
 	defer func() { _ = root.Close() }()
 	// The order is `refs`, `objects`, `info`, then `config`, then `HEAD`. On
@@ -218,36 +227,80 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 		}
 	}
 	for _, name := range probeLeftovers {
-		if err := h.removeEntry(filepath.Join(rel, filepath.FromSlash(name))); err != nil {
-			return probePathError(filepath.Dir(dir), err)
+		if err := removeProbeEntry(root, probe, filepath.FromSlash(name), true); err != nil {
+			return probePathError(probe, err)
 		}
 	}
 	for _, f := range []struct{ name, text string }{{"config", probeConfigText}, {"HEAD", shadowTestFirstHead}} {
-		if err := h.writeProbeFile(root, rel, f.name, f.text); err != nil {
+		if err := writeProbeFile(root, probe, f.name, f.text); err != nil {
 			return probePathError(probe, err)
 		}
 	}
 	for _, name := range probeRebaseFolders {
-		_ = h.removeOneEntry(filepath.Join(rel, name))
+		_ = removeProbeEntry(root, probe, name, false)
 	}
 	return nil
 }
 
-// writeProbeFile writes text to name in root, the folder `.probe` at rel below
-// the folder of all daemons, unless the file holds text already. A folder at
-// name goes first as a tree. A temporary file that a failed write left goes.
-func (h *ShadowHost) writeProbeFile(root *os.Root, rel, name, text string) error {
+// probeFolderBySearch makes `.probe` in dir by its path and opens it, when dir,
+// the folder of the daemon, cannot be opened (openErr). Only a permission
+// error of a folder whose owner bits allow write and search passes. The
+// folder must be a real folder, and the opened folder must be the folder of
+// its Lstat. Else the result is the error of the open of dir. A failed mkdir
+// gives its own error (claustrum's own, not measured).
+func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
+	if stagedAddWindowsSteps || !errors.Is(openErr, fs.ErrPermission) || !writeSearchFolder(dir) {
+		return nil, openErr
+	}
+	probe := filepath.Join(dir, shadowProbeName)
+	if err := os.Mkdir(probe, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+	fi, err := os.Lstat(probe)
+	if err != nil || !goesAsTree(fi.Mode()) {
+		return nil, openErr
+	}
+	root, err := os.OpenRoot(probe)
+	if err != nil {
+		return nil, openErr
+	}
+	if now, err := root.Stat("."); err != nil || !os.SameFile(fi, now) {
+		_ = root.Close()
+		return nil, openErr
+	}
+	return root, nil
+}
+
+// removeProbeEntry deletes name, a fixed name or the name of a temporary file
+// in the folder `.probe` at probe, through root, the root at that folder. So it
+// follows no link out of `.probe`. With tree it deletes name with its content,
+// else it is one plain remove, so a folder with content stays.
+// homeguard.WipesHomeDir on the full path is defense in depth.
+func removeProbeEntry(root *os.Root, probe, name string, tree bool) error {
+	if homeguard.WipesHomeDir(filepath.Join(probe, name)) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	if tree {
+		return root.RemoveAll(name)
+	}
+	return root.Remove(name)
+}
+
+// writeProbeFile writes text to name in root, the folder `.probe` at probe,
+// unless the file holds text already. A folder at name goes first as a tree.
+// A temporary file that a failed write left goes.
+func writeProbeFile(root *os.Root, probe, name, text string) error {
 	if got, err := root.ReadFile(name); err == nil && string(got) == text {
 		return nil
 	}
 	if fi, err := root.Lstat(name); err == nil && fi.IsDir() {
-		if err := h.removeEntry(filepath.Join(rel, name)); err != nil {
+		if err := removeProbeEntry(root, probe, name, true); err != nil {
 			return err
 		}
 	}
 	left, err := writeNewFile(root, name, []byte(text))
 	if left != "" {
-		_ = h.removeEntry(filepath.Join(rel, left))
+		_ = removeProbeEntry(root, probe, left, true)
 	}
 	return err
 }

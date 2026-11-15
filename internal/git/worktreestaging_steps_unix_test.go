@@ -202,3 +202,44 @@ func TestRemoveMovedKeepsASwappedFolder(t *testing.T) {
 		t.Errorf("the moved folder at w1x: %v, want it kept", err)
 	}
 }
+
+// TestStagedLeafFolderMadeByGit: git makes the folder `leaf` of `.s<n>` at the
+// add, with the mode of a new folder under the umask. 4c111e86 gives it 0755
+// under umask 022 (measured on Linux). `objects` of `.s<n>` has the same mode,
+// so it is the control. With a mkdir of `leaf` by the daemon it has 0700.
+func TestStagedLeafFolderMadeByGit(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	var leafMode, objectsMode os.FileMode
+	atStep(t, "staged", func() {
+		folder := daemonFolder(t, f.run)
+		names := addFolders(t, folder)
+		if len(names) != 1 {
+			t.Errorf("the folder of the daemon holds %q, want one .s<n>", names)
+			return
+		}
+		for _, e := range []struct {
+			name string
+			mode *os.FileMode
+		}{{stagedLeafFolder, &leafMode}, {"objects", &objectsMode}} {
+			fi, err := os.Lstat(filepath.Join(folder, names[0], e.name))
+			if err != nil {
+				t.Errorf("%s: %v", e.name, err)
+				return
+			}
+			*e.mode = fi.Mode()
+		}
+	})
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	if raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}); !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+	if objectsMode.Perm() == 0o700 {
+		t.Skip("the umask gives a new folder mode 0700")
+	}
+	if !leafMode.IsDir() || leafMode != objectsMode {
+		t.Errorf("leaf has mode %v, want %v as objects", leafMode, objectsMode)
+	}
+}
