@@ -1423,14 +1423,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if !staleStepAfterGitDir {
 		staleMatched, staleRemoved, staleLocked = staleStep()
 	}
-	// `git worktree add` does not create leading directories, so the reference
-	// makes the parent before adding — this is what lets a nested session path
-	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
-	// from the cleaned path. With a trailing slash, filepath.Dir of the raw path is
-	// the leaf itself, and the leaf mkdir below then failed with "file exists". The
-	// references create that worktree and echo the path as sent. Measured on Linux
-	// and macOS. Every frame below therefore keeps the raw p.WorktreePath. The parent
-	// makers set the modes and the error texts per OS.
+	// The reference makes the parent before adding — this is what lets a nested
+	// session path such as <repo>/.claude/worktrees/<id> succeed on a fresh
+	// repo. The parent comes from the cleaned path. With a trailing slash,
+	// filepath.Dir of the raw path is the leaf itself, and the leaf mkdir below
+	// then failed with "file exists". The references create that worktree and
+	// echo the path as sent. Measured on Linux and macOS. Every frame below
+	// therefore keeps the raw p.WorktreePath. The parent makers set the modes and
+	// the error texts per OS.
 	leafParent := filepath.Dir(filepath.Clean(p.WorktreePath))
 	var parentErr error
 	if p.WorktreeRoot != "" {
