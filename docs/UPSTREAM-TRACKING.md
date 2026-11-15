@@ -362,10 +362,10 @@ the linked pages.
     listing before the `-b` add, and `5fd08069` none.
   - With a git filter or git-lfs, the read-tree of claustrum can carry filter
     items before its list.
-  - On Linux and macOS, with a folder `lfs/objects` in the git directory and
-    no user `lfs.storage`, a create in the state `shadow` runs `ls-tree`, and
-    `cat-file --batch` for its small blobs, before the read-tree, each after a
-    listing (claustrum's own).
+  - On Linux and macOS, with `<git dir>/lfs/objects` and no user
+    `lfs.storage`, a create in the state `shadow` runs one listing twice, then
+    starts `ls-tree` and `cat-file --batch --buffer` together, in `baseRepo`
+    before the read-tree, like `4c111e86` (measured on Linux).
   - In the state `shadow` the read-tree call of a create names the commit id,
     after one `rev-parse --verify --quiet <ref>^{commit}` with no start commit
     (claustrum's own), and the `status` call of git.status carries `lfs.storage` (`b3081b51`, [What

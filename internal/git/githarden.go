@@ -964,7 +964,9 @@ var (
 //
 // keepTook is the time of the keep after a checkout that exited 0
 // (keepWithinDeadline).
-func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, keepTook time.Duration, err, installErr error) {
+//
+// repo is baseRepo, the folder of the calls of the seed (fillCheckoutStore).
+func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir, repo string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, keepTook time.Duration, err, installErr error) {
 	idxDir, removeIdxDir, err := u.requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, 0, err, nil
@@ -990,7 +992,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		lfs.seed = func() (bool, time.Duration) {
 			seedCtx, cancel := seedContext(ctx, timeoutMs)
 			defer cancel()
-			return fillCheckoutStore(seedCtx, u, leaf, u.gitDir, rev, lfs.path)
+			return fillCheckoutStore(seedCtx, u, repo, u.gitDir, rev, lfs.path)
 		}
 	}
 	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, lfs, pin, rule,

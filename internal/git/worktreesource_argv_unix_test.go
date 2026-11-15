@@ -15,7 +15,8 @@ import (
 // on its arguments. The reader drops the hardened light or heavy profile's -c
 // options when they appear as that exact run, and every --git-dir= / --work-tree=
 // option. Every other -c option is kept, in order,
-// with the subcommand and its arguments, one call per slice.
+// with the subcommand and its arguments, one call per slice. Each call writes its
+// line with one printf, so two calls at once do not mix their lines.
 func logGitArgv(t *testing.T) func() [][]string {
 	t.Helper()
 	real, err := exec.LookPath("git")
@@ -24,8 +25,8 @@ func logGitArgv(t *testing.T) func() [][]string {
 	}
 	bin := t.TempDir()
 	log := filepath.Join(bin, "argv.log")
-	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\037' \"$a\"; done >> '" + log + "'\n" +
-		"printf '\\n' >> '" + log + "'\nexec '" + real + "' \"$@\"\n"
+	script := "#!/bin/sh\nline=$(printf '%s\\037' \"$@\")\nprintf '%s\\n' \"$line\" >> '" + log + "'\n" +
+		"exec '" + real + "' \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
