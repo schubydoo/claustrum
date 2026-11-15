@@ -346,10 +346,29 @@ func resolvedPath(p string) (string, bool) {
 // RememberCreate adds the git directory of a good git.worktree_create, as Remember
 // does, and runs no prune: with 2048 records a create makes 2049 (b3081b51,
 // measured on Linux). It returns the error of Remember.
+//
+// A record that this daemon wrote and that is gone from the folder is written
+// again. 4c111e86 does so in a second create after the record was deleted, and
+// it writes nothing when the record is still there (measured on Linux). A
+// spawn keeps the record of its memory (claustrum's own, not measured).
 func RememberCreate(gitDir string) error {
 	return remember(false, []string{gitDir})
 }
 
+// recordGone reports whether the record folder holds no entry for the folder
+// p. A folder that cannot be opened counts as holding it.
+func (s *store) recordGone(p string) bool {
+	root, err := s.openDir()
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	_, err = root.Lstat(RecordName(p))
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// remember adds paths. prune is true for a spawn (Remember) and false for a
+// create (RememberCreate).
 func remember(prune bool, paths []string) error {
 	s := current.Load()
 	s.mu.Lock()
@@ -361,7 +380,7 @@ func remember(prune bool, paths []string) error {
 			continue
 		}
 		s.add(abs)
-		if s.saved[abs] || s.dir == "" {
+		if s.dir == "" || s.saved[abs] && (prune || !s.recordGone(abs)) {
 			continue
 		}
 		if renamed, err := s.write(abs); err != nil {

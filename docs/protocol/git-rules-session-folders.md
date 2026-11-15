@@ -45,7 +45,9 @@ is the git directory of its main repository (`4c111e86`, measured on Linux and m
 record is written before `git worktree add`, so a failed add keeps it (`c9125eb8` and
 `4c111e86`, measured on Linux and macOS). `4c111e86` writes it after the answer of
 `rev-parse --absolute-git-dir`, before the next git call, so a later refusal keeps it
-(measured on Linux and macOS. Windows: not measured). A create with the off switch
+(measured on Linux and macOS. Windows: not measured). A later create writes the record
+again when it is gone from the folder, and writes nothing when it is there (`4c111e86`,
+measured on Linux). A create with the off switch
 makes none (claustrum's own, not measured). On Linux and macOS its path has its links
 resolved (claustrum's own, not measured). Windows is not measured. A create whose trust check names no git
 directory records the folder that git names (claustrum's own, not measured).

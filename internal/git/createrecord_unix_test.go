@@ -40,3 +40,45 @@ func TestCreateOffLockedRegisteredLeafGetsGitsText(t *testing.T) {
 	}
 	mustExist(t, filepath.Join(f.repo, ".git", "worktrees", "w", "locked"))
 }
+
+// A second create whose record was deleted after the first one writes the
+// record again, also when its staged add then fails. Here the folder of the
+// daemon in git-shadow takes no new entry (mode 0500). 4c111e86 answers the
+// text of the private copy and keeps one record of `<repo>/.git` (measured on
+// Linux). Without the test of a gone record (sessiondirs.RememberCreate) the
+// second create writes none.
+func TestCreateWritesAGoneRecordAgainBeforeAStageFailure(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user makes an entry in a folder of mode 0500")
+	}
+	f := newSeededShadowFixture(t)
+	records := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+	if err := os.Mkdir(records, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessiondirs.UseForTest(records))
+	first := filepath.Join(f.repo, ".claude", "worktrees", "w0")
+	if raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w0", "worktreePath": first}); !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("the first create = %s", raw)
+	}
+	entries, err := os.ReadDir(records)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("after the first create the record folder holds %v (%v), want one record", entries, err)
+	}
+	if err := os.Remove(filepath.Join(records, entries[0].Name())); err != nil {
+		t.Fatal(err)
+	}
+	folder := daemonFolder(t, f.run)
+	if err := os.Chmod(folder, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(folder, 0o700) })
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if got := createError(t, raw); !strings.Contains(got, privateCopyText) {
+		t.Fatalf("the second create = %s, want the text of the private copy", raw)
+	}
+	if got, want := recordedPaths(t, records), canonicalPath(f.gitDir); len(got) != 1 || got[0] != want {
+		t.Errorf("after the second create the records name %q, want %q", got, want)
+	}
+}
