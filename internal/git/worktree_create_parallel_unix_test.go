@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -36,10 +37,9 @@ func (f lfsFixture) createLine(t *testing.T, branch string) string {
 // of its own and succeeds, and A removes only its own registration
 // (claustrum's own: the rollback deletes no name that B is making).
 //
-// Mutation: drop the retake() before the undoFailedCheckout of the failed
-// checkout in gitWorktreeCreateLocked. A then removes its registration n1
-// during the add of B, git gives B the name n1 again, and B is refused with
-// otherEntryRefusal.
+// Mutation: make retake a no-op in withWorktreeCreateLock. A then answers
+// and removes its registration n1 during the add of B, git gives B the name
+// n1 again, and B is refused with otherEntryRefusal.
 func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {
 	f := newWTFixture(t, false)
 	installGitSlowStub(t, f.realGit)
@@ -60,6 +60,10 @@ func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "worktree,add,"+leafB)
 	t.Setenv("CLAUSTRUM_GITSTUB_GATE2", gateB)
 	t.Setenv("CLAUSTRUM_GITSTUB_MS2", "60000")
+	var retakes atomic.Int32
+	prev := createLockRetakes
+	createLockRetakes = func() { retakes.Add(1) }
+	t.Cleanup(func() { createLockRetakes = prev })
 	a := dispatchAsync(h, rpcLine(t, "git.worktree_create", createParams(f.top, leafA, "ba")))
 	waitFor(t, "the checkout of A reached its gate", func() bool { return exists(gateA + ".in") })
 	b := dispatchAsync(h, rpcLine(t, "git.worktree_create", createParams(f.top, leafB, "bb")))
@@ -67,12 +71,30 @@ func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {
 	if err := os.WriteFile(gateA, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// A rollback that does not wait answers within a few calls. Give it that
-	// time, then let B go on in every case.
+	// The rollback of A either waits for the lock (the sentinel) or answers.
+	// Then B must still be held, with the registration of A in place.
 	var rawA string
+	if !pollUntil(60*time.Second, func() bool {
+		if rawA == "" {
+			select {
+			case rawA = <-a:
+			default:
+			}
+		}
+		return retakes.Load() > 0 || rawA != ""
+	}) {
+		t.Fatal("the rollback of A neither waited for the lock nor answered in 60 s")
+	}
+	if rawA != "" {
+		t.Errorf("create A answered while the add of B was held: %s", rawA)
+	}
 	select {
-	case rawA = <-a:
-	case <-time.After(5 * time.Second):
+	case got := <-b:
+		t.Fatalf("create B answered while its add was held: %s", got)
+	default:
+	}
+	if regs := f.regs(t); len(regs) != 1 || regs[0] != "n1" {
+		t.Errorf("registrations while B is held = %q, want only n1 of A", regs)
 	}
 	if err := os.WriteFile(gateB, nil, 0o644); err != nil {
 		t.Fatal(err)

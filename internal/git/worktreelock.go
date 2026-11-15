@@ -49,10 +49,16 @@ func withWorktreeRepoLock(repo string, fn func() rpc.Response) rpc.Response {
 // each rollback still run one create at a time. A rollback then removes no
 // registration, leaf or branch name that a second create is making. Both
 // points are claustrum's own. The rows show only the outcome: two creates of
-// 4c111e86 started 0 s or 1 s apart both download both Git LFS objects, and
-// both reply after about 7.4 s (measured on Linux). macOS and Windows are
-// claustrum's own, not measured.
+// 4c111e86 started 0 s or 1 s apart both download both Git LFS objects. At
+// 0 s apart each reply came 7.2 to 7.41 s after its request (measured on
+// Linux, two runs). macOS and Windows are claustrum's own, not measured.
+// Claustrum's own, not measured: a rollback waits for the create lock, so a
+// reply after a timeout can come later than timeoutMs.
 var worktreeCreateLocks sync.Map // canonical git dir -> *sync.Mutex
+
+// createLockRetakes runs right before a retake waits for the create lock. A
+// test replaces it.
+var createLockRetakes = func() {}
 
 // withWorktreeCreateLock runs fn, a git.worktree_create, while it holds the
 // create lock of the git directory of repo. fn ends the hold by release and
@@ -73,6 +79,7 @@ func withWorktreeCreateLock(repo string, fn func(release, retake func()) rpc.Res
 	}
 	retake := func() {
 		if !held {
+			createLockRetakes()
 			mu.Lock()
 			held = true
 		}
