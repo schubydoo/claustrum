@@ -331,28 +331,40 @@ func (r *idLines) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// pointerScanGit runs one call of the seed in dir, with its config listing first,
-// under a limit of its own, as a call of the content check (contentCheck.git).
-// The call ends at the deadline of ctx. Its stdout goes to stdout as it comes.
-func pointerScanGit(ctx context.Context, u gitUse, dir string, stdin io.Reader, stdout io.Writer, args ...string) error {
+// seedScanContext is ctx with a stop of its own for the time limits of one call
+// of the seed, as for a call of the content check (contentCheck.git).
+func seedScanContext(ctx context.Context, u gitUse) context.Context {
 	s := u.stop
 	if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
-	ctx = context.WithValue(ctx, gitStopKey{}, s)
-	cmd := hardenedGitCmd(ctx, u, dir, false, nil, args...)
+	return context.WithValue(ctx, gitStopKey{}, s)
+}
+
+// pointerScanGit runs one call of the seed in dir, under a limit of its own. The
+// call pins the hook names of pre and runs no listing. With a nil pre its config
+// listing runs first. The call ends at the deadline of ctx. Its stdout goes to
+// stdout as it comes.
+func pointerScanGit(ctx context.Context, u gitUse, dir string, pre *configListing, stdin io.Reader, stdout io.Writer, args ...string) error {
+	ctx = seedScanContext(ctx, u)
+	cmd := hardenedGitCmd(ctx, u, dir, false, pre, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	return gitRun(ctx, cmd)
 }
 
 // commitPointers are the pointers of the tree of rev, read in dir. It keeps no
-// output of git but the ids of the small blobs and the pointers. The argv of the
-// ls-tree call follows 4c111e86 (measured on Linux, a pointer at the top of the
-// tree). A pointer in a subfolder is claustrum's own, not measured.
+// output of git but the ids of the small blobs and the pointers. One listing
+// runs before the ls-tree call, and the `cat-file --batch --buffer` call pins
+// its hook names with no listing of its own. The argv of both calls and the
+// listing follow 4c111e86 (measured on Linux, a pointer at the top of the
+// tree). Claustrum's own, not measured: a pointer in a subfolder. Claustrum
+// starts cat-file after the end of ls-tree, and not at all with no small blob.
 func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef {
+	u = u.atCommand()
+	pre := &configListing{hooks: hookPrecursor(seedScanContext(ctx, u), u, dir, false).hooks()}
 	var l blobLister
-	if pointerScanGit(ctx, u, dir, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev) != nil {
+	if pointerScanGit(ctx, u, dir, pre, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev) != nil {
 		return nil
 	}
 	l.end()
@@ -360,7 +372,7 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 		return nil
 	}
 	var b batchReader
-	if pointerScanGit(ctx, u, dir, &idLines{ids: l.ids}, &b, "cat-file", "--batch") != nil {
+	if pointerScanGit(ctx, u, dir, pre, &idLines{ids: l.ids}, &b, "cat-file", "--batch", "--buffer") != nil {
 		return nil
 	}
 	return b.ps

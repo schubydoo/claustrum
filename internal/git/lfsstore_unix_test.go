@@ -897,7 +897,7 @@ func TestCommitPointersStopsAtDeadline(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := pointerScanGit(ctx, gitUse{}, f.repo, nil, io.Discard, "ls-tree", "HEAD"); err == nil {
+	if err := pointerScanGit(ctx, gitUse{}, f.repo, nil, nil, io.Discard, "ls-tree", "HEAD"); err == nil {
 		t.Error("the ls-tree call of the seed after the deadline = nil error, want a failure")
 	}
 	if got := commitPointers(ctx, gitUse{}, f.repo, "HEAD"); len(got) != 0 {
@@ -937,8 +937,13 @@ func TestSeedScanRunsInBaseRepo(t *testing.T) {
 		t.Fatalf("no listing right before the ls-tree call of the seed")
 	}
 	scan := append([]envCall{calls[i-1]}, seedScanCalls(t, calls)...)
-	if !slices.ContainsFunc(scan, func(c envCall) bool { return slices.Contains(c.argv, "cat-file") }) {
-		t.Fatal("no cat-file call of the seed")
+	// The cat-file call comes right after the ls-tree call, with no listing,
+	// and pins the same hook names.
+	if len(scan) < 3 || !argvEndsWith(scan[2].argv, []string{"cat-file", "--batch", "--buffer"}) {
+		t.Fatalf("the seed calls end %q, want the listing, ls-tree, then cat-file --batch --buffer", scan[len(scan)-1].argv)
+	}
+	if got, want := scan[2].pins(t), scan[1].pins(t); !slices.Equal(got, want) {
+		t.Errorf("cat-file pins %q, want the pins of the ls-tree call %q", got, want)
 	}
 	for _, c := range scan {
 		dir, _ := lookupExact(c.env, "GIT_DIR")
