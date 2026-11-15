@@ -156,17 +156,7 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 	if len(names) != 1 {
 		t.Errorf("the shard holds %v, want only the object", names)
 	}
-	// A folder made with mode 0777 here gets the same umask.
-	ref := filepath.Join(t.TempDir(), "ref")
-	if err := os.Mkdir(ref, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	want, _ := os.Stat(ref)
-	for _, d := range []string{filepath.Dir(p), filepath.Dir(filepath.Dir(p)), filepath.Join(f.gitDir, "lfs")} {
-		if fi, err := os.Stat(d); err != nil || fi.Mode().Perm() != want.Mode().Perm() {
-			t.Errorf("the folder %s = %v, %v, want mode 0777 less the umask", d, fi, err)
-		}
-	}
+	// The modes of the folders are pinned by TestLFSKeepShardModeFollowsUmask.
 }
 
 // TestLFSKeepShardModeFollowsUmask: 4c111e86 asks for mode 0777 for the two
