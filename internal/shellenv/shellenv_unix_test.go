@@ -253,12 +253,17 @@ func groupGone(t *testing.T, pgid int) {
 	}
 }
 
-// startSleepingRead starts a real read whose shell writes its pid and then waits on
-// a child in its own group. It returns that pid.
+// startSleepingRead starts a real read whose shell starts a child in its own group,
+// writes its pid and then waits on that child. It returns that pid.
+//
+// The shell writes the pid only after the fork of the child returned. On macOS a
+// group kill during that fork can miss the new child, which then sleeps on in the
+// group. Not measured: one macOS CI failure fits it. Linux fails a fork that a
+// fatal signal hits, so the order changes nothing there.
 func startSleepingRead(t *testing.T, start func()) int {
 	t.Helper()
 	pidFile := filepath.Join(t.TempDir(), "pid")
-	t.Setenv("SHELL", writeFakeShell(t, `echo $$ > '`+pidFile+`'; `+helperInShell(t, "sleep", "30")))
+	t.Setenv("SHELL", writeFakeShell(t, helperInShell(t, "sleep", "30")+` & echo $$ > '`+pidFile+`'; wait`))
 	ResetForTest()
 	old := LoginPATHExtractor
 	LoginPATHExtractor = extractLoginPATH
