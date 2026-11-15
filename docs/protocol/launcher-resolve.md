@@ -145,7 +145,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
 | `owner` | Owned by the uid of the daemon (`4c111e86`, measured on a FUSE mount) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
 | `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
-| `owner` | Owned by another uid | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. If you trust uid <n> with the launcher, you can name it as ownerUid in sshHostLauncher instead. `` |
+| `owner` | Owned by another uid (`4c111e86`, measured with a digest) | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. `` |
 
 #### Rules of the check
 
@@ -162,14 +162,30 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `fault` | Case | `reason` |
 |---|---|---|
 | `writable` | A file system that the walk does not trust, with no digest (`4c111e86`, measured on Linux) | `` `<D>` is on <fs>, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image. `` |
-| `writable` | A trusted disk kind with no real device while a 9p mount is listed, with no digest (`4c111e86`, measured on Linux) | `` `<D>` can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS. `` |
+| `writable` | `/` on NFS, with no digest (`4c111e86`, measured on Linux) | `` `/` is on NFS. Who can change files there can't be checked, so a launcher can't be used on this host. `` |
 
 #### Rules of the kinds
 
-- ext4, XFS and erofs pass (`4c111e86`, measured on Linux). tmpfs, overlayfs, ZFS, squashfs, f2fs, ramfs, eCryptfs, JFS, ReiserFS and bcachefs pass too (claustrum's own, not measured). exFAT and NTFS3 keep no Unix owner and get the unknown text, like the measured vfat (claustrum's own, not measured).
+- ext4, XFS and erofs pass (`4c111e86`, measured on Linux). ZFS, squashfs, f2fs, eCryptfs, JFS, ReiserFS and bcachefs pass too (claustrum's own, not measured). exFAT and NTFS3 keep no Unix owner and get the unknown text, like the measured vfat (claustrum's own, not measured).
 - `<fs>` is `NFS`, `SMB`, `9p`, `AFS`, `Ceph`, `GFS2`, `Lustre`, `GPFS`, `OCFS2` or `VxFS` (`4c111e86`, measured on Linux), or `FUSE or virtiofs`. Any other type is `an unknown kind of file system (0x4d44)`, with its hex. kAFS (0x6b414653) has no row and gets that text.
-- The 9p row is measured with btrfs and an ext4 type on a tmpfs. The device test (major 0) and the read of `/proc/self/mountinfo` are claustrum's own. With no 9p mount, btrfs passes (not measured).
 - On these file systems an `ownerUid` lifts nothing with no digest. With a digest the owner test runs (`4c111e86`, on FUSE). The write test runs too (claustrum's own, not measured). An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
+- The text of `/` on another kind and the fault of the `/` row are claustrum's own, not measured.
+
+#### A kind with no disk (Linux)
+
+With no digest, these rows refuse btrfs, tmpfs, ramfs, overlay, and an ext4 or XFS type on tmpfs or ramfs (`4c111e86`, measured on Linux).
+
+| `fault` | Case | `reason` |
+|---|---|---|
+| `writable` | `/sys/class/bdi` lists a `9p-<n>` entry | `` `<D>` can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS. `` |
+| `writable` | `/sys/class/bdi` can't be read or is empty | `` `<D>` may be a 9p share: `/sys/class/bdi`, which would show one, can't be read here. So who can change `<D>` can't be checked. Make `/sys` readable to the account that signs in (`mount -t sysfs sysfs /sys`), or keep the launcher and every folder above it on a local disk, such as ext4 or XFS. `` |
+| `writable` | An ext4 or XFS type, and no 9p entry | `` `<D>` is on a file system that reports a disk's kind (<hex>) but has no disk behind it, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image. `` |
+
+#### Rules of a kind with no disk
+
+- A `9p-<n>` entry counts also for a 9p mount outside the mount namespace of the daemon (measured). With no such entry, btrfs, tmpfs, ramfs and overlay pass (measured).
+- With a 9p entry, an ext4 type on a tmpfs gets the 9p text (measured). An erofs or btrfs type with no 9p entry passes (measured). `<hex>` is `0xef53` or `0x58465342`.
+- claustrum's own, not measured: the device test (major 0), erofs in the rule, the faults of the last two rows, and the may-be text for an ext4 type. With a digest all three rows pass (measured for the 9p row). The digits-only test of the name is claustrum's own, not measured.
 
 ### Log lines
 
