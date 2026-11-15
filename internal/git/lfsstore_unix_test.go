@@ -49,7 +49,8 @@ func newNamedLFSFixture(t *testing.T, name string, files map[string]string) lfsF
 		mustWrite(t, filepath.Join(f.repo, name), fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n", oid, len(body)))
 		names = append(names, name)
 	}
-	runGit(t, f.repo, append([]string{"add"}, names...)...)
+	// -f: the repository ignores .claude, and a test commits a file there.
+	runGit(t, f.repo, append([]string{"add", "-f"}, names...)...)
 	runGit(t, f.repo, "commit", "-q", "-m", "lfs")
 	exe, err := os.Executable()
 	if err != nil {
@@ -136,6 +137,40 @@ func TestLFSSeedIntoPrivateStore(t *testing.T) {
 	}
 	if b, err := os.ReadFile(filepath.Join(f.leaf, "b.bin")); err != nil || string(b) != "BETA-OBJECT" {
 		t.Errorf("b.bin of the worktree = %q, %v, want the bytes of the local object", b, err)
+	}
+}
+
+// TestLFSFileUnderClaudeSmudgesOnce: the content check compares an LFS file
+// under .claude with the sha256 and the size of its pointer, with no second
+// smudge. A good object passes, and wrong bytes of the same size refuse with
+// the LFS text (4c111e86, measured on macOS).
+func TestLFSFileUnderClaudeSmudgesOnce(t *testing.T) {
+	const name = ".claude/commands/x.bin"
+	for _, good := range []bool{true, false} {
+		t.Run(fmt.Sprint("good ", good), func(t *testing.T) {
+			f := newLFSFixture(t, map[string]string{name: "claude-lfs-object"})
+			body := "claude-lfs-object"
+			if !good {
+				body = "CLAUDE-LFS-OBJECT"
+			}
+			f.local(t, name, body)
+			raw, _ := f.create(t, nil)
+			b, _ := os.ReadFile(f.log)
+			if n := strings.Count(string(b), "\n"); n != 1 {
+				t.Errorf("smudge lines = %q, want one", b)
+			}
+			if good {
+				if !strings.Contains(raw, `"success":true`) {
+					t.Fatalf("git.worktree_create = %s, want success", raw)
+				}
+				return
+			}
+			want := `so it did not keep it. Turn off Worktree for this session, then try again: the Git LFS content checked out at \"` + name +
+				`\" doesn't match its pointer in commit `
+			if !strings.Contains(raw, `"errorCode":"worktree_verify_content"`) || !strings.Contains(raw, want) {
+				t.Fatalf("git.worktree_create = %s, want the LFS text %s", raw, want)
+			}
+		})
 	}
 }
 
