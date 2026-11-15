@@ -248,9 +248,18 @@ func TestLargeScanOutputs(t *testing.T) {
 	}
 }
 
-// TestIDLines: the stdin of `cat-file --batch` is each id on its own line.
+// TestIDLines: the stdin of `cat-file --batch` is each id on its own line. A
+// read into no bytes does not wait for an id.
 func TestIDLines(t *testing.T) {
-	b, err := io.ReadAll(&idLines{ids: []string{"aaaa", "bbbb", "cccc"}})
+	r := newIDLines()
+	if n, err := r.Read(nil); n != 0 || err != nil {
+		t.Errorf("a read into no bytes = %d, %v, want 0 and no error", n, err)
+	}
+	for _, id := range []string{"aaaa", "bbbb", "cccc"} {
+		r.add(id)
+	}
+	r.close()
+	b, err := io.ReadAll(r)
 	if err != nil || string(b) != "aaaa\nbbbb\ncccc\n" {
 		t.Errorf("idLines = %q, %v", b, err)
 	}

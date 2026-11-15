@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
@@ -33,8 +34,10 @@ import (
 //     (measured on Linux).
 //   - The keep. After a good checkout, an object that git-lfs downloaded into
 //     P reaches the store of the repository. Its shard folders are made when
-//     they are missing, with mode 0755 (measured on macOS, claustrum's own on
-//     Linux). A link at `lfs`,
+//     they are missing, with mode 0777 less the umask (measured on Linux). On
+//     macOS they got 0755 under the default umask (measured). macOS under
+//     another umask is claustrum's own. A missing `lfs` and `lfs/objects` get
+//     0755 less the umask (claustrum's own, not measured). A link at `lfs`,
 //     and a folder `lfs/objects` that cannot be written, keep nothing, and the
 //     create succeeds (measured on Linux). An object whose bytes and size
 //     differ from its pointer gets `lfs/objects` but no shard folder (measured
@@ -43,9 +46,11 @@ import (
 //     nothing (lfsroom.go, measured on Linux).
 //   - The sweep of stale temp names (sweepShardTemps).
 //
-// Claustrum's own, not measured: the seed reads the pointers with `ls-tree`
-// and `cat-file --batch` in the new worktree, and only when the repository
-// has a folder `lfs/objects`. It reads the store of the repository by path,
+// The seed reads the pointers with `ls-tree` and `cat-file` in baseRepo, with
+// GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo> (4c111e86, measured on Linux).
+//
+// Claustrum's own, not measured: a baseRepo that is a linked worktree. The
+// seed runs only when the repository has a folder `lfs/objects`. It reads the store of the repository by path,
 // read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too. The
 // form of the keep on macOS is not measured. It keeps no object that the store already has. A link at
 // `lfs/objects` or at a shard folder keeps nothing. The keep tests the bytes
@@ -151,14 +156,16 @@ func readPointerBlob(body []byte) (pointerRef, bool) {
 // counts as no blob (claustrum's own).
 const lsTreeHeadMax = 256
 
-// blobLister reads an `ls-tree -r -z -l` output as it comes, as the stdout of
+// blobLister reads an `ls-tree --full-tree -r -l -z` output as it comes, as the stdout of
 // the call. It keeps the ids of the blobs of at most pointerBlobMax bytes, each
-// once. Of each record it keeps only the text before the tab.
+// once, and gives each new id to found when found is set. Of each record it
+// keeps only the text before the tab.
 type blobLister struct {
 	head   []byte
 	inPath bool
 	ids    []string
 	seen   map[string]bool
+	found  func(id string)
 }
 
 func (l *blobLister) Write(p []byte) (int, error) {
@@ -208,6 +215,9 @@ func (l *blobLister) end() {
 	}
 	l.seen[f[2]] = true
 	l.ids = append(l.ids, f[2])
+	if l.found != nil {
+		l.found(f[2])
+	}
 }
 
 // batchHeaderMax is the most bytes of one header line of a `cat-file --batch`
@@ -304,13 +314,49 @@ func (b *batchReader) take() {
 	}
 }
 
-// idLines is the stdin of `cat-file --batch`: each id on a line of its own.
+// idLines is the stdin of `cat-file --batch`: each id on a line of its own. The
+// ids come by add while ls-tree still runs, and close ends them. A read waits
+// for the next id or the end. An add never waits, so the reader of ls-tree
+// does not wait on cat-file.
 type idLines struct {
-	ids  []string
-	part string
+	mu     sync.Mutex
+	more   *sync.Cond
+	ids    []string
+	part   string
+	closed bool
+}
+
+func newIDLines() *idLines {
+	r := &idLines{}
+	r.more = sync.NewCond(&r.mu)
+	return r
+}
+
+// add puts id at the end of the lines.
+func (r *idLines) add(id string) {
+	r.mu.Lock()
+	r.ids = append(r.ids, id)
+	r.mu.Unlock()
+	r.more.Signal()
+}
+
+// close ends the lines after the ids added so far.
+func (r *idLines) close() {
+	r.mu.Lock()
+	r.closed = true
+	r.mu.Unlock()
+	r.more.Signal()
 }
 
 func (r *idLines) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for r.part == "" && len(r.ids) == 0 && !r.closed {
+		r.more.Wait()
+	}
 	n := 0
 	for n < len(p) {
 		if r.part == "" {
@@ -322,40 +368,62 @@ func (r *idLines) Read(p []byte) (int, error) {
 		k := copy(p[n:], r.part)
 		r.part, n = r.part[k:], n+k
 	}
-	if n == 0 && len(p) > 0 {
+	if n == 0 {
 		return 0, io.EOF
 	}
 	return n, nil
 }
 
-// pointerScanGit runs one call of the seed in dir, with its config listing first,
-// under a limit of its own, as a call of the content check (contentCheck.git).
-// The call ends at the deadline of ctx. Its stdout goes to stdout as it comes.
-func pointerScanGit(ctx context.Context, u gitUse, dir string, stdin io.Reader, stdout io.Writer, args ...string) error {
+// seedScanContext is ctx with a stop of its own for the time limits of one call
+// of the seed, as for a call of the content check (contentCheck.git).
+func seedScanContext(ctx context.Context, u gitUse) context.Context {
 	s := u.stop
 	if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
-	ctx = context.WithValue(ctx, gitStopKey{}, s)
-	cmd := hardenedGitCmd(ctx, u, dir, false, nil, args...)
+	return context.WithValue(ctx, gitStopKey{}, s)
+}
+
+// pointerScanGit runs one call of the seed in dir, under a limit of its own. The
+// call pins the hook names of pre and runs no listing. With a nil pre its config
+// listing runs first. The call ends at the deadline of ctx. Its stdout goes to
+// stdout as it comes.
+func pointerScanGit(ctx context.Context, u gitUse, dir string, pre *configListing, stdin io.Reader, stdout io.Writer, args ...string) error {
+	ctx = seedScanContext(ctx, u)
+	cmd := hardenedGitCmd(ctx, u, dir, false, pre, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	return gitRun(ctx, cmd)
 }
 
 // commitPointers are the pointers of the tree of rev, read in dir. It keeps no
-// output of git but the ids of the small blobs and the pointers.
+// output of git but the ids of the small blobs and the pointers. The same
+// listing runs twice before the ls-tree call, and both calls pin the hook names
+// of the second one. The `cat-file --batch --buffer` call has no listing of its
+// own. cat-file starts with ls-tree,
+// before the first id, and gets each id as ls-tree lists it. Its input ends
+// with the end of ls-tree. The argv of both calls, the listing and that start
+// follow 4c111e86 (measured on Linux, a pointer at the top of the tree).
+// Claustrum's own, not measured: a pointer in a subfolder, a tree with no small
+// blob, the order of the two starts, and which listing gives the hook names.
 func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef {
-	var l blobLister
-	if pointerScanGit(ctx, u, dir, nil, &l, "ls-tree", "-r", "-z", "-l", rev) != nil {
-		return nil
-	}
-	l.end()
-	if len(l.ids) == 0 || ctx.Err() != nil {
-		return nil
-	}
+	u = u.atCommand()
+	hookPrecursor(seedScanContext(ctx, u), u, dir, false)
+	pre := &configListing{hooks: hookPrecursor(seedScanContext(ctx, u), u, dir, false).hooks()}
+	ids := newIDLines()
+	l := blobLister{found: ids.add}
+	listErr := make(chan error, 1)
+	go func() {
+		err := pointerScanGit(ctx, u, dir, pre, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev)
+		if err == nil {
+			l.end()
+		}
+		ids.close()
+		listErr <- err
+	}()
 	var b batchReader
-	if pointerScanGit(ctx, u, dir, &idLines{ids: l.ids}, &b, "cat-file", "--batch") != nil {
+	batchErr := pointerScanGit(ctx, u, dir, pre, ids, &b, "cat-file", "--batch", "--buffer")
+	if <-listErr != nil || batchErr != nil || ctx.Err() != nil {
 		return nil
 	}
 	return b.ps
@@ -652,13 +720,14 @@ func returnDownloads(u gitUse, private string, form keepForm) {
 }
 
 // openShard opens the shard folder rel of root one folder at a time, each from
-// the handle of its parent (shardStep). The caller closes the handle. A folder
-// that is a link, no folder or not the folder that its Lstat saw gives nil. The
-// path of the git directory is not read again.
-func openShard(root *os.Root, rel string) *os.Root {
+// the handle of its parent (shardStep). A missing folder gets mode, less the
+// umask. The caller closes the handle. A folder that is a link, no folder or not
+// the folder that its Lstat saw gives nil. The path of the git directory is not
+// read again.
+func openShard(root *os.Root, rel string, mode os.FileMode) *os.Root {
 	cur := root
 	for _, name := range strings.Split(filepath.ToSlash(rel), "/") {
-		next := shardStep(cur, name)
+		next := shardStep(cur, name, mode)
 		if cur != root {
 			_ = cur.Close()
 		}
@@ -671,12 +740,12 @@ func openShard(root *os.Root, rel string) *os.Root {
 }
 
 // shardStep opens the folder name of parent. It makes the folder when it is
-// missing, with mode 0755. The folder must be a real folder by Lstat through
+// missing, with mode. The folder must be a real folder by Lstat through
 // parent, and the opened folder must be that folder.
-func shardStep(parent *os.Root, name string) *os.Root {
+func shardStep(parent *os.Root, name string, mode os.FileMode) *os.Root {
 	fi, err := parent.Lstat(name)
 	if os.IsNotExist(err) {
-		if parent.Mkdir(name, 0o755) != nil {
+		if parent.Mkdir(name, mode) != nil {
 			return nil
 		}
 		fi, err = parent.Lstat(name)
@@ -717,7 +786,9 @@ var openShardFolder = (*os.Root).OpenRoot
 // own, not measured). After a checkout that failed by itself the keep is one
 // hard link at the name oid (claustrum's own, not measured).
 func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) {
-	objects := openShard(root, filepath.Join("lfs", "objects"))
+	// A missing `lfs` and `lfs/objects` get 0755 (claustrum's own, not
+	// measured). The two shard levels get 0777 (measured on Linux).
+	objects := openShard(root, filepath.Join("lfs", "objects"), 0o755)
 	if objects == nil {
 		return
 	}
@@ -730,7 +801,7 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 	if !objectHoldsOID(ctx, src, oid) {
 		return
 	}
-	shard := openShard(objects, rel)
+	shard := openShard(objects, rel, 0o777)
 	if shard == nil {
 		return
 	}
@@ -821,7 +892,7 @@ func swapInKept(shard *os.Root, private, oid, temp string) {
 		return
 	}
 	defer func() { _ = store.Close() }()
-	dir := openShard(store, filepath.Join("objects", oid[:2], oid[2:4]))
+	dir := openShard(store, filepath.Join("objects", oid[:2], oid[2:4]), 0o755)
 	if dir == nil {
 		return
 	}
