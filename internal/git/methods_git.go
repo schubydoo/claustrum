@@ -995,7 +995,8 @@ func gitListBranches(req *gitCall) rpc.Response {
 // registrations of gitDir is a real folder, empty or not (measured on Linux, macOS and Windows). With
 // the member 5fd08069 runs them in a repository with a linked worktree (measured). An entry that
 // names the leaf gives no pair (measured). In the state shadow one such entry that the stale step
-// removed gives the pair (c9125eb8 and 4c111e86, measured on Linux). On 5fd08069 a missing folder gives none. b3081b51 and
+// removed gives the pair (c9125eb8 and 4c111e86, measured on Linux). So does one such entry that stays for its
+// `locked` file (4c111e86, measured on macOS). On 5fd08069 a missing folder gives none. b3081b51 and
 // c9125eb8 run the pair in the first create of a repository with no such folder (measured on Linux,
 // macOS and Windows, in the state shadow), so there a missing folder gives the pair (missingRuns).
 // With the member a missing folder still gives none: no row of those builds has it. The state
@@ -1412,15 +1413,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// `rev-parse --absolute-git-dir` (staleStepAfterGitDir).
 	// On Linux and macOS a create that holds its git directory runs the step
 	// through the held folder (gitdirheld.go). Windows runs it by the path.
-	staleStep := func() (bool, bool) {
+	staleStep := func() (bool, bool, bool) {
 		if createStepHook != nil && req.use.accepted != nil {
 			createStepHook("stale")
 		}
 		return removeStaleWorktreeEntry(repo, p.WorktreePath, req.use.accepted)
 	}
-	staleMatched, staleRemoved := false, false
+	staleMatched, staleRemoved, staleLocked := false, false, false
 	if !staleStepAfterGitDir {
-		staleMatched, staleRemoved = staleStep()
+		staleMatched, staleRemoved, staleLocked = staleStep()
 	}
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
@@ -1678,7 +1679,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// refusal between the mkdir of the leaf and this point leaves the stale
 	// entry in place (not measured).
 	if staleStepAfterGitDir {
-		staleMatched, staleRemoved = staleStep()
+		staleMatched, staleRemoved, staleLocked = staleStep()
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the checkout, and the daemon
 	// tests it after the add and after the copy step. At timeoutMs 0 both
@@ -1692,7 +1693,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// before the add (measured on Linux). macOS follows Linux (not measured).
 	// Windows keeps the old rule (not measured).
 	staleGone := staleRemoved && req.use.shadow() && !stagedAddWindowsSteps
-	if (req.use.shadow() || bool(p.ShadowDirOff)) && (!staleMatched || staleGone) {
+	// In the state shadow one stale entry that stays for its `locked` file gives
+	// the pair too. 4c111e86 runs the listing of the add and the pair, and then
+	// it answers the locked refusal below (measured on macOS). Linux follows macOS
+	// (not measured). With the member it gives no pair (measured on macOS).
+	staleLockedPair := staleLocked && req.use.shadow()
+	if (req.use.shadow() || bool(p.ShadowDirOff)) && (!staleMatched || staleGone || staleLockedPair) {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
 		pairFor = func(gitDir string) func() {
@@ -1706,7 +1712,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				// repo, and the test of the name .git is claustrum's own (not measured).
 				pairTree = filepath.Dir(gitDir)
 			}
-			return pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff), staleGone)
+			return pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff), staleGone || staleLockedPair)
 		}
 		afterAddListing = pairFor(gitDir)
 	}
@@ -1830,6 +1836,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			regDir = filepath.Dir(gitDirRegistryDir(gitDir))
 		}
 		if msg := registeredLeafRefusal(regDir, p.WorktreePath, bool(p.ShadowDirOff)); msg != "" {
+			if staleLockedPair {
+				addListingThenPair(baseCtx, req.use, repo, afterAddListing)
+			}
 			return refuseAdd(msg)
 		}
 	}

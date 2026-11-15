@@ -348,6 +348,18 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 	hookPrecursor(ctx, f, repo, false)
 }
 
+// addListingThenPair runs the listing of a `worktree add` in repo and then pair,
+// when set, and no add. It holds the lock of the add step, as worktreeAdd does.
+// A create refuses a leaf with a locked stale entry after these calls
+// (4c111e86, measured on macOS).
+func addListingThenPair(ctx context.Context, u gitUse, repo string, pair func()) {
+	defer lockWorktreeAddStep(repo)()
+	offLinkListing(ctx, u, repo)
+	if pair != nil {
+		pair()
+	}
+}
+
 // rereadConfigRefusal reads the config of the git directory that the trust
 // check of repo pins, also when a read of it is kept, and returns the refusal
 // of the gate, or "". It runs only in the state shadow.

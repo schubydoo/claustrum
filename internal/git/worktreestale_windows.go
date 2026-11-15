@@ -68,24 +68,25 @@ const genericHintChars = "$'"
 // exists stays (staleRecordLive, D27).
 //
 // matched reports that an entry names the leaf, also one that stays
-// (pairBeforeAdd). removed reports that the step removed that entry.
-func removeStaleWorktreeEntry(repo, worktreePath string, _ *acceptedGitDir) (matched, removed bool) {
+// (pairBeforeAdd). removed reports that the step removed that entry. locked is
+// always false: Windows keeps no pair for a locked entry (not measured).
+func removeStaleWorktreeEntry(repo, worktreePath string, _ *acceptedGitDir) (matched, removed, locked bool) {
 	base := staleRegistryDir(repo)
 	fi, err := os.Lstat(base)
 	if err != nil || !goesAsTree(fi.Mode()) {
-		return false, false
+		return false, false, false
 	}
 	root, err := os.OpenRoot(base)
 	if err != nil {
-		return false, false
+		return false, false, false
 	}
 	defer func() { _ = root.Close() }()
 	if !sameOpenedFolder(root, fi) {
-		return false, false
+		return false, false, false
 	}
 	names, records := windowsStaleEntries(root, ".", worktreePath)
 	if windowsStaleEntryGoes(root, ".", names, records) && !homeguard.WipesHomeDir(filepath.Join(base, names[0])) {
 		removed = removeHeldEntry(root, names[0]) == nil
 	}
-	return len(names) > 0, removed
+	return len(names) > 0, removed, false
 }

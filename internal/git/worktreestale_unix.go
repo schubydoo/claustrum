@@ -99,22 +99,23 @@ const genericHintChars = "$'\\"
 // matched reports that an entry is stale, also one that stays (pairBeforeAdd).
 // With two stale entries 5fd08069 removes neither and runs no pair (measured
 // on Linux and macOS). removed reports that the step removed the one stale
-// entry.
-func removeStaleWorktreeEntry(repo, worktreePath string, held *acceptedGitDir) (matched, removed bool) {
+// entry. locked reports that the one stale entry stays and holds a `locked`
+// file.
+func removeStaleWorktreeEntry(repo, worktreePath string, held *acceptedGitDir) (matched, removed, locked bool) {
 	base := staleRegistryDir(repo)
 	root, err := held.deleteRoot(base)
 	if err != nil {
-		return false, false
+		return false, false, false
 	}
 	defer func() { _ = root.Close() }()
 	dir, err := root.Open(".")
 	if err != nil {
-		return false, false
+		return false, false, false
 	}
 	ents, err := dir.ReadDir(-1)
 	_ = dir.Close()
 	if err != nil {
-		return false, false
+		return false, false, false
 	}
 	// The order of os.ReadDir, which this step had before it used a root.
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
@@ -143,8 +144,12 @@ func removeStaleWorktreeEntry(repo, worktreePath string, held *acceptedGitDir) (
 	// Two or more stale entries: every one stays (measured).
 	if len(stale) == 1 {
 		removed = removeStaleRegistration(root, stale[0], filepath.Join(base, stale[0]))
+		if !removed {
+			_, err := root.Lstat(stale[0] + "/locked")
+			locked = err == nil
+		}
 	}
-	return len(stale) > 0, removed
+	return len(stale) > 0, removed, locked
 }
 
 // removeStaleRegistration removes the entry name of root, the opened registrations
