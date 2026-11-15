@@ -139,8 +139,8 @@ type SpawnResult struct {
 // CLITempRoot is the cliTempRoot member of a spawn reply. Refused names the kind of
 // the unfit claude-<uid> entry. Name is the private folder that the child got, and
 // WhyNot says why no folder was given. Name and WhyNot never come together. Gone
-// lists the folders that the daemon found lost since the last reply that carried
-// the list (4c111e86, measured on macOS after refused and name). The place of Gone
+// lists the last 16 folders that the daemon found lost, oldest first, in each later
+// reply (4c111e86, measured on macOS after refused and name). The place of Gone
 // after WhyNot is claustrum's own, not measured.
 type CLITempRoot struct {
 	Refused string              `json:"refused,omitempty"`

@@ -136,11 +136,16 @@ type tempRootUser struct {
 	bound, ended bool
 }
 
-// goneTempRoot is a folder that a check found lost, for the lost list of a reply.
+// goneTempRoot is a folder that a check found lost, for the lost list of a reply. why
+// is the word of the list.
 type goneTempRoot struct {
-	name string
-	at   time.Time
+	name, why string
+	at        time.Time
 }
+
+// tempRootLostKeep is the count of lost folders that the list keeps. A loss past it
+// cuts the oldest (4c111e86, measured on macOS).
+const tempRootLostKeep = 16
 
 var tempRoots = struct {
 	mu   sync.Mutex
@@ -149,8 +154,9 @@ var tempRoots = struct {
 	lost map[string]bool // the path of each folder that a check found lost, for the life of the daemon
 }{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
-// tempRootsLost is the lost list that the next reply with a cliTempRoot member
-// carries. It has its own lock, so a step that a stuck mount holds does not hold it.
+// tempRootsLost is the lost list that each later reply with a cliTempRoot member
+// carries, oldest first. It has its own lock, so a step that a stuck mount holds does
+// not hold it.
 var tempRootsLost struct {
 	mu   sync.Mutex
 	list []goneTempRoot
@@ -210,57 +216,34 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 			a = <-done // the step kept its folder right before the limit
 		}
 	}
-	res, taken := addGoneList(a.res)
-	// A spawn binds only once its child runs. A release before the bind is a spawn
-	// that failed, and its reply has no member, so the list goes back.
-	var mu sync.Mutex
-	bound := false
-	bind := func(end func()) {
-		mu.Lock()
-		bound = true
-		mu.Unlock()
-		a.bind(end)
-	}
-	release := func() {
-		mu.Lock()
-		if !bound {
-			putBackGoneList(taken)
-			taken = nil
-		}
-		mu.Unlock()
-		a.release()
-	}
-	return a.env, res, release, bind
+	return a.env, addGoneList(a.res), a.release, a.bind
 }
 
-// addGoneList moves the lost list into a member of a reply and returns the entries
-// that it took. A reply with no member leaves the list for a later one. The list goes
-// out once, in a reply of a spawn whose child starts (claustrum's own, not measured).
-// The why "changed" is measured on macOS for a link at the name. The same word for the
-// other losses and the seconds rounded down are claustrum's own.
-func addGoneList(res *rpc.CLITempRoot) (*rpc.CLITempRoot, []goneTempRoot) {
+// addGoneList copies the lost list into a member of a reply. Each later reply with a
+// member carries the whole list again, and no entry expired within 130 s (4c111e86,
+// measured on macOS). An entry that never expires and the seconds rounded down are
+// claustrum's own, not measured.
+func addGoneList(res *rpc.CLITempRoot) *rpc.CLITempRoot {
 	if res == nil {
-		return nil, nil
+		return nil
 	}
 	tempRootsLost.mu.Lock()
 	defer tempRootsLost.mu.Unlock()
 	for _, l := range tempRootsLost.list {
-		res.Gone = append(res.Gone, rpc.GoneTempRootEntry{Name: l.name, Why: "changed", AgoSeconds: int64(time.Since(l.at) / time.Second)})
+		res.Gone = append(res.Gone, rpc.GoneTempRootEntry{Name: l.name, Why: l.why, AgoSeconds: int64(time.Since(l.at) / time.Second)})
 	}
-	taken := tempRootsLost.list
-	tempRootsLost.list = nil
-	return res, taken
+	return res
 }
 
-// putBackGoneList puts the entries that addGoneList took back before the list, for
-// the next reply with a member.
-func putBackGoneList(taken []goneTempRoot) {
-	if len(taken) == 0 {
-		return
-	}
+// addLostEntry adds a lost folder at the end of the lost list and cuts the oldest
+// entries past tempRootLostKeep.
+func addLostEntry(name, why string) {
 	tempRootsLost.mu.Lock()
 	defer tempRootsLost.mu.Unlock()
-	tempRootsLost.list = append(taken, tempRootsLost.list...)
+	tempRootsLost.list = append(tempRootsLost.list, goneTempRoot{name: name, why: why, at: time.Now()})
+	if n := len(tempRootsLost.list) - tempRootLostKeep; n > 0 {
+		tempRootsLost.list = slices.Delete(tempRootsLost.list, 0, n)
+	}
 }
 
 func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *rpc.CLITempRoot, func(), func(end func())) {
@@ -689,7 +672,8 @@ const (
 //
 //   - A link at the name, a folder of another account (uid 0), or a folder of mode
 //     0777 counts as lost (Linux and macOS). The "open" test takes a group or other
-//     write bit (claustrum's own, only 0777 is measured).
+//     write bit (claustrum's own, only 0777 is measured). The words of the lost list
+//     are "changed", "anothers" and "open" (macOS).
 //   - An own folder that took the place of the held one is held instead, and gets t
 //     and mode 0500 (Linux and macOS). No child is ended.
 //   - With no entry at the name, the folder is made anew (macOS). No child is ended.
@@ -729,12 +713,12 @@ func checkTempRoot(h *heldTempRoot) {
 			takeTempRootAt(h, xfd)
 		}
 	case st.Mode&unix.S_IFMT == unix.S_IFLNK:
-		loseTempRoot(h, "it is a link")
+		loseTempRoot(h, "it is a link", "changed")
 	case st.Mode&unix.S_IFMT != unix.S_IFDIR:
 	case int(st.Uid) != h.uid:
-		loseTempRoot(h, fmt.Sprintf("it is another account's (uid %d)", st.Uid))
+		loseTempRoot(h, fmt.Sprintf("it is another account's (uid %d)", st.Uid), "anothers")
 	case st.Mode&0o022 != 0:
-		loseTempRoot(h, "it is open to other accounts")
+		loseTempRoot(h, "it is open to other accounts", "open")
 	case statDev(&st) != h.dev || st.Ino != h.ino:
 		logging.Infof(tempRootSwapLine, h.name)
 		takeTempRootAt(h, xfd)
@@ -777,10 +761,10 @@ func fitTempRoot(fd int) {
 }
 
 // loseTempRoot marks h lost. The next spawn in its temp dir makes a new folder, and
-// the next good reply with a member lists it. Each child that asked with cliTempRootEnd
-// is ended. For the others one line counts them (4c111e86, see checkTempRoot). The
-// caller holds tempRoots.mu.
-func loseTempRoot(h *heldTempRoot, why string) {
+// each later reply with a member lists it with the word word. Each child that asked
+// with cliTempRootEnd is ended. For the others one line counts them (4c111e86, see
+// checkTempRoot). The caller holds tempRoots.mu.
+func loseTempRoot(h *heldTempRoot, why, word string) {
 	logging.Infof(tempRootLostLine, h.name, why)
 	h.lost.Store(true)
 	key := filepath.Join(h.dir, h.name)
@@ -788,9 +772,7 @@ func loseTempRoot(h *heldTempRoot, why string) {
 	if tempRoots.held[key] == h {
 		delete(tempRoots.held, key)
 	}
-	tempRootsLost.mu.Lock()
-	tempRootsLost.list = append(tempRootsLost.list, goneTempRoot{name: h.name, at: time.Now()})
-	tempRootsLost.mu.Unlock()
+	addLostEntry(h.name, word)
 	runOn := 0
 	for _, u := range h.users {
 		u.mu.Lock()

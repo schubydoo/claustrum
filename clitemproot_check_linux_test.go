@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -69,7 +71,8 @@ func wantFolderShape(t *testing.T, x, name string) {
 
 // A link at the name counts as lost: the spawn that asked is ended, the other gets one
 // run-on line, and the next reply with a member names a new folder and lists the lost
-// one once (4c111e86, measured on Linux and macOS).
+// one. The reply after it lists it again (4c111e86, measured on Linux and macOS, the
+// list on macOS).
 func TestCLITempRootLinkAtTheNameIsLost(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -104,8 +107,8 @@ func TestCLITempRootLinkAtTheNameIsLost(t *testing.T) {
 	if !ok {
 		t.Errorf("answer %s, want the new name and the lost %s with agoSeconds 0 to 2", b, a.Name)
 	}
-	if d := runTempRootBound(t, x, runDir, &rel, nil); d == nil || d.Gone != nil {
-		t.Errorf("the next answer %+v, want no lost list", d)
+	if d := runTempRootBound(t, x, runDir, &rel, nil); d == nil || len(d.Gone) != 1 || d.Gone[0].Name != a.Name || d.Gone[0].Why != "changed" {
+		t.Errorf("the next answer %+v, want the lost %s again", d, a.Name)
 	}
 	holdsFor(t, 5*tempRootCheckEvery, "one end", func() bool { return ends.Load() == 1 })
 	if fi, err := os.Lstat(f); err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -136,6 +139,37 @@ func TestCLITempRootOpenOrForeignFolderIsLost(t *testing.T) {
 	tempRoots.mu.Unlock()
 	waitFor(t, "end", func() bool { return ends.Load() == 2 })
 	wantLinesInOrder(t, logs.String(), "[process.Manager] Claude Code's private temp folder "+b.Name+" counts as lost: it is another account's (uid "+strconv.Itoa(os.Getuid())+")")
+	// The next reply lists both, oldest first, with the words "open" and "anothers"
+	// (4c111e86, measured on macOS).
+	c := runTempRootBound(t, x2, runDir2, &rel, nil)
+	if c == nil || len(c.Gone) != 2 || c.Gone[0].Name != a.Name || c.Gone[0].Why != "open" || c.Gone[1].Name != b.Name || c.Gone[1].Why != "anothers" {
+		t.Errorf("answer %+v, want the lost %s (open) and %s (anothers)", c, a.Name, b.Name)
+	}
+}
+
+// The lost list keeps the last 16 folders, oldest first, and each later reply with a
+// member carries all of them. The 17th loss cuts the oldest (4c111e86, measured on
+// macOS).
+func TestCLITempRootLostListKeepsTheLast16(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	for i := range 17 {
+		addLostEntry(fmt.Sprintf("ccd-%010d", i), "changed")
+	}
+	for range 2 {
+		res := addGoneList(&rpc.CLITempRoot{Name: "ccd-aaaaaaaaaa"})
+		var got []string
+		for _, g := range res.Gone {
+			got = append(got, g.Name)
+		}
+		var want []string
+		for i := 1; i <= 16; i++ {
+			want = append(want, fmt.Sprintf("ccd-%010d", i))
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("lost list %v, want %v", got, want)
+		}
+	}
 }
 
 // An own folder that took the place of the held one is held instead, with t and mode
@@ -369,7 +403,7 @@ func TestCLITempRootGoneListAfterWhyNot(t *testing.T) {
 	}
 	res := runTempRootBound(t, x2, runDir2, &rel, nil)
 	b, _ := json.Marshal(res)
-	want := `{"refused":"a link","whyNot":"` + tempRootSteppedAround + `","lost":[{"name":"` + a.Name + `","why":"changed","agoSeconds":`
+	want := `{"refused":"a link","whyNot":"` + tempRootSteppedAround + `","lost":[{"name":"` + a.Name + `","why":"open","agoSeconds":`
 	if !strings.HasPrefix(string(b), want) {
 		t.Errorf("answer %s, want the prefix %s", b, want)
 	}

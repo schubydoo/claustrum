@@ -89,14 +89,14 @@ func TestSpawnCLITempRootStartFailureGivesItBack(t *testing.T) {
 	}
 }
 
-// A spawn that does not start leaves the lost list for the next good reply, which
-// carries it once (claustrum's own, not measured).
+// A spawn that does not start leaves the lost list, and each later good reply carries
+// it (the failed start is claustrum's own, not measured).
 func TestSpawnCLITempRootStartFailureKeepsTheLostList(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	x, _ := tempRootDir(t, true)
 	tempRootsLost.mu.Lock()
-	tempRootsLost.list = []goneTempRoot{{name: "ccd-0123456789", at: time.Now()}}
+	tempRootsLost.list = []goneTempRoot{{name: "ccd-0123456789", why: "changed", at: time.Now()}}
 	tempRootsLost.mu.Unlock()
 	_, sock := newRunningServer(t)
 	cl := dial(t, sock)
@@ -105,7 +105,7 @@ func TestSpawnCLITempRootStartFailureKeepsTheLostList(t *testing.T) {
 	}
 	exe, env := helperCommand(t, "environ")
 	env["TMPDIR"] = x
-	for i, want := range []int{1, 0} {
+	for i, want := range []int{1, 1} {
 		id := "ok" + strconv.Itoa(i)
 		raw := string(cl.call(spawnLine(t, id, exe, env, true)))
 		if got := strings.Count(raw, `"lost":[{"name":"ccd-0123456789","why":"changed"`); got != want {

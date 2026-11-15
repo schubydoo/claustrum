@@ -220,7 +220,7 @@ On Linux and macOS, while a child runs, claustrum checks its folder by name ever
 - A child whose spawn had `"cliTempRootEnd": true` gets SIGTERM, and the daemon logs `[process.Manager] Process <id> is being ended: its private temp folder is lost`. If it still runs 3 s later, it gets SIGKILL (measured on macOS).
 - The `exit` frame carries `"killedBy":"temp_root"`. A `process.kill` in the wait keeps it (measured on macOS).
 - Other children of the folder run on, and the daemon logs `[process.Manager] <n> process(es) run on in <name>, which may be another account's: their starts did not ask to be ended over it (cliTempRootEnd); end those sessions` (measured on macOS).
-- The next spawn gets a new folder, and its member lists the lost one (measured on macOS):
+- The next spawn gets a new folder. Each later member lists the last 16 lost folders, oldest first. A 17th loss cuts the oldest, and none expired within 130 s. The why is `changed` for a link, `anothers` for another account's folder and `open` for mode 0777 (measured on macOS, on Linux claustrum's own):
 
 ```json
 {"refused":"another account's","name":"ccd-7c9ad7b07c","lost":[{"name":"ccd-ac02b40227","why":"changed","agoSeconds":7}]}
@@ -236,7 +236,7 @@ claustrum's rule on Linux and macOS: a child that ends on the SIGTERM gets a SIG
 - On Linux (on macOS claustrum's own) a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
 
 ??? note "claustrum's own rules of a lost folder"
-    These are not measured. The why `changed` for each kind of loss. The list goes out once, in the next good reply's member, in whole seconds. A group or other write bit counts as open. A file at the name changes nothing. One line for a run of failed checks, and a temp dir that is gone counts as a failed check. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.
+    These are not measured. The why `changed` for the other kinds of loss. Whole seconds, and an entry that never expires. A group or other write bit counts as open. A file at the name changes nothing. One line for a run of failed checks, and a temp dir that is gone counts as a failed check. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.
 
 ### The managed launcher
 
