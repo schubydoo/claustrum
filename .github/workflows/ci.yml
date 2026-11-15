@@ -151,8 +151,6 @@ jobs:
       - name: docs tests
         run: go test -count=1 -run '^TestDocs' .
 
-      # The test shards of this file and of the Makefile together run every
-      # test once. The check lists the tests with go test -list.
       - name: test shards run every test once
         run: python3 scripts/check_git_shards.py
 
@@ -205,10 +203,9 @@ jobs:
             shard: rest
             select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           # The Windows worktree shard also takes the tests named TestCreate and
-          # TestCheckout. On main the go test step took 11.0 min in the rest
-          # shard, 7.8 min in the status shard and 5.4 min in this one.
+          # TestCheckout.
           # The tests named TestWorktreeCreate have their own shard. The go test
-          # step of the worktree shard took 512 to 651 s of its 720 s with them.
+          # step of the worktree shard took up to 651 s of its 720 s with them.
           - os: windows-latest
             shard: worktree
             select: -run=^(TestWorktree|TestCreate|TestCheckout) -skip=^TestWorktreeCreate
