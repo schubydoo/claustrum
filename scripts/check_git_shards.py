@@ -60,9 +60,14 @@ def listed_names(module):
     )
     if out.returncode != 0:
         sys.exit("check_git_shards: go test -list failed:\n" + out.stdout + out.stderr)
+    return parse_list(out.stdout, module)
+
+
+def parse_list(text, module):
+    """Return {dir: set of names} from the output of go test -list."""
     names = {}
     pending = []
-    for line in out.stdout.splitlines():
+    for line in text.splitlines():
         if not line.strip():
             continue
         if line.startswith(LIST_END):
@@ -113,13 +118,13 @@ def parse_flags(tokens):
     return flags
 
 
-def ci_groups():
+def ci_groups(path=CI_FILE):
     """Return {(job, os): [(shard, flags)]} from the matrix legs of ci.yml."""
     groups = {}
     job = None
     entry = None
     entries = []
-    with open(CI_FILE, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
             if m:
@@ -142,10 +147,10 @@ def ci_groups():
     return groups
 
 
-def make_group():
+def make_group(path=MAKEFILE):
     """Return [(shard, flags)] from the GIT_SHARD_* variables of the Makefile."""
     shards = []
-    with open(MAKEFILE, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             m = re.match(r"^GIT_SHARD_(\w+)\s*:=\s*(.*)$", line)
             if m:
