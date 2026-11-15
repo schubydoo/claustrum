@@ -54,6 +54,9 @@ const (
 	// tempRootSteppedAround answers a link or a file at the entry (4c111e86, measured
 	// on Linux and macOS).
 	tempRootSteppedAround = "only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this"
+	// tempRootNoMkdir and the error text answer a mkdir of the new folder that failed.
+	// The text of EACCES is measured on macOS (4c111e86).
+	tempRootNoMkdir = "no folder could be made in the temp dir: "
 )
 
 // tempRootChildDir is the name of the inner folder that the child gets (4c111e86,
@@ -267,7 +270,8 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		return env, nil, none, noBind // measured on Linux for TMPDIR
 	}
 	uid := tempRootUID()
-	// A temp dir that does not exist gives no member (measured on Linux). Another
+	// A temp dir that does not exist gives no member (measured on Linux). So does a
+	// temp dir whose attributes cannot be read (4c111e86, measured on macOS). Another
 	// failed open gives the text of a folder that cannot be opened (claustrum's own,
 	// not measured).
 	x, otherAccount, missing, ok := openTempDirChain(dir, uid)
@@ -283,11 +287,18 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	if err := unix.Fstat(xfd, &xst); err != nil {
 		return env, &rpc.CLITempRoot{WhyNot: tempRootNoOpen}, none, noBind
 	}
+	// A temp dir that cannot be searched gives the kind "out of reach" (4c111e86,
+	// measured on macOS). A failed stat of an entry that exists, other than EACCES,
+	// gives no member (claustrum's own, not measured).
 	var est unix.Stat_t
-	if err := unix.Fstatat(xfd, "claude-"+strconv.Itoa(uid), &est, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return env, nil, none, noBind // a missing entry, or one that cannot be read (claustrum's own)
+	var kind string
+	if err := unix.Fstatat(xfd, "claude-"+strconv.Itoa(uid), &est, unix.AT_SYMLINK_NOFOLLOW); errors.Is(err, unix.EACCES) {
+		kind = "out of reach"
+	} else if err != nil {
+		return env, nil, none, noBind // a missing entry
+	} else {
+		kind = tempEntryUnfit(&est, statDev(&xst), uid)
 	}
-	kind := tempEntryUnfit(&est, statDev(&xst), uid)
 	if kind == "" {
 		return env, nil, none, noBind
 	}
@@ -298,9 +309,10 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	if otherAccount {
 		return refuse(tempRootOther)
 	}
-	// A link or a file gets no folder (4c111e86, measured on Linux and macOS). The
-	// place after the account test is claustrum's own, not measured.
-	if kind == "a link" || kind == "not a folder" {
+	// A link or a file gets no folder (4c111e86, measured on Linux and macOS), and an
+	// entry out of reach neither (measured on macOS). The place after the account test
+	// is claustrum's own, not measured.
+	if kind == "a link" || kind == "not a folder" || kind == "out of reach" {
 		return refuse(tempRootSteppedAround)
 	}
 	tempRoots.mu.Lock()
@@ -321,15 +333,19 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 			return refuse(tempRootTooMany)
 		}
 		var removed bool
-		h, name, removed = makeTempRoot(xfd, dir, uid)
+		var mkErr error
+		h, name, removed, mkErr = makeTempRoot(xfd, dir, uid)
 		if h != nil {
 			h.dir, h.name, h.uid = dir, name, uid
 		}
 		if removed {
 			return refuse(tempRootRemoved)
 		}
+		if mkErr != nil {
+			return refuse(tempRootNoMkdir + mkErr.Error()) // EACCES measured on macOS (4c111e86)
+		}
 		if h == nil {
-			return env, nil, none, noBind // the mkdir failed (claustrum's own, not measured)
+			return env, nil, none, noBind // a name of another shape (claustrum's own, not measured)
 		}
 		holdTempRoot(h.f)
 		fresh, made = true, true
@@ -410,7 +426,8 @@ func tempEnvValue(env []string, key string) string {
 
 // openTempDirChain opens the temp dir and each folder above it for reading. ok is
 // false when one of them cannot be opened. missing is true when the links of the
-// path do not resolve because a name does not exist. otherAccount is true when one of them
+// path do not resolve because a name does not exist, or because its attributes
+// cannot be read (EACCES). otherAccount is true when one of them
 // belongs to an account other than uid and root, or when group or others can
 // write it without the sticky bit. Measured on Linux: a 0777 temp dir is refused
 // and /tmp passes. The group bit, a sticky temp dir and the links of the path,
@@ -418,7 +435,7 @@ func tempEnvValue(env []string, key string) string {
 func openTempDirChain(dir string, uid int) (x *os.File, otherAccount, missing, ok bool) {
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return nil, false, errors.Is(err, os.ErrNotExist), false
+		return nil, false, errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.EACCES), false
 	}
 	p := "/"
 	rest := strings.Split(strings.TrimPrefix(filepath.Clean(real), "/"), "/")
@@ -547,33 +564,37 @@ func openTempRoot(xfd int, name string, uid int, mode uint32) (*os.File, bool) {
 // by one rmdir and removed is true. The reply then says "removed" whether the rmdir
 // worked or not (measured on Linux, b3081b51). A t that cannot be made, or that is
 // no own folder of mode 0700, or a failed mode change, removes t and then the name
-// in the same way (claustrum's own, not measured).
-func makeTempRoot(xfd int, dir string, uid int) (h *heldTempRoot, name string, removed bool) {
+// in the same way (claustrum's own, not measured). A failed mkdir of the new folder
+// returns its error in mkErr.
+func makeTempRoot(xfd int, dir string, uid int) (h *heldTempRoot, name string, removed bool, mkErr error) {
 	name = newTempRootName()
-	if !tempRootNameRE.MatchString(name) || unix.Mkdirat(xfd, name, 0o700) != nil {
-		return nil, "", false
+	if !tempRootNameRE.MatchString(name) {
+		return nil, "", false, nil
+	}
+	if err := unix.Mkdirat(xfd, name, 0o700); err != nil {
+		return nil, "", false, err
 	}
 	afterTempRootMkdir(dir, name)
 	f, ok := openTempRoot(xfd, name, uid, 0o700)
 	if !ok {
 		removeMadeTempRoot(xfd, -1, dir, name)
-		return nil, "", true
+		return nil, "", true, nil
 	}
 	fd := int(f.Fd())
 	if unix.Mkdirat(fd, tempRootChildDir, 0o700) != nil {
 		_ = f.Close()
 		removeMadeTempRoot(xfd, -1, dir, name)
-		return nil, "", true
+		return nil, "", true, nil
 	}
 	afterTempRootChildMkdir(dir, name)
 	if !childDirFit(fd, uid) || unix.Fchmod(fd, 0o500) != nil {
 		removeMadeTempRoot(xfd, fd, dir, name)
 		_ = f.Close()
-		return nil, "", true
+		return nil, "", true, nil
 	}
 	var st unix.Stat_t
 	_ = unix.Fstat(fd, &st)
-	return &heldTempRoot{f: f, dev: statDev(&st), ino: st.Ino, stop: make(chan struct{})}, name, false
+	return &heldTempRoot{f: f, dev: statDev(&st), ino: st.Ino, stop: make(chan struct{})}, name, false, nil
 }
 
 // childDirFit reports whether the folder of fd holds t as an own folder of
