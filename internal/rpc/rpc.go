@@ -63,6 +63,9 @@ type Response struct {
 	// NoFrame marks a request that gets no reply. The route of package main then
 	// returns nil. Its tag keeps it out of every frame.
 	NoFrame bool `json:"-"`
+	// AfterWrite, when set, runs once after the write of the frame, also when
+	// the write sends nothing. Its tag keeps it out of every frame.
+	AfterWrite func() `json:"-"`
 }
 
 // Error is the error member of a reply.

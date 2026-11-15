@@ -53,7 +53,11 @@ directory records the folder that git names (claustrum's own, not measured).
 
 The daemon keeps the folders in memory and in `<root>/session-folders`, for the socket
 `<root>/run/<client>/rpc.sock`. It makes that folder at its start (measured on Linux,
-macOS and Windows), with mode 0700 (measured on Linux and macOS).
+macOS and Windows), with mode 0700 (measured on Linux and macOS). The mkdir goes by
+name through a handle of `<root>` (`4c111e86`, measured on Linux. macOS, Windows and a
+write that makes the folder again are claustrum's own).
+
+### The files
 
 - One file per folder. Its name is the first 32 hex digits of the SHA-256 of the
   folder path (measured on Linux and macOS). Its body is `<ms since epoch> <dev>

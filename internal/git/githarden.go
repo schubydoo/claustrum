@@ -933,13 +933,13 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	if err != nil {
 		return "", false, err, nil
 	}
-	// In the folder of the daemon claustrum removes the index folder before the
-	// reply of the create is written (gitCall.runAtReply). 4c111e86 shows its
-	// `.checkout-<n>` at the reply, and 1 s later it is gone (measured on Linux
-	// and macOS). Two creates at once get two such folders (measured). In the
-	// temporary folder the moment is not measured: it goes at the end of this
-	// step, as before.
-	if u.inFolder() && u.atReply != nil {
+	// The index folder goes after the write of the reply of the create
+	// (gitCall.runAtReply, rpc.Response.AfterWrite). 4c111e86 shows its
+	// `.checkout-<n>` and its `claude-ssh-checkout-<n>` at the reply, and removes
+	// each soon after it (measured on Linux). Two creates at once get two
+	// such folders (measured). With no list of the request it goes at the end
+	// of this step (claustrum's own).
+	if u.atReply != nil {
 		*u.atReply = append(*u.atReply, removeIdxDir)
 	} else {
 		defer removeIdxDir()
@@ -985,7 +985,13 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// member, and after a drain overrun, no call runs (claustrum's own, not
 		// measured).
 		if err == nil && settle {
-			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, pin, readEnd)
+			// The settle call names the private store as the read-tree call
+			// named it (settleCheckout).
+			storage := ""
+			if keep {
+				storage = lfs.path
+			}
+			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, storage, pin, readEnd)
 			// The test of the held git directory runs again right before the
 			// placement, so a swap during the settle step gets the same answer
 			// (claustrum's own, not measured).

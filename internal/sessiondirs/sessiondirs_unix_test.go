@@ -194,3 +194,36 @@ func TestRememberMissingBelowTheRoot(t *testing.T) {
 		t.Errorf("the record folder holds %v, want the record of %s only", got, p)
 	}
 }
+
+// Open makes the record folder through a handle of the folder that holds it, as
+// 4c111e86 does (measured on Linux). The test moves that folder away right
+// after the open of the handle: the record folder then is in the moved folder,
+// and nothing is made at the old path.
+func TestOpenMakesTheFolderThroughTheParentHandle(t *testing.T) {
+	t.Cleanup(UseForTest(""))
+	base := t.TempDir()
+	root := filepath.Join(base, "remote")
+	moved := filepath.Join(base, "moved")
+	if err := os.MkdirAll(filepath.Join(root, "run", "c1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := openRecordParent
+	t.Cleanup(func() { openRecordParent = old })
+	openRecordParent = func(name string) (*os.Root, error) {
+		r, err := old(name)
+		if err == nil && name == root {
+			if rerr := os.Rename(root, moved); rerr != nil {
+				t.Errorf("move the folder: %v", rerr)
+			}
+		}
+		return r, err
+	}
+	Open(filepath.Join(root, "run", "c1", "rpc.sock"))
+	fi, err := os.Lstat(filepath.Join(moved, RecordFolderName))
+	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("the record folder in the moved folder: %v %v", fi, err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Errorf("the old path exists again: %v", err)
+	}
+}

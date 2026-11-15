@@ -171,3 +171,23 @@ func TestShutdownReplyRacesTeardown(t *testing.T) {
 		}
 	}
 }
+
+// closeAll runs each step of a reply that still waits for its write
+// (runPendingAfterWrites), so a write that does not end at the shutdown does
+// not leave the folder of a create behind.
+func TestCloseAllRunsThePendingAfterWrites(t *testing.T) {
+	sock := filepath.Join(shortTempDir(t), "s.sock")
+	s, err := newServerOnSocket(sock, "tok", "", wirelog.Options{}, false, false)
+	if err != nil {
+		t.Fatalf("newServerOnSocket: %v", err)
+	}
+	t.Cleanup(func() { s.procs.KillAll() })
+	t.Cleanup(func() { _ = s.ln.Close() })
+	ran := false
+	s.holdAfterWrite(func() { ran = true })
+	s.signalShutdown()
+	s.closeAll(sock)
+	if !ran {
+		t.Error("closeAll did not run the step that waits for its write")
+	}
+}

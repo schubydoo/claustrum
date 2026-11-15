@@ -48,7 +48,13 @@ func gitDispatchErr(d *Deps, line string) (string, error) {
 	if ns, _, ok := strings.Cut(req.Method, "."); !ok || ns != "git" {
 		return "", fmt.Errorf("gitDispatch: line %s names no git method", line)
 	}
-	b, err := json.Marshal(Handle(d, &req))
+	resp := Handle(d, &req)
+	b, err := json.Marshal(resp)
+	// The steps after the write of the reply run here, as the server runs
+	// them after its write.
+	if resp.AfterWrite != nil {
+		resp.AfterWrite()
+	}
 	if err != nil {
 		return "", fmt.Errorf("marshal response: %w", err)
 	}

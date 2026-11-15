@@ -98,6 +98,15 @@ type server struct {
 	pipeLn       net.Listener       // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
 	keepChildren bool               // -keep-children: leave child processes running on graceful shutdown
 
+	// retrySleep is a test seam: the pause of acceptLoop after a failed accept.
+	// nil uses time.Sleep.
+	retrySleep func(time.Duration)
+
+	// afterWrites are the steps of replies that wait for their write
+	// (holdAfterWrite). afterMu guards it.
+	afterMu     sync.Mutex
+	afterWrites map[*afterWrite]struct{}
+
 	wlog    *wirelog.Log  // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
@@ -818,16 +827,20 @@ func (s *server) run(socket string) {
 	s.teardown(socket)
 }
 
+// acceptRetryWait is the pause after a failed accept, the same after each
+// failure. 4c111e86 and c9125eb8 log about 10 retry lines a second with a
+// steady pace while the error holds (measured on Linux). The exact 100 ms is
+// claustrum's own, not measured.
+const acceptRetryWait = 100 * time.Millisecond
+
 // acceptLoop accepts connections on ln until it is closed on shutdown. It is
 // listener-agnostic so the AF_UNIX socket and the optional Windows named pipe
 // share one code path — every accepted conn goes through the same serveConn.
 func (s *server) acceptLoop(ln net.Listener) {
-	// tempDelay backs off after consecutive non-shutdown accept errors so a
-	// listener wedged into returning errors forever — e.g. an optional named pipe
-	// in a bad state — can't hot-spin the CPU or flood the log. This is the
-	// net/http Server.Serve pattern: start small, double, cap at 1s, reset on a
-	// good Accept. The happy path (and the shutdown branch) is unaffected.
-	var tempDelay time.Duration
+	pause := s.retrySleep
+	if pause == nil {
+		pause = time.Sleep
+	}
 	for {
 		nc, err := ln.Accept()
 		if err != nil {
@@ -836,21 +849,12 @@ func (s *server) acceptLoop(ln net.Listener) {
 				return
 			default:
 			}
-			if tempDelay == 0 {
-				tempDelay = 5 * time.Millisecond
-			} else {
-				tempDelay *= 2
-			}
-			if maxDelay := 1 * time.Second; tempDelay > maxDelay {
-				tempDelay = maxDelay
-			}
 			// 4c111e86 and c9125eb8 log `[Server] accept error (retrying): <error>`
-			// (measured on Linux). claustrum keeps its level tag and its backoff.
+			// (measured on Linux). claustrum keeps its level tag.
 			logging.Warnf("[Server] accept error (retrying): %v", err)
-			time.Sleep(tempDelay)
+			pause(acceptRetryWait)
 			continue
 		}
-		tempDelay = 0
 		// The peer check runs before any read, log line, count or tracking of the
 		// connection (measured on Linux).
 		if !s.peerCheck.admit(nc) {
@@ -1060,10 +1064,62 @@ func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bo
 		resp = dispatchRequest(s, c, raw, req)
 	}()
 	if resp != nil {
+		after := s.holdAfterWrite(resp.AfterWrite)
 		if awaits, _ := s.shutdownReply(); method == methodShutdown && awaits && isChanClosed(s.shutdown) {
 			s.awaitDropStart()
 		}
 		c.WriteResponse(*resp)
+		s.runAfterWrite(after)
+	}
+}
+
+// afterWrite is the step of one reply that waits for the write of its frame
+// (rpc.Response.AfterWrite). It runs once: after the write, or in closeAll if
+// the shutdown comes first.
+type afterWrite struct {
+	once sync.Once
+	fn   func()
+}
+
+// holdAfterWrite takes fn into the steps that wait for a write, or returns nil
+// for a nil fn.
+func (s *server) holdAfterWrite(fn func()) *afterWrite {
+	if fn == nil {
+		return nil
+	}
+	a := &afterWrite{fn: fn}
+	s.afterMu.Lock()
+	if s.afterWrites == nil {
+		s.afterWrites = make(map[*afterWrite]struct{})
+	}
+	s.afterWrites[a] = struct{}{}
+	s.afterMu.Unlock()
+	return a
+}
+
+// runAfterWrite runs the step a, if it has not run yet, and drops it.
+func (s *server) runAfterWrite(a *afterWrite) {
+	if a == nil {
+		return
+	}
+	a.once.Do(a.fn)
+	s.afterMu.Lock()
+	delete(s.afterWrites, a)
+	s.afterMu.Unlock()
+}
+
+// runPendingAfterWrites runs each step that still waits for its write. A step
+// that a request runs now is waited for. The shutdown calls it, so a write that
+// has not ended does not hold the remove (claustrum's own, not measured).
+func (s *server) runPendingAfterWrites() {
+	s.afterMu.Lock()
+	pending := make([]*afterWrite, 0, len(s.afterWrites))
+	for a := range s.afterWrites {
+		pending = append(pending, a)
+	}
+	s.afterMu.Unlock()
+	for _, a := range pending {
+		s.runAfterWrite(a)
 	}
 }
 
@@ -1241,6 +1297,9 @@ func (s *server) closeAll(socket string) {
 	// handler returns its reply as soon as the stop has started, so the reply write
 	// races this close. On Windows the write waits for the start of this drop.
 	closed := s.dropConns()
+	// The steps of the replies that still wait for their write run now, after
+	// the drop, so a blocked write no longer holds them (runPendingAfterWrites).
+	s.runPendingAfterWrites()
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
 	}

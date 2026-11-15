@@ -109,7 +109,13 @@ func settleLimit(ctx context.Context, s *gitStop) (limit time.Duration, ok bool)
 // stderr go to the null device, not to a pipe of the daemon, so no drain applies and
 // a filter child of git that outlives the call does not hold the reply. Such a child
 // gets no signal, as a child of the other calls gets none (claustrum's own).
-func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir, indexFile string, pin []string, readEnd time.Time) {
+//
+// lfsStorage is the private LFS store of the checkout (runWorktreeCheckout), or
+// "". When set, `-c lfs.storage=<store>` comes after --work-tree and right before
+// diff-files. 4c111e86 runs it so in the state shadow, with the store
+// `<checkout folder>/lfs` (measured on Linux). macOS is claustrum's own, not
+// measured.
+func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir, indexFile, lfsStorage string, pin []string, readEnd time.Time) {
 	attr := attrSourceArgs()
 	if attr == nil {
 		return
@@ -139,8 +145,12 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(true,
-		"--git-dir="+gitDir, "--work-tree="+workTree, "diff-files", "--quiet", "--ignore-submodules=all"))...)
+	tail := []string{"--git-dir=" + gitDir, "--work-tree=" + workTree}
+	if lfsStorage != "" {
+		tail = append(tail, "-c", "lfs.storage="+lfsStorage)
+	}
+	tail = append(tail, "diff-files", "--quiet", "--ignore-submodules=all")
+	args := append(attr, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(true, tail...))...)
 	cmd := gitCommandContext(ctx, args...)
 	cmd.Dir = leaf
 	cmd.Env = append(hardenedGitEnv(true, pin, hooks), "GIT_INDEX_FILE="+indexFile)

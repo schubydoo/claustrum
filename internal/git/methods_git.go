@@ -1071,14 +1071,29 @@ func gitWorktreeCreate(req *gitCall) rpc.Response {
 	}
 	repo := p.repoDir()
 	req.use.sshKept = req.offLive
-	defer req.runAtReply()
-	return withWorktreeCreateLock(repo, func() rpc.Response {
+	// The folder of the checkout goes after the write of the reply, also in the
+	// temporary folder (rpc.Response.AfterWrite). 4c111e86 removes it soon after
+	// the reply (measured on Linux). A panic before the reply removes
+	// it at once.
+	req.use.atReply = &req.atReply
+	handed := false
+	defer func() {
+		if !handed {
+			req.runAtReply()
+		}
+	}()
+	resp := withWorktreeCreateLock(repo, func() rpc.Response {
 		// The start of the deadline of timeoutMs (worktreeCreateCtx), before any
 		// git call. A wait for the create lock does not count (claustrum's own, not
 		// measured).
 		arrival := time.Now()
 		return gitWorktreeCreateLocked(req, &p, repo, arrival)
 	})
+	if len(req.atReply) > 0 {
+		resp.AfterWrite = req.runAtReply
+	}
+	handed = true
+	return resp
 }
 
 func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival time.Time) rpc.Response {

@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -251,49 +249,6 @@ func TestIDLines(t *testing.T) {
 	}
 }
 
-// TestCopySeedLeavesNoPartialObject: a copy of the seed that fails midway
-// leaves no file at the name of the object. Its temp stays in the checkout
-// folder.
-func TestCopySeedLeavesNoPartialObject(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "obj")
-	mustWrite(t, src, "alpha-object")
-	checkout := t.TempDir()
-	dst := filepath.Join(checkout, "lfs", "obj")
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	prev := seedCopy
-	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
-		n, _ := io.CopyN(w, r, 3)
-		return n, io.ErrUnexpectedEOF
-	}
-	t.Cleanup(func() { seedCopy = prev })
-	if err := copySeed(context.Background(), src, dst, checkout); err == nil {
-		t.Fatal("copySeed with a failed copy = nil, want the error")
-	}
-	if _, err := os.Lstat(dst); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("%s after a failed copy: %v, want no file", dst, err)
-	}
-	seedCopy = prev
-	if err := copySeed(context.Background(), src, dst, checkout); err != nil || mustRead(t, dst) != "alpha-object" {
-		t.Errorf("copySeed = %v, want the whole object at its name", err)
-	}
-}
-
-// TestCopySeedStopsAtDeadline: a copy of the seed after the deadline of the
-// caller makes no object.
-func TestCopySeedStopsAtDeadline(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "obj")
-	mustWrite(t, src, "alpha-object")
-	checkout := t.TempDir()
-	dst := filepath.Join(checkout, "obj")
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := copySeed(ctx, src, dst, checkout); err == nil || exists(dst) {
-		t.Errorf("copySeed after the deadline = %v, exists %v, want an error and no object", err, exists(dst))
-	}
-}
-
 // lfsStorageItemOK reports whether item is the lfs.storage item of a create
 // on this system: the store of the checkout folder on Linux and macOS, and the
 // store of gitDir on Windows.
@@ -478,57 +433,17 @@ func TestSeedContext(t *testing.T) {
 	}
 }
 
-// TestSeedCopyTime: the seed counts the time of its copies. A hard link adds
-// no time (claustrum's own, not measured).
-func TestSeedCopyTime(t *testing.T) {
-	store := filepath.Join(t.TempDir(), "lfs")
-	oid := strings.Repeat("a", 64)
-	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
-	ps := []pointerRef{{oid: oid, size: 12}}
-	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied != 0 {
-		t.Errorf("seed by a hard link counts %v, want 0", copied)
+// TestSeedNeedsATenthOfALargeObject: a copy of the seed needs the size plus
+// the larger of 1 GiB and a tenth of the size (4c111e86, measured on Linux and macOS).
+// TestSeedLeavesOutLargeObjectBelowTheBound tests the seed itself.
+func TestSeedNeedsATenthOfALargeObject(t *testing.T) {
+	const gib, mib = int64(1) << 30, int64(1) << 20
+	for _, tc := range []struct{ size, want int64 }{
+		{200 * mib, 200*mib + gib},
+		{11 * gib, 11*gib + 11*gib/10},
+	} {
+		if got := seedNeeds(tc.size); got != uint64(tc.want) {
+			t.Errorf("seedNeeds(%d) = %d, want %d", tc.size, got, tc.want)
+		}
 	}
-	prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
-	seedLink = func(string, string) error { return os.ErrPermission }
-	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
-		time.Sleep(30 * time.Millisecond)
-		return io.Copy(w, r)
-	}
-	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
-	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
-	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied < 30*time.Millisecond {
-		t.Errorf("seed by a copy of 30 ms counts %v, want at least 30 ms", copied)
-	}
-}
-
-// TestSeedCopyTimeHoldsHash: the time of a copy of the seed holds the sha256
-// of its bytes, computed in the same pass, so its time is near the seed time
-// of 4c111e86 in the rows (claustrum's own).
-func TestSeedCopyTimeHoldsHash(t *testing.T) {
-	store := filepath.Join(t.TempDir(), "lfs")
-	oid := strings.Repeat("a", 64)
-	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
-	prevLink, prevHash, prevFree := seedLink, seedHash, storeFreeBytes
-	seedLink = func(string, string) error { return os.ErrPermission }
-	hashed := 0
-	seedHash = func() io.Writer { return slowWriter{&hashed} }
-	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
-	t.Cleanup(func() { seedLink, seedHash, storeFreeBytes = prevLink, prevHash, prevFree })
-	private := filepath.Join(t.TempDir(), "lfs")
-	_, copied := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
-	if hashed != 12 || copied < 30*time.Millisecond {
-		t.Errorf("seed by a copy with a hash of 30 ms: %d bytes hashed, %v counted, want 12 bytes and at least 30 ms", hashed, copied)
-	}
-	if got := mustRead(t, storeObjectPath(private, oid)); got != "alpha-object" {
-		t.Errorf("seeded object = %q, want the whole object", got)
-	}
-}
-
-// slowWriter counts the bytes that it takes and waits 30 ms on each write.
-type slowWriter struct{ n *int }
-
-func (w slowWriter) Write(p []byte) (int, error) {
-	time.Sleep(30 * time.Millisecond)
-	*w.n += len(p)
-	return len(p), nil
 }
