@@ -23,8 +23,13 @@ func hardLinks(os.FileInfo) uint64 {
 }
 
 // createSeedFile is not used on Windows.
-func createSeedFile(*os.Root, string) (*os.File, error) {
+func createSeedFile(*os.Root, string, os.FileMode) (*os.File, error) {
 	return nil, errors.ErrUnsupported
+}
+
+// linkAcrossRoots is not used on Windows.
+func linkAcrossRoots(*os.Root, string, *os.Root, string) error {
+	return errors.ErrUnsupported
 }
 
 // openObjectNoFollow is not used on Windows.

@@ -2250,6 +2250,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// 90fca6e6 on Windows. A checkout that fails also fails the request. See the last arm of
 	// the switch.
 	var checkUse *gitUse
+	var keepTook time.Duration
 	var checkCommit string
 	var checkAsk func() string
 	if indexDir != "" {
@@ -2355,7 +2356,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				rule.shadow, rule.own = true, cu.read.ownConfig
 			}
 		}
-		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
+		var rtStderr string
+		var rtDrained bool
+		var rtErr, installErr error
+		rtStderr, rtDrained, keepTook, rtErr, installErr = runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
 			indexDir, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit, p.TimeoutMs)
 		var filters filterPlan
@@ -2574,8 +2578,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// The caller's deadline does not kill the copy step. The daemon lets the step
 	// finish and then tests the deadline. If the deadline expired, the request answers
 	// timeout "after the checkout finished" and rolls back. Measured against f6010b97
-	// and 90fca6e6 on macOS.
-	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
+	// and 90fca6e6 on macOS. The time of the LFS keep does not count
+	// (keepWithinDeadline).
+	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) && !keepWithinDeadline(callerCtx, keepTook, time.Now()) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{
@@ -2586,6 +2591,16 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		})
 	}
 	return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
+}
+
+// keepWithinDeadline reports whether the deadline of ctx passed at now only
+// because of the LFS keep, which took keepTook. A keep whose copy ran past the
+// deadline, kept or stopped, gives success on 4c111e86 (measured on Linux:
+// timeoutMs 6500 and 7500, a 900 MiB object). The rule that subtracts the time
+// of the keep is claustrum's own, not measured.
+func keepWithinDeadline(ctx context.Context, keepTook time.Duration, now time.Time) bool {
+	dl, ok := ctx.Deadline()
+	return ok && keepTook > 0 && now.Sub(dl) <= keepTook
 }
 
 // branchNoteName is name cut at 100 bytes, for the note of a refused attach.
