@@ -168,3 +168,58 @@ func TestCreateOverTheRegistrationLimit(t *testing.T) {
 		t.Errorf("the leaf: %v, want it gone", err)
 	}
 }
+
+// TestCreateWritesTheHeadCopyAgain: after the first request the copy of HEAD
+// of the repository has mode 000, or no bytes. A create writes it again and
+// succeeds, as 4c111e86 does (measured on Linux). A folder there stays, and
+// the create fails: 4c111e86 removes the folder, and claustrum builds no such
+// delete.
+func TestCreateWritesTheHeadCopyAgain(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user reads a file of mode 000")
+	}
+	for _, tc := range []struct {
+		name string
+		mut  func(t *testing.T, head string)
+		ok   bool
+	}{
+		{"mode 000", func(t *testing.T, head string) {
+			if err := os.Chmod(head, 0); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"no bytes", func(t *testing.T, head string) { mustWrite(t, head, "") }, true},
+		{"a folder", func(t *testing.T, head string) {
+			if err := os.Remove(head); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(head, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			head := filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir), "HEAD")
+			want := mustRead(t, head)
+			tc.mut(t, head)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			if got := strings.Contains(raw, `"success":true`); got != tc.ok {
+				t.Errorf("git.worktree_create = %s, want success %v", raw, tc.ok)
+			}
+			fi, err := os.Lstat(head)
+			switch {
+			case err != nil:
+				t.Errorf("the copy of HEAD: %v", err)
+			case tc.ok && (!fi.Mode().IsRegular() || mustRead(t, head) != want):
+				t.Errorf("the copy of HEAD is %v, want a file with %q", fi.Mode(), want)
+			case !tc.ok && !fi.IsDir():
+				t.Errorf("the copy of HEAD is %v, want the folder kept", fi.Mode())
+			}
+		})
+	}
+}

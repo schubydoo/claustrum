@@ -403,6 +403,9 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 			}
 		}
 	}
+	if !headCopyHolds(root, st.copies) {
+		delete(st.copies, "HEAD")
+	}
 	if err := h.writeCopy(st, root, rel, "HEAD", head); err != nil {
 		return err
 	}
@@ -431,6 +434,34 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 		return h.writeCopy(st, root, rel, "BISECT_LOG", nil)
 	}
 	return h.dropCopy(st, rel, "BISECT_LOG")
+}
+
+// headCopyHolds reports whether the copy of HEAD in root, the folder of a
+// repository, still holds the text of its last write (copies). A copy that
+// is gone, cannot be opened or has another text does not, and the request
+// writes it again. 4c111e86 writes the copy again for a create after it got
+// mode 000 or no bytes, and the create succeeds (measured on Linux). A copy
+// with the text of its last write is not written again (measured on Linux).
+//
+// A folder at the copy holds. 4c111e86 removes it and writes the copy
+// (measured on Linux). claustrum does not build that delete, and the request
+// fails as before. Any other entry that is no regular file holds too
+// (claustrum's own). The rule for the other git methods is claustrum's own,
+// not measured.
+func headCopyHolds(root *os.Root, copies map[string][sha256.Size]byte) bool {
+	have, ok := copies["HEAD"]
+	if !ok {
+		return true
+	}
+	fi, err := root.Lstat("HEAD")
+	if err != nil {
+		return false
+	}
+	if !fi.Mode().IsRegular() {
+		return true
+	}
+	data, ok := readRootFile(root, "HEAD", shadowHeadMaxBytes)
+	return ok && sha256.Sum256(data) == have
 }
 
 // repoFolderBySearch opens the folder path of a repository when the folder of
