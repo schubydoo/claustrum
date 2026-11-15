@@ -464,8 +464,33 @@ func headCopyHolds(root *os.Root, copies map[string][sha256.Size]byte) bool {
 	if !fi.Mode().IsRegular() {
 		return true
 	}
-	data, ok := readRootFile(root, "HEAD", shadowHeadMaxBytes)
+	data, ok := readHeadCopy(root, fi)
 	return ok && sha256.Sum256(data) == have
+}
+
+// readHeadCopy reads the copy of HEAD in root, which the Lstat seen found a
+// regular file. The open does not block on a FIFO and takes no terminal, and
+// the opened file must be the regular file of seen. Else ok is false. The
+// caller holds repoMu, so a FIFO put there after the Lstat must not hang the
+// read (claustrum's own).
+func readHeadCopy(root *os.Root, seen os.FileInfo) (data []byte, ok bool) {
+	if seen.Size() > shadowHeadMaxBytes {
+		return nil, false
+	}
+	f, err := root.OpenFile("HEAD", os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(seen, fi) {
+		return nil, false
+	}
+	data, err = io.ReadAll(io.LimitReader(f, shadowHeadMaxBytes+1))
+	if err != nil || int64(len(data)) > shadowHeadMaxBytes {
+		return nil, false
+	}
+	return data, true
 }
 
 // removeEmptyHeadFolder removes an empty folder at the copy of HEAD in root,
