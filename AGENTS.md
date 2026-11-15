@@ -280,7 +280,8 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
 - **Limiters.** A disabled cap or bound bypasses its limiter. Never "simplify" it into a
   huge value, which is a different, observable behavior.
 - **Git time limits** (`internal/git/gitstop.go`) are always on and are no divergence
-  ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)).
+  ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)). Never widen: the deadline stop of
+  the read-tree call sends its group `SIGKILL` only before the reap of git (`leaderGate`).
 
 ## Gotchas — Part B: the live divergences
 
