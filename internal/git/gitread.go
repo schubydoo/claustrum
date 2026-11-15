@@ -428,11 +428,20 @@ const paneNoIndexName = "no-index"
 // is not "". The order is that of the Linux call log (measured). The
 // spawn's own GIT_OPTIONAL_LOCKS, SSH_AUTH_SOCK and GIT_INDEX_FILE go (claustrum's
 // own, not measured).
+//
+// The placeholder entry of the spawn moves to the end, after GIT_INDEX_FILE. The
+// run dir entries come after it (4c111e86, measured on Linux). With no index it
+// goes after SSH_AUTH_SOCK (claustrum's own, not measured).
 func paneEnv(u gitUse, spawn, pin, hooks []string, index string) []string {
+	var placeholder []string
 	base := slices.DeleteFunc(withTraceOff(cleanGitChildEnv(spawn, gitEnvHere), gitEnvHere), func(kv string) bool {
 		name := envName(kv)
 		if gitEnvHere.windows {
 			name = strings.ToUpper(name)
+		}
+		if name == panePlaceholderName {
+			placeholder = append(placeholder, kv)
+			return true
 		}
 		return name == "GIT_OPTIONAL_LOCKS" || name == "SSH_AUTH_SOCK" || name == "GIT_INDEX_FILE"
 	})
@@ -440,5 +449,9 @@ func paneEnv(u gitUse, spawn, pin, hooks []string, index string) []string {
 	if index != "" {
 		env = append(env, "GIT_INDEX_FILE="+index)
 	}
-	return env
+	return append(env, placeholder...)
 }
+
+// panePlaceholderName is the name of the entry that the spawn adds to the
+// environment of each child (internal/supervisor/process.go).
+const panePlaceholderName = "CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER"
