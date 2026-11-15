@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -482,7 +484,10 @@ func TestSeedContext(t *testing.T) {
 // no time (claustrum's own, not measured).
 func TestSeedCopyTime(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "lfs")
-	oid := strings.Repeat("a", 64)
+	// The first seed links the object, so the second one reads it for its
+	// sha256 first (seedObjects): the oid is that of its bytes.
+	sum := sha256.Sum256([]byte("alpha-object"))
+	oid := hex.EncodeToString(sum[:])
 	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
 	ps := []pointerRef{{oid: oid, size: 12}}
 	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied != 0 {

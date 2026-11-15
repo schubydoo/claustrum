@@ -862,3 +862,47 @@ func TestLFSNotKeptAfterDeadline(t *testing.T) {
 		})
 	}
 }
+
+// TestSeedChecksObjectWithSecondLink: an object of the store with a link count
+// above 1 is read once for its sha256 before the seed (4c111e86, measured on
+// macOS). With the right bytes it goes into the private store, with wrong
+// bytes it stays out (claustrum's own, not measured). An object with link
+// count 1 gets no such read, and wrong bytes still go in (measured on Linux).
+func TestSeedChecksObjectWithSecondLink(t *testing.T) {
+	seamFreeSpace(t)
+	right := "alpha-object"
+	sum := sha256.Sum256([]byte(right))
+	rightOID := hex.EncodeToString(sum[:])
+	wrongOID := strings.Repeat("b", 64)
+	for _, tc := range []struct {
+		name, oid  string
+		second     bool
+		reads      int
+		wantSeeded bool
+	}{
+		{"right bytes, two links", rightOID, true, 1, true},
+		{"wrong bytes, two links", wrongOID, true, 1, false},
+		{"wrong bytes, one link", wrongOID, false, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := filepath.Join(t.TempDir(), "lfs")
+			src := storeObjectPath(store, tc.oid)
+			mustWrite(t, src, right)
+			if tc.second {
+				if err := os.Link(src, filepath.Join(t.TempDir(), "second")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reads := 0
+			prev := newObjectHash
+			newObjectHash = func() hash.Hash { reads++; return prev() }
+			t.Cleanup(func() { newObjectHash = prev })
+			private := filepath.Join(t.TempDir(), "lfs")
+			seedObjects(context.Background(), store, private, []pointerRef{{oid: tc.oid, size: int64(len(right))}})
+			_, err := os.Lstat(storeObjectPath(private, tc.oid))
+			if reads != tc.reads || (err == nil) != tc.wantSeeded {
+				t.Errorf("hash reads %d, seeded %v (%v), want %d reads, seeded %v", reads, err == nil, err, tc.reads, tc.wantSeeded)
+			}
+		})
+	}
+}

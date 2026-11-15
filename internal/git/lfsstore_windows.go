@@ -17,6 +17,11 @@ func linkIntoRoot(*os.Root, string, string) error {
 	return errors.ErrUnsupported
 }
 
+// hardLinks is 1 on Windows, where the seed does not run.
+func hardLinks(os.FileInfo) uint64 {
+	return 1
+}
+
 // openObjectNoFollow is not used on Windows.
 func openObjectNoFollow(path string) (*os.File, error) {
 	return os.Open(path)

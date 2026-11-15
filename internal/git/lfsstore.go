@@ -387,6 +387,11 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 // reports a copy left out for seedSpare. copied is the sum of the times of
 // the copies, a failed copy too. A hard link adds no time (claustrum's own,
 // not measured). The time of a copy holds the sha256 of its bytes (copySeed).
+//
+// An object with a link count above 1 is read once first, and its sha256 must
+// be its oid. Then it gets the link or the copy (4c111e86, measured on macOS).
+// Claustrum's own, not measured: Linux, the time of that read in copied, also
+// before a link, and an object that fails the test stays out.
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
@@ -397,6 +402,14 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 		fi, err := os.Lstat(src)
 		if err != nil || !fi.Mode().IsRegular() || fi.Size() != p.size {
 			continue
+		}
+		if hardLinks(fi) > 1 {
+			start := time.Now()
+			ok := objectHoldsOID(ctx, src, p.oid)
+			copied += time.Since(start)
+			if !ok {
+				continue
+			}
 		}
 		dst := storeObjectPath(private, p.oid)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
@@ -430,9 +443,9 @@ const (
 // when the copies took a large part of timeoutMs and git-lfs began no
 // download. Then the private store has no entry `incomplete` (measured on
 // Linux and macOS). The bound of claustrum is a quarter of timeoutMs
-// (claustrum's own). On macOS the seed time that claustrum counts is shorter
-// than that of 4c111e86, so the boundary differs (claustrum's own, not
-// settled). An `incomplete` folder in the store of the repository
+// (claustrum's own). An object with a second link adds a read of its sha256
+// to the seed time (seedObjects). Whether the macOS boundary then matches
+// 4c111e86 is not measured. An `incomplete` folder in the store of the repository
 // does not count (measured on macOS). An empty `incomplete` folder counts
 // (measured on Linux). Claustrum's own, not measured: any kind of entry there
 // counts, and an Lstat that fails counts as no entry. ok is false in every
@@ -515,8 +528,8 @@ const seedTempPattern = "lfs-seed-*"
 //
 // The copy computes the sha256 of the bytes in the same pass, so its time is
 // near the seed time of 4c111e86 in the rows (notKeptText).
-// Claustrum's own, not measured: the result is not used, and an object whose
-// bytes do not match its oid still goes into the store.
+// Claustrum's own, not measured: the result is not used, and an object with
+// link count 1 whose bytes do not match its oid still goes into the store.
 func copySeed(ctx context.Context, src, dst, tmpDir string) error {
 	if _, err := os.Lstat(dst); !errors.Is(err, fs.ErrNotExist) {
 		if err == nil {

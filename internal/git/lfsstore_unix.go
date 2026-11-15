@@ -24,6 +24,14 @@ func linkIntoRoot(root *os.Root, src, name string) error {
 	return unix.Linkat(unix.AT_FDCWD, src, int(d.Fd()), name, 0)
 }
 
+// hardLinks is the link count of the file of fi, or 1 when fi has none.
+func hardLinks(fi os.FileInfo) uint64 {
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return uint64(st.Nlink) //nolint:unconvert // Nlink is uint16 on macOS
+	}
+	return 1
+}
+
 // openObjectNoFollow opens the regular file at path for reading. A link at
 // its last name fails. O_NONBLOCK keeps a FIFO at path from blocking the open,
 // and the FIFO then fails the test of a regular file.
