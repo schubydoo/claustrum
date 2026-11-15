@@ -44,7 +44,7 @@ func TestSocketGitReadRefusals(t *testing.T) {
 	cl := dial(t, sock)
 	cwd := t.TempDir()
 	top := []string{"rev-parse", "--show-toplevel"}
-	const combine = `{"code":-32602,"message":"gitRead needs the command \"git\" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot or sessionFoldersOff","data":{"reason":"other"}}`
+	const combine = `{"code":-32602,"message":"gitRead needs the command \"git\" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot, cliTempRootEnd or sessionFoldersOff","data":{"reason":"other"}}`
 	shape := func(n string) string {
 		return `{"code":-32602,"message":"not one of the Changes pane's git commands (` + n + ` arguments)","data":{"reason":"other"}}`
 	}
