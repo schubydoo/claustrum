@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // TestStagedAddInAFolderWithSearchOnly: the folder of the daemon has mode 0100
@@ -281,5 +283,86 @@ func TestStagedCopyBoundOfAnEntryHead(t *testing.T) {
 			t.Errorf("a HEAD of %d bytes: commondir: %v", tc.size, err)
 		}
 		st.close()
+	}
+}
+
+// TestReadHeadCopyDoesNotBlockOnAFIFO: a FIFO put at the copy of HEAD after
+// its Lstat found a regular file does not hang the read under repoMu. The
+// read fails, and the request writes the copy again (claustrum's own).
+func TestReadHeadCopyDoesNotBlockOnAFIFO(t *testing.T) {
+	dir := t.TempDir()
+	head := filepath.Join(dir, "HEAD")
+	mustWrite(t, head, "ref: refs/heads/main\n")
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	seen, err := root.Lstat("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(head); err != nil {
+		t.Fatal(err)
+	}
+	mustMkfifo(t, head)
+	done := make(chan bool, 1)
+	go func() {
+		_, ok := readHeadCopy(root, seen)
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Error("readHeadCopy of a FIFO = ok, want a failed read")
+		}
+	case <-time.After(3 * time.Second):
+		// A blocked open of the read side ends when a writer opens the FIFO.
+		if w, err := os.OpenFile(head, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_ = w.Close()
+		}
+		t.Fatal("readHeadCopy blocked on a FIFO at the copy of HEAD")
+	}
+}
+
+// TestReadHeadCopyNeedsTheFileOfItsLstat: the read gives the text of the
+// regular file that the Lstat saw. Another file put there, and a file over
+// shadowHeadMaxBytes, give no text (claustrum's own).
+func TestReadHeadCopyNeedsTheFileOfItsLstat(t *testing.T) {
+	dir := t.TempDir()
+	head := filepath.Join(dir, "HEAD")
+	mustWrite(t, head, "ref: refs/heads/main\n")
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	seen, err := root.Lstat("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, ok := readHeadCopy(root, seen); !ok || string(data) != "ref: refs/heads/main\n" {
+		t.Errorf("readHeadCopy = %q, %v, want the text of HEAD", data, ok)
+	}
+	mustWrite(t, filepath.Join(dir, "other"), "ref: refs/heads/other\n")
+	if err := os.Rename(filepath.Join(dir, "other"), head); err != nil {
+		t.Fatal(err)
+	}
+	if data, ok := readHeadCopy(root, seen); ok {
+		t.Errorf("readHeadCopy of another file = %q, ok, want no text", data)
+	}
+	mustWrite(t, head, strings.Repeat("x", shadowHeadMaxBytes+1))
+	big, err := root.Lstat("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readHeadCopy(root, big); ok {
+		t.Error("readHeadCopy of a file over shadowHeadMaxBytes = ok, want no text")
+	}
+	if err := os.Remove(head); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readHeadCopy(root, seen); ok {
+		t.Error("readHeadCopy of a gone file = ok, want no text")
 	}
 }
