@@ -446,3 +446,49 @@ func TestRepoFolderBySearch(t *testing.T) {
 		t.Error("repoFolderBySearch of a folder of mode 000 = a root, want nil")
 	}
 }
+
+// TestStagedReadsDoNotBlockOnAFIFO: a FIFO put at a gitdir entry of a
+// registration after its Lstat does not hang the reads of the staged add
+// under the add lock. readRootFile gives no text, and cannotOpenRegular
+// answers false (claustrum's own).
+func TestStagedReadsDoNotBlockOnAFIFO(t *testing.T) {
+	for name, read := range map[string]func(*os.Root) bool{
+		"readRootFile": func(r *os.Root) bool {
+			_, ok := readRootFile(r, "gitdir", 1024)
+			return ok
+		},
+		"cannotOpenRegular": func(r *os.Root) bool { return cannotOpenRegular(r, "gitdir") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			entry := filepath.Join(dir, "gitdir")
+			mustWrite(t, entry, "/repo/wt/.git\n")
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+			prev := regularLstatDone
+			regularLstatDone = func(string) {
+				if err := os.Remove(entry); err != nil {
+					t.Error(err)
+				}
+				mustMkfifo(t, entry)
+			}
+			t.Cleanup(func() { regularLstatDone = prev })
+			done := make(chan bool, 1)
+			go func() { done <- read(root) }()
+			select {
+			case got := <-done:
+				if got {
+					t.Errorf("%s of a FIFO put there after the Lstat = true, want false", name)
+				}
+			case <-time.After(3 * time.Second):
+				if w, err := os.OpenFile(entry, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+					_ = w.Close()
+				}
+				t.Fatalf("%s blocked on a FIFO at the gitdir entry", name)
+			}
+		})
+	}
+}

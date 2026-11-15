@@ -417,11 +417,11 @@ const entryHeadMaxBytes = 4096
 // of mode 000, and the create succeeds (measured on Linux). Its text is not
 // measured: the empty copy is claustrum's own.
 func cannotOpenRegular(root *os.Root, path string) bool {
-	fi, err := root.Lstat(path)
+	fi, err := lstatForRead(root, path)
 	if err != nil || !fi.Mode().IsRegular() {
 		return false
 	}
-	f, err := root.Open(path)
+	f, err := openSeenRegular(root, path, fi)
 	if err == nil {
 		_ = f.Close()
 		return false
@@ -456,10 +456,11 @@ func rootDirNames(root *os.Root, dir string) ([]string, error) {
 // entry that is no regular file, that has more than max bytes, or that cannot
 // be read.
 func readRootFile(root *os.Root, path string, max int64) (data []byte, ok bool) {
-	if fi, err := root.Lstat(path); err != nil || !fi.Mode().IsRegular() || fi.Size() > max {
+	fi, err := lstatForRead(root, path)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() > max {
 		return nil, false
 	}
-	f, err := root.Open(path)
+	f, err := openSeenRegular(root, path, fi)
 	if err != nil {
 		return nil, false
 	}
@@ -469,6 +470,38 @@ func readRootFile(root *os.Root, path string, max int64) (data []byte, ok bool) 
 		return nil, false
 	}
 	return data, true
+}
+
+// errNotSeenFile is the error of openSeenRegular for an entry that is not the
+// regular file of its Lstat.
+var errNotSeenFile = errors.New("the entry is not the regular file of its Lstat")
+
+// regularLstatDone is a seam for the tests. It runs right after the Lstat of
+// lstatForRead. Production never reassigns it.
+var regularLstatDone = func(string) {}
+
+// lstatForRead is the Lstat of path in root before a read of the file.
+func lstatForRead(root *os.Root, path string) (os.FileInfo, error) {
+	fi, err := root.Lstat(path)
+	regularLstatDone(path)
+	return fi, err
+}
+
+// openSeenRegular opens path in root for reading. The open does not block on a
+// FIFO and takes no terminal, and the opened file must be the regular file of
+// the Lstat seen. A FIFO or another file put there after the Lstat gives
+// errNotSeenFile, so a read under a lock does not hang (claustrum's own).
+func openSeenRegular(root *os.Root, path string, seen os.FileInfo) (*os.File, error) {
+	f, err := root.OpenFile(path, os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(seen, fi) {
+		_ = f.Close()
+		return nil, errNotSeenFile
+	}
+	return f, nil
 }
 
 // fill writes the entries of `.s<n>` (addCopyEntries). HEAD, config and

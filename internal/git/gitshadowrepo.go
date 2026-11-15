@@ -477,15 +477,11 @@ func readHeadCopy(root *os.Root, seen os.FileInfo) (data []byte, ok bool) {
 	if seen.Size() > shadowHeadMaxBytes {
 		return nil, false
 	}
-	f, err := root.OpenFile("HEAD", os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	f, err := openSeenRegular(root, "HEAD", seen)
 	if err != nil {
 		return nil, false
 	}
 	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(seen, fi) {
-		return nil, false
-	}
 	data, err = io.ReadAll(io.LimitReader(f, shadowHeadMaxBytes+1))
 	if err != nil || int64(len(data)) > shadowHeadMaxBytes {
 		return nil, false
