@@ -195,16 +195,19 @@ func newRegistrationName(before, after []string) (string, bool) {
 }
 
 // withAddCopy is the environment env of a `worktree add` call with
-// GIT_COMMON_DIR=<addDir> in the place of GIT_COMMON_DIR=<repoDir>. The call
-// keeps its GIT_DIR, GIT_OBJECT_DIRECTORY and GIT_WORK_TREE (measured).
+// GIT_COMMON_DIR=<addDir> instead of GIT_COMMON_DIR=<repoDir>. The call
+// keeps its GIT_DIR, GIT_OBJECT_DIRECTORY and GIT_WORK_TREE (measured). The new
+// entry ends the environment, after GIT_CONFIG_VALUE_1 (4c111e86, measured on
+// Linux for an add with -b). The add of an existing branch and macOS follow
+// (not measured). On Windows Go sorts the block by name (D23).
 func withAddCopy(env []string, repoDir, addDir string) []string {
-	out := slices.Clone(env)
-	for i, kv := range out {
-		if kv == "GIT_COMMON_DIR="+repoDir {
-			out[i] = "GIT_COMMON_DIR=" + addDir
-		}
+	out := slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		return kv == "GIT_COMMON_DIR="+repoDir
+	})
+	if len(out) == len(env) {
+		return out
 	}
-	return out
+	return append(out, "GIT_COMMON_DIR="+addDir)
 }
 
 // addStage is the state of one staged `worktree add`.

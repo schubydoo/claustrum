@@ -82,8 +82,10 @@ func TestShadowStartTestCalls(t *testing.T) {
 		t.Fatalf("the id of update-ref = %q", id)
 	}
 	prefix := []string{"-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "commit.gpgsign=false"}
-	nine := []string{
+	// The trace entries sit before the author names (4c111e86, measured on Linux).
+	first := []string{
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "LC_ALL=C", "LANGUAGE=C", "GIT_TERMINAL_PROMPT=0",
+		"GIT_TRACE2=0", "GIT_TRACE2_EVENT=0", "GIT_TRACE2_PERF=0",
 		"GIT_AUTHOR_NAME=c", "GIT_AUTHOR_EMAIL=c@c", "GIT_COMMITTER_NAME=c", "GIT_COMMITTER_EMAIL=c@c",
 	}
 	real := []string{"GIT_DIR=" + realDir + "/.git", "GIT_WORK_TREE=" + realDir}
@@ -126,8 +128,8 @@ func TestShadowStartTestCalls(t *testing.T) {
 		if c.cwd != check {
 			t.Errorf("call %d runs in %s, want %s", i+1, c.cwd, check)
 		}
-		if len(c.env) < len(nine)+len(w.tail) || !slices.Equal(c.env[:len(nine)], nine) {
-			t.Errorf("call %d: the first variables are %v\nwant %v", i+1, c.env[:min(len(c.env), len(nine))], nine)
+		if len(c.env) < len(first)+len(w.tail) || !slices.Equal(c.env[:len(first)], first) {
+			t.Errorf("call %d: the first variables are %v\nwant %v", i+1, c.env[:min(len(c.env), len(first))], first)
 			continue
 		}
 		if got := c.env[len(c.env)-len(w.tail):]; !slices.Equal(got, w.tail) {

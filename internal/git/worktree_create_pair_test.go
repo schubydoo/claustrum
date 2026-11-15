@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -151,4 +152,64 @@ func argvHas(argv []string, words ...string) bool {
 		}
 	}
 	return true
+}
+
+// TestCreatePairBeforeTheLockedStaleRefusal: in the state shadow one stale entry
+// of the leaf that holds a `locked` file stays. After `rev-parse
+// --absolute-git-dir` the listing and the pair run, and then the create answers
+// the locked refusal. 4c111e86 makes these calls and no other (measured on
+// macOS). With "shadowDirOff":true no pair runs, and git answers (measured on
+// macOS). Mutation: drop staleLockedPair from the test of the pair (the pair
+// does not run).
+func TestCreatePairBeforeTheLockedStaleRefusal(t *testing.T) {
+	if stagedAddWindowsSteps {
+		t.Skip("Windows keeps no pair for a locked stale entry (not measured)")
+	}
+	for _, member := range []bool{false, true} {
+		t.Run(fmt.Sprintf("shadowDirOff %v", member), func(t *testing.T) {
+			f := newCheckoutRuleFixture(t)
+			old := filepath.Join(f.gitDir, worktreesSubdir, "old")
+			mustWrite(t, filepath.Join(old, "gitdir"), filepath.Join(f.leaf, ".git")+"\n")
+			mustWrite(t, filepath.Join(old, "locked"), "")
+			var extra map[string]any
+			if member {
+				extra = map[string]any{"shadowDirOff": true}
+			}
+			raw, calls := f.create(t, extra)
+			text, _ := createErrorField(t, raw)
+			if member {
+				if !strings.Contains(text, "missing but locked worktree") || ranPair(calls, f.repo) {
+					t.Errorf("reply = %s, pair %v\nwant git's own text and no pair", raw, ranPair(calls, f.repo))
+				}
+				mustExist(t, filepath.Join(old, "locked"))
+				return
+			}
+			if !strings.HasPrefix(text, "cannot add a worktree: ") || !strings.Contains(text, `as a locked worktree (entry "old")`) {
+				t.Fatalf("reply = %s\nwant the locked refusal", raw)
+			}
+			at := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--absolute-git-dir") })
+			if at < 0 {
+				t.Fatal("no rev-parse --absolute-git-dir call")
+			}
+			gitDirWord := "--git-dir=" + filepath.Join(f.repo, ".git")
+			want := [][]string{
+				{"config", "-z", "--list"},
+				{gitDirWord, "config", "-z", "--list"},
+				{gitDirWord, "--work-tree=" + f.repo, "rev-parse", "--show-toplevel"},
+			}
+			tail := calls[at+1:]
+			ok := len(tail) == len(want)
+			for i := 0; ok && i < len(want); i++ {
+				ok = argvEndsWith(tail[i].argv, want[i][len(want[i])-2:]) && argvHas(tail[i].argv, want[i]...)
+			}
+			if !ok {
+				var got [][]string
+				for _, c := range tail {
+					got = append(got, c.argv)
+				}
+				t.Errorf("the calls after rev-parse --absolute-git-dir =\n%q\nwant three calls ending in\n%q", got, want)
+			}
+			mustExist(t, filepath.Join(old, "locked"))
+		})
+	}
 }

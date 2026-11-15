@@ -312,7 +312,8 @@ In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
 arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows). The
 four come right after the profile values, in that order (order measured on Linux and
-macOS).
+macOS). The staged `worktree add` moves its `GIT_COMMON_DIR` to the end ([The staged
+add](git-worktree-create.md#the-staged-add)).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
 
 ### `config.worktree`

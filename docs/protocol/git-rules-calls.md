@@ -167,8 +167,9 @@ The repository calls are the configuration listings, the hardened calls,
 - Every git call gets `GIT_TRACE2=0`, `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0`.
   The daemon's own entries of these names go, on Windows a lower-case name too. On
   Linux the three entries end the daemon's part (`be1c1ca5`, measured on Linux and
-  Windows, macOS not measured). The calls of the start test get them too (measured
-  on Linux, the count per call not measured).
+  Windows, macOS not measured). The calls of the start test get one of each right
+  after `GIT_TERMINAL_PROMPT=0`, before the author names (`4c111e86`, measured on
+  Linux).
 - A call with `GIT_NO_LAZY_FETCH=1` and `GIT_ASKPASS=` gets `GIT_SSH_COMMAND=false`
   in place of the daemon's value. On Linux it comes after `GIT_ASKPASS=`. A call with no `GIT_ASKPASS=` keeps the daemon's value, except the read-tree call of a shadow create (the ssh door) (`be1c1ca5`,
   measured on Linux and Windows, macOS not measured). With `"shadowDirOff":true` a
