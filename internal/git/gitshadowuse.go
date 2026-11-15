@@ -821,9 +821,9 @@ var requestDirMkdir = os.Mkdir
 // macOS claustrum prints `.checkout-<n>` there. On Windows
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
-// On Linux and macOS a folder of the daemon that cannot be opened for lack of
-// permission gets that mkdir error too (see below). Any other failed open gives its own error
-// (not measured).
+// On Linux a folder of the daemon of mode 0100 gets that mkdir error too
+// (measured on Linux, see below). macOS is claustrum's own. Any other failed
+// open gives its own error (not measured).
 //
 // On Windows each such folder is made by its full path with a plain mkdir,
 // not through the root (makeRequestDir). On Windows with a deny entry for new
@@ -847,9 +847,10 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// On Linux and macOS a folder of the daemon with mode 0100 cannot be
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there
 		// (measured on Linux). claustrum runs no mkdir and gives that error with
-		// a new name. Mode 0300 and the other prefixes are not measured.
+		// a new name. Only a folder whose owner bits allow search and no write
+		// gets it. macOS, mode 0300 and the other prefixes are not measured.
 		var pe *os.PathError
-		if !stagedAddWindowsSteps && errors.Is(err, fs.ErrPermission) && errors.As(err, &pe) {
+		if !stagedAddWindowsSteps && errors.Is(err, fs.ErrPermission) && errors.As(err, &pe) && searchOnlyFolder(u.folder) {
 			name, nameErr := requestDirName(shadowPrefix)
 			if nameErr != nil {
 				return "", func() {}, nameErr
@@ -879,6 +880,13 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		return filepath.Join(u.folder, name), func() { _ = u.host.removeEntry(rel) }, nil
 	}
 	return "", func() {}, err
+}
+
+// searchOnlyFolder reports whether the owner bits of the folder path allow a
+// search and no write, as with mode 0100.
+func searchOnlyFolder(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().Perm()&0o300 == 0o100
 }
 
 // requestDirName is a new name for a folder of a request: prefix and a

@@ -3,8 +3,10 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -180,4 +182,76 @@ func TestCreateWritesTheHeadCopyAgain(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSearchOnlyFolderWithALinkedCopy: the folder of the repository copy is a
+// link, and the folder of the daemon has mode 0100. The create gets the open
+// error of the folder of the daemon, and nothing is written through the link
+// (claustrum's own, not measured).
+func TestSearchOnlyFolderWithALinkedCopy(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user opens a folder of mode 0100")
+	}
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	dir := daemonFolder(t, f.run)
+	copyDir := filepath.Join(dir, shadowRepoName(f.gitDir))
+	target := t.TempDir()
+	if err := os.Rename(copyDir, filepath.Join(target, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(target, "moved"), copyDir); err != nil {
+		t.Fatal(err)
+	}
+	before := entryStamps(t, target)
+	if err := os.Chmod(dir, 0o100); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: open ` +
+		strings.Trim(jsonQuoted(t, dir), `"`) + `: permission denied","errorCode":"worktree_add_failed"}}`
+	if raw != want {
+		t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	if after := entryStamps(t, target); !slices.Equal(after, before) {
+		t.Errorf("the target of the link changed:\n %q\nwant\n %q", after, before)
+	}
+}
+
+// TestWriteSearchFolderModes: only a folder of the daemon whose owner bits
+// allow search and no write gets the mkdir text of `.s<n>`. Mode 0300 keeps
+// the open error (not measured).
+func TestWriteSearchFolderModes(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user opens a folder of any mode")
+	}
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		mode os.FileMode
+		want bool
+	}{{0o100, true}, {0o110, true}, {0o300, false}, {0o700, false}, {0o000, false}} {
+		if err := os.Chmod(dir, tc.mode); err != nil {
+			t.Fatal(err)
+		}
+		if got := searchOnlyFolder(dir); got != tc.want {
+			t.Errorf("mode %o: %v, want %v", tc.mode, got, tc.want)
+		}
+	}
+	_ = os.Chmod(dir, 0o700)
+}
+
+// entryStamps are the path, mode, size and write time of each entry below dir,
+// as Lstat sees them.
+func entryStamps(t *testing.T, dir string) []string {
+	t.Helper()
+	var out []string
+	for p, fi := range entryTreeOf(t, dir) {
+		out = append(out, fmt.Sprintf("%s %v %d %d", p, fi.Mode(), fi.Size(), fi.ModTime().UnixNano()))
+	}
+	slices.Sort(out)
+	return out
 }
