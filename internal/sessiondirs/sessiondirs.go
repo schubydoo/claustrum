@@ -147,8 +147,8 @@ var openRecordParent = os.OpenRoot
 
 // makeRecordDir makes the record folder dir with mode 0700 by its name, through
 // a handle of the folder that holds it. At the start 4c111e86 makes it so
-// (measured on Linux). The same form for a folder that is gone at a write is
-// claustrum's own, not measured. An error is a mkdir error of the whole path,
+// (measured on Linux). macOS, Windows and a folder that is gone at a write
+// are claustrum's own, not measured. An error is a mkdir error of the whole path,
 // as the error of os.Mkdir was.
 func makeRecordDir(dir string) error {
 	root, err := openRecordParent(filepath.Dir(dir))

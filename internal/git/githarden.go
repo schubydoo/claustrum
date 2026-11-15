@@ -936,7 +936,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	// The index folder goes after the write of the reply of the create
 	// (gitCall.runAtReply, rpc.Response.AfterWrite). 4c111e86 shows its
 	// `.checkout-<n>` and its `claude-ssh-checkout-<n>` at the reply, and removes
-	// each 13 to 20 ms later (measured on Linux). Two creates at once get two
+	// each soon after it (measured on Linux). Two creates at once get two
 	// such folders (measured). With no list of the request it goes at the end
 	// of this step (claustrum's own).
 	if u.atReply != nil {

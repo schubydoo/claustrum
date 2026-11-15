@@ -219,7 +219,7 @@ func TestShadowFilterRuleReadsTheRepositoryConfig(t *testing.T) {
 // TestCreateCheckoutFolderGoesAfterTheWrite: the folder of the checkout of a
 // good create is still there when Handle returns the reply, and it goes in the
 // step after the write (rpc.Response.AfterWrite). 4c111e86 shows `.checkout-<n>`
-// and `claude-ssh-checkout-<n>` at the reply and removes each 13 to 20 ms later
+// and `claude-ssh-checkout-<n>` at the reply and removes each soon after it
 // (measured on Linux).
 func TestCreateCheckoutFolderGoesAfterTheWrite(t *testing.T) {
 	for _, off := range []bool{false, true} {

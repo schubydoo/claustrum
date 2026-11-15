@@ -61,7 +61,7 @@ func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
 }
 
 // erroringListener is a net.Listener whose Accept always fails, used to drive
-// acceptLoop's error-backoff path.
+// acceptLoop's error-retry path.
 type erroringListener struct {
 	mu    sync.Mutex
 	calls int

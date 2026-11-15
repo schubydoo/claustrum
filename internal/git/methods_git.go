@@ -1072,8 +1072,8 @@ func gitWorktreeCreate(req *gitCall) rpc.Response {
 	repo := p.repoDir()
 	req.use.sshKept = req.offLive
 	// The folder of the checkout goes after the write of the reply, also in the
-	// temporary folder (rpc.Response.AfterWrite). 4c111e86 removes it 13 to 20
-	// ms after the reply (measured on Linux). A panic before the reply removes
+	// temporary folder (rpc.Response.AfterWrite). 4c111e86 removes it soon after
+	// the reply (measured on Linux). A panic before the reply removes
 	// it at once.
 	req.use.atReply = &req.atReply
 	handed := false

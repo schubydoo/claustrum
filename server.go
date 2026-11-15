@@ -1110,7 +1110,7 @@ func (s *server) runAfterWrite(a *afterWrite) {
 
 // runPendingAfterWrites runs each step that still waits for its write. A step
 // that a request runs now is waited for. The shutdown calls it, so a write that
-// does not end leaves no folder behind (claustrum's own, not measured).
+// has not ended does not hold the remove (claustrum's own, not measured).
 func (s *server) runPendingAfterWrites() {
 	s.afterMu.Lock()
 	pending := make([]*afterWrite, 0, len(s.afterWrites))
