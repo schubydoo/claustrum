@@ -33,8 +33,9 @@ import (
 //     (measured on Linux).
 //   - The keep. After a good checkout, an object that git-lfs downloaded into
 //     P reaches the store of the repository. Its shard folders are made when
-//     they are missing, with mode 0755 (measured on macOS, claustrum's own on
-//     Linux). A link at `lfs`,
+//     they are missing, with mode 0777 less the umask (measured on Linux). On
+//     macOS they got 0755 (measured). The same mode for a missing `lfs` and
+//     `lfs/objects` is claustrum's own, not measured. A link at `lfs`,
 //     and a folder `lfs/objects` that cannot be written, keep nothing, and the
 //     create succeeds (measured on Linux). An object whose bytes and size
 //     differ from its pointer gets `lfs/objects` but no shard folder (measured
@@ -673,12 +674,12 @@ func openShard(root *os.Root, rel string) *os.Root {
 }
 
 // shardStep opens the folder name of parent. It makes the folder when it is
-// missing, with mode 0755. The folder must be a real folder by Lstat through
+// missing, with mode 0777 less the umask. The folder must be a real folder by Lstat through
 // parent, and the opened folder must be that folder.
 func shardStep(parent *os.Root, name string) *os.Root {
 	fi, err := parent.Lstat(name)
 	if os.IsNotExist(err) {
-		if parent.Mkdir(name, 0o755) != nil {
+		if parent.Mkdir(name, 0o777) != nil {
 			return nil
 		}
 		fi, err = parent.Lstat(name)

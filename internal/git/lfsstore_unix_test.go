@@ -155,15 +155,41 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 	if len(names) != 1 {
 		t.Errorf("the shard holds %v, want only the object", names)
 	}
-	// A folder made with mode 0755 here gets the same umask.
+	// A folder made with mode 0777 here gets the same umask.
 	ref := filepath.Join(t.TempDir(), "ref")
-	if err := os.Mkdir(ref, 0o755); err != nil {
+	if err := os.Mkdir(ref, 0o777); err != nil {
 		t.Fatal(err)
 	}
 	want, _ := os.Stat(ref)
 	for _, d := range []string{filepath.Dir(p), filepath.Dir(filepath.Dir(p)), filepath.Join(f.gitDir, "lfs")} {
 		if fi, err := os.Stat(d); err != nil || fi.Mode().Perm() != want.Mode().Perm() {
-			t.Errorf("the folder %s = %v, %v, want mode 0755", d, fi, err)
+			t.Errorf("the folder %s = %v, %v, want mode 0777 less the umask", d, fi, err)
+		}
+	}
+}
+
+// TestLFSKeepShardModeFollowsUmask: the keep makes missing shard folders with
+// mode 0777 less the umask, so umask 0002 gives 0775 (4c111e86, measured on
+// Linux). The test sets the umask of the process, so it does not run in
+// parallel.
+func TestLFSKeepShardModeFollowsUmask(t *testing.T) {
+	seamFreeSpace(t)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.onServer(t, "a.bin")
+	if err := os.MkdirAll(filepath.Join(f.gitDir, "lfs", "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := unix.Umask(0o002)
+	t.Cleanup(func() { unix.Umask(old) })
+	f.wantSuccess(t)
+	shard := f.shard("a.bin")
+	for _, d := range []string{shard, filepath.Dir(shard)} {
+		fi, err := os.Stat(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o775 {
+			t.Errorf("the shard folder %s has mode %#o, want 0775", d, got)
 		}
 	}
 }
