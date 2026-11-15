@@ -21,9 +21,7 @@ func NewSysProcAttr() *syscall.SysProcAttr {
 // tears down a smudge/hook orphan that outlived git and kept the daemon's output
 // pipe open past the drain cap, matching 4534d86's observed descendant reap. The command must
 // have been started with NewSysProcAttr (Setpgid), so proc is its group's leader
-// and its pid equals the pgid. Best-effort and nil-safe: a nil or already-reaped
-// process is a no-op. (The pgid stays reserved while any group member is alive, so
-// this is safe to call after proc itself has been waited on.)
+// and its pid equals the pgid. Best-effort and nil-safe: a nil process is a no-op.
 func ReapProcessGroup(proc *os.Process) {
 	if proc == nil || RefuseSmallPid(proc.Pid) != nil {
 		return

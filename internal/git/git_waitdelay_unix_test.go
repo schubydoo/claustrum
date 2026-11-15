@@ -4,6 +4,7 @@ package git
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -334,7 +335,7 @@ func TestWorktreeCreateFailedCheckoutHeldPastDeadline(t *testing.T) {
 			var exited atomic.Bool
 			old := checkoutWaited
 			t.Cleanup(func() { checkoutWaited = old })
-			checkoutWaited = func() { exited.Store(true) }
+			checkoutWaited = func(*exec.Cmd) { exited.Store(true) }
 			fired := deadlineAt(t, exited.Load, release)
 
 			raw, _ := f.create(t, h, "w1", "", markerTimeoutMs)
