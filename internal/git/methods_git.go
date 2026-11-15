@@ -2398,10 +2398,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// not expired, the request succeeds. Measured against f6010b97 and
 			// 90fca6e6 on macOS.
 		case errors.As(rtErr, &room):
-			// The watch stopped a download that filled the disk of the private
-			// LFS store (lfsroom.go). The rollback of a failed checkout runs, and
-			// then the private folder goes, before the reply (4c111e86, measured
-			// on Linux). The place of this arm before the deadline arm and the
+			// The watch stopped a download that left under a tenth of the free
+			// space at the start on the disk of the private LFS store
+			// (lfsroom.go). The rollback of a failed checkout runs and the
+			// private folder goes, both before the reply (4c111e86, measured on
+			// Linux). The place of this arm before the deadline arm and the
 			// filter arms is claustrum's own, not measured.
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			room.removeStore()

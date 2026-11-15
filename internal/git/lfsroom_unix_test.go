@@ -35,15 +35,37 @@ type roomFake struct {
 	killedPgid int
 	kills      int
 	cmdline    string
+	watches    []*lfsRoomWatch
 }
 
 func (r *roomFake) install(t *testing.T) {
 	t.Helper()
-	prevFree, prevReap, prevPoll := storeFreeBytes, reapCheckoutGroup, lfsRoomPoll
+	prevFree, prevReap, prevPoll, prevMade := storeFreeBytes, reapCheckoutGroup, lfsRoomPoll, lfsRoomWatchMade
 	storeFreeBytes = r.free
 	reapCheckoutGroup = r.kill
 	lfsRoomPoll = 10 * time.Millisecond
-	t.Cleanup(func() { storeFreeBytes, reapCheckoutGroup, lfsRoomPoll = prevFree, prevReap, prevPoll })
+	lfsRoomWatchMade = func(w *lfsRoomWatch) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.watches = append(r.watches, w)
+	}
+	t.Cleanup(func() {
+		storeFreeBytes, reapCheckoutGroup, lfsRoomPoll, lfsRoomWatchMade = prevFree, prevReap, prevPoll, prevMade
+	})
+}
+
+// wantEnded checks that one watch ran and that its goroutine ended before
+// the reply.
+func (r *roomFake) wantEnded(t *testing.T) {
+	t.Helper()
+	if len(r.watches) != 1 {
+		t.Fatalf("watches = %d, want 1", len(r.watches))
+	}
+	select {
+	case <-r.watches[0].ended:
+	default:
+		t.Error("the goroutine of the watch runs after the reply, want it ended")
+	}
 }
 
 func (r *roomFake) free(p string) (uint64, bool) {
@@ -152,6 +174,7 @@ func TestLFSRoomStop(t *testing.T) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.wantEnded(t)
 	if r.kills != 1 || r.killedPid < 2 || r.killedPgid != r.killedPid || r.killedPgid == unix.Getpgrp() {
 		t.Errorf("kills = %d of pid %d in group %d, want one of the leader of the group of the read-tree call", r.kills, r.killedPid, r.killedPgid)
 	}
@@ -165,8 +188,8 @@ func TestLFSRoomStop(t *testing.T) {
 }
 
 // TestLFSRoomNoStop: no stop at a free space of a tenth or more, with no
-// `incomplete` folder (seeded objects, measured on Linux), or when only another
-// disk fills (a HOME on another disk, measured on Linux). The poll reads no free
+// `incomplete` folder (measured on Linux), or when only another disk fills (a
+// HOME on another disk, measured on Linux). The poll reads no free
 // space with no `incomplete` folder. The exact bound of a tenth is claustrum's
 // own, not measured.
 func TestLFSRoomNoStop(t *testing.T) {
@@ -203,6 +226,7 @@ func TestLFSRoomNoStop(t *testing.T) {
 			}
 			r.mu.Lock()
 			defer r.mu.Unlock()
+			r.wantEnded(t)
 			if r.kills != 0 {
 				t.Errorf("kills = %d, want none", r.kills)
 			}

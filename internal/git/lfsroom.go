@@ -9,20 +9,20 @@ import (
 	"time"
 )
 
-// The stop of a checkout whose Git LFS download fills the disk of its private
-// store (worktree_lfs_no_space). 4c111e86 does so on Linux (measured):
+// The stop of a checkout whose Git LFS download leaves under a tenth of the
+// free space at the start on the disk of its private store
+// (worktree_lfs_no_space). 4c111e86 does so on Linux (measured):
 //
 //   - While the read-tree call runs, a poll every 0.5 s reads the free space of
 //     the disk that holds the private store <P>/lfs.
 //   - It stops the checkout when `<P>/lfs/incomplete` exists and the free space
-//     is under a tenth of the free space at the start. 229 MB free at the start
-//     gave a stop near 22.9 MB, and 4 GiB free a stop near 409 MB. An empty
-//     `incomplete` folder counts.
+//     is under a tenth of the free space at the start. 229 MB and 4127 MB free
+//     at the start gave bounds of 22.9 MB and 412.7 MB. An empty `incomplete`
+//     folder counts.
 //   - The stop is one SIGKILL to the process group of the read-tree call.
 //     Then the rollback of a failed checkout runs, and the private folder goes
 //     before the reply. The objects that git-lfs fetched are not kept.
-//   - Seeded objects with no download, and a private store on another disk than
-//     the one that fills, give no stop.
+//   - A private store on another disk than the one that fills gives no stop.
 //
 // Claustrum's own, not measured: the first read of the free space comes right
 // after the start of the read-tree call, and the bound has no cap. A free space
@@ -49,8 +49,13 @@ type lfsRoomWatch struct {
 
 // newLFSRoomWatch is the watch of the private store store, whose folder is dir.
 func newLFSRoomWatch(dir, store string) *lfsRoomWatch {
-	return &lfsRoomWatch{dir: dir, store: store, quit: make(chan struct{}), ended: make(chan struct{})}
+	w := &lfsRoomWatch{dir: dir, store: store, quit: make(chan struct{}), ended: make(chan struct{})}
+	lfsRoomWatchMade(w)
+	return w
 }
+
+// lfsRoomWatchMade sees each new watch. A test replaces it.
+var lfsRoomWatchMade = func(*lfsRoomWatch) {}
 
 // start reads the free space at the start and runs the poll for the git
 // process p, the leader of its own process group. It runs right after the
@@ -80,9 +85,10 @@ func (w *lfsRoomWatch) start(p *os.Process) {
 				continue
 			}
 			w.mu.Lock()
-			// The kill goes only to the group of this read-tree call, and only
-			// while its leader runs (gitStillRuns). The call has not returned
-			// from its wait while done is false.
+			// The kill goes only to the group of this read-tree call, under the
+			// lock of the watch, and only while its leader runs (gitStillRuns).
+			// The leader is not reaped here: the wait of exec.Cmd starts only
+			// after end (awaitLeaderExit).
 			if !w.done && gitStillRuns(p) {
 				reapCheckoutGroup(p)
 				w.fired, w.free = true, free
@@ -93,9 +99,9 @@ func (w *lfsRoomWatch) start(p *os.Process) {
 	}()
 }
 
-// end stops the poll. It runs right after the wait for the read-tree call.
-// After it, fired reports a stop, and free is the free space that the stop
-// read.
+// end stops the poll and waits for its goroutine. It runs after the exit of
+// the read-tree call and before its reap (awaitLeaderExit). After it, fired
+// reports a stop, and free is the free space that the stop read.
 func (w *lfsRoomWatch) end() {
 	w.mu.Lock()
 	w.done = true
@@ -131,20 +137,23 @@ func lfsRoomText(e *lfsRoomStop) string {
 		" Claude keeps a checkout's Git LFS files in that folder until the checkout ends, so they need room on that disk."
 }
 
-// roomWords is n bytes in the text of lfsRoomText. Under 1 GiB it is whole
-// MiB, else GiB with one decimal. up rounds up, else down. The rows show 20.4
-// MiB free as `20 MiB`, 390.3 MiB as `390 MiB`, a fetched 197.8 MiB as `198
-// MiB`, 200.0 MiB as `201 MiB` and 3.46 GiB as `3.5 GiB` (measured on Linux).
+// roomWords is n bytes in the text of lfsRoomText. Under 1 MiB it is whole
+// KiB, under 1 GiB whole MiB, else GiB with one decimal. up rounds up, else
+// down. The rows show `4 KiB` to `390 MiB` free and `197 MiB` to `3.5 GiB`
+// fetched. A fetched 200.0 MiB shows as `201 MiB` (measured on Linux).
 // Claustrum's own, not measured: the rounding down of the free space (the rows
-// also fit the nearest value), the bound of 1 GiB, and the form of a free space
-// of 1 GiB or more.
+// also fit the nearest value), the rounding of the KiB form, the bounds of
+// 1 MiB and 1 GiB, and the form of a free space of 1 GiB or more.
 func roomWords(n uint64, up bool) string {
-	const mib, gib = 1 << 20, 1 << 30
+	const kib, mib, gib = 1 << 10, 1 << 20, 1 << 30
 	div := func(a, b uint64) uint64 {
 		if up {
 			return (a + b - 1) / b
 		}
 		return a / b
+	}
+	if n < mib {
+		return strconv.FormatUint(div(n, kib), 10) + " KiB"
 	}
 	if n < gib {
 		return strconv.FormatUint(div(n, mib), 10) + " MiB"

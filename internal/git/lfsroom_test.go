@@ -4,7 +4,8 @@ import "testing"
 
 // TestRoomWords: the sizes of the text of worktree_lfs_no_space. The free
 // space rounds down and the fetched size up (4c111e86, measured on Linux). The
-// bound of 1 GiB and a free space of 1 GiB or more are claustrum's own.
+// bounds of 1 MiB and 1 GiB, the rounding of KiB, and a free space of 1 GiB or
+// more are claustrum's own.
 func TestRoomWords(t *testing.T) {
 	for _, row := range []struct {
 		n    uint64
@@ -17,7 +18,8 @@ func TestRoomWords(t *testing.T) {
 		{207388672, true, "198 MiB"},
 		{209715216, true, "201 MiB"},
 		{3717267456, true, "3.5 GiB"},
-		{0, false, "0 MiB"},
+		{4096, false, "4 KiB"},
+		{0, false, "0 KiB"},
 		{1 << 30, true, "1.0 GiB"},
 		{3717267456, false, "3.4 GiB"},
 	} {

@@ -449,7 +449,8 @@ const (
 var worktreeCreateDrainCap = 5 * time.Second
 
 // reapCheckoutGroup is the group kill of a read-tree call that the deadline stops
-// (hardenedGitCheckout). A test replaces it.
+// (hardenedGitCheckout), or that the watch of the private LFS store stops
+// (lfsroom.go). A test replaces it.
 var reapCheckoutGroup = sysproc.ReapProcessGroup
 
 // hardenedGitCheckout runs the read-tree checkout of git.worktree_create under the
@@ -626,7 +627,8 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 			storage := filepath.Join(u.gitDir, "lfs")
 			if lfs.path != "" {
 				storage = lfs.path
-				// The stop of a download that fills the disk (lfsroom.go).
+				// The stop of a download that leaves under a tenth of the free
+				// space at the start (lfsroom.go).
 				room = newLFSRoomWatch(filepath.Dir(lfs.path), lfs.path)
 				short, copied := lfs.seed()
 				if rule != nil {
@@ -715,7 +717,8 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // (none is sent), and Windows (it keeps the drain, failedCheckoutSkipsStdoutDrain).
 //
 // room is the watch of the private LFS store (lfsroom.go), or nil. It starts
-// after a good start of git and ends right after the wait for git.
+// after a good start of git. It ends after git exited and before the wait for
+// git reaps it (awaitLeaderExit).
 func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch) error {
 	outR, outW, err := os.Pipe()
 	if err != nil {
@@ -742,10 +745,13 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	outDone, errDone := make(chan struct{}), make(chan struct{})
 	go func() { _, _ = io.Copy(io.Discard, outR); close(outDone) }()
 	go func() { _, _ = io.Copy(errBuf, errR); close(errDone) }()
-	werr := cmd.Wait()
 	if room != nil {
+		// The watch ends after the exit of git and before its reap, so its
+		// group kill reaches only a group that this call still holds.
+		awaitLeaderExit(cmd.Process.Pid)
 		room.end()
 	}
+	werr := cmd.Wait()
 	checkoutWaited()
 	limit := time.NewTimer(cmd.WaitDelay)
 	defer limit.Stop()
