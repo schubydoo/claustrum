@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -33,7 +34,7 @@ import (
 //   - Each later step tests that the path still names that folder (stands). A
 //     step that fails the test refuses the create with the text of that step,
 //     leaves the refusal to a later step (swapRefusal, answeredElsewhere), or
-//     moves the hold (movedTo, replacedAtPath).
+//     moves the hold (movedTo, askedAgain, replacedAtPath).
 //   - The acts of the create inside the git directory go through the held
 //     folder, never through the path. The list is at the top of gitdirheld.go.
 //     The test of a step is therefore no guard of such an act. It decides the
@@ -65,6 +66,9 @@ type acceptedGitDir struct {
 	// staged is the registration that the staging step moved into
 	// `worktrees` (addStage.move), or the zero value.
 	staged stagedEntry
+	// reread is true for a hold that askedAgain took: the add reads its config
+	// again after the listing (rereadConfigRefusal).
+	reread bool
 	// addBranch is the branch that the staged add made (`-b`), and addTip its
 	// tip in the held folder right after the add, or "" (addStage.finish).
 	addBranch, addTip string
@@ -320,6 +324,50 @@ func (a *acceptedGitDir) movedTo(gitDir, repo string) *acceptedGitDir {
 	return a.takeOver(gitDir, gitDirIdentity(gitDir), repo)
 }
 
+// mayAskAgain reports whether a create can ask git again at the add
+// (askedAgain), right after a first answer gitDir of `rev-parse
+// --absolute-git-dir` while the path no longer names the held folder. The
+// answer must name the held folder, and the `commondir` test of the step must
+// pass. The trust check of repo must pin another git directory. It is false on
+// nil.
+func (a *acceptedGitDir) mayAskAgain(gitDir, repo string) bool {
+	if a == nil || !a.isAt(gitDir) {
+		return false
+	}
+	if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	t := gitDirTrustFor(repo)
+	return t.verdict == gitDirTrusted && t.pinCommonDir != "" && !a.isAt(t.pinCommonDir)
+}
+
+// askedAgain is the hold of a create on the git directory that git answers in
+// a second `rev-parse --absolute-git-dir` call, with that answer. The create
+// makes the call at the add, when mayAskAgain was true and the path changed
+// before the listing of the add. It is nil when the call fails or movedTo
+// gives no hold. The caller releases the new hold.
+//
+// The rows are measured on Linux. A symbolic link to a copy of the git
+// directory is put at `.git` right after the first answer. 4c111e86 then makes
+// the call about the repository, the read of the config and the listing of the
+// add. Next it asks git again, goes on in the copy and answers success. The
+// record of the session folder names the copy. In the copy the listing comes
+// first, then a new read of its config (reread), the pair and the add. A link
+// to the git directory of another repository is tested, not measured. macOS
+// follows Linux (not measured).
+func (a *acceptedGitDir) askedAgain(u gitUse, repo string) (string, *acceptedGitDir) {
+	again, _, answered, err := worktreeBaseGitDir(u, repo)
+	if a == nil || err != nil || !answered {
+		return "", nil
+	}
+	next := a.movedTo(again, repo)
+	if next == nil {
+		return "", nil
+	}
+	next.reread = true
+	return again, next
+}
+
 // replacedAtPath is the hold of a create on a new real directory at the path
 // of the held git directory, right after a good `worktree add`. It is nil when
 // the path names no real directory, still names the held folder, or names a
@@ -437,7 +485,8 @@ func (u gitUse) swapped(step string) bool {
 //     then the listing of the add, and refuses at the step before the add
 //     (measured on macOS, 7 of 7 runs). The refusal
 //     is in worktreeAdd. With that link before the call, git answers the copy,
-//     and the create goes on in it (movedTo).
+//     and the create goes on in it (movedTo). With that link right after the
+//     call, 4c111e86 goes on in the copy too (askedAgain, measured on Linux).
 func (u gitUse) swapRefusal(step, dir string) string {
 	if !u.swapped(step) {
 		return ""

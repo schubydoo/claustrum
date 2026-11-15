@@ -176,10 +176,15 @@ func settleCheckout(callerCtx context.Context, u gitUse, leaf, workTree, gitDir,
 // attrSourceArgs. The rows hold SHA-1 repositories only, so whether the
 // answer goes into --attr-source is not measured. A failed call changes
 // nothing (claustrum's own, not measured).
+//
+// The two calls name the common git directory of gitDir. For a linked baseRepo
+// that is the `.git` of the main repository, not the folder of the linked
+// worktree (4c111e86, measured on macOS).
 func settleEmptyTree(ctx context.Context, u gitUse, gitDir string, pin []string) {
-	hooks := runListing(ctx, "", gitDir, precursorEnv(true, pin)).hooks()
+	commonGitDir := filepath.Dir(gitDirRegistryDir(gitDir))
+	hooks := runListing(ctx, "", commonGitDir, precursorEnv(true, pin)).hooks()
 	cmd := gitCommandContext(ctx, withFront(u.checkoutFront(gitDir), hardenedProfileArgs(true,
-		"--git-dir="+gitDir, "hash-object", "-t", "tree", os.DevNull))...)
+		"--git-dir="+commonGitDir, "hash-object", "-t", "tree", os.DevNull))...)
 	cmd.Env = hardenedGitEnv(true, pin, hooks)
 	cmd.Cancel = func() error { return stopGitProcess(cmd.Process) }
 	cmd.WaitDelay = gitStopGrace

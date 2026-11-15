@@ -176,8 +176,8 @@ deletes the leaf and the registration and runs the branch step. Some states keep
 registration or the branch (method page). Before the add, the stale step removes at most
 one stale `worktrees` entry, and only one with no `locked` file. The one tree delete with no home guard is the
 registration of a create that holds no git directory and accepted no registration.
-Never widen: Never widen a delete of the [two steps that move
-the hold](#two-steps-that-move-the-hold).
+Never widen: Never widen a delete of the [steps that move
+the hold](#steps-that-move-the-hold).
 
 #### Path 4: the `git.worktree_create` staging sweep
 
@@ -248,9 +248,9 @@ Each write and delete inside it goes through the held folder. The steps and exce
 are at the top of `internal/git/gitdirheld.go` ([The held git
 directory](docs/protocol/git-worktree-create.md#the-held-git-directory)).
 
-#### Two steps that move the hold
+#### Steps that move the hold
 
-On Linux and macOS, `acceptedGitDir.movedTo` and `replacedAtPath` take a new folder from the path. Add no other
+On Linux and macOS, `acceptedGitDir.movedTo`, `askedAgain` and `replacedAtPath` take a new folder from the path. Add no other
 step that resolves the path of the git directory again, and never widen a delete of these
 steps. The maintainer approved two exceptions: the Windows stale step, and the rollback
 of the registration after the staging step took the hold ([Rare

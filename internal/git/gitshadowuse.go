@@ -265,6 +265,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		return stderr, err
 	}
 	named = named && shadowLinksWorktrees
+	// heldAtListing is true when the path still names the held folder right
+	// before the listing of the add.
+	heldAtListing := f.accepted != nil && f.accepted.stands()
 	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
 	if offMember || (off && f.accepted != nil) {
 		if text := offWorktreesRefusal(repo); text != "" {
@@ -279,7 +282,31 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		if f.accepted.sent != "" {
 			gitDir = f.accepted.sent
 		}
-		return "", errors.New(plainAddRefusal(gitDir, named))
+		text := plainAddRefusal(gitDir, named)
+		// On Linux and macOS a swap after the listing starts the text with
+		// `cannot add a worktree: ` (4c111e86, measured on Linux, for a link to
+		// a copy). The text of a folder that is no git directory is not
+		// measured there. Windows keeps its text (not measured).
+		//
+		// Before that refusal 4c111e86 reads the config again and runs the pair
+		// (measured on Linux, for a link to a copy). A refusal of that read is not
+		// measured: the text stays.
+		if heldAtListing && !stagedAddWindowsSteps {
+			_ = rereadConfigRefusal(f, repo)
+			if afterListing != nil {
+				afterListing()
+			}
+			return "", &addSwappedAfterListing{text: text}
+		}
+		return "", errors.New(text)
+	}
+	// A hold that askedAgain took reads its config again after the listing
+	// (4c111e86, measured on Linux). A refusal there is claustrum's own (not
+	// measured).
+	if f.accepted != nil && f.accepted.reread && !stagedAddWindowsSteps {
+		if msg := rereadConfigRefusal(f, repo); msg != "" {
+			return "", errors.New(msg)
+		}
 	}
 	if named {
 		if text := f.worktreesFolderRefusal(); text != "" {
@@ -321,6 +348,27 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 	hookPrecursor(ctx, f, repo, false)
 }
 
+// rereadConfigRefusal reads the config of the git directory that the trust
+// check of repo pins, also when a read of it is kept, and returns the refusal
+// of the gate, or "". It runs only in the state shadow.
+func rereadConfigRefusal(u gitUse, repo string) string {
+	t := gitDirTrustFor(repo)
+	if !u.shadow() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return ""
+	}
+	forgetRepoVerdict(t.pinCommonDir)
+	msg, _ := repoConfigGate(t, false, u.stop)
+	return msg
+}
+
+// addSwappedAfterListing is the error of a `worktree add` that does not run,
+// because the path of the git directory stopped naming the held folder after
+// the listing of the add. The create answers it with the rollback of a failed
+// add and `cannot add a worktree: ` before the text.
+type addSwappedAfterListing struct{ text string }
+
+func (e *addSwappedAfterListing) Error() string { return "cannot add a worktree: " + e.text }
+
 // plainAddRefusal is the error of a `worktree add` that does not run, because
 // the path of the git directory gitDir no longer names the folder that the
 // create holds. named says whether the call names the copy of the request.
@@ -332,10 +380,12 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 //   - The link leads to a copy of the git directory: `git worktree add failed:
 //     cannot prepare the repository's worktrees directory: ".git" is a link or
 //     a file where Claude needs a real directory; put the directory itself in
-//     its place` (cells swap-copy and swap-copyold, 7 of 7 runs).
+//     its place`. On
+//     4c111e86 the create goes on in the copy instead (askedAgain, measured
+//     on Linux).
 //   - The link leads to a folder with one marker file: `git worktree add
 //     failed: cannot list the repository's worktree entries: ".git" is a link
-//     …`, with the same end (cells swap-marker, 4 of 4 runs). The listing
+//     …`, with the same end. The listing
 //     carries GIT_DIR=/dev/null there.
 //
 // Linux has the same two texts (measured, 2 of 2 runs for each form). On

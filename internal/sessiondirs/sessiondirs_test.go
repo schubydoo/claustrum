@@ -273,6 +273,23 @@ func TestUnsavedRecordRefusesWithAPathEntryInTheFolder(t *testing.T) {
 	}
 }
 
+// A plain file at the path of the record folder logs the words of 4c111e86 in
+// place of the error of the open (measured on Linux).
+func TestFileAtTheRecordFolderLogsItsWords(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), RecordFolderName)
+	if err := os.WriteFile(dir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(UseForTest(dir))
+	buf := captureLog(t)
+	_ = Remember(t.TempDir())
+	want := "[sessiondirs] cannot write to the record of session folders in " + fmt.Sprintf("%q", filepath.ToSlash(dir)) +
+		": it is not a folder; they are kept in memory until this helper ends, and written at a later start\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("log = %q, want it to end with %q", buf.String(), want)
+	}
+}
+
 // A failed save does not count as a record: the next Remember of the folder tries
 // the write again and fails again. After the file at the record folder goes, the
 // write makes the folder with mode 0700 and writes the record.

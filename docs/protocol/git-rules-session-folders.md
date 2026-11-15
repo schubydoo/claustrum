@@ -38,13 +38,16 @@ folder (measured on Linux, macOS and Windows). Its record stays after
 `git.worktree_remove` (measured on Linux, macOS and Windows). A create runs no prune,
 so 2048 records become 2049 (`b3081b51`, measured on Linux). A record that cannot be
 saved does not fail the create, and the daemon logs the line of the failure (measured
-on Linux and macOS). `git.info`, `git.status` and `git.list_branches` make no record
+on Linux and macOS). For a plain file at the folder name its cause is `it is not a
+folder` (`4c111e86`, measured on Linux). `git.info`, `git.status` and `git.list_branches` make no record
 (`b3081b51`, measured on Linux). For a `baseRepo` that is a linked worktree, the folder
-is the git directory of its main repository (claustrum's own, not measured). The
+is the git directory of its main repository (`4c111e86`, measured on Linux and macOS). The
 record is written before `git worktree add`, so a failed add keeps it (`c9125eb8` and
-`4c111e86`, measured on Linux and macOS). Those builds write it before the listing of
-`rev-parse --absolute-git-dir` (measured on Linux). claustrum writes it after that
-call and the refusals before the add (claustrum's own). A create with the off switch
+`4c111e86`, measured on Linux and macOS). `4c111e86` writes it after the answer of
+`rev-parse --absolute-git-dir`, before the next git call, so a later refusal keeps it
+(measured on Linux and macOS. Windows: not measured). A later create writes the record
+again when it is gone from the folder, and writes nothing when it is there (`4c111e86`,
+measured on Linux). A create with the off switch
 makes none (claustrum's own, not measured). On Linux and macOS its path has its links
 resolved (claustrum's own, not measured). Windows is not measured. A create whose trust check names no git
 directory records the folder that git names (claustrum's own, not measured).

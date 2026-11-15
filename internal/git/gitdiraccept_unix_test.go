@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // linkAt makes a symbolic link at link to target.
@@ -152,23 +154,21 @@ func TestCreateWithASwappedGitDir(t *testing.T) {
 // server, with the switch as the system has it. At one step the git directory
 // goes to `.git-real`, and the path gets another entry.
 //
-// Two rows are those of 5fd08069 on Linux and macOS (measured). The swap
-// comes after `rev-parse --absolute-git-dir`:
+// One row is that of 5fd08069 on Linux and macOS (measured). A symbolic link
+// to a folder T that is no git directory is put at the path after `rev-parse
+// --absolute-git-dir`. One listing with GIT_DIR=/dev/null follows, and the text
+// is `cannot list the repository's worktree entries: ".git" is a link or a file
+// …`. A link to a git directory there is in
+// TestCreateGoesOnAfterASwapRightAfterTheAnswer.
 //
-//   - A symbolic link to a copy of the git directory. Three calls follow: the
-//     call about the repository, the read of the config, and the listing of
-//     the add with the variables of the calls before the swap. The create is
-//     refused with `cannot prepare the repository's worktrees directory: ".git"
-//     is a link or a file …`. The copy gets no entry. A build with no held git
-//     directory answers success there and makes the registration in the copy.
-//   - A symbolic link to a folder T that is no git directory. One listing with
-//     GIT_DIR=/dev/null follows, and the text is `cannot list the repository's
-//     worktree entries: ".git" is a link or a file …`.
-//
-// Two more rows are measured on Linux and macOS. After the call, a file with
+// One more row is measured on Linux and macOS. After the call, a file with
 // `gitdir: <X>` gives the `lstat … commondir: not a directory` text with no
-// call after it, and a link to X gives the text of the copy after three calls.
-// Without the lstat the file row gets the link text.
+// call after it. Without the lstat the file row gets the link text.
+//
+// A link to the copy after the listing of the add starts the text with `cannot
+// add a worktree: `. A new read of the config and the pair come before the
+// refusal (4c111e86, measured on Linux). Without the read and the pair in that
+// refusal the calls end at the listing.
 //
 // The other rows are not measured. A copy of the git directory as a real
 // directory and a swap before the add get the rule of the measured rows. A
@@ -187,13 +187,12 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 		// or -1 for a row with no record.
 		after int
 	}{
-		{"swap-copy: a link to a copy after the gitdir call", "answered", "link to the copy", prepare, 3},
 		{"swap-marker: a link to no repository after the gitdir call", "answered", "none", list, 1},
 		{"a file that names X", "leaf", "file", "git worktree add failed: cannot locate the repository's git directory: exit status 128", -1},
 		{"swc-file: a file that names X after the gitdir call", "answered", "file", "git worktree add failed: cannot locate the repository's git directory: lstat <gitdir>/commondir: not a directory", 0},
-		{"swc-link: a link to X after the gitdir call", "answered", "link", prepare, 3},
 		{"a link to X before the add", "add", "link", prepare, -1},
 		{"another real directory", "gitdir", "copy", prepare, -1},
+		{"a link to the copy after the listing of the add", "plain add", "link to the copy", "cannot add a worktree: cannot prepare the repository's worktrees directory: " + realDir, -1},
 		{"no repository before the add", "add", "none", list, -1},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -212,6 +211,11 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 				t.Fatal(err)
 			}
 			target := newSwapTarget(t)
+			records := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+			if err := os.Mkdir(records, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(sessiondirs.UseForTest(records))
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 				t.Fatalf("git.info = %s", raw)
 			}
@@ -245,6 +249,26 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 			}) {
 				t.Error("a worktree add call ran")
 			}
+			// The refusal of the lstat of `commondir` keeps the record of the
+			// git directory (from the code: the record comes before the test).
+			if row.entry == "file" && row.step == "answered" {
+				if got, want := recordedPaths(t, records), canonicalPath(f.gitDir); len(got) != 1 || got[0] != want {
+					t.Errorf("after the refusal the records name %q, want %q", got, want)
+				}
+			}
+			// After the listing of the add 4c111e86 reads the config again and
+			// runs the pair, then refuses (measured on Linux).
+			if row.step == "plain add" {
+				want := []string{
+					"config -z --list | " + f.repo,
+					"config --no-includes --file - --list -z | /",
+					"--git-dir=" + f.gitDir + " config -z --list | " + copied,
+					"--git-dir=" + f.gitDir + " --work-tree=" + f.repo + " rev-parse --show-toplevel | " + copied,
+				}
+				if got := callsAfterAnswer(calls); !slices.Equal(got, want) {
+					t.Errorf("the calls after the gitdir call:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+				}
+			}
 			if row.after >= 0 {
 				held := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--absolute-git-dir") })
 				rest := calls[held+1:]
@@ -259,20 +283,8 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 				if !slices.Contains(last.argv, "--list") || last.cwd != f.repo {
 					t.Errorf("the last call = %q in %s, want the listing of the add in the repository", last.argv, last.cwd)
 				}
-				if len(rest) == 1 {
-					if !slices.Contains(last.env, "GIT_DIR="+os.DevNull) {
-						t.Errorf("the listing has no GIT_DIR=%s: %q", os.DevNull, last.env)
-					}
-				} else {
-					if !slices.Contains(rest[0].argv, "--git-dir") || !slices.Contains(rest[1].argv, "--no-includes") {
-						t.Errorf("the two calls before the listing = %q and %q, want the call about the repository and the read of the config", rest[0].argv, rest[1].argv)
-					}
-					for _, kv := range []string{"GIT_DIR=" + f.gitDir, "GIT_WORK_TREE=" + f.repo,
-						"GIT_COMMON_DIR=" + filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir))} {
-						if !slices.Contains(last.env, kv) {
-							t.Errorf("the listing has no %s: %q", kv, last.env)
-						}
-					}
+				if !slices.Contains(last.env, "GIT_DIR="+os.DevNull) {
+					t.Errorf("the listing has no GIT_DIR=%s: %q", os.DevNull, last.env)
 				}
 			}
 			target.untouched(t)
@@ -450,6 +462,122 @@ func TestCreateGoesOnInTheGitDirThatGitAnswers(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCreateGoesOnAfterASwapRightAfterTheAnswer: right after `rev-parse
+// --absolute-git-dir` answered the held folder, `.git` becomes a symbolic link
+// to a copy of the git directory. 4c111e86 then asks git again and answers
+// success (measured on Linux). The calls after the first answer are those of
+// the row. The copy gets the registration, and the record of the session
+// folder names the copy. The marker of a filter in the config of the copy
+// shows no run (claustrum's own: no file asks for the filter). The row with
+// the git directory X of a second repository is tested, not measured. Without
+// the call after the swap (askedAgain) the create is refused before its add.
+func TestCreateGoesOnAfterASwapRightAfterTheAnswer(t *testing.T) {
+	for _, row := range []struct{ name, entry string }{
+		{"a link to a copy", "copy"},
+		{"a link to X", "X"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			// The row has no registrations folder in the repository, so the
+			// listing of the add comes before the pair.
+			if err := os.RemoveAll(filepath.Join(f.gitDir, worktreesSubdir)); err != nil {
+				t.Fatal(err)
+			}
+			records := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+			if err := os.Mkdir(records, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(sessiondirs.UseForTest(records))
+			target := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+			if err := os.CopyFS(target, os.DirFS(f.gitDir)); err != nil {
+				t.Fatal(err)
+			}
+			if row.entry == "X" {
+				_, target = configRepo(t)
+			}
+			marker := filepath.Join(t.TempDir(), "ran")
+			config := filepath.Join(target, "config")
+			mustWrite(t, config, mustRead(t, config)+"[filter \"x\"]\n\tsmudge = sh -c 'touch "+marker+"; cat'\n")
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			swapAt(t, "answered", f.gitDir, target)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want a good create", raw)
+			}
+			want := []string{
+				"rev-parse --git-dir | " + f.repo,
+				"config --no-includes --file - --list -z | /",
+				"config -z --list | " + f.repo,
+				"rev-parse --absolute-git-dir | " + f.repo,
+				"config -z --list | " + f.repo,
+				"config --no-includes --file - --list -z | /",
+				"--git-dir=" + target + " config -z --list | " + target,
+				"--git-dir=" + target + " --work-tree=" + f.repo + " rev-parse --show-toplevel | " + target,
+				"worktree add --no-track --no-checkout -b w1 <staged leaf> | " + f.repo,
+			}
+			if got := callsAfterAnswer(calls); !slices.Equal(got, want) {
+				t.Errorf("the calls after the first answer:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+			for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("worktrees", "w1", "index"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(target, name)); err != nil {
+					t.Errorf("%s in the directory behind the link: %v", name, err)
+				}
+				if _, err := os.Lstat(filepath.Join(f.gitDir+"-real", name)); !os.IsNotExist(err) {
+					t.Errorf("%s in the real git directory: %v, want none", name, err)
+				}
+			}
+			if got, want := mustRead(t, filepath.Join(leaf, ".git")), "gitdir: "+filepath.Join(target, "worktrees", "w1")+"\n"; got != want {
+				t.Errorf("the .git file of the leaf = %q, want %q", got, want)
+			}
+			entries, err := os.ReadDir(records)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("the record folder holds %v (%v), want one record", entries, err)
+			}
+			_, path, _ := strings.Cut(mustRead(t, filepath.Join(records, entries[0].Name())), "\n")
+			// The text counts: a path through the link resolves to the target too.
+			if path != target {
+				t.Errorf("the record names %q, want %q", path, target)
+			}
+			if _, err := os.Lstat(marker); !os.IsNotExist(err) {
+				t.Errorf("the filter ran: %v", err)
+			}
+		})
+	}
+}
+
+// callsAfterAnswer is each call after the first `rev-parse --absolute-git-dir`
+// up to the first `worktree add`, as its words with no `-c` pair, then " | "
+// and its working folder. The leaf of a staged add is "<staged leaf>".
+func callsAfterAnswer(calls []envCall) []string {
+	var out []string
+	seen := false
+	for _, c := range calls {
+		var words []string
+		for i := 0; i < len(c.argv); i++ {
+			if c.argv[i] == "-c" {
+				i++
+				continue
+			}
+			words = append(words, c.argv[i])
+		}
+		add := slices.Contains(words, "worktree") && slices.Contains(words, "add")
+		if add {
+			words[len(words)-1] = "<staged leaf>"
+		}
+		if seen {
+			out = append(out, strings.Join(words, " ")+" | "+c.cwd)
+		}
+		if add && seen {
+			break
+		}
+		seen = seen || slices.Contains(words, "--absolute-git-dir")
+	}
+	return out
 }
 
 // TestCreateWithAMovedGitDirWhoseConfigChanges: a symbolic link to a copy T
