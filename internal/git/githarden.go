@@ -694,6 +694,21 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		var exitErr *exec.ExitError
 		return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
 	}
+	// The keep while the read-tree call runs (keepTicker). It ends at the
+	// return, also after a panic, so before the keep after the checkout. The
+	// wait for a keep of a tick that runs then counts in lfs.tickWait.
+	var keeper *keepTicker
+	if room != nil {
+		keeper = startKeepTicker(u, lfs.path)
+	}
+	endKeeper := func() {
+		start := time.Now()
+		keeper.end()
+		if keeper != nil && lfs.tickWait != nil {
+			*lfs.tickWait = time.Since(start)
+		}
+	}
+	defer endKeeper()
 	err = runHeld(cmd, func() error {
 		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, gate)
 	})
@@ -1004,8 +1019,8 @@ var (
 // failed checkout. On Windows it is nil unless the staging step moved the
 // registration (installTestedWorktreeIndex).
 //
-// keepTook is the time of the keep after a checkout that exited 0
-// (keepWithinDeadline).
+// keepTook is the time of the keep after a checkout that exited 0, with the
+// wait for the end of its ticks (keepWithinDeadline).
 //
 // repo is baseRepo, the folder of the calls of the seed (fillCheckoutStore).
 func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir, repo string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, keepTook time.Duration, err, installErr error) {
@@ -1029,6 +1044,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	}
 	idx := filepath.Join(idxDir, "index")
 	var lfs privateStore
+	var tickWait time.Duration
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path, lfs.runDir = filepath.Join(idxDir, "lfs"), u.host.runDir
 		lfs.seed = func() (bool, time.Duration) {
@@ -1036,6 +1052,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 			defer cancel()
 			return fillCheckoutStore(seedCtx, u, repo, u.gitDir, rev, lfs.path)
 		}
+		lfs.tickWait = &tickWait
 	}
 	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, lfs, pin, rule,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
@@ -1043,9 +1060,9 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	readEnd := time.Now()
 	keep := lfs.path != "" && (rule == nil || !rule.plan.userLfsStorage)
-	// A stop of the watch keeps nothing. 4c111e86 frees the space of the
-	// fetched files before the reply, also of a whole object (measured on
-	// Linux).
+	// A stop of the watch runs no keep after the checkout. 4c111e86 frees the
+	// space of the fetched files before the reply, also of a whole object
+	// (measured on Linux).
 	var room *lfsRoomStop
 	if errors.As(err, &room) {
 		room.fetched, room.runDir, room.removeStore = storeBytes(lfs.path), lfs.runDir, removeIdxDir
@@ -1071,7 +1088,8 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		if err == nil && keep {
 			start := time.Now()
 			returnDownloads(u, lfs.path, keepAfterGood)
-			keepTook = time.Since(start)
+			// The wait for the end of the ticks counts as a time of the keep too.
+			keepTook = tickWait + time.Since(start)
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the

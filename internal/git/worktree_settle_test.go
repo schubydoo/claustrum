@@ -495,7 +495,7 @@ func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
 	lockDone := make(chan struct{})
 	go func() {
 		defer close(lockDone)
-		withWorktreeCreateLock(f.base, func() response {
+		withWorktreeCreateLock(f.base, func(_, _ func()) response {
 			close(held)
 			<-release
 			return response{}

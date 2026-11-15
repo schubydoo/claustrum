@@ -24,6 +24,8 @@ import (
 // text of remote/error, or a 404 text with no such file. `<store>` in that text
 // is the store. With a file remote/hang an object that is not in remote waits
 // for its kill or for a file remote/end.
+// With a file remote/<oid>.hold the download of that object waits until
+// the file goes, for at most 60 s.
 func lfsSmudgeHelper(remote, log string) int {
 	body, _ := io.ReadAll(os.Stdin)
 	p, ok := readPointerBlob(body)
@@ -46,6 +48,9 @@ func lfsSmudgeHelper(remote, log string) int {
 		}
 		_, _ = os.Stdout.Write(b)
 		return 0
+	}
+	for i := 0; i < 1200 && exists(filepath.Join(remote, p.oid+".hold")); i++ {
+		time.Sleep(50 * time.Millisecond)
 	}
 	b, err := os.ReadFile(filepath.Join(remote, p.oid))
 	if err != nil && exists(filepath.Join(remote, "hang")) {
