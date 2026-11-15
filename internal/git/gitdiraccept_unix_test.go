@@ -211,6 +211,11 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 				t.Fatal(err)
 			}
 			target := newSwapTarget(t)
+			records := filepath.Join(t.TempDir(), sessiondirs.RecordFolderName)
+			if err := os.Mkdir(records, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(sessiondirs.UseForTest(records))
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 				t.Fatalf("git.info = %s", raw)
 			}
@@ -243,6 +248,13 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 				return slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add")
 			}) {
 				t.Error("a worktree add call ran")
+			}
+			// The refusal of the lstat of `commondir` keeps the record of the
+			// git directory (from the code: the record comes before the test).
+			if row.entry == "file" && row.step == "answered" {
+				if got, want := recordedPaths(t, records), canonicalPath(f.gitDir); len(got) != 1 || got[0] != want {
+					t.Errorf("after the refusal the records name %q, want %q", got, want)
+				}
 			}
 			// After the listing of the add 4c111e86 reads the config again and
 			// runs the pair, then refuses (measured on Linux).
