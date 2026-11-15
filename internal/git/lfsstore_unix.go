@@ -32,10 +32,26 @@ func hardLinks(fi os.FileInfo) uint64 {
 	return 1
 }
 
-// createSeedFile makes the new file name of dir for a copy of the seed, with
-// O_EXCL and O_NOFOLLOW, write only, mode 0600.
-func createSeedFile(dir *os.Root, name string) (*os.File, error) {
-	return dir.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+// createSeedFile makes the new file name of dir for a copy of the seed or of
+// the keep, with O_EXCL and O_NOFOLLOW, write only, mode perm.
+func createSeedFile(dir *os.Root, name string, perm os.FileMode) (*os.File, error) {
+	return dir.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
+}
+
+// linkAcrossRoots makes name of to a hard link to the file name of from, by one
+// linkat that follows no link.
+func linkAcrossRoots(from *os.Root, name string, to *os.Root, newName string) error {
+	a, err := from.Open(".")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = a.Close() }()
+	b, err := to.Open(".")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = b.Close() }()
+	return unix.Linkat(int(a.Fd()), name, int(b.Fd()), newName, 0)
 }
 
 // openObjectNoFollow opens the regular file at path for reading. A link at

@@ -253,8 +253,8 @@ func TestLFSSweepStaleTempNames(t *testing.T) {
 }
 
 // TestLFSCopyWhenNoLink: with no hard link, as across two file systems, the
-// seed and the keep copy the object (the seed is measured on Linux, the copy
-// of the keep and its mode 0644 are claustrum's own).
+// seed copies the object (measured on Linux). The keep copies it with mode
+// 0666 before the umask (measured on Linux).
 func TestLFSCopyWhenNoLink(t *testing.T) {
 	seamFreeSpace(t)
 	prevSeed, prevKeep := seedLink, keepHardLink
@@ -270,14 +270,14 @@ func TestLFSCopyWhenNoLink(t *testing.T) {
 	}
 	p := storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["b.bin"])
 	fi, err := os.Stat(p)
-	// A file made with mode 0644 here gets the same umask.
+	// A file made with mode 0666 here gets the same umask.
 	ref := filepath.Join(t.TempDir(), "ref")
-	if err := os.WriteFile(ref, nil, 0o644); err != nil {
+	if err := os.WriteFile(ref, nil, 0o666); err != nil {
 		t.Fatal(err)
 	}
 	want, _ := os.Stat(ref)
 	if b, rerr := os.ReadFile(p); err != nil || rerr != nil || string(b) != "beta-object" || fi.Mode().Perm() != want.Mode().Perm() {
-		t.Errorf("the kept copy = %v, %q, %v, want the object with mode 0644", fi, b, err)
+		t.Errorf("the kept copy = %v, %q, %v, want the object with mode 0666", fi, b, err)
 	}
 }
 
@@ -356,52 +356,168 @@ func TestLFSKeepNeedsItsBytes(t *testing.T) {
 	}
 }
 
-// slowSumHash is a hash whose first Sum waits for twice keepBudget, so the
-// budget of the keep is spent after the bytes test of the first object.
-type slowSumHash struct {
-	hash.Hash
-	slept *bool
-}
-
-func (h slowSumHash) Sum(b []byte) []byte {
-	if !*h.slept {
-		*h.slept = true
-		time.Sleep(2 * keepBudget)
-	}
-	return h.Hash.Sum(b)
-}
-
-// TestLFSKeepBudget: the bytes tests of one keep step share a time budget.
-// The object whose test ends the budget is kept, and the next object is not
-// (claustrum's own, not measured).
-func TestLFSKeepBudget(t *testing.T) {
-	seamFreeSpace(t)
-	prevBudget, prevHash := keepBudget, newObjectHash
-	slept := false
-	keepBudget = 50 * time.Millisecond
-	newObjectHash = func() hash.Hash { return slowSumHash{sha256.New(), &slept} }
-	t.Cleanup(func() { keepBudget, newObjectHash = prevBudget, prevHash })
+// keepOne keeps the object of body from a private store into a new git
+// directory after a good checkout. It returns the oid, the downloaded copy, the
+// store of the repository and the inode of the copy before the keep.
+func keepOne(t *testing.T, body string) (oid, src, store string, before uint64) {
+	t.Helper()
 	gitDir, private := t.TempDir(), t.TempDir()
-	var oids []string
-	for _, body := range []string{"alpha-object", "beta-object"} {
-		sum := sha256.Sum256([]byte(body))
-		oid := hex.EncodeToString(sum[:])
-		mustWrite(t, storeObjectPath(private, oid), body)
-		oids = append(oids, oid)
-	}
-	slices.Sort(oids)
+	oid = putObject(t, private, body)
+	src = storeObjectPath(private, oid)
+	before = inodeOf(t, src)
 	root, err := os.OpenRoot(gitDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
 	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, false)
-	store := filepath.Join(gitDir, "lfs")
-	if _, err := os.Lstat(storeObjectPath(store, oids[0])); err != nil {
-		t.Errorf("the first object: %v, want it kept", err)
+	return oid, src, filepath.Join(gitDir, "lfs"), before
+}
+
+// inodeOf is the inode of the file at p.
+func inodeOf(t *testing.T, p string) uint64 {
+	t.Helper()
+	var st unix.Stat_t
+	if err := unix.Lstat(p, &st); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Lstat(storeObjectPath(store, oids[1])); !os.IsNotExist(err) {
-		t.Errorf("the second object: %v, want it not kept after the budget", err)
+	return uint64(st.Ino) //nolint:unconvert // Ino is uint64 on Linux, not on every system
+}
+
+// wantNotKept fails t when the store holds the object oid or a temp name, or
+// when the downloaded copy src is not the file of inode before.
+func wantNotKept(t *testing.T, oid, src, store string, before uint64) {
+	t.Helper()
+	shard := filepath.Dir(storeObjectPath(store, oid))
+	if names, err := os.ReadDir(shard); err != nil || len(names) != 0 {
+		t.Errorf("the shard = %v, %v, want it made and empty", names, err)
+	}
+	if got := inodeOf(t, src); got != before {
+		t.Errorf("the downloaded copy has inode %d, want %d as before the keep", got, before)
+	}
+	if names, _ := os.ReadDir(filepath.Dir(src)); len(names) != 1 {
+		t.Errorf("the folder of the downloaded copy holds %v, want only the copy", names)
+	}
+}
+
+// TestLFSKeepCopiesAndSwapsInTheKept: after a good checkout the keep copies the
+// object into a new file of the store, so the kept object is not the file of
+// the download. A `.kept-<oid>` link of the kept object then replaces the
+// downloaded copy, and no temp name and no `.kept-` name stay (4c111e86,
+// measured on Linux).
+func TestLFSKeepCopiesAndSwapsInTheKept(t *testing.T) {
+	seamFreeSpace(t)
+	oid, src, store, before := keepOne(t, "alpha-object")
+	kept := storeObjectPath(store, oid)
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "alpha-object" {
+		t.Fatalf("the kept object = %q, %v, want the bytes of the download", b, err)
+	}
+	if got := inodeOf(t, kept); got == before {
+		t.Errorf("the kept object has the inode %d of the download, want a copy", got)
+	}
+	if got, want := inodeOf(t, src), inodeOf(t, kept); got != want {
+		t.Errorf("the downloaded copy has inode %d, want %d of the kept object", got, want)
+	}
+	if names, _ := os.ReadDir(filepath.Dir(kept)); len(names) != 1 {
+		t.Errorf("the shard holds %v, want only the object", names)
+	}
+	if names, _ := os.ReadDir(filepath.Dir(src)); len(names) != 1 {
+		t.Errorf("the folder of the downloaded copy holds %v, want only the copy", names)
+	}
+}
+
+// TestLFSKeepFullDiskKeepsNothing: a write of the copy that fails with ENOSPC
+// after some bytes keeps nothing. The temp file goes at once, no `.kept-` name
+// is made, and the downloaded copy stays (4c111e86, measured on Linux).
+func TestLFSKeepFullDiskKeepsNothing(t *testing.T) {
+	seamFreeSpace(t)
+	prev := keepCopy
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		n, _ := io.CopyN(w, r, 4)
+		return n, unix.ENOSPC
+	}
+	t.Cleanup(func() { keepCopy = prev })
+	oid, src, store, before := keepOne(t, "alpha-object")
+	wantNotKept(t, oid, src, store, before)
+}
+
+// TestLFSKeepStopsAtItsBudget: a copy that outlasts keepBudget stops and keeps
+// nothing. The temp file goes, and no `.kept-` name is made (4c111e86,
+// measured on Linux. The bound is claustrum's own).
+func TestLFSKeepStopsAtItsBudget(t *testing.T) {
+	seamFreeSpace(t)
+	prevBudget, prevCopy := keepBudget, keepCopy
+	keepBudget = 50 * time.Millisecond
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		time.Sleep(2 * keepBudget)
+		return io.Copy(w, r)
+	}
+	t.Cleanup(func() { keepBudget, keepCopy = prevBudget, prevCopy })
+	oid, src, store, before := keepOne(t, "alpha-object")
+	wantNotKept(t, oid, src, store, before)
+}
+
+// TestLFSKeepBudgetIsPerObject: each object gets its own keepBudget, so two
+// copies that each take most of the bound are both kept (claustrum's own, not
+// measured).
+func TestLFSKeepBudgetIsPerObject(t *testing.T) {
+	seamFreeSpace(t)
+	prevBudget, prevCopy := keepBudget, keepCopy
+	keepBudget = time.Second
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		time.Sleep(keepBudget * 3 / 5)
+		return io.Copy(w, r)
+	}
+	t.Cleanup(func() { keepBudget, keepCopy = prevBudget, prevCopy })
+	gitDir, private := t.TempDir(), t.TempDir()
+	oids := []string{putObject(t, private, "alpha-object"), putObject(t, private, "beta-object")}
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, false)
+	for _, oid := range oids {
+		if !exists(storeObjectPath(filepath.Join(gitDir, "lfs"), oid)) {
+			t.Errorf("the object %s is not kept, want each object kept within its own budget", oid)
+		}
+	}
+}
+
+// TestSwapInKept: swapInKept replaces no path that is the home folder, and no
+// copy whose link or folder fails. With another home it replaces the copy.
+func TestSwapInKept(t *testing.T) {
+	store, private := t.TempDir(), t.TempDir()
+	oid := putObject(t, store, "alpha-object")
+	putObject(t, private, "alpha-object")
+	src := storeObjectPath(private, oid)
+	before := inodeOf(t, src)
+	shard, err := os.OpenRoot(filepath.Dir(storeObjectPath(store, oid)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = shard.Close() }()
+	t.Setenv("HOME", src)
+	swapInKept(shard, src, oid)
+	if got := inodeOf(t, src); got != before {
+		t.Errorf("the home path has inode %d, want %d as before", got, before)
+	}
+	t.Setenv("HOME", t.TempDir())
+	// A `.kept-` name that is there already fails the link, and a missing
+	// folder fails the open. Both leave the copy as it is.
+	kept := filepath.Join(filepath.Dir(src), keptPrefix+oid)
+	mustWrite(t, kept, "other")
+	swapInKept(shard, src, oid)
+	swapInKept(shard, filepath.Join(t.TempDir(), "gone", oid), oid)
+	if got := inodeOf(t, src); got != before {
+		t.Errorf("after a failed link the copy has inode %d, want %d as before", got, before)
+	}
+	if err := os.Remove(kept); err != nil {
+		t.Fatal(err)
+	}
+	swapInKept(shard, src, oid)
+	if got, want := inodeOf(t, src), inodeOf(t, storeObjectPath(store, oid)); got != want {
+		t.Errorf("the downloaded copy has inode %d, want %d of the kept object", got, want)
 	}
 }
 
@@ -718,7 +834,7 @@ func seamFreeSpace(t *testing.T) {
 // size of the object, also when both stores share a file system. Under the
 // bound the empty shard folder stays (4c111e86, measured on Linux and macOS).
 // After a failed checkout the same holds (measured on Linux and macOS).
-// The rows run the bound by a hard link and by a copy. The exact byte of the
+// After a good checkout every row copies the object. The exact byte of the
 // bound is inferred. A free space that cannot be read keeps the object
 // (claustrum's own). The rows write 1 GiB as a number, so they pin seedSpare.
 func TestLFSKeepNeedsSpare(t *testing.T) {
