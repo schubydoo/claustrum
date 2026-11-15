@@ -495,23 +495,6 @@ func (h *ShadowHost) removeLink(name string) error {
 	return root.Remove(name)
 }
 
-// removeOneEntry deletes rel, a path below the folder of all daemons that this
-// daemon builds from fixed names. It is one plain remove through a root at that
-// folder, so a folder with content stays (prepareProbeFolder). homeguard.WipesHomeDir on
-// the full path is defense in depth.
-func (h *ShadowHost) removeOneEntry(rel string) error {
-	base := filepath.Join(h.runDir, shadowRootName)
-	if homeguard.WipesHomeDir(filepath.Join(base, rel)) {
-		return errors.New("refusing to delete a path that holds the home folder")
-	}
-	root, err := os.OpenRoot(base)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = root.Close() }()
-	return root.Remove(rel)
-}
-
 // Close removes the folder of this daemon at a shutdown. 5fd08069 removes it at
 // -stop and at server.shutdown, and the empty folder of all daemons stays
 // (measured on Linux, macOS and Windows). It removes the folder also while a git

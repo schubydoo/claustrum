@@ -910,28 +910,39 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there
 		// (measured on Linux). claustrum runs no mkdir and gives that error with
 		// a new name. Only a folder whose owner bits allow search and no write
-		// gets it. With mode 0300 4c111e86 makes `.s<n>`, and the create
-		// succeeds (measured on Linux). claustrum keeps the error of the open
-		// there: its probe step removes old entries through a root that needs
-		// the read bit (not built). macOS and the other prefixes are not
-		// measured.
+		// gets it. With mode 0300 4c111e86 makes `.s<n>` by its path, and the
+		// create succeeds (measured on Linux). claustrum makes it by its path
+		// too. The remove through removeEntry then fails at the open of the
+		// folder, and `.s<n>` stays, as on 4c111e86 (measured on Linux). macOS
+		// and the other prefixes are not measured.
 		var pe *os.PathError
-		if !stagedAddWindowsSteps && errors.Is(err, fs.ErrPermission) && errors.As(err, &pe) && searchOnlyFolder(u.folder) {
+		if stagedAddWindowsSteps || !errors.Is(err, fs.ErrPermission) || !errors.As(err, &pe) {
+			return "", func() {}, err
+		}
+		if searchOnlyFolder(u.folder) {
 			name, nameErr := requestDirName(shadowPrefix)
 			if nameErr != nil {
 				return "", func() {}, nameErr
 			}
 			return "", func() {}, &os.PathError{Op: "mkdir", Path: filepath.Join(u.folder, name), Err: pe.Err}
 		}
-		return "", func() {}, err
+		if !writeSearchFolder(u.folder) {
+			return "", func() {}, err
+		}
+		root = nil
+	} else {
+		defer func() { _ = root.Close() }()
 	}
-	defer func() { _ = root.Close() }()
 	for range 10000 {
 		var name string
 		if name, err = requestDirName(shadowPrefix); err != nil {
 			return "", func() {}, err
 		}
-		err = makeRequestDir(root, u.folder, name)
+		if root == nil {
+			err = os.Mkdir(filepath.Join(u.folder, name), 0o700)
+		} else {
+			err = makeRequestDir(root, u.folder, name)
+		}
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}
@@ -953,6 +964,13 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 func searchOnlyFolder(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Mode().Perm()&0o300 == 0o100
+}
+
+// writeSearchFolder reports whether the owner bits of the folder path allow a
+// write and a search, as with mode 0300.
+func writeSearchFolder(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().Perm()&0o300 == 0o300
 }
 
 // requestDirName is a new name for a folder of a request: prefix and a

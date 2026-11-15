@@ -60,7 +60,7 @@ modes and the OS splits is in
 | `internal/git/gitdirheld.go` | the held git directory and the list of the steps that act through it |
 | `internal/git/githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
-| `internal/git/gitshadow.go` (`removeEntry` and `removeLink`, which each delete there goes through) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` · `internal/git/headcopyrmdir_unix.go` | the deletes in the folder `git-shadow` |
+| `internal/git/gitshadow.go` (`removeEntry` and `removeLink`) · `internal/git/gitshadowprobe.go` (`removeProbeEntry`) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` · `internal/git/headcopyrmdir_unix.go` | the deletes in the folder `git-shadow` |
 | `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
 | `clitemproot_unix.go` | the two rmdirs of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
 | `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
@@ -203,7 +203,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
-  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeOneEntry`), except the HEAD copy rmdir and the seed copy remove
+  at or below `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeProbeEntry`), except the HEAD copy rmdir and the seed copy remove
   (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
   ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by

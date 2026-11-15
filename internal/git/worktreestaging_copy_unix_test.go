@@ -225,22 +225,25 @@ func TestSearchOnlyFolderWithALinkedCopy(t *testing.T) {
 }
 
 // TestWriteSearchFolderModes: only a folder of the daemon whose owner bits
-// allow search and no write gets the mkdir text of `.s<n>`. Mode 0300 keeps
-// the open error (not measured).
+// allow search and no write gets the mkdir text of `.s<n>`. Only one whose
+// owner bits allow write and search gets the steps by path, as with mode 0300.
 func TestWriteSearchFolderModes(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user opens a folder of any mode")
 	}
 	dir := t.TempDir()
 	for _, tc := range []struct {
-		mode os.FileMode
-		want bool
-	}{{0o100, true}, {0o110, true}, {0o300, false}, {0o700, false}, {0o000, false}} {
+		mode        os.FileMode
+		want, write bool
+	}{{0o100, true, false}, {0o110, true, false}, {0o300, false, true}, {0o700, false, true}, {0o000, false, false}, {0o200, false, false}} {
 		if err := os.Chmod(dir, tc.mode); err != nil {
 			t.Fatal(err)
 		}
 		if got := searchOnlyFolder(dir); got != tc.want {
 			t.Errorf("mode %o: %v, want %v", tc.mode, got, tc.want)
+		}
+		if got := writeSearchFolder(dir); got != tc.write {
+			t.Errorf("mode %o: write and search %v, want %v", tc.mode, got, tc.write)
 		}
 	}
 	_ = os.Chmod(dir, 0o700)

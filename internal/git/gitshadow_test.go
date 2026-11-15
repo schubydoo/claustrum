@@ -601,31 +601,33 @@ func TestShadowDeleteRefusesHome(t *testing.T) {
 	}
 }
 
-// TestShadowOneEntryRemoveRefusesHome pins the home guard of removeOneEntry.
-// The home folder of the test is an empty folder below git-shadow, the one
-// kind of folder that a plain remove deletes. It is a folder of the test, so a
-// run without the guard deletes nothing else.
-func TestShadowOneEntryRemoveRefusesHome(t *testing.T) {
-	run := resolveTestRoot(t, t.TempDir())
-	home := filepath.Join(run, shadowRootName, "empty")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(homeEnvVar(), home)
-	h := NewShadowHost(run)
-	if err := h.removeOneEntry("empty"); err == nil {
-		t.Error("removeOneEntry deleted the home folder")
-	}
-	if _, err := os.Stat(home); err != nil {
-		t.Errorf("the home folder: %v", err)
-	}
-	// The control: with the home folder elsewhere the same call deletes.
-	t.Setenv(homeEnvVar(), t.TempDir())
-	if err := h.removeOneEntry("empty"); err != nil {
-		t.Errorf("removeOneEntry with the home folder elsewhere: %v", err)
-	}
-	if _, err := os.Lstat(home); !os.IsNotExist(err) {
-		t.Errorf("the folder after the control delete: %v, want it gone", err)
+// TestProbeEntryRemoveRefusesHome pins the home guard of removeProbeEntry, as
+// a tree delete and as a plain remove. The home folder of the test is an empty
+// folder in `.probe`, the one kind of folder that a plain remove deletes. It
+// is a folder of the test, so a run without the guard deletes nothing else.
+func TestProbeEntryRemoveRefusesHome(t *testing.T) {
+	for _, tree := range []bool{true, false} {
+		probe := filepath.Join(resolveTestRoot(t, t.TempDir()), shadowProbeName)
+		home := filepath.Join(probe, "empty")
+		if err := os.MkdirAll(home, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		root := openTestRoot(t, probe)
+		t.Setenv(homeEnvVar(), home)
+		if err := removeProbeEntry(root, probe, "empty", tree); err == nil {
+			t.Errorf("tree %v: removeProbeEntry deleted the home folder", tree)
+		}
+		if _, err := os.Stat(home); err != nil {
+			t.Errorf("tree %v: the home folder: %v", tree, err)
+		}
+		// The control: with the home folder elsewhere the same call deletes.
+		t.Setenv(homeEnvVar(), t.TempDir())
+		if err := removeProbeEntry(root, probe, "empty", tree); err != nil {
+			t.Errorf("tree %v: removeProbeEntry with the home folder elsewhere: %v", tree, err)
+		}
+		if _, err := os.Lstat(home); !os.IsNotExist(err) {
+			t.Errorf("tree %v: the folder after the control delete: %v, want it gone", tree, err)
+		}
 	}
 }
 
