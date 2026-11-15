@@ -37,9 +37,10 @@ lint:
 # reached the default. A run past the default ends with a panic and no failed
 # test.
 #
-# internal/git is the slowest package. Its tests run one at a time, so it
-# runs as three go test processes at once, with the shard sets of the macOS
-# legs of .github/workflows/ci.yml. A fourth process runs all other packages.
+# internal/git is the slowest package. Most of its top-level tests run one at
+# a time, so it runs as three go test processes at once, with the shard sets of
+# the macOS legs of .github/workflows/ci.yml. A fourth process runs all other
+# packages.
 # Each process writes its own log, and the logs print at the end.
 # scripts/check_git_shards.py checks that the three sets run each test once.
 GIT_SHARD_WORKTREE := -run '^TestWorktree'
@@ -50,9 +51,9 @@ test:
 	@pkgs=$$(go list ./... | grep -v '/internal/git$$'); \
 	if [ -z "$$pkgs" ]; then echo "make test: go list found no packages"; exit 1; fi; \
 	logs=$$(mktemp -d) || exit 1; \
-	go test -race -count=1 -timeout 20m $(GIT_SHARD_WORKTREE) ./internal/git/ >"$$logs/1-git-worktree.log" 2>&1 & p1=$$!; \
-	go test -race -count=1 -timeout 20m $(GIT_SHARD_STATUS) ./internal/git/ >"$$logs/2-git-status.log" 2>&1 & p2=$$!; \
-	go test -race -count=1 -timeout 20m $(GIT_SHARD_REST) ./internal/git/ >"$$logs/3-git-rest.log" 2>&1 & p3=$$!; \
+	go test -race -timeout 20m $(GIT_SHARD_WORKTREE) ./internal/git/ >"$$logs/1-git-worktree.log" 2>&1 & p1=$$!; \
+	go test -race -timeout 20m $(GIT_SHARD_STATUS) ./internal/git/ >"$$logs/2-git-status.log" 2>&1 & p2=$$!; \
+	go test -race -timeout 20m $(GIT_SHARD_REST) ./internal/git/ >"$$logs/3-git-rest.log" 2>&1 & p3=$$!; \
 	go test -race -timeout 20m $$pkgs >"$$logs/4-other.log" 2>&1 & p4=$$!; \
 	failed=""; \
 	wait $$p1 || failed="$$failed git-worktree"; \
