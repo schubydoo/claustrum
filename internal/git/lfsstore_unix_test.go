@@ -906,3 +906,64 @@ func TestSeedChecksObjectWithSecondLink(t *testing.T) {
 		})
 	}
 }
+
+// TestSeedLeavesOutLargeObjectBelowTheBound: an 11 GiB object with 1 MiB less
+// than the size plus a tenth free is left out (4c111e86, measured on Linux).
+// The object is a sparse file, so this test is not on Windows.
+func TestSeedLeavesOutLargeObjectBelowTheBound(t *testing.T) {
+	const gib, mib = int64(1) << 30, int64(1) << 20
+	store := filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("c", 64)
+	src := storeObjectPath(store, oid)
+	mustWrite(t, src, "")
+	size := 11 * gib
+	if err := os.Truncate(src, size); err != nil {
+		t.Skipf("no sparse file of 11 GiB here: %v", err)
+	}
+	copies := 0
+	prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	seedCopy = func(io.Writer, io.Reader) (int64, error) { copies++; return 0, os.ErrInvalid }
+	storeFreeBytes = func(string) (uint64, bool) { return uint64(size + size/10 - mib), true }
+	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
+	short, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: size}})
+	if !short || copies != 0 {
+		t.Errorf("11 GiB object 1 MiB below the bound: short %v, %d copies, want short and no copy", short, copies)
+	}
+}
+
+// TestSeedCountsTheReadOfALinkedObject: the read of an object with a second
+// link counts in the seed time, also when the seed then makes a hard link
+// (claustrum's own, not measured).
+func TestSeedCountsTheReadOfALinkedObject(t *testing.T) {
+	seamFreeSpace(t)
+	body := "alpha-object"
+	sum := sha256.Sum256([]byte(body))
+	oid := hex.EncodeToString(sum[:])
+	store := filepath.Join(t.TempDir(), "lfs")
+	src := storeObjectPath(store, oid)
+	mustWrite(t, src, body)
+	if err := os.Link(src, filepath.Join(t.TempDir(), "second")); err != nil {
+		t.Fatal(err)
+	}
+	prev := newObjectHash
+	newObjectHash = func() hash.Hash { return slowHash{prev()} }
+	t.Cleanup(func() { newObjectHash = prev })
+	private := filepath.Join(t.TempDir(), "lfs")
+	_, copied := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: int64(len(body))}})
+	fi, err := os.Stat(storeObjectPath(private, oid))
+	if err != nil || hardLinks(fi) < 3 {
+		t.Fatalf("the seeded object = %v, %v, want a hard link", fi, err)
+	}
+	if copied < 30*time.Millisecond {
+		t.Errorf("seed with a read of 30 ms counts %v, want at least 30 ms", copied)
+	}
+}
+
+// slowHash is a hash that waits 30 ms on each write.
+type slowHash struct{ hash.Hash }
+
+func (h slowHash) Write(p []byte) (int, error) {
+	time.Sleep(30 * time.Millisecond)
+	return h.Hash.Write(p)
+}
