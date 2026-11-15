@@ -53,9 +53,17 @@ func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {
 		_ = os.WriteFile(gateA, nil, 0o644)
 		_ = os.WriteFile(gateB, nil, 0o644)
 	})
-	// Rule 1: the read-tree call of A waits at gateA and then fails.
+	// Rule 1: the read-tree call of A waits at gateA and then fails. Its
+	// --work-tree names the leaf with the links of its path resolved
+	// (checkoutWorkTree). On macOS the temp folder is below /var, a link to
+	// /private/var.
+	realTop, err := filepath.EvalSymlinks(f.top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workTreeA := filepath.Join(realTop, ".claude", "worktrees", "x", "n1")
 	t.Setenv("CLAUSTRUM_GITSTUB_GATE", gateA)
-	slowGit(t, "read-tree,--work-tree="+leafA, "gatefail", 60*time.Second, "", "")
+	slowGit(t, "read-tree,--work-tree="+workTreeA, "gatefail", 60*time.Second, "", "")
 	// Rule 2: the add of B waits at gateB and then runs git.
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "worktree,add,"+leafB)
 	t.Setenv("CLAUSTRUM_GITSTUB_GATE2", gateB)
@@ -117,7 +125,7 @@ func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {
 		t.Fatalf("registrations = %q, want only the one of B", regs)
 	}
 	gitdir, err := os.ReadFile(filepath.Join(f.regDir, regs[0], "gitdir"))
-	if err != nil || strings.TrimSpace(string(gitdir)) != filepath.Join(leafB, ".git") {
+	if want := filepath.Join(realTop, ".claude", "worktrees", "y", "n1", ".git"); err != nil || strings.TrimSpace(string(gitdir)) != want {
 		t.Errorf("the registration %s names %q, %v, want the leaf of B", regs[0], gitdir, err)
 	}
 	if branchExists(t, f.top, "ba") || !branchExists(t, f.top, "bb") {
