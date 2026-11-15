@@ -249,3 +249,66 @@ func TestProbeLeftoverDeleteErrorNamesItsPath(t *testing.T) {
 		t.Errorf("prepareProbeFolder = %v, want an error that names %s", err, filepath.Join(info, "attributes"))
 	}
 }
+
+// TestRequestDirRemoveInAWriteSearchDaemonFolder: with the folder of the
+// daemon at mode 0300, the remove of a request folder that requestDir made
+// removes an empty one by one rmdir, and a folder with content stays (measured
+// on Linux). A file at the name stays (claustrum's own, not measured). Without
+// the rmdir of removeEmptyRequestDir the empty folder stays. With a tree
+// remove in its place the file goes.
+func TestRequestDirRemoveInAWriteSearchDaemonFolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the root user opens a folder of mode 0300")
+	}
+	run := resolveTestRoot(t, t.TempDir())
+	dir := filepath.Join(run, shadowRootName, "d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	u := gitUse{host: NewShadowHost(run), folder: dir}
+	var calls []string
+	old := rmdirRequestDir
+	rmdirRequestDir = func(path string) error {
+		calls = append(calls, path)
+		return old(path)
+	}
+	t.Cleanup(func() { rmdirRequestDir = old })
+	for _, tc := range []struct {
+		name  string
+		fill  func(t *testing.T, path string)
+		stays bool
+	}{
+		{"empty", func(*testing.T, string) {}, false},
+		{"with content", func(t *testing.T, path string) { mustWrite(t, filepath.Join(path, "x", "f"), "x\n") }, true},
+		{"a file at the name", func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, path, "x\n")
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls = nil
+			path, remove, err := u.requestDir(shadowStatusDirPrefix, "")
+			if err != nil {
+				t.Fatalf("requestDir: %v", err)
+			}
+			tc.fill(t, path)
+			remove()
+			if !slices.Equal(calls, []string{path}) {
+				t.Errorf("rmdir calls = %q, want one of %s", calls, path)
+			}
+			_, err = os.Lstat(path)
+			if tc.stays && err != nil {
+				t.Errorf("%s: %v, want it kept", path, err)
+			}
+			if !tc.stays && !os.IsNotExist(err) {
+				t.Errorf("%s: %v, want it gone", path, err)
+			}
+		})
+	}
+}

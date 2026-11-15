@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 )
@@ -912,7 +913,8 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// gets it. With mode 0300 4c111e86 makes `.s<n>` by its path, and the
 		// create succeeds (measured on Linux). claustrum makes it by its path
 		// too. The remove through removeEntry then fails at the open of the
-		// folder, and each such folder stays. On 4c111e86 `.s<n>`,
+		// folder. An empty folder then goes by one rmdir, and a folder with
+		// content stays (removeEmptyRequestDir). On 4c111e86 `.s<n>`,
 		// `.checkout-<n>` and `.readback-objects-<n>` stay (measured on Linux).
 		// macOS and the other prefixes are not measured.
 		var pe *os.PathError
@@ -954,9 +956,35 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 			return "", func() {}, err
 		}
 		rel := filepath.Join(filepath.Base(u.folder), name)
-		return filepath.Join(u.folder, name), func() { _ = u.host.removeEntry(rel) }, nil
+		dir = filepath.Join(u.folder, name)
+		if root == nil {
+			return dir, func() {
+				if u.host.removeEntry(rel) != nil {
+					removeEmptyRequestDir(dir)
+				}
+			}, nil
+		}
+		return dir, func() { _ = u.host.removeEntry(rel) }, nil
 	}
 	return "", func() {}, err
+}
+
+// rmdirRequestDir removes an empty folder by its path. It is a variable so
+// that a test can see the call.
+var rmdirRequestDir = syscall.Rmdir
+
+// removeEmptyRequestDir removes dir, a folder of a request that requestDir
+// made by its path in a folder of the daemon of mode 0300. removeEntry fails
+// there at the open of that folder. With mode 0300 4c111e86 then removes an
+// empty request folder such as `.readback-scratch-<n>`, and a folder with
+// content stays (measured on Linux). claustrum runs one rmdir by path, never a
+// tree, after homeguard.WipesHomeDir. A file at the name stays (claustrum's
+// own, not measured). macOS is not measured.
+func removeEmptyRequestDir(dir string) {
+	if homeguard.WipesHomeDir(dir) {
+		return
+	}
+	_ = rmdirRequestDir(dir)
 }
 
 // searchOnlyFolder reports whether the owner bits of the folder path allow a
