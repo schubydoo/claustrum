@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Linux and macOS in `shadow`, `git.worktree_create` keeps each Git LFS object in `<git dir>/lfs/objects` within about 1 s of its download, while the checkout still runs.
+On Linux in `shadow`, `git.worktree_create` can keep a downloaded Git LFS object in `<git dir>/lfs/objects` while the checkout still runs.

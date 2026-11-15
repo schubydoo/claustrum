@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The private LFS store of git.worktree_create (storeInCheckout). In the state
@@ -87,11 +88,13 @@ var (
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
 // "" for the store of the git directory. seed runs the seed into path and
 // reports a copy that it left out for the space and the time of its copies.
-// runDir is the folder of the socket.
+// runDir is the folder of the socket. tickWait, when set, gets the time of the
+// wait for the end of the keepTicker of the checkout.
 type privateStore struct {
-	path   string
-	runDir string
-	seed   func() (short bool, copied time.Duration)
+	path     string
+	runDir   string
+	seed     func() (short bool, copied time.Duration)
+	tickWait *time.Duration
 }
 
 // storeUse is what a checkout that named its private store gives the reply of
@@ -902,6 +905,12 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 	every := keepTickEvery
 	go func() {
 		defer close(k.ended)
+		// A panic of a keep ends only the ticks, with a log line.
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Warnf("[GitHandler] the keep of Git LFS objects during the checkout stopped: %v", r)
+			}
+		}()
 		tick := time.NewTicker(every)
 		defer tick.Stop()
 		tried := map[string]bool{}
