@@ -566,7 +566,10 @@ func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error 
 			return err
 		}
 	}
-	return dir.Mkdir(stagedLeafFolder, 0o700)
+	// The daemon makes no folder `leaf`: git makes it at the add. 4c111e86
+	// has no such folder before the add, and git gives it 0755 under umask
+	// 022 (measured on Linux). macOS and Windows are claustrum's own.
+	return nil
 }
 
 // mainRefsFault opens `reftable/tables.list` of git, the root at the git

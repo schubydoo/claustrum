@@ -498,7 +498,8 @@ func listTree(t *testing.T, dir string) []string {
 // the repository, `objects` and `refs` are empty, and the registration has its
 // three files and nothing else of the real one. A locked registration gets its
 // `locked` file with its text (measured), and a link in `worktrees` is no
-// registration. After close the folder is gone (measured).
+// registration. After close the folder is gone (measured). There is no
+// folder `leaf` before the add (measured on Linux).
 //
 // Without the removal in close the folder stays. A copy of the whole
 // registration fails at `index`, `ORIG_HEAD` or `logs`.
@@ -529,7 +530,6 @@ func TestOpenAddStage(t *testing.T) {
 		"config = " + mustRead(t, filepath.Join(u.repoDir, "config")),
 		"info",
 		"info/exclude = " + mustRead(t, filepath.Join(f.gitDir, "info", "exclude")),
-		"leaf",
 		"objects",
 		"refs",
 		"worktrees",
@@ -581,7 +581,7 @@ func TestOpenAddStageWithNoRegistration(t *testing.T) {
 	if len(st.copied) != 0 {
 		t.Errorf("the copied registrations = %q, want none", st.copied)
 	}
-	if got, want := listTree(t, st.dir)[2:], []string{"info", "leaf", "objects", "refs"}; !slices.Equal(got, want) {
+	if got, want := listTree(t, st.dir)[2:], []string{"info", "objects", "refs"}; !slices.Equal(got, want) {
 		t.Errorf("the folder holds %q after HEAD and config, want %q", got, want)
 	}
 }
