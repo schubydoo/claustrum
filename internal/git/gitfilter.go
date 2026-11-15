@@ -699,11 +699,43 @@ const (
 		" from the computer where it was committed. Turn off Worktree for this session, then try again."
 	// lfsMissingWords are the words of stderr that give lfsMissingNote. The
 	// measured text is `Object does not exist on the server: [404]`. Which
-	// part of it counts is claustrum's own choice, not measured.
-	lfsMissingWords   = "Object does not exist on the server"
-	lfsStoreHoldsText = ", where Claude keeps this checkout's Git LFS downloads while it runs." +
+	// part of it counts is claustrum's own choice, not measured. A git-lfs
+	// whose server says `Object does not exist` writes `Object does not exist:
+	// [404]`, and that gives the note too (measured on Linux). The words of
+	// lfsMissingServerWords are claustrum's own choice.
+	lfsMissingWords       = "Object does not exist on the server"
+	lfsMissingServerWords = "Object does not exist: [404]"
+	lfsStoreHoldsText     = ", where Claude keeps this checkout's Git LFS downloads while it runs." +
 		" Free some space there (or raise the quota), or turn off Worktree for this session, then try again."
 )
+
+// lfsLogWords start the line of git-lfs that names its log file.
+const lfsLogWords = "Errors logged to "
+
+// withoutLFSLog is stderr, the stderr of a failed read-tree checkout, up to
+// the first line that starts with lfsLogWords, when rule has a settings copy
+// and the private LFS store of the checkout (Linux and macOS). On 4c111e86
+// the reply then ends before that line, and the lines after it are gone too
+// (measured on Linux with git-lfs). Windows has no private store and keeps
+// the line (4c111e86, measured). macOS is claustrum's own, not measured.
+// Claustrum's own, not measured: the test of the start of a line, the cut
+// before the stderrHeadCap bytes of worktreeGitText, and the whole stderr with
+// no private store.
+func withoutLFSLog(stderr string, rule *filterRule) string {
+	if rule == nil || !rule.shadow || rule.store == nil {
+		return stderr
+	}
+	for i := 0; ; {
+		if strings.HasPrefix(stderr[i:], lfsLogWords) {
+			return stderr[:i]
+		}
+		j := strings.IndexByte(stderr[i:], '\n')
+		if j < 0 {
+			return stderr
+		}
+		i += j + 1
+	}
+}
 
 // checkoutNote is the note after text, the text of a failed read-tree
 // checkout after the cut, or "". stderr is the whole stderr of git. With a
@@ -718,14 +750,15 @@ const (
 //     disk below the spare (seedRoomLow), gives the note of the space,
 //     also before the words of a missing object (measured on Linux and macOS).
 //   - lfsMissingWords give lfsMissingNote (measured on Linux and macOS with
-//     a stand-in git-lfs). `Object does not exist` with no `on the server`
-//     gives no lfsMissingNote (measured).
+//     a stand-in git-lfs), and so do lfsMissingServerWords (measured on Linux
+//     with git-lfs). `Object does not exist` with neither gives no
+//     lfsMissingNote (measured).
 //
 // Claustrum's own, not measured: the order of the full disk before the quota,
 // and of both before the space and the missing object. The note of the space
 // follows any failure text after a left-out copy. Each of these notes needs the words
 // in stderr. The test of lfsMissingWords minds letter case, and the
-// words of a real git-lfs are not measured.
+// words of a real git-lfs are measured only for the 404 text, on Linux.
 func checkoutNote(stderr, text string, rule *filterRule) string {
 	if rule == nil || !rule.shadow {
 		return ""
@@ -742,7 +775,7 @@ func checkoutNote(stderr, text string, rule *filterRule) string {
 		case s.short:
 			return ". There isn't enough space on the remote machine (in " + s.runDir + ") for this repository's Git LFS files," +
 				" and downloading them failed. Free up space there (Claude keeps 1 GiB spare), or turn off Worktree for this session, then try again."
-		case strings.Contains(stderr, lfsMissingWords):
+		case strings.Contains(stderr, lfsMissingWords), strings.Contains(stderr, lfsMissingServerWords):
 			return lfsMissingNote
 		}
 	}
