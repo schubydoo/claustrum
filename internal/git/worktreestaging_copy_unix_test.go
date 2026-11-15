@@ -359,10 +359,90 @@ func TestReadHeadCopyNeedsTheFileOfItsLstat(t *testing.T) {
 	if _, ok := readHeadCopy(root, big); ok {
 		t.Error("readHeadCopy of a file over shadowHeadMaxBytes = ok, want no text")
 	}
+	if err := os.WriteFile(head, []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	small, err := root.Lstat("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same file grows past shadowHeadMaxBytes after its Lstat.
+	if err := os.WriteFile(head, []byte(strings.Repeat("y", shadowHeadMaxBytes+1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readHeadCopy(root, small); ok {
+		t.Error("readHeadCopy of a file that grew past shadowHeadMaxBytes = ok, want no text")
+	}
 	if err := os.Remove(head); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := readHeadCopy(root, seen); ok {
 		t.Error("readHeadCopy of a gone file = ok, want no text")
+	}
+}
+
+// TestCannotOpenRegular: only a regular file that the daemon may not open
+// gets the empty gitdir copy. A readable file, a folder and a gone path do
+// not.
+func TestCannotOpenRegular(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user opens a file of mode 000")
+	}
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "readable"), "x")
+	mustWrite(t, filepath.Join(dir, "closed"), "x")
+	if err := os.Chmod(filepath.Join(dir, "closed"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "folder"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	for name, want := range map[string]bool{"readable": false, "closed": true, "folder": false, "gone": false} {
+		if got := cannotOpenRegular(root, name); got != want {
+			t.Errorf("cannotOpenRegular(%s) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestRepoFolderBySearch: the search-only open of a repository folder needs a
+// permission error and a real folder that opens. Any other case gives nil.
+func TestRepoFolderBySearch(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user opens a folder of mode 000")
+	}
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "file"), "x")
+	if r := repoFolderBySearch(repo, os.ErrPermission); r == nil {
+		t.Error("repoFolderBySearch of a real folder = nil, want its root")
+	} else {
+		_ = r.Close()
+	}
+	if r := repoFolderBySearch(repo, os.ErrNotExist); r != nil {
+		_ = r.Close()
+		t.Error("repoFolderBySearch with no permission error = a root, want nil")
+	}
+	for _, p := range []string{filepath.Join(dir, "gone"), filepath.Join(dir, "file")} {
+		if r := repoFolderBySearch(p, os.ErrPermission); r != nil {
+			_ = r.Close()
+			t.Errorf("repoFolderBySearch(%s) = a root, want nil", p)
+		}
+	}
+	closed := filepath.Join(dir, "closed")
+	if err := os.Mkdir(closed, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(closed, 0o700) })
+	if r := repoFolderBySearch(closed, os.ErrPermission); r != nil {
+		_ = r.Close()
+		t.Error("repoFolderBySearch of a folder of mode 000 = a root, want nil")
 	}
 }
