@@ -46,13 +46,13 @@ import (
 // Claustrum's own, not measured: the seed reads the pointers with `ls-tree`
 // and `cat-file --batch` in the new worktree, and only when the repository
 // has a folder `lfs/objects`. It reads the store of the repository by path,
-// read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too. After a
-// good checkout the keep makes the object by a copy (returnDownload, measured
-// on Linux, claustrum's own on macOS). It keeps no object that the store already has. A link at
+// read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too. The
+// form of the keep on macOS is not measured. It keeps no object that the store already has. A link at
 // `lfs/objects` or at a shard folder keeps nothing. The keep tests the bytes
-// of an object against its oid, not its size. After a failed or a stopped
-// checkout it makes only a hard link at the name of the object, with no temp
-// name, no copy and no sweep, so that path has no remove.
+// of an object against its oid, not its size. After a deadline it does not
+// sweep. After a checkout that failed by itself it makes only a hard link at
+// the name of the object, with no temp name, no copy and no sweep, so that
+// path has no remove.
 const (
 	// pointerBlobMax is the largest blob that the seed reads as a pointer
 	// (claustrum's own, the cutoff of git-lfs).
@@ -537,7 +537,7 @@ var storeFreeBytes = freeBytes
 
 // keepBudget bounds the keep of one object: the reads of its bytes test
 // (objectHoldsOID) and its copy (copyIntoRoot). After it the object is not
-// kept. On 4c111e86 a 900 MB keep stopped 3.0 s after the open of the object
+// kept. On 4c111e86 a 900 MiB keep stopped 3.0 s after the open of the object
 // in five rows, with 1.75 to 2.03 s of that in the copy (measured on Linux).
 // The exact bound and its start are claustrum's own, not measured.
 // newObjectHash is the hash of the bytes test. keepCopy is the copy of the
@@ -546,6 +546,20 @@ var (
 	keepBudget    = 3 * time.Second
 	newObjectHash = sha256.New
 	keepCopy      = io.Copy
+)
+
+// keepForm is how the checkout before a keep ended.
+type keepForm int
+
+const (
+	// keepAfterGood is a checkout that exited 0.
+	keepAfterGood keepForm = iota
+	// keepAfterDeadline is a checkout that the deadline of timeoutMs ended.
+	// 4c111e86 keeps then by the copy of a good checkout (measured on Linux).
+	keepAfterDeadline
+	// keepAfterFailure is a checkout that failed by itself, or that another
+	// stop ended (claustrum's own, not measured).
+	keepAfterFailure
 )
 
 // copySeed copies the object src to dst, a new file. The copy writes dst at
@@ -622,8 +636,8 @@ func downloadedOIDs(private string) []string {
 // returnDownloads puts each object of the private store private that the store
 // of the repository lacks into that store. The writes go through the held git
 // directory of the create. A create that holds none keeps nothing (claustrum's
-// own, not measured). failed says that the checkout failed or stopped.
-func returnDownloads(u gitUse, private string, failed bool) {
+// own, not measured). form says how the checkout ended.
+func returnDownloads(u gitUse, private string, form keepForm) {
 	a := u.accepted
 	if a == nil || a.root == nil {
 		return
@@ -632,7 +646,7 @@ func returnDownloads(u gitUse, private string, failed bool) {
 	// checkout still runs.
 	for _, oid := range downloadedOIDs(private) {
 		ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
-		returnDownload(ctx, a.root, a.path, private, oid, time.Now(), failed)
+		returnDownload(ctx, a.root, a.path, private, oid, time.Now(), form)
 		cancel()
 	}
 }
@@ -696,12 +710,13 @@ var openShardFolder = (*os.Root).OpenRoot
 //
 // `lfs/objects` is made first. An object whose bytes do not give its oid then
 // stops the keep, with no shard folder (objectHoldsOID). After a good checkout
-// the keep copies the object to a temp name and links it at the name oid. The
-// downloaded copy then turns into that object (swapInKept), and the temp name
-// goes (measured on Linux). A failed or stopped copy keeps nothing. After a
-// failed or a stopped checkout (failed) the keep is one hard link at the name
-// oid.
-func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, failed bool) {
+// and after a deadline the keep copies the object to a temp name and links it
+// at the name oid. The downloaded copy then turns into that object
+// (swapInKept), and the temp name goes (measured on Linux). A failed or stopped
+// copy keeps nothing. After a deadline the shard gets no sweep (claustrum's
+// own, not measured). After a checkout that failed by itself the keep is one
+// hard link at the name oid (claustrum's own, not measured).
+func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) {
 	objects := openShard(root, filepath.Join("lfs", "objects"))
 	if objects == nil {
 		return
@@ -727,7 +742,7 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 	if !keepHasSpace(shardPath, src) {
 		return
 	}
-	if failed {
+	if form == keepAfterFailure {
 		_ = keepHardLink(shard, src, oid)
 		return
 	}
@@ -741,11 +756,11 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 	}
 	err := shard.Link(temp, oid)
 	if err == nil {
-		swapInKept(shard, src, oid)
+		swapInKept(shard, private, oid, temp)
 	}
 	// temp is the name that the keep built above, not a name from a read.
 	removeLFSStoreEntry(shard, shardPath, temp)
-	if err == nil {
+	if err == nil && form == keepAfterGood {
 		sweepShardTemps(shard, shardPath, oid, now)
 	}
 }
@@ -788,27 +803,41 @@ func keepHasSpace(shardPath, src string) bool {
 // downloaded copy (measured on Linux).
 const keptPrefix = ".kept-"
 
-// swapInKept puts the object oid of the shard folder shard at the path src of
-// the downloaded copy in the private store. It links the object at
-// `.kept-<oid>` beside src, then renames that link over src (measured on
-// Linux). Both steps act through a handle of the folder of src. That folder is
-// in the `.checkout-<n>` folder of the create. A step that fails leaves the
-// copy as it is (claustrum's own, not measured).
-func swapInKept(shard *os.Root, src, oid string) {
-	dir := filepath.Dir(src)
+// swapInKept puts the object oid of the shard folder shard at the downloaded
+// copy in the private store private. It links the name oid of shard at
+// `.kept-<oid>` beside the copy, then renames that link over the copy
+// (measured on Linux). Both steps act through a handle of the shard folder of
+// private, which openShard opens one folder at a time. That folder is in the
+// `.checkout-<n>` folder of the create. The rename needs the link to be the
+// file temp of shard, the copy that the keep just made. A step that fails
+// leaves the copy as it is (claustrum's own, not measured).
+func swapInKept(shard *os.Root, private, oid, temp string) {
+	src := storeObjectPath(private, oid)
 	if homeguard.WipesHomeDir(src) {
 		return
 	}
-	private, err := os.OpenRoot(dir)
+	store, err := os.OpenRoot(private)
 	if err != nil {
 		return
 	}
-	defer func() { _ = private.Close() }()
-	kept := keptPrefix + oid
-	if linkAcrossRoots(shard, oid, private, kept) != nil {
+	defer func() { _ = store.Close() }()
+	dir := openShard(store, filepath.Join("objects", oid[:2], oid[2:4]))
+	if dir == nil {
 		return
 	}
-	_ = private.Rename(kept, filepath.Base(src))
+	defer func() { _ = dir.Close() }()
+	kept := keptPrefix + oid
+	if linkAcrossRoots(shard, oid, dir, kept) != nil {
+		return
+	}
+	made, err := shard.Lstat(temp)
+	if err != nil {
+		return
+	}
+	if got, err := dir.Lstat(kept); err != nil || !os.SameFile(made, got) {
+		return
+	}
+	_ = dir.Rename(kept, oid)
 }
 
 // copyIntoRoot copies the file src to the new file name of root, and reports

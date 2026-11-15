@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -370,7 +371,7 @@ func keepOne(t *testing.T, body string) (oid, src, store string, before uint64) 
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, false)
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood)
 	return oid, src, filepath.Join(gitDir, "lfs"), before
 }
 
@@ -457,26 +458,29 @@ func TestLFSKeepStopsAtItsBudget(t *testing.T) {
 	wantNotKept(t, oid, src, store, before)
 }
 
-// TestLFSKeepBudgetIsPerObject: each object gets its own keepBudget, so two
-// copies that each take most of the bound are both kept (claustrum's own, not
+// TestLFSKeepBudgetIsPerObject: each object gets its own keepBudget, so four
+// copies that each take 0.3 of the bound are all kept (claustrum's own, not
 // measured).
 func TestLFSKeepBudgetIsPerObject(t *testing.T) {
 	seamFreeSpace(t)
 	prevBudget, prevCopy := keepBudget, keepCopy
-	keepBudget = time.Second
+	keepBudget = 2 * time.Second
 	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
-		time.Sleep(keepBudget * 3 / 5)
+		time.Sleep(keepBudget * 3 / 10)
 		return io.Copy(w, r)
 	}
 	t.Cleanup(func() { keepBudget, keepCopy = prevBudget, prevCopy })
 	gitDir, private := t.TempDir(), t.TempDir()
-	oids := []string{putObject(t, private, "alpha-object"), putObject(t, private, "beta-object")}
+	var oids []string
+	for _, body := range []string{"alpha-object", "beta-object", "gamma-object", "delta-object"} {
+		oids = append(oids, putObject(t, private, body))
+	}
 	root, err := os.OpenRoot(gitDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, false)
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood)
 	for _, oid := range oids {
 		if !exists(storeObjectPath(filepath.Join(gitDir, "lfs"), oid)) {
 			t.Errorf("the object %s is not kept, want each object kept within its own budget", oid)
@@ -484,40 +488,208 @@ func TestLFSKeepBudgetIsPerObject(t *testing.T) {
 	}
 }
 
-// TestSwapInKept: swapInKept replaces no path that is the home folder, and no
-// copy whose link or folder fails. With another home it replaces the copy.
-func TestSwapInKept(t *testing.T) {
-	store, private := t.TempDir(), t.TempDir()
-	oid := putObject(t, store, "alpha-object")
-	putObject(t, private, "alpha-object")
+// TestLFSKeepAfterDeadlineCopies: after a deadline the keep copies the object
+// and swaps in the `.kept-` link, as after a good checkout (4c111e86, measured
+// on Linux). The stale temp name of the same oid stays, because that keep does
+// not sweep (claustrum's own, not measured).
+func TestLFSKeepAfterDeadlineCopies(t *testing.T) {
+	seamFreeSpace(t)
+	gitDir, private := t.TempDir(), t.TempDir()
+	oid := putObject(t, private, "alpha-object")
 	src := storeObjectPath(private, oid)
 	before := inodeOf(t, src)
-	shard, err := os.OpenRoot(filepath.Dir(storeObjectPath(store, oid)))
+	kept := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
+	stale := filepath.Join(filepath.Dir(kept), ".claude-aaaaaaaa-"+oid)
+	mustWrite(t, stale, "stale")
+	root, err := os.OpenRoot(gitDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = shard.Close() }()
-	t.Setenv("HOME", src)
-	swapInKept(shard, src, oid)
-	if got := inodeOf(t, src); got != before {
-		t.Errorf("the home path has inode %d, want %d as before", got, before)
+	defer func() { _ = root.Close() }()
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterDeadline)
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "alpha-object" {
+		t.Fatalf("the kept object = %q, %v, want it kept after a deadline", b, err)
 	}
+	if got := inodeOf(t, kept); got == before {
+		t.Errorf("the kept object has the inode %d of the download, want a copy", got)
+	}
+	if got, want := inodeOf(t, src), inodeOf(t, kept); got != want {
+		t.Errorf("the downloaded copy has inode %d, want %d of the kept object", got, want)
+	}
+	if !exists(stale) {
+		t.Error("the stale temp name is gone, want no sweep after a deadline")
+	}
+	if names, _ := os.ReadDir(filepath.Dir(kept)); len(names) != 2 {
+		t.Errorf("the shard holds %v, want the object and the stale name", names)
+	}
+}
+
+// TestFailedKeepForm: a checkout that the deadline of timeoutMs ended gets the
+// copy form. One that failed by itself, or with no such deadline, gets the hard
+// link.
+func TestFailedKeepForm(t *testing.T) {
+	fired, cancel := context.WithCancelCause(context.Background())
+	cancel(errCallerTimeoutMs)
+	killed := errors.New("signal: killed")
+	for _, row := range []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want keepForm
+	}{
+		{"a deadline", fired, killed, keepAfterDeadline},
+		{"a failure before the deadline", fired, checkoutFailedAlone{killed}, keepAfterFailure},
+		{"no deadline", context.Background(), killed, keepAfterFailure},
+	} {
+		if got := failedKeepForm(row.ctx, row.err); got != row.want {
+			t.Errorf("%s: failedKeepForm = %d, want %d", row.name, got, row.want)
+		}
+	}
+}
+
+// TestLFSKeepLinkFailsKeepsNoTemp: an object that turns up at the name oid
+// during the copy fails the link of the temp name. The temp name goes, the
+// other object stays, and the downloaded copy is left as it is.
+func TestLFSKeepLinkFailsKeepsNoTemp(t *testing.T) {
+	seamFreeSpace(t)
+	gitDir, private := t.TempDir(), t.TempDir()
+	oid := putObject(t, private, "alpha-object")
+	src := storeObjectPath(private, oid)
+	before := inodeOf(t, src)
+	kept := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
+	prev := keepCopy
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		mustWrite(t, kept, "other")
+		return io.Copy(w, r)
+	}
+	t.Cleanup(func() { keepCopy = prev })
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood)
+	if names, _ := os.ReadDir(filepath.Dir(kept)); len(names) != 1 || names[0].Name() != oid {
+		t.Errorf("the shard holds %v, want only the other object", names)
+	}
+	if b, _ := os.ReadFile(kept); string(b) != "other" {
+		t.Errorf("the object at the name oid = %q, want the other object", b)
+	}
+	if got := inodeOf(t, src); got != before {
+		t.Errorf("the downloaded copy has inode %d, want %d as before", got, before)
+	}
+}
+
+// swapFixture is a shard of a repository store that holds oid and a temp name
+// of the same file, and a private store with a downloaded copy of it.
+type swapFixture struct {
+	shard        *os.Root
+	shardPath    string
+	private, src string
+	oid, temp    string
+	before       uint64
+}
+
+func newSwapFixture(t *testing.T) swapFixture {
+	t.Helper()
+	store, private := t.TempDir(), t.TempDir()
+	oid := putObject(t, store, "alpha-object")
+	putObject(t, private, "alpha-object")
+	f := swapFixture{shardPath: filepath.Dir(storeObjectPath(store, oid)), private: private,
+		src: storeObjectPath(private, oid), oid: oid, temp: ".claude-aaaaaaaa-" + oid}
+	if err := os.Link(filepath.Join(f.shardPath, oid), filepath.Join(f.shardPath, f.temp)); err != nil {
+		t.Fatal(err)
+	}
+	f.before = inodeOf(t, f.src)
+	shard, err := os.OpenRoot(f.shardPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shard.Close() })
+	f.shard = shard
+	return f
+}
+
+// unchanged fails t when the downloaded copy is not the file of before.
+func (f swapFixture) unchanged(t *testing.T, why string) {
+	t.Helper()
+	if got := inodeOf(t, f.src); got != f.before {
+		t.Errorf("%s: the downloaded copy has inode %d, want %d as before", why, got, f.before)
+	}
+}
+
+// TestSwapInKept: swapInKept replaces no path that is the home folder, and no
+// copy whose link or folder fails. A link that is not the temp file of the keep
+// is not renamed. With another home it replaces the copy.
+func TestSwapInKept(t *testing.T) {
+	f := newSwapFixture(t)
+	t.Setenv("HOME", f.src)
+	swapInKept(f.shard, f.private, f.oid, f.temp)
+	f.unchanged(t, "the home path")
 	t.Setenv("HOME", t.TempDir())
 	// A `.kept-` name that is there already fails the link, and a missing
-	// folder fails the open. Both leave the copy as it is.
-	kept := filepath.Join(filepath.Dir(src), keptPrefix+oid)
+	// store fails the open.
+	kept := filepath.Join(filepath.Dir(f.src), keptPrefix+f.oid)
 	mustWrite(t, kept, "other")
-	swapInKept(shard, src, oid)
-	swapInKept(shard, filepath.Join(t.TempDir(), "gone", oid), oid)
-	if got := inodeOf(t, src); got != before {
-		t.Errorf("after a failed link the copy has inode %d, want %d as before", got, before)
-	}
+	swapInKept(f.shard, f.private, f.oid, f.temp)
+	swapInKept(f.shard, filepath.Join(t.TempDir(), "gone"), f.oid, f.temp)
+	f.unchanged(t, "a failed link")
 	if err := os.Remove(kept); err != nil {
 		t.Fatal(err)
 	}
-	swapInKept(shard, src, oid)
-	if got, want := inodeOf(t, src), inodeOf(t, storeObjectPath(store, oid)); got != want {
+	// A temp name of another file gets the link but no rename.
+	swapInKept(f.shard, f.private, f.oid, "other-temp")
+	f.unchanged(t, "a missing temp")
+	if err := os.Remove(kept); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.shardPath, "other-temp"), "alpha-object")
+	swapInKept(f.shard, f.private, f.oid, "other-temp")
+	f.unchanged(t, "another temp file")
+	if err := os.Remove(kept); err != nil {
+		t.Fatal(err)
+	}
+	swapInKept(f.shard, f.private, f.oid, f.temp)
+	if got, want := inodeOf(t, f.src), inodeOf(t, filepath.Join(f.shardPath, f.oid)); got != want {
 		t.Errorf("the downloaded copy has inode %d, want %d of the kept object", got, want)
+	}
+}
+
+// TestSwapInKeptLinksNoLinkTarget: a symbolic link at the name oid of the shard,
+// here to the temp file, gives a link at `.kept-<oid>` and no rename. A link
+// that followed it would give the temp file and pass the test of its identity.
+func TestSwapInKeptLinksNoLinkTarget(t *testing.T) {
+	f := newSwapFixture(t)
+	at := filepath.Join(f.shardPath, f.oid)
+	if err := os.Remove(at); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(f.temp, at); err != nil {
+		t.Fatal(err)
+	}
+	swapInKept(f.shard, f.private, f.oid, f.temp)
+	f.unchanged(t, "a link at the name oid")
+	if fi, err := os.Lstat(filepath.Join(filepath.Dir(f.src), keptPrefix+f.oid)); err == nil && fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the .kept- name = %v, want a symbolic link or nothing", fi.Mode())
+	}
+}
+
+// TestSwapInKeptRefusesLinkedShard: a shard folder of the private store that is
+// a link gets no `.kept-` name and no rename, also when the link names a
+// folder of the same store with the same copy.
+func TestSwapInKeptRefusesLinkedShard(t *testing.T) {
+	f := newSwapFixture(t)
+	other := filepath.Join(f.private, "objects", "alt")
+	if err := os.Rename(filepath.Dir(f.src), other); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "alt"), filepath.Dir(f.src)); err != nil {
+		t.Fatal(err)
+	}
+	swapInKept(f.shard, f.private, f.oid, f.temp)
+	f.unchanged(t, "a linked shard folder")
+	if names, _ := os.ReadDir(other); len(names) != 1 {
+		t.Errorf("the linked folder holds %v, want only the copy", names)
 	}
 }
 
@@ -548,7 +720,7 @@ func TestLFSNoKeepWithoutHeldDir(t *testing.T) {
 	gitDir, private := t.TempDir(), t.TempDir()
 	oid := strings.Repeat("d", 64)
 	mustWrite(t, storeObjectPath(private, oid), "x")
-	returnDownloads(gitUse{gitDir: gitDir}, private, false)
+	returnDownloads(gitUse{gitDir: gitDir}, private, keepAfterGood)
 	if names, _ := os.ReadDir(gitDir); len(names) != 0 {
 		t.Errorf("%s holds %v, want nothing", gitDir, names)
 	}
@@ -762,7 +934,7 @@ func TestLFSKeepRefusesSwappedShardFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), false)
+	returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), keepAfterGood)
 	if !swapped {
 		t.Fatal("the seam did not swap the shard folder")
 	}
@@ -796,7 +968,7 @@ func TestLFSFailedKeepAddsNoRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), true)
+	returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), keepAfterFailure)
 	if names, _ := os.ReadDir(shard); len(names) != 1 || len(removed) != 0 {
 		t.Errorf("the shard holds %v and %q was removed, want only the stale name and no remove", names, removed)
 	}
@@ -867,7 +1039,7 @@ func TestLFSKeepNeedsSpare(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = root.Close() }()
-			returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), row.failed)
+			returnDownload(context.Background(), root, gitDir, private, oid, time.Now(), map[bool]keepForm{false: keepAfterGood, true: keepAfterFailure}[row.failed])
 			p := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
 			if want := []string{filepath.Dir(p)}; !slices.Equal(asked, want) {
 				t.Errorf("free space asked for %q, want %q", asked, want)

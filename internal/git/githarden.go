@@ -785,6 +785,18 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 // it to learn that git exited.
 var checkoutWaited = func() {}
 
+// failedKeepForm is the form of the keep after the failed read-tree call err
+// with the context ctx of the caller. A deadline of timeoutMs gives the copy
+// form, as the deadline arm of the reply reads it (4c111e86, measured on
+// Linux). Every other failure gives the hard link (claustrum's own, not
+// measured).
+func failedKeepForm(ctx context.Context, err error) keepForm {
+	if callerTimeoutFired(ctx) && !errors.As(err, new(checkoutFailedAlone)) {
+		return keepAfterDeadline
+	}
+	return keepAfterFailure
+}
+
 // checkoutFailedAlone is the error of a read-tree call with a timeoutMs that
 // failed by itself before the deadline (runCheckoutPipes). The create answers
 // it as a failed checkout, also when the deadline expires during the drain.
@@ -996,7 +1008,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	// 4c111e86 keeps a downloaded object after a deadline, and makes its shard
 	// folders after a failed write of git (measured on Linux and macOS).
 	if err != nil && keep {
-		returnDownloads(u, lfs.path, true)
+		returnDownloads(u, lfs.path, failedKeepForm(ctx, err))
 	}
 	if err == nil || drained {
 		if u.swapped("index") {
@@ -1006,7 +1018,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// store (lfsstore.go). It runs after a checkout that exited 0, before the
 		// settle step. The moment is claustrum's own, not measured.
 		if err == nil && keep {
-			returnDownloads(u, lfs.path, false)
+			returnDownloads(u, lfs.path, keepAfterGood)
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the
