@@ -554,8 +554,8 @@ func TestCreateGoesOnAfterASwapRightAfterTheAnswer(t *testing.T) {
 // --absolute-git-dir` answered the held folder, `.git` becomes a symbolic link
 // to a copy T of the git directory. After the second answer 4c111e86 gives
 // each call with --git-dir=T the folder of T in the folder of the daemon as
-// its GIT_COMMON_DIR. Its calls with no --git-dir= keep the folder of the
-// first gate (measured on Linux). The row with the git directory X of a
+// its GIT_COMMON_DIR. Its other calls that name a folder of a repository keep
+// the folder of the first gate (measured on Linux). The row with the git directory X of a
 // second repository is tested, not measured. Without the copy of the folder
 // of T (takeGitDirCopy) the calls with --git-dir=T keep the folder of the
 // first gate.
@@ -864,5 +864,41 @@ func TestCreateOverAnOldRegistrationInTheSpellingOfTheRequest(t *testing.T) {
 				t.Errorf("the record of the registration = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// TestGitDirCopyOnlyOfTheHeldFolder: takeGitDirCopy makes the folder of the
+// copy only for a pinned git directory with the identity of the hold. Another
+// git directory, and a real folder that replaced the held one at its path,
+// get no folder (claustrum's own). Without the identity test both get one.
+func TestGitDirCopyOnlyOfTheHeldFolder(t *testing.T) {
+	_, held := configRepo(t)
+	_, other := configRepo(t)
+	run := resolveTestRoot(t, t.TempDir())
+	u := gitUse{host: NewShadowHost(run)}
+	read := &repoVerdict{shadowText: "[core]\n"}
+	a := acceptGitDir(held, gitDirIdentity(held))
+	if a == nil {
+		t.Fatal("no hold of the git directory")
+	}
+	defer a.release()
+	a.takeGitDirCopy(u, other, read)
+	if a.gitDirCopy != nil {
+		t.Errorf("another git directory got the folder %s", a.gitDirCopy.repoDir)
+	}
+	a.takeGitDirCopy(u, held, read)
+	if a.gitDirCopy == nil || a.gitDirCopy.repoDir == "" {
+		t.Fatal("the held git directory got no folder")
+	}
+	a.gitDirCopy = nil
+	if err := os.Rename(held, held+"-old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(held, os.DirFS(held+"-old")); err != nil {
+		t.Fatal(err)
+	}
+	a.takeGitDirCopy(u, held, read)
+	if a.gitDirCopy != nil {
+		t.Errorf("a folder that replaced the held one got the folder %s", a.gitDirCopy.repoDir)
 	}
 }

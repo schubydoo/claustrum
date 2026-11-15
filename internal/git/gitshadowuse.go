@@ -292,7 +292,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		// (measured on Linux, for a link to a copy). A refusal of that read is not
 		// measured: the text stays.
 		if heldAtListing && !stagedAddWindowsSteps {
-			_, _ = rereadConfigRefusal(f, repo)
+			_, _, _ = rereadConfigRefusal(f, repo)
 			if afterListing != nil {
 				afterListing()
 			}
@@ -305,11 +305,11 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	// measured). The read then gets its own folder in the folder of the daemon
 	// (takeGitDirCopy).
 	if f.accepted != nil && f.accepted.reread && !stagedAddWindowsSteps {
-		msg, read := rereadConfigRefusal(f, repo)
+		msg, read, pinned := rereadConfigRefusal(f, repo)
 		if msg != "" {
 			return "", errors.New(msg)
 		}
-		f.accepted.takeGitDirCopy(f, repo, read)
+		f.accepted.takeGitDirCopy(f, pinned, read)
 	}
 	if named {
 		if text := f.worktreesFolderRefusal(); text != "" {
@@ -365,15 +365,16 @@ func addListingThenPair(ctx context.Context, u gitUse, repo string, pair func())
 
 // rereadConfigRefusal reads the config of the git directory that the trust
 // check of repo pins, also when a read of it is kept, and returns the refusal
-// of the gate, or "", and the read that the gate accepted, or nil. It runs
-// only in the state shadow.
-func rereadConfigRefusal(u gitUse, repo string) (string, *repoVerdict) {
+// of the gate, or "", the read that the gate accepted, or nil, and the git
+// directory that it read. It runs only in the state shadow.
+func rereadConfigRefusal(u gitUse, repo string) (msg string, read *repoVerdict, pinned string) {
 	t := gitDirTrustFor(repo)
 	if !u.shadow() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return "", nil
+		return "", nil, ""
 	}
 	forgetRepoVerdict(t.pinCommonDir)
-	return repoConfigGate(t, false, u.stop)
+	msg, read = repoConfigGate(t, false, u.stop)
+	return msg, read, t.pinCommonDir
 }
 
 // addSwappedAfterListing is the error of a `worktree add` that does not run,
@@ -878,7 +879,8 @@ var requestDirMkdir = os.Mkdir
 // function that removes it. In the state shadow the folder is
 // <S>/<shadowPrefix><n>, made with mode 0700 through a root at the folder of
 // the daemon (by its path on Windows and with mode 0300, see below), and
-// removed through removeEntry. In every other state it is a new folder with tempPrefix in the
+// removed through removeEntry (an empty one by one rmdir at mode 0300, see
+// below). In every other state it is a new folder with tempPrefix in the
 // temporary folder, as before.
 //
 // The shutdown of the daemon removes its folder with every such entry in it,

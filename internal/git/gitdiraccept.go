@@ -372,20 +372,27 @@ func (a *acceptedGitDir) askedAgain(u gitUse, repo string) (string, *acceptedGit
 	return again, next
 }
 
-// takeGitDirCopy makes the folder of the git directory that the trust check of
-// repo pins in the folder of the daemon, with the read of its config. It is
-// the step of the first gate of a request (syncRepo), and it writes and
-// deletes nothing else. The hold a took it at askedAgain. After that answer
-// 4c111e86 gives each call with --git-dir=<copy> its own folder of the copy
-// as GIT_COMMON_DIR. Its calls with no --git-dir= keep the folder of the first
-// gate (measured on Linux). A step that fails keeps the folder of the first
-// gate (claustrum's own, not measured).
-func (a *acceptedGitDir) takeGitDirCopy(u gitUse, repo string, read *repoVerdict) {
-	t := gitDirTrustFor(repo)
-	if read == nil || u.host == nil || t.pinCommonDir == "" {
+// takeGitDirCopy makes the folder of the git directory pinned in the folder of
+// the daemon, with read, the read of its config. pinned and read come from one
+// walk and one read (rereadConfigRefusal), so no step resolves the path again.
+// It is the step of the first gate of a request (syncRepo). That step writes
+// and evicts only inside the folder of the daemon: the 129th repository folder
+// evicts the oldest one.
+//
+// a is the hold that askedAgain took. After that answer 4c111e86 names one new
+// folder of the copy in GIT_COMMON_DIR for each call with --git-dir=<copy>.
+// The other calls that name a folder of a repository keep the folder of the
+// first gate (measured on Linux). A pinned folder that is not the held folder
+// gets no copy, and so does a step that fails. The calls then keep the folder
+// of the first gate (claustrum's own, not measured).
+func (a *acceptedGitDir) takeGitDirCopy(u gitUse, pinned string, read *repoVerdict) {
+	if read == nil || u.host == nil || pinned == "" {
 		return
 	}
-	if use, err := u.host.syncRepo(t.pinCommonDir, read); err == nil {
+	if now := gitDirIdentity(pinned); now == nil || !os.SameFile(now, a.info) {
+		return
+	}
+	if use, err := u.host.syncRepo(pinned, read); err == nil {
 		a.gitDirCopy = &use
 	}
 }
