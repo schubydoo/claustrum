@@ -134,7 +134,10 @@ func TestShadowLfsDownloadNote(t *testing.T) {
 // quota on Linux). With no store, or with no settings copy, they do not. The
 // ssh note reads the text after the cut. The note of a full disk reads the
 // whole stderr (measured on macOS). With the store, `Object does not exist`
-// with no `on the server` gives no missing note (measured on Linux and macOS).
+// with neither `on the server` nor `: [404]` gives no missing note (measured
+// on Linux and macOS).
+// The text of git-lfs for a server that says `Object does not exist` gives it
+// (measured on Linux).
 func TestCheckoutNote(t *testing.T) {
 	const run = "/h/.claude/remote/run/c1"
 	store := &filterRule{shadow: true, store: &storeUse{runDir: run}}
@@ -159,6 +162,7 @@ func TestCheckoutNote(t *testing.T) {
 		{"missing object", "[x] Object does not exist on the server: [404] Object does not exist" + failed, store, missing},
 		{"another failure", "batch response: Fatal error: server broke" + failed, store, lfsDownloadNote},
 		{"a 404 text not on the server", "Smudge error: f.bin: [404] Object does not exist" + failed, store, lfsDownloadNote},
+		{"a missing object of a git-lfs server", "[x] Object does not exist: [404] Object does not exist" + failed, store, missing},
 		{"a seed short of space", "[x] Object does not exist on the server: [404] Object does not exist" + failed,
 			&filterRule{shadow: true, store: &storeUse{runDir: run, short: true}},
 			". There isn't enough space on the remote machine (in " + run + ") for this repository's Git LFS files, and downloading them failed." +
