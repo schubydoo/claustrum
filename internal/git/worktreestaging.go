@@ -443,7 +443,19 @@ func (st *addStage) fill(regs []registrationCopy) error {
 	for _, reg := range regs {
 		st.copied = append(st.copied, reg.name)
 	}
-	if err := writeCopyEntries(dir, "", addCopyEntries(head, config, exclude, hasExclude, regs), 0o700, 0o600); err != nil {
+	// HEAD, config and info/exclude are made with mode 0666 and info, objects
+	// and refs with 0777, before the umask. The registrations keep 0700 and
+	// 0600. 4c111e86 does so, and under umask 022 it gives 0644 and 0755
+	// (measured on Linux). macOS and Windows are claustrum's own.
+	entries := addCopyEntries(head, config, exclude, hasExclude, regs)
+	regsAt := slices.IndexFunc(entries, func(e copyEntry) bool { return e.path == worktreesSubdir })
+	if regsAt < 0 {
+		regsAt = len(entries)
+	}
+	if err := writeCopyEntries(dir, "", entries[:regsAt], 0o777, 0o666); err != nil {
+		return err
+	}
+	if err := writeCopyEntries(dir, "", entries[regsAt:], 0o700, 0o600); err != nil {
 		return err
 	}
 	if mainRefsOpenTest {
