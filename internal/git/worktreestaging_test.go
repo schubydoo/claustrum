@@ -243,16 +243,24 @@ func TestNewRegistrationName(t *testing.T) {
 
 // TestWithAddCopy pins the folder variable of the `worktree add` call: the
 // folder `.s<n>` in the place of the copy of the repository, and the three
-// other folder variables as they are (measured, the call log).
+// other folder variables as they are (measured, the call log). The new entry
+// comes last, after GIT_CONFIG_VALUE_1 (4c111e86, measured on Linux).
+// Mutation: put the entry back in the place of the old one.
 func TestWithAddCopy(t *testing.T) {
-	env := []string{"A=1", `GIT_COMMON_DIR=C:\S\0a83`, `GIT_OBJECT_DIRECTORY=C:\repo\.git\objects`, `GIT_DIR=C:\repo\.git`, `GIT_WORK_TREE=C:\repo`}
+	env := []string{"A=1", `GIT_COMMON_DIR=C:\S\0a83`, `GIT_OBJECT_DIRECTORY=C:\repo\.git\objects`, `GIT_DIR=C:\repo\.git`, `GIT_WORK_TREE=C:\repo`,
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}
 	got := withAddCopy(env, `C:\S\0a83`, `C:\S\.s1314002893`)
-	want := []string{"A=1", `GIT_COMMON_DIR=C:\S\.s1314002893`, `GIT_OBJECT_DIRECTORY=C:\repo\.git\objects`, `GIT_DIR=C:\repo\.git`, `GIT_WORK_TREE=C:\repo`}
+	want := []string{"A=1", `GIT_OBJECT_DIRECTORY=C:\repo\.git\objects`, `GIT_DIR=C:\repo\.git`, `GIT_WORK_TREE=C:\repo`,
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1=",
+		`GIT_COMMON_DIR=C:\S\.s1314002893`}
 	if !slices.Equal(got, want) {
 		t.Errorf("withAddCopy = %q\nwant %q", got, want)
 	}
 	if env[1] != `GIT_COMMON_DIR=C:\S\0a83` {
 		t.Error("withAddCopy changed its input")
+	}
+	if got := withAddCopy(env[2:], `C:\S\0a83`, `C:\S\.s1`); !slices.Equal(got, env[2:]) {
+		t.Errorf("withAddCopy with no entry of the copy = %q, want its input", got)
 	}
 }
 

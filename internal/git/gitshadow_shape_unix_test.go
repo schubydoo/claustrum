@@ -463,7 +463,7 @@ func addRows(argv string) []shapeRow {
 	out[1].shadow = ""
 	staged := out[1]
 	staged.argv = strings.Replace(argv, "<leaf>", "<S>/.s<n>/leaf/w1", 1)
-	staged.shadow, staged.off, staged.fallback = "{A2} GIT_COMMON_DIR=<S>/.s<n> GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H}", "", ""
+	staged.shadow, staged.off, staged.fallback = "{A2} GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H} GIT_COMMON_DIR=<S>/.s<n>", "", ""
 	return []shapeRow{out[0], staged, out[1]}
 }
 
@@ -734,7 +734,7 @@ func TestShadowBothAddsNameTheCopy(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) || !strings.Contains(raw, `"branch":"w1"`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	const vars = "{A2} GIT_COMMON_DIR=<S>/.s<n> GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H}"
+	const vars = "{A2} GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H} GIT_COMMON_DIR=<S>/.s<n>"
 	want := []string{
 		"P20 | worktree add --no-checkout <S>/.s<n>/leaf/w1 wr | <repo> | " + vars,
 		"P20 | worktree add --no-track --no-checkout -b w1 <S>/.s<n>/leaf/w1 | <repo> | " + vars,
