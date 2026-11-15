@@ -174,8 +174,9 @@ type Proc struct {
 	// claims nothing (measured against 4534d86: a natural exit killed inside the
 	// drain window carries no killedBy on the reference). The first reason wins, except
 	// that the shutdown sweep replaces an earlier reason while killAndWaitProc still
-	// waits for the exit (waiting). After a plain process.kill, or after a
-	// killAndWait that returned, the first reason stays (claustrum's own, not measured).
+	// waits for the exit (waiting), and a temp_root signal replaces "client" (see
+	// signalIfLiveLocked). After a plain process.kill, or after a killAndWait that
+	// returned, any other first reason stays (claustrum's own, not measured).
 	// Provenance for the value set is split at the KilledBy field comment above:
 	// "client" is live-measured, "shutdown" is measured on Linux only in the log.
 	// Read and written under p.mu.
@@ -592,6 +593,12 @@ func (p *Proc) signalIfLiveErr(signame, killedBy string) (bool, error) {
 // either, and a refused shutdown KILL stamps no "shutdown" (claustrum's own, not
 // measured). Every other error of signalGroup counts as
 // a delivery, as before. Only Linux and macOS make a *SignalFailed.
+//
+// A temp_root signal that reaches a live child replaces an earlier "client": a child
+// that ignores the SIGTERM of a process.kill and then loses its private temp folder
+// exits with "temp_root" (4c111e86, measured on macOS, on Linux claustrum's own). A
+// child that ended on the SIGTERM of the kill gets no temp_root signal, so it keeps
+// "client". That temp_root replaces no other reason is claustrum's own, not measured.
 func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false, nil
@@ -604,7 +611,7 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	}
 	// A signal cuts a pending farewell (measured on Linux and macOS).
 	p.cutFarewellLocked()
-	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0)) {
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0) || (killedBy == "temp_root" && p.killedBy == "client")) {
 		p.killedBy = killedBy
 	}
 	p.signalled = true

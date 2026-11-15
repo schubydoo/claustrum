@@ -219,6 +219,7 @@ On Linux and macOS, while a child runs, claustrum checks its folder by name ever
 - A link at the name, a folder of another account or a folder of mode 0777 counts as lost. The daemon logs `[process.Manager] Claude Code's private temp folder <name> counts as lost: <why>`. The why is `it is a link`, `it is another account's (uid <n>)` or `it is open to other accounts`.
 - A child whose spawn had `"cliTempRootEnd": true` gets SIGTERM, and the daemon logs `[process.Manager] Process <id> is being ended: its private temp folder is lost`. If it still runs 3 s later, it gets SIGKILL (measured on macOS).
 - The `exit` frame carries `"killedBy":"temp_root"`. A `process.kill` in the wait keeps it (measured on macOS).
+- An end after a `process.kill` that the child survived replaces `client` with `temp_root`, also for a loss 0.3 s before the kill. A child that ended on the SIGTERM of the kill keeps `client` (measured on macOS, on Linux claustrum's own).
 - Other children of the folder run on, and the daemon logs `[process.Manager] <n> process(es) run on in <name>, which may be another account's: their starts did not ask to be ended over it (cliTempRootEnd); end those sessions` (measured on macOS).
 - The next spawn gets a new folder. Each later member lists the last 16 lost folders, oldest first. A 17th loss cuts the oldest, and none expired within 130 s. The why is `changed` for a link, `anothers` for another account's folder and `open` for mode 0777 (measured on macOS, on Linux claustrum's own):
 

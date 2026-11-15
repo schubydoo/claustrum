@@ -118,6 +118,35 @@ func TestLostTempRootKeepsItsKilledByAfterAClientKill(t *testing.T) {
 	}
 }
 
+// TestLostTempRootTakesTheKilledByAfterAClientKill: a child that ignores the SIGTERM
+// of a process.kill and then loses its folder exits with the killedBy "temp_root"
+// after the SIGKILL of the end (4c111e86, measured on macOS, 8 of 8).
+func TestLostTempRootTakesTheKilledByAfterAClientKill(t *testing.T) {
+	logs := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	setTempRootEndGraceForTest(t, 300*time.Millisecond)
+	sent := recordSignalsByProc(t)
+	c, lines := rawLineConn(t)
+	p, bound := spawnHelperTempRoot(t, m, c, TempRootAsk{Folder: true, End: true}, "ignore-term")
+	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+	if !p.signalIfLive("TERM", "client") {
+		t.Fatal("the client SIGTERM found no live child")
+	}
+	end, _ := bound()
+	end()
+	exit := withoutEndAt(nextLine(t, lines, `"stream":"exit"`, 15*time.Second))
+	const want = `{"type":"stream","processId":"tr","stream":"exit","seq":2,"exitCode":-1,"signal":"SIGKILL","killedBy":"temp_root","end":{"at":<n>,"len":113}}`
+	if exit != want {
+		t.Errorf("exit frame = %s\nwant %s", exit, want)
+	}
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM", "TERM", "KILL"}) {
+		t.Errorf("signals to the child = %q, want the client TERM, the TERM of the end, then KILL", got)
+	}
+	wantLinesInOrder(t, logs.String(),
+		"[process.Manager] Process tr exited with code -1, terminated by SIGKILL, asked to end by this daemon (temp_root)")
+}
+
 // TestLostTempRootEndNeedsTheAsk: a spawn with no cliTempRootEnd binds nil, so a loss
 // of its folder sends it nothing (4c111e86, measured on macOS). A spawn with no
 // cliTempRoot binds nothing.
