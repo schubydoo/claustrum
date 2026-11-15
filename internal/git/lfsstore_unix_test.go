@@ -927,34 +927,53 @@ func seedScanCalls(t *testing.T, calls []envCall) []envCall {
 
 // TestSeedScanRunsInBaseRepo: the ls-tree and cat-file calls of the seed run
 // in baseRepo, with GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo>, and so does
-// the listing before them (4c111e86, measured on Linux).
+// the listing before them (4c111e86, measured on Linux). A linked worktree as
+// baseRepo gets its `worktrees/<n>` entry as GIT_DIR, and its pointer is still
+// seeded (claustrum's own, not measured).
 func TestSeedScanRunsInBaseRepo(t *testing.T) {
-	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
-	f.local(t, "a.bin", "alpha-object")
-	raw, calls := f.create(t, nil)
-	if !strings.Contains(raw, `"success":true`) {
-		t.Fatalf("git.worktree_create = %s, want success", raw)
-	}
-	i := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "ls-tree") })
-	if i < 1 || !calls[i-1].listing() {
-		t.Fatalf("no listing right before the ls-tree call of the seed")
-	}
-	scan := append([]envCall{calls[i-1]}, seedScanCalls(t, calls)...)
-	// The cat-file call comes right after the ls-tree call, with no listing,
-	// and pins the same hook names.
-	if len(scan) < 3 || !argvEndsWith(scan[2].argv, []string{"cat-file", "--batch", "--buffer"}) {
-		t.Fatalf("the seed calls end %q, want the listing, ls-tree, then cat-file --batch --buffer", scan[len(scan)-1].argv)
-	}
-	if got, want := scan[2].pins(t), scan[1].pins(t); !slices.Equal(got, want) {
-		t.Errorf("cat-file pins %q, want the pins of the ls-tree call %q", got, want)
-	}
-	for _, c := range scan {
-		dir, _ := lookupExact(c.env, "GIT_DIR")
-		top, _ := lookupExact(c.env, "GIT_WORK_TREE")
-		if canonicalPath(c.cwd) != canonicalPath(f.repo) || canonicalPath(dir) != canonicalPath(f.gitDir) ||
-			canonicalPath(top) != canonicalPath(f.repo) {
-			t.Errorf("call %q runs in %s with GIT_DIR=%s GIT_WORK_TREE=%s, want baseRepo", c.argv, c.cwd, dir, top)
-		}
+	for _, linked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("linked=%v", linked), func(t *testing.T) {
+			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+			f.local(t, "a.bin", "alpha-object")
+			base, gitDir, extra := f.repo, f.gitDir, map[string]any(nil)
+			if linked {
+				base = filepath.Join(filepath.Dir(f.repo), "linked")
+				runGit(t, f.repo, "worktree", "add", "-q", "-b", "base1", base)
+				gitDir = filepath.Join(f.gitDir, worktreesSubdir, "linked")
+				if raw, _ := f.call(t, "git.info", map[string]any{"path": base}); !strings.Contains(raw, `"isRepo":true`) {
+					t.Fatalf("git.info = %s", raw)
+				}
+				extra = map[string]any{"baseRepo": base, "worktreePath": filepath.Join(base, ".claude", "worktrees", "w1")}
+			}
+			raw, calls := f.create(t, extra)
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want success", raw)
+			}
+			if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
+				t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
+			}
+			i := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "ls-tree") })
+			if i < 1 || !calls[i-1].listing() {
+				t.Fatalf("no listing right before the ls-tree call of the seed")
+			}
+			scan := append([]envCall{calls[i-1]}, seedScanCalls(t, calls)...)
+			// The cat-file call comes right after the ls-tree call, with no
+			// listing, and pins the same hook names.
+			if len(scan) < 3 || !argvEndsWith(scan[2].argv, []string{"cat-file", "--batch", "--buffer"}) {
+				t.Fatalf("the seed calls end %q, want the listing, ls-tree, then cat-file --batch --buffer", scan[len(scan)-1].argv)
+			}
+			if got, want := scan[2].pins(t), scan[1].pins(t); !slices.Equal(got, want) {
+				t.Errorf("cat-file pins %q, want the pins of the ls-tree call %q", got, want)
+			}
+			for _, c := range scan {
+				dir, _ := lookupExact(c.env, "GIT_DIR")
+				top, _ := lookupExact(c.env, "GIT_WORK_TREE")
+				if canonicalPath(c.cwd) != canonicalPath(base) || canonicalPath(dir) != canonicalPath(gitDir) ||
+					canonicalPath(top) != canonicalPath(base) {
+					t.Errorf("call %q runs in %s with GIT_DIR=%s GIT_WORK_TREE=%s, want baseRepo", c.argv, c.cwd, dir, top)
+				}
+			}
+		})
 	}
 }
 
