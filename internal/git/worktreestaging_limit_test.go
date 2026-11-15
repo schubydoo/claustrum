@@ -19,9 +19,9 @@ func manyRegistrations(t *testing.T, gitDir string, n int) {
 }
 
 // TestStagedAddRegistrationLimit: a repository with more than 4096
-// registrations is refused before the add with registrationLimitText. 4096
-// pass. 4c111e86 refuses 4097 old entries and adds with 4096 (measured on
-// Linux).
+// registrations is refused with registrationLimitText, no add runs, and
+// `.s<n>` is gone after. 4096 pass. 4c111e86 refuses 4097 old entries with no
+// add and adds with 4096 (measured on Linux).
 func TestStagedAddRegistrationLimit(t *testing.T) {
 	for _, tc := range []struct {
 		total   int
@@ -36,6 +36,15 @@ func TestStagedAddRegistrationLimit(t *testing.T) {
 		refused := errors.As(err, &own) && own.text == registrationLimitText
 		if refused != tc.refused || (tc.refused && stderr != "") {
 			t.Errorf("%d registrations: the add = %v, %q, want refused %v", tc.total, err, stderr, tc.refused)
+		}
+		if !tc.refused {
+			continue
+		}
+		if got := addFolders(t, u.folder); len(got) != 0 {
+			t.Errorf("%d registrations: the folder of the daemon holds %q, want no .s<n>", tc.total, got)
+		}
+		if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); !os.IsNotExist(err) {
+			t.Errorf("%d registrations: the branch w1: %v, want no add", tc.total, err)
 		}
 	}
 }

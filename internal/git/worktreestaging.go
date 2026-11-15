@@ -311,8 +311,12 @@ func openAddStage(u gitUse) (*addStage, error) {
 		}
 	}
 	var regs []registrationCopy
+	var overLimit *addOwnFiles
 	if err == nil {
 		regs, err = readRegistrations(st.git)
+		if errors.As(err, &overLimit) {
+			err = nil
+		}
 	}
 	if err == nil {
 		st.dir, st.removeDir, err = u.requestDir(addCopyPrefix, "")
@@ -321,7 +325,7 @@ func openAddStage(u gitUse) (*addStage, error) {
 		}
 	}
 	if err == nil {
-		err = st.fill(regs)
+		err = st.fill(regs, overLimit)
 	}
 	if err != nil {
 		st.close()
@@ -332,10 +336,13 @@ func openAddStage(u gitUse) (*addStage, error) {
 
 // registrationLimit is the most registrations that a repository can have for
 // a staged add. readRegistrations counts them before it reads any file of an
-// entry. With more, the create answers registrationLimitText with
-// errorCode worktree_add_failed, and no add runs (claustrum's own). 4c111e86 adds the worktree
-// with 4096 old entries and refuses it with 4097 (measured on Linux, with
-// real folders in `<git dir>/worktrees`). The create writes the record of
+// entry. With more, the stage makes `.s<n>` with HEAD, config, info, objects
+// and refs, as 4c111e86 does (measured on Linux), and then refuses. The failed
+// stage removes `.s<n>` as after any failed step (addStage.close, claustrum's
+// own). The create answers registrationLimitText with errorCode
+// worktree_add_failed, and no add runs. 4c111e86 adds the worktree with 4096
+// old entries, and with 4097 it refuses and runs no add (measured on Linux,
+// with real folders in `<git dir>/worktrees`). The create writes the record of
 // session folders before this step (from the code). macOS and Windows are
 // claustrum's own, and so is the count of real folders only.
 const registrationLimit = 4096
@@ -468,7 +475,7 @@ func readRootFile(root *os.Root, path string, max int64) (data []byte, ok bool) 
 // `info/exclude` come from the copy of the repository, which this request
 // brought up to date. Each file is written in place: a poll of 5fd08069 saw a
 // file with 0 bytes first and with its full size 4 to 5 ms later (measured).
-func (st *addStage) fill(regs []registrationCopy) error {
+func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error {
 	repo, err := os.OpenRoot(st.u.repoDir)
 	if err != nil {
 		return err
@@ -506,6 +513,9 @@ func (st *addStage) fill(regs []registrationCopy) error {
 	}
 	if err := writeCopyEntries(dir, "", entries[:regsAt], 0o777, 0o666); err != nil {
 		return err
+	}
+	if overLimit != nil {
+		return overLimit
 	}
 	if err := writeCopyEntries(dir, "", entries[regsAt:], 0o700, 0o600); err != nil {
 		return err
