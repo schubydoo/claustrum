@@ -60,7 +60,7 @@ modes and the OS splits is in
 | `internal/git/gitdirheld.go` | the held git directory and the list of the steps that act through it |
 | `internal/git/githarden_index_*.go` | the placement of the index of a new worktree, and the registration delete of the second rollback (`removeCreatedRegistration`) |
 | `internal/install/install.go` | the CLI path delete, the sweeps, the prune and the blob remove of `-install` |
-| `internal/git/gitshadow.go` (`removeEntry` and `removeLink`) · `internal/git/gitshadowprobe.go` (`removeProbeEntry`) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` · `internal/git/headcopyrmdir_unix.go` | the deletes in the folder `git-shadow` |
+| `internal/git/gitshadow.go` (`removeEntry` and `removeLink`) · `internal/git/gitshadowprobe.go` (`removeProbeEntry`) · `internal/git/gitshadowsweep.go` · `internal/git/gitshadowrepo.go` · `internal/git/gitshadowuse.go` · `internal/git/headcopyrmdir_unix.go` · `internal/git/requestdirrmdir_*.go` | the deletes in the folder `git-shadow` |
 | `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
 | `clitemproot_unix.go` | the two rmdirs of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
 | `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
@@ -203,12 +203,13 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
-  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the `.probe` of the folder of the daemon (`removeProbeEntry`), except the HEAD copy rmdir, the seed copy remove and the keep swap
+  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the `.probe` of the folder of the daemon (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the seed copy remove and the keep swap
   (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
   ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by
   `removeTempRequestDir`, after `homeguard.WipesHomeDir`.
 - **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a `git-shadow` copy (`removeEmptyHeadFolder`). Never widen: no tree.
+- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a folder of the daemon of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the folder of the daemon keeps its identity of the mkdir. Linux runs it through an `O_PATH` handle. macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree.
 - **The LFS store.** On Linux and macOS a create in `shadow` removes `.claude-<8 hex>-<oid>` temp files from one shard
   of `<git dir>/lfs/objects`, each by one file `unlinkat` after `homeguard.WipesHomeDir` (`removeLFSStoreEntry`,
   [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). Never widen: Remove no other

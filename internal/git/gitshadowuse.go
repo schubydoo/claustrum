@@ -292,7 +292,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		// (measured on Linux, for a link to a copy). A refusal of that read is not
 		// measured: the text stays.
 		if heldAtListing && !stagedAddWindowsSteps {
-			_ = rereadConfigRefusal(f, repo)
+			_, _, _ = rereadConfigRefusal(f, repo)
 			if afterListing != nil {
 				afterListing()
 			}
@@ -302,11 +302,14 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	// A hold that askedAgain took reads its config again after the listing
 	// (4c111e86, measured on Linux). A refusal there is claustrum's own (not
-	// measured).
+	// measured). The read then gets its own folder in the folder of the daemon
+	// (takeGitDirCopy).
 	if f.accepted != nil && f.accepted.reread && !stagedAddWindowsSteps {
-		if msg := rereadConfigRefusal(f, repo); msg != "" {
+		msg, read, pinned := rereadConfigRefusal(f, repo)
+		if msg != "" {
 			return "", errors.New(msg)
 		}
+		f.accepted.takeGitDirCopy(f, pinned, read)
 	}
 	if named {
 		if text := f.worktreesFolderRefusal(); text != "" {
@@ -362,15 +365,16 @@ func addListingThenPair(ctx context.Context, u gitUse, repo string, pair func())
 
 // rereadConfigRefusal reads the config of the git directory that the trust
 // check of repo pins, also when a read of it is kept, and returns the refusal
-// of the gate, or "". It runs only in the state shadow.
-func rereadConfigRefusal(u gitUse, repo string) string {
+// of the gate, or "", the read that the gate accepted, or nil, and the git
+// directory that it read. It runs only in the state shadow.
+func rereadConfigRefusal(u gitUse, repo string) (msg string, read *repoVerdict, pinned string) {
 	t := gitDirTrustFor(repo)
 	if !u.shadow() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return ""
+		return "", nil, ""
 	}
 	forgetRepoVerdict(t.pinCommonDir)
-	msg, _ := repoConfigGate(t, false, u.stop)
-	return msg
+	msg, read = repoConfigGate(t, false, u.stop)
+	return msg, read, t.pinCommonDir
 }
 
 // addSwappedAfterListing is the error of a `worktree add` that does not run,
@@ -782,9 +786,15 @@ func (u gitUse) gitDirPin(dir string) []string {
 		return commonDirPinEnv(dir)
 	}
 	// After a create moved its hold, a call with --git-dir= names the objects
-	// of that folder (measured on Linux).
-	u.renewCopy()
-	return []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.heldGitDir(), "objects")}
+	// of that folder (measured on Linux). After askedAgain it names the folder
+	// of the new hold in the folder of the daemon (takeGitDirCopy).
+	c := u
+	if u.accepted != nil && u.accepted.gitDirCopy != nil {
+		c = *u.accepted.gitDirCopy
+		c.noRenew = u.noRenew
+	}
+	c.renewCopy()
+	return []string{"GIT_COMMON_DIR=" + c.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.heldGitDir(), "objects")}
 }
 
 // profileEnv is profileEnv for a call of this request. In the state shadow a
@@ -869,7 +879,8 @@ var requestDirMkdir = os.Mkdir
 // function that removes it. In the state shadow the folder is
 // <S>/<shadowPrefix><n>, made with mode 0700 through a root at the folder of
 // the daemon (by its path on Windows and with mode 0300, see below), and
-// removed through removeEntry. In every other state it is a new folder with tempPrefix in the
+// removed through removeEntry (an empty one by one rmdir at mode 0300, see
+// below). In every other state it is a new folder with tempPrefix in the
 // temporary folder, as before.
 //
 // The shutdown of the daemon removes its folder with every such entry in it,
@@ -912,7 +923,8 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// gets it. With mode 0300 4c111e86 makes `.s<n>` by its path, and the
 		// create succeeds (measured on Linux). claustrum makes it by its path
 		// too. The remove through removeEntry then fails at the open of the
-		// folder, and each such folder stays. On 4c111e86 `.s<n>`,
+		// folder. An empty folder then goes by one rmdir, and a folder with
+		// content stays (removeEmptyRequestDir). On 4c111e86 `.s<n>`,
 		// `.checkout-<n>` and `.readback-objects-<n>` stay (measured on Linux).
 		// macOS and the other prefixes are not measured.
 		var pe *os.PathError
@@ -954,7 +966,18 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 			return "", func() {}, err
 		}
 		rel := filepath.Join(filepath.Base(u.folder), name)
-		return filepath.Join(u.folder, name), func() { _ = u.host.removeEntry(rel) }, nil
+		dir = filepath.Join(u.folder, name)
+		if root == nil {
+			// The identity of the folder of the daemon right after the mkdir.
+			// The rmdir tests it again (removeEmptyRequestDir).
+			parent, statErr := os.Lstat(u.folder)
+			return dir, func() {
+				if err := u.host.removeEntry(rel); errors.Is(err, fs.ErrPermission) && statErr == nil {
+					removeEmptyRequestDir(u.folder, name, parent)
+				}
+			}, nil
+		}
+		return dir, func() { _ = u.host.removeEntry(rel) }, nil
 	}
 	return "", func() {}, err
 }

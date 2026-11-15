@@ -550,6 +550,76 @@ func TestCreateGoesOnAfterASwapRightAfterTheAnswer(t *testing.T) {
 	}
 }
 
+// TestCreateNamesTheCopyOfTheFolderOfTheSecondAnswer: right after `rev-parse
+// --absolute-git-dir` answered the held folder, `.git` becomes a symbolic link
+// to a copy T of the git directory. After the second answer 4c111e86 gives
+// each call with --git-dir=T the folder of T in the folder of the daemon as
+// its GIT_COMMON_DIR. Its other calls that name a folder of a repository keep
+// the folder of the first gate (measured on Linux). The row with the git directory X of a
+// second repository is tested, not measured. Without the copy of the folder
+// of T (takeGitDirCopy) the calls with --git-dir=T keep the folder of the
+// first gate.
+func TestCreateNamesTheCopyOfTheFolderOfTheSecondAnswer(t *testing.T) {
+	for _, row := range []struct{ name, entry string }{
+		{"a link to a copy", "copy"},
+		{"a link to X", "X"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if err := os.RemoveAll(filepath.Join(f.gitDir, worktreesSubdir)); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+			if err := os.CopyFS(target, os.DirFS(f.gitDir)); err != nil {
+				t.Fatal(err)
+			}
+			if row.entry == "X" {
+				_, target = configRepo(t)
+			}
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			swapAt(t, "answered", f.gitDir, target)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want a good create", raw)
+			}
+			answer := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "--absolute-git-dir") })
+			if answer < 0 {
+				t.Fatal("the calls have no rev-parse --absolute-git-dir")
+			}
+			first := childCommonDir(calls[answer].env)
+			if !isShadowRepoName(filepath.Base(first)) {
+				t.Fatalf("the first answer has GIT_COMMON_DIR=%s, want a folder of a repository", first)
+			}
+			moved := filepath.Join(filepath.Dir(first), shadowRepoName(target))
+			if fi, err := os.Lstat(filepath.Join(moved, "config")); err != nil || !fi.Mode().IsRegular() {
+				t.Fatalf("the config of the folder of the copy: %v", err)
+			}
+			named, kept := 0, 0
+			for _, c := range calls[answer+1:] {
+				got := childCommonDir(c.env)
+				switch {
+				case slices.Contains(c.argv, "--git-dir="+target):
+					named++
+					if got != moved {
+						t.Errorf("%q has GIT_COMMON_DIR=%s, want %s", c.argv, got, moved)
+					}
+				case isShadowRepoName(filepath.Base(got)):
+					kept++
+					if got != first {
+						t.Errorf("%q has GIT_COMMON_DIR=%s, want %s", c.argv, got, first)
+					}
+				}
+			}
+			if named < 2 || kept == 0 {
+				t.Errorf("%d calls with --git-dir=%s and %d other calls with a folder of a repository, want 2 or more and 1 or more", named, target, kept)
+			}
+		})
+	}
+}
+
 // callsAfterAnswer is each call after the first `rev-parse --absolute-git-dir`
 // up to the first `worktree add`, as its words with no `-c` pair, then " | "
 // and its working folder. The leaf of a staged add is "<staged leaf>".
@@ -794,5 +864,41 @@ func TestCreateOverAnOldRegistrationInTheSpellingOfTheRequest(t *testing.T) {
 				t.Errorf("the record of the registration = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// TestGitDirCopyOnlyOfTheHeldFolder: takeGitDirCopy makes the folder of the
+// copy only for a pinned git directory with the identity of the hold. Another
+// git directory, and a real folder that replaced the held one at its path,
+// get no folder (claustrum's own). Without the identity test both get one.
+func TestGitDirCopyOnlyOfTheHeldFolder(t *testing.T) {
+	_, held := configRepo(t)
+	_, other := configRepo(t)
+	run := resolveTestRoot(t, t.TempDir())
+	u := gitUse{host: NewShadowHost(run)}
+	read := &repoVerdict{shadowText: "[core]\n"}
+	a := acceptGitDir(held, gitDirIdentity(held))
+	if a == nil {
+		t.Fatal("no hold of the git directory")
+	}
+	defer a.release()
+	a.takeGitDirCopy(u, other, read)
+	if a.gitDirCopy != nil {
+		t.Errorf("another git directory got the folder %s", a.gitDirCopy.repoDir)
+	}
+	a.takeGitDirCopy(u, held, read)
+	if a.gitDirCopy == nil || a.gitDirCopy.repoDir == "" {
+		t.Fatal("the held git directory got no folder")
+	}
+	a.gitDirCopy = nil
+	if err := os.Rename(held, held+"-old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(held, os.DirFS(held+"-old")); err != nil {
+		t.Fatal(err)
+	}
+	a.takeGitDirCopy(u, held, read)
+	if a.gitDirCopy != nil {
+		t.Errorf("a folder that replaced the held one got the folder %s", a.gitDirCopy.repoDir)
 	}
 }

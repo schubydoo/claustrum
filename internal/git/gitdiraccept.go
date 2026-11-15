@@ -69,6 +69,10 @@ type acceptedGitDir struct {
 	// reread is true for a hold that askedAgain took: the add reads its config
 	// again after the listing (rereadConfigRefusal).
 	reread bool
+	// gitDirCopy is the folder in the folder of the daemon of a hold that
+	// askedAgain took, or nil. The calls with --git-dir= name it
+	// (takeGitDirCopy).
+	gitDirCopy *gitUse
 	// addBranch is the branch that the staged add made (`-b`), and addTip its
 	// tip in the held folder right after the add, or "" (addStage.finish).
 	addBranch, addTip string
@@ -366,6 +370,31 @@ func (a *acceptedGitDir) askedAgain(u gitUse, repo string) (string, *acceptedGit
 	}
 	next.reread = true
 	return again, next
+}
+
+// takeGitDirCopy makes the folder of the git directory pinned in the folder of
+// the daemon, with read, the read of its config. pinned and read come from one
+// walk and one read (rereadConfigRefusal), so no step resolves the path again.
+// It is the step of the first gate of a request (syncRepo). That step writes
+// and evicts only inside the folder of the daemon: the 129th repository folder
+// evicts the oldest one.
+//
+// a is the hold that askedAgain took. After that answer 4c111e86 names one new
+// folder of the copy in GIT_COMMON_DIR for each call with --git-dir=<copy>.
+// The other calls that name a folder of a repository keep the folder of the
+// first gate (measured on Linux). A pinned folder that is not the held folder
+// gets no copy, and so does a step that fails. The calls then keep the folder
+// of the first gate (claustrum's own, not measured).
+func (a *acceptedGitDir) takeGitDirCopy(u gitUse, pinned string, read *repoVerdict) {
+	if read == nil || u.host == nil || pinned == "" {
+		return
+	}
+	if now := gitDirIdentity(pinned); now == nil || !os.SameFile(now, a.info) {
+		return
+	}
+	if use, err := u.host.syncRepo(pinned, read); err == nil {
+		a.gitDirCopy = &use
+	}
 }
 
 // replacedAtPath is the hold of a create on a new real directory at the path
