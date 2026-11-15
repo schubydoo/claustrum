@@ -251,8 +251,9 @@ func TestProbeLeftoverDeleteErrorNamesItsPath(t *testing.T) {
 }
 
 // TestRequestDirRemoveInAWriteSearchDaemonFolder: the folder of the daemon has
-// mode 0300. The remove of an empty request folder that requestDir made is one
-// rmdir, and a folder with content stays (measured on Linux). A file at the
+// mode 0300. 4c111e86 removes an empty request folder by one rmdir and keeps a
+// folder with content (measured on Linux). claustrum does the same for a
+// folder that requestDir made. A file at the
 // name stays (claustrum's own, not measured). Without the rmdir of
 // removeEmptyRequestDir the empty folder stays. With a tree remove in its
 // place the file goes.
