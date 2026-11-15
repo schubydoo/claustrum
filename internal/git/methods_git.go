@@ -1766,7 +1766,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// branch then. be1c1ca5 answers so, measured on Linux, macOS and Windows.
 	// The stale step has run before this test. A daemon GIT_COMMON_DIR makes git
 	// register in another folder, so the test does not run then, and git decides
-	// as before (claustrum's own, not measured).
+	// as before (claustrum's own, not measured). With "shadowDirOff":true a
+	// locked entry gets no refusal here, and git decides (registeredLeafRefusal).
 	//
 	// On Windows a junction at `<git dir>\worktrees` of the held folder refuses
 	// the create first, and the registrations behind it are not read. b3081b51
@@ -1785,7 +1786,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if gitAnswered {
 			regDir = filepath.Dir(gitDirRegistryDir(gitDir))
 		}
-		if msg := registeredLeafRefusal(regDir, p.WorktreePath); msg != "" {
+		if msg := registeredLeafRefusal(regDir, p.WorktreePath, bool(p.ShadowDirOff)); msg != "" {
 			return refuseAdd(msg)
 		}
 	}

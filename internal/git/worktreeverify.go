@@ -1101,7 +1101,11 @@ func parentResolvedPath(path string) string {
 // The texts are those of be1c1ca5, measured on Linux, macOS and Windows. A path
 // with a character of genericHintChars gets the hint with no path. Not measured: a
 // `'` on Windows, and every other character in the hint.
-func registeredLeafRefusal(commonDir, worktreePath string) string {
+//
+// With off set ("shadowDirOff":true) a locked entry gives "": the add runs, and
+// git answers its own "missing but locked worktree" text (4c111e86, measured on
+// macOS). An unlocked entry with off keeps the text (not measured).
+func registeredLeafRefusal(commonDir, worktreePath string, off bool) string {
 	if fi, err := os.Lstat(worktreePath); err == nil {
 		if !fi.IsDir() || !emptyFolder(worktreePath) {
 			return ""
@@ -1110,7 +1114,7 @@ func registeredLeafRefusal(commonDir, worktreePath string) string {
 		return ""
 	}
 	name, lock := registeredLeafEntry(commonDir, newWorktreePathSet(worktreePath, parentResolvedPath(worktreePath)))
-	if name == "" {
+	if name == "" || off && lock != notLocked {
 		return ""
 	}
 	head := "cannot add a worktree: " + tickPath(worktreePath) + " is still registered in this repository as "
