@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -155,15 +156,33 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 	if len(names) != 1 {
 		t.Errorf("the shard holds %v, want only the object", names)
 	}
-	// A folder made with mode 0755 here gets the same umask.
-	ref := filepath.Join(t.TempDir(), "ref")
-	if err := os.Mkdir(ref, 0o755); err != nil {
+	// The modes of the folders are pinned by TestLFSKeepShardModeFollowsUmask.
+}
+
+// TestLFSKeepShardModeFollowsUmask: 4c111e86 asks for mode 0777 for the two
+// shard levels (measured on Linux), so umask 0002 gives 0775. A missing `lfs`
+// and `lfs/objects` get 0755 less the umask (claustrum's own, not measured).
+// The test sets the umask of the process, so it does not run in parallel.
+func TestLFSKeepShardModeFollowsUmask(t *testing.T) {
+	seamFreeSpace(t)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.onServer(t, "a.bin")
+	lfs := filepath.Join(f.gitDir, "lfs")
+	if err := os.RemoveAll(lfs); err != nil {
 		t.Fatal(err)
 	}
-	want, _ := os.Stat(ref)
-	for _, d := range []string{filepath.Dir(p), filepath.Dir(filepath.Dir(p)), filepath.Join(f.gitDir, "lfs")} {
-		if fi, err := os.Stat(d); err != nil || fi.Mode().Perm() != want.Mode().Perm() {
-			t.Errorf("the folder %s = %v, %v, want mode 0755", d, fi, err)
+	old := unix.Umask(0o002)
+	t.Cleanup(func() { unix.Umask(old) })
+	f.wantSuccess(t)
+	shard := f.shard("a.bin")
+	for d, want := range map[string]os.FileMode{lfs: 0o755, filepath.Join(lfs, "objects"): 0o755,
+		filepath.Dir(shard): 0o775, shard: 0o775} {
+		fi, err := os.Stat(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != want {
+			t.Errorf("the folder %s has mode %#o, want %#o", d, got, want)
 		}
 	}
 }
@@ -871,11 +890,170 @@ func TestCommitPointersStopsAtDeadline(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := pointerScanGit(ctx, gitUse{}, f.repo, nil, io.Discard, "ls-tree", "HEAD"); err == nil {
+	if err := pointerScanGit(ctx, gitUse{}, f.repo, nil, nil, io.Discard, "ls-tree", "HEAD"); err == nil {
 		t.Error("the ls-tree call of the seed after the deadline = nil error, want a failure")
 	}
 	if got := commitPointers(ctx, gitUse{}, f.repo, "HEAD"); len(got) != 0 {
 		t.Errorf("commitPointers after the deadline = %+v, want none", got)
+	}
+}
+
+// seedListings is the count of the listings right before the two calls of
+// the seed: the same listing twice (4c111e86, measured on Linux).
+const seedListings = 2
+
+// seedScanCalls are the listings right before the seed and its ls-tree and
+// cat-file calls. The two calls run at once, so their records come in either
+// order. It pins the list: seedListings plain listings, then ls-tree and
+// `cat-file --batch --buffer`.
+func seedScanCalls(t *testing.T, calls []envCall) []envCall {
+	t.Helper()
+	scan := func(c envCall) string {
+		switch {
+		case slices.Contains(c.argv, "ls-tree"):
+			return "ls-tree"
+		case argvEndsWith(c.argv, []string{"cat-file", "--batch", "--buffer"}):
+			return "cat-file --batch --buffer"
+		}
+		return ""
+	}
+	i := slices.IndexFunc(calls, func(c envCall) bool { return scan(c) != "" })
+	if i < 0 || i+2 > len(calls) {
+		t.Fatal("no ls-tree and cat-file calls of the seed")
+	}
+	start := i
+	for start > 0 && calls[start-1].listing() && !slices.ContainsFunc(calls[start-1].argv, func(a string) bool {
+		return strings.HasPrefix(a, "--git-dir=")
+	}) {
+		start--
+	}
+	pair := []string{scan(calls[i]), scan(calls[i+1])}
+	slices.Sort(pair)
+	if i-start != seedListings || !slices.Equal(pair, []string{"cat-file --batch --buffer", "ls-tree"}) {
+		t.Fatalf("%d listings, then %q, want %d listings, then ls-tree and cat-file --batch --buffer", i-start, pair, seedListings)
+	}
+	return calls[start : i+2]
+}
+
+// TestSeedScanRunsInBaseRepo: the ls-tree and cat-file calls of the seed run
+// in baseRepo, with GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo>, and so does
+// the two listings before them (4c111e86, measured on Linux). A linked worktree as
+// baseRepo gets its `worktrees/<n>` entry as GIT_DIR, and its pointer is still
+// seeded (claustrum's own, not measured).
+func TestSeedScanRunsInBaseRepo(t *testing.T) {
+	for _, linked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("linked=%v", linked), func(t *testing.T) {
+			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+			f.local(t, "a.bin", "alpha-object")
+			base, gitDir, extra := f.repo, f.gitDir, map[string]any(nil)
+			if linked {
+				base = filepath.Join(filepath.Dir(f.repo), "linked")
+				runGit(t, f.repo, "worktree", "add", "-q", "-b", "base1", base)
+				gitDir = filepath.Join(f.gitDir, worktreesSubdir, "linked")
+				if raw, _ := f.call(t, "git.info", map[string]any{"path": base}); !strings.Contains(raw, `"isRepo":true`) {
+					t.Fatalf("git.info = %s", raw)
+				}
+				extra = map[string]any{"baseRepo": base, "worktreePath": filepath.Join(base, ".claude", "worktrees", "w1")}
+			}
+			raw, calls := f.create(t, extra)
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want success", raw)
+			}
+			if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
+				t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
+			}
+			scan := seedScanCalls(t, calls)
+			// The two listings are the same call.
+			if !slices.Equal(scan[0].argv, scan[1].argv) || !slices.Equal(scan[0].env, scan[1].env) {
+				t.Errorf("the listings %q and %q differ, want the same call twice", scan[0].argv, scan[1].argv)
+			}
+			// cat-file has no listing of its own and pins the hook names of
+			// the ls-tree call.
+			if got, want := scan[len(scan)-1].pins(t), scan[len(scan)-2].pins(t); !slices.Equal(got, want) {
+				t.Errorf("cat-file pins %q, want the pins of the ls-tree call %q", got, want)
+			}
+			for _, c := range scan {
+				dir, _ := lookupExact(c.env, "GIT_DIR")
+				top, _ := lookupExact(c.env, "GIT_WORK_TREE")
+				if canonicalPath(c.cwd) != canonicalPath(base) || canonicalPath(dir) != canonicalPath(gitDir) ||
+					canonicalPath(top) != canonicalPath(base) {
+					t.Errorf("call %q runs in %s with GIT_DIR=%s GIT_WORK_TREE=%s, want baseRepo", c.argv, c.cwd, dir, top)
+				}
+			}
+		})
+	}
+}
+
+// TestSeedScanCatFileStartsDuringLsTree: the cat-file call of the seed starts
+// with the ls-tree call, before the first id, and before ls-tree ends
+// (4c111e86, measured on Linux). The stub holds ls-tree for 500 ms before git
+// prints the tree.
+func TestSeedScanCatFileStartsDuringLsTree(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.local(t, "a.bin", "alpha-object")
+	timeLog := filepath.Join(t.TempDir(), "time.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+	const hold = 500 * time.Millisecond
+	slowGit(t, "ls-tree", "pre", hold, "", "")
+	f.wantSuccess(t)
+	if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
+		t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
+	}
+	b, err := os.ReadFile(timeLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lsPid string
+	var lsStart, lsEnd, catStart int64
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
+		w := strings.Split(line, "\x1f")
+		ns, _ := strconv.ParseInt(w[1], 10, 64)
+		switch {
+		case w[0] == "start" && slices.Contains(w, "ls-tree"):
+			lsPid, lsStart = w[2], ns
+		case w[0] == "start" && slices.Contains(w, "cat-file") && slices.Contains(w, "--buffer"):
+			catStart = ns
+		case w[0] == "end" && w[2] == lsPid:
+			lsEnd = ns
+		}
+	}
+	if lsStart == 0 || lsEnd == 0 || catStart == 0 {
+		t.Fatalf("time log has no ls-tree start or end or no cat-file start:\n%s", b)
+	}
+	if catStart >= lsStart+int64(hold)/2 {
+		t.Errorf("cat-file starts %v after the start of ls-tree, want it before the first id", time.Duration(catStart-lsStart))
+	}
+	if catStart >= lsEnd {
+		t.Errorf("cat-file starts %v after the end of ls-tree, want it to start before", time.Duration(catStart-lsEnd))
+	}
+}
+
+// TestSeedScanArgv: the ls-tree call of the seed has the argv of 4c111e86
+// (measured on Linux). A pointer in a subfolder counts, also when the call
+// runs in another subfolder (claustrum's own, not measured).
+func TestSeedScanArgv(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "sub/b.bin": "beta-object"})
+	mustWrite(t, filepath.Join(f.repo, "other", "c.txt"), "c\n")
+	runGit(t, f.repo, "add", "other")
+	runGit(t, f.repo, "commit", "-q", "-m", "other")
+	calls := logGitArgv(t)
+	for _, dir := range []string{f.repo, filepath.Join(f.repo, "other")} {
+		if got := commitPointers(context.Background(), gitUse{}, dir, "HEAD"); len(got) != 2 {
+			t.Errorf("commitPointers in %s = %+v, want the two pointers", dir, got)
+		}
+	}
+	want := []string{"-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", "HEAD"}
+	n := 0
+	for _, c := range calls() {
+		if slices.Contains(c, "ls-tree") {
+			n++
+			if !slices.Equal(c, want) {
+				t.Errorf("ls-tree call = %q, want %q", c, want)
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d ls-tree calls, want 2", n)
 	}
 }
 
