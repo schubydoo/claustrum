@@ -176,13 +176,14 @@ func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
 	tmp := realTempDir(t)
 	b := plainFolder(t, tmp)
 	makeDir(t, filepath.Join(b, ".git"))
-	if got, want := unusableDotGit(b), filepath.Join(b, ".git"); got != want {
+	want := filepath.Join(b, ".git")
+	if got, _ := unusableDotGit(b); got != want {
 		t.Fatalf("with no variable: unusableDotGit = %q, want %q", got, want)
 	}
 	for _, name := range []string{"GIT_DIR", "GIT_COMMON_DIR"} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(name, filepath.Join(tmp, "elsewhere"))
-			if got := unusableDotGit(b); got != "" {
+			if got, _ := unusableDotGit(b); got != "" {
 				t.Errorf("with a daemon %s: unusableDotGit = %q, want no name", name, got)
 			}
 		})

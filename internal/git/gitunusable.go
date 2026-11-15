@@ -15,9 +15,15 @@ import (
 // on Linux, macOS and Windows).
 const unusableGitText = "Git can't use `%s`, so Claude made no worktree. A Claude session can damage it, so check it first. Then repair it, or turn off Worktree if this isn't meant to be a repository."
 
+// cannotLookText is the refusal of git.worktree_create for a folder that the daemon
+// cannot search for a `.git`. %s is that folder, in the spelling of the walk (4c111e86,
+// measured on macOS for a folder of mode 0600 and of mode 0000).
+const cannotLookText = "Claude couldn't look into `%s` for a repository, so it made no worktree. Check that your account on the remote machine may open that folder, or turn off Worktree."
+
 // notARepoResult is the answer of a create that finds no repository at repo. 4c111e86
 // answers worktree_add_failed with unusableGitText where the walk met a `.git` that git
-// cannot use (unusableDotGit), and not_a_repo otherwise. Measured on Linux, macOS and
+// cannot use (unusableDotGit), or cannotLookText for a folder that it cannot search
+// (measured on macOS), and not_a_repo otherwise. Measured on Linux, macOS and
 // Windows: an empty `.git` folder, one with no HEAD and a nested empty `.git` below a good
 // repository. So is a `.git` file with no `gitdir: ` line. A garbage HEAD is measured on
 // Linux and Windows, and a `.git` folder of junk only on Linux. A `.git` file that is
@@ -25,8 +31,12 @@ const unusableGitText = "Git can't use `%s`, so Claude made no worktree. A Claud
 // dangling `.git` link and a `.git` FIFO are measured on Linux and macOS. The git calls
 // before the answer stay as they were (measured on Linux).
 func notARepoResult(id interface{}, repo string) rpc.Response {
-	if g := unusableDotGit(repo); g != "" {
-		return rpc.OKResult(id, rpc.WorktreeResult{Success: false, Error: fmt.Sprintf(unusableGitText, g), ErrorCode: "worktree_add_failed"})
+	if g, noLook := unusableDotGit(repo); g != "" {
+		text := unusableGitText
+		if noLook {
+			text = cannotLookText
+		}
+		return rpc.OKResult(id, rpc.WorktreeResult{Success: false, Error: fmt.Sprintf(text, g), ErrorCode: "worktree_add_failed"})
 	}
 	return rpc.OKResult(id, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 }
@@ -38,54 +48,70 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 // `.git` of another type, such as a FIFO, do not: the walk goes on, and a repository
 // above them is used (4c111e86, measured on Linux and macOS).
 //
-// claustrum's own, not measured: a daemon GIT_DIR or GIT_COMMON_DIR turns the test off. A git directory
-// that the daemon cannot search counts as usable, so it keeps not_a_repo as 683cc6a9
-// answers. So does a stat of a `.git` file target that fails with another error than
-// "does not exist". A `.git` file that names a regular file is unusable. Where the walk
-// meets two such `.git`, the first one is named.
-func unusableDotGit(dir string) string {
+// noLook is true when the name is a folder that the daemon cannot search for its
+// `.git` (cannotLookText). On Linux and macOS a stat of the `.git` that fails for lack
+// of permission ends the walk so (4c111e86, measured on macOS). A `.git` folder that the
+// daemon cannot search is unusable (measured on macOS for mode 0000). An empty `.git`
+// folder in a folder of another account keeps not_a_repo. Only the folder above it of
+// another account gives the refusal (measured on macOS, both). On Linux all of these are
+// claustrum's own, not measured. On Windows the walk has none of them (from the code).
+//
+// claustrum's own, not measured: a daemon GIT_DIR or GIT_COMMON_DIR turns the test off.
+// A `.git` folder of mode 0600 is unusable, as mode 0000 is. A `.git` file that names a
+// git directory the daemon cannot search counts as usable, so it keeps not_a_repo as
+// 683cc6a9 answers. So does a stat of a `.git` file target that fails with another error
+// than "does not exist". A `.git` file that names a regular file is unusable. The owner
+// test is on a `.git` folder only, and a `.git` folder in a folder of another account
+// ends the walk with no name, also one that the daemon cannot search. Where the walk meets two such `.git`, the first one is
+// named.
+func unusableDotGit(dir string) (name string, noLook bool) {
 	if os.Getenv("GIT_DIR") != "" || daemonCommonDirSet() {
-		return ""
+		return "", false
 	}
 	if dir == "" {
 		dir = "."
 	}
 	start, err := walkStart(dir)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	if start, err = filepath.Abs(start); err != nil {
-		return ""
+		return "", false
 	}
 	first := ""
 	for d := start; ; {
 		dotGit := filepath.Join(d, ".git")
 		fi, err := os.Stat(dotGit)
+		// The permission test takes the Lstat, so a `.git` link into a folder that the
+		// daemon cannot search names the link (claustrum's own, not measured).
+		_, lerr := os.Lstat(dotGit)
 		unusable := false
 		switch {
+		case err != nil && first == "" && walkMayNotLook(lerr):
+			return d, true
 		case err != nil:
 			if isGitDirShape(d) {
-				return ""
+				return "", false
 			}
-			if _, lerr := os.Lstat(dotGit); lerr == nil {
+			if lerr == nil {
 				unusable = true // a dangling link
 			}
 		case fi.IsDir():
-			if !gitDirUnusable(dotGit) {
-				return ""
+			if (!walkMayNotSearch(dotGit) && !gitDirUnusable(dotGit)) || heldByOtherAccount(d) {
+				return "", false
 			}
 			if first == "" {
 				first = dotGit
 			}
-			return first
+			return first, false
 		case fi.Mode().IsRegular():
 			if !gitFileUnusable(dotGit, d) {
-				return ""
+				return "", false
 			}
 			if first == "" {
 				first = dotGit
 			}
-			return first
+			return first, false
 		default:
 			unusable = true // a FIFO, a device
 		}
@@ -94,7 +120,7 @@ func unusableDotGit(dir string) string {
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
-			return first
+			return first, false
 		}
 		d = parent
 	}

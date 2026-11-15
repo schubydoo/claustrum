@@ -206,6 +206,10 @@ on Linux). For a `.git` file that names such a G, all four answer so (`683cc6a9`
 Linux). The create answers `not_a_repo` there, with and without `worktreeRoot`. The remove refuses
 it and deletes nothing (`683cc6a9`, measured on Linux). A daemon `GIT_DIR` on `git.list_branches`
 and the create, a linked-worktree entry, macOS and Windows are claustrum's own, not measured.
+On Linux and macOS a `.git` folder that the daemon cannot search gets the [unusable-git
+refusal](git-worktree-create.md#request-path-folder-and-post-add-refusals) of the create instead
+(`4c111e86`, measured on macOS for mode 0000, claustrum's own on Linux), unless its folder belongs to
+another account.
 
 ### Frames
 
@@ -327,7 +331,10 @@ daemon runs `git version`, and the method goes on:
   `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`, also
   with an empty `GIT_CONFIG_KEY_0`. A folder of mode 0000 gets the same frames for
   the last three methods, as a plain folder and as a repository (measured on
-  Linux).
+  Linux). On `4c111e86` the create answers the [couldn't-look
+  refusal](git-worktree-create.md#request-path-folder-and-post-add-refusals) there
+  instead (measured on macOS for a folder that holds an empty `.git`, claustrum's own on
+  Linux). A plain folder and a repository there are not measured.
 - If `git version` fails too, the method answers the "cannot run" text. That holds
   for `git.info` on a regular file and on a folder of mode 0000, and for the other
   three on a regular file (the create in `error`, with and without `worktreeRoot`).
