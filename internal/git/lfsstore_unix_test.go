@@ -898,21 +898,41 @@ func TestCommitPointersStopsAtDeadline(t *testing.T) {
 	}
 }
 
-// seedScanCalls are the ls-tree call of the seed and the calls after it, up to
-// the read-tree call.
+// seedListings is the count of the listings right before the two calls of
+// the seed.
+const seedListings = 1
+
+// seedScanCalls are the listings right before the seed and its ls-tree and
+// cat-file calls. The two calls run at once, so their records come in either
+// order. It pins the list: seedListings plain listings, then ls-tree and
+// `cat-file --batch --buffer`.
 func seedScanCalls(t *testing.T, calls []envCall) []envCall {
 	t.Helper()
-	for i, c := range calls {
-		if slices.Contains(c.argv, "ls-tree") {
-			for j := i; j < len(calls); j++ {
-				if slices.Contains(calls[j].argv, "read-tree") {
-					return calls[i:j]
-				}
-			}
+	scan := func(c envCall) string {
+		switch {
+		case slices.Contains(c.argv, "ls-tree"):
+			return "ls-tree"
+		case argvEndsWith(c.argv, []string{"cat-file", "--batch", "--buffer"}):
+			return "cat-file --batch --buffer"
 		}
+		return ""
 	}
-	t.Fatal("no ls-tree call before the read-tree call")
-	return nil
+	i := slices.IndexFunc(calls, func(c envCall) bool { return scan(c) != "" })
+	if i < 0 || i+2 > len(calls) {
+		t.Fatal("no ls-tree and cat-file calls of the seed")
+	}
+	start := i
+	for start > 0 && calls[start-1].listing() && !slices.ContainsFunc(calls[start-1].argv, func(a string) bool {
+		return strings.HasPrefix(a, "--git-dir=")
+	}) {
+		start--
+	}
+	pair := []string{scan(calls[i]), scan(calls[i+1])}
+	slices.Sort(pair)
+	if i-start != seedListings || !slices.Equal(pair, []string{"cat-file --batch --buffer", "ls-tree"}) {
+		t.Fatalf("%d listings, then %q, want %d listings, then ls-tree and cat-file --batch --buffer", i-start, pair, seedListings)
+	}
+	return calls[start : i+2]
 }
 
 // TestSeedScanRunsInBaseRepo: the ls-tree and cat-file calls of the seed run
@@ -942,17 +962,10 @@ func TestSeedScanRunsInBaseRepo(t *testing.T) {
 			if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
 				t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
 			}
-			i := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "ls-tree") })
-			if i < 1 || !calls[i-1].listing() {
-				t.Fatalf("no listing right before the ls-tree call of the seed")
-			}
-			scan := append([]envCall{calls[i-1]}, seedScanCalls(t, calls)...)
-			// The cat-file call comes right after the ls-tree call, with no
-			// listing, and pins the same hook names.
-			if len(scan) < 3 || !argvEndsWith(scan[2].argv, []string{"cat-file", "--batch", "--buffer"}) {
-				t.Fatalf("the seed calls end %q, want the listing, ls-tree, then cat-file --batch --buffer", scan[len(scan)-1].argv)
-			}
-			if got, want := scan[2].pins(t), scan[1].pins(t); !slices.Equal(got, want) {
+			scan := seedScanCalls(t, calls)
+			// cat-file has no listing of its own and pins the hook names of
+			// the ls-tree call.
+			if got, want := scan[len(scan)-1].pins(t), scan[len(scan)-2].pins(t); !slices.Equal(got, want) {
 				t.Errorf("cat-file pins %q, want the pins of the ls-tree call %q", got, want)
 			}
 			for _, c := range scan {
@@ -968,14 +981,16 @@ func TestSeedScanRunsInBaseRepo(t *testing.T) {
 }
 
 // TestSeedScanCatFileStartsDuringLsTree: the cat-file call of the seed starts
-// before the ls-tree call ends (4c111e86, measured on Linux). The stub keeps
-// ls-tree running for 500 ms after git printed the tree.
+// with the ls-tree call, before the first id, and before ls-tree ends
+// (4c111e86, measured on Linux). The stub holds ls-tree for 500 ms before git
+// prints the tree.
 func TestSeedScanCatFileStartsDuringLsTree(t *testing.T) {
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
 	f.local(t, "a.bin", "alpha-object")
 	timeLog := filepath.Join(t.TempDir(), "time.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
-	slowGit(t, "ls-tree", "post", 500*time.Millisecond, "", "")
+	const hold = 500 * time.Millisecond
+	slowGit(t, "ls-tree", "pre", hold, "", "")
 	f.wantSuccess(t)
 	if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
 		t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
@@ -985,21 +1000,24 @@ func TestSeedScanCatFileStartsDuringLsTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	var lsPid string
-	var lsEnd, catStart int64
+	var lsStart, lsEnd, catStart int64
 	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		w := strings.Split(line, "\x1f")
 		ns, _ := strconv.ParseInt(w[1], 10, 64)
 		switch {
 		case w[0] == "start" && slices.Contains(w, "ls-tree"):
-			lsPid = w[2]
+			lsPid, lsStart = w[2], ns
 		case w[0] == "start" && slices.Contains(w, "cat-file") && slices.Contains(w, "--buffer"):
 			catStart = ns
 		case w[0] == "end" && w[2] == lsPid:
 			lsEnd = ns
 		}
 	}
-	if lsEnd == 0 || catStart == 0 {
-		t.Fatalf("time log has no ls-tree end or no cat-file start:\n%s", b)
+	if lsStart == 0 || lsEnd == 0 || catStart == 0 {
+		t.Fatalf("time log has no ls-tree start or end or no cat-file start:\n%s", b)
+	}
+	if catStart >= lsStart+int64(hold)/2 {
+		t.Errorf("cat-file starts %v after the start of ls-tree, want it before the first id", time.Duration(catStart-lsStart))
 	}
 	if catStart >= lsEnd {
 		t.Errorf("cat-file starts %v after the end of ls-tree, want it to start before", time.Duration(catStart-lsEnd))

@@ -399,36 +399,29 @@ func pointerScanGit(ctx context.Context, u gitUse, dir string, pre *configListin
 // commitPointers are the pointers of the tree of rev, read in dir. It keeps no
 // output of git but the ids of the small blobs and the pointers. One listing
 // runs before the ls-tree call, and the `cat-file --batch --buffer` call pins
-// its hook names with no listing of its own. cat-file starts while ls-tree
-// still runs, and gets each id as ls-tree lists it. The argv of both calls,
-// the listing and that start follow 4c111e86 (measured on Linux, a pointer at
-// the top of the tree). Claustrum's own, not measured: a pointer in a
-// subfolder, and the start of cat-file at the first small blob, so a tree with
-// none gets no cat-file.
+// its hook names with no listing of its own. cat-file starts with ls-tree,
+// before the first id, and gets each id as ls-tree lists it. Its input ends
+// with the end of ls-tree. The argv of both calls, the listing and that start
+// follow 4c111e86 (measured on Linux, a pointer at the top of the tree).
+// Claustrum's own, not measured: a pointer in a subfolder, a tree with no small
+// blob, and the order of the two starts.
 func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef {
 	u = u.atCommand()
 	pre := &configListing{hooks: hookPrecursor(seedScanContext(ctx, u), u, dir, false).hooks()}
 	ids := newIDLines()
-	var b batchReader
-	var batchErr chan error
-	l := blobLister{found: func(id string) {
-		if batchErr == nil {
-			batchErr = make(chan error, 1)
-			go func() {
-				batchErr <- pointerScanGit(ctx, u, dir, pre, ids, &b, "cat-file", "--batch", "--buffer")
-			}()
+	l := blobLister{found: ids.add}
+	listErr := make(chan error, 1)
+	go func() {
+		err := pointerScanGit(ctx, u, dir, pre, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev)
+		if err == nil {
+			l.end()
 		}
-		ids.add(id)
-	}}
-	err := pointerScanGit(ctx, u, dir, pre, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev)
-	if err == nil {
-		l.end()
-	}
-	ids.close()
-	if batchErr == nil {
-		return nil
-	}
-	if <-batchErr != nil || err != nil || ctx.Err() != nil {
+		ids.close()
+		listErr <- err
+	}()
+	var b batchReader
+	batchErr := pointerScanGit(ctx, u, dir, pre, ids, &b, "cat-file", "--batch", "--buffer")
+	if <-listErr != nil || batchErr != nil || ctx.Err() != nil {
 		return nil
 	}
 	return b.ps
