@@ -566,6 +566,8 @@ component_management:
         - internal/install/libc_linux.go
         - internal/install/libc_other.go
         - internal/install/libc_unix.go
+        # The stop of a bounded run of -install and -probe-cli, with its gate before the reap.
+        - internal/install/groupstop.go
         # The test hooks of the settings reads.
         - internal/install/fortest.go
         - internal/install/fortest_unix.go
