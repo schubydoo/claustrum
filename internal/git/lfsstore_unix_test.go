@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -954,6 +955,45 @@ func TestSeedScanRunsInBaseRepo(t *testing.T) {
 			canonicalPath(top) != canonicalPath(f.repo) {
 			t.Errorf("call %q runs in %s with GIT_DIR=%s GIT_WORK_TREE=%s, want baseRepo", c.argv, c.cwd, dir, top)
 		}
+	}
+}
+
+// TestSeedScanCatFileStartsDuringLsTree: the cat-file call of the seed starts
+// before the ls-tree call ends (4c111e86, measured on Linux). The stub keeps
+// ls-tree running for 500 ms after git printed the tree.
+func TestSeedScanCatFileStartsDuringLsTree(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.local(t, "a.bin", "alpha-object")
+	timeLog := filepath.Join(t.TempDir(), "time.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+	slowGit(t, "ls-tree", "post", 500*time.Millisecond, "", "")
+	f.wantSuccess(t)
+	if got := f.smudges(t)["a.bin"]; got != "present=true private=true" {
+		t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
+	}
+	b, err := os.ReadFile(timeLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lsPid string
+	var lsEnd, catStart int64
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
+		w := strings.Split(line, "\x1f")
+		ns, _ := strconv.ParseInt(w[1], 10, 64)
+		switch {
+		case w[0] == "start" && slices.Contains(w, "ls-tree"):
+			lsPid = w[2]
+		case w[0] == "start" && slices.Contains(w, "cat-file") && slices.Contains(w, "--buffer"):
+			catStart = ns
+		case w[0] == "end" && w[2] == lsPid:
+			lsEnd = ns
+		}
+	}
+	if lsEnd == 0 || catStart == 0 {
+		t.Fatalf("time log has no ls-tree end or no cat-file start:\n%s", b)
+	}
+	if catStart >= lsEnd {
+		t.Errorf("cat-file starts %v after the end of ls-tree, want it to start before", time.Duration(catStart-lsEnd))
 	}
 }
 

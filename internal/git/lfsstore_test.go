@@ -250,7 +250,12 @@ func TestLargeScanOutputs(t *testing.T) {
 
 // TestIDLines: the stdin of `cat-file --batch` is each id on its own line.
 func TestIDLines(t *testing.T) {
-	b, err := io.ReadAll(&idLines{ids: []string{"aaaa", "bbbb", "cccc"}})
+	r := newIDLines()
+	for _, id := range []string{"aaaa", "bbbb", "cccc"} {
+		r.add(id)
+	}
+	r.close()
+	b, err := io.ReadAll(r)
 	if err != nil || string(b) != "aaaa\nbbbb\ncccc\n" {
 		t.Errorf("idLines = %q, %v", b, err)
 	}

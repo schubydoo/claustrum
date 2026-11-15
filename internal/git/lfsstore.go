@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
@@ -157,12 +158,14 @@ const lsTreeHeadMax = 256
 
 // blobLister reads an `ls-tree --full-tree -r -l -z` output as it comes, as the stdout of
 // the call. It keeps the ids of the blobs of at most pointerBlobMax bytes, each
-// once. Of each record it keeps only the text before the tab.
+// once, and gives each new id to found when found is set. Of each record it
+// keeps only the text before the tab.
 type blobLister struct {
 	head   []byte
 	inPath bool
 	ids    []string
 	seen   map[string]bool
+	found  func(id string)
 }
 
 func (l *blobLister) Write(p []byte) (int, error) {
@@ -212,6 +215,9 @@ func (l *blobLister) end() {
 	}
 	l.seen[f[2]] = true
 	l.ids = append(l.ids, f[2])
+	if l.found != nil {
+		l.found(f[2])
+	}
 }
 
 // batchHeaderMax is the most bytes of one header line of a `cat-file --batch`
@@ -308,13 +314,49 @@ func (b *batchReader) take() {
 	}
 }
 
-// idLines is the stdin of `cat-file --batch`: each id on a line of its own.
+// idLines is the stdin of `cat-file --batch`: each id on a line of its own. The
+// ids come by add while ls-tree still runs, and close ends them. A read waits
+// for the next id or the end. An add never waits, so the reader of ls-tree
+// does not wait on cat-file.
 type idLines struct {
-	ids  []string
-	part string
+	mu     sync.Mutex
+	more   *sync.Cond
+	ids    []string
+	part   string
+	closed bool
+}
+
+func newIDLines() *idLines {
+	r := &idLines{}
+	r.more = sync.NewCond(&r.mu)
+	return r
+}
+
+// add puts id at the end of the lines.
+func (r *idLines) add(id string) {
+	r.mu.Lock()
+	r.ids = append(r.ids, id)
+	r.mu.Unlock()
+	r.more.Signal()
+}
+
+// close ends the lines after the ids added so far.
+func (r *idLines) close() {
+	r.mu.Lock()
+	r.closed = true
+	r.mu.Unlock()
+	r.more.Signal()
 }
 
 func (r *idLines) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for r.part == "" && len(r.ids) == 0 && !r.closed {
+		r.more.Wait()
+	}
 	n := 0
 	for n < len(p) {
 		if r.part == "" {
@@ -326,7 +368,7 @@ func (r *idLines) Read(p []byte) (int, error) {
 		k := copy(p[n:], r.part)
 		r.part, n = r.part[k:], n+k
 	}
-	if n == 0 && len(p) > 0 {
+	if n == 0 {
 		return 0, io.EOF
 	}
 	return n, nil
@@ -357,23 +399,36 @@ func pointerScanGit(ctx context.Context, u gitUse, dir string, pre *configListin
 // commitPointers are the pointers of the tree of rev, read in dir. It keeps no
 // output of git but the ids of the small blobs and the pointers. One listing
 // runs before the ls-tree call, and the `cat-file --batch --buffer` call pins
-// its hook names with no listing of its own. The argv of both calls and the
-// listing follow 4c111e86 (measured on Linux, a pointer at the top of the
-// tree). Claustrum's own, not measured: a pointer in a subfolder. Claustrum
-// starts cat-file after the end of ls-tree, and not at all with no small blob.
+// its hook names with no listing of its own. cat-file starts while ls-tree
+// still runs, and gets each id as ls-tree lists it. The argv of both calls,
+// the listing and that start follow 4c111e86 (measured on Linux, a pointer at
+// the top of the tree). Claustrum's own, not measured: a pointer in a
+// subfolder, and the start of cat-file at the first small blob, so a tree with
+// none gets no cat-file.
 func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef {
 	u = u.atCommand()
 	pre := &configListing{hooks: hookPrecursor(seedScanContext(ctx, u), u, dir, false).hooks()}
-	var l blobLister
-	if pointerScanGit(ctx, u, dir, pre, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev) != nil {
-		return nil
-	}
-	l.end()
-	if len(l.ids) == 0 || ctx.Err() != nil {
-		return nil
-	}
+	ids := newIDLines()
 	var b batchReader
-	if pointerScanGit(ctx, u, dir, pre, &idLines{ids: l.ids}, &b, "cat-file", "--batch", "--buffer") != nil {
+	var batchErr chan error
+	l := blobLister{found: func(id string) {
+		if batchErr == nil {
+			batchErr = make(chan error, 1)
+			go func() {
+				batchErr <- pointerScanGit(ctx, u, dir, pre, ids, &b, "cat-file", "--batch", "--buffer")
+			}()
+		}
+		ids.add(id)
+	}}
+	err := pointerScanGit(ctx, u, dir, pre, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev)
+	if err == nil {
+		l.end()
+	}
+	ids.close()
+	if batchErr == nil {
+		return nil
+	}
+	if <-batchErr != nil || err != nil || ctx.Err() != nil {
 		return nil
 	}
 	return b.ps
