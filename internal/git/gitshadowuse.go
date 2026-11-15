@@ -287,10 +287,26 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		// `cannot add a worktree: ` (4c111e86, measured on Linux, for a link to
 		// a copy). The text of a folder that is no git directory is not
 		// measured there. Windows keeps its text (not measured).
+		//
+		// Before that refusal 4c111e86 reads the config again and runs the pair
+		// (measured on Linux, for a link to a copy). A refusal of that read is not
+		// measured: the text stays.
 		if heldAtListing && !stagedAddWindowsSteps {
+			_ = rereadConfigRefusal(f, repo)
+			if afterListing != nil {
+				afterListing()
+			}
 			return "", &addSwappedAfterListing{text: text}
 		}
 		return "", errors.New(text)
+	}
+	// A hold that askedAgain took reads its config again after the listing
+	// (4c111e86, measured on Linux). A refusal there is claustrum's own (not
+	// measured).
+	if f.accepted != nil && f.accepted.reread && !stagedAddWindowsSteps {
+		if msg := rereadConfigRefusal(f, repo); msg != "" {
+			return "", errors.New(msg)
+		}
 	}
 	if named {
 		if text := f.worktreesFolderRefusal(); text != "" {
@@ -330,6 +346,19 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 func offLinkListing(ctx context.Context, u gitUse, repo string) {
 	f, _ := u.fixedForm(true)
 	hookPrecursor(ctx, f, repo, false)
+}
+
+// rereadConfigRefusal reads the config of the git directory that the trust
+// check of repo pins, also when a read of it is kept, and returns the refusal
+// of the gate, or "". It runs only in the state shadow.
+func rereadConfigRefusal(u gitUse, repo string) string {
+	t := gitDirTrustFor(repo)
+	if !u.shadow() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return ""
+	}
+	forgetRepoVerdict(t.pinCommonDir)
+	msg, _ := repoConfigGate(t, false, u.stop)
+	return msg
 }
 
 // addSwappedAfterListing is the error of a `worktree add` that does not run,

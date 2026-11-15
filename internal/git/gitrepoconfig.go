@@ -1375,6 +1375,19 @@ func keptRepoVerdict(k repoVerdictKey) (*repoVerdict, bool) {
 	return v, true
 }
 
+// forgetRepoVerdict drops the kept verdict of the git directory gitDir for
+// the home folder of the daemon, so that the next gate reads its config again.
+func forgetRepoVerdict(gitDir string) {
+	home, _ := os.UserHomeDir()
+	k := repoVerdictKey{gitDir: gitDir, home: home}
+	repoVerdicts.Lock()
+	defer repoVerdicts.Unlock()
+	if _, ok := repoVerdicts.byKey[k]; ok {
+		delete(repoVerdicts.byKey, k)
+		repoVerdicts.order = slices.DeleteFunc(repoVerdicts.order, func(o repoVerdictKey) bool { return o == k })
+	}
+}
+
 func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 	repoVerdicts.Lock()
 	defer repoVerdicts.Unlock()

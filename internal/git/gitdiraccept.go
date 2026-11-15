@@ -66,6 +66,9 @@ type acceptedGitDir struct {
 	// staged is the registration that the staging step moved into
 	// `worktrees` (addStage.move), or the zero value.
 	staged stagedEntry
+	// reread is true for a hold that askedAgain took: the add reads its config
+	// again after the listing (rereadConfigRefusal).
+	reread bool
 	// addBranch is the branch that the staged add made (`-b`), and addTip its
 	// tip in the held folder right after the add, or "" (addStage.finish).
 	addBranch, addTip string
@@ -321,38 +324,47 @@ func (a *acceptedGitDir) movedTo(gitDir, repo string) *acceptedGitDir {
 	return a.takeOver(gitDir, gitDirIdentity(gitDir), repo)
 }
 
-// askedAgain is the hold of a create on the git directory that git answers in
-// a second `rev-parse --absolute-git-dir` call, with that answer. It is for a
-// path that changed right after a first answer that named the held folder. It
-// is nil when the first answer named another folder or the `commondir` test of
-// the step fails. It is nil too when the trust check of repo pins no other git
-// directory, the second call fails, or movedTo gives no hold. The caller
-// releases the new hold.
-//
-// The rows are measured on Linux. A symbolic link to a copy of the git
-// directory is put at `.git` right after the first answer. 4c111e86 then asks
-// git again, goes on in the copy and answers success, and the record of the
-// session folder names the copy. A filter in the config of the copy does not
-// run. Not measured: a link to the git directory of another repository, and
-// macOS, which follows Linux.
-func (a *acceptedGitDir) askedAgain(u gitUse, gitDir, repo string) (string, *acceptedGitDir) {
+// mayAskAgain reports whether a create can ask git again at the add
+// (askedAgain), right after a first answer gitDir of `rev-parse
+// --absolute-git-dir` while the path no longer names the held folder. The
+// answer must name the held folder, and the `commondir` test of the step must
+// pass. The trust check of repo must pin another git directory. It is false on
+// nil.
+func (a *acceptedGitDir) mayAskAgain(gitDir, repo string) bool {
 	if a == nil || !a.isAt(gitDir) {
-		return "", nil
+		return false
 	}
 	if _, err := os.Lstat(filepath.Join(gitDir, "commondir")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return "", nil
+		return false
 	}
-	if t := gitDirTrustFor(repo); t.verdict != gitDirTrusted || t.pinCommonDir == "" || a.isAt(t.pinCommonDir) {
-		return "", nil
-	}
+	t := gitDirTrustFor(repo)
+	return t.verdict == gitDirTrusted && t.pinCommonDir != "" && !a.isAt(t.pinCommonDir)
+}
+
+// askedAgain is the hold of a create on the git directory that git answers in
+// a second `rev-parse --absolute-git-dir` call, with that answer. The create
+// makes the call at the add, when mayAskAgain was true and the path changed
+// before the listing of the add. It is nil when the call fails or movedTo
+// gives no hold. The caller releases the new hold.
+//
+// The rows are measured on Linux. A symbolic link to a copy of the git
+// directory is put at `.git` right after the first answer. 4c111e86 then makes
+// the call about the repository, the read of the config and the listing of the
+// add. Next it asks git again, goes on in the copy and answers success. The
+// record of the session folder names the copy. In the copy the listing comes
+// first, then a new read of its config (reread), the pair and the add. A link
+// to the git directory of another repository is tested, not measured. macOS
+// follows Linux (not measured).
+func (a *acceptedGitDir) askedAgain(u gitUse, repo string) (string, *acceptedGitDir) {
 	again, _, answered, err := worktreeBaseGitDir(u, repo)
-	if err != nil || !answered {
+	if a == nil || err != nil || !answered {
 		return "", nil
 	}
 	next := a.movedTo(again, repo)
 	if next == nil {
 		return "", nil
 	}
+	next.reread = true
 	return again, next
 }
 

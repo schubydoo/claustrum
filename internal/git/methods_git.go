@@ -1610,22 +1610,28 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// record with the off switch and Windows are claustrum's own, not measured.
 	//
 	// On Linux and macOS a path that changed right after an answer that named the
-	// held folder gets one more call, and the create goes on in the folder of the
-	// second answer (acceptedGitDir.askedAgain). The record then names that folder
-	// (measured on Linux).
+	// held folder can move the hold at the add (acceptedGitDir.mayAskAgain). The
+	// record then waits for the second answer and names its folder (measured on
+	// Linux). A record that still waits at the reply names the pin (claustrum's
+	// own, not measured). The order on Windows is not measured.
 	answeredSwap := gitAnswered && req.use.swapped("answered")
 	recorded := t.pinCommonDir
 	if recorded == "" {
 		recorded = gitDir
 	}
-	if answeredSwap && !stagedAddWindowsSteps && req.use.shadow() {
-		if again, next := req.use.accepted.askedAgain(pairSSHUse(req, bool(p.ShadowDirOff)), gitDir, repo); next != nil {
-			defer next.release()
-			req.use.accepted = next
-			gitDir, recorded = again, again
+	recordWaits := answeredSwap && !stagedAddWindowsSteps && req.use.shadow() && req.use.accepted.mayAskAgain(gitDir, repo)
+	writeRecord := func() {
+		if !recordWaits {
+			return
+		}
+		recordWaits = false
+		if !sessiondirs.OffSwitchSet(req.Params) {
+			_ = sessiondirs.RememberCreate(recorded)
 		}
 	}
-	if !sessiondirs.OffSwitchSet(req.Params) {
+	if recordWaits {
+		defer writeRecord()
+	} else if !sessiondirs.OffSwitchSet(req.Params) {
 		_ = sessiondirs.RememberCreate(recorded)
 	}
 	// After a call that answered, the path of the git directory must still name
@@ -1680,6 +1686,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	baseCtx, callerCtx, cancelCtx := worktreeCreateCtx(req.stop, p.TimeoutMs, arrival)
 	defer cancelCtx()
 	var afterAddListing func()
+	var pairFor func(gitDir string) func()
 	// In the state shadow a stale entry that the step removed does not stop the
 	// pair. c9125eb8 and 4c111e86 then run it after the listing of the add, right
 	// before the add (measured on Linux). macOS follows Linux (not measured).
@@ -1688,17 +1695,20 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if (req.use.shadow() || bool(p.ShadowDirOff)) && (!staleMatched || staleGone) {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
-		pairTree := repo
-		if p.WorktreeRoot != "" {
-			pairTree = p.WorktreePath
-		} else if staleGone && filepath.Base(gitDir) == ".git" {
-			// After a removed stale entry 4c111e86 gives the pair the resolved top
-			// of the repository, the parent of the git directory, also for a
-			// baseRepo through a link (measured on Linux). The other pairs keep
-			// repo, and the test of the name .git is claustrum's own (not measured).
-			pairTree = filepath.Dir(gitDir)
+		pairFor = func(gitDir string) func() {
+			pairTree := repo
+			if p.WorktreeRoot != "" {
+				pairTree = p.WorktreePath
+			} else if staleGone && filepath.Base(gitDir) == ".git" {
+				// After a removed stale entry 4c111e86 gives the pair the resolved top
+				// of the repository, the parent of the git directory, also for a
+				// baseRepo through a link (measured on Linux). The other pairs keep
+				// repo, and the test of the name .git is claustrum's own (not measured).
+				pairTree = filepath.Dir(gitDir)
+			}
+			return pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff), staleGone)
 		}
-		afterAddListing = pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff), staleGone)
+		afterAddListing = pairFor(gitDir)
 	}
 	// The caller's deadline does not kill the add. The daemon waits until the 2
 	// minute limit.
@@ -1710,6 +1720,23 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg := req.use.swapRefusal("add", repo); msg != "" {
 		return refuseAdd("git worktree add failed: " + msg)
 	}
+	// A path that changed right after the answer: after the two calls of that
+	// gate 4c111e86 asks git again, and the create goes on in the folder of the
+	// second answer (measured on Linux, for a link to a copy). The record comes
+	// right after that call. The pair then names that folder. A second call that
+	// gives no hold keeps the refusal of the add.
+	if recordWaits && !req.use.accepted.stands() {
+		again, next := req.use.accepted.askedAgain(pairSSHUse(req, bool(p.ShadowDirOff)), repo)
+		if next != nil {
+			defer next.release()
+			req.use.accepted = next
+			gitDir, recorded = again, again
+			if pairFor != nil {
+				afterAddListing = pairFor(gitDir)
+			}
+		}
+	}
+	writeRecord()
 	// With "shadowDirOff":true, a registrations folder that is a link or a file
 	// refuses the add after its listing (offWorktreesRefusal in worktreeAdd). A
 	// create that took the copy at a later gate has the test of a hold instead.
