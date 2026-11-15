@@ -361,13 +361,35 @@ func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 		}
 		reg := registrationCopy{name: name}
 		for _, file := range registrationFiles {
-			if data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes); ok && !emptyCommonDirFile(file, data) {
+			data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes)
+			if !ok && file == "gitdir" && cannotOpenRegular(git, filepath.Join(base, file)) {
+				data, ok = []byte{}, true
+			}
+			if ok && !emptyCommonDirFile(file, data) {
 				reg.files = append(reg.files, copyEntry{path: file, data: data})
 			}
 		}
 		regs = append(regs, reg)
 	}
 	return regs, nil
+}
+
+// cannotOpenRegular reports whether path in root is a regular file that the
+// daemon has no permission to open. Such a `gitdir` of a registration gets
+// an empty copy in `.s<n>`. 4c111e86 writes a `gitdir` there for a `gitdir`
+// of mode 000, and the create succeeds (measured on Linux). Its text is not
+// measured: the empty copy is claustrum's own.
+func cannotOpenRegular(root *os.Root, path string) bool {
+	fi, err := root.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	f, err := root.Open(path)
+	if err == nil {
+		_ = f.Close()
+		return false
+	}
+	return errors.Is(err, fs.ErrPermission)
 }
 
 // emptyCommonDirFile reports whether file is a `commondir` with no bytes. Such

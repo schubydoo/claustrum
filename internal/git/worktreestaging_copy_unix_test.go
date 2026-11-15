@@ -92,3 +92,29 @@ func TestStagedCopyModes(t *testing.T) {
 		}
 	}
 }
+
+// TestStagedCopyOfAnUnreadableGitdir: a `gitdir` of a registration with mode
+// 000 gets an empty copy in `.s<n>`. 4c111e86 writes a `gitdir` there
+// (measured on Linux). The empty text is claustrum's own.
+func TestStagedCopyOfAnUnreadableGitdir(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("the root user reads a file of mode 000")
+	}
+	f := newRepoFolderFixture(t)
+	clearFolderEnv(t)
+	u := f.useOf(t, f.repo)
+	gitdir := filepath.Join(f.gitDir, "worktrees", "wr", "gitdir")
+	if err := os.Chmod(gitdir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(gitdir, 0o644) })
+	st, err := openAddStage(heldUse(t, f.gitDir, u))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	got, err := os.ReadFile(filepath.Join(st.dir, "worktrees", "wr", "gitdir"))
+	if err != nil || len(got) != 0 {
+		t.Errorf("the copy of gitdir = %q, %v, want an empty file", got, err)
+	}
+}
