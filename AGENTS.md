@@ -215,7 +215,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   name and never a tree. The sweep removes only a regular file named by the directory read. A failed or stopped
   copy of the seed removes its own object file (`copySeed`). Never widen: remove only the object file that the
   seed just made, by one plain unlinkat, never a tree. The keep (macOS: claustrum's own) renames its `.kept-<oid>` link over the downloaded copy
-  in the private store, after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only onto that copy.
+  in the private store, after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only the `.kept-<oid>` link of the file that the keep just wrote, and only onto that copy.
 - **The LFS space stop.** On Linux and macOS a Git LFS download can leave under a tenth of the free space at the start. Then the
   group of the read-tree call gets one `SIGKILL` (`lfsRoomWatch`). It goes through `reapCheckoutGroup` after `gitStillRuns`, and the private folder then goes
   by its usual remove before the reply ([the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)).
