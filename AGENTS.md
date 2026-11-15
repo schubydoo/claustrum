@@ -208,12 +208,12 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
   ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by
   `removeTempRequestDir`, after `homeguard.WipesHomeDir`.
+- **The HEAD copy folder.** One plain remove takes an empty `HEAD` folder of a `git-shadow` copy (`removeEmptyHeadFolder`). Never widen: no tree.
 - **The LFS store.** On Linux and macOS a create in `shadow` removes `.claude-<8 hex>-<oid>` temp files from one shard
   of `<git dir>/lfs/objects`, each by one file `unlinkat` after `homeguard.WipesHomeDir` (`removeLFSStoreEntry`,
-  [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). Never widen: Remove no other
-  name and never a tree. The sweep removes only a regular file named by the directory read. A failed or stopped
-  copy of the seed removes its own object file (`copySeed`). Never widen: remove only the object file that the
-  seed just made, by one plain unlinkat, never a tree.
+  [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). A failed or stopped seed copy
+  removes its own file (`copySeed`). Never widen: Remove no other name and never a tree. The sweep removes
+  only a regular file named by the directory read.
 - **`session-folders`.** One plain `os.Root.Remove` by name, of the temp file of a failed write and in the prune ([session
   folders](docs/protocol/git-rules-session-folders.md)). Never widen: Never make either
   remove a tree delete. Never build the name of a remove there from a request value, a

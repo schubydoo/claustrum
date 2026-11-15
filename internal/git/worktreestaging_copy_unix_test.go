@@ -170,10 +170,10 @@ func TestCreateOverTheRegistrationLimit(t *testing.T) {
 }
 
 // TestCreateWritesTheHeadCopyAgain: after the first request the copy of HEAD
-// of the repository has mode 000, or no bytes. A create writes it again and
-// succeeds, as 4c111e86 does (measured on Linux). A folder there stays, and
-// the create fails: 4c111e86 removes the folder, and claustrum builds no such
-// delete.
+// of the repository has mode 000, no bytes, or is an empty folder. A create
+// writes it again and succeeds, as 4c111e86 does (measured on Linux). A
+// folder with a file stays with that file, and the create fails (not
+// measured).
 func TestCreateWritesTheHeadCopyAgain(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user reads a file of mode 000")
@@ -189,13 +189,19 @@ func TestCreateWritesTheHeadCopyAgain(t *testing.T) {
 			}
 		}, true},
 		{"no bytes", func(t *testing.T, head string) { mustWrite(t, head, "") }, true},
-		{"a folder", func(t *testing.T, head string) {
+		{"an empty folder", func(t *testing.T, head string) {
 			if err := os.Remove(head); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.Mkdir(head, 0o700); err != nil {
 				t.Fatal(err)
 			}
+		}, true},
+		{"a folder with a file", func(t *testing.T, head string) {
+			if err := os.Remove(head); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(head, "kept"), "kept\n")
 		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -219,6 +225,8 @@ func TestCreateWritesTheHeadCopyAgain(t *testing.T) {
 				t.Errorf("the copy of HEAD is %v, want a file with %q", fi.Mode(), want)
 			case !tc.ok && !fi.IsDir():
 				t.Errorf("the copy of HEAD is %v, want the folder kept", fi.Mode())
+			case !tc.ok && mustRead(t, filepath.Join(head, "kept")) != "kept\n":
+				t.Errorf("the file in the folder at the copy of HEAD changed")
 			}
 		})
 	}

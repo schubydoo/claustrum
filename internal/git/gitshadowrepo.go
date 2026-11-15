@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
@@ -403,6 +404,9 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 			}
 		}
 	}
+	if fi, err := root.Lstat("HEAD"); err == nil && goesAsTree(fi.Mode()) {
+		_ = removeEmptyHeadFolder(root, filepath.Join(path, "HEAD"))
+	}
 	if !headCopyHolds(root, st.copies) {
 		delete(st.copies, "HEAD")
 	}
@@ -441,13 +445,13 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 // is gone, cannot be opened or has another text does not, and the request
 // writes it again. 4c111e86 writes the copy again for a create after it got
 // mode 000 or no bytes, and the create succeeds (measured on Linux). A copy
-// with the text of its last write is not written again (measured on Linux).
+// that is gone or has another text gets the same rule (claustrum's own). A
+// copy with the text of its last write is not written again (measured on
+// Linux).
 //
-// A folder at the copy holds. 4c111e86 removes it and writes the copy
-// (measured on Linux). claustrum does not build that delete, and the request
-// fails as before. Any other entry that is no regular file holds too
-// (claustrum's own). The rule for the other git methods is claustrum's own,
-// not measured.
+// A folder at the copy holds: removeEmptyHeadFolder runs before this test.
+// Any other entry that is no regular file holds too (claustrum's own). The
+// rule for the other git methods is claustrum's own, not measured.
 func headCopyHolds(root *os.Root, copies map[string][sha256.Size]byte) bool {
 	have, ok := copies["HEAD"]
 	if !ok {
@@ -462,6 +466,20 @@ func headCopyHolds(root *os.Root, copies map[string][sha256.Size]byte) bool {
 	}
 	data, ok := readRootFile(root, "HEAD", shadowHeadMaxBytes)
 	return ok && sha256.Sum256(data) == have
+}
+
+// removeEmptyHeadFolder removes an empty folder at the copy of HEAD in root,
+// the folder of a repository. path is its full path. It is one plain remove
+// through root, never a tree delete, so a folder with content stays and the
+// request fails as before (not measured). homeguard.WipesHomeDir on path is
+// defense in depth. 4c111e86 removes an empty folder there and writes the
+// copy, and the create succeeds (measured on Linux). macOS and Windows are
+// claustrum's own.
+func removeEmptyHeadFolder(root *os.Root, path string) error {
+	if homeguard.WipesHomeDir(path) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	return root.Remove("HEAD")
 }
 
 // repoFolderBySearch opens the folder path of a repository when the folder of
