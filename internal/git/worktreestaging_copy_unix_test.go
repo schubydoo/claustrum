@@ -255,3 +255,31 @@ func entryStamps(t *testing.T, dir string) []string {
 	slices.Sort(out)
 	return out
 }
+
+// TestStagedCopyBoundOfAnEntryHead: a `HEAD` of a registration with 4096
+// bytes gets its copy in `.s<n>`, and one of 4097 bytes gets none. Its other
+// files get their copies. 4c111e86 does so (measured on Linux).
+func TestStagedCopyBoundOfAnEntryHead(t *testing.T) {
+	for _, tc := range []struct {
+		size   int
+		copied bool
+	}{{4096, true}, {4097, false}} {
+		f := newRepoFolderFixture(t)
+		clearFolderEnv(t)
+		u := f.useOf(t, f.repo)
+		head := "ref: refs/heads/" + strings.Repeat("x", tc.size-len("ref: refs/heads/")-1) + "\n"
+		mustWrite(t, filepath.Join(f.gitDir, "worktrees", "wr", "HEAD"), head)
+		st, err := openAddStage(heldUse(t, f.gitDir, u))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = os.Lstat(filepath.Join(st.dir, "worktrees", "wr", "HEAD"))
+		if copied := err == nil; copied != tc.copied {
+			t.Errorf("a HEAD of %d bytes: copied %v, want %v", tc.size, copied, tc.copied)
+		}
+		if _, err := os.Lstat(filepath.Join(st.dir, "worktrees", "wr", "commondir")); err != nil {
+			t.Errorf("a HEAD of %d bytes: commondir: %v", tc.size, err)
+		}
+		st.close()
+	}
+}

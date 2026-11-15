@@ -359,8 +359,9 @@ func (st *addStage) close() {
 // root at its git directory. A registration is a real folder in `worktrees`. A
 // link or a junction there is no registration: nothing follows it. Each file of
 // registrationFiles is read when it is a regular file of at most
-// registrationFileMaxBytes. A registration with a file that is missing is not
-// measured: it gets the files that it has.
+// registrationFileMaxBytes, and a `HEAD` of at most entryHeadMaxBytes. A
+// registration with a file that is missing is not measured: it gets the files
+// that it has.
 func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 	names, err := rootDirNames(git, worktreesSubdir)
 	if err != nil {
@@ -380,7 +381,11 @@ func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 		base := filepath.Join(worktreesSubdir, name)
 		reg := registrationCopy{name: name}
 		for _, file := range registrationFiles {
-			data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes)
+			limit := int64(registrationFileMaxBytes)
+			if file == "HEAD" {
+				limit = entryHeadMaxBytes
+			}
+			data, ok := readRootFile(git, filepath.Join(base, file), limit)
 			if !ok && file == "gitdir" && cannotOpenRegular(git, filepath.Join(base, file)) {
 				data, ok = []byte{}, true
 			}
@@ -392,6 +397,12 @@ func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 	}
 	return regs, nil
 }
+
+// entryHeadMaxBytes bounds the `HEAD` of a registration that gets a copy in
+// `.s<n>`. A larger `HEAD` gets no copy, and the create goes on. 4c111e86
+// copies a `HEAD` of 4096 bytes and leaves out one of 4097 bytes or more
+// (measured on Linux). macOS and Windows are claustrum's own.
+const entryHeadMaxBytes = 4096
 
 // cannotOpenRegular reports whether path in root is a regular file that the
 // daemon has no permission to open. Such a `gitdir` of a registration gets
