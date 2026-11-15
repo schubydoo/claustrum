@@ -88,7 +88,7 @@ func (w *lfsRoomWatch) start(p *os.Process) {
 			// The kill goes only to the group of this read-tree call, under the
 			// lock of the watch, and only while its leader runs (gitStillRuns).
 			// The leader is not reaped here: the wait of exec.Cmd starts only
-			// after end (awaitLeaderExit).
+			// after end (sysproc.AwaitExit).
 			if !w.done && gitStillRuns(p) {
 				reapCheckoutGroup(p)
 				w.fired, w.free = true, free
@@ -100,7 +100,7 @@ func (w *lfsRoomWatch) start(p *os.Process) {
 }
 
 // end stops the poll and waits for its goroutine. It runs after the exit of
-// the read-tree call and before its reap (awaitLeaderExit). After it, fired
+// the read-tree call and before its reap (sysproc.AwaitExit). After it, fired
 // reports a stop, and free is the free space that the stop read.
 func (w *lfsRoomWatch) end() {
 	w.mu.Lock()

@@ -172,8 +172,8 @@ Measured on Linux, unless a rule names its system:
   (Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER` and
   `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher
   (claustrum's own).
-- claustrum's own (not measured): the stop kills the run's whole process group and
-  then waits up to 2 s for its output. The texts name the launcher's argv[0] only.
+- claustrum's own (not measured): the stop kills the run's whole process group while
+  the run still runs, and then waits up to 2 s for its output. The texts name the launcher's argv[0] only.
 - `-install` still exits `0` with an empty stderr, and it writes no
   `[LauncherHandler]` line.
 
@@ -541,8 +541,7 @@ on Linux, macOS and Windows).
 The direct bound is a fixed 30 s, always applied. The mode unsets
 `CLAUDE_RPC_TOKEN` so the probed child never inherits it. The probed CLI runs in
 its own process group, so a terminal Ctrl-C does not reach it. On Unix the
-fixed deadline group-kills the whole subtree, so a `--version` that forks a descendant
-cannot outlive the probe. On Windows the direct child is killed and `WaitDelay` bounds
+fixed deadline group-kills the whole subtree. On Windows the direct child is killed and `WaitDelay` bounds
 the mode, so a stray descendant is left to exit on its own. The mode installs no SIGINT
 handler. A Ctrl-C therefore terminates the claustrum process itself, with exit 130 and
 empty stdout. The mode ignores

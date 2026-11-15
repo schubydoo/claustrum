@@ -58,7 +58,7 @@ func stdinGit(t *testing.T, ctx context.Context) (*exec.Cmd, *os.File) {
 func TestDeadlineStopAfterReapSendsNoGroupKill(t *testing.T) {
 	kills := countGroupKills(t)
 	cmd, feed := stdinGit(t, context.Background())
-	gate := &leaderGate{}
+	gate := &sysproc.LeaderGate{}
 	var cancelled atomic.Bool
 	stop := deadlineStop(cmd, gate, &cancelled)
 	_ = feed.Close()
@@ -85,7 +85,7 @@ func TestDeadlineStopWhileGitRunsKillsGroup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	cmd, _ := stdinGit(t, ctx)
-	gate := &leaderGate{}
+	gate := &sysproc.LeaderGate{}
 	var cancelled atomic.Bool
 	cmd.Cancel = deadlineStop(cmd, gate, &cancelled)
 	var errBuf bytes.Buffer
@@ -119,7 +119,7 @@ func TestDeadlineStopFailedExitWaitStillKills(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	cmd, _ := stdinGit(t, ctx)
-	gate := &leaderGate{}
+	gate := &sysproc.LeaderGate{}
 	var cancelled atomic.Bool
 	cmd.Cancel = deadlineStop(cmd, gate, &cancelled)
 	var errBuf bytes.Buffer
@@ -138,7 +138,7 @@ func TestDeadlineStopFailedExitWaitAfterReap(t *testing.T) {
 	kills := countGroupKills(t)
 	failLeaderExitWait(t)
 	cmd, feed := stdinGit(t, context.Background())
-	gate := &leaderGate{}
+	gate := &sysproc.LeaderGate{}
 	var cancelled atomic.Bool
 	stop := deadlineStop(cmd, gate, &cancelled)
 	go func() {
