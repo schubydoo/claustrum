@@ -314,6 +314,9 @@ func openAddStage(u gitUse) (*addStage, error) {
 	if err == nil {
 		regs, err = readRegistrations(st.git)
 	}
+	if err == nil && len(regs) > registrationLimit {
+		err = &addOwnFiles{text: registrationLimitText}
+	}
 	if err == nil {
 		st.dir, st.removeDir, err = u.requestDir(addCopyPrefix, "")
 		if err != nil {
@@ -329,6 +332,18 @@ func openAddStage(u gitUse) (*addStage, error) {
 	}
 	return st, nil
 }
+
+// registrationLimit is the most registrations that a repository can have for
+// a staged add. With more, the create answers registrationLimitText with
+// errorCode worktree_add_failed, and no add runs. 4c111e86 adds the worktree
+// with 4096 old entries and refuses it with 4097 (measured on Linux, with
+// real folders in `<git dir>/worktrees`). The create writes the record of
+// session folders before this step (from the code). macOS and Windows are
+// claustrum's own, and so is the count of real folders only.
+const registrationLimit = 4096
+
+// registrationLimitText is the refusal of registrationLimit.
+const registrationLimitText = "cannot add a worktree: the repository has more than 4096 worktrees; remove some (git worktree prune, git worktree remove)"
 
 // close removes `.s<n>` and closes a root that the stage opened. 5fd08069
 // removes the folder after a good call and after a failed one (measured).
@@ -717,6 +732,10 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 	defer drop()
 	st, err := openAddStage(u)
 	if err != nil {
+		var ownFiles *addOwnFiles
+		if errors.As(err, &ownFiles) {
+			return "", ownFiles
+		}
 		var dirErr *requestDirError
 		if !stagedAddWindowsSteps && errors.As(err, &dirErr) {
 			return "", &addOwnFiles{text: privateCopyText + dirErr.err.Error()}
