@@ -311,3 +311,29 @@ func TestRequestDirRemoveInAWriteSearchDaemonFolder(t *testing.T) {
 		})
 	}
 }
+
+// TestEmptyRequestDirRemoveKeepsHome: homeguard.WipesHomeDir refuses a request
+// folder that is home or holds home, so no rmdir runs (claustrum's own). The
+// seam records the call and deletes nothing. Without the guard the rmdir
+// runs on home.
+func TestEmptyRequestDirRemoveKeepsHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var calls []string
+	old := rmdirRequestDir
+	rmdirRequestDir = func(path string) error {
+		calls = append(calls, path)
+		return nil
+	}
+	t.Cleanup(func() { rmdirRequestDir = old })
+	removeEmptyRequestDir(home)
+	removeEmptyRequestDir(filepath.Dir(home))
+	if len(calls) != 0 {
+		t.Errorf("rmdir calls = %q, want none", calls)
+	}
+	inside := filepath.Join(home, "x")
+	removeEmptyRequestDir(inside)
+	if !slices.Equal(calls, []string{inside}) {
+		t.Errorf("rmdir calls = %q, want one of %s", calls, inside)
+	}
+}
