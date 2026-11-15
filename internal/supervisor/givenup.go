@@ -8,12 +8,19 @@ import (
 
 // A given-up id (4c111e86, measured on Linux, macOS and Windows). process.kill,
 // process.killAndWait and process.reattach of an id that no process has give that id
-// up. A process.spawn of a given-up id is refused, and the command does not run. The
-// requests that give an id up answer as before. A given-up id changes no signal.
+// up. A process.spawn of an id given up before its start is refused, and the
+// command does not run. The requests that give an id up answer as before.
 //
-// Not built: an end of a child that started while its id was given up. No row shows
-// such an end on any build (Linux 90 pairs, macOS 40, Windows), so claustrum registers
-// that child as before.
+// An id can be given up while its spawn is between that test and its table entry.
+// Then 4c111e86 refuses the spawn after the start with the same text. It ends the
+// child with a group SIGKILL and no SIGTERM, waits 3 s for its end, and then logs
+// the Failed to start line (measured on Linux). claustrum's own, not measured: macOS
+// and Windows, and the end time of the child after the kill.
+
+// givenUpEndWait is how long a spawn refused after the start waits for its child to
+// end after the kill. A child that has not ended by then gets one log line (4c111e86,
+// measured on Linux). var so tests can shrink it.
+var givenUpEndWait = 3 * time.Second
 
 // givenUpIDCap is the most ids that are given up at once. Once the set is full, a
 // new give-up is dropped. After 4100 give-ups one at a time, 4c111e86 refuses ids
