@@ -38,13 +38,14 @@ folder (measured on Linux, macOS and Windows). Its record stays after
 `git.worktree_remove` (measured on Linux, macOS and Windows). A create runs no prune,
 so 2048 records become 2049 (`b3081b51`, measured on Linux). A record that cannot be
 saved does not fail the create, and the daemon logs the line of the failure (measured
-on Linux and macOS). `git.info`, `git.status` and `git.list_branches` make no record
+on Linux and macOS). For a plain file at the folder name its cause is `it is not a
+folder` (`4c111e86`, measured on Linux). `git.info`, `git.status` and `git.list_branches` make no record
 (`b3081b51`, measured on Linux). For a `baseRepo` that is a linked worktree, the folder
 is the git directory of its main repository (`4c111e86`, measured on Linux and macOS). The
 record is written before `git worktree add`, so a failed add keeps it (`c9125eb8` and
 `4c111e86`, measured on Linux and macOS). `4c111e86` writes it after the answer of
 `rev-parse --absolute-git-dir`, before the next git call, so a later refusal keeps it
-(measured on Linux and macOS). A create with the off switch
+(measured on Linux and macOS. Windows: not measured). A create with the off switch
 makes none (claustrum's own, not measured). On Linux and macOS its path has its links
 resolved (claustrum's own, not measured). Windows is not measured. A create whose trust check names no git
 directory records the folder that git names (claustrum's own, not measured).
@@ -104,8 +105,7 @@ and Windows). It logs the second line (measured on Linux and macOS).
   `-32603` with the reason `other`, and no child starts (measured on Linux, macOS and
   Windows). That holds for a file at the folder name and a folder that denies the
   write. Linux and macOS also measured a full disk. The daemon logs the line of the
-  failure and then the failed-start line. For a plain file at the folder name the
-  cause in that line is `it is not a folder` (`4c111e86`, measured on Linux).
+  failure and then the failed-start line.
 - The first entry holds a git or is empty (measured on Linux). With no entry in the
   folder the spawn starts, also with a git or a repository in the folder (measured on
   Linux, and on macOS for an empty folder). claustrum's own, not measured: a later

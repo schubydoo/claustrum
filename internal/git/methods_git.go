@@ -1844,6 +1844,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// So does an add whose folder `.s<n>` cannot be made on Linux and macOS
 	// (addOwnFiles, be1c1ca5 on Linux). So does an add whose git directory was
 	// swapped after its listing (addSwappedAfterListing, 4c111e86 on Linux).
+	// The attach mode is claustrum's own, not measured.
 	var ownFiles *addOwnFiles
 	var swappedLate *addSwappedAfterListing
 	if copyGone(addErr) || errors.As(addErr, &ownFiles) || errors.As(addErr, &swappedLate) {

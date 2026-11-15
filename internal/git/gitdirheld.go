@@ -71,7 +71,7 @@ import (
 // on it acts as above. A create keeps its folder to its reply, also when a
 // later call has no copy: the off switch changes only the form of the calls.
 //
-// Two steps take a new folder from the path, on Linux and macOS. The first is
+// Three steps take a new folder from the path, on Linux and macOS. The first is
 // right after `rev-parse --absolute-git-dir`, when git answered another real
 // directory that passes the gate (acceptedGitDir.movedTo). The second is right
 // after a good `worktree add`, when a new real directory at the path passes
@@ -79,11 +79,11 @@ import (
 // takes it before the move (adopt). The steps above then act through that
 // folder.
 //
-// The maintainer approved a third step on 2026-11-14. A symbolic link is put
-// at `.git` right after an answer of `rev-parse --absolute-git-dir` that named
-// the held folder. The create then makes that call again and takes the folder
-// of the second answer (acceptedGitDir.askedAgain, measured on Linux). The
-// steps above then act through that folder.
+// The third, approved by the maintainer on 2026-11-14, is for a symbolic link
+// put at `.git` right after an answer of `rev-parse --absolute-git-dir` that
+// named the held folder. Before the add the create makes that call again and
+// takes the folder of the second answer (acceptedGitDir.askedAgain, measured
+// on Linux). The steps above then act through that folder.
 //
 // After a junction at `.git` right before `rev-parse --absolute-git-dir` on
 // Windows, the stale step goes by the path and removes the old registration
