@@ -848,7 +848,11 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there
 		// (measured on Linux). claustrum runs no mkdir and gives that error with
 		// a new name. Only a folder whose owner bits allow search and no write
-		// gets it. macOS, mode 0300 and the other prefixes are not measured.
+		// gets it. With mode 0300 4c111e86 makes `.s<n>`, and the create
+		// succeeds (measured on Linux). claustrum keeps the error of the open
+		// there: its probe step removes old entries through a root that needs
+		// the read bit (not built). macOS and the other prefixes are not
+		// measured.
 		var pe *os.PathError
 		if !stagedAddWindowsSteps && errors.Is(err, fs.ErrPermission) && errors.As(err, &pe) && searchOnlyFolder(u.folder) {
 			name, nameErr := requestDirName(shadowPrefix)
