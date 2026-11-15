@@ -104,7 +104,8 @@ and Windows). It logs the second line (measured on Linux and macOS).
   `-32603` with the reason `other`, and no child starts (measured on Linux, macOS and
   Windows). That holds for a file at the folder name and a folder that denies the
   write. Linux and macOS also measured a full disk. The daemon logs the line of the
-  failure and then the failed-start line.
+  failure and then the failed-start line. For a plain file at the folder name the
+  cause in that line is `it is not a folder` (`4c111e86`, measured on Linux).
 - The first entry holds a git or is empty (measured on Linux). With no entry in the
   folder the spawn starts, also with a git or a repository in the folder (measured on
   Linux, and on macOS for an empty folder). claustrum's own, not measured: a later

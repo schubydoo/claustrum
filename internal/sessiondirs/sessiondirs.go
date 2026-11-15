@@ -418,6 +418,12 @@ func (s *store) write(p string) (renamed bool, err error) {
 		}
 	}
 	if err != nil {
+		// A plain file at the path of the record folder gives the words of
+		// 4c111e86 (measured on Linux). Another kind there keeps the error of
+		// the open (not measured).
+		if fi, lerr := os.Lstat(s.dir); lerr == nil && fi.Mode().IsRegular() {
+			return false, errors.New("it is not a folder")
+		}
 		return false, err
 	}
 	defer root.Close()
