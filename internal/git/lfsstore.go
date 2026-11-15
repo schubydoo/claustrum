@@ -437,8 +437,8 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 // bytes needs: the size plus the larger of seedSpare and a tenth of the size.
 // For a 200 MiB object the bound of 4c111e86 is near the size plus 1 GiB
 // (measured on Linux, and on macOS at 200 and 800 MB). It refuses an 11 GiB
-// object 1 MiB below the size plus a tenth (measured on Linux). The bound at
-// its exact byte is inferred, not measured.
+// object 1 MiB below the size plus a tenth (measured on Linux and macOS), and
+// macOS copies it 1 MiB above. The bound at its exact byte is not measured.
 func seedNeeds(size int64) uint64 {
 	s := uint64(size)
 	return s + max(seedSpare, s/10)
@@ -546,8 +546,8 @@ var (
 // its own name, in 32 KiB chunks, through a handle of its folder
 // (createSeedFile). When the copy stops at the deadline of ctx or a write or
 // the close fails, the file is closed and removed at once by one unlinkat of
-// that name through the same handle (removeLFSStoreEntry). 4c111e86 does so on
-// Linux (measured). The mode 0600 of the file is claustrum's own.
+// that name through the same handle (removeLFSStoreEntry). 4c111e86 writes at the oid name and removes the file at the deadline
+// (measured on Linux and macOS), and after a failed write (measured on Linux). The mode 0600 of the file is claustrum's own.
 //
 // The copy computes the sha256 of the bytes in the same pass, so its time is
 // near the seed time of 4c111e86 in the rows (notKeptText).

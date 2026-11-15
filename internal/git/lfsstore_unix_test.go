@@ -908,7 +908,7 @@ func TestSeedChecksObjectWithSecondLink(t *testing.T) {
 }
 
 // TestSeedLeavesOutLargeObjectBelowTheBound: an 11 GiB object with 1 MiB less
-// than the size plus a tenth free is left out (4c111e86, measured on Linux).
+// than the size plus a tenth free is left out (4c111e86, measured on Linux and macOS).
 // The object is a sparse file, so this test is not on Windows.
 func TestSeedLeavesOutLargeObjectBelowTheBound(t *testing.T) {
 	const gib, mib = int64(1) << 30, int64(1) << 20

@@ -494,7 +494,7 @@ func (w slowWriter) Write(p []byte) (int, error) {
 }
 
 // TestSeedNeedsATenthOfALargeObject: a copy of the seed needs the size plus
-// the larger of 1 GiB and a tenth of the size (4c111e86, measured on Linux).
+// the larger of 1 GiB and a tenth of the size (4c111e86, measured on Linux and macOS).
 // TestSeedLeavesOutLargeObjectBelowTheBound tests the seed itself.
 func TestSeedNeedsATenthOfALargeObject(t *testing.T) {
 	const gib, mib = int64(1) << 30, int64(1) << 20
