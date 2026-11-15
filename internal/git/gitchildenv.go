@@ -124,6 +124,7 @@ var gitTraceNames = []string{"GIT_TRACE2", "GIT_TRACE2_EVENT", "GIT_TRACE2_PERF"
 // Windows the names match in any letter case. Only the lower-case names are
 // measured, and other mixes are claustrum's own, not measured. Their place on
 // Windows and the calls on macOS are not measured: they follow Linux.
+// shadowTestEnv moves them for the start test.
 func withTraceOff(env []string, form gitEnvForm) []string {
 	out := slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
 		name := envName(kv)

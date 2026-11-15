@@ -195,7 +195,7 @@ func newRegistrationName(before, after []string) (string, bool) {
 }
 
 // withAddCopy is the environment env of a `worktree add` call with
-// GIT_COMMON_DIR=<addDir> in the place of GIT_COMMON_DIR=<repoDir>. The call
+// GIT_COMMON_DIR=<addDir> instead of GIT_COMMON_DIR=<repoDir>. The call
 // keeps its GIT_DIR, GIT_OBJECT_DIRECTORY and GIT_WORK_TREE (measured). The new
 // entry ends the environment, after GIT_CONFIG_VALUE_1 (4c111e86, measured on
 // Linux for an add with -b). The add of an existing branch and macOS follow

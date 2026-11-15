@@ -159,8 +159,8 @@ func argvHas(argv []string, words ...string) bool {
 // --absolute-git-dir` the listing and the pair run, and then the create answers
 // the locked refusal. 4c111e86 makes these calls and no other (measured on
 // macOS). With "shadowDirOff":true no pair runs, and git answers (measured on
-// macOS). Mutation: drop staleLockedPair from the test of the pair (the calls
-// end at rev-parse).
+// macOS). Mutation: drop staleLockedPair from the test of the pair (the pair
+// does not run).
 func TestCreatePairBeforeTheLockedStaleRefusal(t *testing.T) {
 	if stagedAddWindowsSteps {
 		t.Skip("Windows keeps no pair for a locked stale entry (not measured)")

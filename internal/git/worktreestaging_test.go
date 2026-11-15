@@ -242,7 +242,7 @@ func TestNewRegistrationName(t *testing.T) {
 }
 
 // TestWithAddCopy pins the folder variable of the `worktree add` call: the
-// folder `.s<n>` in the place of the copy of the repository, and the three
+// folder `.s<n>` instead of the copy of the repository, and the three
 // other folder variables as they are (measured, the call log). The new entry
 // comes last, after GIT_CONFIG_VALUE_1 (4c111e86, measured on Linux).
 // Mutation: put the entry back in the place of the old one.

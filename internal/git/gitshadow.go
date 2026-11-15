@@ -645,16 +645,17 @@ func shadowDaemonEnv() []string {
 var shadowCheckDropped = []string{"GIT_NAMESPACE", "GIT_INDEX_FILE"}
 
 // shadowTestEnv is the environment of a test call with no folder variable: the
-// nine variables of the test, then the daemon's own without shadowCheckDropped.
-// The call log of 5fd08069 has this order on Linux (measured). GIT_CONFIG_GLOBAL
+// nine variables of the test with the three trace entries after the fifth, then
+// the daemon's own without shadowCheckDropped. 5fd08069 has the nine and then
+// the daemon's own on Linux (measured). GIT_CONFIG_GLOBAL
 // is /dev/null on Windows too (measured). The daemon's part is cleaned as for
 // every git child (gitChildEnv) and has no GIT_ name (withoutGitNames). 5fd08069
 // does both on the nine calls of the test (measured on Linux, macOS and
 // Windows). The rules of the cleaning are claustrum's own, not measured. The
 // three trace entries of withTraceOff come right after GIT_TERMINAL_PROMPT=0,
 // before the four author and committer names. 4c111e86 has one of each there on
-// the test calls (measured on Linux). macOS and Windows follow Linux (not
-// measured).
+// the test calls (measured on Linux). macOS follows Linux (not measured). On
+// Windows Go sorts the block by name (D23).
 func shadowTestEnv() []string {
 	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvHere), func(kv string) bool {
 		return slices.Contains(shadowCheckDropped, envName(kv))
