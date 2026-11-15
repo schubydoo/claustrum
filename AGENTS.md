@@ -281,7 +281,8 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   huge value, which is a different, observable behavior.
 - **Git time limits** (`internal/git/gitstop.go`) are always on and are no divergence
   ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)). Never widen: the deadline stop of
-  the read-tree call sends its group `SIGKILL` only before the reap of git (`leaderGate`).
+  the read-tree call (`cmd.Cancel`) sends its group `SIGKILL` only before the reap of git (`leaderGate`).
+  The kill after a drain overrun is not covered: it comes after the reap.
 
 ## Gotchas — Part B: the live divergences
 
