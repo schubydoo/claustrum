@@ -707,7 +707,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// process exit), reproducing the reference's fixed post-exit cap.
 		cmd.WaitDelay = worktreeCreateDrainCap
 		// When the deadline fires, kill git immediately and, on Unix, tear down its whole
-		// process group so a descendant is reaped too. cmd.Process.Kill() is what makes the
+		// process group while git is not reaped (leaderGate), so a descendant is reaped too. cmd.Process.Kill() is what makes the
 		// interrupt land on every OS: sysproc.ReapProcessGroup is a no-op on Windows, so without the
 		// direct kill a Windows deadline would leave git running until the WaitDelay fallback
 		// and answer the caller ~worktreeCreateDrainCap late. WaitDelay still bounds any
