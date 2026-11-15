@@ -1183,17 +1183,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		_, _ = endUnstarted(killReapGrace)
 		return nil, ErrStartsStopped
 	}
-	// With a launcher the line names the launcher's argv[0] only (measured).
 	program := ""
-	switch {
-	case supplies:
-		// c9125eb8, measured on Linux.
-		logging.Infof("[process.Manager] Process %s started, PID=%d, via launcher %s, which supplies Claude Code", id, cmd.Process.Pid, path)
-	case launcher != nil:
+	if launcher != nil && !supplies {
 		program = command
-		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
-	default:
-		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
 	}
 	metrics.Met.Spawns.Add(1)
 
@@ -1264,6 +1256,19 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+	// The start line comes only once the process is in the table. So a spawn that a
+	// given-up id refuses after the start logs none (4c111e86, measured on Linux). For
+	// the spent-id refusal after the start this is claustrum's own, not measured. With
+	// a launcher the line names the launcher's argv[0] only (measured).
+	switch {
+	case supplies:
+		// c9125eb8, measured on Linux.
+		logging.Infof("[process.Manager] Process %s started, PID=%d, via launcher %s, which supplies Claude Code", id, cmd.Process.Pid, path)
+	case launcher != nil:
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
+	default:
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
+	}
 	afterTableEntry(id)
 	// A link whose connection is already gone makes the process detached at once,
 	// so its clock starts at the spawn. DetachConn runs after the connection is

@@ -236,8 +236,9 @@ func giveUpAfterStart(t *testing.T, m *Manager, id string, send bool) (func() (i
 // TestGivenUpIDAfterStartEndsChild: an id given up between the test before the
 // start and the table entry gets the given-up refusal after the start. Its child
 // gets one group SIGKILL, and the spawn waits 3 s at most for its end (4c111e86,
-// measured on Linux). Mutations: drop the given-up test after the start, drop the
-// KILL of endUnstarted, set givenUpEndWait to 7 s.
+// measured on Linux). The spawn logs no start line (measured on Linux). Mutations:
+// drop the given-up test after the start, drop the KILL of endUnstarted, set
+// givenUpEndWait to 7 s, log the start line before the table checks.
 func TestGivenUpIDAfterStartEndsChild(t *testing.T) {
 	if givenUpEndWait != 3*time.Second {
 		t.Errorf("givenUpEndWait = %v, want 3s (4c111e86, measured on Linux)", givenUpEndWait)
@@ -263,6 +264,9 @@ func TestGivenUpIDAfterStartEndsChild(t *testing.T) {
 	}
 	if strings.Contains(out, "Process late1 was started and not registered") {
 		t.Errorf("a child that ended at its kill logged the not-ended line:\n%s", out)
+	}
+	if strings.Contains(out, "[process.Manager] Process late1 started") {
+		t.Errorf("a spawn refused after the start logged a start line (4c111e86 logs none, measured on Linux):\n%s", out)
 	}
 }
 

@@ -384,7 +384,7 @@ claustrum's own, not measured: the `id` stays given up for 15 minutes, and a new
 
 #### A give-up during the start
 
-Build `4c111e86`, measured on Linux. A `process.kill` of the `id` can come while the command starts, before the spawn replies. The spawn then gets the same `-32602` reply after the start. The daemon sends `SIGKILL` to the group of the new child, with no `SIGTERM` before it, and waits 3 seconds for its end. If the child has not ended by then, the log gets `[process.Manager] Process <id> was started and not registered, and has not ended 3s after its kill (<nil>)`. Then the log gets `[process.Manager] Failed to start process <id>: <text>`. The reply comes after that wait.
+Build `4c111e86`, measured on Linux. A `process.kill` of the `id` can come while the command starts, before the spawn replies. The spawn then gets the same `-32602` reply after the start. The log gets no `Process <id> started` line for it. The daemon sends `SIGKILL` to the group of the new child, with no `SIGTERM` before it, and waits 3 seconds for its end. If the child has not ended by then, the log gets `[process.Manager] Process <id> was started and not registered, and has not ended 3s after its kill (<nil>)`. Then the log gets `[process.Manager] Failed to start process <id>: <text>`. The reply comes after that wait.
 
 claustrum's own, not measured: macOS and Windows, and the end time of the child after the kill.
 
