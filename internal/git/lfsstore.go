@@ -66,12 +66,11 @@ const (
 	// minute old stays, and one 12 minutes old goes (measured on Linux and
 	// macOS). The bound of 10 minutes between them is claustrum's own.
 	staleTempAge = 10 * time.Minute
-	// seedSpare is the free space that a copy of the seed leaves on the file
-	// system of the private store. On an 8 MB file system (Linux) and a small
-	// disk image (macOS) 4c111e86 copies no object, and with 1100 MB (Linux)
-	// it does (measured). Its text names 1 GiB. The test of the space left
-	// after the copy is claustrum's own, not measured. The keep tests the
-	// same bound (keepHasSpace).
+	// seedSpare is the least free space that a copy of the seed leaves on
+	// the file system of the private store (seedNeeds). On an 8 MB file
+	// system (Linux) and a small disk image (macOS) 4c111e86 copies no object,
+	// and with 1100 MB (Linux) it does (measured). Its text names 1 GiB. The
+	// keep tests the size plus this bound (keepHasSpace).
 	seedSpare = 1 << 30
 )
 
@@ -367,7 +366,7 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 // of gitDir that a pointer of rev names: a regular file with the size of the
 // pointer. It makes a hard link, or a copy when the link fails or a folder on
 // the way is a link. A failure leaves the object out, and git-lfs then
-// downloads it. A copy that would leave less than seedSpare free is left out
+// downloads it. A copy that has less than seedNeeds free is left out
 // too, with no temp, and short reports it. A free space that cannot be read
 // does not stop a copy (claustrum's own, not measured). At the deadline of ctx
 // the seed stops, and the objects that it did not reach stay out. copied is
@@ -417,7 +416,7 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 		}
 		shard := filepath.Dir(src)
 		if viaLink || pathIsLink(shard) || pathIsLink(filepath.Dir(shard)) || seedLink(src, dst) != nil {
-			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < uint64(p.size)+seedSpare {
+			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < seedNeeds(p.size) {
 				short = true
 				continue
 			}
@@ -427,6 +426,17 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 		}
 	}
 	return short, copied
+}
+
+// seedNeeds is the free space that a copy of the seed of an object of size
+// bytes needs: the size plus the larger of seedSpare and a tenth of the size.
+// For a 200 MiB object the bound of 4c111e86 is near the size plus 1 GiB
+// (measured on Linux, and on macOS at 200 and 800 MB). It refuses an 11 GiB
+// object 1 MiB below the size plus a tenth (measured on Linux). The bound at
+// its exact byte is inferred, not measured.
+func seedNeeds(size int64) uint64 {
+	s := uint64(size)
+	return s + max(seedSpare, s/10)
 }
 
 // The text of worktree_lfs_not_kept, around the words of the deadline

@@ -537,3 +537,37 @@ func (w slowWriter) Write(p []byte) (int, error) {
 	*w.n += len(p)
 	return len(p), nil
 }
+
+// TestSeedNeedsATenthOfALargeObject: a copy of the seed needs the size plus
+// the larger of 1 GiB and a tenth of the size. An 11 GiB object with 1 MiB
+// less than the size plus a tenth free is left out (4c111e86, measured on
+// Linux).
+func TestSeedNeedsATenthOfALargeObject(t *testing.T) {
+	const gib, mib = int64(1) << 30, int64(1) << 20
+	for _, tc := range []struct{ size, want int64 }{
+		{200 * mib, 200*mib + gib},
+		{11 * gib, 11*gib + 11*gib/10},
+	} {
+		if got := seedNeeds(tc.size); got != uint64(tc.want) {
+			t.Errorf("seedNeeds(%d) = %d, want %d", tc.size, got, tc.want)
+		}
+	}
+	store := filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("c", 64)
+	src := storeObjectPath(store, oid)
+	mustWrite(t, src, "")
+	size := 11 * gib
+	if err := os.Truncate(src, size); err != nil {
+		t.Skipf("no sparse file of 11 GiB here: %v", err)
+	}
+	copies := 0
+	prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	seedCopy = func(io.Writer, io.Reader) (int64, error) { copies++; return 0, os.ErrInvalid }
+	storeFreeBytes = func(string) (uint64, bool) { return uint64(size + size/10 - mib), true }
+	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
+	short, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: size}})
+	if !short || copies != 0 {
+		t.Errorf("11 GiB object 1 MiB below the bound: short %v, %d copies, want short and no copy", short, copies)
+	}
+}
