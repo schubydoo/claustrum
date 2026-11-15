@@ -182,6 +182,7 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
 	}
+	files = c.dropSkippedFiles(files)
 	// The blob of each committed link is read first, and it counts in the log
 	// line (measured on Linux and Windows). A link of the worktree goes on no
 	// hash-object list, and the log line counts the other files only
@@ -521,6 +522,48 @@ func leadsToTop(leaf, path string) bool {
 	}
 	top, err := os.Stat(leaf)
 	return err == nil && os.SameFile(at, top)
+}
+
+// dropSkippedFiles leaves out each file that is missing in the new worktree and
+// that the index of the new worktree marks skip-worktree. A sparse checkout did
+// not write it. With core.sparseCheckout and a sparse-checkout file of only
+// comment lines, 4c111e86 checks no file under .claude and the create succeeds
+// (measured on Linux). macOS, Windows and cone mode are claustrum's own, not
+// measured. So is the call: one `ls-files -t -z` in the new worktree, with the
+// top names of the missing files, only when a file is missing. A failed call
+// drops no file. A missing file with no skip-worktree mark still refuses.
+func (c *contentCheck) dropSkippedFiles(files []contentFile) []contentFile {
+	missing := map[string]bool{}
+	var tops []string
+	for _, f := range files {
+		if _, err := os.Lstat(filepath.Join(c.leaf, filepath.FromSlash(f.path))); !errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		missing[f.path] = true
+		if top, _, _ := strings.Cut(f.path, "/"); !slices.Contains(tops, top) {
+			tops = append(tops, top)
+		}
+	}
+	if len(tops) == 0 {
+		return files
+	}
+	out, _, err := c.git(c.leaf, nil, nil, append([]string{"--literal-pathspecs", "ls-files", "-t", "-z", "--"}, tops...)...)
+	if err != nil {
+		return files
+	}
+	skipped := map[string]bool{}
+	for rec := range strings.SplitSeq(string(out), "\x00") {
+		if p, ok := strings.CutPrefix(rec, "S "); ok {
+			skipped[p] = true
+		}
+	}
+	kept := make([]contentFile, 0, len(files))
+	for _, f := range files {
+		if !missing[f.path] || !skipped[f.path] {
+			kept = append(kept, f)
+		}
+	}
+	return kept
 }
 
 // worktreeIDs is the ids of the files in the new worktree from one
