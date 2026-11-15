@@ -151,7 +151,7 @@ func readPointerBlob(body []byte) (pointerRef, bool) {
 // counts as no blob (claustrum's own).
 const lsTreeHeadMax = 256
 
-// blobLister reads an `ls-tree -r -z -l` output as it comes, as the stdout of
+// blobLister reads an `ls-tree --full-tree -r -l -z` output as it comes, as the stdout of
 // the call. It keeps the ids of the blobs of at most pointerBlobMax bytes, each
 // once. Of each record it keeps only the text before the tab.
 type blobLister struct {
@@ -344,10 +344,12 @@ func pointerScanGit(ctx context.Context, u gitUse, dir string, stdin io.Reader, 
 }
 
 // commitPointers are the pointers of the tree of rev, read in dir. It keeps no
-// output of git but the ids of the small blobs and the pointers.
+// output of git but the ids of the small blobs and the pointers. The argv of the
+// ls-tree call follows 4c111e86 (measured on Linux, a pointer at the top of the
+// tree). A pointer in a subfolder is claustrum's own, not measured.
 func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef {
 	var l blobLister
-	if pointerScanGit(ctx, u, dir, nil, &l, "ls-tree", "-r", "-z", "-l", rev) != nil {
+	if pointerScanGit(ctx, u, dir, nil, &l, "-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", rev) != nil {
 		return nil
 	}
 	l.end()

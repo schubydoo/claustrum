@@ -879,6 +879,35 @@ func TestCommitPointersStopsAtDeadline(t *testing.T) {
 	}
 }
 
+// TestSeedScanArgv: the ls-tree call of the seed has the argv of 4c111e86
+// (measured on Linux). A pointer in a subfolder counts, also when the call
+// runs in another subfolder (claustrum's own, not measured).
+func TestSeedScanArgv(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "sub/b.bin": "beta-object"})
+	mustWrite(t, filepath.Join(f.repo, "other", "c.txt"), "c\n")
+	runGit(t, f.repo, "add", "other")
+	runGit(t, f.repo, "commit", "-q", "-m", "other")
+	calls := logGitArgv(t)
+	for _, dir := range []string{f.repo, filepath.Join(f.repo, "other")} {
+		if got := commitPointers(context.Background(), gitUse{}, dir, "HEAD"); len(got) != 2 {
+			t.Errorf("commitPointers in %s = %+v, want the two pointers", dir, got)
+		}
+	}
+	want := []string{"-c", "core.commitGraph=false", "ls-tree", "--full-tree", "-r", "-l", "-z", "HEAD"}
+	n := 0
+	for _, c := range calls() {
+		if slices.Contains(c, "ls-tree") {
+			n++
+			if !slices.Equal(c, want) {
+				t.Errorf("ls-tree call = %q, want %q", c, want)
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d ls-tree calls, want 2", n)
+	}
+}
+
 // TestSeedObjectsStopsAtDeadline: a seed after the deadline of the caller puts
 // no object into the private store, also by a hard link.
 func TestSeedObjectsStopsAtDeadline(t *testing.T) {
