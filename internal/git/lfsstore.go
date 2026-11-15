@@ -387,10 +387,10 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 // the copies, a failed copy too. A hard link adds no time (claustrum's own,
 // not measured). The time of a copy holds the sha256 of its bytes (copySeed).
 //
-// An object with a link count above 1 is read once first, and its sha256 must
-// be its oid. Then it gets the link or the copy (4c111e86, measured on macOS).
-// Claustrum's own, not measured: Linux, the time of that read in copied, also
-// before a link, and an object that fails the test stays out.
+// An object with a link count above 1 is read once in full before the link or
+// the copy (4c111e86, measured on macOS). Claustrum's own, not measured: Linux,
+// the time of that read in copied, also before a link, its sha256 is tested
+// against the oid, and an object that fails the test stays out.
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {

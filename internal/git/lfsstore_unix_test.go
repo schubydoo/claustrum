@@ -864,10 +864,10 @@ func TestLFSNotKeptAfterDeadline(t *testing.T) {
 }
 
 // TestSeedChecksObjectWithSecondLink: an object of the store with a link count
-// above 1 is read once for its sha256 before the seed (4c111e86, measured on
-// macOS). With the right bytes it goes into the private store, with wrong
-// bytes it stays out (claustrum's own, not measured). An object with link
-// count 1 gets no such read, and wrong bytes still go in (measured on Linux).
+// above 1 is read once in full before the link or the copy (4c111e86, measured
+// on macOS). Claustrum's own, not measured: its sha256 is tested against the
+// oid, so with wrong bytes it stays out. An object with link count 1 gets no
+// such read, and wrong bytes still go in.
 func TestSeedChecksObjectWithSecondLink(t *testing.T) {
 	seamFreeSpace(t)
 	right := "alpha-object"
