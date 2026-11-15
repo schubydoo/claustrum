@@ -453,45 +453,18 @@ var worktreeCreateDrainCap = 5 * time.Second
 // (lfsroom.go). A test replaces it.
 var reapCheckoutGroup = sysproc.ReapProcessGroup
 
-// leaderGate lets the group kill of the deadline stop run only while the
-// leader of the read-tree call is not reaped. Go runs cmd.Cancel from its own
-// watch of the context. That call can come after the wait reaped git, and the
-// number of an empty group is then free. runCheckoutPipes closes the gate after
-// the exit of git and before the wait (awaitLeaderExit), as the LFS stop ends
-// its watch. On Windows the gate closes right after the start, and the group
-// kill is a no-op there. If the wait for the exit fails, for example on a
-// kqueue that cannot be made on macOS, the gate stays open while git surely
-// runs (gitSurelyRuns).
-type leaderGate struct {
-	mu     sync.Mutex
-	closed bool
-}
-
-// kill sends the group kill to p while the gate is open. It holds the lock
-// across the kill, so the gate does not close and the reap does not start
-// in between.
-func (g *leaderGate) kill(p *os.Process) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.closed {
-		reapCheckoutGroup(p)
-	}
-}
-
-// close shuts the gate. After it, kill sends nothing.
-func (g *leaderGate) close() {
-	g.mu.Lock()
-	g.closed = true
-	g.mu.Unlock()
-}
-
 // deadlineStop is the cmd.Cancel of a read-tree call with a deadline. It marks
 // the stop, sends the group kill through gate, and kills git through its handle.
-// The handle of a reaped git sends nothing.
-func deadlineStop(cmd *exec.Cmd, gate *leaderGate, cancelled *atomic.Bool) func() error {
+// The handle of a reaped git sends nothing. runCheckoutPipes closes the gate
+// after the exit of git and before the wait (sysproc.AwaitExit), as the LFS
+// stop ends its watch. On Windows the gate closes right after the start, and
+// the group kill is a no-op there. If the wait for the exit fails, for example
+// on a kqueue that cannot be made on macOS, the gate stays open while git
+// surely runs (sysproc.SurelyRuns).
+func deadlineStop(cmd *exec.Cmd, gate *sysproc.LeaderGate, cancelled *atomic.Bool) func() error {
 	return func() error {
 		cancelled.Store(true)
-		gate.kill(cmd.Process)
+		gate.Do(func() { reapCheckoutGroup(cmd.Process) })
 		_ = cmd.Process.Kill()
 		return nil
 	}
@@ -699,7 +672,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	_, deadlined := ctx.Deadline()
 	var cancelled atomic.Bool
-	var gate *leaderGate
+	var gate *sysproc.LeaderGate
 	if !deadlined {
 		cmd.WaitDelay = gitDrainWait
 	} else {
@@ -707,13 +680,13 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// process exit), reproducing the reference's fixed post-exit cap.
 		cmd.WaitDelay = worktreeCreateDrainCap
 		// When the deadline fires, kill git immediately and, on Unix, tear down its whole
-		// process group while git is not reaped (leaderGate), so a descendant is reaped too. cmd.Process.Kill() is what makes the
+		// process group while git is not reaped (sysproc.LeaderGate), so a descendant is reaped too. cmd.Process.Kill() is what makes the
 		// interrupt land on every OS: sysproc.ReapProcessGroup is a no-op on Windows, so without the
 		// direct kill a Windows deadline would leave git running until the WaitDelay fallback
 		// and answer the caller ~worktreeCreateDrainCap late. WaitDelay still bounds any
 		// post-kill pipe drain. Returning nil marks the interrupt as successful; Wait still
 		// prefers git's own "signal: killed" *ExitError, so the wire suffix is unchanged.
-		gate = &leaderGate{}
+		gate = &sysproc.LeaderGate{}
 		cmd.Cancel = deadlineStop(cmd, gate, &cancelled)
 	}
 	var errBuf bytes.Buffer
@@ -767,11 +740,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 //
 // room is the watch of the private LFS store (lfsroom.go), or nil. It starts
 // after a good start of git. It ends after git exited and before the wait for
-// git reaps it (awaitLeaderExit).
+// git reaps it (sysproc.AwaitExit).
 //
 // gate is the gate of the deadline stop (deadlineStop), or nil. It closes at
 // the same point as the watch ends, after the exit of git and before its reap.
-func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch, gate *leaderGate) error {
+func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch, gate *sysproc.LeaderGate) error {
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		return err
@@ -809,13 +782,8 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	}
 	if gate != nil {
 		// A step that did not see the exit leaves the gate open while git
-		// surely runs, so a deadline still sends its group kill. The poll ends
-		// when git exits, by itself or by the deadline stop, or when the test
-		// of gitSurelyRuns fails (claustrum's own, not measured).
-		for !seen && gitSurelyRuns(cmd.Process) {
-			time.Sleep(leaderPollEvery)
-		}
-		gate.close()
+		// surely runs, so a deadline still sends its group kill.
+		gate.CloseAfterExit(cmd.Process, seen)
 	}
 	werr := cmd.Wait()
 	checkoutWaited(cmd)
@@ -852,12 +820,12 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 var checkoutWaited = func(*exec.Cmd) {}
 
 // leaderExitWait is the wait for the exit of the read-tree call
-// (awaitLeaderExit). A test replaces it to see a wait that fails.
-var leaderExitWait = awaitLeaderExit
-
-// leaderPollEvery is the time between two tests of a git that the wait for its
-// exit did not see (claustrum's own, not measured).
-const leaderPollEvery = 10 * time.Millisecond
+// (sysproc.AwaitExit). A test replaces it to see a wait that fails. On a
+// system other than Linux and macOS it returns at once. Windows makes no
+// private LFS store (storeInCheckout), so no watch runs there. A wait that
+// does not see the exit ends the watch before the exit, and the watch then
+// sends no kill (claustrum's own, not measured).
+var leaderExitWait = sysproc.AwaitExit
 
 // failedKeepForm is the form of the keep after the failed read-tree call err
 // with the context ctx of the caller. A deadline of timeoutMs gives the copy

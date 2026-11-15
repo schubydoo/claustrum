@@ -89,15 +89,13 @@ func runViaManagedLauncher(argv []string, cli string, bound time.Duration) manag
 	cmd := exec.CommandContext(ctx, argv[0], args...)
 	cmd.Env = StripEnv(os.Environ(), true)
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
-	cmd.Cancel = func() error {
-		sysproc.ReapProcessGroup(cmd.Process)
-		_ = cmd.Process.Kill()
-		return nil
-	}
+	// The group kill comes only before the reap of the run (runGated).
+	gate := &sysproc.LeaderGate{}
+	cmd.Cancel = groupStop(cmd, gate)
 	cmd.WaitDelay = probeCLIKillGrace
 	eb := &sysproc.CappedText{Max: managedRunStderrCap}
 	cmd.Stderr = eb
-	err := cmd.Run()
+	err := runGated(cmd, gate)
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
 		return managedRun{hung: true, stderr: eb.String()}
 	}

@@ -254,9 +254,6 @@ component_management:
         - internal/git/lfsstore_windows.go
         # the stop of a Git LFS download under a tenth of the free space at the start (4c111e86).
         - internal/git/lfsroom.go
-        - internal/git/lfsroom_darwin.go
-        - internal/git/lfsroom_linux.go
-        - internal/git/lfsroom_other.go
         # the core.hooksPath value of each git call that sets it (be1c1ca5).
         - internal/git/hooksdevice_unix.go
         - internal/git/hooksdevice_windows.go
@@ -411,6 +408,11 @@ component_management:
         - internal/sysproc/sysproc.go
         - internal/sysproc/sysproc_unix.go
         - internal/sysproc/sysproc_windows.go
+        # The gate that lets a group kill run only before the reap, and the exit wait that reaps nothing.
+        - internal/sysproc/leadergate.go
+        - internal/sysproc/leaderexit_darwin.go
+        - internal/sysproc/leaderexit_linux.go
+        - internal/sysproc/leaderexit_other.go
         - internal/supervisor/childjobs.go
         - internal/supervisor/childjobs_windows.go
         # 4534d86 exit-frame `signal` name: read from the wait status on unix, always
@@ -564,6 +566,8 @@ component_management:
         - internal/install/libc_linux.go
         - internal/install/libc_other.go
         - internal/install/libc_unix.go
+        # The stop of a bounded run of -install and -probe-cli, with its gate before the reap.
+        - internal/install/groupstop.go
         # The test hooks of the settings reads.
         - internal/install/fortest.go
         - internal/install/fortest_unix.go

@@ -18,10 +18,3 @@ func gitStillRuns(p *os.Process) bool {
 	kp, err := unix.SysctlKinfoProc("kern.proc.pid", p.Pid)
 	return err != nil || kp.Proc.P_stat != darwinZombie
 }
-
-// gitSurelyRuns reports that the git process p has not exited, by the same
-// test as gitStillRuns. A test that fails counts as a git that does not run.
-func gitSurelyRuns(p *os.Process) bool {
-	kp, err := unix.SysctlKinfoProc("kern.proc.pid", p.Pid)
-	return err == nil && kp.Proc.P_stat != darwinZombie
-}

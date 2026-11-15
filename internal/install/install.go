@@ -863,7 +863,10 @@ func runCLIVersion(path string, bound time.Duration) cliRunResult {
 	// therefore does nothing. A stop step that is already in its kill holds the
 	// lock, and the flag is set only after it finished. time.Timer.Stop does not
 	// wait for a stop step that started, so this function waits for it: no
-	// goroutine of this run is left when it returns.
+	// goroutine of this run is left when it returns. The flag is set after the
+	// reap, so the group kill also goes through a gate. The gate closes after
+	// the exit of the CLI and before its reap (sysproc.LeaderGate).
+	gate := &sysproc.LeaderGate{}
 	var (
 		mu      sync.Mutex
 		waited  bool // cmd.Wait returned
@@ -878,10 +881,12 @@ func runCLIVersion(path string, bound time.Duration) cliRunResult {
 			return
 		}
 		stopped = true
-		sysproc.ReapProcessGroup(cmd.Process)
+		gate.Do(func() { reapRunGroup(cmd.Process) })
 		_ = cmd.Process.Kill()
 	})
+	gate.CloseAfterExit(cmd.Process, leaderExitWait(cmd.Process.Pid))
 	err := cmd.Wait()
+	runWaited(cmd)
 	mu.Lock()
 	waited = true
 	mu.Unlock()
@@ -931,8 +936,7 @@ const probeCLIKillGrace = 2 * time.Second
 // (probeCLIPathMissing).
 //
 // The probe runs in its OWN process group (sysproc.NewSysProcAttr) and the deadline tears
-// down the WHOLE group, not just the direct child, so a `--version` that forks a
-// descendant (a wrapper shell, a helper) cannot outlive the probe. A plain
+// down the WHOLE group, not just the direct child. A plain
 // CommandContext would SIGKILL only the direct child and leak the rest — the
 // reparented-sleeper leak slowCLI's comment measured.
 //
@@ -950,16 +954,14 @@ func probeCLIRunnable(path string) probeCLIVerdict {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
-	cmd.Cancel = func() error {
-		// Deadline fired: SIGKILL the child's whole process group (kill(-pgid) on
-		// unix; a no-op reap on Windows, where the direct kill below plus WaitDelay
-		// bound it), then kill the direct child so it dies at once on every OS.
-		sysproc.ReapProcessGroup(cmd.Process)
-		_ = cmd.Process.Kill()
-		return nil
-	}
+	// Deadline fired: SIGKILL the child's whole process group (kill(-pgid) on
+	// unix; a no-op reap on Windows, where the direct kill plus WaitDelay
+	// bound it), then kill the direct child so it dies at once on every OS. The
+	// group kill comes only before the reap of the child (runGated).
+	gate := &sysproc.LeaderGate{}
+	cmd.Cancel = groupStop(cmd, gate)
 	cmd.WaitDelay = probeCLIKillGrace
-	if err := cmd.Run(); err != nil {
+	if err := runGated(cmd, gate); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return probeCLIHung
 		}

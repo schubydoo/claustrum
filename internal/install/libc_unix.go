@@ -3,6 +3,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -67,16 +68,19 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 	cmd.Env = []string{"LC_ALL=C", "PATH=/usr/bin:/bin"}
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
 	var killed atomic.Bool
+	// The group kill comes only before the reap of ldd (runGated).
+	gate := &sysproc.LeaderGate{}
+	stop := groupStop(cmd, gate)
 	cmd.Cancel = func() error {
 		killed.Store(true)
-		sysproc.ReapProcessGroup(cmd.Process)
-		_ = cmd.Process.Kill()
-		return nil
+		return stop()
 	}
 	cmd.WaitDelay = lddKillGrace
-	out, err := cmd.CombinedOutput()
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := runGated(cmd, gate)
 	if killed.Load() {
-		return out, errLddBound
+		return out.Bytes(), errLddBound
 	}
-	return out, err
+	return out.Bytes(), err
 }
