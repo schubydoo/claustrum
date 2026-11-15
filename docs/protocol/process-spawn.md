@@ -228,15 +228,32 @@ On Linux and macOS, while a child runs, claustrum checks its folder by name ever
 
 claustrum's rule on Linux and macOS: a child that ends on the SIGTERM gets a SIGKILL to its group before claustrum reaps it. The SIGKILL of the wait goes to the group too.
 
+#### Other kinds of loss (build `4c111e86`)
+
+These count as lost too and end the child in the same way. They are measured on macOS, and on Linux they are claustrum's own. Each why follows `counts as lost: `.
+
+- A file at the name: `it is not a folder`.
+- A mount on the held folder: `it is on another file system`.
+- A file, a link or a mount at `t`: `it is holding a t that is not a folder`, `it is holding a t that is a link` or `it is holding a t that is on another file system`.
+- A file or a link in place of the temp dir: `it is in a temp dir that is no longer a folder`.
+- A new mount on the temp dir: `it is in a temp dir whose path now leads to another file system (a new mount?)`.
+- A temp dir of mode 0777, also of root: `it is in a temp dir that another account can rearrange`.
+
 #### Changes that end no child (build `4c111e86`)
 
 - An own folder that took the place of the held one is held instead and gets `t` and mode 0500. The line ends `was no longer at its name: this account's folder that stands there is held instead` (measured on Linux and macOS).
 - With no entry at the name, a new folder of that name is made. The line ends `was no longer at its name: it is made anew` (measured on macOS).
 - A held folder whose `t` is gone gets `t` again (measured on macOS). A `t` of mode 0777 stays (measured on Linux and macOS).
+- A sticky temp dir of mode 1777 changes nothing (measured on macOS).
+
+#### Lines of a check that ends no child (build `4c111e86`)
+
+- A temp dir that is gone logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir is gone; nobody is ended over that, and it is looked at again` (measured on macOS).
+- A held folder of mode 0 logs `[process.Manager] Claude Code's private temp folder <name>: its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again` (measured on macOS).
 - On Linux (on macOS claustrum's own) a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
 
 ??? note "claustrum's own rules of a lost folder"
-    These are not measured. The why `changed` for the other kinds of loss. Whole seconds, and an entry that never expires. A group or other write bit counts as open. A file at the name changes nothing. One line for a run of failed checks, and a temp dir that is gone counts as a failed check. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.
+    These are not measured. The why `changed` for the other kinds of loss. Whole seconds, and an entry that never expires. A group or other write bit of the folder counts as open. A temp dir that others can write without the sticky bit counts as lost in any mode, and a group write bit alone ends nobody. The order of the tests. A temp dir that was a link at the hold can stay a link. A folder with no owner read or search bit counts as mode 0. The text `<name>: ` before the lines of a gone temp dir and of mode 0. One line for a run of failed checks, and a gone temp dir and a folder of mode 0 count as failed checks. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began.
 
 ### The managed launcher
 
