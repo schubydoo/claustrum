@@ -1015,8 +1015,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 // Linux). A broken link, a file and a Windows junction give none either (not
 // measured).
 //
-// The calls are gitDirWorkTreeToplevel in gitDir, with workTree as the work
-// tree. That is repo, or with a worktreeRoot the worktreePath (c9125eb8 and
+// The calls are gitDirWorkTreeToplevel in the common git directory of gitDir.
+// For a linked baseRepo that is the `.git` of the main repository, not the
+// folder of the linked worktree (4c111e86, measured on Linux and macOS). The
+// work tree is workTree. That is repo, or with a worktreeRoot the worktreePath (c9125eb8 and
 // 4c111e86, measured on Linux). After a removed stale entry it is the parent
 // of gitDir (4c111e86, measured on Linux with a baseRepo through a link). A worktreePath with a final slash or a link
 // keeps its spelling (claustrum's own, not measured). Their answers are not used, and a failure changes nothing (measured on
@@ -1031,14 +1033,15 @@ func gitListBranches(req *gitCall) rpc.Response {
 //
 // late puts the pair after the listing of the add, as a missing folder does.
 func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, member, late bool) (afterListing func()) {
-	fi, err := os.Lstat(gitDirRegistryDir(gitDir))
+	registry := gitDirRegistryDir(gitDir)
+	fi, err := os.Lstat(registry)
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
 	if !missing && (err != nil || !fi.IsDir()) {
 		return nil
 	}
 	run := func() {
 		u := pairSSHUse(req, member).atGitDirCommand()
-		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), gitDir, workTree, u.gitDirPin(repo), u.gitDirFront())
+		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), filepath.Dir(registry), workTree, u.gitDirPin(repo), u.gitDirFront())
 	}
 	if (missing || late) && !stagedAddWindowsSteps {
 		return run

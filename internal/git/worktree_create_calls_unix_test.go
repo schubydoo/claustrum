@@ -134,3 +134,50 @@ func TestWorktreeCreateCallsOfTheRows(t *testing.T) {
 		})
 	}
 }
+
+// A create from a linked worktree L outside the repository names the `.git` of
+// the main repository in the pair before the add and in the two calls of the
+// empty tree, with L as the work tree of the pair. 4c111e86 does so (the pair
+// measured on Linux and macOS, the empty tree on macOS). The other calls keep
+// the folder of L.
+func TestWorktreeCreateFromALinkedBaseNamesTheMainGitDir(t *testing.T) {
+	requireGit(t)
+	f := newShapeFixture(t, stateShadow)
+	linked := filepath.Join(filepath.Dir(f.repo), "linked")
+	runGit(t, f.repo, "worktree", "add", "-q", "-b", "base1", linked)
+	if raw, _ := f.call(t, "git.info", map[string]any{"path": linked}); !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{
+		"baseRepo": linked, "branchName": "w1", "worktreePath": filepath.Join(linked, ".claude", "worktrees", "w1")})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+	main := "--git-dir=" + filepath.Join(f.repo, ".git")
+	pairs, trees := 0, 0
+	for i, c := range calls {
+		switch {
+		case slices.Contains(c.argv, "--show-toplevel") && slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") }):
+			pairs++
+			if !slices.Contains(c.argv, main) || !slices.Contains(c.argv, "--work-tree="+linked) {
+				t.Errorf("the pair = %q, want %s and the work tree %s", c.argv, main, linked)
+			}
+		case slices.Contains(c.argv, "hash-object") && slices.Contains(c.argv, os.DevNull):
+			trees++
+			if !slices.Contains(c.argv, main) {
+				t.Errorf("the empty-tree call = %q, want %s", c.argv, main)
+			}
+		default:
+			continue
+		}
+		if i == 0 || !slices.Contains(calls[i-1].argv, main) {
+			t.Errorf("the listing before %q does not name %s", c.argv, main)
+		}
+	}
+	if pairs != 1 {
+		t.Errorf("%d pairs before the add, want 1", pairs)
+	}
+	if trees == 0 && attrSourceOK {
+		t.Error("no empty-tree call ran")
+	}
+}
