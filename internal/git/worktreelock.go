@@ -29,30 +29,56 @@ func withWorktreeRepoLock(repo string, fn func() rpc.Response) rpc.Response {
 	return fn()
 }
 
-// worktreeCreateLocks serialises git.worktree_create per git directory. The main
-// repository and a linked worktree of it get one lock. 5fd08069 runs a create
-// through the main repository and a create through a linked worktree of it one
-// after the other. With the first `worktree add` held for 2 s, the second add
-// starts after the first one ended, and both creates succeed (measured on Linux,
-// 3 of 3 runs). The key is that of the branch lock (worktreeGitDirKey). With a
-// GIT_COMMON_DIR in the environment of the daemon that key is <baseRepo>/.git,
-// so the two creates get two locks (not measured).
+// worktreeCreateLocks serialises the steps of git.worktree_create before its
+// checkout step, per git directory. The main repository and a linked worktree
+// of it get one lock. 5fd08069 runs a create through the main repository and a
+// create through a linked worktree of it one after the other. With the first
+// `worktree add` held for 2 s, the second add starts after the first one
+// ended, and both creates succeed (measured on Linux, 3 of 3 runs). The key is
+// that of the branch lock (worktreeGitDirKey). With a GIT_COMMON_DIR in the
+// environment of the daemon that key is <baseRepo>/.git, so the two creates
+// get two locks (not measured).
 //
 // Two different repositories run at the same time, as on 5fd08069 (measured
 // on Linux). A remove does not take this lock. It takes the lock of the add
 // step (lockWorktreeAddStep).
+//
+// The hold ends before the checkout step (release), and a rollback after it
+// takes the lock again (retake) until the reply. So two creates of one
+// repository check out at the same time, while the steps up to the add and
+// each rollback still run one create at a time. A rollback then removes no
+// registration, leaf or branch name that a second create is making. Both
+// points are claustrum's own. The rows show only the outcome: two creates of
+// 4c111e86 started 0 s or 1 s apart both download both Git LFS objects, and
+// both reply after about 7.4 s (measured on Linux). macOS and Windows are
+// claustrum's own, not measured.
 var worktreeCreateLocks sync.Map // canonical git dir -> *sync.Mutex
 
 // withWorktreeCreateLock runs fn, a git.worktree_create, while it holds the
-// create lock of the git directory of repo. The order is always the per-repo
-// lock of a remove, the create lock, the lock of the add step, the branch lock,
-// so they do not deadlock.
-func withWorktreeCreateLock(repo string, fn func() rpc.Response) rpc.Response {
+// create lock of the git directory of repo. fn ends the hold by release and
+// takes the lock again by retake. Both run on the goroutine of fn only. The
+// order is always the per-repo lock of a remove, the create lock, the lock of
+// the add step, the branch lock, so they do not deadlock. A rollback after
+// retake holds no lock of the add step or branch lock before it.
+func withWorktreeCreateLock(repo string, fn func(release, retake func()) rpc.Response) rpc.Response {
 	m, _ := worktreeCreateLocks.LoadOrStore(worktreeGitDirKey(repo), &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
-	defer mu.Unlock()
-	return fn()
+	held := true
+	release := func() {
+		if held {
+			held = false
+			mu.Unlock()
+		}
+	}
+	retake := func() {
+		if !held {
+			mu.Lock()
+			held = true
+		}
+	}
+	defer release()
+	return fn(release, retake)
 }
 
 // worktreeAddLocks is the lock of the add step per git directory. A create holds
