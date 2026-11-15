@@ -899,8 +899,8 @@ func TestCommitPointersStopsAtDeadline(t *testing.T) {
 }
 
 // seedListings is the count of the listings right before the two calls of
-// the seed.
-const seedListings = 1
+// the seed: the same listing twice (4c111e86, measured on Linux).
+const seedListings = 2
 
 // seedScanCalls are the listings right before the seed and its ls-tree and
 // cat-file calls. The two calls run at once, so their records come in either
@@ -937,7 +937,7 @@ func seedScanCalls(t *testing.T, calls []envCall) []envCall {
 
 // TestSeedScanRunsInBaseRepo: the ls-tree and cat-file calls of the seed run
 // in baseRepo, with GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo>, and so does
-// the listing before them (4c111e86, measured on Linux). A linked worktree as
+// the two listings before them (4c111e86, measured on Linux). A linked worktree as
 // baseRepo gets its `worktrees/<n>` entry as GIT_DIR, and its pointer is still
 // seeded (claustrum's own, not measured).
 func TestSeedScanRunsInBaseRepo(t *testing.T) {
@@ -963,6 +963,10 @@ func TestSeedScanRunsInBaseRepo(t *testing.T) {
 				t.Errorf("smudge line of a.bin = %q, want the seeded object", got)
 			}
 			scan := seedScanCalls(t, calls)
+			// The two listings are the same call.
+			if !slices.Equal(scan[0].argv, scan[1].argv) || !slices.Equal(scan[0].env, scan[1].env) {
+				t.Errorf("the listings %q and %q differ, want the same call twice", scan[0].argv, scan[1].argv)
+			}
 			// cat-file has no listing of its own and pins the hook names of
 			// the ls-tree call.
 			if got, want := scan[len(scan)-1].pins(t), scan[len(scan)-2].pins(t); !slices.Equal(got, want) {

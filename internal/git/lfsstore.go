@@ -397,16 +397,18 @@ func pointerScanGit(ctx context.Context, u gitUse, dir string, pre *configListin
 }
 
 // commitPointers are the pointers of the tree of rev, read in dir. It keeps no
-// output of git but the ids of the small blobs and the pointers. One listing
-// runs before the ls-tree call, and the `cat-file --batch --buffer` call pins
-// its hook names with no listing of its own. cat-file starts with ls-tree,
+// output of git but the ids of the small blobs and the pointers. The same
+// listing runs twice before the ls-tree call, and both calls pin the hook names
+// of the second one. The `cat-file --batch --buffer` call has no listing of its
+// own. cat-file starts with ls-tree,
 // before the first id, and gets each id as ls-tree lists it. Its input ends
 // with the end of ls-tree. The argv of both calls, the listing and that start
 // follow 4c111e86 (measured on Linux, a pointer at the top of the tree).
 // Claustrum's own, not measured: a pointer in a subfolder, a tree with no small
-// blob, and the order of the two starts.
+// blob, the order of the two starts, and which listing gives the hook names.
 func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef {
 	u = u.atCommand()
+	hookPrecursor(seedScanContext(ctx, u), u, dir, false)
 	pre := &configListing{hooks: hookPrecursor(seedScanContext(ctx, u), u, dir, false).hooks()}
 	ids := newIDLines()
 	l := blobLister{found: ids.add}
