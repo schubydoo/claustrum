@@ -1054,8 +1054,12 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	// After a failed or a stopped checkout the keep runs too (lfsstore.go).
 	// 4c111e86 keeps a downloaded object after a deadline, and makes its shard
 	// folders after a failed write of git (measured on Linux and macOS).
+	// The reply reads what that keep left out (notKeptText).
 	if err != nil && keep {
-		returnDownloads(u, lfs.path, failedKeepForm(ctx, err))
+		left := returnDownloads(u, lfs.path, failedKeepForm(ctx, err))
+		if rule != nil && rule.store != nil {
+			rule.store.left = left
+		}
 	}
 	if err == nil || drained {
 		if u.swapped("index") {

@@ -102,6 +102,17 @@ type storeUse struct {
 	path   string
 	short  bool
 	copied time.Duration
+	// left is what the keep after a failed checkout left out
+	// (returnDownloads), or nil when no such keep ran.
+	left *leftOut
+}
+
+// leftOut counts the downloaded objects that a keep left out, and sums their
+// sizes. An object that the store of the repository has, a seeded one too,
+// does not count.
+type leftOut struct {
+	n    int
+	size uint64
 }
 
 // seedContext is the bound of the seed of a create with timeoutMs: half of
@@ -551,7 +562,7 @@ const (
 // the store of the repository gives the text of a link (linkText) or of the
 // room (notKeptRoomStart). Both are measured on Linux. Downloads began when
 // the private store has an entry `incomplete` or a file that the keep left out
-// (downloadsLeftOut). That test is claustrum's own. The text of the room needs
+// (storeUse.left, else downloadsLeftOut). That test is claustrum's own. The text of the room needs
 // a file left out (claustrum's own). ok is false in every other case.
 func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, ok bool) {
 	if timeoutMs <= 0 || rule == nil || rule.store == nil || rule.store.path == "" {
@@ -572,7 +583,13 @@ func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, o
 	if gitDir == "" {
 		return "", false
 	}
-	left, size := downloadsLeftOut(s.path, filepath.Join(gitDir, "lfs"))
+	var left int
+	var size uint64
+	if s.left != nil {
+		left, size = s.left.n, s.left.size
+	} else {
+		left, size = downloadsLeftOut(s.path, filepath.Join(gitDir, "lfs"))
+	}
 	if !incomplete && left == 0 {
 		return "", false
 	}
@@ -632,22 +649,31 @@ func linkNote(name, path string) string {
 		" If you didn't make that link, remove just the link: run rm '" + path + "'" + rmLinkWords + "."
 }
 
-// downloadsLeftOut counts the objects of the private store private that the
+// downloadsLeftOut is the walk of the private store for a store whose keep
+// did not report (storeUse.left). It counts the objects of the private store private that the
 // store of the repository, repoStore, does not have after the keep, and sums
 // their sizes. Such an object is one that git-lfs downloaded and the keep left
 // out. A seeded object is in repoStore. The store of the repository is read by
 // path, as the seed reads it.
 func downloadsLeftOut(private, repoStore string) (n int, size uint64) {
+	var l leftOut
 	for _, oid := range downloadedOIDs(private) {
-		if _, err := os.Stat(storeObjectPath(repoStore, oid)); err == nil {
-			continue
-		}
-		n++
-		if fi, err := os.Lstat(storeObjectPath(private, oid)); err == nil && fi.Size() > 0 {
-			size += uint64(fi.Size())
-		}
+		l.add(private, repoStore, oid)
 	}
-	return n, size
+	return l.n, l.size
+}
+
+// add counts the object oid of the private store private when the store of
+// the repository, repoStore, does not have it. The test reads by path, as the
+// seed reads that store.
+func (l *leftOut) add(private, repoStore, oid string) {
+	if _, err := os.Stat(storeObjectPath(repoStore, oid)); err == nil {
+		return
+	}
+	l.n++
+	if fi, err := os.Lstat(storeObjectPath(private, oid)); err == nil && fi.Size() > 0 {
+		l.size += uint64(fi.Size())
+	}
 }
 
 // repoRoomShort reports whether the disk that holds the git directory gitDir
@@ -811,19 +837,30 @@ func downloadedOIDs(private string) []string {
 // returnDownloads puts each object of the private store private that the store
 // of the repository lacks into that store. The writes go through the held git
 // directory of the create. A create that holds none keeps nothing (claustrum's
-// own, not measured). form says how the checkout ended.
-func returnDownloads(u gitUse, private string, form keepForm) {
+// own, not measured). form says how the checkout ended. The result counts
+// the objects that the keep left out (leftOut), for notKeptText. Only an
+// object that the keep did not put in the store is read again, by its path
+// below u.gitDir, so a seeded object does not count.
+func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
+	l := &leftOut{}
+	repoStore := filepath.Join(u.gitDir, "lfs")
 	a := u.accepted
 	if a == nil || a.root == nil {
-		return
+		for _, oid := range downloadedOIDs(private) {
+			l.add(private, repoStore, oid)
+		}
+		return l
 	}
 	// Each budget has its own context, so a keep after a deadline of the
 	// checkout still runs.
 	for _, oid := range downloadedOIDs(private) {
 		ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
-		returnDownload(ctx, a.root, a.path, private, oid, time.Now(), form)
+		if !returnDownload(ctx, a.root, a.path, private, oid, time.Now(), form) {
+			l.add(private, repoStore, oid)
+		}
 		cancel()
 	}
+	return l
 }
 
 // openShard opens the shard folder rel of root one folder at a time, each from
@@ -891,46 +928,47 @@ var openShardFolder = (*os.Root).OpenRoot
 // (swapInKept), and the temp name goes (measured on Linux). A failed or stopped
 // copy keeps nothing. After a deadline the shard gets no sweep (claustrum's
 // own, not measured). After a checkout that failed by itself the keep is one
-// hard link at the name oid (claustrum's own, not measured).
-func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) {
+// hard link at the name oid (claustrum's own, not measured). The result is
+// true when the store has the object at the end: it was there, or the keep
+// put it there.
+func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) bool {
 	// A missing `lfs` and `lfs/objects` get 0755 (claustrum's own, not
 	// measured). The two shard levels get 0777 (measured on Linux).
 	objects := openShard(root, filepath.Join("lfs", "objects"), 0o755)
 	if objects == nil {
-		return
+		return false
 	}
 	defer func() { _ = objects.Close() }()
 	rel := filepath.Join(oid[:2], oid[2:4])
 	if _, err := objects.Lstat(filepath.Join(rel, oid)); err == nil {
-		return
+		return true
 	}
 	src := storeObjectPath(private, oid)
 	if !objectHoldsOID(ctx, src, oid) {
-		return
+		return false
 	}
 	shard := openShard(objects, rel, 0o777)
 	if shard == nil {
-		return
+		return false
 	}
 	defer func() { _ = shard.Close() }()
 	if _, err := shard.Lstat(oid); err == nil {
-		return
+		return true
 	}
 	shardPath := filepath.Join(dir, "lfs", "objects", rel)
 	if !keepHasSpace(shardPath, src) {
-		return
+		return false
 	}
 	if form == keepAfterFailure {
-		_ = keepHardLink(shard, src, oid)
-		return
+		return keepHardLink(shard, src, oid) == nil
 	}
 	var n [4]byte
 	if _, err := rand.Read(n[:]); err != nil {
-		return
+		return false
 	}
 	temp := ".claude-" + hex.EncodeToString(n[:]) + "-" + oid
 	if !copyIntoRoot(ctx, shard, shardPath, src, temp) {
-		return
+		return false
 	}
 	err := shard.Link(temp, oid)
 	if err == nil {
@@ -941,6 +979,7 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 	if err == nil && form == keepAfterGood {
 		sweepShardTemps(shard, shardPath, oid, now)
 	}
+	return err == nil
 }
 
 // objectHoldsOID reports whether the bytes of the regular file at path give

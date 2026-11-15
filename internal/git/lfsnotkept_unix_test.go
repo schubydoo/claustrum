@@ -3,6 +3,8 @@
 package git
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,4 +259,62 @@ func TestLFSCheckoutTextEndsBeforeLog(t *testing.T) {
 		t.Errorf("git.worktree_create = %s\nwant the text %q", raw, want)
 	}
 	f.wantGone(t)
+}
+
+// TestKeepCountsLeftOut: the keep after a failed checkout counts the
+// downloaded objects that it left out, with their sizes. A seeded object that
+// the store of the repository has does not count, also when a link at
+// `lfs/objects` stops every keep. A kept object does not count. notKeptText
+// reads that count and does not walk the private store again.
+func TestKeepCountsLeftOut(t *testing.T) {
+	const seeded, downloaded = "a seeded object", "a downloaded object"
+	sum := func(b string) string { s := sha256.Sum256([]byte(b)); return hex.EncodeToString(s[:]) }
+	for _, row := range []struct {
+		name string
+		link bool
+		want leftOut
+	}{
+		{"objects link", true, leftOut{n: 1, size: uint64(len(downloaded))}},
+		{"plain store", false, leftOut{}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			seamFreeSpace(t)
+			gitDir := filepath.Join(t.TempDir(), ".git")
+			lfs := filepath.Join(gitDir, "lfs")
+			if row.link {
+				target := t.TempDir()
+				mkdirAll(t, lfs)
+				symlink(t, target, filepath.Join(lfs, "objects"))
+			} else {
+				mkdirAll(t, filepath.Join(lfs, "objects"))
+			}
+			mustWrite(t, storeObjectPath(lfs, sum(seeded)), seeded)
+			private := filepath.Join(t.TempDir(), "lfs")
+			mustWrite(t, storeObjectPath(private, sum(seeded)), seeded)
+			mustWrite(t, storeObjectPath(private, sum(downloaded)), downloaded)
+			root, err := os.OpenRoot(gitDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+			got := returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterDeadline)
+			if got == nil || *got != row.want {
+				t.Errorf("returnDownloads = %+v, want %+v", got, row.want)
+			}
+		})
+	}
+	// With the count of the keep, a file on disk that the store lacks does
+	// not count again.
+	gitDir := filepath.Join(t.TempDir(), ".git")
+	mkdirAll(t, filepath.Join(gitDir, "lfs", "objects"))
+	private := filepath.Join(t.TempDir(), "lfs")
+	mustWrite(t, storeObjectPath(private, sum(downloaded)), downloaded)
+	mkdirAll(t, filepath.Join(private, "incomplete"))
+	prev := storeFreeBytes
+	storeFreeBytes = func(string) (uint64, bool) { return 8 << 20, true }
+	t.Cleanup(func() { storeFreeBytes = prev })
+	rule := &filterRule{store: &storeUse{path: private, left: &leftOut{}}}
+	if got, ok := notKeptText(4000, rule, gitDir); ok {
+		t.Errorf("notKeptText with a keep that left nothing out = %q, want no text", got)
+	}
 }
