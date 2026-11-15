@@ -152,8 +152,9 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
 - A create writes the copy of `HEAD` again when it has mode 000 or no bytes, and the
   create succeeds (`4c111e86`, measured on Linux). A copy that is gone or has another
   text gets the same rule (claustrum's own). `4c111e86` removes an empty folder there,
-  writes the copy and succeeds (measured on Linux). claustrum removes it by one plain
-  remove (`removeEmptyHeadFolder`). A folder with content stays, and the create fails
+  writes the copy and succeeds (measured on Linux). On Linux and macOS claustrum
+  removes it by one rmdir (`removeEmptyHeadFolder`). On Windows it stays, and the
+  create fails (claustrum's own). A folder with content stays, and the create fails
   (not measured). The other methods get the same rule (claustrum's own).
 - [The call about the repository](#the-call-about-the-repository) names a folder
   `.probe` of the daemon.

@@ -284,6 +284,8 @@ component_management:
         - internal/git/gitshadowconfig.go
         - internal/git/gitshadowprobe.go
         - internal/git/gitshadowrepo.go
+        - internal/git/headcopyrmdir_unix.go
+        - internal/git/headcopyrmdir_windows.go
         - internal/git/gitshadowhold.go
         - internal/git/gitshadowuse.go
         - internal/git/gitshadowsweep.go

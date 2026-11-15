@@ -405,7 +405,7 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 		}
 	}
 	if fi, err := root.Lstat("HEAD"); err == nil && goesAsTree(fi.Mode()) {
-		_ = removeEmptyHeadFolder(root, filepath.Join(path, "HEAD"))
+		_ = removeEmptyHeadFolder(root, path)
 	}
 	if !headCopyHolds(root, st.copies) {
 		delete(st.copies, "HEAD")
@@ -469,17 +469,18 @@ func headCopyHolds(root *os.Root, copies map[string][sha256.Size]byte) bool {
 }
 
 // removeEmptyHeadFolder removes an empty folder at the copy of HEAD in root,
-// the folder of a repository. path is its full path. It is one plain remove
-// through root, never a tree delete, so a folder with content stays and the
-// request fails as before (not measured). homeguard.WipesHomeDir on path is
-// defense in depth. 4c111e86 removes an empty folder there and writes the
-// copy, and the create succeeds (measured on Linux). macOS and Windows are
-// claustrum's own.
-func removeEmptyHeadFolder(root *os.Root, path string) error {
-	if homeguard.WipesHomeDir(path) {
+// the folder dir of a repository. On Linux and macOS it is one rmdir through
+// a handle of that folder (rmdirHeadCopy), never a tree delete. A folder with
+// content, a file and a link stay, and the request fails as before (not
+// measured). homeguard.WipesHomeDir on the full path is defense in depth.
+// 4c111e86 removes an empty folder there and writes the copy, and the create
+// succeeds (measured on Linux). macOS is claustrum's own. On Windows nothing
+// is removed (claustrum's own).
+func removeEmptyHeadFolder(root *os.Root, dir string) error {
+	if homeguard.WipesHomeDir(filepath.Join(dir, "HEAD")) {
 		return errors.New("refusing to delete a path that holds the home folder")
 	}
-	return root.Remove("HEAD")
+	return rmdirHeadCopy(root, dir)
 }
 
 // repoFolderBySearch opens the folder path of a repository when the folder of
