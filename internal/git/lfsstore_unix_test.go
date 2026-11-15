@@ -1069,3 +1069,61 @@ func TestSeedFailedCopyOnAFullDiskReportsTheSpace(t *testing.T) {
 		})
 	}
 }
+
+// TestSeedCopyTime: the seed counts the time of its copies. A hard link adds
+// no time (claustrum's own, not measured).
+func TestSeedCopyTime(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "lfs")
+	// The first seed links the object, so the second one reads it for its
+	// sha256 first (seedObjects): the oid is that of its bytes.
+	sum := sha256.Sum256([]byte("alpha-object"))
+	oid := hex.EncodeToString(sum[:])
+	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+	ps := []pointerRef{{oid: oid, size: 12}}
+	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied != 0 {
+		t.Errorf("seed by a hard link counts %v, want 0", copied)
+	}
+	prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		time.Sleep(30 * time.Millisecond)
+		return io.Copy(w, r)
+	}
+	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
+	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
+	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied < 30*time.Millisecond {
+		t.Errorf("seed by a copy of 30 ms counts %v, want at least 30 ms", copied)
+	}
+}
+
+// TestSeedCopyTimeHoldsHash: the time of a copy of the seed holds the sha256
+// of its bytes, computed in the same pass, so its time is near the seed time
+// of 4c111e86 in the rows (claustrum's own).
+func TestSeedCopyTimeHoldsHash(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "lfs")
+	oid := strings.Repeat("a", 64)
+	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
+	prevLink, prevHash, prevFree := seedLink, seedHash, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	hashed := 0
+	seedHash = func() io.Writer { return slowWriter{&hashed} }
+	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
+	t.Cleanup(func() { seedLink, seedHash, storeFreeBytes = prevLink, prevHash, prevFree })
+	private := filepath.Join(t.TempDir(), "lfs")
+	_, copied := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
+	if hashed != 12 || copied < 30*time.Millisecond {
+		t.Errorf("seed by a copy with a hash of 30 ms: %d bytes hashed, %v counted, want 12 bytes and at least 30 ms", hashed, copied)
+	}
+	if got := mustRead(t, storeObjectPath(private, oid)); got != "alpha-object" {
+		t.Errorf("seeded object = %q, want the whole object", got)
+	}
+}
+
+// slowWriter counts the bytes that it takes and waits 30 ms on each write.
+type slowWriter struct{ n *int }
+
+func (w slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(30 * time.Millisecond)
+	*w.n += len(p)
+	return len(p), nil
+}
