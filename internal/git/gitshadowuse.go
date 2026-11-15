@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 )
@@ -967,33 +966,18 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		rel := filepath.Join(filepath.Base(u.folder), name)
 		dir = filepath.Join(u.folder, name)
 		if root == nil {
+			// The identity of the folder of the daemon right after the mkdir.
+			// The rmdir tests it again (removeEmptyRequestDir).
+			parent, statErr := os.Lstat(u.folder)
 			return dir, func() {
-				if u.host.removeEntry(rel) != nil {
-					removeEmptyRequestDir(dir)
+				if err := u.host.removeEntry(rel); errors.Is(err, fs.ErrPermission) && statErr == nil {
+					removeEmptyRequestDir(u.folder, name, parent)
 				}
 			}, nil
 		}
 		return dir, func() { _ = u.host.removeEntry(rel) }, nil
 	}
 	return "", func() {}, err
-}
-
-// rmdirRequestDir removes an empty folder by its path. It is a variable so
-// that a test can see the call.
-var rmdirRequestDir = syscall.Rmdir
-
-// removeEmptyRequestDir removes dir, a folder of a request that requestDir
-// made by its path in a folder of the daemon of mode 0300. removeEntry fails
-// there at the open of that folder. With mode 0300 4c111e86 then removes an
-// empty request folder such as `.readback-scratch-<n>`, and a folder with
-// content stays (measured on Linux). claustrum runs one rmdir by path, never a
-// tree, after homeguard.WipesHomeDir. A file at the name stays (claustrum's
-// own, not measured). macOS is not measured.
-func removeEmptyRequestDir(dir string) {
-	if homeguard.WipesHomeDir(dir) {
-		return
-	}
-	_ = rmdirRequestDir(dir)
 }
 
 // searchOnlyFolder reports whether the owner bits of the folder path allow a

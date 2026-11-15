@@ -293,6 +293,10 @@ component_management:
         - internal/git/headcopyrmdir_windows.go
         - internal/git/gitshadowhold.go
         - internal/git/gitshadowuse.go
+        - internal/git/requestdirrmdir_unix.go
+        - internal/git/requestdirrmdir_linux.go
+        - internal/git/requestdirrmdir_darwin.go
+        - internal/git/requestdirrmdir_windows.go
         - internal/git/gitshadowsweep.go
         - internal/git/gitshadow_unix.go
         - internal/git/gitshadow_windows.go

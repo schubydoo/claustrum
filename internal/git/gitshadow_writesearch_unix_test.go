@@ -252,9 +252,10 @@ func TestProbeLeftoverDeleteErrorNamesItsPath(t *testing.T) {
 
 // TestRequestDirRemoveInAWriteSearchDaemonFolder: the folder of the daemon has
 // mode 0300. The remove of an empty request folder that requestDir made is one
-// rmdir, and a folder with content stays (measured on Linux). A file at the name stays (claustrum's own, not measured). Without
-// the rmdir of removeEmptyRequestDir the empty folder stays. With a tree
-// remove in its place the file goes.
+// rmdir, and a folder with content stays (measured on Linux). A file at the
+// name stays (claustrum's own, not measured). Without the rmdir of
+// removeEmptyRequestDir the empty folder stays. With a tree remove in its
+// place the file goes.
 func TestRequestDirRemoveInAWriteSearchDaemonFolder(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the root user opens a folder of mode 0300")
@@ -271,9 +272,9 @@ func TestRequestDirRemoveInAWriteSearchDaemonFolder(t *testing.T) {
 	u := gitUse{host: NewShadowHost(run), folder: dir}
 	var calls []string
 	old := rmdirRequestDir
-	rmdirRequestDir = func(path string) error {
-		calls = append(calls, path)
-		return old(path)
+	rmdirRequestDir = func(folder, name string, parent os.FileInfo) error {
+		calls = append(calls, filepath.Join(folder, name))
+		return old(folder, name, parent)
 	}
 	t.Cleanup(func() { rmdirRequestDir = old })
 	for _, tc := range []struct {
@@ -321,19 +322,109 @@ func TestEmptyRequestDirRemoveKeepsHome(t *testing.T) {
 	t.Setenv("HOME", home)
 	var calls []string
 	old := rmdirRequestDir
-	rmdirRequestDir = func(path string) error {
-		calls = append(calls, path)
+	rmdirRequestDir = func(folder, name string, _ os.FileInfo) error {
+		calls = append(calls, filepath.Join(folder, name))
 		return nil
 	}
 	t.Cleanup(func() { rmdirRequestDir = old })
-	removeEmptyRequestDir(home)
-	removeEmptyRequestDir(filepath.Dir(home))
+	removeEmptyRequestDir(filepath.Dir(home), filepath.Base(home), nil)
+	removeEmptyRequestDir(filepath.Dir(filepath.Dir(home)), filepath.Base(filepath.Dir(home)), nil)
 	if len(calls) != 0 {
 		t.Errorf("rmdir calls = %q, want none", calls)
 	}
 	inside := filepath.Join(home, "x")
-	removeEmptyRequestDir(inside)
+	removeEmptyRequestDir(home, "x", nil)
 	if !slices.Equal(calls, []string{inside}) {
 		t.Errorf("rmdir calls = %q, want one of %s", calls, inside)
+	}
+}
+
+// TestRequestDirRemoveKeepsAFolderOfASwappedParent: the folder of the daemon
+// has mode 0300, and after requestDir made an empty request folder, the folder
+// git-shadow becomes a link to another folder. That folder holds a folder of
+// mode 0300 with the name of the folder of the daemon, and in it an empty
+// folder with the name of the request folder. The rmdir refuses the other
+// parent, so both empty folders stay (claustrum's own). Without the identity
+// test of rmdirInFolder the empty folder of the other parent goes.
+func TestRequestDirRemoveKeepsAFolderOfASwappedParent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the root user opens a folder of mode 0300")
+	}
+	run := resolveTestRoot(t, t.TempDir())
+	shadow := filepath.Join(run, shadowRootName)
+	dir := filepath.Join(shadow, "d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(run, "moved")
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(moved, "d"), 0o700) })
+	u := gitUse{host: NewShadowHost(run), folder: dir}
+	path, remove, err := u.requestDir(shadowStatusDirPrefix, "")
+	if err != nil {
+		t.Fatalf("requestDir: %v", err)
+	}
+	other := filepath.Join(run, "other")
+	twin := filepath.Join(other, "d", filepath.Base(path))
+	if err := os.MkdirAll(twin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(twin), 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(twin), 0o700) })
+	if err := os.Rename(shadow, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, shadow); err != nil {
+		t.Fatal(err)
+	}
+	remove()
+	for _, kept := range []string{twin, filepath.Join(moved, "d", filepath.Base(path))} {
+		if fi, err := os.Lstat(kept); err != nil || !fi.IsDir() {
+			t.Errorf("%s: %v, want the empty folder kept", kept, err)
+		}
+	}
+}
+
+// TestRequestDirRemoveRmdirOnlyAfterAPermissionError: the folder of the daemon
+// has mode 0300, and the folder git-shadow went before the remove. removeEntry
+// then fails with no permission error, and no rmdir runs (claustrum's own).
+// Without the test of the error the rmdir runs.
+func TestRequestDirRemoveRmdirOnlyAfterAPermissionError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the root user opens a folder of mode 0300")
+	}
+	run := resolveTestRoot(t, t.TempDir())
+	shadow := filepath.Join(run, shadowRootName)
+	dir := filepath.Join(shadow, "d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(run, "moved")
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(moved, "d"), 0o700) })
+	var calls []string
+	old := rmdirRequestDir
+	rmdirRequestDir = func(folder, name string, parent os.FileInfo) error {
+		calls = append(calls, filepath.Join(folder, name))
+		return old(folder, name, parent)
+	}
+	t.Cleanup(func() { rmdirRequestDir = old })
+	u := gitUse{host: NewShadowHost(run), folder: dir}
+	_, remove, err := u.requestDir(shadowStatusDirPrefix, "")
+	if err != nil {
+		t.Fatalf("requestDir: %v", err)
+	}
+	if err := os.Rename(shadow, moved); err != nil {
+		t.Fatal(err)
+	}
+	remove()
+	if len(calls) != 0 {
+		t.Errorf("rmdir calls = %q, want none", calls)
 	}
 }
