@@ -459,8 +459,9 @@ var reapCheckoutGroup = sysproc.ReapProcessGroup
 // number of an empty group is then free. runCheckoutPipes closes the gate after
 // the exit of git and before the wait (awaitLeaderExit), as the LFS stop ends
 // its watch. On Windows the gate closes right after the start, and the group
-// kill is a no-op there. On macOS a kqueue that cannot be made closes it at
-// once too. The kill through the handle of git still goes.
+// kill is a no-op there. If the wait for the exit fails, for example on a
+// kqueue that cannot be made on macOS, the gate stays open while git surely
+// runs (gitSurelyRuns).
 type leaderGate struct {
 	mu     sync.Mutex
 	closed bool
@@ -796,20 +797,28 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	outDone, errDone := make(chan struct{}), make(chan struct{})
 	go func() { _, _ = io.Copy(io.Discard, outR); close(outDone) }()
 	go func() { _, _ = io.Copy(errBuf, errR); close(errDone) }()
+	seen := true
 	if room != nil || gate != nil {
 		// The watch ends and the gate closes after the exit of git and before
 		// its reap, so their group kills reach only a group that this call
 		// still holds.
-		awaitLeaderExit(cmd.Process.Pid)
+		seen = leaderExitWait(cmd.Process.Pid)
 	}
 	if room != nil {
 		room.end()
 	}
 	if gate != nil {
+		// A step that did not see the exit leaves the gate open while git
+		// surely runs, so a deadline still sends its group kill. The poll ends
+		// when git exits, by itself or by the deadline stop, or when the test
+		// of gitSurelyRuns fails (claustrum's own, not measured).
+		for !seen && gitSurelyRuns(cmd.Process) {
+			time.Sleep(leaderPollEvery)
+		}
 		gate.close()
 	}
 	werr := cmd.Wait()
-	checkoutWaited()
+	checkoutWaited(cmd)
 	limit := time.NewTimer(cmd.WaitDelay)
 	defer limit.Stop()
 	overrun := false
@@ -838,9 +847,17 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	return werr
 }
 
-// checkoutWaited runs right after the wait for the read-tree call. A test sets
-// it to learn that git exited.
-var checkoutWaited = func() {}
+// checkoutWaited runs right after the wait for the read-tree call cmd. A test
+// sets it to learn that git exited, or to run cmd.Cancel late.
+var checkoutWaited = func(*exec.Cmd) {}
+
+// leaderExitWait is the wait for the exit of the read-tree call
+// (awaitLeaderExit). A test replaces it to see a wait that fails.
+var leaderExitWait = awaitLeaderExit
+
+// leaderPollEvery is the time between two tests of a git that the wait for its
+// exit did not see (claustrum's own, not measured).
+const leaderPollEvery = 10 * time.Millisecond
 
 // failedKeepForm is the form of the keep after the failed read-tree call err
 // with the context ctx of the caller. A deadline of timeoutMs gives the copy

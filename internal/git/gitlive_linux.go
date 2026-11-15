@@ -17,3 +17,11 @@ func gitStillRuns(p *os.Process) bool {
 	err := unix.Waitid(unix.P_PID, p.Pid, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil)
 	return err != nil || info.Signo != int32(unix.SIGCHLD)
 }
+
+// gitSurelyRuns reports that the git process p has not exited, by the same
+// test as gitStillRuns. A test that fails counts as a git that does not run.
+func gitSurelyRuns(p *os.Process) bool {
+	var info unix.Siginfo
+	err := unix.Waitid(unix.P_PID, p.Pid, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil)
+	return err == nil && info.Signo != int32(unix.SIGCHLD)
+}
