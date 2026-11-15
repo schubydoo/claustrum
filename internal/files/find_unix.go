@@ -64,13 +64,30 @@ var findNow = time.Now
 // findSlots holds one token for each walk that runs.
 var findSlots = make(chan struct{}, findMaxWalks)
 
+// findLate counts the walks that still run after the reply at their bound. When
+// the count reaches findMaxWalks, every slot is held past its deadline, and one
+// line logs (4c111e86, measured on Linux: one line in a row where all 4 walks
+// hung). times is the number of that line. It counts each time the count reaches
+// findMaxWalks since the start of the daemon. Only number 1 is measured. The
+// count of later lines is claustrum's own, not measured, and so are the level and
+// the moment of the line, at the bound of the last walk.
+var findLate struct {
+	sync.Mutex
+	walks int
+	times int
+}
+
+// findStuckLine is the line of all walks past their deadlines (4c111e86, measured
+// on Linux).
+const findStuckLine = `[FilesHandler] files.find: all %d walks that may run at once are past their deadlines and have not ended (a dead mount?): every call answers "busy" until one ends or the helper restarts (time number %d)`
+
 // findPassNames are the folder names that a walk passes over (4c111e86,
 // measured on Linux and macOS). A file with such a name is not passed over.
 var findPassNames = map[string]bool{".git": true, ".hg": true, ".svn": true, "node_modules": true}
 
 // filesFind answers files.find: a read-only walk for files whose path ends with
 // suffix. It writes and deletes nothing (from the code). 4c111e86 logs nothing
-// for it (measured on Linux).
+// for it but the line of findStuckLine (measured on Linux).
 func filesFind(req *rpc.Request) rpc.Response {
 	var p findParams
 	if bad := rpc.Bind(req, &p); bad != nil {
@@ -148,6 +165,8 @@ type findState struct {
 	entries    int
 	stop       bool
 	seen       map[string]bool
+	late       bool // findLate guards late and ended
+	ended      bool
 
 	mu       sync.Mutex
 	cut      string
@@ -206,6 +225,7 @@ func findRun(p *findParams) rpc.FindResult {
 			// for the walk comes after its slot is free.
 			defer close(done)
 			defer func() { <-findSlots }()
+			defer w.leave()
 			defer w.recovered()
 			for _, root := range p.Roots {
 				if w.stop {
@@ -219,10 +239,44 @@ func findRun(p *findParams) rpc.FindResult {
 		select {
 		case <-done:
 		case <-bound.C:
+			w.markLate()
 			return w.result(true)
 		}
 	}
 	return w.result(false)
+}
+
+// markLate counts w in findLate when its walk still runs at the bound, and logs
+// findStuckLine when every slot is then held by a late walk. The line logs after
+// the lock goes.
+func (w *findState) markLate() {
+	findLate.Lock()
+	if w.ended {
+		findLate.Unlock()
+		return
+	}
+	w.late = true
+	findLate.walks++
+	times := 0
+	if findLate.walks == findMaxWalks {
+		findLate.times++
+		times = findLate.times
+	}
+	findLate.Unlock()
+	if times > 0 {
+		logging.Warnf(findStuckLine, findMaxWalks, times)
+	}
+}
+
+// leave marks the walk of w as ended, before its slot goes back, and takes it out
+// of findLate.
+func (w *findState) leave() {
+	findLate.Lock()
+	defer findLate.Unlock()
+	w.ended = true
+	if w.late {
+		findLate.walks--
+	}
 }
 
 // recovered ends a walk that panicked, so the panic does not end the daemon. It
