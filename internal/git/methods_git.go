@@ -2426,9 +2426,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// Linux and macOS).
 			//
 			// A deadline after a long copy of the seed answers
-			// worktree_lfs_not_kept (notKeptText). It reads the private store
-			// before the rollback.
-			if text, ok := notKeptText(p.TimeoutMs, rule); ok {
+			// worktree_lfs_not_kept (notKeptText). So does a deadline after Git
+			// LFS downloads began, with a link at the store of the repository or
+			// too little room for a file that the keep left out. It reads the
+			// private store before the rollback.
+			if text, ok := notKeptText(p.TimeoutMs, rule, cu.gitDir); ok {
 				undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 				return rpc.OKResult(req.ID, rpc.WorktreeResult{
 					Success:    false,

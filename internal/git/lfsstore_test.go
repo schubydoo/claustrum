@@ -22,8 +22,8 @@ import (
 // to log. A present object goes to stdout. Else it copies remote/<oid> into
 // the store, as git-lfs does after a download, or fails with exit 2 and the
 // text of remote/error, or a 404 text with no such file. `<store>` in that text
-// is the store. With a file remote/hang it waits for its kill or for a file
-// remote/end.
+// is the store. With a file remote/hang an object that is not in remote waits
+// for its kill or for a file remote/end.
 func lfsSmudgeHelper(remote, log string) int {
 	body, _ := io.ReadAll(os.Stdin)
 	p, ok := readPointerBlob(body)
@@ -47,7 +47,8 @@ func lfsSmudgeHelper(remote, log string) int {
 		_, _ = os.Stdout.Write(b)
 		return 0
 	}
-	if exists(filepath.Join(remote, "hang")) {
+	b, err := os.ReadFile(filepath.Join(remote, p.oid))
+	if err != nil && exists(filepath.Join(remote, "hang")) {
 		// A download that does not end, as a slow server. With remote/incomplete
 		// it first makes <store>/incomplete, as git-lfs does when a download
 		// begins. The deadline of the create kills it with its process group.
@@ -63,7 +64,6 @@ func lfsSmudgeHelper(remote, log string) int {
 		}
 		return 2
 	}
-	b, err := os.ReadFile(filepath.Join(remote, p.oid))
 	if err != nil {
 		text := "Object does not exist on the server: [404]\n"
 		if e, rerr := os.ReadFile(filepath.Join(remote, "error")); rerr == nil {
@@ -395,7 +395,7 @@ func TestNotKeptText(t *testing.T) {
 		{"a hard link only", 4000, 0, false},
 		{"no timeoutMs", 0, time.Second, false},
 	} {
-		got, ok := notKeptText(row.timeoutMs, rule(row.copied))
+		got, ok := notKeptText(row.timeoutMs, rule(row.copied), "")
 		if ok != row.want {
 			t.Errorf("%s: notKeptText(%d, %v) = %q, %v, want %v", row.name, row.timeoutMs, row.copied, got, ok, row.want)
 		}
@@ -403,16 +403,16 @@ func TestNotKeptText(t *testing.T) {
 	const want = "Turn off Worktree for this session, then try again. A plain retry won't help: git worktree add timed out after 4 seconds," +
 		" and copying the repository's Git LFS files into a folder of Claude's own took a large part of that time, as it does when Claude" +
 		" can't hard-link them there (a repository on another disk, a store reached through a link, a relative lfs.storage); a retry copies them again."
-	if got, _ := notKeptText(4000, rule(time.Second)); got != want {
+	if got, _ := notKeptText(4000, rule(time.Second), ""); got != want {
 		t.Errorf("notKeptText = %q\nwant %q", got, want)
 	}
-	if _, ok := notKeptText(4000, nil); ok {
+	if _, ok := notKeptText(4000, nil, ""); ok {
 		t.Error("notKeptText with no rule = ok, want no text")
 	}
 	if err := os.MkdirAll(filepath.Join(private, "incomplete"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := notKeptText(4000, rule(time.Second)); ok {
+	if got, ok := notKeptText(4000, rule(time.Second), ""); ok {
 		t.Errorf("notKeptText with an empty incomplete folder in the private store = %q, want no text", got)
 	}
 }

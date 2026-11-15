@@ -532,30 +532,137 @@ const (
 		" a relative lfs.storage); a retry copies them again."
 )
 
-// notKeptText is the text of a create whose timeoutMs ended during the
-// checkout, when 4c111e86 blames the copies of the seed. 4c111e86 answers it
-// when the copies took a large part of timeoutMs and git-lfs began no
-// download. Then the private store has no entry `incomplete` (measured on
+// notKeptText is the text of worktree_lfs_not_kept for a deadline during the
+// checkout. 4c111e86 blames the copies of the seed when they took a large
+// part of timeoutMs and git-lfs began no download. Then the private store
+// has no entry `incomplete` (measured on
 // Linux and macOS). The bound of claustrum is a quarter of timeoutMs
 // (claustrum's own). An object with a second link adds a read of its sha256
 // to the seed time (seedObjects). Whether the macOS boundary then matches
 // 4c111e86 is not measured. An `incomplete` folder in the store of the repository
 // does not count (measured on macOS). An empty `incomplete` folder counts
 // (measured on Linux). Claustrum's own, not measured: any kind of entry there
-// counts, and an Lstat that fails counts as no entry. ok is false in every
-// other case.
-func notKeptText(timeoutMs int, rule *filterRule) (text string, ok bool) {
+// counts, and an Lstat that fails counts as no entry.
+//
+// gitDir is the git directory of the repository. A link at its `lfs` or at
+// `lfs/objects` adds a note to that text (linkNote, measured on Linux).
+//
+// After Git LFS downloads began, a downloaded file that the keep cannot put in
+// the store of the repository gives the text of a link (linkText) or of the
+// room (notKeptRoomStart). Both are measured on Linux. Downloads began when
+// the private store has an entry `incomplete` or a file that the keep left out
+// (downloadsLeftOut). That test is claustrum's own. The text of the room needs
+// a file left out (claustrum's own). ok is false in every other case.
+func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, ok bool) {
 	if timeoutMs <= 0 || rule == nil || rule.store == nil || rule.store.path == "" {
 		return "", false
 	}
 	s := rule.store
-	if 4*s.copied < time.Duration(timeoutMs)*time.Millisecond {
+	words := deadlineWords(timeoutMs)
+	_, err := os.Lstat(filepath.Join(s.path, "incomplete"))
+	incomplete := err == nil
+	name, link := linkedStoreFolder(gitDir)
+	if 4*s.copied >= time.Duration(timeoutMs)*time.Millisecond && !incomplete {
+		text = notKeptStart + words + notKeptEnd
+		if link != "" {
+			text += linkNote(name, link)
+		}
+		return text, true
+	}
+	if gitDir == "" {
 		return "", false
 	}
-	if _, err := os.Lstat(filepath.Join(s.path, "incomplete")); err == nil {
+	left, size := downloadsLeftOut(s.path, filepath.Join(gitDir, "lfs"))
+	if !incomplete && left == 0 {
 		return "", false
 	}
-	return notKeptStart + deadlineWords(timeoutMs) + notKeptEnd, true
+	if link != "" {
+		return linkText(name, link, words), true
+	}
+	if left > 0 && repoRoomShort(gitDir, size) {
+		return notKeptRoomStart + words + notKeptRoomEnd, true
+	}
+	return "", false
+}
+
+// The texts of worktree_lfs_not_kept after Git LFS downloads began, around the
+// words of the deadline and the path of a link (4c111e86, measured on Linux).
+const (
+	rmLinkWords      = " (exactly so, with no -r: that way rm removes a link but refuses a real folder)"
+	notKeptRoomStart = "Free up space on the disk that holds the repository on the remote machine (or raise your quota there)" +
+		" until the repository's Git LFS files fit with at least 1 GiB to spare, or turn off Worktree for this session," +
+		" then try again. A plain retry won't help: git worktree add timed out after "
+	notKeptRoomEnd = " once Git LFS downloads had begun, and there is too little room left on the disk that holds the repository," +
+		" or in your disk quota there, so Claude can't keep the downloaded files for the next try."
+)
+
+// linkedStoreFolder names the folder of the store of the repository at gitDir
+// that is a symbolic link, with its path: `lfs`, else `lfs/objects`. With no
+// such link, or no gitDir, both are "". The order of the two tests is
+// claustrum's own, not measured. The tests read by path, as the seed does.
+func linkedStoreFolder(gitDir string) (name, path string) {
+	if gitDir == "" {
+		return "", ""
+	}
+	lfs := filepath.Join(gitDir, "lfs")
+	if pathIsLink(lfs) {
+		return "folder", lfs
+	}
+	if objects := filepath.Join(lfs, "objects"); pathIsLink(objects) {
+		return "objects folder", objects
+	}
+	return "", ""
+}
+
+// linkText is the text of worktree_lfs_not_kept for a link at the folder name
+// of the store of the repository, at path. The path is put in as it is, also
+// with a quote mark in it (claustrum's own, not measured).
+func linkText(name, path, words string) string {
+	return "The repository's Git LFS " + name + " on the remote machine, `" + path + "`, is a symbolic link." +
+		" If you didn't make that link, remove only the link, not the folder it points to: run rm '" + path + "'" +
+		rmLinkWords + ", then try again. If you did make it, turn off Worktree for this session instead." +
+		" A plain retry won't help: git worktree add timed out after " + words + " once Git LFS downloads had begun," +
+		" and Claude can't keep the downloaded files in a linked folder for the next try."
+}
+
+// linkNote is the note after the text of a long copy of the seed for a link at
+// the folder name of the store of the repository, at path.
+func linkNote(name, path string) string {
+	return " Also, the repository's Git LFS " + name + " on the remote machine, `" + path + "`, is a symbolic link." +
+		" If you didn't make that link, remove just the link: run rm '" + path + "'" + rmLinkWords + "."
+}
+
+// downloadsLeftOut counts the objects of the private store private that the
+// store of the repository, repoStore, does not have after the keep, and sums
+// their sizes. Such an object is one that git-lfs downloaded and the keep left
+// out. A seeded object is in repoStore. The store of the repository is read by
+// path, as the seed reads it.
+func downloadsLeftOut(private, repoStore string) (n int, size uint64) {
+	for _, oid := range downloadedOIDs(private) {
+		if _, err := os.Stat(storeObjectPath(repoStore, oid)); err == nil {
+			continue
+		}
+		n++
+		if fi, err := os.Lstat(storeObjectPath(private, oid)); err == nil && fi.Size() > 0 {
+			size += uint64(fi.Size())
+		}
+	}
+	return n, size
+}
+
+// repoRoomShort reports whether the disk that holds the git directory gitDir
+// has less free space than size plus seedSpare, the bound that the text of the
+// room names. On 4c111e86 a free space of 8, 30 and 400 MiB was too little for
+// a 5 or 25 MiB object (measured on Linux). Claustrum's own, not measured: the
+// exact bound, the sum of the sizes of all objects left out, and the read of the
+// free space at `lfs/objects`, else at gitDir. A free space that cannot be read
+// gives false. A quota is not read (claustrum's own).
+func repoRoomShort(gitDir string, size uint64) bool {
+	free, ok := storeFreeBytes(filepath.Join(gitDir, "lfs", "objects"))
+	if !ok {
+		free, ok = storeFreeBytes(gitDir)
+	}
+	return ok && free < size+seedSpare
 }
 
 // deadlineWords are the words of timeoutMs in the text of notKeptText. A whole
