@@ -821,8 +821,9 @@ var requestDirMkdir = os.Mkdir
 // macOS claustrum prints `.checkout-<n>` there. On Windows
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
-// A folder of the daemon that cannot be opened is not measured: it gives the
-// error of that open.
+// On Linux a folder of the daemon of mode 0100 gets that mkdir error too
+// (measured on Linux, see below). macOS is claustrum's own. Any other failed
+// open gives its own error (not measured).
 //
 // On Windows each such folder is made by its full path with a plain mkdir,
 // not through the root (makeRequestDir). On Windows with a deny entry for new
@@ -843,15 +844,31 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 	}
 	root, err := os.OpenRoot(u.folder)
 	if err != nil {
+		// On Linux and macOS a folder of the daemon with mode 0100 cannot be
+		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there
+		// (measured on Linux). claustrum runs no mkdir and gives that error with
+		// a new name. Only a folder whose owner bits allow search and no write
+		// gets it. With mode 0300 4c111e86 makes `.s<n>`, and the create
+		// succeeds (measured on Linux). claustrum keeps the error of the open
+		// there: its probe step removes old entries through a root that needs
+		// the read bit (not built). macOS and the other prefixes are not
+		// measured.
+		var pe *os.PathError
+		if !stagedAddWindowsSteps && errors.Is(err, fs.ErrPermission) && errors.As(err, &pe) && searchOnlyFolder(u.folder) {
+			name, nameErr := requestDirName(shadowPrefix)
+			if nameErr != nil {
+				return "", func() {}, nameErr
+			}
+			return "", func() {}, &os.PathError{Op: "mkdir", Path: filepath.Join(u.folder, name), Err: pe.Err}
+		}
 		return "", func() {}, err
 	}
 	defer func() { _ = root.Close() }()
 	for range 10000 {
-		var n [4]byte
-		if _, err = rand.Read(n[:]); err != nil {
+		var name string
+		if name, err = requestDirName(shadowPrefix); err != nil {
 			return "", func() {}, err
 		}
-		name := shadowPrefix + strconv.FormatUint(uint64(binary.LittleEndian.Uint32(n[:])), 10)
 		err = makeRequestDir(root, u.folder, name)
 		if errors.Is(err, os.ErrExist) {
 			continue
@@ -867,6 +884,23 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		return filepath.Join(u.folder, name), func() { _ = u.host.removeEntry(rel) }, nil
 	}
 	return "", func() {}, err
+}
+
+// searchOnlyFolder reports whether the owner bits of the folder path allow a
+// search and no write, as with mode 0100.
+func searchOnlyFolder(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().Perm()&0o300 == 0o100
+}
+
+// requestDirName is a new name for a folder of a request: prefix and a
+// decimal number.
+func requestDirName(prefix string) (string, error) {
+	var n [4]byte
+	if _, err := rand.Read(n[:]); err != nil {
+		return "", err
+	}
+	return prefix + strconv.FormatUint(uint64(binary.LittleEndian.Uint32(n[:])), 10), nil
 }
 
 // removeTempTree removes the temporary folder of a request as a tree. It is a

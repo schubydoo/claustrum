@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/renameretry"
 )
 
@@ -338,41 +339,44 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	if !ok {
 		return errors.New("the HEAD of the repository cannot be read")
 	}
-	base, err := os.OpenRoot(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = base.Close() }()
-
-	// A folder that is not there is the first request, or a folder that went.
-	// The copies then come from what the daemon read before: the config is not
-	// read again for it (measured on Linux).
-	//
-	// The error of a folder that cannot be made names its full path, as on
-	// 5fd08069: `mkdir <S>/<32 hex>: permission denied` under a folder of mode
-	// 0500, and `mkdir <S>/<32 hex>: not a directory` for a plain file of that
-	// name (measured on Linux and macOS). On Windows the file gives `mkdir
-	// <path>: The system cannot find the path specified.` (measured).
-	//
-	// The folder is made by its name through the root at the folder of the
-	// daemon, and never with its parents. A shutdown that removed the folder of
-	// the daemon after the test of syncRepo then leaves no folder behind: the
-	// mkdir fails (not measured, and no client gets that reply).
 	st := h.repos[name]
 	path := filepath.Join(dir, name)
-	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
-		st = nil
-		if err := h.evictOldRepoFolder(base, filepath.Base(dir), name); err != nil {
+	base, err := os.OpenRoot(dir)
+	var root *os.Root
+	if err != nil {
+		if root = repoFolderBySearch(path, err); root == nil {
 			return err
 		}
-	}
-	shadowRepoBeforeMkdir()
-	if err := mkdirShadowRepo(base, name, path); err != nil {
-		return err
-	}
-	root, err := base.OpenRoot(name)
-	if err != nil {
-		return err
+	} else {
+		defer func() { _ = base.Close() }()
+
+		// A folder that is not there is the first request, or a folder that went.
+		// The copies then come from what the daemon read before: the config is not
+		// read again for it (measured on Linux).
+		//
+		// The error of a folder that cannot be made names its full path, as on
+		// 5fd08069: `mkdir <S>/<32 hex>: permission denied` under a folder of mode
+		// 0500, and `mkdir <S>/<32 hex>: not a directory` for a plain file of that
+		// name (measured on Linux and macOS). On Windows the file gives `mkdir
+		// <path>: The system cannot find the path specified.` (measured).
+		//
+		// The folder is made by its name through the root at the folder of the
+		// daemon, and never with its parents. A shutdown that removed the folder of
+		// the daemon after the test of syncRepo then leaves no folder behind: the
+		// mkdir fails (not measured, and no client gets that reply).
+		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+			st = nil
+			if err := h.evictOldRepoFolder(base, filepath.Base(dir), name); err != nil {
+				return err
+			}
+		}
+		shadowRepoBeforeMkdir()
+		if err := mkdirShadowRepo(base, name, path); err != nil {
+			return err
+		}
+		if root, err = base.OpenRoot(name); err != nil {
+			return err
+		}
 	}
 	defer func() { _ = root.Close() }()
 	if st == nil {
@@ -399,6 +403,12 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 				return err
 			}
 		}
+	}
+	if fi, err := root.Lstat("HEAD"); err == nil && goesAsTree(fi.Mode()) {
+		_ = removeEmptyHeadFolder(root, path)
+	}
+	if !headCopyHolds(root, st.copies) {
+		delete(st.copies, "HEAD")
 	}
 	if err := h.writeCopy(st, root, rel, "HEAD", head); err != nil {
 		return err
@@ -428,6 +438,96 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 		return h.writeCopy(st, root, rel, "BISECT_LOG", nil)
 	}
 	return h.dropCopy(st, rel, "BISECT_LOG")
+}
+
+// headCopyHolds reports whether the copy of HEAD in root, the folder of a
+// repository, still holds the text of its last write (copies). A copy that
+// is gone, cannot be opened or has another text does not, and the request
+// writes it again. 4c111e86 writes the copy again for a create after it got
+// mode 000 or no bytes, and the create succeeds (measured on Linux). A copy
+// that is gone or has another text gets the same rule (claustrum's own). A
+// copy with the text of its last write is not written again (measured on
+// Linux).
+//
+// A folder at the copy holds: removeEmptyHeadFolder runs before this test.
+// Any other entry that is no regular file holds too (claustrum's own). The
+// rule for the other git methods is claustrum's own, not measured.
+func headCopyHolds(root *os.Root, copies map[string][sha256.Size]byte) bool {
+	have, ok := copies["HEAD"]
+	if !ok {
+		return true
+	}
+	fi, err := root.Lstat("HEAD")
+	if err != nil {
+		return false
+	}
+	if !fi.Mode().IsRegular() {
+		return true
+	}
+	data, ok := readHeadCopy(root, fi)
+	return ok && sha256.Sum256(data) == have
+}
+
+// readHeadCopy reads the copy of HEAD in root, which the Lstat seen found a
+// regular file. The open does not block on a FIFO and takes no terminal, and
+// the opened file must be the regular file of seen. Else ok is false. The
+// caller holds repoMu, so a FIFO put there after the Lstat must not hang the
+// read (claustrum's own).
+func readHeadCopy(root *os.Root, seen os.FileInfo) (data []byte, ok bool) {
+	if seen.Size() > shadowHeadMaxBytes {
+		return nil, false
+	}
+	f, err := openSeenRegular(root, "HEAD", seen)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = f.Close() }()
+	data, err = io.ReadAll(io.LimitReader(f, shadowHeadMaxBytes+1))
+	if err != nil || int64(len(data)) > shadowHeadMaxBytes {
+		return nil, false
+	}
+	return data, true
+}
+
+// removeEmptyHeadFolder removes an empty folder at the copy of HEAD in root,
+// the folder dir of a repository. On Linux and macOS it is one rmdir through
+// a handle of that folder (rmdirHeadCopy), never a tree delete. A folder with
+// content, a file and a link stay, and the request fails as before (not
+// measured). homeguard.WipesHomeDir on the full path is defense in depth.
+// 4c111e86 removes an empty folder there and writes the copy, and the create
+// succeeds (measured on Linux). macOS is claustrum's own. On Windows nothing
+// is removed (claustrum's own).
+func removeEmptyHeadFolder(root *os.Root, dir string) error {
+	if homeguard.WipesHomeDir(filepath.Join(dir, "HEAD")) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	return rmdirHeadCopy(root, dir)
+}
+
+// repoFolderBySearch opens the folder path of a repository when the folder of
+// the daemon cannot be opened (openErr). A folder of the daemon with mode 0100
+// can be searched but not read. 4c111e86 then answers a create with the mkdir
+// error of `.s<n>`, as with mode 0500 (measured on Linux). The folder must
+// already be there as a real folder, and the opened folder must be the folder
+// of its Lstat. Else the result is nil, and the request gets openErr
+// (claustrum's own, not measured).
+func repoFolderBySearch(path string, openErr error) *os.Root {
+	if !errors.Is(openErr, fs.ErrPermission) {
+		return nil
+	}
+	fi, err := os.Lstat(path)
+	if err != nil || !goesAsTree(fi.Mode()) {
+		return nil
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil
+	}
+	if now, err := root.Stat("."); err != nil || !os.SameFile(fi, now) {
+		_ = root.Close()
+		return nil
+	}
+	return root
 }
 
 // shadowRepoBeforeMkdir is a seam for the tests. It runs right before the mkdir

@@ -311,8 +311,12 @@ func openAddStage(u gitUse) (*addStage, error) {
 		}
 	}
 	var regs []registrationCopy
+	var overLimit *addOwnFiles
 	if err == nil {
 		regs, err = readRegistrations(st.git)
+		if errors.As(err, &overLimit) {
+			err = nil
+		}
 	}
 	if err == nil {
 		st.dir, st.removeDir, err = u.requestDir(addCopyPrefix, "")
@@ -321,7 +325,7 @@ func openAddStage(u gitUse) (*addStage, error) {
 		}
 	}
 	if err == nil {
-		err = st.fill(regs)
+		err = st.fill(regs, overLimit)
 	}
 	if err != nil {
 		st.close()
@@ -329,6 +333,22 @@ func openAddStage(u gitUse) (*addStage, error) {
 	}
 	return st, nil
 }
+
+// registrationLimit is the most registrations that a repository can have for
+// a staged add. readRegistrations counts them before it reads any file of an
+// entry. With more, the stage makes `.s<n>` with HEAD, config, info, objects
+// and refs, as 4c111e86 does (measured on Linux), and then refuses. The failed
+// stage removes `.s<n>` as after any failed step (addStage.close, claustrum's
+// own). The create answers registrationLimitText with errorCode
+// worktree_add_failed, and no add runs. 4c111e86 adds the worktree with 4096
+// old entries, and with 4097 it refuses and runs no add (measured on Linux,
+// with real folders in `<git dir>/worktrees`). The create writes the record of
+// session folders before this step (from the code). macOS and Windows are
+// claustrum's own, and so is the count of real folders only.
+const registrationLimit = 4096
+
+// registrationLimitText is the refusal of registrationLimit.
+const registrationLimitText = "cannot add a worktree: the repository has more than 4096 worktrees; remove some (git worktree prune, git worktree remove)"
 
 // close removes `.s<n>` and closes a root that the stage opened. 5fd08069
 // removes the folder after a good call and after a failed one (measured).
@@ -346,28 +366,67 @@ func (st *addStage) close() {
 // root at its git directory. A registration is a real folder in `worktrees`. A
 // link or a junction there is no registration: nothing follows it. Each file of
 // registrationFiles is read when it is a regular file of at most
-// registrationFileMaxBytes. A registration with a file that is missing is not
-// measured: it gets the files that it has.
+// registrationFileMaxBytes, and a `HEAD` of at most entryHeadMaxBytes. A
+// registration with a file that is missing is not measured: it gets the files
+// that it has.
 func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 	names, err := rootDirNames(git, worktreesSubdir)
 	if err != nil {
 		return nil, err
 	}
-	var regs []registrationCopy
+	var folders []string
 	for _, name := range names {
-		base := filepath.Join(worktreesSubdir, name)
-		if fi, err := git.Lstat(base); err != nil || !goesAsTree(fi.Mode()) {
+		if fi, err := git.Lstat(filepath.Join(worktreesSubdir, name)); err != nil || !goesAsTree(fi.Mode()) {
 			continue
 		}
+		if folders = append(folders, name); len(folders) > registrationLimit {
+			return nil, &addOwnFiles{text: registrationLimitText}
+		}
+	}
+	var regs []registrationCopy
+	for _, name := range folders {
+		base := filepath.Join(worktreesSubdir, name)
 		reg := registrationCopy{name: name}
 		for _, file := range registrationFiles {
-			if data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes); ok && !emptyCommonDirFile(file, data) {
+			limit := int64(registrationFileMaxBytes)
+			if file == "HEAD" {
+				limit = entryHeadMaxBytes
+			}
+			data, ok := readRootFile(git, filepath.Join(base, file), limit)
+			if !ok && file == "gitdir" && cannotOpenRegular(git, filepath.Join(base, file)) {
+				data, ok = []byte{}, true
+			}
+			if ok && !emptyCommonDirFile(file, data) {
 				reg.files = append(reg.files, copyEntry{path: file, data: data})
 			}
 		}
 		regs = append(regs, reg)
 	}
 	return regs, nil
+}
+
+// entryHeadMaxBytes bounds the `HEAD` of a registration that gets a copy in
+// `.s<n>`. A larger `HEAD` gets no copy, and the create goes on. 4c111e86
+// copies a `HEAD` of 4096 bytes and leaves out one of 4097 bytes or more
+// (measured on Linux). macOS and Windows are claustrum's own.
+const entryHeadMaxBytes = 4096
+
+// cannotOpenRegular reports whether path in root is a regular file that the
+// daemon has no permission to open. Such a `gitdir` of a registration gets
+// an empty copy in `.s<n>`. 4c111e86 writes a `gitdir` there for a `gitdir`
+// of mode 000, and the create succeeds (measured on Linux). Its text is not
+// measured: the empty copy is claustrum's own.
+func cannotOpenRegular(root *os.Root, path string) bool {
+	fi, err := lstatForRead(root, path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	f, err := openSeenRegular(root, path, fi)
+	if err == nil {
+		_ = f.Close()
+		return false
+	}
+	return errors.Is(err, fs.ErrPermission)
 }
 
 // emptyCommonDirFile reports whether file is a `commondir` with no bytes. Such
@@ -397,10 +456,11 @@ func rootDirNames(root *os.Root, dir string) ([]string, error) {
 // entry that is no regular file, that has more than max bytes, or that cannot
 // be read.
 func readRootFile(root *os.Root, path string, max int64) (data []byte, ok bool) {
-	if fi, err := root.Lstat(path); err != nil || !fi.Mode().IsRegular() || fi.Size() > max {
+	fi, err := lstatForRead(root, path)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() > max {
 		return nil, false
 	}
-	f, err := root.Open(path)
+	f, err := openSeenRegular(root, path, fi)
 	if err != nil {
 		return nil, false
 	}
@@ -412,11 +472,43 @@ func readRootFile(root *os.Root, path string, max int64) (data []byte, ok bool) 
 	return data, true
 }
 
+// errNotSeenFile is the error of openSeenRegular for an entry that is not the
+// regular file of its Lstat.
+var errNotSeenFile = errors.New("the entry is not the regular file of its Lstat")
+
+// regularLstatDone is a seam for the tests. It runs right after the Lstat of
+// lstatForRead. Production never reassigns it.
+var regularLstatDone = func(string) {}
+
+// lstatForRead is the Lstat of path in root before a read of the file.
+func lstatForRead(root *os.Root, path string) (os.FileInfo, error) {
+	fi, err := root.Lstat(path)
+	regularLstatDone(path)
+	return fi, err
+}
+
+// openSeenRegular opens path in root for reading. The open does not block on a
+// FIFO and takes no terminal, and the opened file must be the regular file of
+// the Lstat seen. A FIFO or another file put there after the Lstat gives
+// errNotSeenFile, so a read under a lock does not hang (claustrum's own).
+func openSeenRegular(root *os.Root, path string, seen os.FileInfo) (*os.File, error) {
+	f, err := root.OpenFile(path, os.O_RDONLY|openNonBlocking|openNoTerminal, 0)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(seen, fi) {
+		_ = f.Close()
+		return nil, errNotSeenFile
+	}
+	return f, nil
+}
+
 // fill writes the entries of `.s<n>` (addCopyEntries). HEAD, config and
 // `info/exclude` come from the copy of the repository, which this request
 // brought up to date. Each file is written in place: a poll of 5fd08069 saw a
 // file with 0 bytes first and with its full size 4 to 5 ms later (measured).
-func (st *addStage) fill(regs []registrationCopy) error {
+func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error {
 	repo, err := os.OpenRoot(st.u.repoDir)
 	if err != nil {
 		return err
@@ -443,7 +535,22 @@ func (st *addStage) fill(regs []registrationCopy) error {
 	for _, reg := range regs {
 		st.copied = append(st.copied, reg.name)
 	}
-	if err := writeCopyEntries(dir, "", addCopyEntries(head, config, exclude, hasExclude, regs), 0o700, 0o600); err != nil {
+	// HEAD, config and info/exclude are made with mode 0666 and info, objects
+	// and refs with 0777, before the umask. The registrations keep 0700 and
+	// 0600. 4c111e86 does so, and under umask 022 it gives 0644 and 0755
+	// (measured on Linux). macOS and Windows are claustrum's own.
+	entries := addCopyEntries(head, config, exclude, hasExclude, regs)
+	regsAt := slices.IndexFunc(entries, func(e copyEntry) bool { return e.path == worktreesSubdir })
+	if regsAt < 0 {
+		regsAt = len(entries)
+	}
+	if err := writeCopyEntries(dir, "", entries[:regsAt], 0o777, 0o666); err != nil {
+		return err
+	}
+	if overLimit != nil {
+		return overLimit
+	}
+	if err := writeCopyEntries(dir, "", entries[regsAt:], 0o700, 0o600); err != nil {
 		return err
 	}
 	if mainRefsOpenTest {
@@ -683,6 +790,10 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 	defer drop()
 	st, err := openAddStage(u)
 	if err != nil {
+		var ownFiles *addOwnFiles
+		if errors.As(err, &ownFiles) {
+			return "", ownFiles
+		}
 		var dirErr *requestDirError
 		if !stagedAddWindowsSteps && errors.As(err, &dirErr) {
 			return "", &addOwnFiles{text: privateCopyText + dirErr.err.Error()}
