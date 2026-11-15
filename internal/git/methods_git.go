@@ -1620,7 +1620,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		recorded = gitDir
 	}
 	recordWaits := answeredSwap && !stagedAddWindowsSteps && req.use.shadow() && req.use.accepted.mayAskAgain(gitDir, repo)
-	writeRecord := func() {
+	saveWaitingRecord := func() {
 		if !recordWaits {
 			return
 		}
@@ -1630,7 +1630,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 	}
 	if recordWaits {
-		defer writeRecord()
+		defer saveWaitingRecord()
 	} else if !sessiondirs.OffSwitchSet(req.Params) {
 		_ = sessiondirs.RememberCreate(recorded)
 	}
@@ -1736,7 +1736,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			}
 		}
 	}
-	writeRecord()
+	saveWaitingRecord()
 	// With "shadowDirOff":true, a registrations folder that is a link or a file
 	// refuses the add after its listing (offWorktreesRefusal in worktreeAdd). A
 	// create that took the copy at a later gate has the test of a hold instead.
