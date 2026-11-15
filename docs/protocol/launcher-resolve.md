@@ -143,7 +143,6 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `fault` | Case | `reason` |
 |---|---|---|
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
-| `writable` | Changed during the check (claustrum's own, not measured) | `` `<D>` changed while the launcher was checked, so the launcher can't be trusted. Keep the launcher somewhere that no other account can change. `` |
 | `owner` | Owned by the uid of the daemon (`4c111e86`, measured on a FUSE mount) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
 | `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
 | `owner` | Owned by another uid | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. If you trust uid <n> with the launcher, you can name it as ownerUid in sshHostLauncher instead. `` |
@@ -155,6 +154,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
 - Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
+- A path that moves during the check is not refused for the move. A swapped file meets the digest test (`4c111e86`, measured on Linux).
 - A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The other order of the tests is claustrum's own.
 
 #### File system kinds (Linux)
@@ -170,10 +170,6 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - `<fs>` is `NFS`, `SMB`, `9p`, `AFS`, `Ceph`, `GFS2`, `Lustre`, `GPFS`, `OCFS2` or `VxFS` (`4c111e86`, measured on Linux), or `FUSE or virtiofs`. Any other type is `an unknown kind of file system (0x4d44)`, with its hex. kAFS (0x6b414653) has no row and gets that text.
 - The 9p row is measured with btrfs and an ext4 type on a tmpfs. The device test (major 0) and the read of `/proc/self/mountinfo` are claustrum's own. With no 9p mount, btrfs passes (not measured).
 - On these file systems an `ownerUid` lifts nothing with no digest. With a digest the owner test runs (`4c111e86`, on FUSE). The write test runs too (claustrum's own, not measured). An item whose facts cannot be read gets `missing` with the text of the launcher (claustrum's own, not measured).
-
-#### The check by handle (Linux)
-
-Last, claustrum opens each item of the file after its links again, from the handle of the folder above, with no link followed. A device, inode or mount id that differs from a look before the walk gets the changed row. A later change is not guarded. All of this is claustrum's own, not measured.
 
 ### Log lines
 

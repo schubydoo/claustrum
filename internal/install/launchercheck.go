@@ -104,8 +104,8 @@ var (
 //     pass (measured). Without digests the file is not read (claustrum's own, not
 //     measured).
 //
-//  7. On Linux, the check by handle (launcherMoved). A folder or a file that changes
-//     after it, before the start, is not guarded (claustrum's own, not measured).
+// A path that moves during the check is not refused for the move. A swapped file meets
+// the digest test like any other (4c111e86, measured on Linux).
 func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 	shown := managedShown(p)
 	switch {
@@ -122,10 +122,6 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 		return FaultMissing, managedNotExecutable(p)
 	}
 	target, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return FaultMissing, managedNotExecutable(p)
-	}
-	look, err := lookLauncherPath(target)
 	if err != nil {
 		return FaultMissing, managedNotExecutable(p)
 	}
@@ -156,7 +152,7 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 			return f, r
 		}
 	}
-	return launcherMoved(target, look)
+	return "", ""
 }
 
 // linkHolderFolders walks the absolute path p one name at a time, as the system does,
