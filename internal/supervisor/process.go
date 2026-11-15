@@ -1138,27 +1138,33 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		logging.Warnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
 	}
 	// endUnstarted ends a started child that the spawn does not keep, and reaps it. The
-	// wait is bounded by killReapGrace. This spawn holds the start gate, and
+	// wait is bounded by wait. This spawn holds the start gate, and
 	// StopStarts waits for it. A child that the kill cannot reap must not hold the
 	// gate and the teardown forever. After the bound the spawn goes on, and the
 	// goroutine reaps the child later. Nothing below touches cmd, and the pipe read
-	// ends and the group handle are not used by the wait.
-	endUnstarted := func() {
-		_ = signalGroup(group, cmd.Process, "KILL")
+	// ends and the group handle are not used by the wait. The kill comes before the
+	// only cmd.Wait of the child, so it reaches the group of this child before its
+	// reap. It reports whether the child was reaped in the wait, and the error of the
+	// kill.
+	endUnstarted := func(wait time.Duration) (bool, error) {
+		killErr := signalGroup(group, cmd.Process, "KILL")
 		reaped := make(chan struct{})
 		go func() {
 			_ = cmd.Wait()
 			close(reaped)
 		}()
-		bound := time.NewTimer(killReapGrace)
+		bound := time.NewTimer(wait)
+		ended := false
 		select {
 		case <-reaped:
+			ended = true
 		case <-bound.C:
 		}
 		bound.Stop()
 		group.Close()
 		sysproc.CloseAll(stdoutR, stderrR)
 		_ = stdin.Close()
+		return ended, killErr
 	}
 	// A Windows child with a job started suspended. It runs only now, after the join,
 	// so it starts no process before it joins its job. A no-op otherwise. If the resume
@@ -1167,27 +1173,19 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	if err := resumeProc(cmd.Process, cmd.SysProcAttr); err != nil {
 		err = fmt.Errorf("resume after the job join: %w", err)
 		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
-		endUnstarted()
+		_, _ = endUnstarted(killReapGrace)
 		return nil, err
 	}
 	// A start that returns after the shutdown began leaves no start line, no
 	// count, no table entry and no record. The kill here ends the child at once,
 	// also with -keep-children, and the wait reaps it.
 	if m.startsStopped.Load() {
-		endUnstarted()
+		_, _ = endUnstarted(killReapGrace)
 		return nil, ErrStartsStopped
 	}
-	// With a launcher the line names the launcher's argv[0] only (measured).
 	program := ""
-	switch {
-	case supplies:
-		// c9125eb8, measured on Linux.
-		logging.Infof("[process.Manager] Process %s started, PID=%d, via launcher %s, which supplies Claude Code", id, cmd.Process.Pid, path)
-	case launcher != nil:
+	if launcher != nil && !supplies {
 		program = command
-		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
-	default:
-		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
 	}
 	metrics.Met.Spawns.Add(1)
 
@@ -1240,11 +1238,37 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	if old := m.procs[id]; (old != nil && old != p && old.linked) || m.spentLocked(id) {
 		m.mu.Unlock()
 		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), errSpentID)
-		endUnstarted()
+		_, _ = endUnstarted(killReapGrace)
 		return nil, errSpentID
+	}
+	// An id that was given up after the test before the start gets the same refusal
+	// after the start. The child gets the group SIGKILL, and the spawn waits
+	// givenUpEndWait for its end. The Failed to start line comes after the wait
+	// (givenup.go).
+	if m.givenUpLocked(id) {
+		m.mu.Unlock()
+		wait := givenUpEndWait
+		if ended, killErr := endUnstarted(wait); !ended {
+			logging.Warnf("[process.Manager] Process %s was started and not registered, and has not ended %v after its kill (%v)", LogID(id), wait, killErr)
+		}
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), errGivenUpID)
+		return nil, errGivenUpID
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+	// The start line comes only once the process is in the table. So a spawn that a
+	// given-up id refuses after the start logs none (4c111e86, measured on Linux). For
+	// the spent-id refusal after the start this is claustrum's own, not measured. With
+	// a launcher the line names the launcher's argv[0] only (measured).
+	switch {
+	case supplies:
+		// c9125eb8, measured on Linux.
+		logging.Infof("[process.Manager] Process %s started, PID=%d, via launcher %s, which supplies Claude Code", id, cmd.Process.Pid, path)
+	case launcher != nil:
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
+	default:
+		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
+	}
 	afterTableEntry(id)
 	// A link whose connection is already gone makes the process detached at once,
 	// so its clock starts at the spawn. DetachConn runs after the connection is

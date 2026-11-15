@@ -228,6 +228,9 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM` first, then its group gets `SIGKILL` (`argsAskEnd`,
   `endAsked`, [D28](docs/DIVERGENCES.md#d28)). Never widen: In the shutdown sweep, send a group
   `SIGKILL` after the exit of a child only while its exit drain is open.
+- **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
+  (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
+  the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.
 - **The extract marker.** `.synced` goes as a tree through the handle of `destDir` that
   `extractTarGz` tested (`writeSyncedMarker`, [the
   steps](docs/protocol/files-extract-tar.md#what-the-request-does)). Never widen: This step is approved by the maintainer. Do not
