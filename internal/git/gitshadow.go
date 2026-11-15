@@ -651,25 +651,31 @@ var shadowCheckDropped = []string{"GIT_NAMESPACE", "GIT_INDEX_FILE"}
 // every git child (gitChildEnv) and has no GIT_ name (withoutGitNames). 5fd08069
 // does both on the nine calls of the test (measured on Linux, macOS and
 // Windows). The rules of the cleaning are claustrum's own, not measured. The
-// trace entries of withTraceOff end it. be1c1ca5 has them on the test calls
-// (measured on Linux). Their place and their count per call there are not
-// measured.
+// three trace entries of withTraceOff come right after GIT_TERMINAL_PROMPT=0,
+// before the four author and committer names. 4c111e86 has one of each there on
+// the test calls (measured on Linux). macOS and Windows follow Linux (not
+// measured).
 func shadowTestEnv() []string {
 	daemon := slices.DeleteFunc(cleanGitChildEnv(shadowDaemonEnv(), gitEnvHere), func(kv string) bool {
 		return slices.Contains(shadowCheckDropped, envName(kv))
 	})
 	daemon = withTraceOff(withoutGitNames(daemon), gitEnvHere)
-	return append([]string{
+	own, trace := daemon[:len(daemon)-len(gitTraceNames)], daemon[len(daemon)-len(gitTraceNames):]
+	env := []string{
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"LC_ALL=C",
 		"LANGUAGE=C",
 		"GIT_TERMINAL_PROMPT=0",
+	}
+	env = append(env, trace...)
+	env = append(env,
 		"GIT_AUTHOR_NAME=c",
 		"GIT_AUTHOR_EMAIL=c@c",
 		"GIT_COMMITTER_NAME=c",
 		"GIT_COMMITTER_EMAIL=c@c",
-	}, daemon...)
+	)
+	return append(env, own...)
 }
 
 // shadowGit runs one git call of the test in dir with env and the full argv.
