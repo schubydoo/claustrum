@@ -375,12 +375,18 @@ A spawn with the `id` and the session of a running process only replaces it, as 
 Build `4c111e86`, measured on Linux, macOS and Windows:
 
 - `process.kill`, `process.killAndWait` and `process.reattach` of an `id` that no process has give that `id` up. Their replies stay as before.
-- A spawn of a given-up `id` gets `-32602` with the text of [Errors](#errors) and `"data":{"reason":"other"}`. The command does not run. The daemon log gets `[process.Manager] Failed to start process <id>: <text>`.
+- A spawn of a given-up `id` gets `-32602` with the text of [Errors](#errors) and `"data":{"reason":"other"}`. For an `id` given up before the start, the command does not run. The daemon log gets `[process.Manager] Failed to start process <id>: <text>`.
 - An `id` of 1 to 128 bytes is given up, and a longer one is not. Letter case and a trailing blank make another `id` (measured on Windows).
 - The `id` is free again between 840 and 910 seconds after it was given up (measured on Linux and Windows). On macOS it is refused at 14 minutes and free at 16. A refused spawn does not renew the time (measured on Windows).
 - On Linux, at most 4096 `id`s are given up, and a new give-up past that is dropped. The cap counts every given-up `id`. After 4100 give-ups one at a time, `id`s 0 to 4095 are refused and later ones start. In a burst of give-ups, the `id`s near the cap varied from run to run. A full set first drops the `id`s past their time, and then a new give-up gets in. While the set stays full, a new give-up of a given-up `id` does not renew its time.
 
 claustrum's own, not measured: the `id` stays given up for 15 minutes, and a new give-up renews it outside a full set. The test comes right after the test of a spent `id`. A reattach with a `proof` gives the `id` up too. In a burst, the kept `id`s are its own.
+
+#### A give-up during the start
+
+Build `4c111e86`, measured on Linux. A `process.kill` of the `id` can come while the command starts, before the spawn replies. The spawn then gets the same `-32602` reply after the start. The daemon sends `SIGKILL` to the group of the new child, with no `SIGTERM` before it, and waits 3 seconds for its end. If the child has not ended by then, the log gets `[process.Manager] Process <id> was started and not registered, and has not ended 3s after its kill (<nil>)`. Then the log gets `[process.Manager] Failed to start process <id>: <text>`. The reply comes after that wait.
+
+claustrum's own, not measured: macOS and Windows, and the end time of the child after the kill.
 
 ### A spawn during a shutdown
 

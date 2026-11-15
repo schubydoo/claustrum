@@ -3,7 +3,9 @@ package supervisor
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -178,4 +180,133 @@ func TestGivenUpIDFullSet(t *testing.T) {
 	if stale || !late || n != givenUpIDCap {
 		t.Errorf("stale id kept %v, new id given up %v, set size %d: want false, true, %d", stale, late, n, givenUpIDCap)
 	}
+}
+
+// giveUpAfterStart gives id up right after the start of its child, as a
+// process.kill of id in the start window does. It records the pid of that child and
+// the KILLs that signalGroup gets for it. With send false the KILL reaches no
+// process, and the cleanup ends the child. It returns the pid and the KILL count,
+// and a channel that closes at the first KILL of the child.
+func giveUpAfterStart(t *testing.T, m *Manager, id string, send bool) (func() (int, int), <-chan struct{}) {
+	t.Helper()
+	oldAfter, oldSignal := afterChildStart, signalGroup
+	var mu sync.Mutex
+	pid, kills := 0, 0
+	var child *os.Process
+	killed := make(chan struct{})
+	afterChildStart = func(got string, p int) {
+		if got == id {
+			mu.Lock()
+			pid = p
+			mu.Unlock()
+			m.GiveUpUnknown(id)
+		}
+	}
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		mu.Lock()
+		mine := proc.Pid == pid && pid != 0
+		if mine && signame == "KILL" {
+			kills++
+			if child == nil {
+				close(killed)
+			}
+			child = proc
+		}
+		mu.Unlock()
+		if mine && !send {
+			return nil
+		}
+		return oldSignal(g, proc, signame)
+	}
+	t.Cleanup(func() {
+		afterChildStart, signalGroup = oldAfter, oldSignal
+		mu.Lock()
+		defer mu.Unlock()
+		if child != nil && !send {
+			_ = child.Kill()
+		}
+	})
+	return func() (int, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		return pid, kills
+	}, killed
+}
+
+// TestGivenUpIDAfterStartEndsChild: an id given up between the test before the
+// start and the table entry gets the given-up refusal after the start. Its child
+// gets one group SIGKILL, and the spawn waits 3 s at most for its end (4c111e86,
+// measured on Linux). Mutations: drop the given-up test after the start, drop the
+// KILL of endUnstarted, set givenUpEndWait to 7 s.
+func TestGivenUpIDAfterStartEndsChild(t *testing.T) {
+	if givenUpEndWait != 3*time.Second {
+		t.Errorf("givenUpEndWait = %v, want 3s (4c111e86, measured on Linux)", givenUpEndWait)
+	}
+	buf := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	exe, env := helperCommand(t, "sleep")
+	c, _ := pipeConn(t)
+	seen, _ := giveUpAfterStart(t, m, "late1", true)
+	if _, err := m.spawnVia(c, "late1", exe, []string{"60"}, "", env, false, nil, 0); err != errGivenUpID {
+		t.Fatalf("spawn of an id given up in its start = %v, want the given-up refusal", err)
+	}
+	if m.Get("late1") != nil {
+		t.Error("the refused spawn left a record")
+	}
+	if pid, kills := seen(); pid == 0 || kills != 1 {
+		t.Errorf("child pid %d got %d group KILLs, want 1", pid, kills)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[process.Manager] Failed to start process late1: this id was asked after, or asked to be ended, while no process had it: take a fresh one\n") {
+		t.Errorf("no failed-start line in:\n%s", out)
+	}
+	if strings.Contains(out, "Process late1 was started and not registered") {
+		t.Errorf("a child that ended at its kill logged the not-ended line:\n%s", out)
+	}
+}
+
+// TestGivenUpIDAfterStartLogsUnended: a child that has not ended givenUpEndWait
+// after its kill gets one line, and the spawn answers after that wait, not after
+// killReapGrace. The Failed to start line comes after it (4c111e86, measured on
+// Linux). The manager lock is free during the wait. The KILL reaches no process
+// here, and the cleanup ends the child. Mutations: drop the line, wait
+// killReapGrace, hold m.mu across the wait, log the Failed to start line first.
+func TestGivenUpIDAfterStartLogsUnended(t *testing.T) {
+	buf := captureLogBuf(t)
+	old := givenUpEndWait
+	givenUpEndWait = 500 * time.Millisecond
+	t.Cleanup(func() { givenUpEndWait = old })
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	exe, env := helperCommand(t, "sleep")
+	c, _ := pipeConn(t)
+	_, killed := giveUpAfterStart(t, m, "late2", false)
+	start := time.Now()
+	spawnErr := make(chan error, 1)
+	go func() {
+		_, err := m.spawnVia(c, "late2", exe, []string{"60"}, "", env, false, nil, 0)
+		spawnErr <- err
+	}()
+	select {
+	case <-killed:
+	case err := <-spawnErr:
+		t.Fatalf("spawn of an id given up in its start = %v before any KILL, want the given-up refusal", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the child got no KILL within 30 s")
+	}
+	locked := time.Now()
+	_ = m.Get("other")
+	if took := time.Since(locked); took >= 100*time.Millisecond {
+		t.Errorf("m.Get waited %v during the wait after the kill, want the manager lock free", took)
+	}
+	if err := <-spawnErr; err != errGivenUpID {
+		t.Fatalf("spawn of an id given up in its start = %v, want the given-up refusal", err)
+	}
+	if took := time.Since(start); took >= 3*time.Second {
+		t.Errorf("the refused spawn answered after %v, want about givenUpEndWait", took)
+	}
+	wantLinesInOrder(t, buf.String(),
+		"[process.Manager] Process late2 was started and not registered, and has not ended 500ms after its kill (<nil>)",
+		"[process.Manager] Failed to start process late2: this id was asked after, or asked to be ended, while no process had it: take a fresh one")
 }
