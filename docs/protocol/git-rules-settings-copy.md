@@ -169,7 +169,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   Linux and macOS). On Windows it is not measured.
 - On Linux and macOS `4c111e86` names the index folder of a create
   `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
-  soon after it, as does `claude-ssh-checkout-<n>` (measured on Linux). claustrum
+  soon after it, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request that uses the

@@ -2364,6 +2364,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		refusedName, filterRefused := filters.refusedFilter(rtStderr)
 		var refusal checkoutRefusal
+		var room *lfsRoomStop
 		switch {
 		case errors.As(rtErr, &refusal):
 			// The second listing of the checkout failed, the repository has too
@@ -2396,6 +2397,21 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// timeout "after the checkout finished" and rolls back. If the deadline has
 			// not expired, the request succeeds. Measured against f6010b97 and
 			// 90fca6e6 on macOS.
+		case errors.As(rtErr, &room):
+			// The watch stopped a download that left under a tenth of the free
+			// space at the start on the disk of the private LFS store
+			// (lfsroom.go). The rollback of a failed checkout runs and the
+			// private folder goes, both before the reply (4c111e86, measured on
+			// Linux). The place of this arm before the deadline arm and the
+			// filter arms is claustrum's own, not measured.
+			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			room.removeStore()
+			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+				Success:    false,
+				Error:      lfsRoomText(room) + undo,
+				ErrorCode:  "worktree_lfs_no_space",
+				BranchKept: kept,
+			})
 		case rtErr != nil && p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) && !errors.As(rtErr, new(checkoutFailedAlone)):
 			// The caller's deadline killed the checkout. The text after "during the
 			// checkout): " is the killed git's stderr made by worktreeGitText, or the

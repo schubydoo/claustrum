@@ -215,6 +215,10 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   name and never a tree. The sweep removes only a regular file named by the directory read. A failed or stopped
   copy of the seed removes its own object file (`copySeed`). Never widen: remove only the object file that the
   seed just made, by one plain unlinkat, never a tree.
+- **The LFS space stop.** On Linux and macOS a Git LFS download can leave under a tenth of the free space at the start. Then the
+  group of the read-tree call gets one `SIGKILL` (`lfsRoomWatch`). It goes through `reapCheckoutGroup` after `gitStillRuns`, and the private folder then goes
+  by its usual remove before the reply ([the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)).
+  Never widen: send it only to the group of the checkout git that this create started, and none after its reap.
 - **`session-folders`.** One plain `os.Root.Remove` by name, of the temp file of a failed write and in the prune ([session
   folders](docs/protocol/git-rules-session-folders.md)). Never widen: Never make either
   remove a tree delete. Never build the name of a remove there from a request value, a

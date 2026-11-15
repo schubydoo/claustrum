@@ -449,7 +449,8 @@ const (
 var worktreeCreateDrainCap = 5 * time.Second
 
 // reapCheckoutGroup is the group kill of a read-tree call that the deadline stops
-// (hardenedGitCheckout). A test replaces it.
+// (hardenedGitCheckout), or that the watch of the private LFS store stops
+// (lfsroom.go). A test replaces it.
 var reapCheckoutGroup = sysproc.ReapProcessGroup
 
 // hardenedGitCheckout runs the read-tree checkout of git.worktree_create under the
@@ -572,6 +573,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		return "", false, errGitDirChanged
 	}
 	var filters filterPlan
+	var room *lfsRoomWatch
 	if rule != nil {
 		if rule.shadow {
 			rule.planFor(pre.out)
@@ -625,6 +627,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 			storage := filepath.Join(u.gitDir, "lfs")
 			if lfs.path != "" {
 				storage = lfs.path
+				// The stop of a download that leaves under a tenth of the free
+				// space at the start (lfsroom.go).
+				room = newLFSRoomWatch(filepath.Dir(lfs.path), lfs.path)
 				short, copied := lfs.seed()
 				if rule != nil {
 					rule.store = &storeUse{runDir: lfs.runDir, path: lfs.path, short: short, copied: copied}
@@ -676,10 +681,13 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		return failedCheckoutSkipsStdoutDrain && deadlined && !cancelled.Load() && errors.As(werr, &exitErr)
 	}
 	err = runHeld(cmd, func() error {
-		return runCheckoutPipes(cmd, &errBuf, failedAlone)
+		return runCheckoutPipes(cmd, &errBuf, failedAlone, room)
 	})
 	if failedAlone(err) {
 		err = checkoutFailedAlone{err}
+	}
+	if room != nil && room.fired && err != nil {
+		err = &lfsRoomStop{err: err, free: room.free}
 	}
 	drained = errors.Is(err, exec.ErrWaitDelay)
 	if drained && deadlined {
@@ -707,7 +715,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // (checkoutFailedAlone, b3081b51, measured on Linux and macOS). Also not measured: a
 // failure with no timeoutMs (both pipes keep gitDrainWait), a signal to that child
 // (none is sent), and Windows (it keeps the drain, failedCheckoutSkipsStdoutDrain).
-func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool) error {
+//
+// room is the watch of the private LFS store (lfsroom.go), or nil. It starts
+// after a good start of git. It ends after git exited and before the wait for
+// git reaps it (awaitLeaderExit).
+func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch) error {
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		return err
@@ -727,9 +739,18 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 		_ = errR.Close()
 		return startErr
 	}
+	if room != nil {
+		room.start(cmd.Process)
+	}
 	outDone, errDone := make(chan struct{}), make(chan struct{})
 	go func() { _, _ = io.Copy(io.Discard, outR); close(outDone) }()
 	go func() { _, _ = io.Copy(errBuf, errR); close(errDone) }()
+	if room != nil {
+		// The watch ends after the exit of git and before its reap, so its
+		// group kill reaches only a group that this call still holds.
+		awaitLeaderExit(cmd.Process.Pid)
+		room.end()
+	}
 	werr := cmd.Wait()
 	checkoutWaited()
 	limit := time.NewTimer(cmd.WaitDelay)
@@ -933,6 +954,9 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	if err != nil {
 		return "", false, err, nil
 	}
+	// The remove runs once: a stop of the watch runs it before the reply too
+	// (lfsRoomStop).
+	removeIdxDir = sync.OnceFunc(removeIdxDir)
 	// The index folder goes after the write of the reply of the create
 	// (gitCall.runAtReply, rpc.Response.AfterWrite). 4c111e86 shows its
 	// `.checkout-<n>` and its `claude-ssh-checkout-<n>` at the reply, and removes
@@ -960,6 +984,14 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	readEnd := time.Now()
 	keep := lfs.path != "" && (rule == nil || !rule.plan.userLfsStorage)
+	// A stop of the watch keeps nothing. 4c111e86 frees the space of the
+	// fetched files before the reply, also of a whole object (measured on
+	// Linux).
+	var room *lfsRoomStop
+	if errors.As(err, &room) {
+		room.fetched, room.runDir, room.removeStore = storeBytes(lfs.path), lfs.runDir, removeIdxDir
+		keep = false
+	}
 	// After a failed or a stopped checkout the keep runs too (lfsstore.go).
 	// 4c111e86 keeps a downloaded object after a deadline, and makes its shard
 	// folders after a failed write of git (measured on Linux and macOS).
