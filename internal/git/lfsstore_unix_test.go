@@ -143,12 +143,13 @@ func TestLFSSeedIntoPrivateStore(t *testing.T) {
 // TestLFSFileUnderClaudeSmudgesOnce: the content check compares an LFS file
 // under .claude with the sha256 and the size of its pointer, with no second
 // smudge. A good object passes, and wrong bytes of the same size refuse with
-// the LFS text (4c111e86, measured on macOS).
+// the LFS text (4c111e86, measured on macOS). The path has the filter lfs, as
+// in the row.
 func TestLFSFileUnderClaudeSmudgesOnce(t *testing.T) {
 	const name = ".claude/commands/x.bin"
 	for _, good := range []bool{true, false} {
 		t.Run(fmt.Sprint("good ", good), func(t *testing.T) {
-			f := newLFSFixture(t, map[string]string{name: "claude-lfs-object"})
+			f := newNamedLFSFixture(t, "lfs", map[string]string{name: "claude-lfs-object"})
 			body := "claude-lfs-object"
 			if !good {
 				body = "CLAUDE-LFS-OBJECT"

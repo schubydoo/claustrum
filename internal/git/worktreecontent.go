@@ -83,6 +83,11 @@ type contentCheck struct {
 	ask func() string
 	// asked is true after ask gave a bad answer.
 	asked bool
+	// differ are the files of the compare step, in its order.
+	differ []contentFile
+	// lfsFiles are the paths of differ whose filter attribute is lfs, or nil
+	// before the first ask (lfsFiltered).
+	lfsFiles map[string]bool
 }
 
 // contentRefusal is the code and the hint of a refused content check. asked is
@@ -260,6 +265,9 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 				continue
 			}
 		}
+		c.differ = append(c.differ, f)
+	}
+	for _, f := range c.differ {
 		if r := c.compare(f); r != nil {
 			return hashed, r
 		}
@@ -713,13 +721,14 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 	if link || f.mode == "120000" {
 		return c.contentMismatch(f.path)
 	}
-	// A blob that is a Git LFS pointer gets no filter call. The file passes when
-	// its sha256 is the oid of the pointer. 4c111e86 runs one smudge for a good
-	// LFS file under .claude, and it refuses wrong bytes of the same size with
-	// the LFS text (measured on macOS). From the code: a filter call here runs
-	// git-lfs with the store of the settings copy, where the object is absent.
-	// Linux and Windows are claustrum's own, not measured.
-	if p, ok := readPointerBlob(blob); ok {
+	// A Git LFS pointer blob whose path has the filter lfs gets no filter call.
+	// The file passes when its sha256 is the oid of the pointer. 4c111e86 runs
+	// one smudge for a good LFS file under .claude, and it refuses wrong bytes of
+	// the same size with the LFS text (measured on macOS). From the code: a
+	// filter call here runs git-lfs with the store of the settings copy, where
+	// the object is absent. Linux, Windows and the attribute test are
+	// claustrum's own, not measured.
+	if p, ok := readPointerBlob(blob); ok && c.lfsFiltered(f.path) {
 		if lfsContentMatches(have, p) {
 			return nil
 		}
@@ -733,6 +742,33 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 		return c.contentMismatch(f.path)
 	}
 	return nil
+}
+
+// lfsFiltered reports whether the filter attribute of path is lfs in the new
+// worktree. The first ask runs one `check-attr -z --stdin filter` there for
+// every file of the compare step that is no link. A failed call counts no
+// path, and the filter call runs as before (claustrum's own, not measured).
+func (c *contentCheck) lfsFiltered(path string) bool {
+	if c.lfsFiles == nil {
+		c.lfsFiles = map[string]bool{}
+		var in strings.Builder
+		for _, f := range c.differ {
+			if f.mode != "120000" {
+				in.WriteString(f.path + "\x00")
+			}
+		}
+		out, _, err := c.git(c.leaf, []byte(in.String()), nil, "check-attr", "-z", "--stdin", "filter")
+		if err == nil {
+			// Each record is <path> NUL filter NUL <value> NUL.
+			recs := strings.Split(string(out), "\x00")
+			for i := 0; i+2 < len(recs); i += 3 {
+				if recs[i+1] == "filter" && recs[i+2] == "lfs" {
+					c.lfsFiles[recs[i]] = true
+				}
+			}
+		}
+	}
+	return c.lfsFiles[path]
 }
 
 // lfsContentMatches reports whether the sha256 of have is the oid of the pointer
