@@ -314,9 +314,6 @@ func openAddStage(u gitUse) (*addStage, error) {
 	if err == nil {
 		regs, err = readRegistrations(st.git)
 	}
-	if err == nil && len(regs) > registrationLimit {
-		err = &addOwnFiles{text: registrationLimitText}
-	}
 	if err == nil {
 		st.dir, st.removeDir, err = u.requestDir(addCopyPrefix, "")
 		if err != nil {
@@ -334,8 +331,9 @@ func openAddStage(u gitUse) (*addStage, error) {
 }
 
 // registrationLimit is the most registrations that a repository can have for
-// a staged add. With more, the create answers registrationLimitText with
-// errorCode worktree_add_failed, and no add runs. 4c111e86 adds the worktree
+// a staged add. readRegistrations counts them before it reads any file of an
+// entry. With more, the create answers registrationLimitText with
+// errorCode worktree_add_failed, and no add runs (claustrum's own). 4c111e86 adds the worktree
 // with 4096 old entries and refuses it with 4097 (measured on Linux, with
 // real folders in `<git dir>/worktrees`). The create writes the record of
 // session folders before this step (from the code). macOS and Windows are
@@ -368,12 +366,18 @@ func readRegistrations(git *os.Root) ([]registrationCopy, error) {
 	if err != nil {
 		return nil, err
 	}
-	var regs []registrationCopy
+	var folders []string
 	for _, name := range names {
-		base := filepath.Join(worktreesSubdir, name)
-		if fi, err := git.Lstat(base); err != nil || !goesAsTree(fi.Mode()) {
+		if fi, err := git.Lstat(filepath.Join(worktreesSubdir, name)); err != nil || !goesAsTree(fi.Mode()) {
 			continue
 		}
+		if folders = append(folders, name); len(folders) > registrationLimit {
+			return nil, &addOwnFiles{text: registrationLimitText}
+		}
+	}
+	var regs []registrationCopy
+	for _, name := range folders {
+		base := filepath.Join(worktreesSubdir, name)
 		reg := registrationCopy{name: name}
 		for _, file := range registrationFiles {
 			data, ok := readRootFile(git, filepath.Join(base, file), registrationFileMaxBytes)
