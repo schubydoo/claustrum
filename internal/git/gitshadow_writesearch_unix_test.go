@@ -165,3 +165,76 @@ func TestProbeFolderBySearchRefusals(t *testing.T) {
 		t.Errorf("the target of the link holds %q, want nothing", names)
 	}
 }
+
+// TestWriteSearchStepsKeepOtherOpenErrors: a folder of the daemon whose owner
+// bits allow no write and search gets the error of its open at `.probe` and
+// at `.s<n>`, as before (claustrum's own, not measured). Without the mode test
+// of writeSearchFolder the steps run by path.
+func TestWriteSearchStepsKeepOtherOpenErrors(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the root user opens a folder of any mode")
+	}
+	run := resolveTestRoot(t, t.TempDir())
+	dir := filepath.Join(run, shadowRootName, "d")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	want := "open " + dir + ": permission denied"
+	if err := NewShadowHost(run).prepareProbeFolder(dir); err == nil || err.Error() != want {
+		t.Errorf("prepareProbeFolder = %v, want %s", err, want)
+	}
+	u := gitUse{host: NewShadowHost(run), folder: dir}
+	if _, _, err := u.requestDir(addCopyPrefix, ""); err == nil || err.Error() != want {
+		t.Errorf("requestDir = %v, want %s", err, want)
+	}
+}
+
+// TestProbeFolderBySearchOpenError: a `.probe` that cannot be opened in a
+// folder of mode 0300 gets the open error of that folder (claustrum's own,
+// not measured).
+func TestProbeFolderBySearchOpenError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the root user opens a folder of any mode")
+	}
+	dir := t.TempDir()
+	probe := filepath.Join(dir, shadowProbeName)
+	if err := os.Mkdir(probe, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700); _ = os.Chmod(probe, 0o700) })
+	openErr := &os.PathError{Op: "open", Path: dir, Err: os.ErrPermission}
+	if root, err := probeFolderBySearch(dir, openErr); err != openErr {
+		if root != nil {
+			_ = root.Close()
+		}
+		t.Errorf("probeFolderBySearch = %v, want the open error of the folder", err)
+	}
+}
+
+// TestProbeLeftoverDeleteErrorNamesItsPath: a leftover of `.probe` that cannot
+// be deleted stops the step with an error that names its full path
+// (probePathError, claustrum's own, not measured).
+func TestProbeLeftoverDeleteErrorNamesItsPath(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the root user deletes in a folder of mode 0500")
+	}
+	run := resolveTestRoot(t, t.TempDir())
+	dir := filepath.Join(run, shadowRootName, "d")
+	info := filepath.Join(dir, shadowProbeName, "info")
+	mustWrite(t, filepath.Join(info, "attributes"), "x\n")
+	if err := os.Chmod(info, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(info, 0o700) })
+	err := NewShadowHost(run).prepareProbeFolder(dir)
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(info, "attributes")+": permission denied") {
+		t.Errorf("prepareProbeFolder = %v, want an error that names %s", err, filepath.Join(info, "attributes"))
+	}
+}
