@@ -112,3 +112,22 @@ func TestCLITempRootTempDirNoMkdir(t *testing.T) {
 		t.Errorf("log %q, want %q", logs.String(), want)
 	}
 }
+
+// A new name of another shape makes no folder and gives no member, with no line
+// (claustrum's own, not measured).
+func TestCLITempRootNameOfAnotherShape(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := newTempRootName
+	newTempRootName = func() string { return "ccd-x" }
+	t.Cleanup(func() { newTempRootName = old })
+	x, runDir := tempRootDir(t, true)
+	logs := captureLogBuf(t)
+	_, b := runTempRootBoth(t, x, runDir, &rel)
+	if string(b) != "null" || len(ccdFolders(t, x)) != 0 {
+		t.Errorf("answer %s, folders %v, want no member and no folder", b, ccdFolders(t, x))
+	}
+	if strings.Contains(logs.String(), "temp folder") {
+		t.Errorf("log %q, want no line", logs.String())
+	}
+}
