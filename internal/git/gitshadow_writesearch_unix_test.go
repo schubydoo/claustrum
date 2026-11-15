@@ -5,6 +5,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -37,7 +38,7 @@ func readableAgain(t *testing.T, dir string) []string {
 
 // TestCreateInAWriteSearchDaemonFolder: with the folder of the daemon at mode
 // 0300, 4c111e86 makes `.s<n>`, the leaf and the branch, and the create
-// succeeds. `.s<n>` stays (measured on Linux). Without the mkdir of
+// succeeds. `.s<n>` and `.checkout-<n>` stay (measured on Linux). Without the mkdir of
 // requestDir by path, or without probeFolderBySearch, the create fails.
 func TestCreateInAWriteSearchDaemonFolder(t *testing.T) {
 	f := newSeededShadowFixture(t)
@@ -60,6 +61,16 @@ func TestCreateInAWriteSearchDaemonFolder(t *testing.T) {
 	}
 	if got := readableAgain(t, dir); len(got) != 1 {
 		t.Errorf("the folder of the daemon holds %q, want the one .s<n> that stays", got)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	names := entryNames(t, dir)
+	if err := os.Chmod(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, checkoutDirPrefix) }) {
+		t.Errorf("the folder of the daemon holds %q, want the .checkout-<n> that stays", names)
 	}
 }
 

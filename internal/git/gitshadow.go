@@ -461,8 +461,7 @@ func (h *ShadowHost) dropLock() {
 
 // removeEntry deletes rel, a path below the folder of all daemons. rel is a
 // name that this daemon made, one that a directory read of git-shadow or of the
-// folder of the daemon returned, or a fixed name in `.probe`. It never comes
-// from a request. The delete
+// folder of the daemon returned. It never comes from a request. The delete
 // goes through a root at the folder of all daemons, so it follows no link out of
 // it. homeguard.WipesHomeDir on the full path is defense in depth.
 func (h *ShadowHost) removeEntry(rel string) error {

@@ -246,8 +246,8 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 // the folder of the daemon, cannot be opened (openErr). Only a permission
 // error of a folder whose owner bits allow write and search passes. The
 // folder must be a real folder, and the opened folder must be the folder of
-// its Lstat. Else the result is the error of the open of dir (claustrum's
-// own, not measured).
+// its Lstat. Else the result is the error of the open of dir. A failed mkdir
+// gives its own error (claustrum's own, not measured).
 func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
 	if stagedAddWindowsSteps || !errors.Is(openErr, fs.ErrPermission) || !writeSearchFolder(dir) {
 		return nil, openErr
