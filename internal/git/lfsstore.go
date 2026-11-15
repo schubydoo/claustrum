@@ -44,9 +44,11 @@ import (
 //     nothing (lfsroom.go, measured on Linux).
 //   - The sweep of stale temp names (sweepShardTemps).
 //
-// Claustrum's own, not measured: the seed reads the pointers with `ls-tree`
-// and `cat-file --batch` in the new worktree, and only when the repository
-// has a folder `lfs/objects`. It reads the store of the repository by path,
+// The seed reads the pointers with `ls-tree` and `cat-file` in baseRepo, with
+// GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo> (4c111e86, measured on Linux).
+//
+// Claustrum's own, not measured: a baseRepo that is a linked worktree. The
+// seed runs only when the repository has a folder `lfs/objects`. It reads the store of the repository by path,
 // read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too. The
 // form of the keep on macOS is not measured. It keeps no object that the store already has. A link at
 // `lfs/objects` or at a shard folder keeps nothing. The keep tests the bytes

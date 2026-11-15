@@ -905,6 +905,51 @@ func TestCommitPointersStopsAtDeadline(t *testing.T) {
 	}
 }
 
+// seedScanCalls are the ls-tree call of the seed and the calls after it, up to
+// the read-tree call.
+func seedScanCalls(t *testing.T, calls []envCall) []envCall {
+	t.Helper()
+	for i, c := range calls {
+		if slices.Contains(c.argv, "ls-tree") {
+			for j := i; j < len(calls); j++ {
+				if slices.Contains(calls[j].argv, "read-tree") {
+					return calls[i:j]
+				}
+			}
+		}
+	}
+	t.Fatal("no ls-tree call before the read-tree call")
+	return nil
+}
+
+// TestSeedScanRunsInBaseRepo: the ls-tree and cat-file calls of the seed run
+// in baseRepo, with GIT_DIR=<repo>/.git and GIT_WORK_TREE=<repo>, and so does
+// the listing before them (4c111e86, measured on Linux).
+func TestSeedScanRunsInBaseRepo(t *testing.T) {
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.local(t, "a.bin", "alpha-object")
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	i := slices.IndexFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "ls-tree") })
+	if i < 1 || !calls[i-1].listing() {
+		t.Fatalf("no listing right before the ls-tree call of the seed")
+	}
+	scan := append([]envCall{calls[i-1]}, seedScanCalls(t, calls)...)
+	if !slices.ContainsFunc(scan, func(c envCall) bool { return slices.Contains(c.argv, "cat-file") }) {
+		t.Fatal("no cat-file call of the seed")
+	}
+	for _, c := range scan {
+		dir, _ := lookupExact(c.env, "GIT_DIR")
+		top, _ := lookupExact(c.env, "GIT_WORK_TREE")
+		if canonicalPath(c.cwd) != canonicalPath(f.repo) || canonicalPath(dir) != canonicalPath(f.gitDir) ||
+			canonicalPath(top) != canonicalPath(f.repo) {
+			t.Errorf("call %q runs in %s with GIT_DIR=%s GIT_WORK_TREE=%s, want baseRepo", c.argv, c.cwd, dir, top)
+		}
+	}
+}
+
 // TestSeedScanArgv: the ls-tree call of the seed has the argv of 4c111e86
 // (measured on Linux). A pointer in a subfolder counts, also when the call
 // runs in another subfolder (claustrum's own, not measured).
