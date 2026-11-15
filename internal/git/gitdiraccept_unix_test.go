@@ -170,6 +170,9 @@ func TestCreateWithASwappedGitDir(t *testing.T) {
 // call after it, and a link to X gives the text of the copy after three calls.
 // Without the lstat the file row gets the link text.
 //
+// A link to the copy after the listing of the add starts the text with `cannot
+// add a worktree: ` (4c111e86, measured on Linux). Its calls are not compared.
+//
 // The other rows are not measured. A copy of the git directory as a real
 // directory and a swap before the add get the rule of the measured rows. A
 // file with `gitdir: <X>` before the call fails the `rev-parse
@@ -194,6 +197,7 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 		{"swc-link: a link to X after the gitdir call", "answered", "link", prepare, 3},
 		{"a link to X before the add", "add", "link", prepare, -1},
 		{"another real directory", "gitdir", "copy", prepare, -1},
+		{"a link to the copy after the listing of the add", "plain add", "link to the copy", "cannot add a worktree: cannot prepare the repository's worktrees directory: " + realDir, -1},
 		{"no repository before the add", "add", "none", list, -1},
 	} {
 		t.Run(row.name, func(t *testing.T) {

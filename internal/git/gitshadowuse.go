@@ -265,6 +265,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		return stderr, err
 	}
 	named = named && shadowLinksWorktrees
+	// heldAtListing is true when the path still names the held folder right
+	// before the listing of the add.
+	heldAtListing := f.accepted != nil && f.accepted.stands()
 	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
 	if offMember || (off && f.accepted != nil) {
 		if text := offWorktreesRefusal(repo); text != "" {
@@ -279,7 +282,15 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		if f.accepted.sent != "" {
 			gitDir = f.accepted.sent
 		}
-		return "", errors.New(plainAddRefusal(gitDir, named))
+		text := plainAddRefusal(gitDir, named)
+		// On Linux and macOS a swap after the listing starts the text with
+		// `cannot add a worktree: ` (4c111e86, measured on Linux, for a link to
+		// a copy). The text of a folder that is no git directory is not
+		// measured there. Windows keeps its text (not measured).
+		if heldAtListing && !stagedAddWindowsSteps {
+			return "", &addSwappedAfterListing{text: text}
+		}
+		return "", errors.New(text)
 	}
 	if named {
 		if text := f.worktreesFolderRefusal(); text != "" {
@@ -320,6 +331,14 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 	f, _ := u.fixedForm(true)
 	hookPrecursor(ctx, f, repo, false)
 }
+
+// addSwappedAfterListing is the error of a `worktree add` that does not run,
+// because the path of the git directory stopped naming the held folder after
+// the listing of the add. The create answers it with the rollback of a failed
+// add and `cannot add a worktree: ` before the text.
+type addSwappedAfterListing struct{ text string }
+
+func (e *addSwappedAfterListing) Error() string { return "cannot add a worktree: " + e.text }
 
 // plainAddRefusal is the error of a `worktree add` that does not run, because
 // the path of the git directory gitDir no longer names the folder that the

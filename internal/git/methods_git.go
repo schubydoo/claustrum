@@ -1802,9 +1802,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// An add whose repository folder went gets the rollback of a failed add,
 	// with the text alone and no fallback add (from the code, not measured).
 	// So does an add whose folder `.s<n>` cannot be made on Linux and macOS
-	// (addOwnFiles, be1c1ca5 on Linux).
+	// (addOwnFiles, be1c1ca5 on Linux). So does an add whose git directory was
+	// swapped after its listing (addSwappedAfterListing, 4c111e86 on Linux).
 	var ownFiles *addOwnFiles
-	if copyGone(addErr) || errors.As(addErr, &ownFiles) {
+	var swappedLate *addSwappedAfterListing
+	if copyGone(addErr) || errors.As(addErr, &ownFiles) || errors.As(addErr, &swappedLate) {
 		return refuseAdd(addErr.Error())
 	}
 	// A stopped attach add gets no fallback, so one add runs, as on 5fd08069
