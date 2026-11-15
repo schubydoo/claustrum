@@ -1033,15 +1033,15 @@ func gitListBranches(req *gitCall) rpc.Response {
 //
 // late puts the pair after the listing of the add, as a missing folder does.
 func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, member, late bool) (afterListing func()) {
-	registry := gitDirRegistryDir(gitDir)
-	fi, err := os.Lstat(registry)
+	registrations := gitDirRegistryDir(gitDir)
+	fi, err := os.Lstat(registrations)
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
 	if !missing && (err != nil || !fi.IsDir()) {
 		return nil
 	}
 	run := func() {
 		u := pairSSHUse(req, member).atGitDirCommand()
-		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), filepath.Dir(registry), workTree, u.gitDirPin(repo), u.gitDirFront())
+		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), filepath.Dir(registrations), workTree, u.gitDirPin(repo), u.gitDirFront())
 	}
 	if (missing || late) && !stagedAddWindowsSteps {
 		return run
