@@ -11,7 +11,7 @@ import (
 
 // The stop of a checkout whose Git LFS download leaves under a tenth of the
 // free space at the start on the disk of its private store
-// (worktree_lfs_no_space). 4c111e86 does so on Linux (measured):
+// (worktree_lfs_no_space). 4c111e86 does so on Linux and macOS (measured):
 //
 //   - While the read-tree call runs, a poll every 0.5 s reads the free space of
 //     the disk that holds the private store <P>/lfs.
@@ -26,8 +26,8 @@ import (
 //
 // Claustrum's own, not measured: the first read of the free space comes right
 // after the start of the read-tree call, and the bound has no cap. A free space
-// that cannot be read gives no stop. A start with 0 free gives no stop. The
-// watch runs on macOS too, and Windows has no private store (storeInCheckout).
+// that cannot be read gives no stop. A start with 0 free gives no stop.
+// Windows has no private store (storeInCheckout).
 
 // lfsRoomPoll is the time between two reads of the free space (measured: 0.5 s).
 // A test shrinks it.
