@@ -705,6 +705,34 @@ const (
 		" Free some space there (or raise the quota), or turn off Worktree for this session, then try again."
 )
 
+// lfsLogWords start the line of git-lfs that names its log file.
+const lfsLogWords = "Errors logged to "
+
+// withoutLFSLog is stderr, the stderr of a failed read-tree checkout, up to
+// the first line that starts with lfsLogWords, when rule has a settings copy
+// and the private LFS store of the checkout (Linux and macOS). On 4c111e86
+// the reply then ends before that line, and the lines after it are gone too
+// (measured on Linux with git-lfs). Windows has no private store and keeps
+// the line (4c111e86, measured). macOS is claustrum's own, not measured.
+// Claustrum's own, not measured: the test of the start of a line, the cut
+// before the stderrHeadCap bytes of worktreeGitText, and the whole stderr with
+// no private store.
+func withoutLFSLog(stderr string, rule *filterRule) string {
+	if rule == nil || !rule.shadow || rule.store == nil {
+		return stderr
+	}
+	for i := 0; ; {
+		if strings.HasPrefix(stderr[i:], lfsLogWords) {
+			return stderr[:i]
+		}
+		j := strings.IndexByte(stderr[i:], '\n')
+		if j < 0 {
+			return stderr
+		}
+		i += j + 1
+	}
+}
+
 // checkoutNote is the note after text, the text of a failed read-tree
 // checkout after the cut, or "". stderr is the whole stderr of git. With a
 // settings copy and one of lfsNoteWords in text the note is lfsDownloadNote.

@@ -2497,8 +2497,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// reply, before any undo text (claustrum's own, not measured beside
 			// a failed undo). A write below the private LFS store on a full disk
 			// or a quota puts its own start before the text, with no note
-			// (storeFullStart).
-			text := worktreeGitText(rtStderr, rtErr)
+			// (storeFullStart). With the private LFS store the text ends before
+			// the log line of git-lfs (withoutLFSLog).
+			text := worktreeGitText(withoutLFSLog(rtStderr, rule), rtErr)
 			msg := "git worktree add failed (checkout): " + text
 			code := "worktree_add_failed"
 			if start, c := storeFullStart(rtStderr, rule); c != "" {

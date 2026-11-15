@@ -237,3 +237,24 @@ func pathUnder(p, dir string) bool {
 	rd, err2 := filepath.EvalSymlinks(dir)
 	return err1 == nil && err2 == nil && under(rp, rd)
 }
+
+// TestLFSCheckoutTextEndsBeforeLog: the text of a failed LFS checkout with
+// the private store ends before the line of git-lfs that names its log file. The
+// ssh note follows (4c111e86, measured on Linux with git-lfs, row b of a
+// server error).
+func TestLFSCheckoutTextEndsBeforeLog(t *testing.T) {
+	f := newNamedLFSFixture(t, "lfs", map[string]string{"b.bin": "beta-object"})
+	failure := "Downloading b.bin (11 B)\nError downloading object: b.bin (2a2a2a2): Smudge error: Error downloading b.bin: batch response:" +
+		" Fatal error: Server error: http://127.0.0.1:9/lfs/objects/batch\n"
+	mustWrite(t, filepath.Join(f.remote, "error"), failure+
+		"\nErrors logged to '<store>/logs/20261115T010203.log'.\nUse `git lfs logs last` to view the log.\n")
+	raw, _ := f.create(t, nil)
+	want := "git worktree add failed (checkout): Downloading b.bin (11 B) Error downloading object: b.bin (2a2a2a2): Smudge error:" +
+		" Error downloading b.bin: batch response: Fatal error: Server error: http://127.0.0.1:9/lfs/objects/batch. Claude doesn't use ssh," +
+		" credential, or proxy settings from this repository's own git config. If the download needs one and you trust that setting," +
+		" copy it into ~/.gitconfig on the remote machine, then try again."
+	if !strings.HasSuffix(raw, `"error":`+jsonQuoted(t, want)+`,"errorCode":"worktree_add_failed"}}`) {
+		t.Errorf("git.worktree_create = %s\nwant the text %q", raw, want)
+	}
+	f.wantGone(t)
+}
