@@ -167,7 +167,7 @@ func TestFindNameCut(t *testing.T) {
 // TestFindHitsAndLimit: the default limit is 5, the cap is 20, a hit past the
 // limit gives "count", a path met twice counts once, and the paths sort by the
 // number of parts below their root, then by bytes (4c111e86, measured on Linux
-// and macOS, two roots on Linux).
+// and macOS, with two roots it fits the rows on Linux).
 func TestFindHitsAndLimit(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	a := filepath.Join(root, "A")
@@ -216,8 +216,9 @@ func TestFindHitsAndLimit(t *testing.T) {
 	if strings.Join(res.Paths, " ") != strings.Join(want, " ") {
 		t.Errorf("order: %v, want %v", res.Paths, want)
 	}
-	// Two roots at different depths: the parts count below each root, so the
-	// deeper root sorts first at depth 1, in either order of the roots.
+	// Two roots at different depths: the paths count their names below each
+	// root, so ft/sib/t.txt and home/t.txt tie and sort by bytes, in either
+	// order of the roots.
 	two := filepath.Join(root, "two")
 	findTree(t, two, "home/t.txt", "home/sub/t.txt", "ft/sib/t.txt")
 	want = []string{two + "/ft/sib/t.txt", two + "/home/t.txt", two + "/home/sub/t.txt"}
