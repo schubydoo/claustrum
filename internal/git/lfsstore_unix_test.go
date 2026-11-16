@@ -426,7 +426,7 @@ func keepOne(t *testing.T, body string) (oid, src, store string, before uint64) 
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood)
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood, nil)
 	return oid, src, filepath.Join(gitDir, "lfs"), before
 }
 
@@ -535,7 +535,7 @@ func TestLFSKeepBudgetIsPerObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood)
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood, nil)
 	for _, oid := range oids {
 		if !exists(storeObjectPath(filepath.Join(gitDir, "lfs"), oid)) {
 			t.Errorf("the object %s is not kept, want each object kept within its own budget", oid)
@@ -561,7 +561,7 @@ func TestLFSKeepAfterDeadlineCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterDeadline)
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterDeadline, nil)
 	if b, err := os.ReadFile(kept); err != nil || string(b) != "alpha-object" {
 		t.Fatalf("the kept object = %q, %v, want it kept after a deadline", b, err)
 	}
@@ -623,7 +623,7 @@ func TestLFSKeepLinkFailsKeepsNoTemp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = root.Close() }()
-	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood)
+	returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterGood, nil)
 	if names, _ := os.ReadDir(filepath.Dir(kept)); len(names) != 1 || names[0].Name() != oid {
 		t.Errorf("the shard holds %v, want only the other object", names)
 	}
@@ -775,7 +775,7 @@ func TestLFSNoKeepWithoutHeldDir(t *testing.T) {
 	gitDir, private := t.TempDir(), t.TempDir()
 	oid := strings.Repeat("d", 64)
 	mustWrite(t, storeObjectPath(private, oid), "x")
-	returnDownloads(gitUse{gitDir: gitDir}, private, keepAfterGood)
+	returnDownloads(gitUse{gitDir: gitDir}, private, keepAfterGood, nil)
 	if names, _ := os.ReadDir(gitDir); len(names) != 0 {
 		t.Errorf("%s holds %v, want nothing", gitDir, names)
 	}

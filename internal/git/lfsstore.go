@@ -89,12 +89,14 @@ var (
 // "" for the store of the git directory. seed runs the seed into path and
 // reports a copy that it left out for the space and the time of its copies.
 // runDir is the folder of the socket. tickWait, when set, gets the time of the
-// wait for the end of the keepTicker of the checkout.
+// wait for the end of the keepTicker of the checkout. tickTried, when set,
+// gets the oids whose keep in a tick ended (keepTicker.tried).
 type privateStore struct {
-	path     string
-	runDir   string
-	seed     func() (short bool, copied time.Duration)
-	tickWait *time.Duration
+	path      string
+	runDir    string
+	seed      func() (short bool, copied time.Duration)
+	tickWait  *time.Duration
+	tickTried *map[string]bool
 }
 
 // storeUse is what a checkout that named its private store gives the reply of
@@ -855,7 +857,12 @@ func downloadedOIDs(private string) []string {
 // the objects that the keep left out (leftOut), for notKeptText. Only an
 // object that the keep did not put in the store is read again, by its path
 // below u.gitDir, so a seeded object does not count.
-func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
+//
+// An oid in tried had its keep in a tick (keepTicker.tried) and gets no second
+// keep. On 4c111e86 a 900 MiB object whose keep stopped at its bound was not
+// copied again after a good checkout (measured on Linux). After a deadline
+// and after a failed checkout that rule is claustrum's own, not measured.
+func returnDownloads(u gitUse, private string, form keepForm, tried map[string]bool) *leftOut {
 	l := &leftOut{}
 	repoStore := filepath.Join(u.gitDir, "lfs")
 	a := u.accepted
@@ -868,6 +875,10 @@ func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
 	// Each budget has its own context, so a keep after a deadline of the
 	// checkout still runs.
 	for _, oid := range downloadedOIDs(private) {
+		if tried[oid] {
+			l.add(private, repoStore, oid)
+			continue
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
 		if !returnDownload(ctx, a.root, a.path, private, oid, time.Now(), form) {
 			l.add(private, repoStore, oid)
@@ -886,14 +897,19 @@ var keepTickEvery = time.Second
 
 // keepTicker keeps the objects that git-lfs downloaded into a private store
 // while the read-tree call runs. Each tick keeps each new object of the store
-// once, as returnDownloads does, in the form keepDuringCheckout. An object
-// that a tick did not keep waits for the keep after the checkout. Claustrum's
-// own, not measured: macOS, and the ticks after a stop for the space, until
-// git exits.
+// once, as returnDownloads does, in the form keepDuringCheckout. The keep
+// after the checkout skips an object whose keep in a tick ended (tried), also
+// when that keep left it out. An object that no tick reached waits for the keep after the
+// checkout. Claustrum's own, not measured: macOS, and the ticks after a stop
+// for the space, until git exits.
 type keepTicker struct {
 	quit  chan struct{}
 	ended chan struct{}
 	once  sync.Once
+	// tried holds the oids whose keep in a tick returned. A keep that panics
+	// does not count. Only the goroutine of the ticks writes it. Read it after
+	// end.
+	tried map[string]bool
 }
 
 // keepTickerMade sees each new keepTicker. A test replaces it.
@@ -906,7 +922,7 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 	if a == nil || a.root == nil {
 		return nil
 	}
-	k := &keepTicker{quit: make(chan struct{}), ended: make(chan struct{})}
+	k := &keepTicker{quit: make(chan struct{}), ended: make(chan struct{}), tried: map[string]bool{}}
 	keepTickerMade(k)
 	every := keepTickEvery
 	go func() {
@@ -919,7 +935,6 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 		}()
 		tick := time.NewTicker(every)
 		defer tick.Stop()
-		tried := map[string]bool{}
 		for {
 			select {
 			case <-k.quit:
@@ -927,7 +942,7 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 			case <-tick.C:
 			}
 			for _, oid := range downloadedOIDs(private) {
-				if tried[oid] {
+				if k.tried[oid] {
 					continue
 				}
 				select {
@@ -935,10 +950,10 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 					return
 				default:
 				}
-				tried[oid] = true
 				ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
 				returnDownload(ctx, a.root, a.path, private, oid, time.Now(), keepDuringCheckout)
 				cancel()
+				k.tried[oid] = true
 			}
 		}
 	}()

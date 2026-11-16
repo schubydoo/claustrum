@@ -234,3 +234,49 @@ func TestKeepTickPanicEndsOnlyTheTicks(t *testing.T) {
 		}
 	}
 }
+
+// TestLFSKeepTickNotCopiedAgain: a keep of a tick whose copy stops at its
+// bound leaves the object out, and the keep after a good checkout does not
+// copy it again. On 4c111e86 a 900 MiB object got one copy, stopped at its
+// bound, and the create answered success (measured on Linux). Mutation: drop
+// the test of tried in returnDownloads (a.bin gets a second copy and is kept).
+func TestLFSKeepTickNotCopiedAgain(t *testing.T) {
+	seamFreeSpace(t)
+	setKeepTick(t, 20*time.Millisecond)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
+	f.onServer(t, "a.bin")
+	f.onServer(t, "b.bin")
+	release := f.holdDownload(t, "b.bin")
+	prevBudget, prevCopy := keepBudget, keepCopy
+	keepBudget = 300 * time.Millisecond
+	var mu sync.Mutex
+	copiesA := 0
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		if file, ok := w.(*os.File); ok && strings.HasSuffix(file.Name(), f.oids["a.bin"]) {
+			mu.Lock()
+			copiesA++
+			first := copiesA == 1
+			mu.Unlock()
+			if first {
+				time.Sleep(600 * time.Millisecond)
+				release()
+			}
+		}
+		return io.Copy(w, r)
+	}
+	t.Cleanup(func() { keepBudget, keepCopy = prevBudget, prevCopy })
+	f.wantSuccess(t)
+	mu.Lock()
+	got := copiesA
+	mu.Unlock()
+	if got != 1 {
+		t.Errorf("the keep copied a.bin %d times, want 1", got)
+	}
+	if exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
+		t.Error("a.bin is in the store of the repository after its stopped copy")
+	}
+	entries, _ := os.ReadDir(f.shard("a.bin"))
+	for _, e := range entries {
+		t.Errorf("the shard of a.bin holds %s, want it empty", e.Name())
+	}
+}
