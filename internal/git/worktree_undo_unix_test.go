@@ -91,14 +91,14 @@ func TestWorktreeCreateUndoCouldNotFinish(t *testing.T) {
 				head := "git worktree add timed out after " + strconv.Itoa(lateMs) + "ms (deadline expired "
 				if tc.mode == "hold" {
 					// The checkout exits 0 and a descendant holds its pipes past the
-					// drain cap. The deadline fires 300 ms after the checkout was
-					// reaped, during the drain.
+					// drain cap. The deadline fires 300 ms after the checkout
+					// exited, during the drain.
 					oldCap := worktreeCreateDrainCap
 					t.Cleanup(func() { worktreeCreateDrainCap = oldCap })
 					worktreeCreateDrainCap = 1500 * time.Millisecond
 					self := filepath.Join(t.TempDir(), "self")
 					t.Setenv("CLAUSTRUM_GITSTUB_HOLDSELF", self)
-					deadlineAt(t, reapedFor(self, 300*time.Millisecond), nil)
+					deadlineAt(t, exitedFor(self, 300*time.Millisecond), nil)
 					frame = head + tc.frame + ")"
 				} else {
 					// The stub made hsub and then its marker, and sleeps.

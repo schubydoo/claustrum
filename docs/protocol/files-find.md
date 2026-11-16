@@ -70,6 +70,16 @@ A reply gives `not_a_file` over `links` and `many_links`, and `unreadable` over 
 
 A relative link target that stays in the root leads to `folder` for a folder. For a regular file the link is left out of the list. Every other link leads to `other`: an absolute target, a missing target and a target whose last name is a link. A relative target out of the root leads to `other` too. A target through a linked parent folder leads to `other`, unless that parent leads to `folder` itself. These link rules are measured on Linux. An absolute target, a target out of the root and a linked parent are measured on macOS too.
 
+### The log line
+
+When all 4 walks are past their bound and still run, the daemon logs one line (`4c111e86`, measured on Linux):
+
+```
+[FilesHandler] files.find: all 4 walks that may run at once are past their deadlines and have not ended (a dead mount?): every call answers "busy" until one ends or the helper restarts (time number 1)
+```
+
+The number counts each time that all 4 walks are late, from the start of the daemon. Only number 1 is measured. The later numbers, the level `WARN` and the moment of the line are claustrum's own. claustrum logs it at the bound of the fourth late walk. Only four hung walks are measured. claustrum's own: a walk that is alive but slow counts as late until it stops at its next entry, so four slow walks log the line too.
+
 ## Platform notes
 
 === "Linux"
