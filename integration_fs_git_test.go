@@ -213,7 +213,7 @@ func TestSocketGitBattery(t *testing.T) {
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
-		got[i] = normPath(cl.call(line), root)
+		got[i] = normPath(cl.callAny(line), root)
 	}
 	assertGolden(t, "socket_git.golden.json", encodeGolden(t, got))
 }
@@ -521,7 +521,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
-		got[i] = normPath(cl.call(line), home)
+		got[i] = normPath(cl.callAny(line), home)
 	}
 	assertGolden(t, "socket_tilde_expansion.golden.json", encodeGolden(t, got))
 

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -315,6 +316,16 @@ const createWait = 20 * time.Second
 func (cl *testClient) callCreate(line string) json.RawMessage {
 	cl.t.Helper()
 	return cl.callWithin(createWait, line)
+}
+
+// callAny is callCreate for a git.worktree_create request and call for any
+// other, for loops that send a list of mixed requests one at a time.
+func (cl *testClient) callAny(line string) json.RawMessage {
+	cl.t.Helper()
+	if strings.Contains(line, `"method":"git.worktree_create"`) {
+		return cl.callCreate(line)
+	}
+	return cl.call(line)
 }
 
 // callWithin is call with its own deadline.
