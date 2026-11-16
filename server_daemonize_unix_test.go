@@ -295,7 +295,7 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 	}
 
 	// Linux logs the start line of files.read real once. The host /proc is real
-	// here, so it is the pass line (claustrum's own place, not measured).
+	// here, so it is the pass line.
 	if runtime.GOOS == "linux" {
 		const passLine = "[FilesHandler] files.realpath: using the OS's path for the open handle"
 		if n := strings.Count(string(b), passLine); n != 1 {
