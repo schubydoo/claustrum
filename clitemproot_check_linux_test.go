@@ -35,6 +35,17 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// afterCheck runs cond under tempRoots.mu. A check logs its line while it holds that
+// lock and fits the folder after the line. So cond sees the line only once that check
+// has ended.
+func afterCheck(cond func() bool) func() bool {
+	return func() bool {
+		tempRoots.mu.Lock()
+		defer tempRoots.mu.Unlock()
+		return cond()
+	}
+}
+
 // holdsFor checks cond again and again for d, and fails the test once it does not
 // hold.
 func holdsFor(t *testing.T, d time.Duration, what string, cond func() bool) {
@@ -157,7 +168,7 @@ func TestCLITempRootSwappedFolderIsHeldInstead(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " was no longer at its name: this account's folder that stands there is held instead"
-	waitFor(t, "swap line", func() bool { return strings.Contains(logs.String(), line) })
+	waitFor(t, "swap line", afterCheck(func() bool { return strings.Contains(logs.String(), line) }))
 	wantFolderShape(t, x, a.Name)
 	wantFolderShape(t, x, a.Name+".old")
 	h := heldRecordOf(x, a.Name)
@@ -185,7 +196,7 @@ func TestCLITempRootSwappedFolderIsHeldInstead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "second swap line", func() bool { return strings.Count(logs.String(), line) == 2 })
+	waitFor(t, "second swap line", afterCheck(func() bool { return strings.Count(logs.String(), line) == 2 }))
 	wantFolderShape(t, x, a.Name)
 	if n := ends.Load(); n != 0 {
 		t.Errorf("ends %d, want 0", n)
