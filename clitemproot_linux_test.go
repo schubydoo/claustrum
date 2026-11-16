@@ -178,11 +178,13 @@ func TestCLITempRootCapOfEightLiveSpawns(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	logs := captureLogBuf(t)
+	advance := fakeTempRootClock(t) // each make out of the window of the one before
 	for i := range tempRootLiveCap {
 		x, runDir := tempRootDir(t, true)
 		if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
 			t.Fatalf("spawn %d: %+v, want a name", i+1, res)
 		}
+		advance(tempRootMakeWindow)
 	}
 	x, runDir := tempRootDir(t, true)
 	env, res := runTempRoot(t, x, runDir, &rel)
@@ -368,14 +370,6 @@ func TestCLITempRootUnreadableTempDir(t *testing.T) {
 	if strings.Contains(logs.String(), "temp folder") {
 		t.Errorf("log %q, want no line", logs.String())
 	}
-}
-
-// setAfterMkdir runs fn between the mkdir and the test of the new folder.
-func setAfterMkdir(t *testing.T, fn func(dir, name string)) {
-	t.Helper()
-	old := afterTempRootMkdir
-	afterTempRootMkdir = fn
-	t.Cleanup(func() { afterTempRootMkdir = old })
 }
 
 func wantRemovedAnswer(t *testing.T, res *rpc.CLITempRoot) {
