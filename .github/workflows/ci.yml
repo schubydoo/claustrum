@@ -166,7 +166,7 @@ jobs:
     # macOS gets 40 minutes: GitHub's macOS arm64 runners were short of capacity
     # (its own notice), and the job limit also counted the time a job waited for a
     # runner, so jobs that never started were cancelled at 15 minutes (TASK-544).
-    # The go test step keeps its own 13 minute limit, so a hang still stops there.
+    # The go test step keeps its own 16 minute limit, so a hang still stops there.
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 17 || matrix.os == 'macos-latest' && 40 || 15 }}
     strategy:
       fail-fast: false
@@ -329,8 +329,11 @@ jobs:
         # GOFLAGS carries the shard's -run or -skip flag. Every leg is a shard.
         # go build ignores a test flag in GOFLAGS.
         # The step limit counts only from the start of the step, unlike the job
-        # limit, which also counted the wait for a runner on macOS.
-        timeout-minutes: 13
+        # limit, which also counted the wait for a runner on macOS. It is the
+        # 12 minutes of go test plus room to compile (up to about 3.3 minutes on
+        # Windows), so the stack of a hung test prints first. On Linux and Windows
+        # the job limits of 15 and 17 minutes come first, as before.
+        timeout-minutes: 16
         env:
           GOFLAGS: ${{ matrix.select }}
         # The time limit is explicit, and 3 minutes below the 15 minutes of a macOS
