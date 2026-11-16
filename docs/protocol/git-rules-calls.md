@@ -388,7 +388,7 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
 - `timeoutMs` does not end the add. With `"shadowDirOff":true` it does not end
   the listing before the checkout either (measured on Linux).
 - With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
-  its output and gets no signal, except after a [failed checkout](git-worktree-create.md#add-and-checkout-failures) on Linux. Listings before a call wait until stdout
+  its output and gets no signal, except a child in the group of git after a [failed checkout](git-worktree-create.md#add-and-checkout-failures) on Linux. Listings before a call wait until stdout
   closes, also past the limit. The `status` scan waits too, within its limit
   (measured on Linux). Held past 30 s, the
   config read on standard input ends near 31 s (measured on Linux), and `config.worktree`
@@ -403,8 +403,7 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
   stdout and stderr past the deadline, the reply is still that failure (`b3081b51`,
   measured on Linux and macOS). A filter refusal and the ssh door text of that
   failure then come before `timeout` too (claustrum's own, not measured). Windows
-  keeps the drain and answers `timeout` there (claustrum's own, not measured). On
-  Linux the group kill of a failed checkout ends a child in the group of git first.
+  keeps the drain and answers `timeout` there (claustrum's own, not measured).
 - The settle call of a create, its listing and the pair before it ([The settle step](git-worktree-create.md#the-settle-step)) have their own limit, and their stop stops no later call (claustrum's own).
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s
   bound of the call about the repository (measured on Linux).

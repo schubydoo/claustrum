@@ -792,12 +792,12 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // the drain, failedCheckoutSkipsStdoutDrain).
 //
 // On Linux a git that failed by itself gets one SIGKILL to its group after its
-// exit. A member of the group that still runs dies. 4c111e86 sends it 0.3 to 1 ms
-// after the reap of git, with no timeoutMs (measured on Linux). claustrum sends it
-// before the reap, so the number of the group cannot be in use by another group.
-// It sends it before the drain. It sends none after a kill of the LFS watch or a
-// deadline stop. The case with a timeoutMs is not measured. macOS sends none
-// (failedCheckoutKillsGroup).
+// exit. A member of the group that still runs dies. 4c111e86 sends it after a Git
+// LFS download error, with no timeoutMs (measured on Linux). Other failures and a
+// timeoutMs are claustrum's own, not measured. 4c111e86 sends it after git exits,
+// claustrum before the reap, so the number of the group cannot be in use by
+// another group. It sends it before the drain. It sends no own kill after a kill
+// of the LFS watch or a deadline stop. macOS sends none (failedCheckoutKillsGroup).
 //
 // room is the watch of the private LFS store (lfsroom.go), or nil. It starts
 // after a good start of git. It ends after git exited and before the wait for
@@ -907,8 +907,10 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 	return werr
 }
 
-// groupKillSent reports that the watch of the private LFS store or the
-// deadline stop ran. Then the failed exit gets no second group kill.
+// groupKillSent reports that the watch of the private LFS store fired or that
+// the deadline stop ran. Then the failed exit gets no own group kill. A stop
+// that ran after the gate closed sent no group kill either, so that git gets
+// none (claustrum's own, from the code).
 func groupKillSent(room *lfsRoomWatch, stop *checkoutStop) bool {
 	return (room != nil && room.fired) || (stop != nil && stop.stopped())
 }
