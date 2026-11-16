@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1067,4 +1068,103 @@ func TestCLITempRootGivenBackBounds(t *testing.T) {
 	if n := givenCount(); n != tempRootGivenKeep-1 {
 		t.Errorf("%d given-back folders after the check, want %d: the old one ends", n, tempRootGivenKeep-1)
 	}
+}
+
+// setAfterOneCheck runs fn after each folder of a check, until the test ends. The loop
+// reads the seam under tempRoots.mu at its start.
+func setAfterOneCheck(t *testing.T, fn func()) {
+	t.Helper()
+	tempRoots.mu.Lock()
+	old := afterTempRootOneCheck
+	afterTempRootOneCheck = fn
+	tempRoots.mu.Unlock()
+	t.Cleanup(func() {
+		tempRoots.mu.Lock()
+		afterTempRootOneCheck = old
+		tempRoots.mu.Unlock()
+	})
+}
+
+// The losses of one check reach the lost list in one step at its end: between two
+// folders of the check a reply sees none of them (claustrum's own).
+func TestCLITempRootLossesOfOneCheckReachTheListTogether(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	var seen []int
+	setAfterOneCheck(t, func() {
+		tempRootsLost.mu.Lock()
+		seen = append(seen, len(tempRootsLost.list))
+		tempRootsLost.mu.Unlock()
+	})
+	for range 2 {
+		x, runDir := tempRootDir(t, true)
+		a := runTempRootBound(t, x, runDir, &rel, nil)
+		linkAtName(t, x, a.Name)
+	}
+	ticks.check(t)
+	tempRootsLost.mu.Lock()
+	n := len(tempRootsLost.list)
+	tempRootsLost.mu.Unlock()
+	if !slices.Equal(seen, []int{0, 0}) || n != 2 {
+		t.Errorf("list sizes between the folders %v and after the check %d, want [0 0] and 2", seen, n)
+	}
+}
+
+// The check of a given-back folder holds no lock while it looks at the folder, so a
+// spawn in another temp dir gets its folder meanwhile (claustrum's own).
+func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	type answer struct {
+		res     *rpc.CLITempRoot
+		release func()
+	}
+	got := make(chan answer, 1)
+	go func() {
+		_, res, release, _ := privateTempRoot([]string{"TMPDIR=" + x2}, runDir2)
+		got <- answer{res, release}
+	}()
+	select {
+	case a := <-got:
+		rel = append(rel, a.release)
+		if a.res == nil || !tempRootNameRE.MatchString(a.res.Name) {
+			t.Errorf("answer %+v during the check, want a folder", a.res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("a spawn waited for the check of a given-back folder")
+		close(free)
+		rel = append(rel, (<-got).release)
+		free = nil
+	}
+	if free != nil {
+		close(free)
+	}
+	<-done
+	tempRootCheckDev = old
 }

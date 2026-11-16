@@ -136,6 +136,7 @@ var (
 	afterTempRootMkdir      = func(dir, name string) {}
 	afterTempRootChildMkdir = func(dir, name string) {}
 	afterTempRootChecks     = func() {}
+	afterTempRootOneCheck   = func() {}
 )
 
 func randomTempRootName() string {
@@ -166,6 +167,10 @@ type heldTempRoot struct {
 	// name.
 	given, gone bool
 	givenAt     time.Time
+	// probe is true for the copy of a given-back folder that a check looks at with no
+	// lock (givenProbe). A loss there only sets lossWhy and lossWord.
+	probe             bool
+	lossWhy, lossWord string
 	// xdev is the device of the temp dir at the hold, and dirLink is true when the
 	// temp dir path was a link then (checkTempRoot).
 	xdev    uint64
@@ -204,6 +209,8 @@ var tempRoots = struct {
 	// checks is open while the loop of the checks runs (checkTempRoots). A close
 	// stops it, and the loop closes checksEnded at its end.
 	checks, checksEnded chan struct{}
+	// checkLost holds the losses of the running check, for one step into the lost list.
+	checkLost []goneTempRoot
 }{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
 // tempRootsLost is the lost list that each later reply with a cliTempRoot member
@@ -290,9 +297,19 @@ func addGoneList(res *rpc.CLITempRoot) *rpc.CLITempRoot {
 // addLostEntry adds a lost folder at the end of the lost list and cuts the oldest
 // entries past tempRootLostKeep.
 func addLostEntry(name, why string) {
+	addLostEntries([]goneTempRoot{{name: name, why: why, at: time.Now()}})
+}
+
+// addLostEntries adds the losses of one check at the end of the lost list in one step,
+// so a reply gets all of them or none, and cuts the oldest entries past
+// tempRootLostKeep.
+func addLostEntries(gone []goneTempRoot) {
+	if len(gone) == 0 {
+		return
+	}
 	tempRootsLost.mu.Lock()
 	defer tempRootsLost.mu.Unlock()
-	tempRootsLost.list = append(tempRootsLost.list, goneTempRoot{name: name, why: why, at: time.Now()})
+	tempRootsLost.list = append(tempRootsLost.list, gone...)
 	if n := len(tempRootsLost.list) - tempRootLostKeep; n > 0 {
 		tempRootsLost.list = slices.Delete(tempRootsLost.list, 0, n)
 	}
@@ -410,7 +427,7 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		if tempRoots.checks == nil {
 			tempRoots.checks, tempRoots.checksEnded = make(chan struct{}), make(chan struct{})
 			ticks, stopTicks := tempRootCheckTicks(tempRootCheckEvery)
-			go checkTempRoots(tempRoots.checks, tempRoots.checksEnded, ticks, stopTicks, afterTempRootChecks)
+			go checkTempRoots(tempRoots.checks, tempRoots.checksEnded, ticks, stopTicks, afterTempRootChecks, afterTempRootOneCheck)
 		}
 	}
 	u := &tempRootUser{}
@@ -759,8 +776,9 @@ func dropGivenTempRoots(end func(*heldTempRoot) bool) {
 // (4c111e86 gave an order that changed from check to check), the checks of a given-back
 // folder past 8 s and their end, the end of the loop, and no flock, no write and no
 // line but a loss line for a given-back folder. The caller gives the ticks
-// (tempRootCheckTicks) and the call after each check, so a test can set them.
-func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks, after func()) {
+// (tempRootCheckTicks), the call after each check and the call after each folder of a
+// check, so a test can set them.
+func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks, after, afterOne func()) {
 	defer close(ended)
 	defer stopTicks()
 	for {
@@ -769,10 +787,24 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 			return
 		case <-ticks:
 		}
+		// The given-back folders are looked at first, through copies and with no lock,
+		// so a temp dir that does not answer holds up no live folder and no spawn.
+		tempRoots.mu.Lock()
+		probes := map[*heldTempRoot]*heldTempRoot{}
+		for _, g := range tempRoots.given {
+			if p := givenProbe(g); p != nil {
+				probes[g] = p
+			}
+		}
+		tempRoots.mu.Unlock()
+		for _, p := range probes {
+			checkTempRoot(p)
+		}
 		tempRoots.mu.Lock()
 		select {
 		case <-stop:
 			tempRoots.mu.Unlock()
+			closeProbes(probes)
 			return
 		default:
 		}
@@ -783,10 +815,19 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 		hs = append(hs, tempRoots.given...)
 		slices.SortFunc(hs, func(a, b *heldTempRoot) int { return cmp.Compare(a.seq, b.seq) })
 		for _, h := range hs {
-			if !h.lost.Load() {
+			switch p := probes[h]; {
+			case h.lost.Load():
+			case !h.given:
 				checkTempRoot(h)
+			case p != nil && p.lossWhy != "":
+				markTempRootLost(h, p.lossWhy, p.lossWord)
+			case p != nil:
+				h.gone = p.gone
 			}
+			afterOne()
 		}
+		addLostEntries(tempRoots.checkLost)
+		tempRoots.checkLost = nil
 		dropGivenTempRoots(func(g *heldTempRoot) bool {
 			return g.lost.Load() || g.gone || time.Since(g.givenAt) >= tempRootGivenFor
 		})
@@ -795,10 +836,30 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 			tempRoots.checks = nil
 		}
 		tempRoots.mu.Unlock()
+		closeProbes(probes)
 		after()
 		if done {
 			return
 		}
+	}
+}
+
+// givenProbe gives a copy of the given-back folder g for a check with no lock, with its
+// own handle, or nil when the handle cannot be copied. The caller holds tempRoots.mu.
+func givenProbe(g *heldTempRoot) *heldTempRoot {
+	fd, err := unix.Dup(int(g.f.Fd()))
+	if err != nil {
+		return nil
+	}
+	unix.CloseOnExec(fd)
+	return &heldTempRoot{f: os.NewFile(uintptr(fd), g.name), dev: g.dev, ino: g.ino, dir: g.dir, name: g.name,
+		uid: g.uid, given: true, probe: true, xdev: g.xdev, dirLink: g.dirLink}
+}
+
+// closeProbes closes the handles of the copies of a check.
+func closeProbes(probes map[*heldTempRoot]*heldTempRoot) {
+	for _, p := range probes {
+		_ = p.f.Close()
 	}
 }
 
@@ -995,11 +1056,21 @@ func fitTempRoot(fd int) {
 	_ = unix.Fchmod(fd, 0o500)
 }
 
-// loseTempRoot marks h lost. The next spawn in its temp dir makes a new folder, and
-// each later reply with a member lists it with the word word. Each child that asked
-// with cliTempRootEnd is ended. For the others one line counts them (4c111e86, see
-// checkTempRoot). The caller holds tempRoots.mu.
+// loseTempRoot marks h lost, or for a copy of a given-back folder keeps why and word
+// for the check (markTempRootLost).
 func loseTempRoot(h *heldTempRoot, why, word string) {
+	if h.probe {
+		h.lossWhy, h.lossWord = why, word
+		return
+	}
+	markTempRootLost(h, why, word)
+}
+
+// markTempRootLost marks h lost. The next spawn in its temp dir makes a new folder, and
+// each later reply with a member lists it with the word word, from the end of the
+// check. Each child that asked with cliTempRootEnd is ended. For the others one line
+// counts them (4c111e86, see checkTempRoot). The caller holds tempRoots.mu.
+func markTempRootLost(h *heldTempRoot, why, word string) {
 	logging.Infof(tempRootLostLine, h.name, why)
 	h.lost.Store(true)
 	key := filepath.Join(h.dir, h.name)
@@ -1007,7 +1078,7 @@ func loseTempRoot(h *heldTempRoot, why, word string) {
 	if tempRoots.held[key] == h {
 		delete(tempRoots.held, key)
 	}
-	addLostEntry(h.name, word)
+	tempRoots.checkLost = append(tempRoots.checkLost, goneTempRoot{name: h.name, why: word, at: time.Now()})
 	runOn := 0
 	for _, u := range h.users {
 		u.mu.Lock()
