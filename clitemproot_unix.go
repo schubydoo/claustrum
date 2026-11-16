@@ -349,7 +349,7 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	}
 	if fresh {
 		var lst unix.Stat_t
-		h.xdev, h.dirLink = statDev(&xst), unix.Lstat(dir, &lst) == nil && lst.Mode&unix.S_IFMT == unix.S_IFLNK
+		h.xdev, h.dirLink = statDev(&xst), unix.Lstat(noTrailingSlash(dir), &lst) == nil && lst.Mode&unix.S_IFMT == unix.S_IFLNK
 		tempRoots.held[filepath.Join(dir, name)] = h
 		go tendTempRoot(h, tempRootRefresh, tempRootCheckEvery)
 	}
@@ -712,7 +712,7 @@ func checkTempRoot(h *heldTempRoot) {
 		h.checkFailed = true
 	}
 	var lst unix.Stat_t
-	if err := unix.Lstat(h.dir, &lst); errors.Is(err, unix.ENOENT) {
+	if err := unix.Lstat(noTrailingSlash(h.dir), &lst); errors.Is(err, unix.ENOENT) {
 		failed(tempRootDirGoneLine, h.name)
 		return
 	} else if k := lst.Mode & unix.S_IFMT; err == nil && k != unix.S_IFDIR && (k != unix.S_IFLNK || !h.dirLink) {
@@ -782,6 +782,15 @@ func checkTempRoot(h *heldTempRoot) {
 	default:
 		checkChildDir(h, &st)
 	}
+}
+
+// noTrailingSlash cuts the trailing slashes of dir, so that an lstat looks at its
+// last name and follows no link there. "/" stays "/".
+func noTrailingSlash(dir string) string {
+	if d := strings.TrimRight(dir, "/"); d != "" {
+		return d
+	}
+	return dir
 }
 
 // checkChildDir checks the t of the held folder, whose stat is st. A t that is gone

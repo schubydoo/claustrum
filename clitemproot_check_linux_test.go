@@ -657,3 +657,47 @@ func TestCLITempRootNoRemakeInAGroupWritableTempDir(t *testing.T) {
 		})
 	}
 }
+
+// A temp dir path with a trailing slash: a link in place of the temp dir still counts
+// as lost, and a temp dir path that was a link at the hold still ends nobody.
+func TestCLITempRootTempDirWithATrailingSlash(t *testing.T) {
+	t.Run("replaced by a link", func(t *testing.T) {
+		var rel []func()
+		cleanTempRoots(t, &rel)
+		setTempRootCheckEvery(t, 20*time.Millisecond)
+		logs := captureLogBuf(t)
+		x, runDir := tempRootDir(t, true)
+		var ends atomic.Int32
+		a := runTempRootBound(t, x+"/", runDir, &rel, func() { ends.Add(1) })
+		if a == nil || !tempRootNameRE.MatchString(a.Name) {
+			t.Fatalf("answer %+v, want a folder", a)
+		}
+		underCheckLock(t, func() error {
+			if err := os.Rename(x, x+".old"); err != nil {
+				return err
+			}
+			return os.Symlink(x+".old", x)
+		})
+		waitFor(t, "end", func() bool { return ends.Load() == 1 })
+		wantLinesInOrder(t, logs.String(), "[process.Manager] Claude Code's private temp folder "+a.Name+" counts as lost: it is in a temp dir that is no longer a folder")
+	})
+	t.Run("a link at the hold", func(t *testing.T) {
+		var rel []func()
+		cleanTempRoots(t, &rel)
+		setTempRootCheckEvery(t, 20*time.Millisecond)
+		logs := captureLogBuf(t)
+		x, runDir := tempRootDir(t, true)
+		l := filepath.Join(filepath.Dir(x), "l")
+		if err := os.Symlink(x, l); err != nil {
+			t.Fatal(err)
+		}
+		var ends atomic.Int32
+		a := runTempRootBound(t, l+"/", runDir, &rel, func() { ends.Add(1) })
+		if a == nil || !tempRootNameRE.MatchString(a.Name) {
+			t.Fatalf("answer %+v, want a folder", a)
+		}
+		holdsFor(t, 5*tempRootCheckEvery, "no end and no line", func() bool {
+			return ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+		})
+	})
+}
