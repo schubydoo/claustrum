@@ -793,8 +793,8 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 //
 // On Linux a git that failed by itself gets one SIGKILL to its group after its
 // exit. A member of the group that still runs dies. 4c111e86 sends it after a Git
-// LFS download error, with no timeoutMs (measured on Linux). Other failures and a
-// timeoutMs are claustrum's own, not measured. 4c111e86 sends it after git exits,
+// LFS download error or a failed smudge filter, also with a timeoutMs (measured on
+// Linux). Other failures are claustrum's own, not measured. 4c111e86 sends it after git exits,
 // claustrum before the reap, so the number of the group cannot be in use by
 // another group. It sends it before the drain. It sends no own kill after a kill
 // of the LFS watch or a deadline stop. macOS sends none (failedCheckoutKillsGroup).
