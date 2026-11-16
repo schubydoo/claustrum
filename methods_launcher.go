@@ -39,6 +39,30 @@ type managedLauncherLog struct {
 	last string
 	// ignoredVarLogged is set once the ignored-variable line was written.
 	ignoredVarLogged bool
+	// lastChecked is the reason of the last answer to a launcherCheck, or "" after
+	// a usable one.
+	lastChecked string
+}
+
+// noteChecked writes the refused line of an answer to a launcherCheck. A refusal
+// with the reason of the last answer writes no line. A usable answer in between
+// makes it log again (4c111e86, measured on Linux). claustrum's own, not measured:
+// the key lives for one daemon, apart from the key of note. With logsRepeats each
+// refusal logs, a repeat too (c9125eb8, measured on macOS).
+func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeats bool) {
+	reason := ""
+	if res.Status == install.StatusUnusable {
+		reason = res.Reason
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if reason == l.lastChecked && !logsRepeats {
+		return
+	}
+	l.lastChecked = reason
+	if reason != "" {
+		logging.Warnf("[LauncherHandler] the launcher that the desktop names is refused: %s", reason)
+	}
 }
 
 // firstIgnoredVar reports true the first time only, so the ignored-variable line
@@ -120,10 +144,7 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 	}
 	if p.LauncherCheck != nil && (p.Path != "" || !onWindowsHost()) {
 		res := install.ResolveChecked(p.Path, *p.LauncherCheck)
-		if res.Status == install.StatusUnusable {
-			// One line for each refusal, a repeat too (measured on macOS).
-			logging.Warnf("[LauncherHandler] the launcher that the desktop names is refused: %s", res.Reason)
-		}
+		s.managedLog.noteChecked(res, launcherCheckLogsRepeats)
 		return rpc.OKResult(req.ID, res)
 	}
 	res, note := install.Resolve(p.CliPath)
