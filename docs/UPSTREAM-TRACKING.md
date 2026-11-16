@@ -119,7 +119,7 @@ of the real desktop client:
   token and host paths. Never commit one.
 
 The last capture ran against `8de85faa`, a build well behind the current
-baseline, `c9125eb8`. Its result is in
+baseline, `4c111e86`. Its result is in
 [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#8de85faaa11694321e937499a18c7ab88f37c76c-2026-05-21).
 Use a capture as a periodic spot-check. Use it again for a build that changes
 `process.*` behavior that the synthetic battery cannot fully model (real
@@ -194,7 +194,7 @@ Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and
 `-metrics-addr` and `-wire-log`
 ([flags.md → Flags of claustrum alone](protocol/flags.md#flags-of-claustrum-alone)).
-claustrum lacks the terminal of `52d82f0a`, `683cc6a9`, `be1c1ca5` and `b3081b51`, and of the pinned `c9125eb8`, so `server.capabilities` lacks
+claustrum lacks the terminal of `52d82f0a`, `683cc6a9`, `be1c1ca5`, `b3081b51` and `c9125eb8`, and of the pinned `4c111e86`, so `server.capabilities` lacks
 `process.resize`, and on Linux and macOS `process.spawn.pty`. A `process.resize`
 gets `-32601` (measured on macOS and Windows), and a keyed `pty` object runs the
 command (claustrum's own). Check those
@@ -250,7 +250,7 @@ open of claustrum (from the code, not measured). See
 ### Triage gotchas: when a probe result is misleading
 
 These are the traps that matter for telling drift from expected. In the git and
-files methods, claustrum follows `c9125eb8`, the build that `scripts/UPSTREAM_SHA`
+files methods, claustrum follows `4c111e86`, the build that `scripts/UPSTREAM_SHA`
 names. The exceptions are the D-entries above, and the places where an item below
 or the linked page names another build. A probe against an older build
 shows the differences of each item as a build split, not drift. The rules are on
@@ -283,12 +283,12 @@ the linked pages.
   `process.spawn` `launcher` param, the child env strip, and the gated launcher
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
-  measured. `f6010b97` has none of these. `launcherFault`, `macos_host` (its text: `4c111e86`), the file
-  check (its file system and owner texts: `4c111e86`) and `launcher.supplies_cli` follow the pin. See
+  measured. `f6010b97` has none of these. `launcherFault`, `macos_host`, the file
+  check and `launcher.supplies_cli` follow the pin. See
   [launcher.resolve](protocol/launcher-resolve.md),
   [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
   and [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
-- `files.find` follows `4c111e86` on Linux and macOS. The pin `c9125eb8` has no
+- `files.find` follows the pin on Linux and macOS. `c9125eb8` has no
   `files.find`. See [files.find](protocol/files-find.md).
 - The peer check follows `5fd08069`. `server.capabilities` carries the
   `peerCheck` and `peerCheckBy` members and the `server.peer_check` and
@@ -560,8 +560,8 @@ the reference stays the same.
 Go 1.27 does that. It turns on the `jsonv2` GOEXPERIMENT by default, and the v2
 `Marshal` renders an invalid UTF-8 byte as the literal U+FFFD character (bytes
 `EF BF BD`). Go 1.26 and earlier emit the six-ASCII `\ufffd` escape. The build
-pinned today, `c9125eb8`, carries a go1.25.14 stamp (`go version` on the binary), as
-`b3081b51`, `be1c1ca5`, `683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
+pinned today, `4c111e86`, carries a go1.25.14 stamp (`go version` on the binary), as
+`c9125eb8`, `b3081b51`, `be1c1ca5`, `683cc6a9`, `52d82f0a` and `5fd08069` do. So it emits the
 same escape. `files.read` puts raw file bytes into `content`, so under Go 1.27
 every read of a file with a non-UTF-8 byte diverges from the reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
 `TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this

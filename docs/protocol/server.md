@@ -180,4 +180,4 @@ A handler panic in `server.shutdown` writes no frame (claustrum's own). See [Han
 
 ## Differences from the reference
 
-`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of `52d82f0a`, of `683cc6a9`, of `be1c1ca5`, of `b3081b51` and of the pinned build `c9125eb8`. So it lists no `process.resize`, and on Linux and macOS no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#c9125eb87bca9ab294d4190dd79be9dfb8d11806-2026-11-02-built)).
+`-keep-children` is claustrum's own flag ([CT-2](../DIVERGENCES.md#ct-2)). The peer check follows the reference. claustrum lacks the terminal of `52d82f0a`, of `683cc6a9`, of `be1c1ca5`, of `b3081b51`, of `c9125eb8` and of the pinned build `4c111e86`. So it lists no `process.resize`, and on Linux and macOS no `process.spawn.pty` ([open items](../REFERENCE-BUILDS.md#4c111e86f743b90f84ee752123f94e2d239234ad-2026-11-08-built)).
