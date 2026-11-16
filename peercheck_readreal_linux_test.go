@@ -67,7 +67,11 @@ func TestReadRealLineHeldUntilTheLift(t *testing.T) {
 	}
 
 	// A good start naming writes the line at once.
+	t.Setenv(peerCheckEnv, "1")
 	g2 := startPeerCheck()
+	if g2 == nil {
+		t.Fatal("the peer check was not enabled")
+	}
 	before := strings.Count(logs.String(), readRealPassLine)
 	g2.logReadRealStart()
 	if n := strings.Count(logs.String(), readRealPassLine); n != before+1 {
