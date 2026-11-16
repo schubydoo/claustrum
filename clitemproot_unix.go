@@ -846,12 +846,13 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 
 // givenProbe gives a copy of the given-back folder g for a check with no lock, with its
 // own handle, or nil when the handle cannot be copied. The caller holds tempRoots.mu.
+// The copy is close-on-exec from the start (F_DUPFD_CLOEXEC), so a child that starts
+// at the same moment cannot inherit it.
 func givenProbe(g *heldTempRoot) *heldTempRoot {
-	fd, err := unix.Dup(int(g.f.Fd()))
+	fd, err := unix.FcntlInt(g.f.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil {
 		return nil
 	}
-	unix.CloseOnExec(fd)
 	return &heldTempRoot{f: os.NewFile(uintptr(fd), g.name), dev: g.dev, ino: g.ino, dir: g.dir, name: g.name,
 		uid: g.uid, given: true, probe: true, xdev: g.xdev, dirLink: g.dirLink}
 }
