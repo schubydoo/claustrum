@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,4 +98,47 @@ func TestFailedCheckoutAfterStopSendsNoSecondKill(t *testing.T) {
 	if n := all.Load(); n != 1 {
 		t.Errorf("group kills = %d, want 1: the one of the stop", n)
 	}
+}
+
+// TestWorktreeCreateFailedCheckoutEndsGroupMember: a create with no timeoutMs
+// whose read-tree git fails while its child, in the group of git, holds stdout
+// for 20 s. The group kill ends the child, so the reply comes before the drain
+// of gitDrainWait (4c111e86 ends such a child, measured on Linux).
+func TestWorktreeCreateFailedCheckoutEndsGroupMember(t *testing.T) {
+	stubLingeringGit(t, false, "20")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT0", "fail")
+	endHeldDescendant(t)
+	raw, elapsed := runLingeringCreate(t, t.TempDir(), 0)
+	if !strings.Contains(raw, failedFilterReply) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Fatalf("reply = %s, want the failure of git with worktree_add_failed", raw)
+	}
+	if elapsed >= gitDrainWait {
+		t.Errorf("reply after %s, want under %s: the child of git still held stdout", elapsed, gitDrainWait)
+	}
+	b, err := os.ReadFile(os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"))
+	if err != nil {
+		t.Fatalf("pid of the child of git: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatalf("pid of the child of git: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !processEnded(pid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the child %d of git still runs 5 s after the reply", pid)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// processEnded reports that pid is gone or a zombie, from /proc/<pid>/stat.
+func processEnded(pid int) bool {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return true
+	}
+	s := string(b)
+	i := strings.LastIndexByte(s, ')')
+	return i < 0 || i+2 >= len(s) || s[i+2] == 'Z' || s[i+2] == 'X'
 }

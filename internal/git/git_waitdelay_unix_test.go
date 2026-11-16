@@ -206,8 +206,9 @@ const failedFilterReply = `"error":"git worktree add failed (checkout): fatal: a
 // drain, where a drain to the cap answers timeout. The second puts it past the
 // drain, where a drain to the cap answers late. In the third a second child
 // holds stderr for 300 ms and writes a line there: the stderr drain still waits
-// for it (claustrum's own, not measured). The group kill of the failed git does
-// nothing there, as for a child outside the group of git (keepFailedCheckoutGroup).
+// for it (claustrum's own, not measured). In each case the group kill of the
+// failed git does nothing, as for a child outside the group of git
+// (keepFailedCheckoutGroup).
 func TestWorktreeCreateFailedCheckoutSkipsStdoutDrain(t *testing.T) {
 	const drainCap = 8 * time.Second
 	setDuration(t, &worktreeCreateDrainCap, drainCap)
@@ -228,9 +229,9 @@ func TestWorktreeCreateFailedCheckoutSkipsStdoutDrain(t *testing.T) {
 			stubLingeringGit(t, false, "20")
 			t.Setenv("CLAUSTRUM_GITSTUB_EXIT0", "fail")
 			endHeldDescendant(t)
+			keepFailedCheckoutGroup(t)
 			if tc.lateErr {
 				t.Setenv("CLAUSTRUM_GITSTUB_LATEERR", "1")
-				keepFailedCheckoutGroup(t)
 			}
 			raw, elapsed := runLingeringCreate(t, t.TempDir(), tc.timeoutMs)
 			if !strings.Contains(raw, failedFilterReply) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
