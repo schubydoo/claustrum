@@ -262,7 +262,10 @@ func (h stalledHash) Write(p []byte) (int, error) {
 // after the checkout reads the object again and makes its one copy. On
 // 4c111e86 the first read of a 900 MiB object ended at the exit of git in 10
 // of 10 rows. One temp file followed after the checkout (measured on Linux).
-// Mutation: drop the stop of the context of the ticks in keepTicker.end (the
+// The stall holds only a keep of a tick while the download of b.bin is held,
+// so it holds a.bin. The copy of a.bin must come after the end of the ticks.
+// Mutations: drop the stop of the context of the ticks in keepTicker.end, or
+// give the keep of a tick a context from context.Background (in both the
 // read of the tick runs on, and the tick makes the copy).
 func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 	seamFreeSpace(t)
@@ -274,29 +277,43 @@ func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 	release := f.holdDownload(t, "b.bin")
 	prevHash, prevCopy, prevBudget := newObjectHash, keepCopy, keepBudget
 	keepBudget = 30 * time.Second
-	var stopped atomic.Bool
+	var stopped, released atomic.Bool
 	var mu sync.Mutex
-	hashes, copiesA := 0, 0
-	newObjectHash = func() hash.Hash {
-		mu.Lock()
-		hashes++
-		n := hashes
-		mu.Unlock()
-		if n > 1 {
-			return sha256.New()
-		}
+	copiesA, copiesInTick := 0, 0
+	tickEnded := func() bool {
 		got := made()
 		if len(got) != 1 {
-			t.Errorf("the create made %d tickers before the first keep, want 1", len(got))
+			return false
+		}
+		select {
+		case <-got[0].ended:
+			return true
+		default:
+			return false
+		}
+	}
+	newObjectHash = func() hash.Hash {
+		got := made()
+		if len(got) != 1 || tickEnded() || released.Load() {
 			return sha256.New()
 		}
 		var once sync.Once
-		return stalledHash{Hash: sha256.New(), first: func() { once.Do(release) }, done: got[0].ctx.Done(), stopped: &stopped}
+		free := func() {
+			once.Do(func() {
+				released.Store(true)
+				release()
+			})
+		}
+		return stalledHash{Hash: sha256.New(), first: free, done: got[0].ctx.Done(), stopped: &stopped}
 	}
 	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
 		if file, ok := w.(*os.File); ok && strings.HasSuffix(file.Name(), f.oids["a.bin"]) {
+			inTick := !tickEnded()
 			mu.Lock()
 			copiesA++
+			if inTick {
+				copiesInTick++
+			}
 			mu.Unlock()
 		}
 		return io.Copy(w, r)
@@ -307,10 +324,10 @@ func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 		t.Error("the keep of the tick still read a.bin after the exit of git")
 	}
 	mu.Lock()
-	got := copiesA
+	got, inTick := copiesA, copiesInTick
 	mu.Unlock()
-	if got != 1 {
-		t.Errorf("the keep copied a.bin %d times, want 1", got)
+	if got != 1 || inTick != 0 {
+		t.Errorf("the keep copied a.bin %d times, %d of them in a tick, want 1 after the checkout", got, inTick)
 	}
 	if !exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
 		t.Error("a.bin is not in the store of the repository")
