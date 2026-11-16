@@ -213,7 +213,7 @@ func TestSocketGitBattery(t *testing.T) {
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
-		got[i] = normPath(cl.call(line), root)
+		got[i] = normPath(cl.callAny(line), root)
 	}
 	assertGolden(t, "socket_git.golden.json", encodeGolden(t, got))
 }
@@ -521,7 +521,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
-		got[i] = normPath(cl.call(line), home)
+		got[i] = normPath(cl.callAny(line), home)
 	}
 	assertGolden(t, "socket_tilde_expansion.golden.json", encodeGolden(t, got))
 
@@ -561,7 +561,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// row has always pinned, one refusal earlier. The path expands under the repo
 	// (containment), and pathcanon.ExpandTilde strips the trailing "/" for the tilde form.
 	const wtBase = "<DIR>/repo/.claude/worktrees/wt2"
-	wtErr := string(normPath(cl.call(req(22, "git.worktree_create", map[string]any{
+	wtErr := string(normPath(cl.callCreate(req(22, "git.worktree_create", map[string]any{
 		"baseRepo": "~/repo", "branchName": "wt4", "worktreePath": "~/repo/.claude/worktrees/wt2/",
 	})), home))
 	if strings.Contains(wtErr, wtBase+"/") {
@@ -773,7 +773,7 @@ func TestSocketWorktreeSourceBranch(t *testing.T) {
 		if src != "" {
 			params["sourceBranch"] = src
 		}
-		got = append(got, normPath(cl.call(req(i+1, "git.worktree_create", params)), root))
+		got = append(got, normPath(cl.callCreate(req(i+1, "git.worktree_create", params)), root))
 	}
 	assertGolden(t, "socket_worktree_source_branch.golden.json", encodeGolden(t, got))
 }
@@ -814,7 +814,7 @@ func TestSocketWorktreeExistingBranch(t *testing.T) {
 		if c.existingBranch != "" {
 			params["existingBranch"] = c.existingBranch
 		}
-		got = append(got, normPath(cl.call(req(i+1, "git.worktree_create", params)), root))
+		got = append(got, normPath(cl.callCreate(req(i+1, "git.worktree_create", params)), root))
 	}
 	assertGolden(t, "socket_worktree_existing_branch.golden.json", encodeGolden(t, got))
 }
@@ -863,9 +863,9 @@ func TestSocketWorktreeRemoveBranch(t *testing.T) {
 	wtDir := func(n string) string { return filepath.Join(repo, ".claude", "worktrees", n) }
 
 	// Two worktrees: one whose branch stays at master, one that diverges.
-	cl.call(req(1, "git.worktree_create", map[string]any{
+	cl.callCreate(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "merged", "worktreePath": wt("wtm")}))
-	cl.call(req(2, "git.worktree_create", map[string]any{
+	cl.callCreate(req(2, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "unmerged", "worktreePath": wt("wtu")}))
 	writeFile(t, filepath.Join(wtDir("wtu"), "z.txt"), "z\n", 0o644)
 	runGit(t, wtDir("wtu"), "add", "z.txt")
@@ -904,7 +904,7 @@ func TestSocketWorktreeRemoveKeepsBranchConfig(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	wt := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "wtb"))
-	cl.call(req(1, "git.worktree_create", map[string]any{
+	cl.callCreate(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "wtb", "worktreePath": wt}))
 	// Give the branch a config section that `git branch -D` would remove.
 	runGit(t, repo, "config", "branch.wtb.description", "desc")
@@ -987,7 +987,7 @@ func TestSocketWorktreeCreatePopulates(t *testing.T) {
 	cl := dial(t, sock)
 	wtDir := filepath.Join(repo, ".claude", "worktrees", "wt")
 	wt := filepath.ToSlash(wtDir)
-	reply := cl.call(req(1, "git.worktree_create", map[string]any{
+	reply := cl.callCreate(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "wt", "worktreePath": wt}))
 	if !strings.Contains(string(reply), `"success":true`) {
 		t.Fatalf("worktree_create failed: %s", reply)
@@ -1027,7 +1027,7 @@ func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	wt := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "wt"))
-	reply := string(cl.call(req(1, "git.worktree_create", map[string]any{
+	reply := string(cl.callCreate(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "dup", "worktreePath": wt})))
 
 	if !strings.Contains(reply, `"success":false`) {

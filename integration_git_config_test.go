@@ -41,7 +41,7 @@ func TestSocketGitConfigRefusal(t *testing.T) {
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
-		got[i] = normPath(normPath(cl.call(line), f.wt), root)
+		got[i] = normPath(normPath(cl.callAny(line), f.wt), root)
 	}
 	assertGolden(t, "socket_git_config_refusal.golden.json", encodeGolden(t, got))
 }
