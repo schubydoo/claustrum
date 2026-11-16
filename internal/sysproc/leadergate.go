@@ -46,6 +46,13 @@ func (g *LeaderGate) CloseAfterExit(p *os.Process, seen bool) {
 	g.Close()
 }
 
+// AwaitExit is AwaitExitStatus with no status. It reports that the wait saw
+// the exit of the child pid, and it reaps nothing.
+func AwaitExit(pid int) bool {
+	seen, _ := AwaitExitStatus(pid)
+	return seen
+}
+
 // LeaderPollEvery is the time between two tests of a leader that the wait for
 // its exit did not see (claustrum's own, not measured).
 const LeaderPollEvery = 10 * time.Millisecond

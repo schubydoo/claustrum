@@ -598,11 +598,15 @@ func (p *Proc) signalIfLiveErr(signame, killedBy string) (bool, error) {
 // that ignores the SIGTERM of a process.kill and then loses its private temp folder
 // exits with "temp_root" (4c111e86, measured on macOS, on Linux claustrum's own). A
 // child that ended on the SIGTERM of the kill gets no temp_root signal, so it keeps
-// "client". That temp_root replaces no other reason is claustrum's own, not measured.
+// "client". A child that has exited but is not marked reaped yet can still get the
+// signal, so the replace also asks sysproc.SurelyRuns, which tells a zombie from a
+// running child. That temp_root replaces no other reason is claustrum's own, not
+// measured.
 func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return false, nil
 	}
+	takeOver := killedBy == "temp_root" && p.killedBy == "client" && sysproc.SurelyRuns(p.cmd.Process)
 	var failed *SignalFailed
 	if err := signalGroup(p.group, p.cmd.Process, signame); errors.As(err, &failed) {
 		// A refused signal leaves a pending farewell and its timer as they are
@@ -611,7 +615,7 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	}
 	// A signal cuts a pending farewell (measured on Linux and macOS).
 	p.cutFarewellLocked()
-	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0) || (killedBy == "temp_root" && p.killedBy == "client")) {
+	if killedBy != "" && (p.killedBy == "" || (killedBy == "shutdown" && p.waiting > 0) || takeOver) {
 		p.killedBy = killedBy
 	}
 	p.signalled = true
@@ -2237,9 +2241,10 @@ func buildSpawnEnvOn(adoptedEnv []string, adopted bool, env map[string]string, n
 	// With no request value of the name, the child gets it with the value 1. A daemon
 	// entry of the name takes the value 1 in place. Otherwise the entry goes after the new
 	// caller keys (measured on Linux). A request value wins, with no second entry.
-	// 4c111e86, measured on Linux and macOS. On Windows, after an adopt and for a
-	// launcher or gitRead spawn this is claustrum's own, not measured. Its place before
-	// SSH_AUTH_SOCK is not measured.
+	// 4c111e86, measured on Linux and macOS. On Windows and after an adopt this is
+	// claustrum's own, not measured. Its place before SSH_AUTH_SOCK is not measured.
+	// A launcher spawn gets the same entry (4c111e86, measured on Linux). A gitRead
+	// spawn moves it after GIT_INDEX_FILE (paneEnv in internal/git/gitread.go).
 	if _, ok := env[placeholderEnvName]; !ok {
 		base = sysproc.ReplaceOrAppendEnv(base, placeholderEnvName, "1")
 	}

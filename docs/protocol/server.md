@@ -98,6 +98,10 @@ The daemon reads no request from a refused connection. So an unauthenticated `se
 
 A caller that exited before the check gets no line, but it takes a number: the next refusal logs number 2 (measured on Linux, c9125eb8 and 4c111e86). If the daemon has too many open files, the line gives `lookup_failed` and `caller <pid>: too many open files` (measured on Linux, c9125eb8 and 4c111e86).
 
+### A failed poll (Linux)
+
+A failed poll of the caller's pidfd gives `poll caller <pid>:` and the errno text. A poll that gets `EINTR` runs again. If every poll gets `EINTR`, the caller gets no reply in 30 s (measured on Linux, `4c111e86`). claustrum retries with no limit (claustrum's own). claustrum's own, not measured: such a poll blocks the accept of new connections until the daemon ends.
+
 ### Out of resources (Linux)
 
 A line of `out_of_resources` (measured on Linux, `4c111e86`):

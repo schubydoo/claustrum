@@ -19,9 +19,11 @@ func NewSysProcAttr() *syscall.SysProcAttr {
 // ReapProcessGroup SIGKILLs the whole process group led by proc — kill(-pgid) —
 // reaping any descendant proc left behind. It is how git.worktree_create's checkout
 // tears down a smudge/hook orphan that outlived git and kept the daemon's output
-// pipe open past the drain cap, matching 4534d86's observed descendant reap. The command must
+// pipe open past the drain cap. The command must
 // have been started with NewSysProcAttr (Setpgid), so proc is its group's leader
-// and its pid equals the pgid. Best-effort and nil-safe: a nil process is a no-op.
+// and its pid equals the pgid. An unreaped leader keeps the number of its group.
+// After the reap the number is free once the last member ends. Best-effort and
+// nil-safe: a nil process is a no-op.
 func ReapProcessGroup(proc *os.Process) {
 	if proc == nil || RefuseSmallPid(proc.Pid) != nil {
 		return

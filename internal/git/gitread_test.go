@@ -339,7 +339,8 @@ func TestPaneRangeSides(t *testing.T) {
 // TestPaneGitRunShadow runs the steps before the pane's git in a repository in
 // the state shadow. The run names the copy in GIT_COMMON_DIR, and the index of
 // rev-parse is <copy>/no-index. The env ends with GIT_OPTIONAL_LOCKS=0, an empty
-// SSH_AUTH_SOCK and that index (measured on Linux and macOS). The last call before
+// SSH_AUTH_SOCK and that index (measured on Linux and macOS). The placeholder entry
+// of the spawn comes after the index (4c111e86, measured on Linux). The last call before
 // the run is the listing in the cwd (measured on Linux). The status shape keeps
 // the real index (measured on Windows).
 func TestPaneGitRunShadow(t *testing.T) {
@@ -369,7 +370,7 @@ func TestPaneGitRunShadow(t *testing.T) {
 	if len(calls) == 0 || !calls[len(calls)-1].listing() || calls[len(calls)-1].cwd != f.repo {
 		t.Fatalf("the last call before the run = %+v, want the listing in %s", calls[len(calls)-1:], f.repo)
 	}
-	env := run.Env(append(os.Environ(), "SSH_AUTH_SOCK=/agent", "GIT_OPTIONAL_LOCKS=1"))
+	env := run.Env(append(os.Environ(), "SSH_AUTH_SOCK=/agent", panePlaceholderName+"=1", "GIT_OPTIONAL_LOCKS=1"))
 	common, _ := envValue(env, "GIT_COMMON_DIR")
 	if filepath.Dir(filepath.Dir(common)) != filepath.Join(f.run, "git-shadow") || !isShadowRepoName(filepath.Base(common)) {
 		t.Errorf("GIT_COMMON_DIR = %q, want a copy below %s", common, filepath.Join(f.run, "git-shadow"))
@@ -377,11 +378,11 @@ func TestPaneGitRunShadow(t *testing.T) {
 	if d, _ := envValue(env, "GIT_DIR"); d != f.gitDir {
 		t.Errorf("GIT_DIR = %q, want %q", d, f.gitDir)
 	}
-	tail := []string{"GIT_OPTIONAL_LOCKS=0", "SSH_AUTH_SOCK=", "GIT_INDEX_FILE=" + filepath.Join(common, "no-index")}
-	if len(env) < 3 || !slices.Equal(env[len(env)-3:], tail) {
-		t.Errorf("env ends with %q, want %q", env[max(0, len(env)-3):], tail)
+	tail := []string{"GIT_OPTIONAL_LOCKS=0", "SSH_AUTH_SOCK=", "GIT_INDEX_FILE=" + filepath.Join(common, "no-index"), panePlaceholderName + "=1"}
+	if len(env) < 4 || !slices.Equal(env[len(env)-4:], tail) {
+		t.Errorf("env ends with %q, want %q", env[max(0, len(env)-4):], tail)
 	}
-	for _, name := range []string{"SSH_AUTH_SOCK", "GIT_OPTIONAL_LOCKS"} {
+	for _, name := range []string{"SSH_AUTH_SOCK", "GIT_OPTIONAL_LOCKS", panePlaceholderName} {
 		n := 0
 		for _, kv := range env {
 			if strings.HasPrefix(kv, name+"=") {
@@ -413,8 +414,13 @@ func TestPaneGitRunShadow(t *testing.T) {
 		t.Fatalf("PaneGitRun status: %v", err)
 	}
 	status.Release()
-	if _, ok := envValue(status.Env(append(os.Environ(), "GIT_INDEX_FILE=/spawn-index")), "GIT_INDEX_FILE"); ok {
+	statusEnv := status.Env(append(os.Environ(), "GIT_INDEX_FILE=/spawn-index", panePlaceholderName+"=1"))
+	if _, ok := envValue(statusEnv, "GIT_INDEX_FILE"); ok {
 		t.Errorf("the status run has GIT_INDEX_FILE, want the real index")
+	}
+	// With no index the entry comes after SSH_AUTH_SOCK (claustrum's own, not measured).
+	if tail := []string{"SSH_AUTH_SOCK=", panePlaceholderName + "=1"}; !slices.Equal(statusEnv[max(0, len(statusEnv)-2):], tail) {
+		t.Errorf("the status env ends with %q, want %q", statusEnv[max(0, len(statusEnv)-2):], tail)
 	}
 }
 
