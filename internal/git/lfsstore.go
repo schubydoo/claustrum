@@ -119,17 +119,25 @@ type leftOut struct {
 	size uint64
 }
 
-// seedContext is the bound of the seed of a create with timeoutMs: half of
-// timeoutMs from the start of the seed. On 4c111e86 a seed whose copy needs
-// more time stops, the object stays out, and git-lfs then fails to find it
-// (measured on Linux: timeoutMs 1300 to 1944 ms, a reply after 0.7 to 1.1 s).
-// The start of that bound is claustrum's own, not measured. With no timeoutMs
-// the seed has only the bound of ctx.
-func seedContext(ctx context.Context, timeoutMs int) (context.Context, context.CancelFunc) {
+// seedContext is the bound of the seed of a create with timeoutMs. arrival is
+// the start of the deadline of timeoutMs (worktreeCreateCtx). The seed starts
+// now, and it stops at seedDeadline. On 4c111e86 a seed whose copy needs more
+// time stops, the object stays out, and git-lfs then fails to find it
+// (measured on Linux). With no timeoutMs the seed has only the bound of ctx.
+func seedContext(ctx context.Context, timeoutMs int, arrival time.Time) (context.Context, context.CancelFunc) {
 	if timeoutMs <= 0 {
 		return ctx, func() {}
 	}
-	return context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond/2)
+	return context.WithDeadline(ctx, seedDeadline(arrival, time.Now(), timeoutMs))
+}
+
+// seedDeadline is the end of a seed that starts at start, for a create whose
+// deadline of timeoutMs counts from arrival. With s the time from arrival to
+// start, the seed stops at (timeoutMs + s) / 2 after arrival. 4c111e86 cuts a
+// seed there, and the size of the object plays no part (measured on Linux).
+// macOS follows Linux (claustrum's own, not measured).
+func seedDeadline(arrival, start time.Time, timeoutMs int) time.Time {
+	return arrival.Add((time.Duration(timeoutMs)*time.Millisecond + start.Sub(arrival)) / 2)
 }
 
 // pointerRef is one LFS pointer of the commit of a checkout.

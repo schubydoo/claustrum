@@ -437,20 +437,50 @@ func TestDeadlineWords(t *testing.T) {
 	}
 }
 
-// TestSeedContext: the seed of a create with timeoutMs ends at half of it
-// (4c111e86, measured on Linux and macOS). With no timeoutMs it keeps ctx.
+// TestSeedContext: the seed of a create with timeoutMs ends at (timeoutMs + s)
+// / 2 after arrival, with s the time from arrival to the start of the seed
+// (4c111e86, measured on Linux). With no timeoutMs it keeps ctx.
 func TestSeedContext(t *testing.T) {
-	start := time.Now()
-	ctx, cancel := seedContext(context.Background(), 4000)
+	arrival := time.Now().Add(-time.Second)
+	ctx, cancel := seedContext(context.Background(), 3000, arrival)
 	defer cancel()
+	// s is about 1 s, so the seed ends about 2 s after arrival, 1 s from now.
 	d, ok := ctx.Deadline()
-	if !ok || d.Sub(start) < 2*time.Second-500*time.Millisecond || d.Sub(start) > 2*time.Second+500*time.Millisecond {
-		t.Errorf("seedContext(4000) deadline after %v, %v, want 2 s", d.Sub(start), ok)
+	if got := d.Sub(arrival); !ok || got < 2*time.Second-200*time.Millisecond || got > 2*time.Second+200*time.Millisecond {
+		t.Errorf("seedContext(3000) deadline %v after arrival, %v, want 2 s", got, ok)
 	}
-	plain, cancelPlain := seedContext(context.Background(), 0)
+	plain, cancelPlain := seedContext(context.Background(), 0, arrival)
 	defer cancelPlain()
 	if _, ok := plain.Deadline(); ok {
 		t.Error("seedContext(0) has a deadline, want none")
+	}
+}
+
+// TestSeedDeadlineCountsFromArrival: the bound of a seed that starts s after
+// arrival is (timeoutMs + s) / 2 after arrival, not timeoutMs / 2 after the
+// start of the seed (4c111e86, measured on Linux).
+func TestSeedDeadlineCountsFromArrival(t *testing.T) {
+	arrival := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		s         time.Duration
+		timeoutMs int
+		want      time.Duration
+	}{
+		{0, 3000, 1500 * time.Millisecond},
+		{time.Second, 3000, 2 * time.Second},
+		{2400 * time.Millisecond, 3000, 2700 * time.Millisecond},
+		{500 * time.Millisecond, 1500, time.Second},
+		// A seed that starts after the deadline of timeoutMs has a bound
+		// that passed already, so it stops at once.
+		{4 * time.Second, 3000, 3500 * time.Millisecond},
+	} {
+		got := seedDeadline(arrival, arrival.Add(c.s), c.timeoutMs).Sub(arrival)
+		if got != c.want {
+			t.Errorf("seedDeadline(s %v, timeoutMs %d) = %v after arrival, want %v", c.s, c.timeoutMs, got, c.want)
+		}
+		if c.s > time.Duration(c.timeoutMs)*time.Millisecond && got >= c.s {
+			t.Errorf("seedDeadline(s %v, timeoutMs %d) = %v after arrival, want before the start of the seed", c.s, c.timeoutMs, got)
+		}
 	}
 }
 
