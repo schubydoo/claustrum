@@ -573,8 +573,9 @@ const (
 // After Git LFS downloads began, a downloaded file that the keep cannot put in
 // the store of the repository gives the text of a link (linkText) or of the
 // room (notKeptRoomStart). Both are measured on Linux. Downloads began when
-// the private store has an entry `incomplete` or a file that the keep left out
-// (storeUse.left, else downloadsLeftOut). That test is claustrum's own. The text of the room needs
+// the private store has an entry `incomplete` at the deadline. A file that the
+// keep left out (storeUse.left, else downloadsLeftOut) with no such entry keeps
+// timeout (4c111e86, measured on Linux and macOS). The text of the room needs
 // a file left out (claustrum's own). ok is false in every other case.
 func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, ok bool) {
 	if timeoutMs <= 0 || rule == nil || rule.store == nil || rule.store.path == "" {
@@ -592,8 +593,11 @@ func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, o
 		}
 		return text, true
 	}
-	if gitDir == "" {
+	if gitDir == "" || !incomplete {
 		return "", false
+	}
+	if link != "" {
+		return linkText(name, link, words), true
 	}
 	var left int
 	var size uint64
@@ -601,12 +605,6 @@ func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, o
 		left, size = s.left.n, s.left.size
 	} else {
 		left, size = downloadsLeftOut(s.path, filepath.Join(gitDir, "lfs"))
-	}
-	if !incomplete && left == 0 {
-		return "", false
-	}
-	if link != "" {
-		return linkText(name, link, words), true
 	}
 	if left > 0 && repoRoomShort(gitDir, size) {
 		return notKeptRoomStart + words + notKeptRoomEnd, true
