@@ -714,3 +714,122 @@ func TestCLITempRootTempDirWithATrailingSlash(t *testing.T) {
 		})
 	})
 }
+
+// linkAtName puts a link at the name of the folder name in x, to the folder under a
+// new name, as the rows of the cap do.
+func linkAtName(t *testing.T, x, name string) {
+	t.Helper()
+	f := filepath.Join(x, name)
+	if err := os.Rename(f, f+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(f+".old", f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A loss in the time that the child ran still counts after the give-back: the next
+// check finds it, and the next reply lists it (4c111e86, measured on macOS). The
+// flock goes at the give-back.
+func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, time.Second)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	linkAtName(t, x, a.Name)
+	rel[0]()
+	tempRoots.mu.Lock()
+	given := len(tempRoots.given)
+	tempRoots.mu.Unlock()
+	if given != 1 {
+		t.Fatalf("%d folders wait for the last check, want 1 (did a check come before the give-back?)", given)
+	}
+	f, err := os.Open(filepath.Join(x, a.Name+".old"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Errorf("flock after the give-back: %v, want none held", err)
+	}
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	waitFor(t, "loss line", afterCheck(func() bool { return strings.Contains(logs.String(), line) }))
+	tempRoots.mu.Lock()
+	given = len(tempRoots.given)
+	tempRoots.mu.Unlock()
+	if given != 0 {
+		t.Errorf("%d folders still wait after the check, want 0", given)
+	}
+	c := runTempRootBound(t, x, runDir, &rel, nil)
+	if c == nil || c.Name == a.Name || len(c.Gone) != 1 || c.Gone[0].Name != a.Name || c.Gone[0].Why != "changed" {
+		t.Errorf("the next answer %+v, want a new folder and the lost %s", c, a.Name)
+	}
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("%d loss lines, want 1", n)
+	}
+}
+
+// One check looks at all held folders together. The losses of folders held at other
+// times come at the same check, in the order of the hold, and the next reply lists
+// them in that order (4c111e86, measured on macOS: batches of 3 and 6). The order of
+// the hold is claustrum's own.
+func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 400*time.Millisecond)
+	logs := captureLogBuf(t)
+	var names, xs []string
+	var runDir0 string
+	for i := range 6 {
+		if i == 3 {
+			time.Sleep(200 * time.Millisecond) // half a check later
+		}
+		x, runDir := tempRootDir(t, true)
+		a := runTempRootBound(t, x, runDir, &rel, nil)
+		if a == nil || !tempRootNameRE.MatchString(a.Name) {
+			t.Fatalf("spawn %d: %+v, want a folder", i+1, a)
+		}
+		names, xs = append(names, a.Name), append(xs, x)
+		if i == 0 {
+			runDir0 = runDir
+		}
+	}
+	for i := range names {
+		linkAtName(t, xs[i], names[i])
+	}
+	line := func(n string) string {
+		return "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"
+	}
+	all := false
+	waitFor(t, "first loss line", afterCheck(func() bool {
+		s := logs.String()
+		if !strings.Contains(s, line(names[0])) {
+			return false
+		}
+		all = true
+		for _, n := range names {
+			all = all && strings.Contains(s, line(n))
+		}
+		return true
+	}))
+	if !all {
+		t.Fatalf("the check that found %s did not find all six\nlog:\n%s", names[0], logs.String())
+	}
+	var want []string
+	for _, n := range names {
+		want = append(want, line(n))
+	}
+	wantLinesInOrder(t, logs.String(), want...)
+	c := runTempRootBound(t, xs[0], runDir0, &rel, nil)
+	var got []string
+	if c != nil {
+		for _, g := range c.Gone {
+			got = append(got, g.Name)
+		}
+	}
+	if !slices.Equal(got, names) {
+		t.Errorf("lost list %v, want %v", got, names)
+	}
+}

@@ -107,10 +107,26 @@ func cleanTempRoots(t *testing.T, releases *[]func()) {
 		if live != 0 || held != 0 {
 			t.Errorf("after the test: live %d, held %d, want 0 and 0", live, held)
 		}
+		stopTempRootChecks()
 		tempRootsLost.mu.Lock()
 		tempRootsLost.list = nil
 		tempRootsLost.mu.Unlock()
 	})
+}
+
+// stopTempRootChecks stops the loop of the checks and closes the folders that wait
+// for their last check, so that the next test starts its own loop at its own pace.
+func stopTempRootChecks() {
+	tempRoots.mu.Lock()
+	defer tempRoots.mu.Unlock()
+	if tempRoots.checks != nil {
+		close(tempRoots.checks)
+		tempRoots.checks = nil
+	}
+	for _, h := range tempRoots.given {
+		_ = h.f.Close()
+	}
+	tempRoots.given = nil
 }
 
 // clearTempRootMakes forgets the makes of earlier tests, so that the make cap of a
