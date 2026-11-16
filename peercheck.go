@@ -40,10 +40,11 @@ const (
 
 // peerCheckUnavailableLine is the line of a daemon that starts with
 // CLAUDE_SSH_PEER_CHECK=1 and names no namespaces. The text is the one of
-// 5fd08069 on macOS and Windows, where it came directly before the listening
-// line. On Linux it is the line of a kernel with no own text (claustrum's own,
-// not measured).
-const peerCheckUnavailableLine = "[Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all"
+// 4c111e86 (measured on macOS and Windows). On macOS
+// and Windows 5fd08069 logged its line directly before the listening line. On
+// Linux it is the line of a kernel with no own text (claustrum's own, not
+// measured).
+const peerCheckUnavailableLine = "[Server] found no namespaces to compare: cannot tell callers in a sandbox from others, serving all"
 
 // peerRefusedMessage is the message of that frame (measured on Linux).
 const peerRefusedMessage = "Refused: this server could not confirm that the caller is in its own namespaces"
