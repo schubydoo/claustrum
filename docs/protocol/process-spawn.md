@@ -225,14 +225,14 @@ On Windows `cliTempRoot` and `cliTempRootEnd` change nothing, as on `b3081b51` (
 
 #### A lost folder (build `4c111e86`)
 
-On Linux and macOS, claustrum checks all its held folders by name together, every 2 s (claustrum's own). These rules are measured on Linux and macOS unless marked:
+On Linux and macOS, claustrum checks all its held folders by name together, every 2 s from the first make (on Linux claustrum's own). These rules are measured on Linux and macOS unless marked:
 
 - A link at the name, a folder of another account or a folder of mode 0777 counts as lost. The daemon logs `[process.Manager] Claude Code's private temp folder <name> counts as lost: <why>`. The why is `it is a link`, `it is another account's (uid <n>)` or `it is open to other accounts`.
 - A child whose spawn had `"cliTempRootEnd": true` gets SIGTERM, and the daemon logs `[process.Manager] Process <id> is being ended: its private temp folder is lost`. If it still runs 3 s later, it gets SIGKILL (measured on macOS).
 - The `exit` frame carries `"killedBy":"temp_root"`. A `process.kill` in the wait keeps it (measured on macOS).
 - An end after a `process.kill` that the child survived replaces `client` with `temp_root`. A child that ended on the SIGTERM of the kill keeps `client` (measured on macOS, on Linux claustrum's own).
 - Other children of the folder run on, and the daemon logs `[process.Manager] <n> process(es) run on in <name>, which may be another account's: their starts did not ask to be ended over it (cliTempRootEnd); end those sessions` (measured on macOS).
-- The losses that one check finds join the lost list together. A folder whose child ended after the loss still counts as lost at the next check (measured on macOS).
+- The losses that one check finds join the lost list together. A folder stays checked after its last child ended. A loss 5 s after that end still counts at the next check (measured on macOS).
 - The next spawn gets a new folder. Each later member lists the last 16 lost folders, oldest first. A 17th loss cuts the oldest, and none expired within 130 s. The why is `changed` for a link, `anothers` for another account's folder and `open` for mode 0777 (measured on macOS, on Linux claustrum's own):
 
 ```json
@@ -266,7 +266,7 @@ These count as lost too and end the child in the same way. They are measured on 
 - On Linux (on macOS claustrum's own) a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
 
 ??? note "claustrum's own rules of a lost folder"
-    These are not measured. The why `changed` for the other kinds of loss. Whole seconds, and an entry that never expires. A group or other write bit of the folder counts as open. A temp dir with an other write bit, in any mode, and no sticky bit counts as lost, and a group write bit alone ends nobody. A temp dir that group or others can write without the sticky bit, or that an account other than this one and root owns, gets no folder made anew. The order of the tests. A temp dir that was a link at the hold can stay a link. A folder with no owner read or search bit counts as mode 0. The text `<name>: ` before the lines of a gone temp dir and of mode 0. One line for a run of failed checks, and a gone temp dir and a folder of mode 0 count as failed checks. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began. A check takes the folders in the order of the hold (`4c111e86` varied it). Checks stop when none is held. A folder given back loses its `flock` and gets one last check, unless held again. That check logs only a loss.
+    These are not measured. The why `changed` for the other kinds of loss. Whole seconds, and an entry that never expires. A group or other write bit of the folder counts as open. A temp dir with an other write bit, in any mode, and no sticky bit counts as lost, and a group write bit alone ends nobody. A temp dir that group or others can write without the sticky bit, or that an account other than this one and root owns, gets no folder made anew. The order of the tests. A temp dir that was a link at the hold can stay a link. A folder with no owner read or search bit counts as mode 0. The text `<name>: ` before the lines of a gone temp dir and of mode 0. One line for a run of failed checks, and a gone temp dir and a folder of mode 0 count as failed checks. A lost folder is not checked again and not given again by this daemon. A spawn that binds its child after the loss ends it at once. No end starts after the shutdown began. A check takes the folders in the order of the hold (`4c111e86` varied it). A folder given back loses its `flock`, and its checks log only a loss. They end once it is lost, held again or its temp dir is gone.
 
 ### The managed launcher
 

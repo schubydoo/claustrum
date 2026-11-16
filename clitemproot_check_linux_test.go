@@ -728,19 +728,42 @@ func linkAtName(t *testing.T, x, name string) {
 	}
 }
 
-// fakeCheckTicks gives the checks a tick only when the test sends one, until the test
-// ends. So no check comes between two steps of the test.
-func fakeCheckTicks(t *testing.T) chan<- time.Time {
-	t.Helper()
-	stopTempRootChecks()
-	ticks := make(chan time.Time)
-	old := tempRootCheckTicks
-	tempRootCheckTicks = func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} }
-	t.Cleanup(func() { tempRootCheckTicks = old })
-	return ticks
+// checkTicks drives the loop of the checks by hand (fakeCheckTicks).
+type checkTicks struct {
+	ticks chan time.Time
+	done  chan struct{} // gets a value at the end of each check
 }
 
-// givenCount is the count of the folders that wait for their last check.
+// fakeCheckTicks gives the checks a tick only when the test sends one, until the test
+// ends. So no check comes between two steps of the test.
+func fakeCheckTicks(t *testing.T) checkTicks {
+	t.Helper()
+	stopTempRootChecks()
+	c := checkTicks{ticks: make(chan time.Time), done: make(chan struct{}, 1)}
+	oldTicks, oldAfter := tempRootCheckTicks, afterTempRootChecks
+	tempRootCheckTicks = func(time.Duration) (<-chan time.Time, func()) { return c.ticks, func() {} }
+	afterTempRootChecks = func() { c.done <- struct{}{} }
+	t.Cleanup(func() { tempRootCheckTicks, afterTempRootChecks = oldTicks, oldAfter })
+	return c
+}
+
+// check runs one check and waits for its end. With no loop of the checks it fails the
+// test.
+func (c checkTicks) check(t *testing.T) {
+	t.Helper()
+	select {
+	case c.ticks <- time.Now():
+	case <-time.After(5 * time.Second):
+		t.Fatal("no loop of the checks runs")
+	}
+	select {
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check did not end within 5 s")
+	}
+}
+
+// givenCount is the count of the given-back folders that are still checked.
 func givenCount() int {
 	tempRoots.mu.Lock()
 	defer tempRoots.mu.Unlock()
@@ -749,7 +772,7 @@ func givenCount() int {
 
 // A loss in the time that the child ran still counts after the give-back: the next
 // check finds it, and the next reply lists it (4c111e86, measured on macOS). The
-// flock goes at the give-back.
+// flock goes at the give-back (claustrum's own).
 func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -760,7 +783,7 @@ func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 	linkAtName(t, x, a.Name)
 	rel[0]()
 	if n := givenCount(); n != 1 {
-		t.Fatalf("%d folders wait for the last check, want 1", n)
+		t.Fatalf("%d given-back folders are checked, want 1", n)
 	}
 	f, err := os.Open(filepath.Join(x, a.Name+".old"))
 	if err != nil {
@@ -770,11 +793,13 @@ func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		t.Errorf("flock after the give-back: %v, want none held", err)
 	}
-	ticks <- time.Now()
-	waitFor(t, "the last check", func() bool { return givenCount() == 0 })
+	ticks.check(t)
 	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
 	if n := strings.Count(logs.String(), line); n != 1 {
 		t.Errorf("%d loss lines, want 1\nlog:\n%s", n, logs.String())
+	}
+	if n := givenCount(); n != 0 {
+		t.Errorf("%d given-back folders are still checked after the loss, want 0", n)
 	}
 	c := runTempRootBound(t, x, runDir, &rel, nil)
 	if c == nil || c.Name == a.Name || len(c.Gone) != 1 || c.Gone[0].Name != a.Name || c.Gone[0].Why != "changed" {
@@ -782,10 +807,55 @@ func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 	}
 }
 
-// The last check of a folder that was given back writes nothing: a missing folder is
-// not made anew, an own folder at the name is not held instead, and a missing t is not
-// made again (claustrum's own, not measured).
-func TestCLITempRootLastCheckWritesNothing(t *testing.T) {
+// A given-back folder stays checked: a loss after several checks still counts
+// (4c111e86, measured on macOS: a loss 5 s after the end of the child).
+func TestCLITempRootGivenBackFolderStaysChecked(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	for range 3 {
+		ticks.check(t)
+	}
+	if n := givenCount(); n != 1 || strings.Contains(logs.String(), "private temp folder "+a.Name) {
+		t.Fatalf("after three checks %d given-back folders and log %q, want 1 and no line", n, logs.String())
+	}
+	linkAtName(t, x, a.Name)
+	ticks.check(t)
+	if line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"; !strings.Contains(logs.String(), line) {
+		t.Errorf("log %q, want %q", logs.String(), line)
+	}
+	if c := runTempRootBound(t, x, runDir, &rel, nil); c == nil || len(c.Gone) != 1 || c.Gone[0].Name != a.Name {
+		t.Errorf("the next answer %+v, want the lost %s", c, a.Name)
+	}
+}
+
+// A gone temp dir ends the checks of a given-back folder, with no line (claustrum's
+// own, not measured).
+func TestCLITempRootGivenBackFolderOfAGoneTempDir(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	if err := os.Rename(x, x+".away"); err != nil {
+		t.Fatal(err)
+	}
+	ticks.check(t)
+	if n := givenCount(); n != 0 || strings.Contains(logs.String(), "private temp folder "+a.Name) {
+		t.Errorf("%d given-back folders and log %q, want 0 and no line", n, logs.String())
+	}
+}
+
+// The checks of a given-back folder write nothing: a missing folder is not made anew,
+// an own folder at the name is not held instead, and a missing t is not made again
+// (claustrum's own, not measured).
+func TestCLITempRootGivenBackCheckWritesNothing(t *testing.T) {
 	cases := []struct {
 		name   string
 		change func(t *testing.T, f string)
@@ -848,8 +918,7 @@ func TestCLITempRootLastCheckWritesNothing(t *testing.T) {
 			rel[0]()
 			f := filepath.Join(x, a.Name)
 			c.change(t, f)
-			ticks <- time.Now()
-			waitFor(t, "the last check", func() bool { return givenCount() == 0 })
+			ticks.check(t)
 			c.want(t, f)
 			if strings.Contains(logs.String(), "private temp folder "+a.Name) {
 				t.Errorf("log %q, want no line of %s", logs.String(), a.Name)
@@ -860,8 +929,8 @@ func TestCLITempRootLastCheckWritesNothing(t *testing.T) {
 
 // One check looks at all held folders together. The losses of folders held at other
 // times come at the same check, in the order of the hold, and the next reply lists
-// them in that order (4c111e86, measured on macOS: batches of 3). The order of
-// the hold is claustrum's own.
+// them in that order (4c111e86, measured on macOS: batches of 3). The order of the hold
+// is claustrum's own.
 func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -883,7 +952,7 @@ func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
 	for i := range names {
 		linkAtName(t, xs[i], names[i])
 	}
-	ticks <- time.Now()
+	ticks.check(t)
 	line := func(n string) string {
 		return "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"
 	}
