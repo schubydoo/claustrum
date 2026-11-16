@@ -105,15 +105,19 @@ func TestFailedCheckoutAfterStopSendsNoSecondKill(t *testing.T) {
 // for 20 s. The group kill ends the child, so the reply comes before the drain
 // of gitDrainWait (4c111e86 ends such a child, measured on Linux).
 func TestWorktreeCreateFailedCheckoutEndsGroupMember(t *testing.T) {
-	stubLingeringGit(t, false, "20")
+	// The cost of the create with a child that holds nothing is the baseline, so a
+	// slow runner's helper starts do not count against the drain bound.
+	stubLingeringGit(t, false, "0")
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT0", "fail")
+	_, base := runLingeringCreate(t, t.TempDir(), 0)
+	t.Setenv("CLAUSTRUM_GITSTUB_ORPHAN", "20")
 	endHeldDescendant(t)
 	raw, elapsed := runLingeringCreate(t, t.TempDir(), 0)
 	if !strings.Contains(raw, failedFilterReply) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 		t.Fatalf("reply = %s, want the failure of git with worktree_add_failed", raw)
 	}
-	if elapsed >= gitDrainWait {
-		t.Errorf("reply after %s, want under %s: the child of git still held stdout", elapsed, gitDrainWait)
+	if limit := base + gitDrainWait/2; elapsed >= limit {
+		t.Errorf("reply after %s, want under %s (baseline %s plus half of %s): the child of git still held stdout", elapsed, limit, base, gitDrainWait)
 	}
 	b, err := os.ReadFile(os.Getenv("CLAUSTRUM_GITSTUB_HOLDPID"))
 	if err != nil {
