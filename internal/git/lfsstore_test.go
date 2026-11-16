@@ -314,14 +314,14 @@ func TestLFSStoreRemoveHomeGuard(t *testing.T) {
 	defer func() { _ = root.Close() }()
 	t.Setenv("HOME", filepath.Join(dir, name))
 	t.Setenv("USERPROFILE", filepath.Join(dir, name))
-	removeLFSStoreEntry(root, dir, name)
+	_ = removeLFSStoreEntry(root, dir, name)
 	if len(removed) != 0 {
 		t.Errorf("removed %q, want no remove of the home folder", removed)
 	}
 	other := t.TempDir()
 	t.Setenv("HOME", other)
 	t.Setenv("USERPROFILE", other)
-	removeLFSStoreEntry(root, dir, name)
+	_ = removeLFSStoreEntry(root, dir, name)
 	if !slices.Equal(removed, []string{name}) {
 		t.Errorf("removed %q, want %q", removed, name)
 	}
