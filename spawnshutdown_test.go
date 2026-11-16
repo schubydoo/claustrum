@@ -42,7 +42,10 @@ func newTeardownServer(t *testing.T) (*server, string, string) {
 	s.procs.RunDir = supervisor.ExecChildRunDir(sock)
 	s.procs.HoldRunDir()
 	s.procs.InstanceID = s.instanceID
+	var served sync.WaitGroup
+	acceptDone := make(chan struct{})
 	go func() {
+		defer close(acceptDone)
 		for {
 			nc, err := ln.Accept()
 			if err != nil {
@@ -53,11 +56,16 @@ func newTeardownServer(t *testing.T) (*server, string, string) {
 			s.mu.Lock()
 			s.conns[c] = struct{}{}
 			s.mu.Unlock()
-			go s.serveConn(c)
+			served.Add(1)
+			go func() {
+				defer served.Done()
+				s.serveConn(c)
+			}()
 		}
 	}()
 	t.Cleanup(func() {
 		_ = ln.Close()
+		waitServedConns(t, s, acceptDone, &served)
 		s.procs.KillAll()
 	})
 	return s, sock, runDir

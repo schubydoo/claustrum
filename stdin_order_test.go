@@ -153,7 +153,7 @@ func TestStdinTicketDoesNotSpanTheResponseWrite(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
 
-	go s.serveConn(conn.New(server, nil, 0, nil, nil, nil))
+	serveConnForTest(t, s, conn.New(server, nil, 0, nil, nil, nil))
 
 	// Nobody ever reads `client`, so every response write blocks.
 	const id = "nowrite"

@@ -99,7 +99,9 @@ func TestCLITempRootLinkAtTheNameIsLost(t *testing.T) {
 	if err := os.Symlink(f+".old", f); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "end", func() bool { return ends.Load() == 1 })
+	// The check ends the spawn before it logs the run-on line, so the test waits for
+	// the end of that check.
+	waitFor(t, "end", afterCheck(func() bool { return ends.Load() == 1 }))
 	wantLinesInOrder(t, logs.String(),
 		"[process.Manager] Claude Code's private temp folder "+a.Name+" counts as lost: it is a link",
 		"[process.Manager] 1 process(es) run on in "+a.Name+", which may be another account's: their starts did not ask to be ended over it (cliTempRootEnd); end those sessions")
