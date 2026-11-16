@@ -1101,11 +1101,11 @@ func TestSeedObjectsStopsAtDeadline(t *testing.T) {
 	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	seedObjects(ctx, store, private, []pointerRef{{oid: oid, size: 12}})
+	_, _, _ = seedObjects(ctx, store, private, []pointerRef{{oid: oid, size: 12}})
 	if p := storeObjectPath(private, oid); exists(p) {
 		t.Errorf("%s exists, want no seed after the deadline", p)
 	}
-	seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
+	_, _, _ = seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
 	if p := storeObjectPath(private, oid); !exists(p) {
 		t.Errorf("%s is missing, want the seed with no deadline", p)
 	}
@@ -1198,7 +1198,7 @@ func TestSeedSpareMakesNoFile(t *testing.T) {
 	store, private := filepath.Join(t.TempDir(), "lfs"), filepath.Join(t.TempDir(), "lfs")
 	oid := strings.Repeat("a", 64)
 	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
-	if short, _ := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}}); !short {
+	if short, _, _ := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}}); !short {
 		t.Error("seedObjects = false, want a copy left out")
 	}
 	if names, _ := os.ReadDir(filepath.Dir(storeObjectPath(private, oid))); len(names) != 0 {
@@ -1410,7 +1410,7 @@ func TestSeedChecksObjectWithSecondLink(t *testing.T) {
 			newObjectHash = func() hash.Hash { reads++; return prev() }
 			t.Cleanup(func() { newObjectHash = prev })
 			private := filepath.Join(t.TempDir(), "lfs")
-			seedObjects(context.Background(), store, private, []pointerRef{{oid: tc.oid, size: int64(len(right))}})
+			_, _, _ = seedObjects(context.Background(), store, private, []pointerRef{{oid: tc.oid, size: int64(len(right))}})
 			_, err := os.Lstat(storeObjectPath(private, tc.oid))
 			if reads != tc.reads || (err == nil) != tc.wantSeeded {
 				t.Errorf("hash reads %d, seeded %v (%v), want %d reads, seeded %v", reads, err == nil, err, tc.reads, tc.wantSeeded)
@@ -1438,7 +1438,7 @@ func TestSeedLeavesOutLargeObjectBelowTheBound(t *testing.T) {
 	seedCopy = func(io.Writer, io.Reader) (int64, error) { copies++; return 0, os.ErrInvalid }
 	storeFreeBytes = func(string) (uint64, bool) { return uint64(size + size/10 - mib), true }
 	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
-	short, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: size}})
+	short, _, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: size}})
 	if !short || copies != 0 {
 		t.Errorf("11 GiB object 1 MiB below the bound: short %v, %d copies, want short and no copy", short, copies)
 	}
@@ -1462,7 +1462,7 @@ func TestSeedCountsTheReadOfALinkedObject(t *testing.T) {
 	newObjectHash = func() hash.Hash { return slowHash{prev()} }
 	t.Cleanup(func() { newObjectHash = prev })
 	private := filepath.Join(t.TempDir(), "lfs")
-	_, copied := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: int64(len(body))}})
+	_, copied, _ := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: int64(len(body))}})
 	fi, err := os.Stat(storeObjectPath(private, oid))
 	if err != nil || hardLinks(fi) < 3 {
 		t.Fatalf("the seeded object = %v, %v, want a hard link", fi, err)
@@ -1540,6 +1540,106 @@ func TestCopySeedRemovesTheFileOfAStoppedCopy(t *testing.T) {
 	}
 }
 
+// TestCopySeedReportsAFileItCannotRemove: a stopped copy in a folder of mode
+// 0555 cannot remove its file. copySeed reports that remove (4c111e86,
+// measured on Linux). A folder at the name (measured on Linux) and a gone file
+// report nothing.
+func TestCopySeedReportsAFileItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root removes a file in a folder of mode 0555")
+	}
+	for _, row := range []struct {
+		name   string
+		swap   func(t *testing.T, dst string)
+		report bool
+	}{
+		{"read-only folder", func(t *testing.T, dst string) {
+			if err := os.Chmod(filepath.Dir(dst), 0o555); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(filepath.Dir(dst), 0o700) })
+		}, true},
+		{"folder at the name", func(t *testing.T, dst string) {
+			if err := os.Remove(dst); err != nil {
+				t.Fatal(err)
+			}
+			mkdirAll(t, dst)
+		}, false},
+		{"gone file", func(t *testing.T, dst string) {
+			if err := os.Remove(dst); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			src, dst := copySeedCase(t)
+			prev := seedCopy
+			seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+				n, _ := io.CopyN(w, r, 3)
+				row.swap(t, dst)
+				return n, context.DeadlineExceeded
+			}
+			t.Cleanup(func() { seedCopy = prev })
+			err := copySeed(context.Background(), src, dst)
+			var left seedNotRemoved
+			if got := errors.As(err, &left); got != row.report {
+				t.Fatalf("copySeed = %v, a failed remove %v, want %v", err, got, row.report)
+			}
+			if row.report && err.Error() != "remove "+dst+": permission denied" {
+				t.Errorf("copySeed = %q, want the remove of %s", err, dst)
+			}
+		})
+	}
+}
+
+// TestLFSSeedFileNotRemovedFailsTheCreate: a copy of the seed that stops and
+// cannot remove its file fails the create with worktree_add_failed and logs
+// the remove (4c111e86, measured on Linux). No read-tree call runs (claustrum's
+// own, not measured). The rollback runs. The remove is the seam, so nothing
+// goes.
+func TestLFSSeedFileNotRemovedFailsTheCreate(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.local(t, "a.bin", "alpha-object")
+	oid := f.oids["a.bin"]
+	prevLink, prevCopy, prevRemove := seedLink, seedCopy, removeLFSStoreFile
+	seedLink = func(string, string) error { return os.ErrPermission }
+	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		n, _ := io.CopyN(w, r, 3)
+		return n, context.DeadlineExceeded
+	}
+	removeLFSStoreFile = func(root *os.Root, name string) error {
+		if name == oid {
+			return unix.EACCES
+		}
+		return prevRemove(root, name)
+	}
+	t.Cleanup(func() { seedLink, seedCopy, removeLFSStoreFile = prevLink, prevCopy, prevRemove })
+	raw, _ := f.create(t, map[string]any{"timeoutMs": 5000})
+	const start = "WARN  [GitHandler] git.worktree_create: a file the helper put in the checkout's private Git LFS folder" +
+		" was replaced or damaged and could not be removed: remove "
+	var path string
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if p, ok := strings.CutPrefix(line, start); ok && strings.HasSuffix(p, "/"+oid+": permission denied") {
+			path = strings.TrimSuffix(p, ": permission denied")
+		}
+	}
+	folder, _, ok := strings.Cut(path, string(filepath.Separator)+checkoutDirPrefix)
+	if !ok || !strings.Contains(folder, string(filepath.Separator)+"git-shadow"+string(filepath.Separator)) {
+		t.Fatalf("no log line of the remove of the object in a folder of git-shadow:\n%s", buf.String())
+	}
+	want := "git worktree add failed (checkout): Claude could not prepare a private Git LFS folder under " + folder +
+		" on the remote machine (a file Claude put there was replaced or damaged and could not be removed). Try again;" +
+		" if it keeps failing, check that folder and its disk."
+	if !strings.Contains(raw, `"error":`+jsonQuoted(t, want)+`,"errorCode":"worktree_add_failed"`) {
+		t.Errorf("git.worktree_create = %s\nwant the text %q", raw, want)
+	}
+	if b, _ := os.ReadFile(f.log); len(b) != 0 {
+		t.Errorf("smudge lines = %q, want no read-tree call", b)
+	}
+	f.wantGone(t)
+}
+
 // TestSeedFailedCopyOnAFullDiskReportsTheSpace: after a failed copy of the seed
 // the free space is read again. Below the spare the seed reports the copy as
 // left out, so the reply gets the note of the space (4c111e86, measured on
@@ -1569,7 +1669,7 @@ func TestSeedFailedCopyOnAFullDiskReportsTheSpace(t *testing.T) {
 				return tc.after, true
 			}
 			t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
-			short, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: 12}})
+			short, _, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), []pointerRef{{oid: oid, size: 12}})
 			if short != tc.wantShort || reads != 2 {
 				t.Errorf("short %v after %d reads of the free space, want %v after 2", short, reads, tc.wantShort)
 			}
@@ -1592,7 +1692,7 @@ func TestSeedCopyTime(t *testing.T) {
 	oid := hex.EncodeToString(sum[:])
 	mustWrite(t, storeObjectPath(store, oid), "alpha-object")
 	ps := []pointerRef{{oid: oid, size: 12}}
-	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied != 0 {
+	if _, copied, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied != 0 {
 		t.Errorf("seed by a hard link counts %v, want 0", copied)
 	}
 	prevLink, prevCopy, prevFree := seedLink, seedCopy, storeFreeBytes
@@ -1603,7 +1703,7 @@ func TestSeedCopyTime(t *testing.T) {
 	}
 	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
 	t.Cleanup(func() { seedLink, seedCopy, storeFreeBytes = prevLink, prevCopy, prevFree })
-	if _, copied := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied < 30*time.Millisecond {
+	if _, copied, _ := seedObjects(context.Background(), store, filepath.Join(t.TempDir(), "lfs"), ps); copied < 30*time.Millisecond {
 		t.Errorf("seed by a copy of 30 ms counts %v, want at least 30 ms", copied)
 	}
 }
@@ -1622,7 +1722,7 @@ func TestSeedCopyTimeHoldsHash(t *testing.T) {
 	storeFreeBytes = func(string) (uint64, bool) { return 1 << 40, true }
 	t.Cleanup(func() { seedLink, seedHash, storeFreeBytes = prevLink, prevHash, prevFree })
 	private := filepath.Join(t.TempDir(), "lfs")
-	_, copied := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
+	_, copied, _ := seedObjects(context.Background(), store, private, []pointerRef{{oid: oid, size: 12}})
 	if hashed != 12 || copied < 30*time.Millisecond {
 		t.Errorf("seed by a copy with a hash of 30 ms: %d bytes hashed, %v counted, want 12 bytes and at least 30 ms", hashed, copied)
 	}
@@ -1716,7 +1816,7 @@ func TestSeedEndsAtTheFirstObjectLeftOut(t *testing.T) {
 	mustWrite(t, storeObjectPath(store, first), "alpha-object")
 	mustWrite(t, storeObjectPath(store, second), "beta-object")
 	ps := []pointerRef{{oid: first, size: 12}, {oid: second, size: 11}}
-	if short, _ := seedObjects(context.Background(), store, private, ps); !short {
+	if short, _, _ := seedObjects(context.Background(), store, private, ps); !short {
 		t.Error("seedObjects = false, want a copy left out")
 	}
 	if fi, err := os.Stat(filepath.Dir(storeObjectPath(private, first))); err != nil || !fi.IsDir() {

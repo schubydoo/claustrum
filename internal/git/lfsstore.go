@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -87,13 +89,13 @@ var (
 
 // privateStore is the private LFS store of one checkout. path is <P>/lfs, or
 // "" for the store of the git directory. seed runs the seed into path and
-// reports a copy that it left out for the space and the time of its copies.
-// runDir is the folder of the socket. tickWait, when set, gets the time of the
+// reports a copy that it left out for the space, the time of its copies and a
+// failed remove (seedObjects). runDir is the folder of the socket. tickWait, when set, gets the time of the
 // wait for the end of the keepTicker of the checkout.
 type privateStore struct {
 	path     string
 	runDir   string
-	seed     func() (short bool, copied time.Duration)
+	seed     func() (short bool, copied time.Duration, damaged error)
 	tickWait *time.Duration
 }
 
@@ -460,14 +462,15 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 // too, with no temp, and short reports it. The seed then ends. A free space that cannot be read
 // does not stop a copy (claustrum's own, not measured). At the deadline of ctx
 // the seed stops, and the objects that it did not reach stay out. copied is
-// the time of its copies.
-func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private string) (short bool, copied time.Duration) {
+// the time of its copies. damaged is the failed remove of a copy that stopped
+// (seedObjects).
+func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private string) (short bool, copied time.Duration, damaged error) {
 	if ctx.Err() != nil {
-		return false, 0
+		return false, 0, nil
 	}
 	store := filepath.Join(gitDir, "lfs")
 	if fi, err := os.Stat(filepath.Join(store, "objects")); err != nil || !fi.IsDir() {
-		return false, 0
+		return false, 0, nil
 	}
 	return seedObjects(ctx, store, private, commitPointers(ctx, u, dir, rev))
 }
@@ -490,11 +493,15 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 // of its object. On 4c111e86 the second of two objects then got no shard
 // folder (measured on macOS). Linux, a later object that a hard link can
 // seed and a later copy that fits are claustrum's own, not measured.
-func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
+//
+// A copy whose file the remove left behind ends the seed, and damaged is that
+// remove (seedNotRemoved). The create then fails before the read-tree call
+// (seedDamagedText).
+func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration, damaged error) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
 		if ctx.Err() != nil {
-			return short, copied
+			return short, copied, nil
 		}
 		src := storeObjectPath(store, p.oid)
 		fi, err := os.Lstat(src)
@@ -516,17 +523,21 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 		shard := filepath.Dir(src)
 		if viaLink || pathIsLink(shard) || pathIsLink(filepath.Dir(shard)) || seedLink(src, dst) != nil {
 			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < seedNeeds(p.size) {
-				return true, copied
+				return true, copied, nil
 			}
 			start := time.Now()
 			err := copySeed(ctx, src, dst)
 			copied += time.Since(start)
+			var left seedNotRemoved
+			if errors.As(err, &left) {
+				return short, copied, left.err
+			}
 			if err != nil && seedRoomLow(filepath.Dir(dst), p.size) {
 				short = true
 			}
 		}
 	}
-	return short, copied
+	return short, copied, nil
 }
 
 // seedNeeds is the free space that a copy of the seed of an object of size
@@ -791,6 +802,11 @@ const (
 // The copy computes the sha256 of the bytes in the same pass, so its time is
 // near the seed time of 4c111e86 in the rows (notKeptText).
 // Claustrum's own, not measured: the result is not used.
+//
+// A remove that fails gives a seedNotRemoved error. On 4c111e86 a shard folder
+// of mode 0555 failed it with EACCES (measured on Linux). A gone file and a
+// folder at the name count as removed. A folder there kept the answer of a
+// stopped copy (measured on Linux). macOS is not measured.
 func copySeed(ctx context.Context, src, dst string) error {
 	in, err := openObjectNoFollow(src)
 	if err != nil {
@@ -813,10 +829,30 @@ func copySeed(ctx context.Context, src, dst string) error {
 	}
 	if err != nil {
 		// name is the file that this call just made, not a name from a read.
-		removeLFSStoreEntry(dir, filepath.Dir(dst), name)
+		rerr := removeLFSStoreEntry(dir, filepath.Dir(dst), name)
+		if rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+			if fi, lerr := dir.Lstat(name); lerr != nil || !fi.IsDir() {
+				return seedNotRemoved{&os.PathError{Op: "remove", Path: dst, Err: rerr}}
+			}
+		}
 	}
 	return err
 }
+
+// seedDamagedText is the text after "git worktree add failed (checkout): "
+// when a remove of the seed failed (seedNotRemoved). folder is the folder of
+// the daemon, <socket folder>/git-shadow/<name> (4c111e86, measured on Linux).
+func seedDamagedText(folder string) string {
+	return "Claude could not prepare a private Git LFS folder under " + folder + " on the remote machine" +
+		" (a file Claude put there was replaced or damaged and could not be removed). Try again; if it keeps failing," +
+		" check that folder and its disk."
+}
+
+// seedNotRemoved is the failed remove of the file of a copy of the seed that
+// stopped (copySeed).
+type seedNotRemoved struct{ err *os.PathError }
+
+func (e seedNotRemoved) Error() string { return e.err.Error() }
 
 // ctxReader is r that fails each read after the end of ctx.
 type ctxReader struct {
@@ -1094,7 +1130,7 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 		swapInKept(shard, private, oid, temp)
 	}
 	// temp is the name that the keep built above, not a name from a read.
-	removeLFSStoreEntry(shard, shardPath, temp)
+	_ = removeLFSStoreEntry(shard, shardPath, temp)
 	if err == nil && form == keepAfterGood {
 		sweepShardTemps(shard, shardPath, oid, now)
 	}
@@ -1197,7 +1233,7 @@ func copyIntoRoot(ctx context.Context, root *os.Root, rootPath, src, name string
 	}
 	if err != nil {
 		// name is the temp name that the keep built, not a name from a read.
-		removeLFSStoreEntry(root, rootPath, name)
+		_ = removeLFSStoreEntry(root, rootPath, name)
 		return false
 	}
 	return true
@@ -1231,7 +1267,7 @@ func sweepShardTemps(shard *os.Root, shardPath, oid string, now time.Time) {
 		if m[1] != oid && now.Sub(fi.ModTime()) <= staleTempAge {
 			continue
 		}
-		removeLFSStoreEntry(shard, shardPath, e.Name())
+		_ = removeLFSStoreEntry(shard, shardPath, e.Name())
 	}
 }
 
@@ -1242,10 +1278,11 @@ var removeLFSStoreFile = removeFileAt
 
 // removeLFSStoreEntry removes name from the shard folder shard, at
 // shardPath, or from the folder of a copy of the seed. homeguard.WipesHomeDir on the full path comes first, as for each
-// delete in the folder git-shadow (removeEntry).
-func removeLFSStoreEntry(shard *os.Root, shardPath, name string) {
+// delete in the folder git-shadow (removeEntry). The error is that of the
+// remove, or nil when the guard refused it.
+func removeLFSStoreEntry(shard *os.Root, shardPath, name string) error {
 	if homeguard.WipesHomeDir(filepath.Join(shardPath, name)) {
-		return
+		return nil
 	}
-	_ = removeLFSStoreFile(shard, name)
+	return removeLFSStoreFile(shard, name)
 }

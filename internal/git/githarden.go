@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -699,7 +700,16 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 				// The stop of a download that leaves under a tenth of the free
 				// space at the start (lfsroom.go).
 				room = newLFSRoomWatch(filepath.Dir(lfs.path), lfs.path)
-				short, copied := lfs.seed()
+				short, copied, damaged := lfs.seed()
+				if damaged != nil {
+					// The remove of a copy of the seed that stopped failed
+					// (seedObjects). 4c111e86 logs it and answers seedDamagedText
+					// (measured on Linux). Claustrum's own, not measured: no
+					// read-tree call runs.
+					logging.Warnf("[GitHandler] git.worktree_create: a file the helper put in the checkout's private Git LFS folder"+
+						" was replaced or damaged and could not be removed: %v", damaged)
+					return "", false, checkoutRefusal(seedDamagedText(u.folder))
+				}
 				if rule != nil {
 					rule.store = &storeUse{runDir: lfs.runDir, path: lfs.path, short: short, copied: copied}
 				}
@@ -1153,7 +1163,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	var tickWait time.Duration
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path, lfs.runDir = filepath.Join(idxDir, "lfs"), u.host.runDir
-		lfs.seed = func() (bool, time.Duration) {
+		lfs.seed = func() (bool, time.Duration, error) {
 			seedCtx, cancel := seedContext(ctx, timeoutMs, arrival)
 			defer cancel()
 			return fillCheckoutStore(seedCtx, u, repo, u.gitDir, rev, lfs.path)
