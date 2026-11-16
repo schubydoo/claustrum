@@ -286,7 +286,7 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
 - **Git time limits** (`internal/git/gitstop.go`) are always on and are no divergence
   ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)).
 - **The `timeoutMs` stop of the read-tree call** (`internal/git/githarden.go`, `cmd.Cancel`). Never widen: it sends its
-  group `SIGKILL` only before the reap of git (`sysproc.LeaderGate`). The kill after a drain overrun is not covered: it comes after the reap.
+  group `SIGKILL` only before the reap of git (`sysproc.LeaderGate`). The kill after a drain overrun comes before the reap too (`runCheckoutPipes`). A wait with no exit status sends no overrun kill (claustrum's own).
 - **The bound stops of `-install` and `-probe-cli`** (`internal/install/groupstop.go`, `runCLIVersion`). Never widen: each
   sends its group `SIGKILL` only before the reap of its run (`sysproc.LeaderGate`).
 

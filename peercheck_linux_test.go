@@ -430,7 +430,7 @@ func TestPeerLookupStepErrors(t *testing.T) {
 	cases := []struct {
 		name           string
 		cookie, cred   error
-		pidfd          error
+		pidfd, poll    error
 		link           map[string]error
 		names          []string
 		namesErr       error
@@ -449,6 +449,10 @@ func TestPeerLookupStepErrors(t *testing.T) {
 		{name: "caller EACCES", link: map[string]error{callerLink: syscall.EACCES}, reason: "unreadable", detail: "readlink " + callerLink + ": permission denied"},
 		{name: "caller gone, user listed", link: map[string]error{callerLink: syscall.ENOENT}, names: []string{"net", "user"}, reason: "out_of_resources", detail: callerDir + ` lists "user", which cannot be read: ` + enomem},
 		{name: "caller gone, no user listed", link: map[string]error{callerLink: syscall.ENOENT}, names: []string{"net"}, reason: "out_of_resources", detail: callerDir + " shows no user namespace, on a system that has them: " + enomem},
+		{name: "poll ENOMEM", poll: syscall.ENOMEM, reason: "out_of_resources", detail: fmt.Sprintf("poll caller %d: %s", pid, enomem)},
+		{name: "poll ENFILE", poll: syscall.ENFILE, reason: "out_of_resources", detail: fmt.Sprintf("poll caller %d: %s", pid, enfile)},
+		{name: "poll EBADF", poll: syscall.EBADF, reason: "lookup_failed", detail: fmt.Sprintf("poll caller %d: bad file descriptor", pid)},
+		{name: "poll EFAULT", poll: syscall.EFAULT, reason: "lookup_failed", detail: fmt.Sprintf("poll caller %d: bad address", pid)},
 		{name: "caller exited", link: map[string]error{callerLink: syscall.ENOENT}, namesErr: &os.PathError{Op: "open", Path: callerDir, Err: syscall.ENOENT}, reason: "lookup_failed", detail: "readlink " + callerLink + ": " + syscall.ENOENT.Error(), exited: true},
 	}
 	sock := filepath.Join(shortTempDir(t), "p.sock")
@@ -467,9 +471,9 @@ func TestPeerLookupStepErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = nc.Close() })
-	oldLink, oldNames, oldCookie, oldCred, oldPidfd := peerReadlink, peerNSNames, peerCookieOf, peerCredOf, peerPidfdOf
+	oldLink, oldNames, oldCookie, oldCred, oldPidfd, oldPoll := peerReadlink, peerNSNames, peerCookieOf, peerCredOf, peerPidfdOf, peerPoll
 	t.Cleanup(func() {
-		peerReadlink, peerNSNames, peerCookieOf, peerCredOf, peerPidfdOf = oldLink, oldNames, oldCookie, oldCred, oldPidfd
+		peerReadlink, peerNSNames, peerCookieOf, peerCredOf, peerPidfdOf, peerPoll = oldLink, oldNames, oldCookie, oldCred, oldPidfd, oldPoll
 	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -506,12 +510,63 @@ func TestPeerLookupStepErrors(t *testing.T) {
 				}
 				return oldPidfd(fd)
 			}
+			peerPoll = func(fds []unix.PollFd, timeout int) (int, error) {
+				if tc.poll != nil {
+					return 0, tc.poll
+				}
+				return oldPoll(fds, timeout)
+			}
 			peer, exited, lookErr := lookupPeer(nc, own)
 			reason, detail := judgePeer(own, peer, lookErr)
 			if reason != tc.reason || detail != tc.detail || exited != tc.exited {
 				t.Errorf("lookup = (%q, %q, exited %v), want (%q, %q, exited %v)", reason, detail, exited, tc.reason, tc.detail, tc.exited)
 			}
 		})
+	}
+}
+
+// TestPeerLookupPollRetriesEINTR: a poll of the pidfd that gets EINTR runs again,
+// and the caller is served after it. 4c111e86 serves the caller after one or two
+// EINTR (measured on Linux). 50 in a row is claustrum's own, not measured.
+func TestPeerLookupPollRetriesEINTR(t *testing.T) {
+	own, err := daemonNSText()
+	if err != nil || !own.pidfd {
+		t.Skipf("this kernel gives no pidfd part (own text %q, %v)", own.String(), err)
+	}
+	sock := filepath.Join(shortTempDir(t), "p.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	cli, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	nc, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = nc.Close() })
+	old := peerPoll
+	t.Cleanup(func() { peerPoll = old })
+	for _, eintr := range []int{1, 2, 50} {
+		calls := 0
+		peerPoll = func(fds []unix.PollFd, timeout int) (int, error) {
+			calls++
+			if calls <= eintr {
+				return 0, syscall.EINTR
+			}
+			return old(fds, timeout)
+		}
+		peer, exited, lookErr := lookupPeer(nc, own)
+		if lookErr != nil || exited || !peer.pidfd || calls != eintr+1 {
+			t.Errorf("%d EINTR: lookup = (%q, exited %v, %v) after %d polls, want served after %d", eintr, peer.String(), exited, lookErr, calls, eintr+1)
+		}
+		if reason, _ := judgePeer(own, peer, lookErr); reason != "" {
+			t.Errorf("%d EINTR: reason %q, want the caller served", eintr, reason)
+		}
 	}
 }
 

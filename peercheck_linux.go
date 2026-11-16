@@ -133,6 +133,10 @@ var peerPidfdOf = func(fd int) (int, error) {
 	return unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_PEERPIDFD)
 }
 
+// peerPoll is the poll of the pidfd of a caller. A test replaces it to give the
+// poll an errno.
+var peerPoll = unix.Poll
+
 // The texts of a failed SO_NETNS_COOKIE or SO_PEERCRED read are the bare errno
 // text, as on 4c111e86 (measured on Linux for ENFILE and ENOMEM).
 func lookupPeerFD(fd int, own nsText) (peer nsText, exited bool, err error) {
@@ -178,10 +182,16 @@ func lookupPeerFD(fd int, own nsText) (peer nsText, exited bool, err error) {
 		}
 	}
 	if pfd >= 0 {
+		// A poll that gets EINTR runs again, with no limit. A failed poll names the
+		// caller by its pid (4c111e86, measured on Linux for ENOMEM, ENFILE, EBADF,
+		// EFAULT and EINTR).
 		fds := []unix.PollFd{{Fd: int32(pfd), Events: unix.POLLIN}}
-		n, err := unix.Poll(fds, 0)
+		n, err := peerPoll(fds, 0)
+		for errors.Is(err, unix.EINTR) {
+			n, err = peerPoll(fds, 0)
+		}
 		if err != nil {
-			return peer, false, fmt.Errorf("poll pidfd: %w", err)
+			return peer, false, fmt.Errorf("poll caller %d: %w", cred.Pid, err)
 		}
 		if n > 0 {
 			return peer, true, errPeerExited

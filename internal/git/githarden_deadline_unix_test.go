@@ -5,6 +5,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -52,28 +53,28 @@ func stdinGit(t *testing.T, ctx context.Context) (*exec.Cmd, *os.File) {
 }
 
 // TestDeadlineStopAfterReapSendsNoGroupKill: Go runs cmd.Cancel from its watch
-// of the context, which can come after the wait reaped git. That call sends
-// no group kill (claustrum's own, from the code). The test makes the late call
-// itself, after runCheckoutPipes returned.
+// of the context, which can come after the exit of git. git exited 0, so the
+// drain ran before the reap. That call then sends no group kill, marks no stop
+// and returns os.ErrProcessDone (claustrum's own, from the code). The test
+// makes the late call itself, after runCheckoutPipes returned.
 func TestDeadlineStopAfterReapSendsNoGroupKill(t *testing.T) {
 	kills := countGroupKills(t)
 	cmd, feed := stdinGit(t, context.Background())
-	gate := &sysproc.LeaderGate{}
-	var cancelled atomic.Bool
-	stop := deadlineStop(cmd, gate, &cancelled)
+	st := newCheckoutStop()
+	stop := deadlineStop(cmd, st)
 	_ = feed.Close()
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, gate); err != nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st); err != nil {
 		t.Fatalf("git hash-object = %v, %s", err, errBuf.String())
 	}
-	if err := stop(); err != nil {
-		t.Fatalf("the late stop = %v, want nil", err)
+	if err := stop(); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("the late stop = %v, want os.ErrProcessDone", err)
 	}
 	if n := kills(); n != 0 {
 		t.Errorf("group kills after the reap = %d, want 0", n)
 	}
-	if !cancelled.Load() {
-		t.Error("the late stop did not mark the stop")
+	if st.stopped() {
+		t.Error("the late stop marked the stop")
 	}
 }
 
@@ -85,18 +86,17 @@ func TestDeadlineStopWhileGitRunsKillsGroup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	cmd, _ := stdinGit(t, ctx)
-	gate := &sysproc.LeaderGate{}
-	var cancelled atomic.Bool
-	cmd.Cancel = deadlineStop(cmd, gate, &cancelled)
+	st := newCheckoutStop()
+	cmd.Cancel = deadlineStop(cmd, st)
 	var errBuf bytes.Buffer
-	err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, gate)
+	err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st)
 	if err == nil {
 		t.Fatal("git hash-object ended well, want the kill of the deadline")
 	}
 	if n := kills(); n != 1 {
 		t.Errorf("group kills = %d, want 1", n)
 	}
-	if !cancelled.Load() {
+	if !st.stopped() {
 		t.Error("the deadline did not mark the stop")
 	}
 }
@@ -107,7 +107,7 @@ func failLeaderExitWait(t *testing.T) {
 	t.Helper()
 	prev := leaderExitWait
 	t.Cleanup(func() { leaderExitWait = prev })
-	leaderExitWait = func(int) bool { return false }
+	leaderExitWait = func(int) (bool, bool) { return false, false }
 }
 
 // TestDeadlineStopFailedExitWaitStillKills: a wait for the exit that fails
@@ -119,11 +119,10 @@ func TestDeadlineStopFailedExitWaitStillKills(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	cmd, _ := stdinGit(t, ctx)
-	gate := &sysproc.LeaderGate{}
-	var cancelled atomic.Bool
-	cmd.Cancel = deadlineStop(cmd, gate, &cancelled)
+	st := newCheckoutStop()
+	cmd.Cancel = deadlineStop(cmd, st)
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, gate); err == nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st); err == nil {
 		t.Fatal("git hash-object ended well, want the kill of the deadline")
 	}
 	if n := kills(); n != 1 {
@@ -138,15 +137,14 @@ func TestDeadlineStopFailedExitWaitAfterReap(t *testing.T) {
 	kills := countGroupKills(t)
 	failLeaderExitWait(t)
 	cmd, feed := stdinGit(t, context.Background())
-	gate := &sysproc.LeaderGate{}
-	var cancelled atomic.Bool
-	stop := deadlineStop(cmd, gate, &cancelled)
+	st := newCheckoutStop()
+	stop := deadlineStop(cmd, st)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		_ = feed.Close()
 	}()
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, gate); err != nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st); err != nil {
 		t.Fatalf("git hash-object = %v, %s", err, errBuf.String())
 	}
 	_ = stop()

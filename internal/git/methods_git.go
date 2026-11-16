@@ -2402,8 +2402,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			})
 		case rtDrained:
 			// git exited 0, but a checkout descendant held the daemon's output pipe
-			// past the ~5s drain cap. hardenedGitCheckout already killed and reaped
-			// the process group. The checkout counts as finished, so the request goes
+			// past the ~5s drain cap. The checkout counts as finished, so the request goes
 			// on to the copy step. The deadline test after the copy step then answers
 			// timeout "after the checkout finished" and rolls back. If the deadline has
 			// not expired, the request succeeds. Measured against f6010b97 and

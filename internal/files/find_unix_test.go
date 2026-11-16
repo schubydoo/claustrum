@@ -612,18 +612,35 @@ func findSlotsFree(t *testing.T) {
 
 // TestFindStalledRead: a folder read that blocks past the bound gives the reply
 // at the bound with the cut "time", and the stalled walk keeps its slot until
-// its read ends (4c111e86, measured on Linux).
+// its read ends (4c111e86, measured on Linux). When all 4 slots are held past
+// their deadlines, one line logs (4c111e86, measured on Linux). After a walk ends,
+// the next such state logs the next number (claustrum's own, not measured).
 func TestFindStalledRead(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	findTree(t, root, "stall/t.txt", "fast/t.txt")
 	findSlotsFree(t)
+	logs := captureLogBuf(t)
+	findLate.Lock()
+	first := findLate.times + 1
+	findLate.Unlock()
+	stuck := func(n int) string {
+		return fmt.Sprintf(`[FilesHandler] files.find: all 4 walks that may run at once are past their deadlines and have not ended (a dead mount?): every call answers "busy" until one ends or the helper restarts (time number %d)`, n)
+	}
+	var mu sync.Mutex
 	release := make(chan struct{})
 	var once sync.Once
-	free := func() { once.Do(func() { close(release) }) }
+	free := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		once.Do(func() { close(release) })
+	}
 	read := findReadDir
 	findReadDir = func(f *os.File, n int) ([]os.DirEntry, error) {
 		if f.Name() == root+"/stall" {
-			<-release
+			mu.Lock()
+			r := release
+			mu.Unlock()
+			<-r
 		}
 		return read(f, n)
 	}
@@ -663,11 +680,59 @@ func TestFindStalledRead(t *testing.T) {
 		if (res.Cut == "") != want || (res.Cut == "busy") == want {
 			t.Errorf("fast walk with %d held: %+v, want busy %v", i, res, !want)
 		}
+		if n := strings.Count(logs.String(), "[FilesHandler] files.find: all 4 walks"); n != min(i/findMaxWalks, 1) {
+			t.Errorf("stalled walk %d: %d lines of all walks past their deadlines, want %d", i, n, i/findMaxWalks)
+		}
+	}
+	if !strings.Contains(logs.String(), stuck(first)) {
+		t.Errorf("log %q, want the line %q", logs.String(), stuck(first))
+	}
+	// A walk that ends ends the state. The next time all 4 are late, the next
+	// number logs.
+	free()
+	findSlotsFree(t)
+	mu.Lock()
+	release, once = make(chan struct{}), sync.Once{}
+	mu.Unlock()
+	for i := 1; i <= findMaxWalks; i++ {
+		if res, _ := call("stall"); res.Cut != "time" {
+			t.Errorf("second round, stalled walk %d: %+v, want the cut time", i, res)
+		}
+	}
+	if !strings.Contains(logs.String(), stuck(first+1)) {
+		t.Errorf("log %q, want the line %q", logs.String(), stuck(first+1))
 	}
 	free()
 	findSlotsFree(t)
 	if res, _ := call("fast"); !res.Whole || len(res.Paths) != 1 {
 		t.Errorf("after the release: %+v, want whole with 1 path", res)
+	}
+}
+
+// TestFindLateAfterEnd: a walk that ended before its bound fired does not count
+// as late, and logs no line (claustrum's own, not measured).
+func TestFindLateAfterEnd(t *testing.T) {
+	logs := captureLogBuf(t)
+	findLate.Lock()
+	walks, times := findLate.walks, findLate.times
+	findLate.walks = findMaxWalks - 1
+	findLate.Unlock()
+	t.Cleanup(func() {
+		findLate.Lock()
+		findLate.walks, findLate.times = walks, times
+		findLate.Unlock()
+	})
+	w := &findState{}
+	w.leave()
+	w.markLate()
+	findLate.Lock()
+	got, gotTimes := findLate.walks, findLate.times
+	findLate.Unlock()
+	if got != findMaxWalks-1 || gotTimes != times || w.late {
+		t.Errorf("after leave and markLate: %d late walks, times %d, late %v, want %d, %d, false", got, gotTimes, w.late, findMaxWalks-1, times)
+	}
+	if out := logs.String(); strings.Contains(out, "[FilesHandler] files.find: all") {
+		t.Errorf("log %q, want no line", out)
 	}
 }
 
