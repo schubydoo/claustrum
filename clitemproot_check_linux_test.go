@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -80,7 +83,8 @@ func wantFolderShape(t *testing.T, x, name string) {
 
 // A link at the name counts as lost: the spawn that asked is ended, the other gets one
 // run-on line, and the next reply with a member names a new folder and lists the lost
-// one once (4c111e86, measured on Linux and macOS).
+// one. The reply after it lists it again (4c111e86, measured on Linux and macOS, the
+// list on macOS).
 func TestCLITempRootLinkAtTheNameIsLost(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -117,8 +121,8 @@ func TestCLITempRootLinkAtTheNameIsLost(t *testing.T) {
 	if !ok {
 		t.Errorf("answer %s, want the new name and the lost %s with agoSeconds 0 to 2", b, a.Name)
 	}
-	if d := runTempRootBound(t, x, runDir, &rel, nil); d == nil || d.Gone != nil {
-		t.Errorf("the next answer %+v, want no lost list", d)
+	if d := runTempRootBound(t, x, runDir, &rel, nil); d == nil || len(d.Gone) != 1 || d.Gone[0].Name != a.Name || d.Gone[0].Why != "changed" {
+		t.Errorf("the next answer %+v, want the lost %s again", d, a.Name)
 	}
 	holdsFor(t, 5*tempRootCheckEvery, "one end", func() bool { return ends.Load() == 1 })
 	if fi, err := os.Lstat(f); err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -149,6 +153,37 @@ func TestCLITempRootOpenOrForeignFolderIsLost(t *testing.T) {
 	tempRoots.mu.Unlock()
 	waitFor(t, "end", func() bool { return ends.Load() == 2 })
 	wantLinesInOrder(t, logs.String(), "[process.Manager] Claude Code's private temp folder "+b.Name+" counts as lost: it is another account's (uid "+strconv.Itoa(os.Getuid())+")")
+	// The next reply lists both, oldest first, with the words "open" and "anothers"
+	// (4c111e86, measured on macOS).
+	c := runTempRootBound(t, x2, runDir2, &rel, nil)
+	if c == nil || len(c.Gone) != 2 || c.Gone[0].Name != a.Name || c.Gone[0].Why != "open" || c.Gone[1].Name != b.Name || c.Gone[1].Why != "anothers" {
+		t.Errorf("answer %+v, want the lost %s (open) and %s (anothers)", c, a.Name, b.Name)
+	}
+}
+
+// The lost list keeps the last 16 folders, oldest first, and each later reply with a
+// member carries all of them. The 17th loss cuts the oldest (4c111e86, measured on
+// macOS).
+func TestCLITempRootLostListKeepsTheLast16(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	for i := range 17 {
+		addLostEntry(fmt.Sprintf("ccd-%010d", i), "changed")
+	}
+	for range 2 {
+		res := addGoneList(&rpc.CLITempRoot{Name: "ccd-aaaaaaaaaa"})
+		var got []string
+		for _, g := range res.Gone {
+			got = append(got, g.Name)
+		}
+		var want []string
+		for i := 1; i <= 16; i++ {
+			want = append(want, fmt.Sprintf("ccd-%010d", i))
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("lost list %v, want %v", got, want)
+		}
+	}
 }
 
 // An own folder that took the place of the held one is held instead, with t and mode
@@ -382,8 +417,300 @@ func TestCLITempRootGoneListAfterWhyNot(t *testing.T) {
 	}
 	res := runTempRootBound(t, x2, runDir2, &rel, nil)
 	b, _ := json.Marshal(res)
-	want := `{"refused":"a link","whyNot":"` + tempRootSteppedAround + `","lost":[{"name":"` + a.Name + `","why":"changed","agoSeconds":`
+	want := `{"refused":"a link","whyNot":"` + tempRootSteppedAround + `","lost":[{"name":"` + a.Name + `","why":"open","agoSeconds":`
 	if !strings.HasPrefix(string(b), want) {
 		t.Errorf("answer %s, want the prefix %s", b, want)
 	}
+}
+
+// wantLostAfter holds a folder in a new temp dir, runs change on the temp dir x and
+// the folder name, and waits for the end and the lost line with why.
+func wantLostAfter(t *testing.T, change func(x, name string), why string) {
+	t.Helper()
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 20*time.Millisecond)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	change(x, a.Name)
+	waitFor(t, "end", func() bool { return ends.Load() == 1 })
+	wantLinesInOrder(t, logs.String(), "[process.Manager] Claude Code's private temp folder "+a.Name+" counts as lost: "+why)
+	holdsFor(t, 5*tempRootCheckEvery, "one end", func() bool { return ends.Load() == 1 })
+}
+
+// wantNoEndAfter holds a folder in a new temp dir, runs change, and checks for 5
+// checks that nobody is ended and that the log holds line once, or no line of the
+// folder for an empty line. It gives back the folder name.
+func wantNoEndAfter(t *testing.T, change func(x, name string), line string) {
+	t.Helper()
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 20*time.Millisecond)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	change(x, a.Name)
+	if line != "" {
+		line = "[process.Manager] Claude Code's private temp folder " + a.Name + line
+		waitFor(t, "the line", func() bool { return strings.Contains(logs.String(), line) })
+	}
+	holdsFor(t, 5*tempRootCheckEvery, "no end", func() bool {
+		if line == "" {
+			return ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+		}
+		return ends.Load() == 0 && strings.Count(logs.String(), line) == 1
+	})
+}
+
+// underCheckLock runs f while no check runs.
+func underCheckLock(t *testing.T, f func() error) {
+	t.Helper()
+	tempRoots.mu.Lock()
+	err := f()
+	tempRoots.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A file at the name, and a t that is a file or a link, count as lost (4c111e86,
+// measured on macOS).
+func TestCLITempRootFileAtTheNameOrInnerChangeIsLost(t *testing.T) {
+	t.Run("file at the name", func(t *testing.T) {
+		wantLostAfter(t, func(x, name string) {
+			f := filepath.Join(x, name)
+			underCheckLock(t, func() error {
+				if err := os.Rename(f, f+".old"); err != nil {
+					return err
+				}
+				return os.WriteFile(f, nil, 0o600)
+			})
+		}, "it is not a folder")
+	})
+	for _, c := range []struct {
+		name, why string
+		put       func(p string) error
+	}{
+		{"t is a file", "it is holding a t that is not a folder", func(p string) error { return os.WriteFile(p, nil, 0o600) }},
+		{"t is a link", "it is holding a t that is a link", func(p string) error { return os.Symlink("/", p) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			wantLostAfter(t, func(x, name string) {
+				f := filepath.Join(x, name)
+				underCheckLock(t, func() error {
+					_ = os.Chmod(f, 0o700)
+					if err := os.Remove(filepath.Join(f, "t")); err != nil {
+						return err
+					}
+					if err := c.put(filepath.Join(f, "t")); err != nil {
+						return err
+					}
+					return os.Chmod(f, 0o500)
+				})
+			}, c.why)
+		})
+	}
+}
+
+// A mount on the held folder, on its t or on the temp dir counts as lost (4c111e86,
+// measured on macOS). A test cannot mount, so the seam gives the one inode another
+// device.
+func TestCLITempRootMountIsLost(t *testing.T) {
+	for _, c := range []struct {
+		name, why string
+		path      func(x, name string) string
+	}{
+		{"on the folder", "it is on another file system", func(x, name string) string { return filepath.Join(x, name) }},
+		{"on t", "it is holding a t that is on another file system", func(x, name string) string { return filepath.Join(x, name, "t") }},
+		{"on the temp dir", "it is in a temp dir whose path now leads to another file system (a new mount?)", func(x, name string) string { return x }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			wantLostAfter(t, func(x, name string) {
+				var st unix.Stat_t
+				if err := unix.Lstat(c.path(x, name), &st); err != nil {
+					t.Fatal(err)
+				}
+				ino := st.Ino
+				underCheckLock(t, func() error {
+					old := tempRootCheckDev
+					tempRootCheckDev = func(s *unix.Stat_t) uint64 {
+						if s.Ino == ino {
+							return old(s) + 1
+						}
+						return old(s)
+					}
+					t.Cleanup(func() {
+						tempRoots.mu.Lock()
+						tempRootCheckDev = old
+						tempRoots.mu.Unlock()
+					})
+					return nil
+				})
+			}, c.why)
+		})
+	}
+}
+
+// A temp dir that became a file or a link, or that others can write, counts as lost
+// (4c111e86, measured on macOS, mode 0777 also of root).
+func TestCLITempRootTempDirChangeIsLost(t *testing.T) {
+	for _, c := range []struct {
+		name, why string
+		change    func(x string) error
+	}{
+		{"a file", "it is in a temp dir that is no longer a folder", func(x string) error {
+			if err := os.Rename(x, x+".old"); err != nil {
+				return err
+			}
+			return os.WriteFile(x, nil, 0o600)
+		}},
+		{"a link", "it is in a temp dir that is no longer a folder", func(x string) error {
+			if err := os.Rename(x, x+".old"); err != nil {
+				return err
+			}
+			return os.Symlink(x+".old", x)
+		}},
+		{"mode 0777", "it is in a temp dir that another account can rearrange", func(x string) error { return os.Chmod(x, 0o777) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			wantLostAfter(t, func(x, _ string) { underCheckLock(t, func() error { return c.change(x) }) }, c.why)
+		})
+	}
+}
+
+// A sticky temp dir of mode 1777 and a temp dir of mode 0770 change nothing. A temp dir that is gone and a held
+// folder of mode 0 log their own line once and end nobody (4c111e86, measured on
+// macOS).
+func TestCLITempRootChangesThatEndNobody(t *testing.T) {
+	t.Run("sticky 1777", func(t *testing.T) {
+		wantNoEndAfter(t, func(x, _ string) {
+			underCheckLock(t, func() error { return os.Chmod(x, os.ModeSticky|0o777) })
+		}, "")
+	})
+	// A group write bit alone ends nobody: only mode 0777 is measured, and the test
+	// of the other write bit is claustrum's own.
+	t.Run("group write 0770", func(t *testing.T) {
+		wantNoEndAfter(t, func(x, _ string) {
+			underCheckLock(t, func() error { return os.Chmod(x, 0o770) })
+		}, "")
+	})
+	t.Run("gone temp dir", func(t *testing.T) {
+		wantNoEndAfter(t, func(x, _ string) {
+			underCheckLock(t, func() error { return os.Rename(x, x+".old") })
+		}, ": the temp dir is gone; nobody is ended over that, and it is looked at again")
+	})
+	t.Run("folder of mode 0", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root uses a folder of mode 0000")
+		}
+		wantNoEndAfter(t, func(x, name string) {
+			underCheckLock(t, func() error { return os.Chmod(filepath.Join(x, name), 0) })
+		}, ": its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again")
+	})
+}
+
+// A temp dir whose path is a link at the hold, as /tmp is on macOS, ends nobody and
+// logs no line of the folder (claustrum's own, not measured).
+func TestCLITempRootTempDirLinkAtTheHoldEndsNobody(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 20*time.Millisecond)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	l := filepath.Join(filepath.Dir(x), "l")
+	if err := os.Symlink(x, l); err != nil {
+		t.Fatal(err)
+	}
+	var ends atomic.Int32
+	a := runTempRootBound(t, l, runDir, &rel, func() { ends.Add(1) })
+	if a == nil || !tempRootNameRE.MatchString(a.Name) {
+		t.Fatalf("answer %+v, want a folder", a)
+	}
+	holdsFor(t, 5*tempRootCheckEvery, "no end and no line", func() bool {
+		return ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+	})
+}
+
+// A folder gone from a temp dir that group can write, or that another account owns,
+// is not made anew, and nobody is ended (claustrum's own, not measured). The owner
+// case gives the held record another uid, as the test cannot chown.
+func TestCLITempRootNoRemakeInAGroupWritableTempDir(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		change func(x string, h *heldTempRoot) error
+	}{
+		{"mode 0770", func(x string, _ *heldTempRoot) error { return os.Chmod(x, 0o770) }},
+		{"another owner", func(_ string, h *heldTempRoot) error { h.uid = os.Getuid() + 1; return nil }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var rel []func()
+			cleanTempRoots(t, &rel)
+			setTempRootCheckEvery(t, 20*time.Millisecond)
+			logs := captureLogBuf(t)
+			x, runDir := tempRootDir(t, true)
+			var ends atomic.Int32
+			a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+			h := heldRecordOf(x, a.Name)
+			f := filepath.Join(x, a.Name)
+			underCheckLock(t, func() error {
+				_ = os.Chmod(f, 0o700)
+				_ = os.Remove(filepath.Join(f, "t"))
+				if err := os.Remove(f); err != nil {
+					return err
+				}
+				return c.change(x, h)
+			})
+			holdsFor(t, 5*tempRootCheckEvery, "no remake, no end and no line", func() bool {
+				_, err := os.Lstat(f)
+				return errors.Is(err, os.ErrNotExist) && ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+			})
+		})
+	}
+}
+
+// A temp dir path with a trailing slash: a link in place of the temp dir still counts
+// as lost, and a temp dir path that was a link at the hold still ends nobody.
+func TestCLITempRootTempDirWithATrailingSlash(t *testing.T) {
+	t.Run("replaced by a link", func(t *testing.T) {
+		var rel []func()
+		cleanTempRoots(t, &rel)
+		setTempRootCheckEvery(t, 20*time.Millisecond)
+		logs := captureLogBuf(t)
+		x, runDir := tempRootDir(t, true)
+		var ends atomic.Int32
+		a := runTempRootBound(t, x+"/", runDir, &rel, func() { ends.Add(1) })
+		if a == nil || !tempRootNameRE.MatchString(a.Name) {
+			t.Fatalf("answer %+v, want a folder", a)
+		}
+		underCheckLock(t, func() error {
+			if err := os.Rename(x, x+".old"); err != nil {
+				return err
+			}
+			return os.Symlink(x+".old", x)
+		})
+		waitFor(t, "end", func() bool { return ends.Load() == 1 })
+		wantLinesInOrder(t, logs.String(), "[process.Manager] Claude Code's private temp folder "+a.Name+" counts as lost: it is in a temp dir that is no longer a folder")
+	})
+	t.Run("a link at the hold", func(t *testing.T) {
+		var rel []func()
+		cleanTempRoots(t, &rel)
+		setTempRootCheckEvery(t, 20*time.Millisecond)
+		logs := captureLogBuf(t)
+		x, runDir := tempRootDir(t, true)
+		l := filepath.Join(filepath.Dir(x), "l")
+		if err := os.Symlink(x, l); err != nil {
+			t.Fatal(err)
+		}
+		var ends atomic.Int32
+		a := runTempRootBound(t, l+"/", runDir, &rel, func() { ends.Add(1) })
+		if a == nil || !tempRootNameRE.MatchString(a.Name) {
+			t.Fatalf("answer %+v, want a folder", a)
+		}
+		holdsFor(t, 5*tempRootCheckEvery, "no end and no line", func() bool {
+			return ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+		})
+	})
 }

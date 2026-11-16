@@ -129,10 +129,11 @@ func TestLostTempRootKillsTheGroupOfAChildThatEndsAtTheKill(t *testing.T) {
 	}
 }
 
-// TestLostTempRootKillsTheGroupAfterAClientKill: a process.kill that the child
-// survives keeps the killedBy "client". The SIGTERM of the end then ends the child,
-// and its group still gets one SIGKILL before the reap. The stub drops the first
-// SIGTERM. The grandchild is the test's own (claustrum's own rule).
+// TestLostTempRootKillsTheGroupAfterAClientKill: after a process.kill that the child
+// survives, the SIGTERM of the end ends the child with the killedBy "temp_root", and
+// its group still gets one SIGKILL before the reap. The stub drops the first SIGTERM.
+// The grandchild is the test's own (claustrum's own rule: the rows of 4c111e86 ended
+// the child by the SIGKILL of the end).
 func TestLostTempRootKillsTheGroupAfterAClientKill(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
@@ -166,7 +167,7 @@ func TestLostTempRootKillsTheGroupAfterAClientKill(t *testing.T) {
 	end, _ := bound()
 	end()
 	exit := withoutEndAt(nextLine(t, lines, `"stream":"exit"`, 15*time.Second))
-	const want = `{"type":"stream","processId":"tr","stream":"exit","seq":2,"exitCode":0,"killedBy":"client","end":{"at":<n>,"len":90}}`
+	const want = `{"type":"stream","processId":"tr","stream":"exit","seq":2,"exitCode":0,"killedBy":"temp_root","end":{"at":<n>,"len":93}}`
 	if exit != want {
 		t.Errorf("exit frame = %s\nwant %s", exit, want)
 	}

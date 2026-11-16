@@ -17,7 +17,8 @@ var tempRootEndGrace = 3 * time.Second
 // for a child whose spawn asked with "cliTempRootEnd":true. 4c111e86 logs the line,
 // sends the SIGTERM, and sends the SIGKILL to a child that still runs after the wait
 // (measured on Linux and macOS, the SIGKILL and the line order on macOS). A
-// process.kill in the wait keeps the killedBy "temp_root" (measured on macOS).
+// process.kill in the wait keeps the killedBy "temp_root", and an end after a
+// process.kill that the child survived takes it (measured on macOS).
 //
 // Each signal goes through signalIfLiveLocked, so no signal reaches a reaped child,
 // and the SIGKILL goes to the group as in watchGitReadLimit. A child that ends on the
@@ -30,8 +31,7 @@ func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
 	// The id is cut (4c111e86, measured on Linux and macOS).
 	logging.Infof("[process.Manager] Process %s is being ended: its private temp folder is lost", LogID(p.id))
 	// The SIGTERM and its flag go under one hold of p.mu. The flag, not killedBy,
-	// tells the exit path that this end signalled: a process.kill before it keeps
-	// the killedBy "client".
+	// tells the exit path that this end signalled.
 	p.mu.Lock()
 	live, err := p.signalIfLiveLocked("TERM", "temp_root")
 	p.tempRootTermed = p.tempRootTermed || (live && err == nil)

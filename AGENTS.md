@@ -249,6 +249,9 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   if it still runs 3 s later, a group SIGKILL (`endForLostTempRoot`). A child that ended on the SIGTERM gets a group
   SIGKILL before its reap (`killGroupOnTempRootExit`). Never widen: Signal no other child, send no group SIGKILL
   after the reap, and none to a group that the spawn did not make.
+- **The loss kinds** (`checkTempRoot`, `checkChildDir`). The folder, its `t` and the temp dir count as lost in the
+  [measured kinds](docs/protocol/process-spawn.md#a-lost-folder-build-4c111e86). Never widen: Add no kind without a
+  measured row, and end no child over a failed check, a gone temp dir or a folder of mode 0.
 
 ### The held git directory
 
