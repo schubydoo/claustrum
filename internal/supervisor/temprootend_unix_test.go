@@ -172,17 +172,21 @@ func TestTempRootReplacesOnlyClient(t *testing.T) {
 // TestTempRootKeepsClientAfterTheExit: a child that ended on the SIGTERM of a
 // process.kill keeps the killedBy "client", also when the temp_root signal comes after
 // its exit and before the exit goroutine marks it reaped (4c111e86, measured on macOS:
-// kill then loss gives "client"). The test holds p.mu, so the reap flag waits.
+// kill then loss gives "client"). The test holds p.mu from the client SIGTERM on, so
+// the reap flag waits.
 func TestTempRootKeepsClientAfterTheExit(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
 	c, lines := rawLineConn(t)
 	p, _ := spawnHelperTempRoot(t, m, c, TempRootAsk{Folder: true, End: true}, "term-exit0")
 	nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
-	if !p.signalIfLive("TERM", "client") {
+	// p.mu is held from before the client SIGTERM, so the exit goroutine cannot set
+	// p.reaped before the temp_root signal.
+	p.mu.Lock()
+	if live, _ := p.signalIfLiveLocked("TERM", "client"); !live {
+		p.mu.Unlock()
 		t.Fatal("the client SIGTERM found no live child")
 	}
-	p.mu.Lock()
 	for deadline := time.Now().Add(10 * time.Second); sysproc.SurelyRuns(p.cmd.Process); time.Sleep(5 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			p.mu.Unlock()
