@@ -57,9 +57,10 @@ import (
 // ACKNOWLEDGED LIMITATIONS. The list is not complete. The compare is on text,
 // so each other spelling that the system resolves to the home folder passes it
 // too. On Windows a path with the `\\?\` prefix and the short 8.3 name of home
-// pass it (Windows, the test binary). Two callers add a compare by identity for the folder that they delete:
-// -install (FolderHoldsHome) and the wipe of files.extract_tar (destEntryHoldsHome, for the folder at the last
-// name of destDir). The other callers have the text compare alone.
+// pass it (Windows, the test binary). Four callers add a compare by identity (FolderHoldsHome) for the folder
+// that they delete: -install, the wipe of files.extract_tar (destEntryHoldsHome, for the folder at the last
+// name of destDir), the leaf of git.worktree_remove (worktreeLeafHomeRefusal) and the leaf deletes of the
+// git.worktree_create rollbacks (leafHoldsHome). The other callers have the text compare alone.
 //
 //  1. Symlinks are not resolved. A path that reaches home through a symlink is
 //     accepted. Closing it would mean an EvalSymlinks on every request, whose

@@ -177,9 +177,10 @@ have no flag and no key.
     `worktreePath` that is not strictly inside `baseRepo`. So without
     `worktreeRoot` the guard fires for a repository that is an ancestor of
     home. With `worktreeRoot` it is the active home guard. Without `worktreeRoot` it
-    tests paths behind Windows junctions too.
+    tests paths behind Windows junctions too. The leaf folder is tested by
+    identity too.
   - Each rollback delete of `git.worktree_create`, and from the code its stale
-    step before the add. It is defense in depth and emits no frame. The
+    step before the add. The leaf folder is tested by identity too. It is defense in depth and emits no frame. The
     exception is the registration delete of a create that holds no git
     directory and accepted no registration. That delete tests the `gitdir` record and the registrations
     directory instead. The guard also runs before the cleanup of old
