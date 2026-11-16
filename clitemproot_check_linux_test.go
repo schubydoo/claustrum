@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -713,4 +714,572 @@ func TestCLITempRootTempDirWithATrailingSlash(t *testing.T) {
 			return ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
 		})
 	})
+}
+
+// linkAtName puts a link at the name of the folder name in x, to the folder under a
+// new name, as the rows of the cap do.
+func linkAtName(t *testing.T, x, name string) {
+	t.Helper()
+	f := filepath.Join(x, name)
+	if err := os.Rename(f, f+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(f+".old", f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// checkTicks drives the loop of the checks by hand (fakeCheckTicks).
+type checkTicks struct {
+	ticks chan time.Time
+	done  chan struct{} // gets a value at the end of each check
+}
+
+// fakeCheckTicks gives the checks a tick only when the test sends one, until the test
+// ends. So no check comes between two steps of the test.
+func fakeCheckTicks(t *testing.T) checkTicks {
+	t.Helper()
+	stopTempRootChecks()
+	c := checkTicks{ticks: make(chan time.Time), done: make(chan struct{}, 1)}
+	// The loop reads both seams under tempRoots.mu at its start.
+	tempRoots.mu.Lock()
+	oldTicks, oldAfter := tempRootCheckTicks, afterTempRootChecks
+	tempRootCheckTicks = func(time.Duration) (<-chan time.Time, func()) { return c.ticks, func() {} }
+	afterTempRootChecks = func() {
+		select {
+		case c.done <- struct{}{}:
+		default:
+		}
+	}
+	tempRoots.mu.Unlock()
+	t.Cleanup(func() {
+		tempRoots.mu.Lock()
+		tempRootCheckTicks, afterTempRootChecks = oldTicks, oldAfter
+		tempRoots.mu.Unlock()
+	})
+	return c
+}
+
+// check runs one check and waits for its end. With no loop of the checks it fails the
+// test.
+func (c checkTicks) check(t *testing.T) {
+	t.Helper()
+	select {
+	case c.ticks <- time.Now():
+	case <-time.After(5 * time.Second):
+		t.Fatal("no loop of the checks runs")
+	}
+	select {
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check did not end within 5 s")
+	}
+}
+
+// givenCount is the count of the given-back folders that are still checked.
+func givenCount() int {
+	tempRoots.mu.Lock()
+	defer tempRoots.mu.Unlock()
+	return len(tempRoots.given)
+}
+
+// A loss in the time that the child ran still counts after the give-back: the next
+// check finds it, and the next reply lists it (4c111e86, measured on macOS). The
+// flock goes at the give-back (claustrum's own).
+func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	linkAtName(t, x, a.Name)
+	rel[0]()
+	if n := givenCount(); n != 1 {
+		t.Fatalf("%d given-back folders are checked, want 1", n)
+	}
+	f, err := os.Open(filepath.Join(x, a.Name+".old"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Errorf("flock after the give-back: %v, want none held", err)
+	}
+	ticks.check(t)
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("%d loss lines, want 1\nlog:\n%s", n, logs.String())
+	}
+	if n := givenCount(); n != 0 {
+		t.Errorf("%d given-back folders are still checked after the loss, want 0", n)
+	}
+	c := runTempRootBound(t, x, runDir, &rel, nil)
+	if c == nil || c.Name == a.Name || len(c.Gone) != 1 || c.Gone[0].Name != a.Name || c.Gone[0].Why != "changed" {
+		t.Errorf("the next answer %+v, want a new folder and the lost %s", c, a.Name)
+	}
+}
+
+// A given-back folder stays checked: a loss after several checks still counts
+// (4c111e86, measured on macOS: a loss 5 s after the end of the child).
+func TestCLITempRootGivenBackFolderStaysChecked(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	for range 3 {
+		ticks.check(t)
+	}
+	if n := givenCount(); n != 1 || strings.Contains(logs.String(), "private temp folder "+a.Name) {
+		t.Fatalf("after three checks %d given-back folders and log %q, want 1 and no line", n, logs.String())
+	}
+	linkAtName(t, x, a.Name)
+	ticks.check(t)
+	if line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"; !strings.Contains(logs.String(), line) {
+		t.Errorf("log %q, want %q", logs.String(), line)
+	}
+	if c := runTempRootBound(t, x, runDir, &rel, nil); c == nil || len(c.Gone) != 1 || c.Gone[0].Name != a.Name {
+		t.Errorf("the next answer %+v, want the lost %s", c, a.Name)
+	}
+}
+
+// A gone temp dir ends the checks of a given-back folder, with no line (claustrum's
+// own, not measured).
+func TestCLITempRootGivenBackFolderOfAGoneTempDir(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	if err := os.Rename(x, x+".away"); err != nil {
+		t.Fatal(err)
+	}
+	ticks.check(t)
+	if n := givenCount(); n != 0 || strings.Contains(logs.String(), "private temp folder "+a.Name) {
+		t.Errorf("%d given-back folders and log %q, want 0 and no line", n, logs.String())
+	}
+}
+
+// The checks of a given-back folder write nothing: a missing folder is not made anew,
+// an own folder at the name is not held instead, and a missing t is not made again.
+// The first two end the checks of the folder (claustrum's own, not measured).
+func TestCLITempRootGivenBackCheckWritesNothing(t *testing.T) {
+	cases := []struct {
+		name   string
+		given  int // the given-back folders that are checked after the check
+		change func(t *testing.T, f string)
+		want   func(t *testing.T, f string)
+	}{
+		{"missing folder", 0,
+			func(t *testing.T, f string) {
+				if err := os.Rename(f, f+".away"); err != nil {
+					t.Fatal(err)
+				}
+			},
+			func(t *testing.T, f string) {
+				if _, err := os.Lstat(f); !os.IsNotExist(err) {
+					t.Errorf("the name: %v, want no folder made anew", err)
+				}
+			}},
+		{"own folder at the name", 0,
+			func(t *testing.T, f string) {
+				if err := os.Rename(f, f+".away"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(f, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+			func(t *testing.T, f string) {
+				if fi, err := os.Lstat(f); err != nil || fi.Mode().Perm() != 0o700 {
+					t.Errorf("the new folder: %v %v, want mode 0700", fi, err)
+				}
+				if _, err := os.Lstat(filepath.Join(f, "t")); !os.IsNotExist(err) {
+					t.Errorf("t in the new folder: %v, want none", err)
+				}
+			}},
+		{"missing t", 1,
+			func(t *testing.T, f string) {
+				if err := os.Chmod(f, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(f, "t")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(f, 0o500); err != nil {
+					t.Fatal(err)
+				}
+			},
+			func(t *testing.T, f string) {
+				if _, err := os.Lstat(filepath.Join(f, "t")); !os.IsNotExist(err) {
+					t.Errorf("t: %v, want none made again", err)
+				}
+			}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var rel []func()
+			cleanTempRoots(t, &rel)
+			ticks := fakeCheckTicks(t)
+			logs := captureLogBuf(t)
+			x, runDir := tempRootDir(t, true)
+			a := runTempRootBound(t, x, runDir, &rel, nil)
+			rel[0]()
+			f := filepath.Join(x, a.Name)
+			c.change(t, f)
+			ticks.check(t)
+			c.want(t, f)
+			if n := givenCount(); n != c.given {
+				t.Errorf("%d given-back folders after the check, want %d", n, c.given)
+			}
+			if strings.Contains(logs.String(), "private temp folder "+a.Name) {
+				t.Errorf("log %q, want no line of %s", logs.String(), a.Name)
+			}
+		})
+	}
+}
+
+// One check looks at all held folders together. The losses of folders held at other
+// times come at the same check, in the order of the hold, and the next reply lists
+// them in that order (4c111e86, measured on macOS: batches of 3). The order of the hold
+// is claustrum's own.
+func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	var names, xs []string
+	var runDir0 string
+	for i := range 6 {
+		x, runDir := tempRootDir(t, true)
+		a := runTempRootBound(t, x, runDir, &rel, nil)
+		if a == nil || !tempRootNameRE.MatchString(a.Name) {
+			t.Fatalf("spawn %d: %+v, want a folder", i+1, a)
+		}
+		names, xs = append(names, a.Name), append(xs, x)
+		if i == 0 {
+			runDir0 = runDir
+		}
+	}
+	for i := range names {
+		linkAtName(t, xs[i], names[i])
+	}
+	ticks.check(t)
+	line := func(n string) string {
+		return "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"
+	}
+	all := false
+	waitFor(t, "first loss line", afterCheck(func() bool {
+		s := logs.String()
+		if !strings.Contains(s, line(names[0])) {
+			return false
+		}
+		all = true
+		for _, n := range names {
+			all = all && strings.Contains(s, line(n))
+		}
+		return true
+	}))
+	if !all {
+		t.Fatalf("the check that found %s did not find all six\nlog:\n%s", names[0], logs.String())
+	}
+	var want []string
+	for _, n := range names {
+		want = append(want, line(n))
+	}
+	wantLinesInOrder(t, logs.String(), want...)
+	c := runTempRootBound(t, xs[0], runDir0, &rel, nil)
+	var got []string
+	if c != nil {
+		for _, g := range c.Gone {
+			got = append(got, g.Name)
+		}
+	}
+	if !slices.Equal(got, names) {
+		t.Errorf("lost list %v, want %v", got, names)
+	}
+}
+
+// A new hold of a given-back folder ends its old record and closes the old handle, so
+// a later loss gives one line and one entry of the list (claustrum's own).
+func TestCLITempRootHeldAgainEndsTheGivenRecord(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	tempRoots.mu.Lock()
+	old := tempRoots.given[0]
+	tempRoots.mu.Unlock()
+	if b := runTempRootBound(t, x, runDir, &rel, nil); b == nil || b.Name != a.Name {
+		t.Fatalf("second answer %+v, want the folder %s again", b, a.Name)
+	}
+	if n := givenCount(); n != 0 || old.f.Fd() != ^uintptr(0) {
+		t.Errorf("after the new hold %d given-back folders, old handle %d, want 0 and closed", n, old.f.Fd())
+	}
+	rel[1]()
+	linkAtName(t, x, a.Name)
+	ticks.check(t)
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("%d loss lines, want 1", n)
+	}
+	if c := runTempRootBound(t, x, runDir, &rel, nil); c == nil || len(c.Gone) != 1 {
+		t.Errorf("the next answer %+v, want one lost entry", c)
+	}
+}
+
+// At most tempRootGivenKeep given-back folders are checked, and each for
+// tempRootGivenFor. The oldest goes first (claustrum's own, not measured).
+func TestCLITempRootGivenBackBounds(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	advance := fakeTempRootClock(t)
+	var first *heldTempRoot
+	for i := range tempRootGivenKeep + 1 {
+		x, runDir := tempRootDir(t, true)
+		if a := runTempRootBound(t, x, runDir, &rel, nil); a == nil || a.Name == "" {
+			t.Fatalf("spawn %d: %+v, want a folder", i+1, a)
+		}
+		rel[i]()
+		advance(tempRootMakeWindow)
+		if i == 0 {
+			tempRoots.mu.Lock()
+			first = tempRoots.given[0]
+			tempRoots.mu.Unlock()
+		}
+	}
+	tempRoots.mu.Lock()
+	n, firstIn := len(tempRoots.given), slices.Contains(tempRoots.given, first)
+	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
+	tempRoots.mu.Unlock()
+	if n != tempRootGivenKeep || firstIn || first.f.Fd() != ^uintptr(0) {
+		t.Fatalf("%d given-back folders, the first kept %v, want %d and the first closed", n, firstIn, tempRootGivenKeep)
+	}
+	ticks.check(t)
+	if n := givenCount(); n != tempRootGivenKeep-1 {
+		t.Errorf("%d given-back folders after the check, want %d: the old one ends", n, tempRootGivenKeep-1)
+	}
+}
+
+// setAfterOneCheck runs fn after each folder of a check, until the test ends. The loop
+// reads the seam under tempRoots.mu at its start.
+func setAfterOneCheck(t *testing.T, fn func()) {
+	t.Helper()
+	tempRoots.mu.Lock()
+	old := afterTempRootOneCheck
+	afterTempRootOneCheck = fn
+	tempRoots.mu.Unlock()
+	t.Cleanup(func() {
+		tempRoots.mu.Lock()
+		afterTempRootOneCheck = old
+		tempRoots.mu.Unlock()
+	})
+}
+
+// The losses of one check reach the lost list in one step at its end: between two
+// folders of the check a reply sees none of them (claustrum's own).
+func TestCLITempRootLossesOfOneCheckReachTheListTogether(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	var seen []int
+	setAfterOneCheck(t, func() {
+		tempRootsLost.mu.Lock()
+		seen = append(seen, len(tempRootsLost.list))
+		tempRootsLost.mu.Unlock()
+	})
+	for range 2 {
+		x, runDir := tempRootDir(t, true)
+		a := runTempRootBound(t, x, runDir, &rel, nil)
+		linkAtName(t, x, a.Name)
+	}
+	ticks.check(t)
+	tempRootsLost.mu.Lock()
+	n := len(tempRootsLost.list)
+	tempRootsLost.mu.Unlock()
+	if !slices.Equal(seen, []int{0, 0}) || n != 2 {
+		t.Errorf("list sizes between the folders %v and after the check %d, want [0 0] and 2", seen, n)
+	}
+}
+
+// The check of a given-back folder holds no lock while it looks at the folder, so a
+// spawn in another temp dir gets its folder meanwhile (claustrum's own).
+func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	tempRoots.mu.Lock()
+	pass := tempRoots.givenPass // the look that the seam holds up
+	tempRoots.mu.Unlock()
+	type answer struct {
+		res     *rpc.CLITempRoot
+		release func()
+	}
+	got := make(chan answer, 1)
+	go func() {
+		_, res, release, _ := privateTempRoot([]string{"TMPDIR=" + x2}, runDir2)
+		got <- answer{res, release}
+	}()
+	select {
+	case a := <-got:
+		rel = append(rel, a.release)
+		if a.res == nil || !tempRootNameRE.MatchString(a.res.Name) {
+			t.Errorf("answer %+v during the check, want a folder", a.res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("a spawn waited for the check of a given-back folder")
+		close(free)
+		rel = append(rel, (<-got).release)
+		free = nil
+	}
+	if free != nil {
+		close(free)
+	}
+	<-done
+	// The loop can end its check before the look answers, so the seam goes back only
+	// once the look has answered too.
+	if pass != nil {
+		<-pass.done
+	}
+	tempRootCheckDev = old
+}
+
+// A check of a given-back folder that does not answer holds up no check of a held
+// folder: each tick still checks the held folders, their losses reach the list at that
+// tick, and no new look at the given-back folders starts meanwhile (claustrum's own).
+func TestCLITempRootStuckGivenBackCheckDelaysNoHeldCheck(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	var heldNames []string
+	var heldDirs []string
+	for range 2 {
+		x2, runDir2 := tempRootDir(t, true)
+		b := runTempRootBound(t, x2, runDir2, &rel, nil)
+		heldNames, heldDirs = append(heldNames, b.Name), append(heldDirs, x2)
+	}
+	free := make(chan struct{})
+	var calls atomic.Int32
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if calls.Add(1) == 1 { // the first call is the look at the given-back folder
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return statDev(st)
+	}
+	for i, n := range heldNames {
+		linkAtName(t, heldDirs[i], n)
+		ticks.check(t)
+		if line := "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"; !strings.Contains(logs.String(), line) {
+			t.Errorf("tick %d: log lacks %q", i+1, line)
+		}
+		tempRootsLost.mu.Lock()
+		got := len(tempRootsLost.list)
+		tempRootsLost.mu.Unlock()
+		if got != i+1 {
+			t.Errorf("tick %d: %d lost entries, want %d", i+1, got, i+1)
+		}
+	}
+	tempRoots.mu.Lock()
+	pass := tempRoots.givenPass
+	tempRoots.mu.Unlock()
+	if pass == nil || pass.answered {
+		t.Errorf("look at the given-back folder %+v, want the first one still running", pass)
+	}
+	close(free)
+	if pass != nil {
+		<-pass.done
+	}
+	tempRootCheckDev = old
+}
+
+// A look at the given-back folders that a loop gave up still counts until it answers.
+// A new loop starts no second look meanwhile (claustrum's own: the cap of 1).
+func TestCLITempRootGivenUpLookBlocksANewOne(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	free := make(chan struct{})
+	var calls atomic.Int32
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if calls.Add(1) == 1 { // the first look does not answer
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return statDev(st)
+	}
+	ticks.check(t) // the look starts and does not answer
+	tempRoots.mu.Lock()
+	first := tempRoots.givenPass
+	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
+	tempRoots.mu.Unlock()
+	if first == nil {
+		t.Fatal("no look at the given-back folder")
+	}
+	ticks.check(t) // the old record ends, so the loop ends and gives the look up
+	tempRoots.mu.Lock()
+	running := tempRoots.checks != nil
+	tempRoots.mu.Unlock()
+	if running {
+		t.Fatal("the loop still runs, want its end")
+	}
+	runTempRootBound(t, x2, runDir2, &rel, nil) // a new loop
+	rel[1]()
+	ticks.check(t)
+	tempRoots.mu.Lock()
+	second, open := tempRoots.givenPass, tempRoots.givenOpen
+	tempRoots.mu.Unlock()
+	if n := calls.Load(); second != nil || open != 1 || n != 1 {
+		t.Errorf("look %+v, %d open and %d looks at a folder, want none new, 1 open and 1", second, open, n)
+	}
+	close(free)
+	<-first.done
+	tempRootCheckDev = old
 }
