@@ -2,4 +2,4 @@
 default: patch
 ---
 
-A `timeoutMs` deadline of `git.worktree_create` answers `timeout` when the private Git LFS store has no `incomplete` entry, also when a downloaded file cannot be kept.
+After Git LFS downloads, a deadline of `git.worktree_create` with a file that cannot be kept answers `timeout` when the private store has no `incomplete` entry.

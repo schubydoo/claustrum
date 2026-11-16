@@ -488,8 +488,8 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 //
 // The first copy left out for seedSpare ends the seed, after the shard folder
 // of its object. On 4c111e86 the second of two objects then got no shard
-// folder (measured on macOS). Linux, and a later object that a hard link
-// can seed, are claustrum's own, not measured.
+// folder (measured on macOS). Linux, a later object that a hard link can
+// seed and a later copy that fits are claustrum's own, not measured.
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
@@ -577,7 +577,7 @@ const (
 // After Git LFS downloads began, a downloaded file that the keep cannot put in
 // the store of the repository gives the text of a link (linkText) or of the
 // room (notKeptRoomStart). Both are measured on Linux. Downloads began when
-// the private store has an entry `incomplete` at the deadline. A file that the
+// the private store has an entry `incomplete`. A file that the
 // keep left out (storeUse.left, else downloadsLeftOut) with no such entry keeps
 // timeout (4c111e86, measured on Linux and macOS). The text of the room needs
 // a file left out (claustrum's own). ok is false in every other case.
@@ -896,7 +896,8 @@ var keepTickEvery = time.Second
 // end stops a keep that still runs when the read-tree call has exited
 // (stop). On 4c111e86 the read of a 900 MiB object that began during the
 // checkout ended at the exit of git, with no copy. The keep after the
-// checkout then read it again and made its one copy (measured on Linux).
+// checkout then read it again, and only it wrote a temp file (measured on
+// Linux).
 // Claustrum's own, not measured: a stop during the copy of a tick, which
 // removes that temp file as any stopped copy does, macOS, and the ticks after
 // a stop for the space, until git exits.
