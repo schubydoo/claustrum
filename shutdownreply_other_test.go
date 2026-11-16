@@ -28,7 +28,7 @@ func TestShutdownReplyIsWrittenBeforeTheClose(t *testing.T) {
 	s.mu.Lock()
 	s.conns[c] = struct{}{}
 	s.mu.Unlock()
-	go s.serveConn(c)
+	serveConnForTest(t, s, c)
 
 	var line string
 	read := make(chan struct{})

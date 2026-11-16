@@ -23,7 +23,7 @@ func startShutdownOnPipe(t *testing.T, s *server) net.Conn {
 	s.mu.Lock()
 	s.conns[c] = struct{}{}
 	s.mu.Unlock()
-	go s.serveConn(c)
+	serveConnForTest(t, s, c)
 	if _, err := io.WriteString(client, `{"jsonrpc":"2.0","id":7,"method":"server.shutdown"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}

@@ -147,6 +147,26 @@ func waitServedConns(t *testing.T, s *server, acceptDone <-chan struct{}, served
 	}
 }
 
+// serveConnForTest runs serveConn on c for a test that serves a connection outside
+// the harness. At cleanup it closes the server side and waits for serveConn to
+// return, for the reason in waitServedConns.
+func serveConnForTest(t *testing.T, s *server, c *conn.Conn) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.serveConn(c)
+	}()
+	t.Cleanup(func() {
+		c.NC().Close()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Errorf("serveConn still runs 10 s after the cleanup closed its connection")
+		}
+	})
+}
+
 // startSocketServer is newRunningServer for tests that only need the socket path.
 func startSocketServer(t *testing.T) string {
 	t.Helper()
