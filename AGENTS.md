@@ -137,8 +137,8 @@ from the socket, as in `plugins.prune`.
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
 | `files.extract_tar` | the last name of `destDir` | the caller (RPC) | `homeguard.WipesHomeDir`, `destEntryHoldsHome`, `checkDestViews` | [files.extract_tar](docs/protocol/files-extract-tar.md) |
-| `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `homeguard.WipesHomeDir` on `worktreePath`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
-| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two staging removes | the caller (RPC) | `homeguard.WipesHomeDir` (D2), identity tests, one exception (see Path 3) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
+| `git.worktree_remove` | `worktreePath`, its registration | the caller (RPC) | `homeguard.WipesHomeDir` on `worktreePath`, `worktreeLeafHomeRefusal`, containment | [git.worktree_remove](docs/protocol/git-worktree-remove.md) |
+| `git.worktree_create` rollback | `worktreePath`, its registration, one stale entry, two staging removes | the caller (RPC) | `homeguard.WipesHomeDir` (D2), `leafHoldsHome`, identity tests, one exception (see Path 3) | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `git.worktree_create` staging sweep | old staging entries of the `baseRepo` git directory | the caller (RPC): a good add in `shadow` | prefix, age, `homeguard.WipesHomeDir` | [git.worktree_create](docs/protocol/git-worktree-create.md#after-a-failure) |
 | `-install` | the CLI path | the operator | D6, `homeguard.FolderHoldsHome` | [-install](docs/INSTALL.md#staging-and-cleanup) |
 
