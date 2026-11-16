@@ -160,6 +160,7 @@ type heldTempRoot struct {
 	users       []*tempRootUser
 	stop        chan struct{}
 	checkFailed bool        // the last check failed (checkTempRoot)
+	changes     int         // the change lines of the checks so far (tempRootChangeCap)
 	lost        atomic.Bool // set once, when a check finds the folder lost
 	// given is true once the last spawn gave the folder back, at givenAt. The checks
 	// then go on with no flock and no write (checkTempRoots). gone is true once a check
@@ -954,7 +955,28 @@ const (
 	tempRootWellAgainLn     = "[process.Manager] Claude Code's private temp folder %s: all is well with it again"
 	tempRootDirGoneLine     = "[process.Manager] Claude Code's private temp folder %s: the temp dir is gone; nobody is ended over that, and it is looked at again"
 	tempRootOwnerShutLine   = "[process.Manager] Claude Code's private temp folder %s: its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again"
+	tempRootChangeCapLine   = "[process.Manager] Claude Code's private temp folder %s: its state keeps changing, and is logged no more unless it is lost"
 )
+
+// tempRootChangeCap is the count of change lines of one hold of a folder: a failed-check
+// line or the line that all is well again. 4c111e86 logs 49 lines of a folder of mode 0 and
+// of all is well again, then the cap line in place of the 50th, and no change line after
+// (measured on Linux). Not measured, claustrum's own: the cap on macOS, a count for each
+// folder, the lines of a gone or unreadable temp dir in the count, the line of a loss after
+// the cap, and a new count when a given-back folder is held again.
+const tempRootChangeCap = 50
+
+// logTempRootChange logs a change line of h, or the cap line in place of the change
+// at tempRootChangeCap, or nothing after it.
+func logTempRootChange(h *heldTempRoot, format string, args ...any) {
+	h.changes++
+	switch {
+	case h.changes < tempRootChangeCap:
+		logging.Infof(format, args...)
+	case h.changes == tempRootChangeCap:
+		logging.Infof(tempRootChangeCapLine, h.name)
+	}
+}
 
 // tempRootCheckDev gives the device of st in a check. A seam for the tests, as a
 // test cannot mount. Production never reassigns it.
@@ -988,7 +1010,7 @@ var tempRootCheckDev = statDev
 func checkTempRoot(h *heldTempRoot) {
 	failed := func(format string, args ...any) {
 		if !h.checkFailed && !h.given {
-			logging.Infof(format, args...)
+			logTempRootChange(h, format, args...)
 		}
 		h.checkFailed = true
 	}
@@ -1033,7 +1055,7 @@ func checkTempRoot(h *heldTempRoot) {
 	}
 	if h.checkFailed && !h.given {
 		h.checkFailed = false
-		logging.Infof(tempRootWellAgainLn, h.name)
+		logTempRootChange(h, tempRootWellAgainLn, h.name)
 	}
 	switch {
 	case missing && h.given:
