@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -85,7 +86,9 @@ func tempEntryName() string { return "claude-" + strconv.Itoa(os.Getuid()) }
 // test that left a live count.
 func cleanTempRoots(t *testing.T, releases *[]func()) {
 	t.Helper()
+	clearTempRootMakes()
 	t.Cleanup(func() {
+		defer clearTempRootMakes()
 		for _, r := range *releases {
 			r()
 		}
@@ -108,6 +111,26 @@ func cleanTempRoots(t *testing.T, releases *[]func()) {
 		tempRootsLost.list = nil
 		tempRootsLost.mu.Unlock()
 	})
+}
+
+// clearTempRootMakes forgets the makes of earlier tests, so that the make cap of a
+// test counts its own makes only.
+func clearTempRootMakes() {
+	tempRoots.mu.Lock()
+	tempRoots.made = nil
+	tempRoots.mu.Unlock()
+}
+
+// fakeTempRootClock sets the clock of the make cap to a time that only the returned
+// call moves on, until the test ends.
+func fakeTempRootClock(t *testing.T) (advance func(time.Duration)) {
+	t.Helper()
+	var at atomic.Int64
+	at.Store(time.Now().UnixNano())
+	old := tempRootNow
+	tempRootNow = func() time.Time { return time.Unix(0, at.Load()) }
+	t.Cleanup(func() { tempRootNow = old })
+	return func(d time.Duration) { at.Add(int64(d)) }
 }
 
 func ccdFolders(t *testing.T, x string) []string {

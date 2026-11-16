@@ -77,6 +77,28 @@ var tempRootLimit = 2 * time.Second
 // step or a refresh holds the lock, once it ends (claustrum's own, not measured).
 const tempRootLiveCap = 8
 
+// tempRootMakeCap is the count of new folders that the daemon makes within
+// tempRootMakeWindow. A spawn that needs one more gets tempRootTooMany and no
+// folder (4c111e86, measured on macOS). A folder that a spawn takes again is no
+// make, and a folder that was removed still counts. The count is of this daemon, in
+// memory (measured on macOS). These are claustrum's own, not measured: a window that
+// slides with each make, its edge (a make 60 s old no longer counts), the cap on Linux
+// and for each kind of entry, and no count for a check that makes a folder anew.
+const tempRootMakeCap = 8
+
+const tempRootMakeWindow = 60 * time.Second
+
+// tempRootNow gives the time of a make. A seam for the tests. Production never
+// reassigns it.
+var tempRootNow = time.Now
+
+// tempRootMakeFits cuts the makes older than tempRootMakeWindow and reports whether
+// one more make fits the cap. The caller holds tempRoots.mu.
+func tempRootMakeFits(now time.Time) bool {
+	tempRoots.made = slices.DeleteFunc(tempRoots.made, func(at time.Time) bool { return now.Sub(at) >= tempRootMakeWindow })
+	return len(tempRoots.made) < tempRootMakeCap
+}
+
 // tempRootMaxAge is the age of a folder that a later daemon no longer takes. A
 // folder of 25 h gets a new name (measured on Linux). The bound of 24 h is
 // claustrum's own, not measured. The daemon itself keeps a folder that it holds.
@@ -155,6 +177,7 @@ var tempRoots = struct {
 	mu   sync.Mutex
 	held map[string]*heldTempRoot // by the path of the folder
 	live int
+	made []time.Time     // the time of each make within tempRootMakeWindow, oldest first
 	lost map[string]bool // the path of each folder that a check found lost, for the life of the daemon
 }{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
@@ -316,12 +339,15 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	h, name, fresh := reuseTempRoot(xfd, dir, root, reg, uid, canAdd)
 	made := false
 	if h == nil {
-		if !canAdd {
+		if !canAdd || !tempRootMakeFits(tempRootNow()) {
 			return refuse(tempRootTooMany)
 		}
 		var removed bool
 		var mkErr error
 		h, name, removed, mkErr = makeTempRoot(xfd, dir, uid)
+		if h != nil || removed {
+			tempRoots.made = append(tempRoots.made, tempRootNow()) // the mkdir worked
+		}
 		if h != nil {
 			h.dir, h.name, h.uid = dir, name, uid
 		}

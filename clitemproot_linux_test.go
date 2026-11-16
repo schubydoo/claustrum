@@ -178,11 +178,13 @@ func TestCLITempRootCapOfEightLiveSpawns(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	logs := captureLogBuf(t)
+	advance := fakeTempRootClock(t) // each make out of the window of the one before
 	for i := range tempRootLiveCap {
 		x, runDir := tempRootDir(t, true)
 		if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
 			t.Fatalf("spawn %d: %+v, want a name", i+1, res)
 		}
+		advance(tempRootMakeWindow)
 	}
 	x, runDir := tempRootDir(t, true)
 	env, res := runTempRoot(t, x, runDir, &rel)
@@ -219,6 +221,119 @@ func TestCLITempRootCapCountsEachFolderOnce(t *testing.T) {
 	x2, runDir2 := tempRootDir(t, true)
 	if _, res := runTempRoot(t, x2, runDir2, &rel); res == nil || res.Name == "" {
 		t.Fatalf("a spawn in another temp dir: %+v, want a name", res)
+	}
+}
+
+// The ninth make within 60 s gets no folder, with the text of the cap, and the child
+// keeps its env (4c111e86, measured on macOS). A make 60 s old no longer counts, and
+// the window slides with each make (claustrum's own, not measured).
+func TestCLITempRootCapOfEightMakesInAMinute(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	logs := captureLogBuf(t)
+	advance := fakeTempRootClock(t)
+	for i := range tempRootMakeCap {
+		x, runDir := tempRootDir(t, true)
+		if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
+			t.Fatalf("make %d: %+v, want a name", i+1, res)
+		}
+		rel[len(rel)-1]() // the child ended: the place of the live cap is free
+		advance(time.Second)
+	}
+	waitTempRootsLive(t, 0)
+	advance(51 * time.Second) // 59 s after the first make
+	x, runDir := tempRootDir(t, true)
+	env, res := runTempRoot(t, x, runDir, &rel)
+	b, _ := json.Marshal(res)
+	if want := `{"refused":"not readable by its owner","whyNot":"too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute"}`; string(b) != want {
+		t.Fatalf("ninth answer %s, want %s", b, want)
+	}
+	if !slices.Equal(env, []string{"TMPDIR=" + x}) || len(ccdFolders(t, x)) != 0 {
+		t.Errorf("the ninth got env %q and folders %v, want its own env and none", env, ccdFolders(t, x))
+	}
+	want := "[process.Manager] Claude Code's temp folder is unfit (it is " + unfitKind + "), but no other was made: " + tempRootTooMany + "\n"
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("log %q, want %q", logs.String(), want)
+	}
+	addLostEntry("ccd-0123456789", "changed")
+	_, res = runTempRoot(t, x, runDir, &rel)
+	b, _ = json.Marshal(res)
+	if want := `{"refused":"not readable by its owner","whyNot":"` + tempRootTooMany + `","lost":[{"name":"ccd-0123456789","why":"changed","agoSeconds":0}]}`; string(b) != want {
+		t.Fatalf("answer with a loss %s, want %s", b, want)
+	}
+	advance(time.Second) // 60 s after the first make
+	if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
+		t.Fatalf("60 s after the first make: %+v, want a name", res)
+	}
+	x2, runDir2 := tempRootDir(t, true)
+	if _, res := runTempRoot(t, x2, runDir2, &rel); res == nil || res.WhyNot != tempRootTooMany {
+		t.Fatalf("59 s after the second make: %+v, want the text of the cap", res)
+	}
+}
+
+// A spawn that takes an intact folder again makes none, so it does not count
+// (4c111e86, measured on macOS).
+func TestCLITempRootCapSkipsATakeAgain(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	fakeTempRootClock(t)
+	x, runDir := tempRootDir(t, true)
+	_, first := runTempRoot(t, x, runDir, &rel)
+	if first == nil || first.Name == "" {
+		t.Fatalf("first: %+v, want a name", first)
+	}
+	for i := range 2 * tempRootMakeCap {
+		rel[len(rel)-1]()
+		waitTempRootsLive(t, 0)
+		if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name != first.Name {
+			t.Fatalf("take %d: %+v, want the name %s", i+1, res, first.Name)
+		}
+	}
+	for i := 1; i < tempRootMakeCap; i++ {
+		x, runDir := tempRootDir(t, true)
+		if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.Name == "" {
+			t.Fatalf("make %d: %+v, want a name", i+1, res)
+		}
+	}
+	for _, r := range rel {
+		r() // the place of the live cap is free
+	}
+	waitTempRootsLive(t, 0)
+	x9, runDir9 := tempRootDir(t, true)
+	if _, res := runTempRoot(t, x9, runDir9, &rel); res == nil || res.WhyNot != tempRootTooMany {
+		t.Fatalf("ninth make: %+v, want the text of the cap", res)
+	}
+}
+
+// A folder that was removed still counts (4c111e86, measured on macOS). A spawn in
+// its temp dir then needs a make, and gets none.
+func TestCLITempRootCapCountsARemovedFolder(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	fakeTempRootClock(t)
+	var firstDir, firstRun string
+	for i := range tempRootMakeCap {
+		x, runDir := tempRootDir(t, true)
+		_, res := runTempRoot(t, x, runDir, &rel)
+		if res == nil || res.Name == "" {
+			t.Fatalf("make %d: %+v, want a name", i+1, res)
+		}
+		rel[len(rel)-1]()
+		waitTempRootsLive(t, 0)
+		openTree(filepath.Join(x, res.Name))
+		if err := os.RemoveAll(filepath.Join(x, res.Name)); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			firstDir, firstRun = x, runDir
+		}
+	}
+	if _, res := runTempRoot(t, firstDir, firstRun, &rel); res == nil || res.WhyNot != tempRootTooMany {
+		t.Fatalf("a spawn where the first folder was: %+v, want the text of the cap", res)
+	}
+	x, runDir := tempRootDir(t, true)
+	if _, res := runTempRoot(t, x, runDir, &rel); res == nil || res.WhyNot != tempRootTooMany {
+		t.Fatalf("ninth make: %+v, want the text of the cap", res)
 	}
 }
 

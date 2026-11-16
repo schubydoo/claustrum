@@ -167,7 +167,7 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 | `the temp dir or a folder above it belongs to, or can be written by, another account` | A temp dir of mode 0777. `/tmp` passes. |
 | `only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this` | The entry is a link or a file (`4c111e86`). A temp dir that cannot be searched (see [a failed test](#a-failed-test-of-the-temp-dir-build-4c111e86)). |
 | `no folder could be made in the temp dir: permission denied` | The mkdir of the new folder failed (see [a failed test](#a-failed-test-of-the-temp-dir-build-4c111e86)). |
-| `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | The daemon holds 8 folders (`c9125eb8` and `4c111e86`, measured on macOS). Spawns that share a folder take one place (measured on Linux). |
+| `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | The daemon holds 8 folders (`c9125eb8` and `4c111e86`, measured on macOS). Spawns that share a folder take one place (measured on Linux). Or the daemon made 8 new folders in the last minute (see [the cap of new folders](#the-cap-of-new-folders-build-4c111e86)). |
 | `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. A folder that the step makes later stays. `refused` is absent. |
 | `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
 
@@ -178,6 +178,17 @@ These rules are measured on macOS. On Linux they are claustrum's own.
 - A temp dir whose attributes cannot be read gives no member and no line. A folder above it that cannot be searched counts as such a temp dir (claustrum's own).
 - A temp dir that cannot be searched gives `refused` `out of reach` and the text of a link or a file.
 - A mkdir of the new folder that fails with `EACCES` gives `no folder could be made in the temp dir: permission denied`. `refused` names the kind of the entry. Another errno gives its own text (claustrum's own).
+
+#### The cap of new folders (build `4c111e86`)
+
+These rules are measured on macOS. On Linux they are claustrum's own.
+
+- A daemon makes at most 8 new folders within about 60 s. The next spawn that needs one gets the text of the cap and no folder.
+- The child still runs with its env as it was. `refused` names the kind of the entry, and `lost` comes after `whyNot`.
+- A spawn that takes an intact folder again makes none. A folder that was removed still counts.
+- The count is of one daemon. A new daemon makes a folder at once.
+
+These are claustrum's own: the window of 60 s slides with each make, and a make 60 s old no longer counts. The count is in memory. A check that makes a folder anew at its name is no make. The cap holds for each kind of entry.
 
 #### The removes of a new folder
 
