@@ -740,10 +740,22 @@ func fakeCheckTicks(t *testing.T) checkTicks {
 	t.Helper()
 	stopTempRootChecks()
 	c := checkTicks{ticks: make(chan time.Time), done: make(chan struct{}, 1)}
+	// The loop reads both seams under tempRoots.mu at its start.
+	tempRoots.mu.Lock()
 	oldTicks, oldAfter := tempRootCheckTicks, afterTempRootChecks
 	tempRootCheckTicks = func(time.Duration) (<-chan time.Time, func()) { return c.ticks, func() {} }
-	afterTempRootChecks = func() { c.done <- struct{}{} }
-	t.Cleanup(func() { tempRootCheckTicks, afterTempRootChecks = oldTicks, oldAfter })
+	afterTempRootChecks = func() {
+		select {
+		case c.done <- struct{}{}:
+		default:
+		}
+	}
+	tempRoots.mu.Unlock()
+	t.Cleanup(func() {
+		tempRoots.mu.Lock()
+		tempRootCheckTicks, afterTempRootChecks = oldTicks, oldAfter
+		tempRoots.mu.Unlock()
+	})
 	return c
 }
 
@@ -853,15 +865,16 @@ func TestCLITempRootGivenBackFolderOfAGoneTempDir(t *testing.T) {
 }
 
 // The checks of a given-back folder write nothing: a missing folder is not made anew,
-// an own folder at the name is not held instead, and a missing t is not made again
-// (claustrum's own, not measured).
+// an own folder at the name is not held instead, and a missing t is not made again.
+// The first two end the checks of the folder (claustrum's own, not measured).
 func TestCLITempRootGivenBackCheckWritesNothing(t *testing.T) {
 	cases := []struct {
 		name   string
+		given  int // the given-back folders that are checked after the check
 		change func(t *testing.T, f string)
 		want   func(t *testing.T, f string)
 	}{
-		{"missing folder",
+		{"missing folder", 0,
 			func(t *testing.T, f string) {
 				if err := os.Rename(f, f+".away"); err != nil {
 					t.Fatal(err)
@@ -872,7 +885,7 @@ func TestCLITempRootGivenBackCheckWritesNothing(t *testing.T) {
 					t.Errorf("the name: %v, want no folder made anew", err)
 				}
 			}},
-		{"own folder at the name",
+		{"own folder at the name", 0,
 			func(t *testing.T, f string) {
 				if err := os.Rename(f, f+".away"); err != nil {
 					t.Fatal(err)
@@ -889,7 +902,7 @@ func TestCLITempRootGivenBackCheckWritesNothing(t *testing.T) {
 					t.Errorf("t in the new folder: %v, want none", err)
 				}
 			}},
-		{"missing t",
+		{"missing t", 1,
 			func(t *testing.T, f string) {
 				if err := os.Chmod(f, 0o700); err != nil {
 					t.Fatal(err)
@@ -920,6 +933,9 @@ func TestCLITempRootGivenBackCheckWritesNothing(t *testing.T) {
 			c.change(t, f)
 			ticks.check(t)
 			c.want(t, f)
+			if n := givenCount(); n != c.given {
+				t.Errorf("%d given-back folders after the check, want %d", n, c.given)
+			}
 			if strings.Contains(logs.String(), "private temp folder "+a.Name) {
 				t.Errorf("log %q, want no line of %s", logs.String(), a.Name)
 			}
@@ -985,5 +1001,70 @@ func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
 	}
 	if !slices.Equal(got, names) {
 		t.Errorf("lost list %v, want %v", got, names)
+	}
+}
+
+// A new hold of a given-back folder ends its old record and closes the old handle, so
+// a later loss gives one line and one entry of the list (claustrum's own).
+func TestCLITempRootHeldAgainEndsTheGivenRecord(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	tempRoots.mu.Lock()
+	old := tempRoots.given[0]
+	tempRoots.mu.Unlock()
+	if b := runTempRootBound(t, x, runDir, &rel, nil); b == nil || b.Name != a.Name {
+		t.Fatalf("second answer %+v, want the folder %s again", b, a.Name)
+	}
+	if n := givenCount(); n != 0 || old.f.Fd() != ^uintptr(0) {
+		t.Errorf("after the new hold %d given-back folders, old handle %d, want 0 and closed", n, old.f.Fd())
+	}
+	rel[1]()
+	linkAtName(t, x, a.Name)
+	ticks.check(t)
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("%d loss lines, want 1", n)
+	}
+	if c := runTempRootBound(t, x, runDir, &rel, nil); c == nil || len(c.Gone) != 1 {
+		t.Errorf("the next answer %+v, want one lost entry", c)
+	}
+}
+
+// At most tempRootGivenKeep given-back folders are checked, and each for
+// tempRootGivenFor. The oldest goes first (claustrum's own, not measured).
+func TestCLITempRootGivenBackBounds(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	advance := fakeTempRootClock(t)
+	var first *heldTempRoot
+	for i := range tempRootGivenKeep + 1 {
+		x, runDir := tempRootDir(t, true)
+		if a := runTempRootBound(t, x, runDir, &rel, nil); a == nil || a.Name == "" {
+			t.Fatalf("spawn %d: %+v, want a folder", i+1, a)
+		}
+		rel[i]()
+		advance(tempRootMakeWindow)
+		if i == 0 {
+			tempRoots.mu.Lock()
+			first = tempRoots.given[0]
+			tempRoots.mu.Unlock()
+		}
+	}
+	tempRoots.mu.Lock()
+	n, firstIn := len(tempRoots.given), slices.Contains(tempRoots.given, first)
+	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
+	tempRoots.mu.Unlock()
+	if n != tempRootGivenKeep || firstIn || first.f.Fd() != ^uintptr(0) {
+		t.Fatalf("%d given-back folders, the first kept %v, want %d and the first closed", n, firstIn, tempRootGivenKeep)
+	}
+	ticks.check(t)
+	if n := givenCount(); n != tempRootGivenKeep-1 {
+		t.Errorf("%d given-back folders after the check, want %d: the old one ends", n, tempRootGivenKeep-1)
 	}
 }
