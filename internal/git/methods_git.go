@@ -2309,8 +2309,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// location calls run again (recheckLocation). That place is
 			// claustrum's own. 4c111e86 and c9125eb8 make the same 45 calls
 			// with one ask (the counts measured on Linux).
-			// The answer is not used here. The content check gets it again as
-			// a kept answer (claustrum's own, not measured).
+			// The answer is not used here. The content check gets a good one
+			// again as a kept answer. A bad answer is not kept, so the content
+			// check asks again, and only a second bad answer refuses
+			// (claustrum's own, not measured).
 			if p.WorktreeRoot != "" {
 				_ = cu.askAfterAdd(repo)
 				recheckLocation(quiet, repo)

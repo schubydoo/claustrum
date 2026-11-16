@@ -196,37 +196,53 @@ func TestWorktreeCreateFromSourceBranchWithRootRechecks(t *testing.T) {
 	if err := os.Symlink("nowhere", filepath.Join(base, ".git")); err != nil {
 		t.Fatal(err)
 	}
-	source := strings.TrimSpace(gitOut(t, f.repo, "rev-parse", "--abbrev-ref", "HEAD"))
-	if raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": base, "branchName": "w1",
-		"worktreePath": filepath.Join(base, ".claude", "worktrees", "w1"), "sourceBranch": source}); !strings.Contains(raw, `"success":true`) {
-		t.Fatalf("git.worktree_create without worktreeRoot = %s", raw)
-	}
-	root := dropGroupWrite(t, resolveTestRoot(t, t.TempDir()))
-	requireTempOutsideCheckout(t, root)
-	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": base, "branchName": "w2",
-		"worktreePath": filepath.Join(root, "proj", "w2"), "worktreeRoot": root, "sourceBranch": source})
-	if !strings.Contains(raw, `"success":true`) {
-		t.Fatalf("git.worktree_create = %s", raw)
-	}
 	type head struct {
 		words string
 		n     int
 	}
-	var got []head
-	for _, c := range calls {
-		words := strings.Join(strings.Fields(rowArgv(c, f.repo, root))[:2], " ")
-		if i := slices.IndexFunc(got, func(h head) bool { return h.words == words }); i >= 0 {
-			got[i].n++
-			continue
+	heads := func(calls []envCall, root string) []head {
+		var got []head
+		for _, c := range calls {
+			words := strings.Join(strings.Fields(rowArgv(c, f.repo, root))[:2], " ")
+			if i := slices.IndexFunc(got, func(h head) bool { return h.words == words }); i >= 0 {
+				got[i].n++
+				continue
+			}
+			got = append(got, head{words, 1})
 		}
-		got = append(got, head{words, 1})
+		return got
 	}
-	want := []head{{"config -z", 17}, {"rev-parse --is-inside-work-tree", 1}, {"rev-parse --show-toplevel", 3},
+	source := strings.TrimSpace(gitOut(t, f.repo, "rev-parse", "--abbrev-ref", "HEAD"))
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": base, "branchName": "w1",
+		"worktreePath": filepath.Join(base, ".claude", "worktrees", "w1"), "sourceBranch": source})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create without worktreeRoot = %s", raw)
+	}
+	// The row without worktreeRoot has 30 calls. It lists no core.excludesFile
+	// read, so the test leaves out the one that claustrum makes first here.
+	calls = slices.DeleteFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "core.excludesFile") })
+	want := []head{{"rev-parse --git-dir", 2}, {"config --no-includes", 1}, {"config -z", 8},
+		{"rev-parse --is-inside-work-tree", 1}, {"rev-parse --verify", 2}, {"rev-parse --absolute-git-dir", 1},
+		{"--git-dir=<repo>/.git config", 6}, {"--git-dir=<repo>/.git --work-tree=<repo>/sub", 1}, {"worktree add", 1},
+		{"--git-dir=<repo>/.git --work-tree=<repo>/sub/.claude/worktrees/w1", 1}, {"--attr-source=<id> version", 1},
+		{"--git-dir=<repo>/.git hash-object", 1}, {"--attr-source=<id> --git-dir=<repo>/.git", 1},
+		{"cat-file --batch", 1}, {"hash-object -t", 2}}
+	if got := heads(calls, ""); !slices.Equal(got, want) {
+		t.Errorf("without worktreeRoot: %d calls\n got  %v\n want %v", len(calls), got, want)
+	}
+	root := dropGroupWrite(t, resolveTestRoot(t, t.TempDir()))
+	requireTempOutsideCheckout(t, root)
+	raw, calls = f.call(t, "git.worktree_create", map[string]any{"baseRepo": base, "branchName": "w2",
+		"worktreePath": filepath.Join(root, "proj", "w2"), "worktreeRoot": root, "sourceBranch": source})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+	want = []head{{"config -z", 17}, {"rev-parse --is-inside-work-tree", 1}, {"rev-parse --show-toplevel", 3},
 		{"rev-parse --absolute-git-dir", 4}, {"worktree list", 3}, {"rev-parse --verify", 2},
 		{"--git-dir=<repo>/.git config", 6}, {"--git-dir=<repo>/.git --work-tree=<root>/proj/w2", 2},
 		{"worktree add", 1}, {"rev-parse --git-dir", 1}, {"--git-dir=<repo>/.git hash-object", 1},
 		{"--attr-source=<id> --git-dir=<repo>/.git", 1}, {"cat-file --batch", 1}, {"hash-object -t", 2}}
-	if !slices.Equal(got, want) {
+	if got := heads(calls, root); !slices.Equal(got, want) {
 		t.Errorf("%d calls\n got  %v\n want %v", len(calls), got, want)
 	}
 }
