@@ -122,7 +122,7 @@ func TestCheckLauncherFileOwner(t *testing.T) {
 	}{
 		{"file own", map[string]launcherFacts{L: {uid: 1000, mode: 0o755}}, own(L)},
 		{"folder own", map[string]launcherFacts{x: {uid: 1000, mode: 0o755}}, own(x)},
-		{"file 1234", map[string]launcherFacts{L: {uid: 1234, mode: 0o755}}, "`" + L + "` belongs to uid 1234. Root must own the launcher and every folder above it. If you trust uid 1234 with the launcher, you can name it as ownerUid in sshHostLauncher instead."},
+		{"file 1234", map[string]launcherFacts{L: {uid: 1234, mode: 0o755}}, "`" + L + "` belongs to uid 1234. Root must own the launcher and every folder above it."},
 		{"file nobody", map[string]launcherFacts{L: {uid: 65534, mode: 0o755}}, "`" + L + "` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it."},
 	}
 	for _, c := range cases {
@@ -223,19 +223,53 @@ func TestCheckLauncherFileNFS(t *testing.T) {
 	}
 }
 
-// TestCheckLauncherFileLike9p pins a trusted disk kind with no real device while a 9p
-// mount is listed (4c111e86, measured on Linux with btrfs): with no digest the folder
-// gets writable and the 9p text, also with a right ownerUid. With the right digest it passes.
+// TestCheckLauncherFileLike9p pins the three doubts of a trusted kind with no real
+// device (4c111e86, measured on Linux): a 9p entry in /sys/class/bdi, a /sys/class/bdi that
+// can't be read, and the f_type of ext4 or XFS with no disk behind it. With no digest the
+// folder gets writable and the text, also with a right ownerUid. With the right digest it
+// passes (measured for the 9p entry, claustrum's own for the other two).
 func TestCheckLauncherFileLike9p(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		facts launcherFacts
+		text  func(mnt string) string
+	}{
+		{"9p entry", launcherFacts{mode: 0o755, doubt: doubtNineP}, func(mnt string) string {
+			return "`" + mnt + "` can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
+		}},
+		{"no bdi", launcherFacts{mode: 0o755, doubt: doubtNoBDI}, func(mnt string) string {
+			return "`" + mnt + "` may be a 9p share: `/sys/class/bdi`, which would show one, can't be read here. So who can change `" + mnt + "` can't be checked. Make `/sys` readable to the account that signs in (`mount -t sysfs sysfs /sys`), or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
+		}},
+		{"ext4 with no disk", launcherFacts{mode: 0o755, doubt: doubtNoDisk, magic: 0xef53}, func(mnt string) string {
+			return "`" + mnt + "` is on a file system that reports a disk's kind (0xef53) but has no disk behind it, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
+		}},
+		{"xfs with no disk", launcherFacts{mode: 0o755, doubt: doubtNoDisk, magic: 0x58465342}, func(mnt string) string {
+			return "`" + mnt + "` is on a file system that reports a disk's kind (0x58465342) but has no disk behind it, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
+		}},
+	} {
+		d := launcherDir(t)
+		mnt := filepath.Join(d, "mnt")
+		L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
+		fakeLauncherFacts(t, map[string]launcherFacts{mnt: c.facts, L: c.facts})
+		uid := uint32(0)
+		checkFile(t, c.name+" {}", L, LauncherCheck{}, FaultWritable, c.text(mnt))
+		checkFile(t, c.name+" ownerUid", L, LauncherCheck{OwnerUID: &uid}, FaultWritable, c.text(mnt))
+		checkFile(t, c.name+" right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
+	}
+}
+
+// TestCheckLauncherFileRootNFS pins the text of a "/" on NFS (4c111e86, measured on
+// Linux, in a chroot on an NFS mount). A folder below "/" on NFS keeps the general text.
+func TestCheckLauncherFileRootNFS(t *testing.T) {
 	d := launcherDir(t)
-	mnt := filepath.Join(d, "btrfs")
-	L := writeLauncher(t, filepath.Join(mnt, "launcher.sh"), "#!/bin/sh\n", 0o755)
-	fakeLauncherFacts(t, map[string]launcherFacts{mnt: {mode: 0o755, like9p: true}, L: {mode: 0o755, like9p: true}})
-	text := "`" + mnt + "` can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
-	uid := uint32(0)
-	checkFile(t, "like 9p {}", L, LauncherCheck{}, FaultWritable, text)
-	checkFile(t, "like 9p ownerUid", L, LauncherCheck{OwnerUID: &uid}, FaultWritable, text)
-	checkFile(t, "like 9p right", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, "", "")
+	L := writeLauncher(t, filepath.Join(d, "launcher.sh"), "#!/bin/sh\n", 0o755)
+	nfs := launcherFacts{mode: 0o755, fs: "NFS"}
+	fakeLauncherFacts(t, map[string]launcherFacts{"/": nfs, d: nfs, L: nfs})
+	checkFile(t, "/ on NFS", L, LauncherCheck{}, FaultWritable, "`/` is on NFS. Who can change files there can't be checked, so a launcher can't be used on this host.")
+	fakeLauncherFacts(t, map[string]launcherFacts{"/": {mode: 0o755, fs: "SMB"}})
+	checkFile(t, "/ on SMB", L, LauncherCheck{}, FaultWritable, "`/` is on SMB, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.")
+	fakeLauncherFacts(t, map[string]launcherFacts{d: nfs, L: nfs})
+	checkFile(t, "folder on NFS", L, LauncherCheck{}, FaultWritable, "`"+d+"` is on NFS, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.")
 }
 
 // TestCheckLauncherFileOwnFUSE pins a FUSE mount that the uid of the daemon owns

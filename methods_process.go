@@ -116,8 +116,10 @@ func launcherShapeRefusal(req *request, p *spawnParams) *rpc.Response {
 
 // gitReadCombineText is the refusal of a gitRead spawn with another command than
 // git, with no cwd, or with a member that it cannot be combined with (c9125eb8,
-// measured on Linux, macOS and Windows).
-const gitReadCombineText = `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot or sessionFoldersOff`
+// measured on Linux, macOS and Windows). The text names cliTempRootEnd too
+// (4c111e86, measured on Linux). The test does not refuse cliTempRootEnd
+// (claustrum's own, not measured).
+const gitReadCombineText = `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot, cliTempRootEnd or sessionFoldersOff`
 
 // gitReadRefusal is the refusal of a "gitRead":true spawn before its start, or nil.
 // The combine test comes before the shape test (c9125eb8, measured on Linux). The

@@ -56,16 +56,26 @@ const nobodyUID = 65534
 const NoLauncherText = managedNoLauncher
 
 // launcherFacts are the facts of one path that the walk tests: its owner, its mode
-// bits (the 12 low bits of st_mode), fs and like9p. fs names a file system that the walk
-// does not trust, as the refusal text shows it, such as "NFS" or "an unknown kind of file
-// system (0x4d44)". It is "" for a trusted file system. like9p marks a trusted disk kind
-// with no real device while a 9p mount is listed.
+// bits (the 12 low bits of st_mode), fs, doubt and magic. fs names a file system that the
+// walk does not trust, as the refusal text shows it, such as "NFS" or "an unknown kind of
+// file system (0x4d44)". It is "" for a trusted file system. doubt marks a trusted kind
+// with no real device that the walk can't tell apart from a 9p share. magic is the f_type
+// that the text of doubtNoDisk shows.
 type launcherFacts struct {
-	uid    uint32
-	mode   uint32
-	fs     string
-	like9p bool
+	uid   uint32
+	mode  uint32
+	fs    string
+	doubt int
+	magic uint32
 }
+
+// The doubts of a trusted kind with no real device (4c111e86, measured on Linux).
+const (
+	doubtNone   = iota
+	doubtNineP  // /sys/class/bdi lists a 9p share
+	doubtNoBDI  // /sys/class/bdi can't be read
+	doubtNoDisk // the f_type of ext4 or XFS with no disk behind it
+)
 
 // launcherPathFacts and launcherOwnUID are seams, so a test fakes the owner, the mode
 // and the file system type, and runs as any user. Production never reassigns them.
@@ -104,8 +114,8 @@ var (
 //     pass (measured). Without digests the file is not read (claustrum's own, not
 //     measured).
 //
-//  7. On Linux, the check by handle (launcherMoved). A folder or a file that changes
-//     after it, before the start, is not guarded (claustrum's own, not measured).
+// A path that moves during the check is not refused for the move. A swapped file meets
+// the digest test like any other (4c111e86, measured on Linux).
 func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 	shown := managedShown(p)
 	switch {
@@ -122,10 +132,6 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 		return FaultMissing, managedNotExecutable(p)
 	}
 	target, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return FaultMissing, managedNotExecutable(p)
-	}
-	look, err := lookLauncherPath(target)
 	if err != nil {
 		return FaultMissing, managedNotExecutable(p)
 	}
@@ -156,7 +162,7 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 			return f, r
 		}
 	}
-	return launcherMoved(target, look)
+	return "", ""
 }
 
 // linkHolderFolders walks the absolute path p one name at a time, as the system does,
@@ -227,24 +233,37 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 		return FaultMissing, managedNotExecutable(launcher)
 	}
 	if f.fs != "" && !digests {
-		// The texts follow 4c111e86 (measured on Linux).
+		// The texts follow 4c111e86 (measured on Linux). The text of "/" is measured on
+		// NFS only. "/" on another kind gets the general text (claustrum's own, not measured).
+		if item == "/" && f.fs == "NFS" {
+			return FaultWritable, "`/` is on NFS. Who can change files there can't be checked, so a launcher can't be used on this host."
+		}
 		return FaultWritable, shown + " is on " + f.fs + ", so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
 	}
-	if f.like9p && !digests {
-		// 4c111e86, measured on Linux.
-		return FaultWritable, shown + " can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
+	if !digests {
+		// The texts follow 4c111e86 (measured on Linux, with no digest). The fault of the
+		// last two is claustrum's own, not measured.
+		switch f.doubt {
+		case doubtNineP:
+			return FaultWritable, shown + " can't be told apart from a 9p share that is mounted on this machine (`findmnt -t 9p` lists it, unless it's outside this container), so who can change it can't be checked. Unmount the share, or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
+		case doubtNoBDI:
+			return FaultWritable, shown + " may be a 9p share: `/sys/class/bdi`, which would show one, can't be read here. So who can change " + shown + " can't be checked. Make `/sys` readable to the account that signs in (`mount -t sysfs sysfs /sys`), or keep the launcher and every folder above it on a local disk, such as ext4 or XFS."
+		case doubtNoDisk:
+			return FaultWritable, fmt.Sprintf("%s is on a file system that reports a disk's kind (%#x) but has no disk behind it, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.", shown, f.magic)
+		}
 	}
 	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
 		// The order of the three texts, for a daemon that runs as uid 65534, is
 		// claustrum's own, not measured. The first text follows 4c111e86 (measured on
-		// Linux, on a FUSE mount).
+		// Linux, on a FUSE mount). The third follows 4c111e86 (measured on Linux, with a
+		// digest, on ext4 and on NFS).
 		switch {
 		case int64(f.uid) == int64(launcherOwnUID()):
 			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root must own the launcher and every folder above it.", shown, f.uid)
 		case f.uid == nobodyUID:
 			return FaultOwner, shown + " shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it."
 		default:
-			return FaultOwner, fmt.Sprintf("%s belongs to uid %d. Root must own the launcher and every folder above it. If you trust uid %d with the launcher, you can name it as ownerUid in sshHostLauncher instead.", shown, f.uid, f.uid)
+			return FaultOwner, fmt.Sprintf("%s belongs to uid %d. Root must own the launcher and every folder above it.", shown, f.uid)
 		}
 	}
 	if f.mode&0o022 != 0 {
