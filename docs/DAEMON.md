@@ -581,7 +581,7 @@ own, the text measured on Linux, `4c111e86`):
 
 Each new caller makes the daemon read its namespaces again until one read works. The first good read that names a namespace logs the serving line (measured on Linux, `4c111e86`).
 
-At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). Line one follows the host cleaning line. After a failed own naming, it waits and comes right after the serving line (measured on Linux, `4c111e86`). Windows logs line one once after the banner, also with no `files.realpath` call (measured on Windows, `4c111e86` and `c9125eb8`). The level tag, and the place and count of line two, are claustrum's own, not measured:
+At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). Line one follows the `host cleaning off` line. After a failed own naming, it waits and comes right after the serving line (measured on Linux, `4c111e86` and `c9125eb8`). Windows logs line one once after the banner, also with no `files.realpath` call (measured on Windows, `4c111e86` and `c9125eb8`). The level tag, and the place and count of line two, are claustrum's own, not measured:
 
 ```
 [FilesHandler] files.realpath: using the OS's path for the open handle

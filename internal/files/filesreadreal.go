@@ -31,7 +31,7 @@ func readRealStartLine(goos string, available func() bool) string {
 	return ""
 }
 
-// LogReadRealStart writes the start line once, before the first connection.
+// LogReadRealStart writes the start line of this system, before the first connection line.
 func LogReadRealStart() {
 	if line := readRealStartLine(runtime.GOOS, ReadRealAvailable); line != "" {
 		logging.Infof("%s", line)

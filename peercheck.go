@@ -379,8 +379,8 @@ func (g *peerGate) ownOrRetry() (nsText, error) {
 
 // logReadRealStart writes the start line of the files handler. After a failed
 // start naming it holds the line until the first read that works. Then the line
-// comes right after the serving line, once (4c111e86, measured on Linux). A plain
-// start and a good start naming write it at once (measured on Linux). A lift by a
+// comes right after the serving line (4c111e86 and c9125eb8, measured on Linux). A
+// plain start and a good start naming write it at once (measured on Linux). A lift by a
 // read that names no namespace writes it too (claustrum's own, not measured).
 func (g *peerGate) logReadRealStart() {
 	if g != nil {

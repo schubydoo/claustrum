@@ -74,3 +74,31 @@ func TestReadRealLineHeldUntilTheLift(t *testing.T) {
 		t.Errorf("after a good start naming the start line appears %d more times, want 1", n-before)
 	}
 }
+
+// TestReadRealLineAtALiftThatNamesNoNamespace: a read after a failed start
+// naming that works but names no namespace writes no serving line. It still
+// writes the held start line once, at the first admit (claustrum's own, not
+// measured). The test counts only the start line, as the log capture is shared.
+func TestReadRealLineAtALiftThatNamesNoNamespace(t *testing.T) {
+	t.Setenv(peerCheckEnv, "1")
+	stubStartTest(t, okLink, okInfo)
+	nameErr := error(ownNamingError{&fs.PathError{Op: "readlink", Path: "/proc/self/ns/user", Err: syscall.ENFILE}})
+	old := readDaemonNSText
+	t.Cleanup(func() { readDaemonNSText = old })
+	readDaemonNSText = func() (nsText, error) { return nsText{}, nameErr }
+	logs := captureLogBuf(t)
+	g := startPeerCheck()
+	g.logReadRealStart()
+	if strings.Contains(logs.String(), readRealPassLine) {
+		t.Fatalf("the start line came before the lift. Log:\n%s", logs.String())
+	}
+	nameErr = nil
+	for i := 0; i < 2; i++ {
+		if ok, _ := peerAdmitOnce(t, g); !ok {
+			t.Fatalf("caller %d after the lift was refused", i+1)
+		}
+		if n := strings.Count(logs.String(), readRealPassLine); n != 1 {
+			t.Errorf("after caller %d the start line appears %d times, want 1. Log:\n%s", i+1, n, logs.String())
+		}
+	}
+}
