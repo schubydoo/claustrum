@@ -476,8 +476,9 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 // (measured on Linux). The answers are not used. A call that its time limit
 // stops stops the request, so no later git call of it starts (gitstop.go). Any
 // other failure changes nothing (claustrum's own, not measured). So is the
-// absence of the calls in the other states, and of the first run after an add
-// of a commit id.
+// absence of the calls in the other states. After an add of a commit id the
+// first run follows an ask right after the add (4c111e86 and c9125eb8, the
+// call counts measured on Linux).
 func recheckLocation(u gitUse, repo string) {
 	_ = repoTopLevel(u, repo, nil)
 	_ = repositoryCheckError(u, repo, nil)

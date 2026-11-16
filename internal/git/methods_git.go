@@ -2304,6 +2304,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// the branch with the same text (measured on macOS).
 		if cu.shadow() && !offNow && isObjectID(checkoutRev) {
 			checkAsk = func() string { return cu.askAfterAdd(repo) }
+			// With a worktreeRoot git is asked right after the add, and the
+			// location calls run again (recheckLocation). 4c111e86 and c9125eb8
+			// make 45 calls there with one ask (the counts measured on Linux).
+			// The answer is not used here. The content check gets it again as
+			// a kept answer (claustrum's own, not measured).
+			if p.WorktreeRoot != "" {
+				_ = cu.askAfterAdd(repo)
+				recheckLocation(quiet, repo)
+			}
 		}
 		if cu.shadow() && !offNow && !isObjectID(checkoutRev) {
 			// On Linux and macOS git is asked about the repository first

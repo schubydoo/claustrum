@@ -181,3 +181,52 @@ func TestWorktreeCreateFromALinkedBaseNamesTheMainGitDir(t *testing.T) {
 		t.Error("no empty-tree call ran")
 	}
 }
+
+// A create from sourceBranch with a worktreeRoot, in a folder of the repository
+// whose .git is a dangling link, asks git about the repository right after the
+// add and runs the three location calls again there. 4c111e86 and c9125eb8 make
+// 45 calls after a create without worktreeRoot in the same folder (measured on
+// Linux, the first two words of each call). Before, claustrum made 39 calls and
+// asked before the batch of the content check.
+func TestWorktreeCreateFromSourceBranchWithRootRechecks(t *testing.T) {
+	requireGit(t)
+	f := newShapeFixture(t, stateShadow)
+	base := filepath.Join(f.repo, "sub")
+	writeFile(t, filepath.Join(base, "README"), "x\n", 0o644)
+	if err := os.Symlink("nowhere", filepath.Join(base, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	source := strings.TrimSpace(gitOut(t, f.repo, "rev-parse", "--abbrev-ref", "HEAD"))
+	if raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": base, "branchName": "w1",
+		"worktreePath": filepath.Join(base, ".claude", "worktrees", "w1"), "sourceBranch": source}); !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create without worktreeRoot = %s", raw)
+	}
+	root := dropGroupWrite(t, resolveTestRoot(t, t.TempDir()))
+	requireTempOutsideCheckout(t, root)
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": base, "branchName": "w2",
+		"worktreePath": filepath.Join(root, "proj", "w2"), "worktreeRoot": root, "sourceBranch": source})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+	type head struct {
+		words string
+		n     int
+	}
+	var got []head
+	for _, c := range calls {
+		words := strings.Join(strings.Fields(rowArgv(c, f.repo, root))[:2], " ")
+		if i := slices.IndexFunc(got, func(h head) bool { return h.words == words }); i >= 0 {
+			got[i].n++
+			continue
+		}
+		got = append(got, head{words, 1})
+	}
+	want := []head{{"config -z", 17}, {"rev-parse --is-inside-work-tree", 1}, {"rev-parse --show-toplevel", 3},
+		{"rev-parse --absolute-git-dir", 4}, {"worktree list", 3}, {"rev-parse --verify", 2},
+		{"--git-dir=<repo>/.git config", 6}, {"--git-dir=<repo>/.git --work-tree=<root>/proj/w2", 2},
+		{"worktree add", 1}, {"rev-parse --git-dir", 1}, {"--git-dir=<repo>/.git hash-object", 1},
+		{"--attr-source=<id> --git-dir=<repo>/.git", 1}, {"cat-file --batch", 1}, {"hash-object -t", 2}}
+	if !slices.Equal(got, want) {
+		t.Errorf("%d calls\n got  %v\n want %v", len(calls), got, want)
+	}
+}
