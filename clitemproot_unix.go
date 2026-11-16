@@ -958,11 +958,12 @@ const (
 	tempRootChangeCapLine   = "[process.Manager] Claude Code's private temp folder %s: its state keeps changing, and is logged no more unless it is lost"
 )
 
-// tempRootChangeCap is the count of change lines of one folder: a failed-check line
-// or the line that all is well again. 4c111e86 logs 49 of them and then the cap line
-// in place of the 50th, and no change line after (measured on Linux). Not measured,
-// claustrum's own: the cap on macOS, and that the count never resets. A loss after the
-// cap still logs its line, as the cap line says.
+// tempRootChangeCap is the count of change lines of one hold of a folder: a failed-check
+// line or the line that all is well again. 4c111e86 logs 49 lines of a folder of mode 0 and
+// of all is well again, then the cap line in place of the 50th, and no change line after
+// (measured on Linux). Not measured, claustrum's own: the cap on macOS, a count for each
+// folder, the lines of a gone or unreadable temp dir in the count, the line of a loss after
+// the cap, and a new count when a given-back folder is held again.
 const tempRootChangeCap = 50
 
 // logTempRootChange logs a change line of h, or the cap line in place of the change

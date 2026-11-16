@@ -341,8 +341,8 @@ func TestCLITempRootFailedCheckEndsNobody(t *testing.T) {
 }
 
 // A held folder that flips between mode 0000 and 0500 64 times logs 49 change lines,
-// then the cap line in place of the 50th, and no change line after. Nobody is ended
-// (4c111e86, measured on Linux).
+// then the cap line in place of the 50th, and no change line after (4c111e86, measured
+// on Linux). Nobody is ended (claustrum's own here, not measured).
 func TestCLITempRootChangeLinesStopAtTheCap(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root uses a folder of mode 0000")
@@ -379,6 +379,12 @@ func TestCLITempRootChangeLinesStopAtTheCap(t *testing.T) {
 			strings.Count(s, capLine) == 1 && strings.Index(s, capLine) > strings.LastIndex(s, shut) &&
 			strings.Index(s, capLine) > strings.LastIndex(s, well)
 	})
+	// A loss after the cap still logs its line (claustrum's own, not measured).
+	if err := os.Chmod(f, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	lost := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is open to other accounts"
+	waitFor(t, "the loss line after the cap", func() bool { return strings.Contains(logs.String(), lost) })
 }
 
 // A spawn that binds after its folder was found lost is ended at once (claustrum's
