@@ -67,7 +67,14 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	s.procs.InstanceID = s.instanceID
 	// The settings control of the git methods has the same run dir, as in production.
 	s.gitShadow = git.NewShadowHost(supervisor.ExecChildRunDir(sock))
+	// served counts the accept loop and the serveConn goroutine of each connection,
+	// so the cleanup can wait for them. acceptDone closes when the accept loop ends.
+	var served sync.WaitGroup
+	acceptDone := make(chan struct{})
+	served.Add(1)
 	go func() {
+		defer served.Done()
+		defer close(acceptDone)
 		for {
 			nc, err := ln.Accept()
 			if err != nil {
@@ -83,7 +90,11 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 			s.mu.Lock()
 			s.conns[c] = struct{}{}
 			s.mu.Unlock()
-			go s.serveConn(c)
+			served.Add(1)
+			go func() {
+				defer served.Done()
+				s.serveConn(c)
+			}()
 		}
 	}()
 	// Mimic the real teardown's connection close on server.shutdown (minus the
@@ -103,11 +114,37 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	t.Cleanup(func() {
 		close(stop)
 		ln.Close()
+		waitServedConns(t, s, acceptDone, &served)
 		s.procs.KillAll()
 		// Closes the lock file and removes the folder of this daemon below git-shadow.
 		s.gitShadow.Close()
 	})
 	return s, sock
+}
+
+// waitServedConns ends the server side of every connection that the harness
+// accepted and waits for each serveConn to return. serveConn logs its close line
+// as it returns, and the logger is global. Without the wait, that line can land in
+// the log capture of a later test. The accept loop ends first, so no connection
+// joins s.conns after the close below.
+func waitServedConns(t *testing.T, s *server, acceptDone <-chan struct{}, served *sync.WaitGroup) {
+	t.Helper()
+	<-acceptDone
+	s.mu.Lock()
+	for c := range s.conns {
+		c.NC().Close()
+	}
+	s.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		served.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Errorf("a serveConn goroutine still runs 10 s after the cleanup closed its connection")
+	}
 }
 
 // startSocketServer is newRunningServer for tests that only need the socket path.
