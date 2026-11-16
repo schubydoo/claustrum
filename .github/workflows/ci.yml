@@ -171,7 +171,7 @@ jobs:
       # the fifth skips all of them, so together they run every test once.
       # scripts/check_git_shards.py checks that each shard set of this file and
       # of the Makefile runs every test once.
-      # macOS runs three shards. One macOS run took 461 s for the whole suite,
+      # macOS runs four shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
       # of the go test step. The git shard runs the worktree, the git.status,
       # the TestShadow and the TestProbe tests, and the rest shard skips them.
@@ -181,7 +181,8 @@ jobs:
       # The tests named TestRepoHold are tests of the settings copy too, so they
       # go with TestShadow in every shard set. The Windows rest shard passed its
       # 12 minutes with them in it.
-      # The coverage shards below run the three sets of the macOS legs.
+      # The coverage shards below run the sets of the macOS legs, with the create
+      # and rest sets as one rest shard.
       matrix:
         include:
           - os: ubuntu-latest
@@ -199,9 +200,16 @@ jobs:
           - os: macos-latest
             shard: status
             select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+          # The tests named TestCreate, TestLFS and TestContent have their own
+          # shard. In 5 runs the rest shard took 650 to 701 s of its 720 s in
+          # internal/git with them, and one run passed the limit. They took 276
+          # to 295 s of it.
+          - os: macos-latest
+            shard: create
+            select: -run=^(TestCreate|TestLFS|TestContent)
           - os: macos-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestCreate|TestLFS|TestContent)
           # The Windows worktree shard also takes the tests named TestCreate and
           # TestCheckout.
           # The tests named TestWorktreeCreate have their own shard. The go test

@@ -563,10 +563,10 @@ namespaces of the daemon:
 
 On macOS and Windows the line is at WARN level and comes last before the banner,
 with no reap line between them. Its place beside the lines of a reap is not
-measured:
+measured. The text is the one of `4c111e86` (measured on macOS and Windows):
 
 ```
-[Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all
+[Server] found no namespaces to compare: cannot tell callers in a sandbox from others, serving all
 ```
 
 A Linux kernel that names no namespace gets that line too (claustrum's own, not
