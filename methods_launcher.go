@@ -67,6 +67,10 @@ func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeat
 	}
 }
 
+// answerResetsCheck is launcherAnswerResetsCheck behind a seam, so a Linux test
+// drives the macOS arm of handleLauncher. Production never reassigns it.
+var answerResetsCheck = launcherAnswerResetsCheck
+
 // resetChecked clears the key of noteChecked, so the next refusal of a launcherCheck
 // logs its line.
 func (l *managedLauncherLog) resetChecked() {
@@ -158,7 +162,7 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 		return rpc.OKResult(req.ID, res)
 	}
 	res, note := install.Resolve(p.CliPath)
-	if launcherAnswerResetsCheck {
+	if answerResetsCheck {
 		s.managedLog.resetChecked()
 	}
 	if note != "" && s.managedLog.firstIgnoredVar() {

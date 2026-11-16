@@ -225,26 +225,26 @@ func TestLauncherResolveRefusesANonString(t *testing.T) {
 	dir := tempManagedSettingsDir(t)
 	base := filepath.Join(dir, managedSettingsBase)
 	const tail = " must be one string (the launcher and its arguments), not "
-	for _, c := range []struct{ settings, reason string }{
-		{`{"processWrapper":5}`, "processWrapper" + tail + "a number"},
-		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean"},
-		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array"},
-		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object"},
-		{`{"processWrapper":null}`, ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object"},
-		{`{"env":"x"}`, ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"/w"},"processWrapper":5}`, "launcher `/w` does not exist or is not an executable regular file"},
+	for _, c := range []struct{ settings, reason, fault string }{
+		{`{"processWrapper":5}`, "processWrapper" + tail + "a number", ""},
+		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean", ""},
+		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array", ""},
+		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object", ""},
+		{`{"processWrapper":null}`, "", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object", ""},
+		{`{"env":"x"}`, "", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"/w"},"processWrapper":5}`, "launcher `/w` does not exist or is not an executable regular file", install.FaultMissing},
 	} {
 		writeFileMode(t, base, []byte(c.settings), 0o644)
 		before := len(logs.String())
 		want := noneFrame
 		switch {
-		case strings.HasPrefix(c.reason, "launcher `"):
-			want = unusableFaultFrame(base, c.reason, install.FaultMissing)
+		case c.fault != "":
+			want = unusableFaultFrame(base, c.reason, c.fault)
 		case c.reason != "":
 			want = unusableFrame(base, c.reason)
 		}
