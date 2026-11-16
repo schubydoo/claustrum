@@ -232,3 +232,25 @@ func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
 		}
 	}
 }
+
+// TestShownResolveFaultArms pins both arms of shownResolveFault. With shown, a missing
+// launcher and a bare name keep their fault, as on macOS (4c111e86, measured on
+// macOS). Other faults and the arm off macOS give none.
+func TestShownResolveFaultArms(t *testing.T) {
+	for _, c := range []struct {
+		fault string
+		shown bool
+		want  string
+	}{
+		{FaultMissing, true, FaultMissing},
+		{FaultNotAbsolute, true, FaultNotAbsolute},
+		{FaultScriptSuffix, true, ""},
+		{"", true, ""},
+		{FaultMissing, false, ""},
+		{FaultNotAbsolute, false, ""},
+	} {
+		if got := shownResolveFault(c.fault, c.shown); got != c.want {
+			t.Errorf("shownResolveFault(%q, %v) = %q, want %q", c.fault, c.shown, got, c.want)
+		}
+	}
+}

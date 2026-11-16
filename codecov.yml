@@ -178,11 +178,14 @@ component_management:
         # process.spawn launcher checks and the child env strip, with its OS split.
         - methods_launcher.go
         - methods_launcher_linux.go
+        - methods_launcher_darwin.go
         - methods_launcher_other.go
         - internal/supervisor/spawncheck.go
         - internal/install/managedsettings.go
         - internal/install/checkfault_linux.go
         - internal/install/checkfault_other.go
+        - internal/install/resolvefault_darwin.go
+        - internal/install/resolvefault_other.go
         - internal/install/managedlauncher_unix.go
         - internal/install/managedlauncher_windows.go
         - internal/install/managedlauncherdir_darwin.go

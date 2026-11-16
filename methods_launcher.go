@@ -46,9 +46,11 @@ type managedLauncherLog struct {
 
 // noteChecked writes the refused line of an answer to a launcherCheck. A refusal
 // with the reason of the last answer writes no line. A usable answer in between
-// makes it log again (4c111e86, measured on Linux). claustrum's own, not measured:
-// the key lives for one daemon, apart from the key of note. With logsRepeats each
-// refusal logs, a repeat too (c9125eb8, measured on macOS).
+// makes it log again (4c111e86, measured on Linux). On macOS an answer with no
+// launcherCheck does too (resetChecked). That fits the rows of 4c111e86 on macOS,
+// where a change of the managed settings came first each time. claustrum's
+// own, not measured: the key lives for one daemon, apart from the key of note. With
+// logsRepeats each refusal logs, a repeat too (Windows, claustrum's own).
 func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeats bool) {
 	reason := ""
 	if res.Status == install.StatusUnusable {
@@ -63,6 +65,18 @@ func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeat
 	if reason != "" {
 		logging.Warnf("[LauncherHandler] the launcher that the desktop names is refused: %s", reason)
 	}
+}
+
+// answerResetsCheck is launcherAnswerResetsCheck behind a seam, so a Linux test
+// drives the macOS arm of handleLauncher. Production never reassigns it.
+var answerResetsCheck = launcherAnswerResetsCheck
+
+// resetChecked clears the key of noteChecked, so the next refusal of a launcherCheck
+// logs its line.
+func (l *managedLauncherLog) resetChecked() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lastChecked = ""
 }
 
 // firstIgnoredVar reports true the first time only, so the ignored-variable line
@@ -148,6 +162,9 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 		return rpc.OKResult(req.ID, res)
 	}
 	res, note := install.Resolve(p.CliPath)
+	if answerResetsCheck {
+		s.managedLog.resetChecked()
+	}
 	if note != "" && s.managedLog.firstIgnoredVar() {
 		logging.Infof("%s", note)
 	}
