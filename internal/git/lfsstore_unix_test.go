@@ -1700,3 +1700,29 @@ func TestKeepWithinDeadline(t *testing.T) {
 		}
 	}
 }
+
+// TestSeedEndsAtTheFirstObjectLeftOut: with too little space for a copy the
+// seed makes the shard folder of the first object and none of the second
+// (4c111e86, measured on macOS with a private folder on a small disk image).
+// Mutation: `continue` in place of the return after the space test of
+// seedObjects (the shard folder of the second object appears).
+func TestSeedEndsAtTheFirstObjectLeftOut(t *testing.T) {
+	prevSeed, prevFree := seedLink, storeFreeBytes
+	seedLink = func(string, string) error { return os.ErrPermission }
+	storeFreeBytes = func(string) (uint64, bool) { return 3 << 20, true }
+	t.Cleanup(func() { seedLink, storeFreeBytes = prevSeed, prevFree })
+	store, private := filepath.Join(t.TempDir(), "lfs"), filepath.Join(t.TempDir(), "lfs")
+	first, second := strings.Repeat("f4", 32), strings.Repeat("d6", 32)
+	mustWrite(t, storeObjectPath(store, first), "alpha-object")
+	mustWrite(t, storeObjectPath(store, second), "beta-object")
+	ps := []pointerRef{{oid: first, size: 12}, {oid: second, size: 11}}
+	if short, _ := seedObjects(context.Background(), store, private, ps); !short {
+		t.Error("seedObjects = false, want a copy left out")
+	}
+	if fi, err := os.Stat(filepath.Dir(storeObjectPath(private, first))); err != nil || !fi.IsDir() {
+		t.Errorf("the shard folder of the first object: %v, want it made", err)
+	}
+	if _, err := os.Lstat(filepath.Join(private, "objects", second[:2])); !os.IsNotExist(err) {
+		t.Errorf("the shard folder of the second object: %v, want none", err)
+	}
+}

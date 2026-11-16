@@ -459,7 +459,7 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 // pointer. It makes a hard link, or a copy when the link fails or a folder on
 // the way is a link. A failure leaves the object out, and git-lfs then
 // downloads it. A copy that has less than seedNeeds free is left out
-// too, with no temp, and short reports it. A free space that cannot be read
+// too, with no temp, and short reports it. The seed then ends. A free space that cannot be read
 // does not stop a copy (claustrum's own, not measured). At the deadline of ctx
 // the seed stops, and the objects that it did not reach stay out. copied is
 // the time of its copies.
@@ -487,6 +487,11 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 // (4c111e86, measured on Linux, the read also on macOS). Claustrum's own, not
 // measured: the time of that read in copied, also before a link, and the
 // content is tested against the oid (claustrum's own form).
+//
+// The first copy left out for seedSpare ends the seed, after the shard folder
+// of its object. On 4c111e86 the second of two objects then got no shard
+// folder (measured on macOS). Linux, and a later object that a hard link
+// can seed, are claustrum's own, not measured.
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
@@ -513,8 +518,7 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 		shard := filepath.Dir(src)
 		if viaLink || pathIsLink(shard) || pathIsLink(filepath.Dir(shard)) || seedLink(src, dst) != nil {
 			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < seedNeeds(p.size) {
-				short = true
-				continue
+				return true, copied
 			}
 			start := time.Now()
 			err := copySeed(ctx, src, dst)
