@@ -198,7 +198,7 @@ An unusable or unreadable answer writes one line, at WARN (claustrum's own). A u
 
 A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
-An unusable answer to a `launcherCheck` writes this line. A repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured on Linux). On macOS and Windows the same rule is claustrum's own:
+An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured). On macOS each refusal writes it, a repeat too (`c9125eb8`, measured). Windows does the same as macOS (claustrum's own, not measured):
 
 ```text
 [LauncherHandler] the launcher that the desktop names is refused: <reason>

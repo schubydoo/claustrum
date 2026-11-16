@@ -47,16 +47,16 @@ type managedLauncherLog struct {
 // noteChecked writes the refused line of an answer to a launcherCheck. A refusal
 // with the reason of the last answer writes no line. A usable answer in between
 // makes it log again (4c111e86, measured on Linux). claustrum's own, not measured:
-// the key lives for one daemon, apart from the key of note, and macOS and Windows
-// follow the same rule.
-func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult) {
+// the key lives for one daemon, apart from the key of note. With logsRepeats each
+// refusal logs, a repeat too (c9125eb8, measured on macOS).
+func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeats bool) {
 	reason := ""
 	if res.Status == install.StatusUnusable {
 		reason = res.Reason
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if reason == l.lastChecked {
+	if reason == l.lastChecked && !logsRepeats {
 		return
 	}
 	l.lastChecked = reason
@@ -144,7 +144,7 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 	}
 	if p.LauncherCheck != nil && (p.Path != "" || !onWindowsHost()) {
 		res := install.ResolveChecked(p.Path, *p.LauncherCheck)
-		s.managedLog.noteChecked(res)
+		s.managedLog.noteChecked(res, launcherCheckLogsRepeats)
 		return rpc.OKResult(req.ID, res)
 	}
 	res, note := install.Resolve(p.CliPath)
