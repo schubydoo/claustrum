@@ -633,7 +633,7 @@ func findJoin(dir, name string) string {
 
 // reply sorts each list by the number of path parts, then by bytes (4c111e86,
 // measured on Linux and macOS). The paths count their parts below their own
-// root (4c111e86, fits the rows on Linux with two roots at different depths). The
+// root (4c111e86, measured on Linux with two roots at different depths). The
 // lists passedOver and links count the parts of the whole path. With two roots
 // that is not measured. The order of the walk sets which entries a bound keeps.
 // The caller holds mu.
@@ -656,7 +656,7 @@ func findSorted(s []string) []string {
 }
 
 // findSortedPaths sorts the paths by their depth below their root, then by the
-// bytes of the whole path (with two roots, not measured). A path met under two roots keeps the depth of its
+// bytes of the whole path (with two roots, measured on Linux). A path met under two roots keeps the depth of its
 // first meet (claustrum's own, not measured).
 func findSortedPaths(paths []string, depths []int) []string {
 	idx := make([]int, len(paths))

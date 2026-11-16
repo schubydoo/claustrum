@@ -167,7 +167,7 @@ func TestFindNameCut(t *testing.T) {
 // TestFindHitsAndLimit: the default limit is 5, the cap is 20, a hit past the
 // limit gives "count", a path met twice counts once, and the paths sort by the
 // number of parts below their root, then by bytes (4c111e86, measured on Linux
-// and macOS, with two roots it fits the rows on Linux).
+// and macOS, with two roots measured on Linux).
 func TestFindHitsAndLimit(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	a := filepath.Join(root, "A")
