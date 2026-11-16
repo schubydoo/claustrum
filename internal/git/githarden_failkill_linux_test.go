@@ -24,7 +24,7 @@ func TestFailedCheckoutKillsLiveMember(t *testing.T) {
 	cmd, _, held := lingeringReadTree(t, ctx, "fail", nil)
 	var errBuf bytes.Buffer
 	var exitErr *exec.ExitError
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, nil); !errors.As(err, &exitErr) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, nil, nil); !errors.As(err, &exitErr) {
 		t.Fatalf("read-tree = %v, want the exit error of git", err)
 	}
 	if n, b := all.Load(), beforeReap.Load(); n != 1 || b != 1 {
@@ -50,7 +50,7 @@ func TestFailedCheckoutWithNoMemberKillsOnce(t *testing.T) {
 	cmd.WaitDelay = time.Second
 	var errBuf bytes.Buffer
 	var exitErr *exec.ExitError
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, nil); !errors.As(err, &exitErr) || exitErr.ExitCode() != 5 {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, nil, nil); !errors.As(err, &exitErr) || exitErr.ExitCode() != 5 {
 		t.Fatalf("read-tree = %v, want exit status 5", err)
 	}
 	if n, b := all.Load(), beforeReap.Load(); n != 1 || b != 1 {
@@ -74,7 +74,7 @@ func TestFailedCheckoutUnseenExitSendsNothing(t *testing.T) {
 	}
 	var errBuf bytes.Buffer
 	var exitErr *exec.ExitError
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, nil); !errors.As(err, &exitErr) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, nil, nil); !errors.As(err, &exitErr) {
 		t.Fatalf("read-tree = %v, want the exit error of git", err)
 	}
 	if n := all.Load(); n != 0 {
@@ -92,7 +92,7 @@ func TestFailedCheckoutAfterStopSendsNoSecondKill(t *testing.T) {
 	cmd, st, _ := lingeringReadTree(t, ctx, "fail", func(c *exec.Cmd) { _ = c.Cancel() })
 	var errBuf bytes.Buffer
 	var exitErr *exec.ExitError
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st); !errors.As(err, &exitErr) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st, nil); !errors.As(err, &exitErr) {
 		t.Fatalf("read-tree = %v, want the exit error of git", err)
 	}
 	if n := all.Load(); n != 1 {

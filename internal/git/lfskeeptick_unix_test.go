@@ -333,3 +333,84 @@ func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 		t.Error("a.bin is not in the store of the repository")
 	}
 }
+
+// TestLFSKeepTickStopsBeforeTheDrain: a child of the download of b.bin holds
+// the stderr of git for 1 s after git exits, so the drain of the checkout
+// waits. A keep of a tick that still reads a.bin at the exit of git must not
+// copy it during that drain. The keep after the checkout makes the one copy
+// (4c111e86 ends that read at the exit of git, measured on Linux). Mutation:
+// drop both calls of exited in runCheckoutPipes (the keep of the tick reads on
+// through the drain and copies a.bin).
+func TestLFSKeepTickStopsBeforeTheDrain(t *testing.T) {
+	seamFreeSpace(t)
+	setKeepTick(t, 20*time.Millisecond)
+	made := watchTickers(t)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
+	f.onServer(t, "a.bin")
+	f.onServer(t, "b.bin")
+	mustWrite(t, filepath.Join(f.remote, f.oids["b.bin"]+".linger"), "")
+	release := f.holdDownload(t, "b.bin")
+	waited := make(chan struct{})
+	var waitedOnce sync.Once
+	prevWaited := checkoutWaited
+	checkoutWaited = func(*exec.Cmd) { waitedOnce.Do(func() { close(waited) }) }
+	prevHash, prevCopy, prevBudget := newObjectHash, keepCopy, keepBudget
+	keepBudget = 30 * time.Second
+	var stopped, released atomic.Bool
+	var mu sync.Mutex
+	copiesA, copiesInTick := 0, 0
+	tickEnded := func() bool {
+		got := made()
+		if len(got) != 1 {
+			return false
+		}
+		select {
+		case <-got[0].ended:
+			return true
+		default:
+			return false
+		}
+	}
+	newObjectHash = func() hash.Hash {
+		if len(made()) != 1 || tickEnded() || released.Load() {
+			return sha256.New()
+		}
+		var once sync.Once
+		free := func() {
+			once.Do(func() {
+				released.Store(true)
+				release()
+			})
+		}
+		// The read of a.bin waits for the exit of git, then goes on.
+		return stalledHash{Hash: sha256.New(), first: free, done: waited, stopped: &stopped}
+	}
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		if file, ok := w.(*os.File); ok && strings.HasSuffix(file.Name(), f.oids["a.bin"]) {
+			inTick := !tickEnded()
+			mu.Lock()
+			copiesA++
+			if inTick {
+				copiesInTick++
+			}
+			mu.Unlock()
+		}
+		return io.Copy(w, r)
+	}
+	t.Cleanup(func() {
+		newObjectHash, keepCopy, keepBudget, checkoutWaited = prevHash, prevCopy, prevBudget, prevWaited
+	})
+	f.wantSuccess(t)
+	if !stopped.Load() {
+		t.Fatal("the read of a.bin in a tick did not wait for the exit of git")
+	}
+	mu.Lock()
+	got, inTick := copiesA, copiesInTick
+	mu.Unlock()
+	if got != 1 || inTick != 0 {
+		t.Errorf("the keep copied a.bin %d times, %d of them in a tick, want 1 after the checkout", got, inTick)
+	}
+	if !exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
+		t.Error("a.bin is not in the store of the repository")
+	}
+}

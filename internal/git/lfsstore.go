@@ -893,7 +893,7 @@ var keepTickEvery = time.Second
 // once, as returnDownloads does, in the form keepDuringCheckout. An object
 // that a tick did not keep waits for the keep after the checkout.
 //
-// end stops a keep that still runs when the read-tree call has exited
+// halt stops a keep that still runs when the read-tree call has exited
 // (stop). On 4c111e86 the read of a 900 MiB object that began during the
 // checkout ended at the exit of git, with no copy. The keep after the
 // checkout then read it again, and only it wrote a temp file (measured on
@@ -960,9 +960,9 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 	return k
 }
 
-// end stops the ticks and the keep that runs, and waits for that keep. A
-// second call only waits. A nil k does nothing.
-func (k *keepTicker) end() {
+// halt stops the ticks and the keep that runs, with no wait. A second call
+// does nothing. A nil k does nothing.
+func (k *keepTicker) halt() {
 	if k == nil {
 		return
 	}
@@ -970,6 +970,15 @@ func (k *keepTicker) end() {
 		close(k.quit)
 		k.stop()
 	})
+}
+
+// end halts k and waits for the keep that runs. A second call only waits. A
+// nil k does nothing.
+func (k *keepTicker) end() {
+	if k == nil {
+		return
+	}
+	k.halt()
 	<-k.ended
 }
 

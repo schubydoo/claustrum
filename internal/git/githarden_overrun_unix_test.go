@@ -106,7 +106,7 @@ func TestDrainOverrunKillsGroupBeforeReap(t *testing.T) {
 	defer cancel()
 	cmd, st, held := lingeringReadTree(t, ctx, "1", nil)
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st); !errors.Is(err, exec.ErrWaitDelay) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st, nil); !errors.Is(err, exec.ErrWaitDelay) {
 		t.Fatalf("read-tree = %v, want exec.ErrWaitDelay", err)
 	}
 	if n, b := all.Load(), beforeReap.Load(); n != 1 || b != 1 {
@@ -128,7 +128,7 @@ func TestDrainOverrunAfterFailedExitSendsNoKill(t *testing.T) {
 	cmd, st, _ := lingeringReadTree(t, ctx, "fail", nil)
 	var errBuf bytes.Buffer
 	var exitErr *exec.ExitError
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st); !errors.As(err, &exitErr) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st, nil); !errors.As(err, &exitErr) {
 		t.Fatalf("read-tree = %v, want the exit error of git", err)
 	}
 	want := int32(0)
@@ -152,7 +152,7 @@ func TestStopDuringDrainBeforeReapDoesNothing(t *testing.T) {
 		time.AfterFunc(200*time.Millisecond, cancel)
 	})
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st); !errors.Is(err, exec.ErrWaitDelay) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st, nil); !errors.Is(err, exec.ErrWaitDelay) {
 		t.Fatalf("read-tree = %v, want exec.ErrWaitDelay", err)
 	}
 	if st.stopped() {
@@ -173,7 +173,7 @@ func TestStopBeforeDrainKeepsWaitFirst(t *testing.T) {
 	defer cancel()
 	cmd, st, _ := lingeringReadTree(t, ctx, "1", func(c *exec.Cmd) { _ = c.Cancel() })
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st); !errors.Is(err, exec.ErrWaitDelay) {
+	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st, nil); !errors.Is(err, exec.ErrWaitDelay) {
 		t.Fatalf("read-tree = %v, want exec.ErrWaitDelay", err)
 	}
 	if !st.stopped() {
