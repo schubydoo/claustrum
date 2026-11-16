@@ -80,10 +80,12 @@ const tempRootLiveCap = 8
 // tempRootMakeCap is the count of new folders that the daemon makes within
 // tempRootMakeWindow. A spawn that needs one more gets tempRootTooMany and no
 // folder (4c111e86, measured on macOS). A folder that a spawn takes again is no
-// make, and a folder that was removed still counts. The count is of this daemon, in
-// memory (measured on macOS). These are claustrum's own, not measured: a window that
-// slides with each make, its edge (a make 60 s old no longer counts), the cap on Linux
-// and for each kind of entry, and no count for a check that makes a folder anew.
+// make, and a folder that was removed still counts. The count is of this daemon
+// (measured on macOS, in one temp dir). These are claustrum's own, not measured: a
+// window that slides with each make, its edge (a make 60 s old no longer counts), a
+// count in memory, one count across all temp dirs, the cap on Linux and for each kind
+// of entry, and no count for a check that makes a folder anew. A make whose new folder
+// fails its test and is removed counts, and a mkdir that fails does not.
 const tempRootMakeCap = 8
 
 const tempRootMakeWindow = 60 * time.Second

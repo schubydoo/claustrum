@@ -188,7 +188,7 @@ These rules are measured on macOS. On Linux they are claustrum's own.
 - A spawn that takes an intact folder again makes none. A folder that was removed still counts.
 - The count is of one daemon. A new daemon makes a folder at once.
 
-These are claustrum's own: the window of 60 s slides with each make, and a make 60 s old no longer counts. The count is in memory. A check that makes a folder anew at its name is no make. The cap holds for each kind of entry.
+These are claustrum's own: the window of 60 s slides with each make, and a make 60 s old no longer counts. The count is in memory. One count runs across all temp dirs, and only one `TMPDIR` is measured. A check that makes a folder anew at its name is no make. A make whose new folder fails its test and is removed counts. A mkdir that fails does not. The cap holds for each kind of entry.
 
 #### The removes of a new folder
 

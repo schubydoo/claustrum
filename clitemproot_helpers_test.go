@@ -133,6 +133,14 @@ func fakeTempRootClock(t *testing.T) (advance func(time.Duration)) {
 	return func(d time.Duration) { at.Add(int64(d)) }
 }
 
+// setAfterMkdir runs fn between the mkdir and the test of the new folder.
+func setAfterMkdir(t *testing.T, fn func(dir, name string)) {
+	t.Helper()
+	old := afterTempRootMkdir
+	afterTempRootMkdir = fn
+	t.Cleanup(func() { afterTempRootMkdir = old })
+}
+
 func ccdFolders(t *testing.T, x string) []string {
 	t.Helper()
 	ents, err := os.ReadDir(x)
