@@ -183,6 +183,8 @@ component_management:
         - internal/install/managedsettings.go
         - internal/install/checkfault_linux.go
         - internal/install/checkfault_other.go
+        - internal/install/resolvefault_darwin.go
+        - internal/install/resolvefault_other.go
         - internal/install/managedlauncher_unix.go
         - internal/install/managedlauncher_windows.go
         - internal/install/managedlauncherdir_darwin.go

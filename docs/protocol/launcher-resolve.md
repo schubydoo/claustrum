@@ -36,6 +36,8 @@ The result has one of four shapes. Each keeps this member order:
 | `unusable` | A value is set, but the daemon refuses it. `reason` says why. |
 | `unreadable` | A settings file or the drop-in folder cannot be read. `path` names it. |
 
+On macOS an unusable answer adds `fault` after `reason` (`4c111e86`, measured on macOS). `missing` covers a missing launcher, a folder and a file that cannot run. `not_absolute` covers a bare name.
+
 With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, measured on Linux):
 
 ```jsonc

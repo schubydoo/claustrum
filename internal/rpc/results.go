@@ -326,11 +326,16 @@ type NotRepoResult struct {
 //	{"status":"usable","argv":[…],"source":"<file>"}
 //	{"status":"unusable","source":"<file>","reason":"<text>"}
 //	{"status":"unreadable","reason":"<text>","path":"<file or folder>"}
+//
+// On macOS an unusable answer adds fault after reason (4c111e86, measured on macOS):
+//
+//	{"status":"unusable","source":"<file>","reason":"<text>","fault":"<fault>"}
 type ManagedLauncherResult struct {
 	Status string   `json:"status"`
 	Argv   []string `json:"argv,omitempty"`
 	Source string   `json:"source,omitempty"`
 	Reason string   `json:"reason,omitempty"`
+	Fault  string   `json:"fault,omitempty"`
 	Path   string   `json:"path,omitempty"`
 }
 
