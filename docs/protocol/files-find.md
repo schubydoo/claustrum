@@ -29,7 +29,7 @@ An extra member is ignored. A member sent twice keeps its last value (measured o
 | `passedOver` | The folders that the walk did not enter: `.git`, `.hg`, `.svn`, `node_modules`, and a folder that holds a regular file `pyvenv.cfg`. A file `.git` and a folder `pyvenv.cfg` do not count (measured on Linux). A root is never passed over. |
 | `links` | Up to 20 links that the walk met (measured on Linux). A link is never followed. |
 
-If two roots overlap, each list still holds a path once. Each list sorts by the number of names in the path, then by bytes. The walk is depth first, as inferred from the rows, so a bound keeps the entries that it met first. The order inside a folder is the order of the file system (claustrum's own, not measured).
+Overlapping roots list a path once. Each list sorts by the number of names, then by bytes. In `paths` only the names below its root count (measured on Linux). The walk is depth first, as inferred from the rows, so a bound keeps the entries met first. A folder reads in the order of the file system (claustrum's own, not measured).
 
 ## Errors
 

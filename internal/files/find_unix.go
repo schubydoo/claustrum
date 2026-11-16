@@ -171,6 +171,7 @@ type findState struct {
 	mu       sync.Mutex
 	cut      string
 	paths    []string
+	depths   []int // the folder depth below its root of each path
 	passed   []string
 	links    []rpc.FindLink
 	overflow bool // a link past the 20 met
@@ -409,7 +410,7 @@ func (w *findState) entry(e fs.DirEntry, fd int, dir, root string, depth int) {
 	switch {
 	case typ.IsRegular():
 		if match {
-			w.hit(full)
+			w.hit(full, depth)
 		}
 	case typ&fs.ModeSymlink != 0:
 		// A link is never followed. A link that matches gives not_a_file
@@ -434,7 +435,7 @@ func (w *findState) entry(e fs.DirEntry, fd int, dir, root string, depth int) {
 // the walk, so a walk that finds exactly the limit stays whole (claustrum's own,
 // not measured). A path met twice counts once (4c111e86, measured on Linux and
 // macOS).
-func (w *findState) hit(full string) {
+func (w *findState) hit(full string, depth int) {
 	if w.seen[full] {
 		return
 	}
@@ -446,6 +447,7 @@ func (w *findState) hit(full string) {
 	w.seen[full] = true
 	w.mu.Lock()
 	w.paths = append(w.paths, full)
+	w.depths = append(w.depths, depth)
 	w.mu.Unlock()
 }
 
@@ -630,11 +632,14 @@ func findJoin(dir, name string) string {
 }
 
 // reply sorts each list by the number of path parts, then by bytes (4c111e86,
-// measured on Linux and macOS). The order of the walk sets which entries a
-// bound keeps. The caller holds mu.
+// measured on Linux and macOS). The paths count their parts below their own
+// root (4c111e86, measured on Linux with two roots at different depths). The
+// lists passedOver and links count the parts of the whole path. With two roots
+// that is not measured. The order of the walk sets which entries a bound keeps.
+// The caller holds mu.
 func (w *findState) reply() rpc.FindResult {
 	res := rpc.FindResult{
-		Paths:      findSorted(w.paths),
+		Paths:      findSortedPaths(w.paths, w.depths),
 		Whole:      w.cut == "",
 		Cut:        w.cut,
 		PassedOver: findSorted(w.passed),
@@ -647,6 +652,28 @@ func (w *findState) reply() rpc.FindResult {
 func findSorted(s []string) []string {
 	out := append([]string{}, s...)
 	sort.SliceStable(out, func(i, j int) bool { return findLess(out[i], out[j]) })
+	return out
+}
+
+// findSortedPaths sorts the paths by their depth below their root, then by the
+// bytes of the whole path. A path met under two roots keeps the depth of its
+// first meet (claustrum's own, not measured).
+func findSortedPaths(paths []string, depths []int) []string {
+	idx := make([]int, len(paths))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(i, j int) bool {
+		a, b := idx[i], idx[j]
+		if depths[a] != depths[b] {
+			return depths[a] < depths[b]
+		}
+		return paths[a] < paths[b]
+	})
+	out := make([]string, len(paths))
+	for i, k := range idx {
+		out[i] = paths[k]
+	}
 	return out
 }
 
