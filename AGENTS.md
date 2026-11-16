@@ -21,7 +21,7 @@ daemon. The wire surface is the product.
 | Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in three shards). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -290,6 +290,9 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)).
 - **The `timeoutMs` stop of the read-tree call** (`internal/git/githarden.go`, `cmd.Cancel`). Never widen: it sends its
   group `SIGKILL` only before the reap of git (`sysproc.LeaderGate`). The kill after a drain overrun comes before the reap too (`runCheckoutPipes`). A wait with no exit status sends no overrun kill (claustrum's own).
+- **A failed read-tree call** (Linux, `runCheckoutPipes`). After the checkout git of a create fails by itself, its group gets one
+  `SIGKILL`. 4c111e86 sends it after a Git LFS download error or a failed smudge filter, also with a `timeoutMs` (measured on Linux). Never widen: send it once, only to the group of that git, after its exit and before its reap (claustrum's
+  own). Send none after the `timeoutMs` stop or the LFS space stop.
 - **The bound stops of `-install` and `-probe-cli`** (`internal/install/groupstop.go`, `runCLIVersion`). Never widen: each
   sends its group `SIGKILL` only before the reap of its run (`sysproc.LeaderGate`).
 

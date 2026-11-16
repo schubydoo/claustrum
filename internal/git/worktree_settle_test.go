@@ -562,16 +562,40 @@ func TestSettleCheckoutReadsTheLimitAfterTheProbe(t *testing.T) {
 	}
 }
 
+// movedDeadline is a context whose deadline a test moves while a call runs. Only
+// Deadline changes. Done and Err stay those of the embedded context.
+type movedDeadline struct {
+	context.Context
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *movedDeadline) Deadline() (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at, true
+}
+
+func (c *movedDeadline) set(at time.Time) {
+	c.mu.Lock()
+	c.at = at
+	c.mu.Unlock()
+}
+
 // A slow listing in the leaf before the settle call takes no time from the call:
 // the time left is read again after the listing, and with less than the margin
 // left no call runs (claustrum's own, not measured). Mutation: drop the
 // settleLimit read after runListing in settleCheckout.
+//
+// The deadline moves while the listing waits on its gate, so the time of the
+// empty tree pair before it does not count. A fixed deadline gave the pair 500 ms,
+// and a slow runner ran out of it before the listing.
 func TestSettleCheckoutReadsTheLimitAfterTheListing(t *testing.T) {
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not found in PATH")
 	}
-	const listing = 1200 * time.Millisecond
+	const listing = 30 * time.Second
 	installGitSlowStub(t, realGit)
 	setAttrSource(t, true)
 	dir := t.TempDir()
@@ -589,16 +613,38 @@ func TestSettleCheckoutReadsTheLimitAfterTheListing(t *testing.T) {
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "--list")
 	t.Setenv("CLAUSTRUM_GITSTUB_DIR2", wd)
 	t.Setenv("CLAUSTRUM_GITSTUB_MS2", strconv.FormatInt(listing.Milliseconds(), 10))
+	gate := filepath.Join(t.TempDir(), "listing")
+	t.Setenv("CLAUSTRUM_GITSTUB_GATE2", gate)
 	slowGit(t, "diff-files", "fail", 0, "", "")
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "0")
 	setDuration(t, &settleMargin, time.Second)
 	setDuration(t, &settleMinLimit, 3*time.Second)
 	start := time.Now()
-	ctx, cancel := context.WithDeadline(context.Background(), start.Add(settleMargin+500*time.Millisecond))
-	defer cancel()
+	ctx := &movedDeadline{Context: context.Background(), at: start.Add(time.Hour)}
+	// When the listing waits on its gate, the deadline moves to now, so less than
+	// the margin is left after the listing. Then the gate opens.
+	done := make(chan struct{})
+	moved := make(chan struct{})
+	go func() {
+		defer close(moved)
+		for end := time.Now().Add(listing); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if _, err := os.Stat(gate + ".in"); err == nil {
+				ctx.set(time.Now())
+				_ = os.WriteFile(gate, nil, 0o644)
+				return
+			}
+		}
+	}()
 	settleCheckout(ctx, gitUse{}, dir, dir, filepath.Join(dir, "g"), filepath.Join(dir, "index"), "", nil, start)
-	if took := time.Since(start); took < listing {
-		t.Fatalf("settleCheckout took %v, want at least the listing delay %v: the listing did not run", took, listing)
+	close(done)
+	<-moved
+	if _, err := os.Stat(gate); err != nil {
+		t.Fatalf("settleCheckout took %v, and the listing did not reach its gate: the listing did not run", time.Since(start))
 	}
 	b, err := os.ReadFile(log)
 	if err != nil {

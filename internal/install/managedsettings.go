@@ -178,13 +178,25 @@ func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherResult {
 		return rpc.ManagedLauncherResult{Status: StatusUnusable, Source: source, Reason: refused}
 	}
 	argv, reason := parseManagedLauncherValue(value)
+	fault := ""
 	if reason == "" {
-		reason = Check(argv, cliPath)
+		fault, reason = checkFault(argv, cliPath)
 	}
 	if reason != "" {
-		return rpc.ManagedLauncherResult{Status: StatusUnusable, Source: source, Reason: reason}
+		return rpc.ManagedLauncherResult{Status: StatusUnusable, Source: source, Reason: reason, Fault: shownResolveFault(fault, managedResolveFaultShown)}
 	}
 	return rpc.ManagedLauncherResult{Status: managedStatusUsable, Argv: argv, Source: source}
+}
+
+// shownResolveFault is the fault member of a refusal of the managed launcher. With
+// shown, a missing launcher file or folder gives missing and a bare name not_absolute
+// (4c111e86, measured on macOS). A refusal of a parse error, the own path or a script
+// name gives none (claustrum's own, not measured).
+func shownResolveFault(fault string, shown bool) string {
+	if shown && (fault == FaultMissing || fault == FaultNotAbsolute) {
+		return fault
+	}
+	return ""
 }
 
 func managedUnreadable(path, reason string) *rpc.ManagedLauncherResult {

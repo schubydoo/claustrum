@@ -220,19 +220,19 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 			text: "refusing to create worktree: <X>/W/T/x leads into <X>/W, a worktree of the repository <B>/cwS21 " +
 				"(at <X>/W); a worktree location must be outside the repository's checkouts"},
 		{name: "C-W9", setup: setM, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
-			text: "refusing to create worktree: <X>/proj/loc leads into a session worktree (at <X>/proj/loc" + session},
+			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
 		{name: "C-W10", setup: setM, root: "<X>/proj/new", path: "<X>/proj/new/p/w1",
 			text: "refusing to create worktree: <X>/proj/new would be made inside a session worktree or its " +
 				"per-repository directory (at <X>/proj/new" + session},
 		{name: "C-W11", setup: setM, root: "<X>/proj", path: "<X>/proj/p/w1",
-			text: "refusing to create worktree: <X>/proj is itself a per-repository worktree directory (it holds a " +
+			text: "refusing to create worktree: `<X>/proj` is itself a per-repository worktree directory (it holds a " +
 				".claude-managed-worktrees marker); choose the directory above it, or another location"},
 		// Equal on both builds: claustrum keeps its text.
 		{name: "C-W12", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/C/.claude/worktrees/w0")
 			c.file(t, "<X>/C/.claude/worktrees/w0/.git")
 		}, root: "<X>/C/.claude/worktrees/w0/loc", path: "<X>/C/.claude/worktrees/w0/loc/p/w1",
-			text: "refusing to create worktree: <X>/C/.claude/worktrees/w0/loc is inside a git checkout " +
+			text: "refusing to create worktree: `<X>/C/.claude/worktrees/w0/loc` is inside a git checkout " +
 				"(<X>/C/.claude/worktrees/w0 has a .git entry); a worktree location must be outside every checkout, " +
 				"so that no session working in one can reach it — choose a directory that is not part of any repository"},
 		{name: "C-W13", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/q/w2",
@@ -247,7 +247,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 			c.file(t, "<X>/a/.git")
 			chmodForTest(t, c.p("<X>/a/b"), 0o777)
 		}, root: "<X>/a/b/c", path: "<X>/a/b/c/p/w1",
-			text: "refusing to create worktree: <X>/a/b/c is inside a git checkout (<X>/a has a .git entry); " +
+			text: "refusing to create worktree: `<X>/a/b/c` is inside a git checkout (<X>/a has a .git entry); " +
 				"a worktree location must be outside every checkout, so that no session working in one can " +
 				"reach it — choose a directory that is not part of any repository"},
 	} {
@@ -592,7 +592,7 @@ func TestLocationCellLinkOutOfCheckout(t *testing.T) {
 			c.dir(t, "<B>/out22")
 			c.link(t, "<B>/out22", "<X>/home/link")
 		}, root: "<X>/home/link/wt", path: "<X>/home/link/wt/p/w1", extra: []string{"<B>/out22"},
-			text: "refusing to create worktree: <X>/home/link/wt is inside a git checkout (<X>/home has a .git " +
+			text: "refusing to create worktree: `<X>/home/link/wt` is inside a git checkout (<X>/home has a .git " +
 				"entry); a worktree location must be outside every checkout, so that no session working in one " +
 				"can reach it — choose a directory that is not part of any repository"},
 		{name: "X2", setup: func(t *testing.T, c *locCell) {
