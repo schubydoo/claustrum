@@ -21,7 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
-| `4c111e86…` | 2026-11-08 (built) | the method `files.find`, the refusal of a given-up `id`, the `lost` list and the end of a lost private temp folder, new Git LFS codes of `git.worktree_create`, the unusable `.git` refusal, new launcher and peer check refusals and new features. See below | [PRs 1055, 1057, 1058, 1060–1065, 1068–1070, 1073–1076, 1078–1083, 1085, 1087–1092, 1094–1096, 1098–1101, 1105, 1106, 1108, 1109, 1111–1114, 1116–1118, 1120–1122, 1124, 1128, 1129, 1131–1133, 1136, 1138, 1139, 1144–1146](https://github.com/schubydoo/claustrum/pull/1146) |
+| `4c111e86…` | 2026-11-08 (built) | the method `files.find`, the refusal of a given-up `id`, the `lost` list and the end of a lost private temp folder, new Git LFS codes of `git.worktree_create`, the unusable `.git` refusal, new launcher and peer check refusals and new features. See below | [PRs 1055, 1057, 1058, 1060–1065, 1068–1070, 1073–1076, 1078–1083, 1085, 1087–1092, 1094–1096, 1098–1101, 1105, 1106, 1108, 1109, 1111–1114, 1116–1118, 1120–1122, 1124, 1128, 1129, 1131–1133, 1136, 1138, 1139, 1142, 1144–1146](https://github.com/schubydoo/claustrum/pull/1146) |
 | `c9125eb8…` | 2026-11-02 (built) | the methods `files.mkdir` and `server.adoptEnv`, the `gitRead` and launcher members of `process.spawn`, the launcher file check, the adopt frame of the bridge, new git refusals and new `plugins.prune` skips. See below | [PRs 1008–1019, 1021–1041](https://github.com/schubydoo/claustrum/pull/1041) |
 | `b3081b51…` | 2026-10-30 (built) | new `server.capabilities` features, the launcher refusal of a value that is not a string, the session folders, the content check of a new worktree, new Windows git refusals and the `cliTempRoot` member. See below | [PRs 906, 907, 909–915, 920, 921, 923–927](https://github.com/schubydoo/claustrum/pull/927) |
 | `be1c1ca5…` | 2026-10-19 (built) | the staged worktree add on every system, the ssh door of the checkout, new worktree texts, the null-device hook path on Windows, new git child variables, a long socket path, `cliRemoved` and a new feature. See below | [PRs 807–818](https://github.com/schubydoo/claustrum/pull/818) |
@@ -89,12 +89,12 @@ methods and in [PROTOCOL.md](PROTOCOL.md). Each rule names its systems there.
   with a suffix. PRs 1061, 1074 and 1131 follow it, measured on Linux and macOS. Windows
   answers `-32601`.
 - `process.spawn` refuses a given-up `id` with `-32602`. A `process.kill`, a
-  `killAndWait` or a `process.reattach` of an unknown `id` gives it up (PRs 1060, 1074
-  and 1112, measured on Linux, macOS and Windows).
+  `killAndWait` or a `process.reattach` of an unknown `id` gives it up (PR 1060,
+  measured on Linux, macOS and Windows).
 - The private temp folder of a spawn is `ccd-<10 hex>` with an inner `t`, where
-  `c9125eb8` made `ccd-<12 hex>`. The `cliTempRoot` member gains `refused` and a `lost`
-  list. A spawn after 8 new folders within about a minute gets no folder (PRs 1065,
-  1073, 1109, 1120, 1122 and 1129, on Linux and macOS).
+  `c9125eb8` made `ccd-<12 hex>` (PRs 1065 and 1073, on Linux and macOS). On macOS the
+  `cliTempRoot` member gains a `lost` list. A spawn after 8 new folders within about a
+  minute gets no folder (PRs 1109, 1120, 1122 and 1129).
 - With `cliTempRootEnd`, a child ends when its private temp folder is lost. Its exit
   frame carries `"killedBy":"temp_root"` (PRs 1065, 1073 and 1120, measured on Linux and
   macOS).
@@ -105,13 +105,15 @@ methods and in [PROTOCOL.md](PROTOCOL.md). Each rule names its systems there.
 - `git.worktree_create` gains the codes `worktree_no_space`, `worktree_quota`,
   `worktree_lfs_not_kept` and `worktree_lfs_no_space` (PRs 1081, 1091, 1100 and 1136). A
   failed Git LFS download gets new texts (PRs 1064, 1076 and 1113). Both are on Linux
-  and macOS. The ssh note of a failed download is measured on Windows too.
+  and macOS, except `worktree_lfs_no_space`, measured on Linux only. The ssh note of a
+  failed download is measured on Windows too. A stopped seed copy whose file cannot be
+  removed answers `worktree_add_failed` (PR 1145, measured on Linux).
 - The content check reads a Git LFS file under `.claude` from the private store. A
   sparse checkout file with only comment lines passes (PRs 1108 and 1118, measured on
   Linux).
 - On Linux the launcher check refuses a launcher on a file system that is not local,
-  with new texts. It tests the file through a handle (PRs 1055, 1078 and 1116). On macOS
-  a `launcherCheck` gets the fault `macos_host` with a new text (PR 1057).
+  with new texts (PRs 1055, 1078 and 1116). On macOS a `launcherCheck` gets the fault
+  `macos_host` with a new text (PR 1057).
 - If files or memory run out, the peer check refuses a caller with `out_of_resources`
   (PRs 1079 and 1117, measured on Linux).
 - `server.capabilities` lists the new methods and features of these items (measured on
@@ -122,11 +124,11 @@ through a private folder `.checkout-<n>` under `git-shadow`. It holds the index 
 private Git LFS store, and it goes soon after the reply (PRs 1058, 1063 and 1094). The
 create seeds that store from the store of the repository. It keeps new downloads in the
 repository store by a copy, with 1 GiB spare. It removes its old temp names there. PRs
-1063, 1064, 1087, 1101, 1106, 1114, 1121, 1136 and 1145 follow these steps. Two new
-group `SIGKILL`s end a checkout git, each measured on Linux. The first is the space stop
-of a Git LFS download (PR 1100). The second follows a failed checkout git after its exit
-(PR 1138). The staged add copies `HEAD`, `config` and `info/exclude` into `.s<n>`, and
-git makes the leaf. The session-folder record comes right after the git-dir answer (PRs
+1063, 1064, 1087, 1101, 1106, 1114, 1121 and 1136 follow these steps. Two new group
+`SIGKILL`s end a checkout git, each measured on Linux. The first is the space stop of a
+Git LFS download (PR 1100). The second follows a failed checkout git after its exit (PR
+1138). The staged add copies `HEAD`, `config` and `info/exclude` into `.s<n>`, and git
+makes the leaf. The session-folder record comes right after the git-dir answer (PRs
 1088, 1095, 1096, 1098 and 1099). In a daemon folder of mode `0300` an empty request
 folder goes by one rmdir (PR 1105, measured on Linux). After a failed add, a file or a
 link in place of the leaf goes (PR 1089, measured on Linux). A `process.kill` can come
@@ -146,8 +148,8 @@ item names its systems:
 - On macOS claustrum makes the private temp folder of a spawn (PR 1073, measured on
   macOS).
 - The peer check line of too many open files names the caller pid (PR 1069).
-- Git requests go on after a `git-shadow` lock error other than a held lock (PR 1070,
-  measured on Linux and macOS).
+- Git requests go on after a `git-shadow` lock error of `ENOLCK` on Linux or the FIFO
+  lock error on macOS (PR 1070, measured on Linux and macOS).
 - A failed close of the worktree location marker answers `mkdir_failed`. Creates in
   `fallback-git` or with `worktreeRoot` make the git calls of the reference (PR 1075).
 - The daemon drops `CLAUDE_SSH_CHILD` and `CLAUDE_SSH_RUN_DIR` from its environment (PR
@@ -169,14 +171,9 @@ item names its systems:
 - After a failed start naming of the peer check, the `files.realpath` start line comes
   after the serving line (PR 1144).
 
-**How it was bounded.** Each item above was measured side by side with `c9125eb8` on the
-systems named. Each PR ran its rows again after the fix, on its systems.
-BATTERY-RESULT-TBD: the frame battery of the final code beside `4c111e86`, on Linux,
-macOS and Windows.
-
-**Measured details.** After the checkout git exits, `4c111e86` waits about 1.2 s before
-its last keep, and claustrum keeps at once. The reply bytes and the kept objects are
-equal (measured on Linux).
+**How it was bounded.** Each PR ran its rows side by side with `c9125eb8`, and again
+after the fix, on its systems. BATTERY-RESULT-TBD: the frame battery of the final code
+beside `4c111e86`, on Linux, macOS and Windows.
 
 These items stay open:
 
@@ -187,6 +184,9 @@ These items stay open:
 - The text of the ssh door in the `GIT_SSH_COMMAND` of the read-tree call differs from
   the reference, by the maintainer's choice. A copy of that text is a copy of code by
   the reference authors.
+- On Windows `files.realpath` through a junction still differs from `4c111e86` and
+  `c9125eb8`. Two Windows texts, of a remove with a dangling `commondir` junction and of
+  a create on an unborn `HEAD`, still differ from `c9125eb8`.
 - The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `c9125eb87bca9ab294d4190dd79be9dfb8d11806` — 2026-11-02 (built)

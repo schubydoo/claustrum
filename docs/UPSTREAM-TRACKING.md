@@ -283,8 +283,8 @@ the linked pages.
   `process.spawn` `launcher` param, the child env strip, and the gated launcher
   runs of `-install` and `-probe-cli`. The Linux file test on a cache hit before a
   launcher run follows `5fd08069`. Other launcher runs of `5fd08069` are not
-  measured. `f6010b97` has none of these. `launcherFault`, `macos_host`, the file
-  check and `launcher.supplies_cli` follow the pin. See
+  measured. `f6010b97` has none of these. `launcherFault`, `macos_host` and the file
+  check follow the pin, and `launcher.supplies_cli` follows `c9125eb8`. See
   [launcher.resolve](protocol/launcher-resolve.md),
   [process.spawn → The managed launcher](protocol/process-spawn.md#the-managed-launcher)
   and [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
@@ -380,8 +380,8 @@ the linked pages.
   ([the private LFS store](protocol/git-worktree-create.md#the-private-lfs-store)). On Windows the variables and the
   names of the short-lived entries are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).
-  The `GIT_TRACE2*=0` and `GIT_SSH_COMMAND=false` entries and the config call of the ssh
-  door follow the pin.
+  The `GIT_TRACE2*=0` entries follow the pin (measured on Linux). The
+  `GIT_SSH_COMMAND=false` entries and the config call of the ssh door follow `c9125eb8`.
 - The `worktreeRoot` location rules follow `5fd08069` (measured on Linux and
   macOS). `89cb6289` is not measured there.
 - A remove behind a linked `<git dir>/worktrees` follows `5fd08069` (measured on
