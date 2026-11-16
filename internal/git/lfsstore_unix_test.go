@@ -1325,7 +1325,7 @@ func putObject(t *testing.T, store, body string) string {
 // the private store keeps timeout. A copy past half of timeoutMs stops, and
 // git-lfs then fails to find the object (4c111e86, measured on Linux and
 // macOS). A seed that starts 3 s after the start of the request stops at
-// (10 + 3) / 2 s from that start, so a copy of 4.5 s stops too. A bound of
+// (10 + 3) / 2 s from that start, so a copy of 4 s stops too. A bound of
 // half of timeoutMs from the start of the seed lets it end (4c111e86, measured
 // on Linux).
 func TestLFSNotKeptAfterDeadline(t *testing.T) {
@@ -1338,7 +1338,7 @@ func TestLFSNotKeptAfterDeadline(t *testing.T) {
 		{"long copy", 0, 3000 * time.Millisecond, true, false, "worktree_lfs_not_kept", "timed out after 10 seconds, and copying"},
 		{"download begun", 0, 3000 * time.Millisecond, true, true, "timeout", "git worktree add timed out after 10000ms (deadline expired during the checkout)"},
 		{"copy past half", 0, 6000 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
-		{"late seed", 3000 * time.Millisecond, 4500 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
+		{"late seed", 3000 * time.Millisecond, 4000 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})

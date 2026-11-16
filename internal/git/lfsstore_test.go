@@ -470,9 +470,16 @@ func TestSeedDeadlineCountsFromArrival(t *testing.T) {
 		{time.Second, 3000, 2 * time.Second},
 		{2400 * time.Millisecond, 3000, 2700 * time.Millisecond},
 		{500 * time.Millisecond, 1500, time.Second},
+		// A seed that starts after the deadline of timeoutMs has a bound
+		// that passed already, so it stops at once.
+		{4 * time.Second, 3000, 3500 * time.Millisecond},
 	} {
-		if got := seedDeadline(arrival, arrival.Add(c.s), c.timeoutMs).Sub(arrival); got != c.want {
+		got := seedDeadline(arrival, arrival.Add(c.s), c.timeoutMs).Sub(arrival)
+		if got != c.want {
 			t.Errorf("seedDeadline(s %v, timeoutMs %d) = %v after arrival, want %v", c.s, c.timeoutMs, got, c.want)
+		}
+		if c.s > time.Duration(c.timeoutMs)*time.Millisecond && got >= c.s {
+			t.Errorf("seedDeadline(s %v, timeoutMs %d) = %v after arrival, want before the start of the seed", c.s, c.timeoutMs, got)
 		}
 	}
 }
