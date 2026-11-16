@@ -496,7 +496,8 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 //
 // A copy whose file the remove left behind ends the seed, and damaged is that
 // remove (seedNotRemoved). The create then fails before the read-tree call
-// (seedDamagedText).
+// (seedDamagedText). Claustrum's own, not measured: the end of the seed and no
+// read-tree call.
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration, damaged error) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
@@ -804,9 +805,10 @@ const (
 // Claustrum's own, not measured: the result is not used.
 //
 // A remove that fails gives a seedNotRemoved error. On 4c111e86 a shard folder
-// of mode 0555 failed it with EACCES (measured on Linux). A gone file and a
-// folder at the name count as removed. A folder there kept the answer of a
-// stopped copy (measured on Linux). macOS is not measured.
+// of mode 0555 failed it with EACCES (measured on Linux). An empty folder at
+// the name kept the answer of a stopped copy, with no log line (measured on
+// Linux). Claustrum's own, not measured: a gone file and any folder at the name
+// count as removed.
 func copySeed(ctx context.Context, src, dst string) error {
 	in, err := openObjectNoFollow(src)
 	if err != nil {
@@ -849,7 +851,7 @@ func seedDamagedText(folder string) string {
 }
 
 // seedNotRemoved is the failed remove of the file of a copy of the seed that
-// stopped (copySeed).
+// stopped or failed (copySeed).
 type seedNotRemoved struct{ err *os.PathError }
 
 func (e seedNotRemoved) Error() string { return e.err.Error() }

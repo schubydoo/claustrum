@@ -702,8 +702,8 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 				room = newLFSRoomWatch(filepath.Dir(lfs.path), lfs.path)
 				short, copied, damaged := lfs.seed()
 				if damaged != nil {
-					// The remove of a copy of the seed that stopped failed
-					// (seedObjects). 4c111e86 logs it and answers seedDamagedText
+					// The file of a stopped or failed copy of the seed could
+					// not be removed (seedObjects). 4c111e86 logs it and answers seedDamagedText
 					// (measured on Linux). Claustrum's own, not measured: no
 					// read-tree call runs.
 					logging.Warnf("[GitHandler] git.worktree_create: a file the helper put in the checkout's private Git LFS folder"+

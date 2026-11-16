@@ -1542,8 +1542,8 @@ func TestCopySeedRemovesTheFileOfAStoppedCopy(t *testing.T) {
 
 // TestCopySeedReportsAFileItCannotRemove: a stopped copy in a folder of mode
 // 0555 cannot remove its file. copySeed reports that remove (4c111e86,
-// measured on Linux). A folder at the name (measured on Linux) and a gone file
-// report nothing.
+// measured on Linux). An empty folder at the name (its answer measured on
+// Linux) and a gone file (claustrum's own) report nothing.
 func TestCopySeedReportsAFileItCannotRemove(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root removes a file in a folder of mode 0555")
@@ -1589,6 +1589,27 @@ func TestCopySeedReportsAFileItCannotRemove(t *testing.T) {
 				t.Errorf("copySeed = %q, want the remove of %s", err, dst)
 			}
 		})
+	}
+}
+
+// TestCopySeedReportsARemoveWithNoEntryLeft: a remove that fails with an error
+// other than ENOENT, and an Lstat of the name that fails after it, still
+// report the remove (claustrum's own, not measured). The remove is the seam.
+func TestCopySeedReportsARemoveWithNoEntryLeft(t *testing.T) {
+	src, dst := copySeedCase(t)
+	prevCopy, prevRemove := seedCopy, removeLFSStoreFile
+	seedCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		n, _ := io.CopyN(w, r, 3)
+		if err := os.Remove(dst); err != nil {
+			t.Error(err)
+		}
+		return n, context.DeadlineExceeded
+	}
+	removeLFSStoreFile = func(*os.Root, string) error { return unix.EACCES }
+	t.Cleanup(func() { seedCopy, removeLFSStoreFile = prevCopy, prevRemove })
+	err := copySeed(context.Background(), src, dst)
+	if !errors.As(err, new(seedNotRemoved)) || err.Error() != "remove "+dst+": permission denied" {
+		t.Errorf("copySeed = %v, want the failed remove of %s", err, dst)
 	}
 }
 
