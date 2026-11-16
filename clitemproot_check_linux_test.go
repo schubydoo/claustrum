@@ -1141,6 +1141,9 @@ func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
 		<-ticks.done
 	}()
 	<-in
+	tempRoots.mu.Lock()
+	pass := tempRoots.givenPass // the look that the seam holds up
+	tempRoots.mu.Unlock()
 	type answer struct {
 		res     *rpc.CLITempRoot
 		release func()
@@ -1166,6 +1169,11 @@ func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
 		close(free)
 	}
 	<-done
+	// The loop can end its check before the look answers, so the seam goes back only
+	// once the look has answered too.
+	if pass != nil {
+		<-pass.done
+	}
 	tempRootCheckDev = old
 }
 
