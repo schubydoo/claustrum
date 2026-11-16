@@ -3,6 +3,8 @@
 package git
 
 import (
+	"crypto/sha256"
+	"hash"
 	"io"
 	"os"
 	"os/exec"
@@ -10,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -235,48 +238,81 @@ func TestKeepTickPanicEndsOnlyTheTicks(t *testing.T) {
 	}
 }
 
-// TestLFSKeepTickNotCopiedAgain: a keep of a tick whose copy stops at its
-// bound leaves the object out, and the keep after a good checkout does not
-// copy it again. On 4c111e86 a 900 MiB object got one copy, stopped at its
-// bound, and the create answered success (measured on Linux). Mutation: drop
-// the test of tried in returnDownloads (a.bin gets a second copy and is kept).
-func TestLFSKeepTickNotCopiedAgain(t *testing.T) {
+// stalledHash is a hash whose first Write runs first, then waits for done or for
+// 10 s, and reports in stopped whether done ended the wait.
+type stalledHash struct {
+	hash.Hash
+	first   func()
+	done    <-chan struct{}
+	stopped *atomic.Bool
+}
+
+func (h stalledHash) Write(p []byte) (int, error) {
+	h.first()
+	select {
+	case <-h.done:
+		h.stopped.Store(true)
+	case <-time.After(10 * time.Second):
+	}
+	return h.Hash.Write(p)
+}
+
+// TestLFSKeepTickStopsAtTheExitOfGit: a keep of a tick that still reads its
+// object when the read-tree call exits stops there, with no copy. The keep
+// after the checkout reads the object again and makes its one copy. On
+// 4c111e86 the first read of a 900 MiB object ended at the exit of git in 10
+// of 10 rows. One temp file followed after the checkout (measured on Linux).
+// Mutation: drop the stop of the context of the ticks in keepTicker.end (the
+// read of the tick runs on, and the tick makes the copy).
+func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 	seamFreeSpace(t)
 	setKeepTick(t, 20*time.Millisecond)
+	made := watchTickers(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
 	f.onServer(t, "a.bin")
 	f.onServer(t, "b.bin")
 	release := f.holdDownload(t, "b.bin")
-	prevBudget, prevCopy := keepBudget, keepCopy
-	keepBudget = 300 * time.Millisecond
+	prevHash, prevCopy, prevBudget := newObjectHash, keepCopy, keepBudget
+	keepBudget = 30 * time.Second
+	var stopped atomic.Bool
 	var mu sync.Mutex
-	copiesA := 0
+	hashes, copiesA := 0, 0
+	newObjectHash = func() hash.Hash {
+		mu.Lock()
+		hashes++
+		n := hashes
+		mu.Unlock()
+		if n > 1 {
+			return sha256.New()
+		}
+		got := made()
+		if len(got) != 1 {
+			t.Errorf("the create made %d tickers before the first keep, want 1", len(got))
+			return sha256.New()
+		}
+		var once sync.Once
+		return stalledHash{Hash: sha256.New(), first: func() { once.Do(release) }, done: got[0].ctx.Done(), stopped: &stopped}
+	}
 	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
 		if file, ok := w.(*os.File); ok && strings.HasSuffix(file.Name(), f.oids["a.bin"]) {
 			mu.Lock()
 			copiesA++
-			first := copiesA == 1
 			mu.Unlock()
-			if first {
-				time.Sleep(600 * time.Millisecond)
-				release()
-			}
 		}
 		return io.Copy(w, r)
 	}
-	t.Cleanup(func() { keepBudget, keepCopy = prevBudget, prevCopy })
+	t.Cleanup(func() { newObjectHash, keepCopy, keepBudget = prevHash, prevCopy, prevBudget })
 	f.wantSuccess(t)
+	if !stopped.Load() {
+		t.Error("the keep of the tick still read a.bin after the exit of git")
+	}
 	mu.Lock()
 	got := copiesA
 	mu.Unlock()
 	if got != 1 {
 		t.Errorf("the keep copied a.bin %d times, want 1", got)
 	}
-	if exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
-		t.Error("a.bin is in the store of the repository after its stopped copy")
-	}
-	entries, _ := os.ReadDir(f.shard("a.bin"))
-	for _, e := range entries {
-		t.Errorf("the shard of a.bin holds %s, want it empty", e.Name())
+	if !exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
+		t.Error("a.bin is not in the store of the repository")
 	}
 }

@@ -756,9 +756,6 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		if keeper != nil && lfs.tickWait != nil {
 			*lfs.tickWait = time.Since(start)
 		}
-		if keeper != nil && lfs.tickTried != nil {
-			*lfs.tickTried = keeper.tried
-		}
 	}
 	defer endKeeper()
 	err = runHeld(cmd, func() error {
@@ -1114,7 +1111,6 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	idx := filepath.Join(idxDir, "index")
 	var lfs privateStore
 	var tickWait time.Duration
-	var tickTried map[string]bool
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path, lfs.runDir = filepath.Join(idxDir, "lfs"), u.host.runDir
 		lfs.seed = func() (bool, time.Duration) {
@@ -1123,7 +1119,6 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 			return fillCheckoutStore(seedCtx, u, repo, u.gitDir, rev, lfs.path)
 		}
 		lfs.tickWait = &tickWait
-		lfs.tickTried = &tickTried
 	}
 	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, lfs, pin, rule,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
@@ -1144,7 +1139,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	// folders after a failed write of git (measured on Linux and macOS).
 	// The reply reads what that keep left out (notKeptText).
 	if err != nil && keep {
-		left := returnDownloads(u, lfs.path, failedKeepForm(ctx, err), tickTried)
+		left := returnDownloads(u, lfs.path, failedKeepForm(ctx, err))
 		if rule != nil && rule.store != nil {
 			rule.store.left = left
 		}
@@ -1158,7 +1153,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// settle step. The moment is claustrum's own, not measured.
 		if err == nil && keep {
 			start := time.Now()
-			returnDownloads(u, lfs.path, keepAfterGood, tickTried)
+			returnDownloads(u, lfs.path, keepAfterGood)
 			// The wait for the end of the ticks counts as a time of the keep too.
 			keepTook = tickWait + time.Since(start)
 		}

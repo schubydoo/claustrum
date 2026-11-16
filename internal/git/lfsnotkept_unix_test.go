@@ -311,7 +311,7 @@ func TestKeepCountsLeftOut(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = root.Close() }()
-			got := returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterDeadline, nil)
+			got := returnDownloads(gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root}}, private, keepAfterDeadline)
 			if got == nil || *got != row.want {
 				t.Errorf("returnDownloads = %+v, want %+v", got, row.want)
 			}
