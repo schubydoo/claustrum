@@ -10,8 +10,8 @@ import (
 
 // TestLauncherCheckLogRepeatsArm pins both arms of noteChecked. With logsRepeats
 // each refusal logs, a repeat too, as on Windows (claustrum's own). Without it a
-// repeat logs no line until a usable answer comes between, as on Linux and macOS
-// (4c111e86, measured).
+// repeat logs no line until a usable answer comes between, as on Linux (4c111e86,
+// measured on Linux).
 func TestLauncherCheckLogRepeatsArm(t *testing.T) {
 	refused := rpc.LauncherCheckResult{Status: install.StatusUnusable, Reason: "arm-test reason"}
 	usable := rpc.LauncherCheckResult{Status: "usable"}

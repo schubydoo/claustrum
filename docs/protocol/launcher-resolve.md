@@ -36,7 +36,7 @@ The result has one of four shapes. Each keeps this member order:
 | `unusable` | A value is set, but the daemon refuses it. `reason` says why. |
 | `unreadable` | A settings file or the drop-in folder cannot be read. `path` names it. |
 
-On macOS an unusable answer adds `fault` after `reason` (`4c111e86`, measured on macOS). `missing` covers a missing launcher, a folder and a file that cannot run. `not_absolute` covers a bare name.
+On macOS `fault` follows `reason`: `missing` for a missing launcher, folder or file that cannot run, `not_absolute` for a bare name (`4c111e86`, measured on macOS). Other refusals send none (claustrum's own).
 
 With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, measured on Linux):
 
@@ -200,7 +200,7 @@ An unusable or unreadable answer writes one line, at WARN (claustrum's own). A u
 
 A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
-An unusable answer to a `launcherCheck` writes this line. On Linux and macOS a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured). On macOS a resolve with no `launcherCheck` comes between too (`4c111e86`, measured on macOS). A -32602 reply does not. On Windows each refusal writes it, a repeat too (claustrum's own, not measured):
+An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured on Linux). On macOS every answer to a `launcherCheck` is `macos_host`, and a repeat writes nothing too (`4c111e86`, measured on macOS). There a usable or managed-refused resolve with no `launcherCheck` comes between. That fits the rows on macOS, but each such resolve followed a change of the managed settings, so a settings change alone can be the cause. A none or unreadable answer comes between too (claustrum's own, not measured). A -32602 reply to a `launcherCheck` does not (measured on macOS). On Windows each refusal writes it, a repeat too (claustrum's own, not measured):
 
 ```text
 [LauncherHandler] the launcher that the desktop names is refused: <reason>
