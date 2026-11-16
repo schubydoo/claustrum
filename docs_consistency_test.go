@@ -783,7 +783,7 @@ var docSectionRunLimits = map[string]int{
 	"SECURITY.md":                              559,
 	"docs/ARCHITECTURE.md":                     496,
 	"docs/DAEMON.md":                           913,  // the Windows exit line at shutdown, exact count (decision-062). 909: the start-time rule of the child records
-	"docs/DIVERGENCES.md":                      723,  // the identity home guard of the worktree leaf deletes in D2, TASK-044 (maintainer decision 2026-11-16). 709 before
+	"docs/DIVERGENCES.md":                      727,  // the identity home guard of the worktree leaf deletes in D2, with and without worktreeRoot, TASK-044 (maintainer decision 2026-11-16), exact count. 709 before
 	"docs/IMPROVEMENTS.md":                     1493, // the KILL exception of item 21, b3081b51
 	"docs/INSTALL.md":                          736,
 	"docs/PROTOCOL.md":                         627,

@@ -174,7 +174,7 @@ func IsFilesystemRoot(p string) bool {
 	return filepath.Dir(c) == c
 }
 
-// FolderHoldsHome is the home guard of the tree delete in stageAndInstall.
+// FolderHoldsHome is the identity home guard of a folder delete.
 // fi is the Lstat answer of the folder at cliPath. Two tests run, and one yes
 // refuses the delete:
 //

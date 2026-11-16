@@ -118,3 +118,40 @@ func TestWorktreeRollbackRefusesHomeByIdentity(t *testing.T) {
 		mustExist(t, filepath.Join(wt, "KEEP.txt"))
 	})
 }
+
+// The rollbacks keep a leaf that holds home by identity. HOME is a folder in the
+// leaf, reached through a symbolic link to the leaf, so its text does not start
+// with the leaf path.
+func TestWorktreeRollbackKeepsALeafThatHoldsHome(t *testing.T) {
+	setup := func(t *testing.T) (repo, wt, keep string, cp worktreeCheckpoint) {
+		t.Helper()
+		top := t.TempDir()
+		repo = filepath.Join(top, "repo")
+		wt = filepath.Join(repo, ".claude", "worktrees", "wt")
+		keep = filepath.Join(wt, "inner", "KEEP.txt")
+		writeFile(t, keep, "must survive", 0o600)
+		alias := filepath.Join(top, "alias")
+		symlinkOrSkip(t, wt, alias)
+		cp = checkpointCreatedWorktree(wt)
+		t.Cleanup(cp.release)
+		if cp.info == nil || cp.parentInfo == nil {
+			t.Fatal("checkpoint did not capture the leaf")
+		}
+		t.Setenv(homeEnvVar(), filepath.Join(alias, "inner"))
+		return repo, wt, keep, cp
+	}
+
+	t.Run("undoFailedCheckout", func(t *testing.T) {
+		repo, wt, keep, cp := setup(t)
+		if got, _ := undoFailedCheckout(gitUse{}, repo, wt, "", cp, testedRegistration{noRegistration: true}); got != "" {
+			t.Errorf("undo text = %q, want none", got)
+		}
+		mustExist(t, keep)
+	})
+
+	t.Run("removeCreatedLeaf", func(t *testing.T) {
+		_, wt, keep, cp := setup(t)
+		removeCreatedLeaf(wt, cp)
+		mustExist(t, keep)
+	})
+}

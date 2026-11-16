@@ -324,7 +324,7 @@ func leafSafeToRemove(worktreePath string, cp worktreeCheckpoint) bool {
 // test (homeguard.WipesHomeDir) runs first. A leaf that is a folder is then compared
 // with home and each parent folder of home by identity (homeguard.FolderHoldsHome).
 // A leaf that is gone, or is no folder, keeps the verdict of the text test. The
-// Lstat follows no link at the leaf, so a link in its place still goes as a link.
+// Lstat follows no link at the leaf. So on Linux and macOS a link in its place still goes as a link.
 func leafHoldsHome(worktreePath string) bool {
 	if homeguard.WipesHomeDir(worktreePath) {
 		return true
