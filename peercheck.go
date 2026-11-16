@@ -346,10 +346,12 @@ func (g *peerGate) ownText() nsText {
 // ownOrRetry gives the own text of the gate. After a failed start naming it
 // reads the own namespaces again, and keeps a read that works.
 //
-// The first read that works writes the serving line of a good start, once, before
-// the check of its caller. 4c111e86 wrote it there and then served that caller
-// (measured on Linux). The level is claustrum's own. A read that names no
-// namespace writes no line (claustrum's own, not measured).
+// The first read that works writes the serving line of a good start. 4c111e86
+// wrote it after the refusal lines and before the connection line, and served
+// that caller (measured on Linux). Its place before the check is claustrum's own.
+// The single line is claustrum's own, not measured: each run served one caller.
+// The level is claustrum's own. A read that names no namespace writes no line
+// (claustrum's own, not measured).
 func (g *peerGate) ownOrRetry() (nsText, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

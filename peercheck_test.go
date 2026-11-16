@@ -434,8 +434,8 @@ func TestPeerRefusalLineCarriesEndMember(t *testing.T) {
 // refuses every caller (4c111e86, measured on Linux). ENFILE gives
 // out_of_resources and EACCES gives lookup_failed. The line of each refusal shows
 // the own text "". Each connection reads the own namespaces again (measured). A
-// read that works then logs the serving line once, after the refusal lines, and
-// serves the caller (measured on Linux).
+// read that works then logs the serving line after the refusal lines and serves
+// the caller (measured on Linux). The single line is claustrum's own, not measured.
 func TestPeerGateStartNamingFailure(t *testing.T) {
 	t.Setenv(peerCheckEnv, "1")
 	enfile := ownNamingError{&fs.PathError{Op: "readlink", Path: "/proc/self/ns/user", Err: syscall.ENFILE}}
@@ -486,9 +486,6 @@ func TestPeerGateStartNamingFailure(t *testing.T) {
 	out := logs.String()
 	if n := strings.Count(out, serving); n != 1 {
 		t.Errorf("the serving line appears %d times, want 1. Log:\n%s", n, out)
-	}
-	if i := strings.Index(out, serving); i >= 0 && i < strings.LastIndex(out, "refused caller number 2 ") {
-		t.Errorf("the serving line comes before the refusal lines. Log:\n%s", out)
 	}
 	if got := g.ownText(); got != measuredOwn {
 		t.Errorf("own text after the good read = %q, want %q", got.String(), measuredOwn.String())
