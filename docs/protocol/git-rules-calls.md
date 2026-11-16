@@ -388,7 +388,7 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
 - `timeoutMs` does not end the add. With `"shadowDirOff":true` it does not end
   the listing before the checkout either (measured on Linux).
 - With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
-  its output and gets no signal. Listings before a call wait until stdout
+  its output and gets no signal, except a child in the group of git after a [failed checkout](git-worktree-create.md#add-and-checkout-failures) on Linux. Listings before a call wait until stdout
   closes, also past the limit. The `status` scan waits too, within its limit
   (measured on Linux). Held past 30 s, the
   config read on standard input ends near 31 s (measured on Linux), and `config.worktree`

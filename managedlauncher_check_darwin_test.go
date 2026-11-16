@@ -15,8 +15,8 @@ const macOSHostText = "This launcher can't be used on a macOS host: an access-co
 // c9125eb8, with the text of 4c111e86: every spawn with a
 // launcher and a launcherCheck gets macos_host, with the prefix of its shape, before
 // any file test. Every launcher.resolve with a launcherCheck answers unusable with
-// macos_host, also with no path and no settings file. Each refusal logs its line, a
-// repeat too (c9125eb8, measured on macOS).
+// macos_host, also with no path and no settings file. The second of two equal
+// refusals logs no line (4c111e86, measured on macOS).
 func TestLauncherCheckRefusedOnMacOS(t *testing.T) {
 	logs := captureLogBuf(t)
 	tempManagedSettingsDir(t)
@@ -47,7 +47,46 @@ func TestLauncherCheckRefusedOnMacOS(t *testing.T) {
 		}
 	}
 	line := "[LauncherHandler] the launcher that the desktop names is refused: " + macOSHostText + "\n"
-	if n := strings.Count(logs.String(), line); n != 2 {
-		t.Errorf("%d refusal lines, want 2 (one per resolve):\n%s", n, logs.String())
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("%d refusal lines, want 1 (one per run of equal refusals):\n%s", n, logs.String())
+	}
+}
+
+// TestLauncherCheckLogOnceOnMacOS pins the macOS rows of 4c111e86: a run of equal
+// refusals of a launcherCheck logs one line, and a -32602 reply in the run does not
+// end it. A resolve with no launcherCheck ends it, a usable answer and a managed
+// refusal alike.
+func TestLauncherCheckLogOnceOnMacOS(t *testing.T) {
+	logs := captureLogBuf(t)
+	dir := tempManagedSettingsDir(t)
+	base := filepath.Join(dir, managedSettingsBase)
+	w := mkExec(t, filepath.Join(dir, "bin", "wrap"))
+	s := newTestServer(t)
+	line := "[LauncherHandler] the launcher that the desktop names is refused: " + macOSHostText + "\n"
+	resolve := func(params string) {
+		t.Helper()
+		dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":`+params+`}`))
+	}
+	check := func() { t.Helper(); resolve(`{"cliPath":"/x/cli","launcherCheck":{}}`) }
+	steps := []struct {
+		row   string
+		ask   func()
+		lines int
+	}{
+		{"first refusal", check, 1},
+		{"equal refusal", check, 1},
+		{"-32602", func() { resolve(`{"cliPath":"/x/cli","launcherCheck":{"ownerUid":"501"}}`) }, 1},
+		{"refusal after -32602", check, 1},
+		{"usable answer", func() { writeFileMode(t, base, []byte(pwSettings(t, w)), 0o644); resolve(`{"cliPath":"/x/cli"}`) }, 1},
+		{"refusal after usable", check, 2},
+		{"managed refusal", func() { writeFileMode(t, base, []byte(pwSettings(t, "wrap")), 0o644); resolve(`{"cliPath":"/x/cli"}`) }, 2},
+		{"refusal after managed refusal", check, 3},
+		{"equal refusal again", check, 3},
+	}
+	for _, st := range steps {
+		st.ask()
+		if n := strings.Count(logs.String(), line); n != st.lines {
+			t.Fatalf("after %s: %d refusal lines, want %d:\n%s", st.row, n, st.lines, logs.String())
+		}
 	}
 }

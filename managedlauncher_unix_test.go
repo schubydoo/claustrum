@@ -137,6 +137,15 @@ func unusableFrame(source, reason string) string {
 	return `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","source":"` + source + `","reason":"` + reason + `"}}`
 }
 
+// unusableFaultFrame is the unusable frame of a refusal with a fault. macOS adds the
+// fault after reason (4c111e86, measured on macOS), the other systems send none.
+func unusableFaultFrame(source, reason, fault string) string {
+	if runtime.GOOS != "darwin" {
+		return unusableFrame(source, reason)
+	}
+	return `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","source":"` + source + `","reason":"` + reason + `","fault":"` + fault + `"}}`
+}
+
 func unreadableFrame(path, reason string) string {
 	return `{"jsonrpc":"2.0","id":1,"result":{"status":"unreadable","reason":"` + reason + `","path":"` + path + `"}}`
 }
@@ -216,24 +225,27 @@ func TestLauncherResolveRefusesANonString(t *testing.T) {
 	dir := tempManagedSettingsDir(t)
 	base := filepath.Join(dir, managedSettingsBase)
 	const tail = " must be one string (the launcher and its arguments), not "
-	for _, c := range []struct{ settings, reason string }{
-		{`{"processWrapper":5}`, "processWrapper" + tail + "a number"},
-		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean"},
-		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array"},
-		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object"},
-		{`{"processWrapper":null}`, ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array"},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object"},
-		{`{"env":"x"}`, ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"/w"},"processWrapper":5}`, "launcher `/w` does not exist or is not an executable regular file"},
+	for _, c := range []struct{ settings, reason, fault string }{
+		{`{"processWrapper":5}`, "processWrapper" + tail + "a number", ""},
+		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean", ""},
+		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array", ""},
+		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object", ""},
+		{`{"processWrapper":null}`, "", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object", ""},
+		{`{"env":"x"}`, "", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"/w"},"processWrapper":5}`, "launcher `/w` does not exist or is not an executable regular file", install.FaultMissing},
 	} {
 		writeFileMode(t, base, []byte(c.settings), 0o644)
 		before := len(logs.String())
 		want := noneFrame
-		if c.reason != "" {
+		switch {
+		case c.fault != "":
+			want = unusableFaultFrame(base, c.reason, c.fault)
+		case c.reason != "":
 			want = unusableFrame(base, c.reason)
 		}
 		checkResolve(t, s, c.settings, "/opt/claude/cli", want)
@@ -407,7 +419,7 @@ func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 
 	writeFileMode(t, base, []byte(`{"processWrapper":"`+w+"\xc2\x85"+`a"}`), 0o644)
 	checkResolve(t, s, "R10g-0085", "/opt/claude/cli",
-		unusableFrame(base, "launcher `"+w+"\xc2\x85"+"a` does not exist or is not an executable regular file"))
+		unusableFaultFrame(base, "launcher `"+w+"\xc2\x85"+"a` does not exist or is not an executable regular file", install.FaultMissing))
 
 	writeFileMode(t, base, []byte(envSettings(t, `["`+w+`",""]`)), 0o644)
 	checkResolve(t, s, "R9c", "/opt/claude/cli",
@@ -434,7 +446,7 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	set := func(v string) { t.Helper(); writeFileMode(t, base, []byte(envSettings(t, v)), 0o644) }
 
 	set("wrap")
-	checkResolve(t, s, "R11a", "/opt/claude/cli", unusableFrame(base, managedNotAbsolute))
+	checkResolve(t, s, "R11a", "/opt/claude/cli", unusableFaultFrame(base, managedNotAbsolute, install.FaultNotAbsolute))
 
 	cli := mkExec(t, filepath.Join(bin, "cli"))
 	set(cli)
@@ -462,7 +474,7 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	writeFileMode(t, w644, []byte("#\n"), 0o644)
 	for _, p := range []string{missing, folder, w644} {
 		set(p)
-		checkResolve(t, s, "R11d "+filepath.Base(p), "/opt/claude/cli", unusableFrame(base, "launcher `"+p+"` does not exist or is not an executable regular file"))
+		checkResolve(t, s, "R11d "+filepath.Base(p), "/opt/claude/cli", unusableFaultFrame(base, "launcher `"+p+"` does not exist or is not an executable regular file", install.FaultMissing))
 	}
 	link := filepath.Join(bin, "wlink")
 	if err := os.Symlink(w, link); err != nil {
@@ -496,7 +508,7 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	set(exists)
 	checkResolve(t, s, "R11e-exists", "/opt/claude/cli", usableFrame(base, exists))
 	set(exists[:len(exists)-1] + "z")
-	checkResolve(t, s, "R11e-missing", "/opt/claude/cli", unusableFrame(base, "launcher `"+head+"\xe2\x80\xa6` does not exist or is not an executable regular file"))
+	checkResolve(t, s, "R11e-missing", "/opt/claude/cli", unusableFaultFrame(base, "launcher `"+head+"\xe2\x80\xa6` does not exist or is not an executable regular file", install.FaultMissing))
 }
 
 // TestLauncherResolveBaseFileChecks pins measured rules: permission denied (through the

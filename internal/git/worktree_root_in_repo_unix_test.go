@@ -272,7 +272,7 @@ func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
 // "inside a git checkout" text for most of these measured cases. One keeps that
 // text, and two create.
 func TestWorktreeCreateRootInRepo(t *testing.T) {
-	const s7 = " is inside a git checkout (<T2> has a .git entry); a worktree location must be outside " +
+	const s7 = "` is inside a git checkout (<T2> has a .git entry); a worktree location must be outside " +
 		"every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository"
 	for _, r := range []struct {
 		name, base, root, wp, want string
@@ -291,7 +291,7 @@ func TestWorktreeCreateRootInRepo(t *testing.T) {
 		{name: "K9", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
 			want: "refusing to create worktree: <T>/.claude leads into the repository <T>/sub (at <T>)" + r0Tail},
 		{name: "K10", root: "<T2>/.claude", wp: "<T2>/.claude/cp/c1",
-			want: "refusing to create worktree: <T2>/.claude" + s7},
+			want: "refusing to create worktree: `<T2>/.claude" + s7},
 		{name: "K6", root: "<B>", wp: "<B>/cp/c1", created: true},
 		{name: "K7", root: "<B>/Tx", wp: "<B>/Tx/cp/c1", created: true},
 	} {

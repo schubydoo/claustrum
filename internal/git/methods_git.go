@@ -2298,12 +2298,25 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		quiet.noRecheck = true
 		// After the add of a commit id from sourceBranch the content check asks
 		// git about the repository instead, before its batch (checkAsk).
+		// With a worktreeRoot it reads the kept answer of the ask below.
 		// b3081b51 and c9125eb8 make that call there on macOS, and c9125eb8 on
 		// Linux (measured). A wrong answer on every call fails the create with
 		// worktree_verify_repository after 6 calls, and the branch step keeps
 		// the branch with the same text (measured on macOS).
 		if cu.shadow() && !offNow && isObjectID(checkoutRev) {
 			checkAsk = func() string { return cu.askAfterAdd(repo) }
+			// With a worktreeRoot git is asked right after the add, and the
+			// location calls run again (recheckLocation). That place is
+			// claustrum's own. 4c111e86 and c9125eb8 make the same 45 calls
+			// with one ask (the counts measured on Linux).
+			// The answer is not used here. The content check gets a good one
+			// again as a kept answer. A bad answer is not kept, so the content
+			// check asks again, and only a second bad answer refuses
+			// (claustrum's own, not measured).
+			if p.WorktreeRoot != "" {
+				_ = cu.askAfterAdd(repo)
+				recheckLocation(quiet, repo)
+			}
 		}
 		if cu.shadow() && !offNow && !isObjectID(checkoutRev) {
 			// On Linux and macOS git is asked about the repository first

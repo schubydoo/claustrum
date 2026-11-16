@@ -116,7 +116,7 @@ func TestSocketWorktreeUnreadMembersIgnored(t *testing.T) {
 	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
 
 	cl := dial(t, startSocketServer(t))
-	got := string(cl.call(req(1, "git.worktree_create", map[string]any{
+	got := string(cl.callCreate(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "b1", "worktreePath": leaf, "path": 123})))
 	if !strings.Contains(got, `"result":{"success":true,`) || !strings.HasSuffix(got, `"sourceBranch":"main","branch":"b1"}}`) {
 		t.Fatalf("create = %s, want success with branch b1", got)
