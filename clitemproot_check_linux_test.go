@@ -340,6 +340,53 @@ func TestCLITempRootFailedCheckEndsNobody(t *testing.T) {
 	}
 }
 
+// A held folder that flips between mode 0000 and 0500 64 times logs 49 change lines,
+// then the cap line in place of the 50th, and no change line after (4c111e86, measured
+// on Linux). Nobody is ended (claustrum's own here, not measured).
+func TestCLITempRootChangeLinesStopAtTheCap(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root uses a folder of mode 0000")
+	}
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 20*time.Millisecond)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	h := heldRecordOf(x, a.Name)
+	f := filepath.Join(x, a.Name)
+	underCheckLock(t, func() error {
+		for i := range 64 {
+			mode := os.FileMode(0o500)
+			if i%2 == 0 {
+				mode = 0
+			}
+			if err := os.Chmod(f, mode); err != nil {
+				return err
+			}
+			checkTempRoot(h)
+		}
+		return nil
+	})
+	prefix := "[process.Manager] Claude Code's private temp folder " + a.Name + ": "
+	shut := prefix + "its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again"
+	well := prefix + "all is well with it again"
+	capLine := prefix + "its state keeps changing, and is logged no more unless it is lost"
+	holdsFor(t, 5*tempRootCheckEvery, "the capped lines", func() bool {
+		s := logs.String()
+		return ends.Load() == 0 && strings.Count(s, shut) == 25 && strings.Count(s, well) == 24 &&
+			strings.Count(s, capLine) == 1 && strings.Index(s, capLine) > strings.LastIndex(s, shut) &&
+			strings.Index(s, capLine) > strings.LastIndex(s, well)
+	})
+	// A loss after the cap still logs its line (claustrum's own, not measured).
+	if err := os.Chmod(f, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	lost := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is open to other accounts"
+	waitFor(t, "the loss line after the cap", func() bool { return strings.Contains(logs.String(), lost) })
+}
+
 // A spawn that binds after its folder was found lost is ended at once (claustrum's
 // own, not measured).
 func TestCLITempRootBindAfterALossEnds(t *testing.T) {
