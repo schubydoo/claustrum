@@ -40,7 +40,7 @@ const (
 
 // peerCheckUnavailableLine is the line of a daemon that starts with
 // CLAUDE_SSH_PEER_CHECK=1 and names no namespaces. The text is the one of
-// 4c111e86 (measured on Windows). On macOS that text is not measured. On macOS
+// 4c111e86 (measured on macOS and Windows). On macOS
 // and Windows 5fd08069 logged its line directly before the listening line. On
 // Linux it is the line of a kernel with no own text (claustrum's own, not
 // measured).

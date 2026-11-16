@@ -563,8 +563,7 @@ namespaces of the daemon:
 
 On macOS and Windows the line is at WARN level and comes last before the banner,
 with no reap line between them. Its place beside the lines of a reap is not
-measured. The text is the one of `4c111e86` (measured on Windows, not measured
-on macOS):
+measured. The text is the one of `4c111e86` (measured on macOS and Windows):
 
 ```
 [Server] found no namespaces to compare: cannot tell callers in a sandbox from others, serving all

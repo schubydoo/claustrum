@@ -23,7 +23,7 @@ import (
 
 // wantPeerCheckLine is the line of a start with CLAUDE_SSH_PEER_CHECK=1, as the
 // daemon log holds it. The text of macOS and Windows is the one of 4c111e86
-// (measured on Windows, not measured on macOS). The Linux text is the one of 5fd08069 too
+// (measured on macOS and Windows). The Linux text is the one of 5fd08069 too
 // (measured on Linux), with the own text of this host.
 func wantPeerCheckLine() string {
 	if own, _ := daemonNSText(); own.names() {
