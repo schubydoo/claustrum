@@ -1224,3 +1224,54 @@ func TestCLITempRootStuckGivenBackCheckDelaysNoHeldCheck(t *testing.T) {
 	}
 	tempRootCheckDev = old
 }
+
+// A look at the given-back folders that a loop gave up still counts until it answers.
+// A new loop starts no second look meanwhile (claustrum's own: the cap of 1).
+func TestCLITempRootGivenUpLookBlocksANewOne(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	free := make(chan struct{})
+	var calls atomic.Int32
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if calls.Add(1) == 1 { // the first look does not answer
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return statDev(st)
+	}
+	ticks.check(t) // the look starts and does not answer
+	tempRoots.mu.Lock()
+	first := tempRoots.givenPass
+	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
+	tempRoots.mu.Unlock()
+	if first == nil {
+		t.Fatal("no look at the given-back folder")
+	}
+	ticks.check(t) // the old record ends, so the loop ends and gives the look up
+	tempRoots.mu.Lock()
+	running := tempRoots.checks != nil
+	tempRoots.mu.Unlock()
+	if running {
+		t.Fatal("the loop still runs, want its end")
+	}
+	runTempRootBound(t, x2, runDir2, &rel, nil) // a new loop
+	rel[1]()
+	ticks.check(t)
+	tempRoots.mu.Lock()
+	second, open := tempRoots.givenPass, tempRoots.givenOpen
+	tempRoots.mu.Unlock()
+	if n := calls.Load(); second != nil || open != 1 || n != 1 {
+		t.Errorf("look %+v, %d open and %d looks at a folder, want none new, 1 open and 1", second, open, n)
+	}
+	close(free)
+	<-first.done
+	tempRootCheckDev = old
+}

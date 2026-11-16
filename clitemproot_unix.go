@@ -213,6 +213,8 @@ var tempRoots = struct {
 	checkLost []goneTempRoot
 	// givenPass is the look at the given-back folders that runs or waits to count.
 	givenPass *givenPass
+	// givenOpen counts the passes that have not answered, given-up ones too.
+	givenOpen int
 }{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
 // tempRootsLost is the lost list that each later reply with a cliTempRoot member
@@ -800,7 +802,7 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 		// While they have not answered, no new pass starts.
 		tempRoots.mu.Lock()
 		pass := tempRoots.givenPass
-		if pass == nil && len(tempRoots.given) > 0 {
+		if pass == nil && len(tempRoots.given) > 0 && tempRoots.givenOpen < tempRootGivenPassCap {
 			pass = startGivenPass()
 		}
 		tempRoots.mu.Unlock()
@@ -868,6 +870,11 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 // folders (claustrum's own, not measured).
 const tempRootGivenWait = 200 * time.Millisecond
 
+// tempRootGivenPassCap is the count of passes that may wait for their answer at once,
+// given-up passes too, so a temp dir that stops answering holds up at most this many
+// goroutines and copied handles (claustrum's own, not measured).
+const tempRootGivenPassCap = 1
+
 // givenPass is one look at the copies of the given-back folders. done closes once
 // they all answered, and answered is set then, under tempRoots.mu.
 type givenPass struct {
@@ -887,12 +894,14 @@ func startGivenPass() *givenPass {
 		}
 	}
 	tempRoots.givenPass = p
+	tempRoots.givenOpen++
 	go func() {
 		for _, c := range p.probes {
 			checkTempRoot(c)
 		}
 		tempRoots.mu.Lock()
 		p.answered = true
+		tempRoots.givenOpen--
 		mine := tempRoots.givenPass != p
 		tempRoots.mu.Unlock()
 		close(p.done)
