@@ -22,14 +22,14 @@ import (
 // of them runs in parallel.
 
 // wantPeerCheckLine is the line of a start with CLAUDE_SSH_PEER_CHECK=1, as the
-// daemon log holds it. The text of macOS and Windows is the one of 5fd08069
-// (measured on macOS and Windows). The Linux text is the one of 5fd08069 too
+// daemon log holds it. The text of macOS and Windows is the one of 4c111e86
+// (measured on Windows, not measured on macOS). The Linux text is the one of 5fd08069 too
 // (measured on Linux), with the own text of this host.
 func wantPeerCheckLine() string {
 	if own, _ := daemonNSText(); own.names() {
 		return "INFO  [Server] serving only callers in \"" + own.String() + "\"\n"
 	}
-	return "WARN  [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all\n"
+	return "WARN  [Server] found no namespaces to compare: cannot tell callers in a sandbox from others, serving all\n"
 }
 
 // wantCapabilityFeatures is the features array in the order of the frame. Windows
@@ -134,6 +134,19 @@ func TestPeerCheckValueTable(t *testing.T) {
 				t.Errorf("a start with the value %q logs a peer check line:\n%s", tc.value, logs.String())
 			}
 		})
+	}
+}
+
+// TestPeerCheckNoOwnTextLine: a start with the value 1 and no own text writes the
+// WARN line of 4c111e86 once (measured on Windows), on every system.
+func TestPeerCheckNoOwnTextLine(t *testing.T) {
+	t.Setenv(peerCheckEnv, "1")
+	stubDaemonNSText(t, nsText{})
+	logs := captureLogBuf(t)
+	startPeerCheck()
+	const line = "WARN  [Server] found no namespaces to compare: cannot tell callers in a sandbox from others, serving all\n"
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("the peer check line appears %d times, want 1. Log:\n%s", n, logs.String())
 	}
 }
 
