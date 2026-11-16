@@ -755,6 +755,13 @@ func checkTempRoot(h *heldTempRoot) {
 	}
 	switch {
 	case missing:
+		// No folder is made anew in a temp dir that group or others can write without
+		// the sticky bit, or that an account other than h.uid and root owns, as for a
+		// new folder (openTempDirChain). That gate and no line then are claustrum's own,
+		// not measured.
+		if (xst.Mode&0o022 != 0 && xst.Mode&unix.S_ISVTX == 0) || (int(xst.Uid) != h.uid && xst.Uid != 0) {
+			return
+		}
 		logging.Infof(tempRootRemadeLine, h.name)
 		if unix.Mkdirat(xfd, h.name, 0o700) == nil {
 			takeTempRootAt(h, xfd)

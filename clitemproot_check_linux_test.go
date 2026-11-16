@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -596,4 +597,63 @@ func TestCLITempRootChangesThatEndNobody(t *testing.T) {
 			underCheckLock(t, func() error { return os.Chmod(filepath.Join(x, name), 0) })
 		}, ": its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again")
 	})
+}
+
+// A temp dir whose path is a link at the hold, as /tmp is on macOS, ends nobody and
+// logs no line of the folder (claustrum's own, not measured).
+func TestCLITempRootTempDirLinkAtTheHoldEndsNobody(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	setTempRootCheckEvery(t, 20*time.Millisecond)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	l := filepath.Join(filepath.Dir(x), "l")
+	if err := os.Symlink(x, l); err != nil {
+		t.Fatal(err)
+	}
+	var ends atomic.Int32
+	a := runTempRootBound(t, l, runDir, &rel, func() { ends.Add(1) })
+	if a == nil || !tempRootNameRE.MatchString(a.Name) {
+		t.Fatalf("answer %+v, want a folder", a)
+	}
+	holdsFor(t, 5*tempRootCheckEvery, "no end and no line", func() bool {
+		return ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+	})
+}
+
+// A folder gone from a temp dir that group can write, or that another account owns,
+// is not made anew, and nobody is ended (claustrum's own, not measured). The owner
+// case gives the held record another uid, as the test cannot chown.
+func TestCLITempRootNoRemakeInAGroupWritableTempDir(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		change func(x string, h *heldTempRoot) error
+	}{
+		{"mode 0770", func(x string, _ *heldTempRoot) error { return os.Chmod(x, 0o770) }},
+		{"another owner", func(_ string, h *heldTempRoot) error { h.uid = os.Getuid() + 1; return nil }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var rel []func()
+			cleanTempRoots(t, &rel)
+			setTempRootCheckEvery(t, 20*time.Millisecond)
+			logs := captureLogBuf(t)
+			x, runDir := tempRootDir(t, true)
+			var ends atomic.Int32
+			a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+			h := heldRecordOf(x, a.Name)
+			f := filepath.Join(x, a.Name)
+			underCheckLock(t, func() error {
+				_ = os.Chmod(f, 0o700)
+				_ = os.Remove(filepath.Join(f, "t"))
+				if err := os.Remove(f); err != nil {
+					return err
+				}
+				return c.change(x, h)
+			})
+			holdsFor(t, 5*tempRootCheckEvery, "no remake, no end and no line", func() bool {
+				_, err := os.Lstat(f)
+				return errors.Is(err, os.ErrNotExist) && ends.Load() == 0 && !strings.Contains(logs.String(), "private temp folder "+a.Name)
+			})
+		})
+	}
 }
