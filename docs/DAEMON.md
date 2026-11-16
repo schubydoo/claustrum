@@ -579,6 +579,8 @@ own, the text measured on Linux, `4c111e86`):
 [Server] refusing every caller for now: cannot name this server's own namespaces: readlink /proc/self/ns/user: too many open files in system
 ```
 
+After that, each new caller makes the daemon read its namespaces again, and the first good read logs the serving line (measured on Linux, `4c111e86`).
+
 At start on Linux, the daemon logs one of these lines once, before the first connection line (measured on Linux, `683cc6a9`). The level tag, and the place and count of line two, are claustrum's own, not measured:
 
 ```

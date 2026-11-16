@@ -307,7 +307,8 @@ func peerRefusalLogged(n int64) bool {
 // After a failed start naming, each connection reads the own namespaces again
 // (4c111e86, measured on Linux). A read that fails refuses the caller with that
 // error, and the line shows the own text "". A read that works ends the refusals
-// from then on (claustrum's own, not measured).
+// from then on (claustrum's own, not measured). It serves its caller (4c111e86,
+// measured on Linux).
 func (g *peerGate) admit(nc net.Conn) bool {
 	if g == nil {
 		return true
@@ -344,6 +345,11 @@ func (g *peerGate) ownText() nsText {
 
 // ownOrRetry gives the own text of the gate. After a failed start naming it
 // reads the own namespaces again, and keeps a read that works.
+//
+// The first read that works writes the serving line of a good start, once, before
+// the check of its caller. 4c111e86 wrote it there and then served that caller
+// (measured on Linux). The level is claustrum's own. A read that names no
+// namespace writes no line (claustrum's own, not measured).
 func (g *peerGate) ownOrRetry() (nsText, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -355,5 +361,8 @@ func (g *peerGate) ownOrRetry() (nsText, error) {
 		return nsText{}, err
 	}
 	g.own, g.namingErr = own, nil
+	if own.names() {
+		logging.Infof("[Server] serving only callers in %q", own.String())
+	}
 	return own, nil
 }
