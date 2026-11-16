@@ -278,7 +278,13 @@ func authed(body string) string {
 // wait polls cond (called while holding cl.mu) until true or a 5s deadline.
 func (cl *testClient) wait(cond func() bool) {
 	cl.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	cl.waitWithin(5*time.Second, cond)
+}
+
+// waitWithin is wait with its own deadline.
+func (cl *testClient) waitWithin(limit time.Duration, cond func() bool) {
+	cl.t.Helper()
+	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		cl.mu.Lock()
 		ok := cond()
@@ -297,11 +303,28 @@ func (cl *testClient) wait(cond func() bool) {
 // dispatch the response battery deliberately exercises.
 func (cl *testClient) call(line string) json.RawMessage {
 	cl.t.Helper()
+	return cl.callWithin(5*time.Second, line)
+}
+
+// createWait bounds the wait for one git.worktree_create reply. On the Windows
+// runners of CI a first create took 1.0 to 3.3 s, and 5.0 s on a loaded runner,
+// so the 5 s of call was too short for it.
+const createWait = 20 * time.Second
+
+// callCreate is call for a git.worktree_create request, with createWait.
+func (cl *testClient) callCreate(line string) json.RawMessage {
+	cl.t.Helper()
+	return cl.callWithin(createWait, line)
+}
+
+// callWithin is call with its own deadline.
+func (cl *testClient) callWithin(limit time.Duration, line string) json.RawMessage {
+	cl.t.Helper()
 	cl.mu.Lock()
 	n := len(cl.resp)
 	cl.mu.Unlock()
 	cl.send(line)
-	cl.wait(func() bool { return len(cl.resp) > n })
+	cl.waitWithin(limit, func() bool { return len(cl.resp) > n })
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 	return cl.resp[len(cl.resp)-1]
