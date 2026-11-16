@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The cleanup of the harness waits for the server side of each connection. So
@@ -10,6 +12,10 @@ import (
 // and no later test can see it.
 func TestHarnessCleanupWaitsForTheServerSideOfItsConnections(t *testing.T) {
 	buf := captureLogBuf(t)
+	// The close lines are Info lines, so CLAUSTRUM_LOG_LEVEL=warn hides them.
+	oldLevel := logging.Threshold.Load()
+	logging.Threshold.Store(int32(logging.LevelInfo))
+	t.Cleanup(func() { logging.Threshold.Store(oldLevel) })
 	var s *server
 	t.Run("inner", func(t *testing.T) {
 		var sock string
