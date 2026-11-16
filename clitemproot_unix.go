@@ -19,6 +19,7 @@ package main
 // plain remove of the registry name in the run dir before it is written again.
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -110,11 +111,18 @@ const tempRootMaxAge = 24 * time.Hour
 // Linux: 600 s from the first hold). A variable for the tests.
 var tempRootRefresh = 600 * time.Second
 
-// tempRootCheckEvery is the time between two checks of a held folder (checkTempRoot).
-// A change made 0.6 s to 0.7 s after the spawn ended the child 1.34 s to 1.46 s later
-// (4c111e86, measured on Linux and macOS). The value of 2 s is claustrum's own. A
-// variable for the tests.
+// tempRootCheckEvery is the time between two checks of the held folders
+// (checkTempRoots). A change made 0.6 s to 0.7 s after the spawn ended the child 1.34 s
+// to 1.46 s later (4c111e86, measured on Linux and macOS). The checks come every 2 s
+// (4c111e86, measured on macOS, on Linux claustrum's own). A variable for the tests.
 var tempRootCheckEvery = 2 * time.Second
+
+// tempRootCheckTicks gives the ticks of the checks, one every d, and the call that stops
+// them. A seam for the tests. Production never reassigns it.
+var tempRootCheckTicks = func(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(d)
+	return t.C, t.Stop
+}
 
 // tempRootNameRE is the shape of a folder name of this step: 10 hex (4c111e86,
 // measured on Linux and macOS). They come from crypto/rand (claustrum's own, not
@@ -127,6 +135,8 @@ var (
 	newTempRootName         = randomTempRootName
 	afterTempRootMkdir      = func(dir, name string) {}
 	afterTempRootChildMkdir = func(dir, name string) {}
+	afterTempRootChecks     = func() {}
+	afterTempRootOneCheck   = func() {}
 )
 
 func randomTempRootName() string {
@@ -136,19 +146,31 @@ func randomTempRootName() string {
 }
 
 // heldTempRoot is one folder that this daemon holds: an open handle with an
-// exclusive flock, refreshed every tempRootRefresh and checked every tempRootCheckEvery
-// while a spawn uses it. dir and name give its path, and uid is the account that
-// owns it. The fields change under tempRoots.mu, except lost.
+// exclusive flock, refreshed every tempRootRefresh while a spawn uses it, and checked
+// every tempRootCheckEvery. dir and name give its path, and uid is the account that
+// owns it. seq is the order of the hold. The fields change under tempRoots.mu, except
+// lost.
 type heldTempRoot struct {
 	f           *os.File
 	dev         uint64
 	ino         uint64
 	dir, name   string
 	uid         int
+	seq         uint64
 	users       []*tempRootUser
 	stop        chan struct{}
 	checkFailed bool        // the last check failed (checkTempRoot)
 	lost        atomic.Bool // set once, when a check finds the folder lost
+	// given is true once the last spawn gave the folder back, at givenAt. The checks
+	// then go on with no flock and no write (checkTempRoots). gone is true once a check
+	// of a given-back folder found its temp dir gone, no entry or another folder at the
+	// name.
+	given, gone bool
+	givenAt     time.Time
+	// probe is true for the copy of a given-back folder that a check looks at with no
+	// lock (givenProbe). A loss there only sets lossWhy and lossWord.
+	probe             bool
+	lossWhy, lossWord string
 	// xdev is the device of the temp dir at the hold, and dirLink is true when the
 	// temp dir path was a link then (checkTempRoot).
 	xdev    uint64
@@ -181,6 +203,18 @@ var tempRoots = struct {
 	live int
 	made []time.Time     // the time of each make within tempRootMakeWindow, oldest first
 	lost map[string]bool // the path of each folder that a check found lost, for the life of the daemon
+	seq  uint64          // the seq of the last hold
+	// given holds the folders that their last spawn gave back, while they are checked.
+	given []*heldTempRoot
+	// checks is open while the loop of the checks runs (checkTempRoots). A close
+	// stops it, and the loop closes checksEnded at its end.
+	checks, checksEnded chan struct{}
+	// checkLost holds the losses of the running check, for one step into the lost list.
+	checkLost []goneTempRoot
+	// givenPass is the look at the given-back folders that runs or waits to count.
+	givenPass *givenPass
+	// givenOpen counts the passes that have not answered, given-up ones too.
+	givenOpen int
 }{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
 // tempRootsLost is the lost list that each later reply with a cliTempRoot member
@@ -267,9 +301,19 @@ func addGoneList(res *rpc.CLITempRoot) *rpc.CLITempRoot {
 // addLostEntry adds a lost folder at the end of the lost list and cuts the oldest
 // entries past tempRootLostKeep.
 func addLostEntry(name, why string) {
+	addLostEntries([]goneTempRoot{{name: name, why: why, at: time.Now()}})
+}
+
+// addLostEntries adds the losses of one check at the end of the lost list in one step,
+// so a reply gets all of them or none, and cuts the oldest entries past
+// tempRootLostKeep.
+func addLostEntries(gone []goneTempRoot) {
+	if len(gone) == 0 {
+		return
+	}
 	tempRootsLost.mu.Lock()
 	defer tempRootsLost.mu.Unlock()
-	tempRootsLost.list = append(tempRootsLost.list, goneTempRoot{name: name, why: why, at: time.Now()})
+	tempRootsLost.list = append(tempRootsLost.list, gone...)
 	if n := len(tempRootsLost.list) - tempRootLostKeep; n > 0 {
 		tempRootsLost.list = slices.Delete(tempRootsLost.list, 0, n)
 	}
@@ -378,8 +422,17 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	if fresh {
 		var lst unix.Stat_t
 		h.xdev, h.dirLink = statDev(&xst), unix.Lstat(noTrailingSlash(dir), &lst) == nil && lst.Mode&unix.S_IFMT == unix.S_IFLNK
+		tempRoots.seq++
+		h.seq = tempRoots.seq
 		tempRoots.held[filepath.Join(dir, name)] = h
-		go tendTempRoot(h, tempRootRefresh, tempRootCheckEvery)
+		// A given-back record of the same folder ends: the new hold checks it.
+		dropGivenTempRoots(func(g *heldTempRoot) bool { return g.dir == dir && g.name == name })
+		go tendTempRoot(h, tempRootRefresh)
+		if tempRoots.checks == nil {
+			tempRoots.checks, tempRoots.checksEnded = make(chan struct{}), make(chan struct{})
+			ticks, stopTicks := tempRootCheckTicks(tempRootCheckEvery)
+			go checkTempRoots(tempRoots.checks, tempRoots.checksEnded, ticks, stopTicks, afterTempRootChecks, afterTempRootOneCheck)
+		}
 	}
 	u := &tempRootUser{}
 	h.users = append(h.users, u)
@@ -392,9 +445,21 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		h.users = slices.DeleteFunc(h.users, func(o *tempRootUser) bool { return o == u })
 		if len(h.users) == 0 {
 			close(h.stop)
-			_ = h.f.Close()
-			if tempRoots.held[filepath.Join(dir, name)] == h {
-				delete(tempRoots.held, filepath.Join(dir, name))
+			if tempRoots.held[filepath.Join(dir, name)] != h {
+				_ = h.f.Close() // a lost folder is not checked again
+				return
+			}
+			delete(tempRoots.held, filepath.Join(dir, name))
+			// The flock goes now (claustrum's own). The checks go on, so a later loss still
+			// counts (4c111e86, measured on macOS).
+			_ = unix.Flock(int(h.f.Fd()), unix.LOCK_UN)
+			h.given, h.givenAt = true, time.Now()
+			tempRoots.given = append(tempRoots.given, h)
+			if n := len(tempRoots.given) - tempRootGivenKeep; n > 0 {
+				for _, g := range tempRoots.given[:n] {
+					_ = g.f.Close()
+				}
+				tempRoots.given = slices.Delete(tempRoots.given, 0, n)
 			}
 		}
 	}
@@ -661,33 +726,221 @@ func holdTempRoot(f *os.File) {
 	_ = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 }
 
-// tendTempRoot holds the folder again every refresh, and checks it every check,
-// until the last spawn that uses it gives it back. After a loss it only holds. The
-// caller reads tempRootRefresh and tempRootCheckEvery, so a test can set them.
-func tendTempRoot(h *heldTempRoot, refresh, check time.Duration) {
-	rt, ct := time.NewTicker(refresh), time.NewTicker(check)
+// tendTempRoot holds the folder again every refresh, until the last spawn that uses
+// it gives it back. The caller reads tempRootRefresh, so a test can set it.
+func tendTempRoot(h *heldTempRoot, refresh time.Duration) {
+	rt := time.NewTicker(refresh)
 	defer rt.Stop()
-	defer ct.Stop()
 	for {
-		checking := false
 		select {
 		case <-h.stop:
 			return
 		case <-rt.C:
-		case <-ct.C:
-			checking = true
 		}
 		tempRoots.mu.Lock()
 		select {
 		case <-h.stop:
 		default:
-			if !checking {
-				holdTempRoot(h.f)
-			} else if !h.lost.Load() {
-				checkTempRoot(h)
-			}
+			holdTempRoot(h.f)
 		}
 		tempRoots.mu.Unlock()
+	}
+}
+
+// tempRootGivenKeep and tempRootGivenFor bound the given-back folders that are still
+// checked: at most 8, each for 10 min after its give-back (claustrum's own, not
+// measured: 4c111e86 still listed a loss made 5 s after the end of its child).
+const (
+	tempRootGivenKeep = 8
+	tempRootGivenFor  = 10 * time.Minute
+)
+
+// dropGivenTempRoots closes and drops each given-back folder for which end is true.
+// The caller holds tempRoots.mu.
+func dropGivenTempRoots(end func(*heldTempRoot) bool) {
+	tempRoots.given = slices.DeleteFunc(tempRoots.given, func(g *heldTempRoot) bool {
+		if !end(g) {
+			return false
+		}
+		_ = g.f.Close()
+		return true
+	})
+}
+
+// checkTempRoots checks all held folders together every check, in the order of their
+// hold. A folder that its last spawn gave back is still checked. Its handle closes
+// once it is lost, held again, older than tempRootGivenFor or pushed out past
+// tempRootGivenKeep, or once a check finds its temp dir gone, no entry or another
+// folder at its name. The loop ends with no folder.
+// Measured on 4c111e86 (macOS): the first check comes about 2 s after the first hold,
+// not 2 s after the daemon start, and the checks then come every 2 s. The losses of
+// several folders come at one check and fill the lost list together. A loss made 5 s
+// after the end of the last child of a folder still counts at the next check.
+// These are claustrum's own, not measured: the order of the hold within one check
+// (4c111e86 gave an order that changed from check to check), the checks of a given-back
+// folder past 8 s and their end, the end of the loop, and no flock, no write and no
+// line but a loss line for a given-back folder. The caller gives the ticks
+// (tempRootCheckTicks), the call after each check and the call after each folder of a
+// check, so a test can set them.
+func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks, after, afterOne func()) {
+	defer close(ended)
+	defer stopTicks()
+	for {
+		select {
+		case <-stop:
+			tempRoots.mu.Lock()
+			abandoned := abandonGivenPass()
+			tempRoots.mu.Unlock()
+			closeProbes(abandoned)
+			return
+		case <-ticks:
+		}
+		// The given-back folders are looked at through copies, in a goroutine of their
+		// own and with no lock, so a temp dir that does not answer holds up no live
+		// folder, no spawn and no later check. The check waits tempRootGivenWait for
+		// them. Copies that answer later count at the first check after their answer.
+		// While they have not answered, no new pass starts.
+		tempRoots.mu.Lock()
+		pass := tempRoots.givenPass
+		if pass == nil && len(tempRoots.given) > 0 && tempRoots.givenOpen < tempRootGivenPassCap {
+			pass = startGivenPass()
+		}
+		tempRoots.mu.Unlock()
+		if pass != nil {
+			wait := time.NewTimer(tempRootGivenWait)
+			select {
+			case <-pass.done:
+			case <-wait.C:
+			}
+			wait.Stop()
+		}
+		tempRoots.mu.Lock()
+		select {
+		case <-stop:
+			abandoned := abandonGivenPass()
+			tempRoots.mu.Unlock()
+			closeProbes(abandoned)
+			return
+		default:
+		}
+		var probes map[*heldTempRoot]*heldTempRoot
+		if pass != nil && pass.answered {
+			probes, tempRoots.givenPass = pass.probes, nil
+		}
+		hs := make([]*heldTempRoot, 0, len(tempRoots.held)+len(tempRoots.given))
+		for _, h := range tempRoots.held {
+			hs = append(hs, h)
+		}
+		hs = append(hs, tempRoots.given...)
+		slices.SortFunc(hs, func(a, b *heldTempRoot) int { return cmp.Compare(a.seq, b.seq) })
+		for _, h := range hs {
+			switch p := probes[h]; {
+			case h.lost.Load():
+			case !h.given:
+				checkTempRoot(h)
+			case p != nil && p.lossWhy != "":
+				markTempRootLost(h, p.lossWhy, p.lossWord)
+			case p != nil:
+				h.gone = p.gone
+			}
+			afterOne()
+		}
+		addLostEntries(tempRoots.checkLost)
+		tempRoots.checkLost = nil
+		dropGivenTempRoots(func(g *heldTempRoot) bool {
+			return g.lost.Load() || g.gone || time.Since(g.givenAt) >= tempRootGivenFor
+		})
+		done := len(tempRoots.held) == 0 && len(tempRoots.given) == 0
+		var abandoned map[*heldTempRoot]*heldTempRoot
+		if done {
+			tempRoots.checks = nil
+			abandoned = abandonGivenPass()
+		}
+		tempRoots.mu.Unlock()
+		closeProbes(probes)
+		closeProbes(abandoned)
+		after()
+		if done {
+			return
+		}
+	}
+}
+
+// tempRootGivenWait is the time that a check waits for the copies of the given-back
+// folders (claustrum's own, not measured).
+const tempRootGivenWait = 200 * time.Millisecond
+
+// tempRootGivenPassCap is the count of passes that may wait for their answer at once,
+// given-up passes too, so a temp dir that stops answering holds up at most this many
+// goroutines and copied handles (claustrum's own, not measured).
+const tempRootGivenPassCap = 1
+
+// givenPass is one look at the copies of the given-back folders. done closes once
+// they all answered, and answered is set then, under tempRoots.mu.
+type givenPass struct {
+	probes   map[*heldTempRoot]*heldTempRoot
+	done     chan struct{}
+	answered bool
+}
+
+// startGivenPass copies the given-back folders and looks at the copies in a goroutine.
+// A pass that the loop gave up closes its own copies once they answer. The caller
+// holds tempRoots.mu.
+func startGivenPass() *givenPass {
+	p := &givenPass{probes: map[*heldTempRoot]*heldTempRoot{}, done: make(chan struct{})}
+	for _, g := range tempRoots.given {
+		if c := givenProbe(g); c != nil {
+			p.probes[g] = c
+		}
+	}
+	tempRoots.givenPass = p
+	tempRoots.givenOpen++
+	go func() {
+		for _, c := range p.probes {
+			checkTempRoot(c)
+		}
+		tempRoots.mu.Lock()
+		p.answered = true
+		tempRoots.givenOpen--
+		mine := tempRoots.givenPass != p
+		tempRoots.mu.Unlock()
+		close(p.done)
+		if mine {
+			closeProbes(p.probes)
+		}
+	}()
+	return p
+}
+
+// abandonGivenPass gives up the running pass. It returns the copies to close when they
+// already answered, and otherwise the pass closes them itself. The caller holds
+// tempRoots.mu.
+func abandonGivenPass() map[*heldTempRoot]*heldTempRoot {
+	p := tempRoots.givenPass
+	tempRoots.givenPass = nil
+	if p != nil && p.answered {
+		return p.probes
+	}
+	return nil
+}
+
+// givenProbe gives a copy of the given-back folder g for a check with no lock, with its
+// own handle, or nil when the handle cannot be copied. The caller holds tempRoots.mu.
+// The copy is close-on-exec from the start (F_DUPFD_CLOEXEC), so a child that starts
+// at the same moment cannot inherit it.
+func givenProbe(g *heldTempRoot) *heldTempRoot {
+	fd, err := unix.FcntlInt(g.f.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return nil
+	}
+	return &heldTempRoot{f: os.NewFile(uintptr(fd), g.name), dev: g.dev, ino: g.ino, dir: g.dir, name: g.name,
+		uid: g.uid, given: true, probe: true, xdev: g.xdev, dirLink: g.dirLink}
+}
+
+// closeProbes closes the handles of the copies of a check.
+func closeProbes(probes map[*heldTempRoot]*heldTempRoot) {
+	for _, p := range probes {
+		_ = p.f.Close()
 	}
 }
 
@@ -734,7 +987,7 @@ var tempRootCheckDev = statDev
 // owner read or search bit of the folder, and the prefix of the gone and mode 0 lines.
 func checkTempRoot(h *heldTempRoot) {
 	failed := func(format string, args ...any) {
-		if !h.checkFailed {
+		if !h.checkFailed && !h.given {
 			logging.Infof(format, args...)
 		}
 		h.checkFailed = true
@@ -742,6 +995,7 @@ func checkTempRoot(h *heldTempRoot) {
 	var lst unix.Stat_t
 	if err := unix.Lstat(noTrailingSlash(h.dir), &lst); errors.Is(err, unix.ENOENT) {
 		failed(tempRootDirGoneLine, h.name)
+		h.gone = h.given
 		return
 	} else if k := lst.Mode & unix.S_IFMT; err == nil && k != unix.S_IFDIR && (k != unix.S_IFLNK || !h.dirLink) {
 		loseTempRoot(h, "it is in a temp dir that is no longer a folder", "changed")
@@ -777,11 +1031,15 @@ func checkTempRoot(h *heldTempRoot) {
 		failed(tempRootOwnerShutLine, h.name)
 		return
 	}
-	if h.checkFailed {
+	if h.checkFailed && !h.given {
 		h.checkFailed = false
 		logging.Infof(tempRootWellAgainLn, h.name)
 	}
 	switch {
+	case missing && h.given:
+		// A folder that was given back is not made anew, nor held instead below. Its
+		// checks end.
+		h.gone = true
 	case missing:
 		// No folder is made anew in a temp dir that group or others can write without
 		// the sticky bit, or that an account other than h.uid and root owns, as for a
@@ -805,8 +1063,11 @@ func checkTempRoot(h *heldTempRoot) {
 	case tempRootCheckDev(&st) != tempRootCheckDev(&xst):
 		loseTempRoot(h, "it is on another file system", "changed")
 	case statDev(&st) != h.dev || st.Ino != h.ino:
-		logging.Infof(tempRootSwapLine, h.name)
-		takeTempRootAt(h, xfd)
+		if !h.given {
+			logging.Infof(tempRootSwapLine, h.name)
+			takeTempRootAt(h, xfd)
+		}
+		h.gone = h.given
 	default:
 		checkChildDir(h, &st)
 	}
@@ -830,7 +1091,9 @@ func checkChildDir(h *heldTempRoot, st *unix.Stat_t) {
 	err := unix.Fstatat(fd, tempRootChildDir, &tst, unix.AT_SYMLINK_NOFOLLOW)
 	switch {
 	case errors.Is(err, unix.ENOENT):
-		fitTempRoot(fd)
+		if !h.given {
+			fitTempRoot(fd)
+		}
 	case err != nil:
 	case tst.Mode&unix.S_IFMT == unix.S_IFLNK:
 		loseTempRoot(h, "it is holding a t that is a link", "changed")
@@ -874,11 +1137,21 @@ func fitTempRoot(fd int) {
 	_ = unix.Fchmod(fd, 0o500)
 }
 
-// loseTempRoot marks h lost. The next spawn in its temp dir makes a new folder, and
-// each later reply with a member lists it with the word word. Each child that asked
-// with cliTempRootEnd is ended. For the others one line counts them (4c111e86, see
-// checkTempRoot). The caller holds tempRoots.mu.
+// loseTempRoot marks h lost, or for a copy of a given-back folder keeps why and word
+// for the check (markTempRootLost).
 func loseTempRoot(h *heldTempRoot, why, word string) {
+	if h.probe {
+		h.lossWhy, h.lossWord = why, word
+		return
+	}
+	markTempRootLost(h, why, word)
+}
+
+// markTempRootLost marks h lost. The next spawn in its temp dir makes a new folder, and
+// each later reply with a member lists it with the word word, from the end of the
+// check. Each child that asked with cliTempRootEnd is ended. For the others one line
+// counts them (4c111e86, see checkTempRoot). The caller holds tempRoots.mu.
+func markTempRootLost(h *heldTempRoot, why, word string) {
 	logging.Infof(tempRootLostLine, h.name, why)
 	h.lost.Store(true)
 	key := filepath.Join(h.dir, h.name)
@@ -886,7 +1159,7 @@ func loseTempRoot(h *heldTempRoot, why, word string) {
 	if tempRoots.held[key] == h {
 		delete(tempRoots.held, key)
 	}
-	addLostEntry(h.name, word)
+	tempRoots.checkLost = append(tempRoots.checkLost, goneTempRoot{name: h.name, why: word, at: time.Now()})
 	runOn := 0
 	for _, u := range h.users {
 		u.mu.Lock()

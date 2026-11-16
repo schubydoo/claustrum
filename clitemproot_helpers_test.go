@@ -107,10 +107,35 @@ func cleanTempRoots(t *testing.T, releases *[]func()) {
 		if live != 0 || held != 0 {
 			t.Errorf("after the test: live %d, held %d, want 0 and 0", live, held)
 		}
+		stopTempRootChecks()
 		tempRootsLost.mu.Lock()
 		tempRootsLost.list = nil
 		tempRootsLost.mu.Unlock()
 	})
+}
+
+// stopTempRootChecks stops the loop of the checks, waits for its end and closes the
+// given-back folders, so that the next test starts its own loop at its own pace.
+func stopTempRootChecks() {
+	tempRoots.mu.Lock()
+	stop, ended, pass := tempRoots.checks, tempRoots.checksEnded, tempRoots.givenPass
+	tempRoots.checks, tempRoots.checksEnded = nil, nil
+	if stop != nil {
+		close(stop)
+	}
+	tempRoots.mu.Unlock()
+	if ended != nil {
+		<-ended
+	}
+	if pass != nil {
+		<-pass.done // a test frees each look that it holds up
+	}
+	tempRoots.mu.Lock()
+	for _, h := range tempRoots.given {
+		_ = h.f.Close()
+	}
+	tempRoots.given = nil
+	tempRoots.mu.Unlock()
 }
 
 // clearTempRootMakes forgets the makes of earlier tests, so that the make cap of a
@@ -159,9 +184,15 @@ func ccdFolders(t *testing.T, x string) []string {
 // setTempRootCheckEvery shortens the time between two checks until the test ends.
 func setTempRootCheckEvery(t *testing.T, d time.Duration) {
 	t.Helper()
+	tempRoots.mu.Lock() // a step reads it under tempRoots.mu
 	old := tempRootCheckEvery
 	tempRootCheckEvery = d
-	t.Cleanup(func() { tempRootCheckEvery = old })
+	tempRoots.mu.Unlock()
+	t.Cleanup(func() {
+		tempRoots.mu.Lock()
+		tempRootCheckEvery = old
+		tempRoots.mu.Unlock()
+	})
 }
 
 func tempRootsLive() int {
