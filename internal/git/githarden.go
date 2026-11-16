@@ -744,9 +744,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		var exitErr *exec.ExitError
 		return failedCheckoutSkipsStdoutDrain && deadlined && !stop.stopped() && errors.As(werr, &exitErr)
 	}
-	// The keep while the read-tree call runs (keepTicker). It ends at the
-	// return, also after a panic, so before the keep after the checkout. The
-	// wait for a keep of a tick that runs then counts in lfs.tickWait.
+	// The keep while the read-tree call runs (keepTicker). Its ticks and the
+	// keep that runs stop when runCheckoutPipes sees the exit of git, before
+	// the drain (keepTicker.halt). It ends at the return, also after a panic,
+	// so before the keep after the checkout. The wait for a keep of a tick
+	// that runs then counts in lfs.tickWait.
 	var keeper *keepTicker
 	if room != nil {
 		keeper = startKeepTicker(u, lfs.path)
@@ -760,7 +762,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	}
 	defer endKeeper()
 	err = runHeld(cmd, func() error {
-		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, stop)
+		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, stop, keeper.halt)
 	})
 	if failedAlone(err) {
 		err = checkoutFailedAlone{err}
@@ -807,6 +809,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // closes at the same point as the watch ends, after the exit of git and before
 // its reap.
 //
+// exited runs once the exit of git is seen, and at the latest before the
+// drain. It stops the keep of the ticks (keepTicker.halt), so no keep of a
+// tick runs on through a drain that a filter child holds open. nil runs
+// nothing.
+//
 // With a stop, a git that exited 0 stays unreaped through the drain
 // (sysproc.AwaitExitStatus gives the status before the wait). A drain that
 // overruns its cap then sends one SIGKILL to the group of git, and the wait
@@ -814,7 +821,10 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // and a wait with no status keep the old order: the wait, then the drain. That
 // order sends no kill after an overrun (claustrum's own, from the code). On
 // Windows the wait has no status, and the group kill is a no-op there.
-func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch, stop *checkoutStop) error {
+func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) bool, room *lfsRoomWatch, stop *checkoutStop, exited func()) error {
+	if exited == nil {
+		exited = func() {}
+	}
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		return err
@@ -846,6 +856,9 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 		// its reap, so their group kills reach only a group that this call
 		// still holds.
 		seen, clean = leaderExitWait(cmd.Process.Pid)
+		if seen {
+			exited()
+		}
 	}
 	if room != nil {
 		room.end()
@@ -868,6 +881,8 @@ func runCheckoutPipes(cmd *exec.Cmd, errBuf *bytes.Buffer, skipOut func(error) b
 		werr = cmd.Wait()
 		checkoutWaited(cmd)
 	}
+	// git has exited, or its exit was seen: the drain starts here.
+	exited()
 	limit := time.NewTimer(cmd.WaitDelay)
 	defer limit.Stop()
 	overrun := false

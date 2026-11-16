@@ -45,9 +45,10 @@ func notKeptNoteWant(objects bool, p string) string {
 // answers worktree_lfs_not_kept when the keep left a downloaded file out
 // because of a link at `lfs` (text A) or at `lfs/objects` (text B), or too
 // little room on the disk of the repository (text C). A kept object gives no
-// text (4c111e86, measured on Linux). After the text of a long copy, a link
-// adds a note (E and F, measured on Linux). The tests of the start of the
-// downloads and of the bound of the room are claustrum's own.
+// text (4c111e86, measured on Linux). With no `incomplete` entry in the private
+// store a file left out gives no text either (measured on Linux and macOS).
+// After the text of a long copy, a link adds a note (E and F, measured on
+// Linux). The bound of the room is claustrum's own.
 func TestNotKeptAfterDownloadsBegan(t *testing.T) {
 	const mib = uint64(1) << 20
 	oid := strings.Repeat("ab", 32)
@@ -64,7 +65,9 @@ func TestNotKeptAfterDownloadsBegan(t *testing.T) {
 	}{
 		{"lfs link", "lfs", false, true, true, 0, 1 << 40, func(g string) string { return notKeptLinkWant(false, filepath.Join(g, "lfs")) }, ""},
 		{"objects link", "objects", false, true, true, 0, 1 << 40, func(g string) string { return notKeptLinkWant(true, filepath.Join(g, "lfs", "objects")) }, ""},
-		{"lfs link, a download done", "lfs", false, true, false, 0, 1 << 40, func(g string) string { return notKeptLinkWant(false, filepath.Join(g, "lfs")) }, ""},
+		{"lfs link, no download in progress", "lfs", false, true, false, 0, 1 << 40, nil, ""},
+		{"objects link, no download in progress", "objects", false, true, false, 0, 1 << 40, nil, ""},
+		{"free 8 MiB, no download in progress", "", false, true, false, 0, 8 * mib, nil, ""},
 		{"free 8 MiB", "", false, true, true, 0, 8 * mib, func(string) string { return notKeptRoomWant }, ""},
 		{"free 400 MiB", "", false, true, true, 0, 400 * mib, func(string) string { return notKeptRoomWant }, ""},
 		{"enough room, left out", "", false, true, true, 0, 1<<30 + 6*mib, nil, ""},
@@ -158,25 +161,32 @@ func mkdirAll(t *testing.T, p string) {
 // A link at `lfs` or `lfs/objects`, or too little room on the disk of the
 // repository, keeps a.bin out, and the reply is worktree_lfs_not_kept. With
 // room and no link a.bin is kept, and the reply is timeout (4c111e86, measured
-// on Linux).
+// on Linux). A download of b.bin that makes no `incomplete` entry keeps
+// timeout, also when a.bin stays out (measured on Linux and macOS).
 func TestLFSNotKeptAfterDownloadsBegan(t *testing.T) {
 	const mib = uint64(1) << 20
 	for _, row := range []struct {
-		name string
-		link string
-		free uint64
-		code string
+		name       string
+		link       string
+		free       uint64
+		incomplete bool
+		code       string
 	}{
-		{"lfs link", "lfs", 1 << 40, "worktree_lfs_not_kept"},
-		{"objects link", "objects", 1 << 40, "worktree_lfs_not_kept"},
-		{"free 8 MiB", "", 8 * mib, "worktree_lfs_not_kept"},
-		{"plain", "", 1 << 40, "timeout"},
+		{"lfs link", "lfs", 1 << 40, true, "worktree_lfs_not_kept"},
+		{"objects link", "objects", 1 << 40, true, "worktree_lfs_not_kept"},
+		{"free 8 MiB", "", 8 * mib, true, "worktree_lfs_not_kept"},
+		{"plain", "", 1 << 40, true, "timeout"},
+		{"lfs link, no incomplete entry", "lfs", 1 << 40, false, "timeout"},
+		{"objects link, no incomplete entry", "objects", 1 << 40, false, "timeout"},
+		{"free 8 MiB, no incomplete entry", "", 8 * mib, false, "timeout"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
 			f.onServer(t, "a.bin")
 			mustWrite(t, filepath.Join(f.remote, "hang"), "")
-			mustWrite(t, filepath.Join(f.remote, "incomplete"), "")
+			if row.incomplete {
+				mustWrite(t, filepath.Join(f.remote, "incomplete"), "")
+			}
 			lfs := filepath.Join(f.gitDir, "lfs")
 			want := ""
 			switch row.link {
@@ -195,6 +205,9 @@ func TestLFSNotKeptAfterDownloadsBegan(t *testing.T) {
 					want = strings.Replace(notKeptRoomWant, "4 seconds", "5 seconds", 1)
 				}
 			}
+			if row.code == "timeout" {
+				want = ""
+			}
 			prev := storeFreeBytes
 			storeFreeBytes = func(p string) (uint64, bool) {
 				if pathUnder(p, f.gitDir) {
@@ -211,8 +224,9 @@ func TestLFSNotKeptAfterDownloadsBegan(t *testing.T) {
 				t.Errorf("git.worktree_create = %s\nwant the text %q", raw, want)
 			}
 			kept := exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"]))
-			if kept != (row.code == "timeout") {
-				t.Errorf("a.bin in the store of the repository = %v, want %v", kept, row.code == "timeout")
+			wantKept := row.link == "" && row.free > 8*mib
+			if kept != wantKept {
+				t.Errorf("a.bin in the store of the repository = %v, want %v", kept, wantKept)
 			}
 			f.wantGone(t)
 		})
