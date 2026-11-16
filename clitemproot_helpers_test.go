@@ -118,7 +118,7 @@ func cleanTempRoots(t *testing.T, releases *[]func()) {
 // given-back folders, so that the next test starts its own loop at its own pace.
 func stopTempRootChecks() {
 	tempRoots.mu.Lock()
-	stop, ended := tempRoots.checks, tempRoots.checksEnded
+	stop, ended, pass := tempRoots.checks, tempRoots.checksEnded, tempRoots.givenPass
 	tempRoots.checks, tempRoots.checksEnded = nil, nil
 	if stop != nil {
 		close(stop)
@@ -126,6 +126,9 @@ func stopTempRootChecks() {
 	tempRoots.mu.Unlock()
 	if ended != nil {
 		<-ended
+	}
+	if pass != nil {
+		<-pass.done // a test frees each look that it holds up
 	}
 	tempRoots.mu.Lock()
 	for _, h := range tempRoots.given {

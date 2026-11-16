@@ -211,6 +211,8 @@ var tempRoots = struct {
 	checks, checksEnded chan struct{}
 	// checkLost holds the losses of the running check, for one step into the lost list.
 	checkLost []goneTempRoot
+	// givenPass is the look at the given-back folders that runs or waits to count.
+	givenPass *givenPass
 }{held: map[string]*heldTempRoot{}, lost: map[string]bool{}}
 
 // tempRootsLost is the lost list that each later reply with a cliTempRoot member
@@ -784,29 +786,44 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 	for {
 		select {
 		case <-stop:
+			tempRoots.mu.Lock()
+			abandoned := abandonGivenPass()
+			tempRoots.mu.Unlock()
+			closeProbes(abandoned)
 			return
 		case <-ticks:
 		}
-		// The given-back folders are looked at first, through copies and with no lock,
-		// so a temp dir that does not answer holds up no live folder and no spawn.
+		// The given-back folders are looked at through copies, in a goroutine of their
+		// own and with no lock, so a temp dir that does not answer holds up no live
+		// folder, no spawn and no later check. The check waits tempRootGivenWait for
+		// them. Copies that answer later count at the first check after their answer.
+		// While they have not answered, no new pass starts.
 		tempRoots.mu.Lock()
-		probes := map[*heldTempRoot]*heldTempRoot{}
-		for _, g := range tempRoots.given {
-			if p := givenProbe(g); p != nil {
-				probes[g] = p
-			}
+		pass := tempRoots.givenPass
+		if pass == nil && len(tempRoots.given) > 0 {
+			pass = startGivenPass()
 		}
 		tempRoots.mu.Unlock()
-		for _, p := range probes {
-			checkTempRoot(p)
+		if pass != nil {
+			wait := time.NewTimer(tempRootGivenWait)
+			select {
+			case <-pass.done:
+			case <-wait.C:
+			}
+			wait.Stop()
 		}
 		tempRoots.mu.Lock()
 		select {
 		case <-stop:
+			abandoned := abandonGivenPass()
 			tempRoots.mu.Unlock()
-			closeProbes(probes)
+			closeProbes(abandoned)
 			return
 		default:
+		}
+		var probes map[*heldTempRoot]*heldTempRoot
+		if pass != nil && pass.answered {
+			probes, tempRoots.givenPass = pass.probes, nil
 		}
 		hs := make([]*heldTempRoot, 0, len(tempRoots.held)+len(tempRoots.given))
 		for _, h := range tempRoots.held {
@@ -832,16 +849,70 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 			return g.lost.Load() || g.gone || time.Since(g.givenAt) >= tempRootGivenFor
 		})
 		done := len(tempRoots.held) == 0 && len(tempRoots.given) == 0
+		var abandoned map[*heldTempRoot]*heldTempRoot
 		if done {
 			tempRoots.checks = nil
+			abandoned = abandonGivenPass()
 		}
 		tempRoots.mu.Unlock()
 		closeProbes(probes)
+		closeProbes(abandoned)
 		after()
 		if done {
 			return
 		}
 	}
+}
+
+// tempRootGivenWait is the time that a check waits for the copies of the given-back
+// folders (claustrum's own, not measured).
+const tempRootGivenWait = 200 * time.Millisecond
+
+// givenPass is one look at the copies of the given-back folders. done closes once
+// they all answered, and answered is set then, under tempRoots.mu.
+type givenPass struct {
+	probes   map[*heldTempRoot]*heldTempRoot
+	done     chan struct{}
+	answered bool
+}
+
+// startGivenPass copies the given-back folders and looks at the copies in a goroutine.
+// A pass that the loop gave up closes its own copies once they answer. The caller
+// holds tempRoots.mu.
+func startGivenPass() *givenPass {
+	p := &givenPass{probes: map[*heldTempRoot]*heldTempRoot{}, done: make(chan struct{})}
+	for _, g := range tempRoots.given {
+		if c := givenProbe(g); c != nil {
+			p.probes[g] = c
+		}
+	}
+	tempRoots.givenPass = p
+	go func() {
+		for _, c := range p.probes {
+			checkTempRoot(c)
+		}
+		tempRoots.mu.Lock()
+		p.answered = true
+		mine := tempRoots.givenPass != p
+		tempRoots.mu.Unlock()
+		close(p.done)
+		if mine {
+			closeProbes(p.probes)
+		}
+	}()
+	return p
+}
+
+// abandonGivenPass gives up the running pass. It returns the copies to close when they
+// already answered, and otherwise the pass closes them itself. The caller holds
+// tempRoots.mu.
+func abandonGivenPass() map[*heldTempRoot]*heldTempRoot {
+	p := tempRoots.givenPass
+	tempRoots.givenPass = nil
+	if p != nil && p.answered {
+		return p.probes
+	}
+	return nil
 }
 
 // givenProbe gives a copy of the given-back folder g for a check with no lock, with its

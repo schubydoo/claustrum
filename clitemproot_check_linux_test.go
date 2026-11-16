@@ -1168,3 +1168,59 @@ func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
 	<-done
 	tempRootCheckDev = old
 }
+
+// A check of a given-back folder that does not answer holds up no check of a held
+// folder: each tick still checks the held folders, their losses reach the list at that
+// tick, and no new look at the given-back folders starts meanwhile (claustrum's own).
+func TestCLITempRootStuckGivenBackCheckDelaysNoHeldCheck(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	runTempRootBound(t, x, runDir, &rel, nil)
+	rel[0]()
+	var heldNames []string
+	var heldDirs []string
+	for range 2 {
+		x2, runDir2 := tempRootDir(t, true)
+		b := runTempRootBound(t, x2, runDir2, &rel, nil)
+		heldNames, heldDirs = append(heldNames, b.Name), append(heldDirs, x2)
+	}
+	free := make(chan struct{})
+	var calls atomic.Int32
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if calls.Add(1) == 1 { // the first call is the look at the given-back folder
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return statDev(st)
+	}
+	for i, n := range heldNames {
+		linkAtName(t, heldDirs[i], n)
+		ticks.check(t)
+		if line := "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"; !strings.Contains(logs.String(), line) {
+			t.Errorf("tick %d: log lacks %q", i+1, line)
+		}
+		tempRootsLost.mu.Lock()
+		got := len(tempRootsLost.list)
+		tempRootsLost.mu.Unlock()
+		if got != i+1 {
+			t.Errorf("tick %d: %d lost entries, want %d", i+1, got, i+1)
+		}
+	}
+	tempRoots.mu.Lock()
+	pass := tempRoots.givenPass
+	tempRoots.mu.Unlock()
+	if pass == nil || pass.answered {
+		t.Errorf("look at the given-back folder %+v, want the first one still running", pass)
+	}
+	close(free)
+	if pass != nil {
+		<-pass.done
+	}
+	tempRootCheckDev = old
+}
