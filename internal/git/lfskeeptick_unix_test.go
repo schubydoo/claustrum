@@ -267,10 +267,25 @@ func (h stalledHash) Write(p []byte) (int, error) {
 // Mutations: drop the stop of the context of the ticks in keepTicker.end, or
 // give the keep of a tick a context from context.Background (in both the
 // read of the tick runs on, and the tick makes the copy).
+//
+// The stall ends when the stop of the ticks has returned, not when ctx is
+// done. A cancel closes the done channel of ctx before it ends the context of
+// each keep, so a stall that ended at ctx.Done let the tick read on and copy.
 func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 	seamFreeSpace(t)
 	setKeepTick(t, 20*time.Millisecond)
 	made := watchTickers(t)
+	halted := make(chan struct{})
+	var haltedOnce sync.Once
+	watch := keepTickerMade
+	keepTickerMade = func(k *keepTicker) {
+		watch(k)
+		stop := k.stop
+		k.stop = func() {
+			stop()
+			haltedOnce.Do(func() { close(halted) })
+		}
+	}
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
 	f.onServer(t, "a.bin")
 	f.onServer(t, "b.bin")
@@ -304,7 +319,7 @@ func TestLFSKeepTickStopsAtTheExitOfGit(t *testing.T) {
 				release()
 			})
 		}
-		return stalledHash{Hash: sha256.New(), first: free, done: got[0].ctx.Done(), stopped: &stopped}
+		return stalledHash{Hash: sha256.New(), first: free, done: halted, stopped: &stopped}
 	}
 	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
 		if file, ok := w.(*os.File); ok && strings.HasSuffix(file.Name(), f.oids["a.bin"]) {
