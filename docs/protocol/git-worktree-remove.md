@@ -65,7 +65,7 @@ The shared texts are in the [error-string catalogue](errors.md#error-string-cata
 | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | A leaf that is a symbolic link or not a directory. Nothing is deleted (measured on macOS) |
 | `refusing to remove worktree: <t> changed while the removal was checking it` | claustrum's own text for a leaf that another directory replaced between two looks. Nothing is deleted. On Linux and macOS, with `worktreeRoot`, a `<directory>` that turns into a symlink out of the root between two looks answers `failed to remove worktree: openat <directory>: path escapes from parent` (claustrum's own) |
 | `failed to remove worktree: openat <path from baseRepo>: path escapes from parent` | [D19](../DIVERGENCES.md#d19), Windows, when a directory between `baseRepo` and the leaf is a junction. `<path from baseRepo>` is the folder that holds the leaf, relative to `baseRepo`, for example `.claude\worktrees`. claustrum's own text. Nothing is deleted, and the branch stays |
-| `worktreePath must not be or contain the home directory: …` | [D2](../DIVERGENCES.md#d2). Without `worktreeRoot` the containment answers first, so it fires only if a repo is an ancestor of home, or on Windows behind a junction (Platform notes). With `worktreeRoot` it is the active home guard |
+| `worktreePath must not be or contain the home directory: …` | [D2](../DIVERGENCES.md#d2). Without `worktreeRoot` the containment answers first. Then it fires for a repo that is an ancestor of home, or on Windows behind a junction (Platform notes). A leaf folder that is home or holds it by identity gets it too. With `worktreeRoot` it is the active home guard |
 
 ### Locks and the repository
 

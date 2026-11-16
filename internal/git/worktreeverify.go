@@ -110,7 +110,7 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 // handle, and those need the identity of the leaf and of its parent (claustrum's
 // own, not measured).
 func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
-	if worktreePath == "" || homeguard.WipesHomeDir(worktreePath) {
+	if worktreePath == "" || leafHoldsHome(worktreePath) {
 		return
 	}
 	if cp.info != nil {
@@ -317,7 +317,20 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 // leafSafeToRemove is the guard of each delete of the leaf in a rollback after a
 // good add: the home guard (D2) and the checkpoint identity of the leaf.
 func leafSafeToRemove(worktreePath string, cp worktreeCheckpoint) bool {
-	return worktreePath != "" && !homeguard.WipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
+	return worktreePath != "" && !leafHoldsHome(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
+}
+
+// leafHoldsHome is the home guard (D2) of each rollback delete of the leaf. The text
+// test (homeguard.WipesHomeDir) runs first. A leaf that is a folder is then compared
+// with home and each parent folder of home by identity (homeguard.FolderHoldsHome).
+// A leaf that is gone, or is no folder, keeps the verdict of the text test. The
+// Lstat follows no link at the leaf. So on Linux and macOS a link in its place still goes as a link.
+func leafHoldsHome(worktreePath string) bool {
+	if homeguard.WipesHomeDir(worktreePath) {
+		return true
+	}
+	fi, err := os.Lstat(worktreePath)
+	return err == nil && fi.IsDir() && homeguard.FolderHoldsHome(worktreePath, fi)
 }
 
 // removeCreatedLeaf removes the leaf of a create as steps A and C of

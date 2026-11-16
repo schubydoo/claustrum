@@ -2952,6 +2952,10 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		_ = leafDir.Close()
 		return refuse(worktreeRemoveText(err))
 	}
+	if msg := worktreeLeafHomeRefusal(leafDir, p.WorktreePath); msg != "" {
+		_ = leafDir.Close()
+		return refuse(msg)
+	}
 	// The `.git` file is read before the git calls below. In the repo no git has run
 	// yet. With worktreeRoot the external checks above already ran git. A leaf swapped
 	// during the git calls below is not detected: the removal then deletes the new directory and drops the
@@ -3539,6 +3543,19 @@ func worktreeRemoveHomeRefusal(worktreePath string) string {
 		return fmt.Sprintf("worktreePath must not be or contain the home directory: %q", worktreePath)
 	}
 	return ""
+}
+
+// worktreeLeafHomeRefusal is the second home guard of git.worktree_remove (D2). It
+// compares the opened leaf folder with home and each parent folder of home by
+// identity (homeguard.FolderHoldsHome). So a spelling that the text test misses,
+// such as a path through a symbolic link, is refused too, with the same text. A
+// leaf that the Stat cannot read keeps the verdict of the text test.
+func worktreeLeafHomeRefusal(leafDir *os.Root, worktreePath string) string {
+	fi, err := leafDir.Stat(".")
+	if err != nil || !homeguard.FolderHoldsHome(worktreePath, fi) {
+		return ""
+	}
+	return fmt.Sprintf("worktreePath must not be or contain the home directory: %q", worktreePath)
 }
 
 // pruneGitDir is the git directory whose `worktrees` holds the entries that a remove
