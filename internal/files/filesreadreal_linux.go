@@ -5,15 +5,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-
-	"github.com/schubydoo/claustrum/internal/logging"
-)
-
-// The two start lines of the files handler, as the rows quote them (build
-// 683cc6a9, Linux). The level of each line is claustrum's own, not measured.
-const (
-	filesRealPassLine = "[FilesHandler] files.realpath: using the OS's path for the open handle"
-	filesRealFailLine = "[FilesHandler] files.realpath: cannot read /proc/self/fd or mnt_id in /proc/self/fdinfo; falling back to filepath.EvalSymlinks, checked against the opened file; files.read will not return real"
 )
 
 // startReadlink and startReadFile are the seams of the start test.
@@ -71,13 +62,4 @@ func probeOpenHandle() bool {
 		}
 	}
 	return false
-}
-
-// LogReadRealStart writes the start line once, before the first connection.
-func LogReadRealStart() {
-	if ReadRealAvailable() {
-		logging.Infof("%s", filesRealPassLine)
-		return
-	}
-	logging.Infof("%s", filesRealFailLine)
 }

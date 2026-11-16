@@ -384,6 +384,7 @@ component_management:
         - internal/files/findroot_darwin.go
         - internal/files/findroot_other.go
         - internal/pathcanon/netpath_windows.go
+        - internal/files/filesreadreal.go
         - internal/files/filesreadreal_linux.go
         - internal/files/filesreadreal_other.go
         # the ELOOP tries of files.stat, files.list and files.validate.
