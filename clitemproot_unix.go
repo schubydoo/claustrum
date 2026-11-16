@@ -728,7 +728,7 @@ func tendTempRoot(h *heldTempRoot, refresh time.Duration) {
 
 // tempRootGivenKeep and tempRootGivenFor bound the given-back folders that are still
 // checked: at most 8, each for 10 min after its give-back (claustrum's own, not
-// measured: 4c111e86 still checked one 8 s after the end of its child).
+// measured: 4c111e86 still listed a loss made 5 s after the end of its child).
 const (
 	tempRootGivenKeep = 8
 	tempRootGivenFor  = 10 * time.Minute
@@ -751,7 +751,7 @@ func dropGivenTempRoots(end func(*heldTempRoot) bool) {
 // once it is lost, held again, older than tempRootGivenFor or pushed out past
 // tempRootGivenKeep, or once a check finds its temp dir gone, no entry or another
 // folder at its name. The loop ends with no folder.
-// Measured on 4c111e86 (macOS): the first check comes about 2 s after the first make,
+// Measured on 4c111e86 (macOS): the first check comes about 2 s after the first hold,
 // not 2 s after the daemon start, and the checks then come every 2 s. The losses of
 // several folders come at one check and fill the lost list together. A loss made 5 s
 // after the end of the last child of a folder still counts at the next check.

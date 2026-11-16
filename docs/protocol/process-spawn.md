@@ -225,7 +225,7 @@ On Windows `cliTempRoot` and `cliTempRootEnd` change nothing, as on `b3081b51` (
 
 #### A lost folder (build `4c111e86`)
 
-On Linux and macOS, claustrum checks all its held folders by name together, every 2 s from the first make (on Linux claustrum's own). These rules are measured on Linux and macOS unless marked:
+On Linux and macOS, claustrum checks all its folders by name together, every 2 s from the first hold (on Linux claustrum's own). These rules are measured on Linux and macOS unless marked:
 
 - A link at the name, a folder of another account or a folder of mode 0777 counts as lost. The daemon logs `[process.Manager] Claude Code's private temp folder <name> counts as lost: <why>`. The why is `it is a link`, `it is another account's (uid <n>)` or `it is open to other accounts`.
 - A child whose spawn had `"cliTempRootEnd": true` gets SIGTERM, and the daemon logs `[process.Manager] Process <id> is being ended: its private temp folder is lost`. If it still runs 3 s later, it gets SIGKILL (measured on macOS).
@@ -272,7 +272,7 @@ These count as lost too and end the child in the same way. They are measured on 
 
 A folder stays checked after its last child ended. A loss 5 s after that end still counts at the next check (measured on macOS).
 
-These are claustrum's own: the folder loses its `flock`, and its checks write nothing and log only a loss. They end when it is lost or held again, or when its name or temp dir changes. They also end after 10 min, and for the oldest past 8 such folders.
+These are claustrum's own: the folder loses its `flock`, and its checks write nothing and log only a loss. They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
 
 ### The managed launcher
 
