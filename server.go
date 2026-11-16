@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
-	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/git"
 	"github.com/schubydoo/claustrum/internal/hostsweep"
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -264,8 +263,9 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// this shell, not in newServerOnSocket, so an in-process test boot starts no cleaner.
 	hostsweep.Start(socket)
 	// The start test of files.read real, once and before the first connection line.
-	// Its place beside the banner and the cleaner line is claustrum's own, not measured.
-	files.LogReadRealStart()
+	// A failed start naming of the peer check holds it (logReadRealStart). Its place
+	// after the banner is measured on Linux and Windows, and after the cleaner line on Linux.
+	s.peerCheck.logReadRealStart()
 	// The session folders: the record folder beside run, with the records of
 	// earlier daemons (internal/sessiondirs). It comes before the first request. Its
 	// place after the lines above is claustrum's own, not measured. Kept in this

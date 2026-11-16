@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
+	"github.com/schubydoo/claustrum/internal/files"
 	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
@@ -144,6 +145,9 @@ type peerGate struct {
 	namingErr error
 	// refused counts the refused callers of this daemon, from 1.
 	refused atomic.Int64
+	// readRealHeld is true while the start line of the files handler waits for
+	// the lift of a failed start naming. mu guards it.
+	readRealHeld bool
 }
 
 // peerCheckAsked tells if the variable has the exact text "1". On 5fd08069 each of
@@ -366,5 +370,26 @@ func (g *peerGate) ownOrRetry() (nsText, error) {
 	if own.names() {
 		logging.Infof("[Server] serving only callers in %q", own.String())
 	}
+	if g.readRealHeld {
+		g.readRealHeld = false
+		files.LogReadRealStart()
+	}
 	return own, nil
+}
+
+// logReadRealStart writes the start line of the files handler. After a failed
+// start naming it holds the line until the first read that works. Then the line
+// comes right after the serving line, once (4c111e86, measured on Linux). A plain
+// start and a good start naming write it at once (measured on Linux). A lift by a
+// read that names no namespace writes it too (claustrum's own, not measured).
+func (g *peerGate) logReadRealStart() {
+	if g != nil {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if g.namingErr != nil {
+			g.readRealHeld = true
+			return
+		}
+	}
+	files.LogReadRealStart()
 }
