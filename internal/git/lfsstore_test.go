@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -25,7 +26,9 @@ import (
 // is the store. With a file remote/hang an object that is not in remote waits
 // for its kill or for a file remote/end.
 // With a file remote/<oid>.hold the download of that object waits until
-// the file goes, for at most 60 s.
+// the file goes, for at most 60 s. With a file remote/<oid>.linger the
+// download of that object leaves a child that holds the stderr of git for
+// 1 s, so the drain of the checkout waits for it.
 func lfsSmudgeHelper(remote, log string) int {
 	body, _ := io.ReadAll(os.Stdin)
 	p, ok := readPointerBlob(body)
@@ -79,6 +82,18 @@ func lfsSmudgeHelper(remote, log string) int {
 	}
 	if os.MkdirAll(filepath.Dir(obj), 0o755) != nil || os.WriteFile(obj+".tmp", b, 0o644) != nil || os.Rename(obj+".tmp", obj) != nil {
 		return 2
+	}
+	if exists(filepath.Join(remote, p.oid+".linger")) {
+		exe, err := os.Executable()
+		if err != nil {
+			return 2
+		}
+		child := exec.Command(exe, "1")
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stderr = os.Stderr
+		if child.Start() != nil {
+			return 2
+		}
 	}
 	_, _ = os.Stdout.Write(b)
 	return 0

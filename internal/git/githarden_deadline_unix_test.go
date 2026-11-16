@@ -64,7 +64,7 @@ func TestDeadlineStopAfterReapSendsNoGroupKill(t *testing.T) {
 	stop := deadlineStop(cmd, st)
 	_ = feed.Close()
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st); err != nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st, nil); err != nil {
 		t.Fatalf("git hash-object = %v, %s", err, errBuf.String())
 	}
 	if err := stop(); !errors.Is(err, os.ErrProcessDone) {
@@ -89,7 +89,7 @@ func TestDeadlineStopWhileGitRunsKillsGroup(t *testing.T) {
 	st := newCheckoutStop()
 	cmd.Cancel = deadlineStop(cmd, st)
 	var errBuf bytes.Buffer
-	err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st)
+	err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st, nil)
 	if err == nil {
 		t.Fatal("git hash-object ended well, want the kill of the deadline")
 	}
@@ -122,7 +122,7 @@ func TestDeadlineStopFailedExitWaitStillKills(t *testing.T) {
 	st := newCheckoutStop()
 	cmd.Cancel = deadlineStop(cmd, st)
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st); err == nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st, nil); err == nil {
 		t.Fatal("git hash-object ended well, want the kill of the deadline")
 	}
 	if n := kills(); n != 1 {
@@ -144,7 +144,7 @@ func TestDeadlineStopFailedExitWaitAfterReap(t *testing.T) {
 		_ = feed.Close()
 	}()
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st); err != nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, nil, st, nil); err != nil {
 		t.Fatalf("git hash-object = %v, %s", err, errBuf.String())
 	}
 	_ = stop()

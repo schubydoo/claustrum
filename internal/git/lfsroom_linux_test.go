@@ -82,7 +82,7 @@ func TestLFSRoomNoKillAfterReap(t *testing.T) {
 	}
 	w := newLFSRoomWatch(dir, store)
 	var errBuf bytes.Buffer
-	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, w, nil); err != nil {
+	if err := runCheckoutPipes(cmd, &errBuf, func(error) bool { return false }, w, nil, nil); err != nil {
 		t.Fatalf("git hash-object = %v, %s", err, errBuf.String())
 	}
 	select {

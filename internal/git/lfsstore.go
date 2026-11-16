@@ -457,7 +457,7 @@ func commitPointers(ctx context.Context, u gitUse, dir, rev string) []pointerRef
 // pointer. It makes a hard link, or a copy when the link fails or a folder on
 // the way is a link. A failure leaves the object out, and git-lfs then
 // downloads it. A copy that has less than seedNeeds free is left out
-// too, with no temp, and short reports it. A free space that cannot be read
+// too, with no temp, and short reports it. The seed then ends. A free space that cannot be read
 // does not stop a copy (claustrum's own, not measured). At the deadline of ctx
 // the seed stops, and the objects that it did not reach stay out. copied is
 // the time of its copies.
@@ -485,6 +485,11 @@ func fillCheckoutStore(ctx context.Context, u gitUse, dir, gitDir, rev, private 
 // (4c111e86, measured on Linux, the read also on macOS). Claustrum's own, not
 // measured: the time of that read in copied, also before a link, and the
 // content is tested against the oid (claustrum's own form).
+//
+// The first copy left out for seedSpare ends the seed, after the shard folder
+// of its object. On 4c111e86 the second of two objects then got no shard
+// folder (measured on macOS). Linux, a later object that a hard link can
+// seed and a later copy that fits are claustrum's own, not measured.
 func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (short bool, copied time.Duration) {
 	viaLink := pathIsLink(store) || pathIsLink(filepath.Join(store, "objects"))
 	for _, p := range ps {
@@ -511,8 +516,7 @@ func seedObjects(ctx context.Context, store, private string, ps []pointerRef) (s
 		shard := filepath.Dir(src)
 		if viaLink || pathIsLink(shard) || pathIsLink(filepath.Dir(shard)) || seedLink(src, dst) != nil {
 			if free, ok := storeFreeBytes(filepath.Dir(dst)); ok && free < seedNeeds(p.size) {
-				short = true
-				continue
+				return true, copied
 			}
 			start := time.Now()
 			err := copySeed(ctx, src, dst)
@@ -573,8 +577,9 @@ const (
 // After Git LFS downloads began, a downloaded file that the keep cannot put in
 // the store of the repository gives the text of a link (linkText) or of the
 // room (notKeptRoomStart). Both are measured on Linux. Downloads began when
-// the private store has an entry `incomplete` or a file that the keep left out
-// (storeUse.left, else downloadsLeftOut). That test is claustrum's own. The text of the room needs
+// the private store has an entry `incomplete`. A file that the
+// keep left out (storeUse.left, else downloadsLeftOut) with no such entry keeps
+// timeout (4c111e86, measured on Linux and macOS). The text of the room needs
 // a file left out (claustrum's own). ok is false in every other case.
 func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, ok bool) {
 	if timeoutMs <= 0 || rule == nil || rule.store == nil || rule.store.path == "" {
@@ -592,8 +597,11 @@ func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, o
 		}
 		return text, true
 	}
-	if gitDir == "" {
+	if gitDir == "" || !incomplete {
 		return "", false
+	}
+	if link != "" {
+		return linkText(name, link, words), true
 	}
 	var left int
 	var size uint64
@@ -601,12 +609,6 @@ func notKeptText(timeoutMs int, rule *filterRule, gitDir string) (text string, o
 		left, size = s.left.n, s.left.size
 	} else {
 		left, size = downloadsLeftOut(s.path, filepath.Join(gitDir, "lfs"))
-	}
-	if !incomplete && left == 0 {
-		return "", false
-	}
-	if link != "" {
-		return linkText(name, link, words), true
 	}
 	if left > 0 && repoRoomShort(gitDir, size) {
 		return notKeptRoomStart + words + notKeptRoomEnd, true
@@ -889,13 +891,23 @@ var keepTickEvery = time.Second
 // keepTicker keeps the objects that git-lfs downloaded into a private store
 // while the read-tree call runs. Each tick keeps each new object of the store
 // once, as returnDownloads does, in the form keepDuringCheckout. An object
-// that a tick did not keep waits for the keep after the checkout. Claustrum's
-// own, not measured: macOS, and the ticks after a stop for the space, until
-// git exits.
+// that a tick did not keep waits for the keep after the checkout.
+//
+// halt stops a keep that still runs when the read-tree call has exited
+// (stop). On 4c111e86 the read of a 900 MiB object that began during the
+// checkout ended at the exit of git, with no copy. The keep after the
+// checkout then read it again, and only it wrote a temp file (measured on
+// Linux).
+// Claustrum's own, not measured: a stop during the copy of a tick, which
+// removes that temp file as any stopped copy does, macOS, and the ticks after
+// a stop for the space, until git exits.
 type keepTicker struct {
 	quit  chan struct{}
 	ended chan struct{}
 	once  sync.Once
+	// ctx is the parent of the context of each keep of a tick. stop ends it.
+	ctx  context.Context
+	stop context.CancelFunc
 }
 
 // keepTickerMade sees each new keepTicker. A test replaces it.
@@ -908,7 +920,8 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 	if a == nil || a.root == nil {
 		return nil
 	}
-	k := &keepTicker{quit: make(chan struct{}), ended: make(chan struct{})}
+	ctx, stop := context.WithCancel(context.Background())
+	k := &keepTicker{quit: make(chan struct{}), ended: make(chan struct{}), ctx: ctx, stop: stop}
 	keepTickerMade(k)
 	every := keepTickEvery
 	go func() {
@@ -938,7 +951,7 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 				default:
 				}
 				tried[oid] = true
-				ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
+				ctx, cancel := context.WithTimeout(k.ctx, keepBudget)
 				returnDownload(ctx, a.root, a.path, private, oid, time.Now(), keepDuringCheckout)
 				cancel()
 			}
@@ -947,13 +960,25 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 	return k
 }
 
-// end stops the ticks and waits for the keep that runs. A second call only
-// waits. A nil k does nothing.
+// halt stops the ticks and the keep that runs, with no wait. A second call
+// does nothing. A nil k does nothing.
+func (k *keepTicker) halt() {
+	if k == nil {
+		return
+	}
+	k.once.Do(func() {
+		close(k.quit)
+		k.stop()
+	})
+}
+
+// end halts k and waits for the keep that runs. A second call only waits. A
+// nil k does nothing.
 func (k *keepTicker) end() {
 	if k == nil {
 		return
 	}
-	k.once.Do(func() { close(k.quit) })
+	k.halt()
 	<-k.ended
 }
 
