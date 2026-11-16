@@ -23,7 +23,7 @@ func failFrame(t *testing.T, text, code string) string {
 
 // checkoutRootText is the refusal for a worktree location inside a git checkout.
 func checkoutRootText(root, dir string) string {
-	return "refusing to create worktree: " + root + " is inside a git checkout (" + dir +
+	return "refusing to create worktree: `" + root + "` is inside a git checkout (" + dir +
 		" has a .git entry); a worktree location must be outside every checkout, so that no " +
 		"session working in one can reach it — choose a directory that is not part of any repository"
 }

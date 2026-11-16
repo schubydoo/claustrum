@@ -509,6 +509,8 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 // folder that exists gets the "leads into" text, and a missing one the "would be
 // made" text. Then a root that holds that file itself is refused. 5fd08069 refuses
 // so (measured on Linux). A .claude/worktrees folder above the root is not
+// measured. The "leads into" and "is itself" texts show the root in backticks
+// (4c111e86 and c9125eb8, measured on Linux). The "would be made" text is not
 // measured.
 func sessionLocationRefusal(worktreeRoot string) string {
 	const tail = "; beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
@@ -526,14 +528,14 @@ func sessionLocationRefusal(worktreeRoot string) string {
 			continue
 		}
 		if _, err := os.Lstat(at); err == nil {
-			return fmt.Sprintf("refusing to create worktree: %s leads into a session worktree (at %s%s", worktreeRoot, at, tail)
+			return fmt.Sprintf("refusing to create worktree: %s leads into a session worktree (at %s%s", tickPath(worktreeRoot), at, tail)
 		}
 		return fmt.Sprintf("refusing to create worktree: %s would be made inside a session worktree or its "+
 			"per-repository directory (at %s%s", worktreeRoot, at, tail)
 	}
 	if holdsManagedMarker(resolved) {
 		return fmt.Sprintf("refusing to create worktree: %s is itself a per-repository worktree directory "+
-			"(it holds a .claude-managed-worktrees marker); choose the directory above it, or another location", worktreeRoot)
+			"(it holds a .claude-managed-worktrees marker); choose the directory above it, or another location", tickPath(worktreeRoot))
 	}
 	return ""
 }

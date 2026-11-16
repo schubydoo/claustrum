@@ -85,15 +85,16 @@ func externalChainCheck(worktreeRoot, worktreePath string) (dir, msg, code strin
 }
 
 // gitEntryRefusal refuses a worktreeRoot below the folder d when d holds a .git entry
-// of any kind, or answers "". An lstat error other than "not exist" is sent as Go
-// prints it, with errorCode mkdir_failed.
+// of any kind, or answers "". The text shows worktreeRoot in backticks and d bare
+// (4c111e86 and c9125eb8, measured on Linux). An lstat error other than "not exist"
+// is sent as Go prints it, with errorCode mkdir_failed.
 func gitEntryRefusal(worktreeRoot, d string) (msg, code string) {
 	_, err := os.Lstat(filepath.Join(d, ".git"))
 	if err == nil {
 		return fmt.Sprintf("refusing to create worktree: %s is inside a git checkout "+
 			"(%s has a .git entry); a worktree location must be outside every checkout, "+
 			"so that no session working in one can reach it — choose a directory that is "+
-			"not part of any repository", worktreeRoot, d), "unsafe_path"
+			"not part of any repository", tickPath(worktreeRoot), d), "unsafe_path"
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		return parentStepPrefix + err.Error(), "mkdir_failed"
