@@ -119,9 +119,10 @@ func TestDrainOverrunKillsGroupBeforeReap(t *testing.T) {
 
 // TestDrainOverrunAfterFailedExitSendsNoKill: git fails and its child holds
 // stdout past the cap. The wait comes first, and the overrun sends no group
-// kill (claustrum's own, from the code).
+// kill (claustrum's own, from the code). On Linux the failed exit gets its one
+// kill before the reap (failedCheckoutKillsGroup).
 func TestDrainOverrunAfterFailedExitSendsNoKill(t *testing.T) {
-	all, _ := groupKillsAtReap(t, false)
+	all, beforeReap := groupKillsAtReap(t, false)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	cmd, st, _ := lingeringReadTree(t, ctx, "fail", nil)
@@ -130,8 +131,12 @@ func TestDrainOverrunAfterFailedExitSendsNoKill(t *testing.T) {
 	if err := runCheckoutPipes(cmd, &errBuf, noSkip, nil, st); !errors.As(err, &exitErr) {
 		t.Fatalf("read-tree = %v, want the exit error of git", err)
 	}
-	if n := all.Load(); n != 0 {
-		t.Errorf("group kills = %d, want 0", n)
+	want := int32(0)
+	if failedCheckoutKillsGroup {
+		want = 1
+	}
+	if n, b := all.Load(), beforeReap.Load(); n != want || b != want {
+		t.Errorf("group kills = %d, before the reap = %d, want %d and %d", n, b, want, want)
 	}
 }
 

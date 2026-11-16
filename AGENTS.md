@@ -290,6 +290,9 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)).
 - **The `timeoutMs` stop of the read-tree call** (`internal/git/githarden.go`, `cmd.Cancel`). Never widen: it sends its
   group `SIGKILL` only before the reap of git (`sysproc.LeaderGate`). The kill after a drain overrun comes before the reap too (`runCheckoutPipes`). A wait with no exit status sends no overrun kill (claustrum's own).
+- **A failed read-tree call** (Linux, `runCheckoutPipes`). After the checkout git of a create fails by itself, its group gets one
+  `SIGKILL`, as on 4c111e86 (measured on Linux). Never widen: send it once, only to the group of that git, after its exit and
+  before its reap. Send none after the `timeoutMs` stop or the LFS space stop.
 - **The bound stops of `-install` and `-probe-cli`** (`internal/install/groupstop.go`, `runCLIVersion`). Never widen: each
   sends its group `SIGKILL` only before the reap of its run (`sysproc.LeaderGate`).
 

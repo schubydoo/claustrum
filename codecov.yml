@@ -272,6 +272,9 @@ component_management:
         # the stdout drain after a failed read-tree call of the create (b3081b51).
         - internal/git/githarden_drain_unix.go
         - internal/git/githarden_drain_windows.go
+        # the group kill after a failed read-tree call of the create (4c111e86).
+        - internal/git/githarden_failkill_linux.go
+        - internal/git/githarden_failkill_other.go
         # the configuration listing before each hardened call and its hook pins (89cb6289).
         - internal/git/gitlisting.go
         # the pane's git of a gitRead process.spawn (c9125eb8).

@@ -206,7 +206,8 @@ const failedFilterReply = `"error":"git worktree add failed (checkout): fatal: a
 // drain, where a drain to the cap answers timeout. The second puts it past the
 // drain, where a drain to the cap answers late. In the third a second child
 // holds stderr for 300 ms and writes a line there: the stderr drain still waits
-// for it (claustrum's own, not measured).
+// for it (claustrum's own, not measured). The group kill of the failed git does
+// nothing there, as for a child outside the group of git (keepFailedCheckoutGroup).
 func TestWorktreeCreateFailedCheckoutSkipsStdoutDrain(t *testing.T) {
 	const drainCap = 8 * time.Second
 	setDuration(t, &worktreeCreateDrainCap, drainCap)
@@ -229,6 +230,7 @@ func TestWorktreeCreateFailedCheckoutSkipsStdoutDrain(t *testing.T) {
 			endHeldDescendant(t)
 			if tc.lateErr {
 				t.Setenv("CLAUSTRUM_GITSTUB_LATEERR", "1")
+				keepFailedCheckoutGroup(t)
 			}
 			raw, elapsed := runLingeringCreate(t, t.TempDir(), tc.timeoutMs)
 			if !strings.Contains(raw, failedFilterReply) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
@@ -245,8 +247,10 @@ func TestWorktreeCreateFailedCheckoutSkipsStdoutDrain(t *testing.T) {
 }
 
 // A failed read-tree call with no timeoutMs keeps the drain of gitDrainWait
-// while a child holds its stdout (claustrum's own, not measured).
+// while a child holds its stdout (claustrum's own, not measured). The group kill
+// of the failed git does nothing here (keepFailedCheckoutGroup).
 func TestWorktreeCreateFailedCheckoutNoTimeoutKeepsDrain(t *testing.T) {
+	keepFailedCheckoutGroup(t)
 	stubLingeringGit(t, false, "20")
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT0", "fail")
 	endHeldDescendant(t)
@@ -257,6 +261,16 @@ func TestWorktreeCreateFailedCheckoutNoTimeoutKeepsDrain(t *testing.T) {
 	if elapsed < gitDrainWait {
 		t.Errorf("reply after %s, want at least %s: the stdout drain was skipped", elapsed, gitDrainWait)
 	}
+}
+
+// keepFailedCheckoutGroup makes the group kill of a read-tree call do nothing,
+// as for a child outside the group of git. On Linux a failed git gets that kill
+// (runCheckoutPipes), and it ends a child of the stub before the drain.
+func keepFailedCheckoutGroup(t *testing.T) {
+	t.Helper()
+	prev := reapCheckoutGroup
+	t.Cleanup(func() { reapCheckoutGroup = prev })
+	reapCheckoutGroup = func(*os.Process) {}
 }
 
 // A read-tree call that the deadline stops keeps the stdout drain, also when the

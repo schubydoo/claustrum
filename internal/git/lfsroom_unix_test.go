@@ -227,8 +227,13 @@ func TestLFSRoomNoStop(t *testing.T) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			r.wantEnded(t)
-			if r.kills != 0 {
-				t.Errorf("kills = %d, want none", r.kills)
+			// On Linux the failed git gets its own group kill (runCheckoutPipes).
+			wantKills := 0
+			if failedCheckoutKillsGroup {
+				wantKills = 1
+			}
+			if r.watches[0].fired || r.kills != wantKills {
+				t.Errorf("watch fired = %v, kills = %d, want no stop of the watch and %d kills", r.watches[0].fired, r.kills, wantKills)
 			}
 			if (row.reads == 1 && r.reads != 1) || r.reads < row.reads {
 				t.Errorf("reads of the free space of the private folder = %d, want %d", r.reads, row.reads)
