@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -68,20 +67,26 @@ func TestCheckLauncherFileLinkLoop(t *testing.T) {
 	checkFile(t, "loop in a folder of the path", mid, right, FaultLinks, links(mid))
 }
 
-// TestCheckLauncherFileMoved pins the check by handle (claustrum's own, not measured).
-// The facts seam swaps the folder x for a new one with the same launcher while the walk
-// tests x. The walk then passes, and the check by handle refuses x as changed. With no
-// swap, and with a digest, the same launcher passes.
+// TestCheckLauncherFileMoved pins that a moved path is not refused for the move
+// (4c111e86, measured on Linux). The facts seam swaps the folder x for a new one while
+// the walk tests x. A swap to the same launcher passes, with no digest and with one. A
+// swap to another file gets the digest refusal.
 func TestCheckLauncherFileMoved(t *testing.T) {
 	d := launcherDir(t)
 	x := filepath.Join(d, "x")
 	L := writeLauncher(t, filepath.Join(x, "launcher.sh"), "#!/bin/sh\n", 0o755)
 	fakeLauncherFacts(t, nil)
 	right := LauncherCheck{SHA256: []string{digestOf(t, L)}}
-	checkFile(t, "no swap", L, LauncherCheck{}, "", "")
-	checkFile(t, "no swap, digest", L, right, "", "")
-	moved := "`" + x + "` changed while the launcher was checked, so the launcher can't be trusted. Keep the launcher somewhere that no other account can change."
-	for i, chk := range []LauncherCheck{{}, right} {
+	none := "launcher `" + L + "` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest."
+	for i, c := range []struct {
+		chk         LauncherCheck
+		body        string
+		fault, text string
+	}{
+		{LauncherCheck{}, "#!/bin/sh\n", "", ""},
+		{right, "#!/bin/sh\n", "", ""},
+		{right, "#!/bin/sh\nexit 0\n", FaultDigest, none},
+	} {
 		swapped := false
 		launcherPathFacts = func(p string) (launcherFacts, error) {
 			if p == x && !swapped {
@@ -89,11 +94,11 @@ func TestCheckLauncherFileMoved(t *testing.T) {
 				if err := os.Rename(x, filepath.Join(d, fmt.Sprintf("old%d", i))); err != nil {
 					return launcherFacts{}, err
 				}
-				writeLauncher(t, L, "#!/bin/sh\n", 0o755)
+				writeLauncher(t, L, c.body, 0o755)
 			}
 			return launcherFacts{mode: 0o755}, nil
 		}
-		checkFile(t, fmt.Sprintf("swap %d", i), L, chk, FaultWritable, moved)
+		checkFile(t, fmt.Sprintf("swap %d", i), L, c.chk, c.fault, c.text)
 		if !swapped {
 			t.Fatalf("swap %d: the walk never tested %s", i, x)
 		}
@@ -114,27 +119,40 @@ func TestLauncherFSTypeReal(t *testing.T) {
 }
 
 // TestStatLauncherFactsLike9p pins the 9p rule through the seams (4c111e86, measured on
-// Linux with btrfs and with the ext4 f_type on a tmpfs). /proc is on a device with major
-// 0. The folder of the test gives a real device where it has one.
+// Linux). /proc is on a device with major 0. The folder of the test gives a real device
+// where it has one. bdi is the list of /sys/class/bdi, nil for a folder that can't be read.
 func TestStatLauncherFactsLike9p(t *testing.T) {
-	old, oldNine := launcherFSType, launcherNinePMounted
-	t.Cleanup(func() { launcherFSType, launcherNinePMounted = old, oldNine })
+	old, oldBDI := launcherFSType, launcherBDINames
+	t.Cleanup(func() { launcherFSType, launcherBDINames = old, oldBDI })
+	nine := []string{"0:62", "259:0", "9p-1"}
+	plain := []string{"0:62", "259:0", "btrfs-1"}
 	type row struct {
 		p     string
 		magic uint32
-		nine  bool
-		want  bool
+		bdi   []string
+		want  int
 	}
 	rows := []row{
-		{"/proc", unix.EXT4_SUPER_MAGIC, true, true},
-		{"/proc", unix.BTRFS_SUPER_MAGIC, true, true},
-		{"/proc", unix.XFS_SUPER_MAGIC, true, true},
-		{"/proc", unix.EXT4_SUPER_MAGIC, false, false},
-		{"/proc", unix.TMPFS_MAGIC, true, false},
-		{"/proc", unix.OVERLAYFS_SUPER_MAGIC, true, false},
-		{"/proc", 0x2fc12fc1, true, false},
-		{"/proc", unix.SQUASHFS_MAGIC, true, false},
-		{"/proc", unix.NFS_SUPER_MAGIC, true, false},
+		{"/proc", unix.EXT4_SUPER_MAGIC, nine, doubtNineP},
+		{"/proc", unix.BTRFS_SUPER_MAGIC, nine, doubtNineP},
+		{"/proc", unix.XFS_SUPER_MAGIC, nine, doubtNineP},
+		{"/proc", unix.TMPFS_MAGIC, nine, doubtNineP},
+		{"/proc", unix.RAMFS_MAGIC, nine, doubtNineP},
+		{"/proc", unix.OVERLAYFS_SUPER_MAGIC, nine, doubtNineP},
+		{"/proc", unix.TMPFS_MAGIC, []string{"9p-12"}, doubtNineP},
+		{"/proc", unix.TMPFS_MAGIC, []string{"9p-", "9p-x", "x9p-1"}, doubtNone},
+		{"/proc", unix.BTRFS_SUPER_MAGIC, nil, doubtNoBDI},
+		{"/proc", unix.TMPFS_MAGIC, nil, doubtNoBDI},
+		{"/proc", unix.RAMFS_MAGIC, []string{}, doubtNoBDI},
+		{"/proc", unix.OVERLAYFS_SUPER_MAGIC, nil, doubtNoBDI},
+		{"/proc", unix.EXT4_SUPER_MAGIC, plain, doubtNoDisk},
+		{"/proc", unix.XFS_SUPER_MAGIC, plain, doubtNoDisk},
+		{"/proc", unix.BTRFS_SUPER_MAGIC, plain, doubtNone},
+		{"/proc", unix.EROFS_SUPER_MAGIC_V1, plain, doubtNone},
+		{"/proc", unix.TMPFS_MAGIC, plain, doubtNone},
+		{"/proc", 0x2fc12fc1, nine, doubtNone},
+		{"/proc", unix.SQUASHFS_MAGIC, nil, doubtNone},
+		{"/proc", unix.NFS_SUPER_MAGIC, nine, doubtNone},
 	}
 	d, err := os.Getwd()
 	if err != nil {
@@ -145,44 +163,49 @@ func TestStatLauncherFactsLike9p(t *testing.T) {
 		t.Fatal(err)
 	}
 	if unix.Major(st.Dev) != 0 {
-		rows = append(rows, row{d, unix.EXT4_SUPER_MAGIC, true, false})
+		rows = append(rows, row{d, unix.EXT4_SUPER_MAGIC, nine, doubtNone}, row{d, unix.EXT4_SUPER_MAGIC, nil, doubtNone})
+	} else {
+		t.Logf("%s is on a device with major 0: the two rows of a real device are skipped", d)
 	}
 	for _, c := range rows {
 		launcherFSType = func(string) (uint32, error) { return c.magic, nil }
-		launcherNinePMounted = func() bool { return c.nine }
+		launcherBDINames = func() ([]string, error) {
+			if c.bdi == nil {
+				return nil, os.ErrPermission
+			}
+			return c.bdi, nil
+		}
 		f, err := statLauncherFacts(c.p)
-		if err != nil || f.like9p != c.want {
-			t.Errorf("%s, f_type %#x, 9p %v: got %v, %v, want %v", c.p, c.magic, c.nine, f.like9p, err, c.want)
+		if err != nil || f.doubt != c.want || f.magic != c.magic {
+			t.Errorf("%s, f_type %#x, bdi %q: got %d %#x, %v, want %d", c.p, c.magic, c.bdi, f.doubt, f.magic, err, c.want)
 		}
 	}
 }
 
-// TestMountInfoType pins the read of the type field of a mountinfo line, and of the
-// real table of the test.
-func TestMountInfoType(t *testing.T) {
-	for line, want := range map[string]string{
-		"36 35 0:44 / /mnt/share rw,relatime shared:1 - 9p 127.0.0.1 rw,trans=tcp": "9p",
-		"22 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw":                             "ext4",
-		"22 1 8:1 / / rw,relatime":                                                 "",
-	} {
-		if got := mountInfoType(line); got != want {
-			t.Errorf("%q: got %q, want %q", line, got, want)
+// TestReadBDINames pins the read of the real /sys/class/bdi of the test. An entry can
+// come or go between two reads, so each name of the call must be in a read right after
+// it, in any order, and most of them must be there.
+func TestReadBDINames(t *testing.T) {
+	got, err := readBDINames()
+	ents, err2 := os.ReadDir("/sys/class/bdi")
+	if err2 != nil || len(ents) == 0 {
+		t.Skip("no /sys/class/bdi entries to compare:", err2)
+	}
+	if err != nil {
+		t.Fatalf("readBDINames: %v", err)
+	}
+	after := map[string]bool{}
+	for _, e := range ents {
+		after[e.Name()] = true
+	}
+	missing := 0
+	for _, n := range got {
+		if !after[n] {
+			missing++
 		}
 	}
-	table := "22 1 8:1 / / rw - ext4 /dev/sda1 rw\n36 35 0:44 / /mnt/share rw - 9p 127.0.0.1 rw\n"
-	if !ninePListed(strings.NewReader(table)) {
-		t.Error("a table with a 9p line lists none")
-	}
-	if ninePListed(strings.NewReader("22 1 8:1 / / rw - ext4 /dev/sda1 rw\n36 35 0:45 / /9p rw - tmpfs 9p rw\n")) {
-		t.Error("a table with no 9p type lists one")
-	}
-	b, err := os.ReadFile("/proc/self/mountinfo")
-	if err != nil {
-		t.Skip(err)
-	}
-	want := strings.Contains(string(b), " - 9p ")
-	if got := ninePInMountTable(); got != want {
-		t.Errorf("the real table: got %v, want %v", got, want)
+	if len(got) == 0 || missing > 1 {
+		t.Errorf("got %q, and %d of them are not in the read after it %v", got, missing, after)
 	}
 }
 
@@ -191,9 +214,9 @@ func TestMountInfoType(t *testing.T) {
 // and any other f_type gets the unknown text with its hex. A failed statfs is an error.
 func TestStatLauncherFactsFileSystem(t *testing.T) {
 	d := launcherDir(t)
-	old, oldNine := launcherFSType, launcherNinePMounted
-	t.Cleanup(func() { launcherFSType, launcherNinePMounted = old, oldNine })
-	launcherNinePMounted = func() bool { return false }
+	old, oldBDI := launcherFSType, launcherBDINames
+	t.Cleanup(func() { launcherFSType, launcherBDINames = old, oldBDI })
+	launcherBDINames = func() ([]string, error) { return []string{"0:62"}, nil }
 	for _, c := range []struct {
 		magic uint32
 		want  string
