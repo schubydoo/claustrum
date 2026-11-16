@@ -166,8 +166,11 @@ func resolveCheckFrame(t *testing.T, s *server, path, check string) string {
 // TestLauncherResolveCheck pins launcher.resolve with path and launcherCheck
 // (c9125eb8, measured on Linux): the usable reply names path with no source, also
 // when the policy names another file. The unusable reply has reason, fault and
-// hostPolicySeen, and logs one line each time. Without path the reply is unusable
-// with not_absolute (c9125eb8, measured on Linux).
+// hostPolicySeen. Without path the reply is unusable with not_absolute (c9125eb8,
+// measured on Linux). A refusal with the reason of the last answer logs no line, and
+// a usable answer, another reason or none between makes it log again (4c111e86,
+// measured on Linux). The -32602 reply between is no answer, so the next equal
+// refusal stays silent (4c111e86, measured on Linux).
 func TestLauncherResolveCheck(t *testing.T) {
 	logs := captureLogBuf(t)
 	fakeFacts(t, nil)
@@ -187,19 +190,36 @@ func TestLauncherResolveCheck(t *testing.T) {
 	}
 	reason := "launcher `" + L + "` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest."
 	unusable := `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"` + reason + `","fault":"digest","hostPolicySeen":false}}`
-	for range 2 {
+	line := "[LauncherHandler] the launcher that the desktop names is refused: " + reason + "\n"
+	noPathText := "the launcher must be an absolute path, not a bare name resolved via PATH"
+	noPathLine := "[LauncherHandler] the launcher that the desktop names is refused: " + noPathText + "\n"
+	noPath := `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"` + noPathText + `","fault":"not_absolute","hostPolicySeen":false}}`
+	wrong := func() {
+		t.Helper()
 		if got := resolveCheckFrame(t, s, L, `{"sha256":["`+strings.Repeat("0", 64)+`"]}`); got != unusable {
 			t.Errorf("wrong digest:\n got %s\nwant %s", got, unusable)
 		}
 	}
-	line := "[LauncherHandler] the launcher that the desktop names is refused: " + reason + "\n"
-	if n := strings.Count(logs.String(), line); n != 2 {
-		t.Errorf("%d refusal lines, want 2 (one per resolve):\n%s", n, logs.String())
+	counts := func(step string, want, wantNoPath int) {
+		t.Helper()
+		if n, m := strings.Count(logs.String(), line), strings.Count(logs.String(), noPathLine); n != want || m != wantNoPath {
+			t.Errorf("%s: %d digest lines and %d not_absolute lines, want %d and %d:\n%s", step, n, m, want, wantNoPath, logs.String())
+		}
 	}
-	noPath := `{"jsonrpc":"2.0","id":1,"result":{"status":"unusable","reason":"the launcher must be an absolute path, not a bare name resolved via PATH","fault":"not_absolute","hostPolicySeen":false}}`
+	wrong()
+	wrong()
+	counts("a repeat", 1, 0)
+	dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"/x/cli","path":`+jsonText(t, L)+`}}`))
+	wrong()
+	counts("after a -32602 reply", 1, 0)
+	resolveCheckFrame(t, s, L, `{"sha256":["`+sha256Hex(t, L)+`"]}`)
+	wrong()
+	counts("after a usable answer", 2, 0)
 	if got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"/x/cli","launcherCheck":{}}}`)); got != noPath {
 		t.Errorf("no path:\n got %s\nwant %s", got, noPath)
 	}
+	wrong()
+	counts("after another reason", 3, 1)
 	writeFileMode(t, base, []byte(`{"processWrapper":`+jsonText(t, other)+`,"x":1}`), 0o644)
 	seen := `{"jsonrpc":"2.0","id":1,"result":{"status":"usable","argv":["` + L + `"],"hostPolicySeen":true}}`
 	if got := resolveCheckFrame(t, s, L, `{}`); got != seen {

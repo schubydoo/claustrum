@@ -4,6 +4,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,8 +15,10 @@ const macOSHostText = "This launcher can't be used on a macOS host: an access-co
 // c9125eb8, with the text of 4c111e86: every spawn with a
 // launcher and a launcherCheck gets macos_host, with the prefix of its shape, before
 // any file test. Every launcher.resolve with a launcherCheck answers unusable with
-// macos_host, also with no path and no settings file.
+// macos_host, also with no path and no settings file. Each refusal logs its line, a
+// repeat too (c9125eb8, measured on macOS).
 func TestLauncherCheckRefusedOnMacOS(t *testing.T) {
+	logs := captureLogBuf(t)
 	tempManagedSettingsDir(t)
 	s := newTestServer(t)
 	wrap, exe := wrapLauncherFixture(t)
@@ -42,5 +45,9 @@ func TestLauncherCheckRefusedOnMacOS(t *testing.T) {
 		if got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":`+params+`}`)); got != want {
 			t.Errorf("resolve %s:\n got %s\nwant %s", params, got, want)
 		}
+	}
+	line := "[LauncherHandler] the launcher that the desktop names is refused: " + macOSHostText + "\n"
+	if n := strings.Count(logs.String(), line); n != 2 {
+		t.Errorf("%d refusal lines, want 2 (one per resolve):\n%s", n, logs.String())
 	}
 }

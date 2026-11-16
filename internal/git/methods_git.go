@@ -2367,7 +2367,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		release()
 		rtStderr, rtDrained, keepTook, rtErr, installErr = runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, repo, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit, p.TimeoutMs)
+			indexDir, repo, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit, p.TimeoutMs, arrival)
 		var filters filterPlan
 		if rule != nil {
 			filters = rule.plan
@@ -2402,8 +2402,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			})
 		case rtDrained:
 			// git exited 0, but a checkout descendant held the daemon's output pipe
-			// past the ~5s drain cap. hardenedGitCheckout already killed and reaped
-			// the process group. The checkout counts as finished, so the request goes
+			// past the ~5s drain cap. The checkout counts as finished, so the request goes
 			// on to the copy step. The deadline test after the copy step then answers
 			// timeout "after the checkout finished" and rolls back. If the deadline has
 			// not expired, the request succeeds. Measured against f6010b97 and

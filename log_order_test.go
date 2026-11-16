@@ -16,6 +16,19 @@ import (
 // socket close in the same ordered stream as the daemon's own log lines.
 type markConn struct{ net.Conn }
 
+// markAddr is the remote address of a marked conn. No other conn of a test has it.
+// The global log also takes the lines of a conn that an earlier test closed but did
+// not wait for, so a test here looks only for lines with markLabel.
+type markAddr struct{}
+
+func (markAddr) Network() string { return "pipe" }
+func (markAddr) String() string  { return "marked pipe" }
+
+// markLabel is the quoted label of a marked conn in the connection lines.
+const markLabel = `"marked pipe"`
+
+func (m markConn) RemoteAddr() net.Addr { return markAddr{} }
+
 func (m markConn) Write(p []byte) (int, error) {
 	log.Printf("MARK write")
 	return m.Conn.Write(p)
@@ -104,7 +117,7 @@ func TestUnauthorizedLoggedBeforeReplyWrite(t *testing.T) {
 // At a client EOF the "Connection closed" line is logged before the socket close.
 func TestConnectionClosedLoggedBeforeClose(t *testing.T) {
 	out := serveMarkedConn(t, `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"`+testToken+`"}`+"\n", true)
-	c := indexOrFail(t, out, "INFO  [Server] Connection closed: \"pipe\"\n")
+	c := indexOrFail(t, out, "INFO  [Server] Connection closed: "+markLabel+"\n")
 	k := indexOrFail(t, out, "MARK close")
 	if c > k {
 		t.Errorf("Connection closed must precede the socket close; got:\n%s", out)
@@ -116,11 +129,11 @@ func TestConnectionClosedLoggedBeforeClose(t *testing.T) {
 // close, with the quoted label. A failed parse does not set the mark.
 func TestTokenlessConnectionLogsOnlyTheCountedClose(t *testing.T) {
 	out := serveMarkedConn(t, "not json\n", true)
-	c := indexOrFail(t, out, "INFO  [Server] Connection number 1 that never showed the token: \"pipe\"\n")
+	c := indexOrFail(t, out, "INFO  [Server] Connection number 1 that never showed the token: "+markLabel+"\n")
 	if k := indexOrFail(t, out, "MARK close"); c > k {
 		t.Errorf("the counted close must precede the socket close; got:\n%s", out)
 	}
-	for _, bad := range []string{"New connection from", "Connection closed"} {
+	for _, bad := range []string{"New connection from: " + markLabel, "Connection closed: " + markLabel} {
 		if strings.Contains(out, bad) {
 			t.Errorf("a connection with no token mark logged %q; got:\n%s", bad, out)
 		}
@@ -133,14 +146,14 @@ func TestTokenlessConnectionLogsOnlyTheCountedClose(t *testing.T) {
 func TestNewConnectionLineComesAtTheFirstAuthorizedRequest(t *testing.T) {
 	ping := `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"` + testToken + `"}` + "\n"
 	out := serveMarkedConn(t, ping, true)
-	if n := strings.Count(out, "INFO  [Server] New connection from: \"pipe\"\n"); n != 1 {
+	if n := strings.Count(out, "INFO  [Server] New connection from: "+markLabel+"\n"); n != 1 {
 		t.Errorf("New connection lines = %d, want 1; got:\n%s", n, out)
 	}
-	if indexOrFail(t, out, "New connection from") > indexOrFail(t, out, "MARK write") {
+	if indexOrFail(t, out, "New connection from: "+markLabel) > indexOrFail(t, out, "MARK write") {
 		t.Errorf("New connection must precede the reply; got:\n%s", out)
 	}
 	out = serveMarkedConn(t, `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"bad"}`+"\n", true)
-	if strings.Contains(out, "New connection from") {
+	if strings.Contains(out, "New connection from: "+markLabel) {
 		t.Errorf("a refused request set the token mark; got:\n%s", out)
 	}
 }
