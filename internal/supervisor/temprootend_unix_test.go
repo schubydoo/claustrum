@@ -147,6 +147,27 @@ func TestLostTempRootTakesTheKilledByAfterAClientKill(t *testing.T) {
 		"[process.Manager] Process tr exited with code -1, terminated by SIGKILL, asked to end by this daemon (temp_root)")
 }
 
+// TestTempRootReplacesOnlyClient: a temp_root signal keeps an earlier "shutdown" or
+// "limit" (claustrum's own, not measured).
+func TestTempRootReplacesOnlyClient(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	recordSignalsByProc(t)
+	c, lines := rawLineConn(t)
+	for i, first := range []string{"shutdown", "limit"} {
+		p, _ := spawnHelperTempRootID(t, m, c, "tr"+first, TempRootAsk{Folder: true, End: true}, "ignore-term")
+		nextLine(t, lines, `"stream":"stdout"`, 20*time.Second)
+		p.mu.Lock()
+		p.killedBy = first
+		live, err := p.signalIfLiveLocked("TERM", "temp_root")
+		got := p.killedBy
+		p.mu.Unlock()
+		if !live || err != nil || got != first {
+			t.Errorf("row %d: live %v, err %v, killedBy %q, want %q", i, live, err, got, first)
+		}
+	}
+}
+
 // TestLostTempRootEndNeedsTheAsk: a spawn with no cliTempRootEnd binds nil, so a loss
 // of its folder sends it nothing (4c111e86, measured on macOS). A spawn with no
 // cliTempRoot binds nothing.
