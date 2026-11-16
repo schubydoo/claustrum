@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1323,17 +1324,21 @@ func putObject(t *testing.T, store, body string) string {
 // 10 s (claustrum's own) and under half. An `incomplete` folder that git-lfs made in
 // the private store keeps timeout. A copy past half of timeoutMs stops, and
 // git-lfs then fails to find the object (4c111e86, measured on Linux and
-// macOS).
+// macOS). A seed that starts 3 s after the start of the request stops at
+// (10 + 3) / 2 s from that start, so a copy of 4.5 s stops too. A bound of
+// half of timeoutMs from the start of the seed lets it end (4c111e86, measured
+// on Linux).
 func TestLFSNotKeptAfterDeadline(t *testing.T) {
 	for _, row := range []struct {
-		name       string
-		copyTime   time.Duration
-		hang, inc  bool
-		code, text string
+		name            string
+		delay, copyTime time.Duration
+		hang, inc       bool
+		code, text      string
 	}{
-		{"long copy", 3000 * time.Millisecond, true, false, "worktree_lfs_not_kept", "timed out after 10 seconds, and copying"},
-		{"download begun", 3000 * time.Millisecond, true, true, "timeout", "git worktree add timed out after 10000ms (deadline expired during the checkout)"},
-		{"copy past half", 6000 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
+		{"long copy", 0, 3000 * time.Millisecond, true, false, "worktree_lfs_not_kept", "timed out after 10 seconds, and copying"},
+		{"download begun", 0, 3000 * time.Millisecond, true, true, "timeout", "git worktree add timed out after 10000ms (deadline expired during the checkout)"},
+		{"copy past half", 0, 6000 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
+		{"late seed", 3000 * time.Millisecond, 4500 * time.Millisecond, false, false, "worktree_add_failed", "Object does not exist on the server"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
@@ -1352,12 +1357,18 @@ func TestLFSNotKeptAfterDeadline(t *testing.T) {
 				return io.Copy(w, r)
 			}
 			t.Cleanup(func() { seedLink, seedCopy = prevLink, prevCopy })
+			if row.delay > 0 {
+				// The staged add runs before the seed. Its first Lstat waits.
+				prevLstat, wait := regularLstatDone, sync.OnceFunc(func() { time.Sleep(row.delay) })
+				regularLstatDone = func(string) { wait() }
+				t.Cleanup(func() { regularLstatDone = prevLstat })
+			}
 			raw, _ := f.create(t, map[string]any{"timeoutMs": 10000})
 			if !strings.Contains(raw, `"errorCode":"`+row.code+`"`) || !strings.Contains(raw, row.text) {
 				t.Errorf("git.worktree_create = %s\nwant errorCode %s and %q", raw, row.code, row.text)
 			}
-			if got := f.smudges(t)["a.bin"]; row.name == "copy past half" && !strings.HasPrefix(got, "present=false") {
-				t.Errorf("smudge line of a.bin = %q, want no seeded copy after half of timeoutMs", got)
+			if got := f.smudges(t)["a.bin"]; row.code == "worktree_add_failed" && !strings.HasPrefix(got, "present=false") {
+				t.Errorf("smudge line of a.bin = %q, want no seeded copy past the bound of the seed", got)
 			}
 			f.wantGone(t)
 		})

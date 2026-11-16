@@ -1023,7 +1023,9 @@ var (
 // wait for the end of its ticks (keepWithinDeadline).
 //
 // repo is baseRepo, the folder of the calls of the seed (fillCheckoutStore).
-func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir, repo string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int) (stderr string, drained bool, keepTook time.Duration, err, installErr error) {
+// arrival is the start of the deadline of timeoutMs, the start of the bound
+// of the seed too (seedContext).
+func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, adminDir, repo string, tested testedRegistration, rev string, pin []string, rule *filterRule, settle bool, timeoutMs int, arrival time.Time) (stderr string, drained bool, keepTook time.Duration, err, installErr error) {
 	idxDir, removeIdxDir, err := u.requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, 0, err, nil
@@ -1048,7 +1050,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path, lfs.runDir = filepath.Join(idxDir, "lfs"), u.host.runDir
 		lfs.seed = func() (bool, time.Duration) {
-			seedCtx, cancel := seedContext(ctx, timeoutMs)
+			seedCtx, cancel := seedContext(ctx, timeoutMs, arrival)
 			defer cancel()
 			return fillCheckoutStore(seedCtx, u, repo, u.gitDir, rev, lfs.path)
 		}
