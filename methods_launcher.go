@@ -47,8 +47,8 @@ type managedLauncherLog struct {
 // noteChecked writes the refused line of an answer to a launcherCheck. A refusal
 // with the reason of the last answer writes no line. A usable answer in between
 // makes it log again (4c111e86, measured on Linux). On macOS an answer with no
-// launcherCheck does too (resetChecked). That fits the rows of 4c111e86 on macOS,
-// where a change of the managed settings came first each time. claustrum's
+// launcherCheck does too (resetChecked), and a settings rewrite alone does not
+// (4c111e86, measured on macOS). claustrum's
 // own, not measured: the key lives for one daemon, apart from the key of note. With
 // logsRepeats each refusal logs, a repeat too (Windows, claustrum's own).
 func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeats bool) {
