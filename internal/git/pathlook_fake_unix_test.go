@@ -1,3 +1,5 @@
+//go:build unix
+
 package git
 
 import (
@@ -19,7 +21,8 @@ var errCannotAccess error = cannotAccess{}
 // The two shapes of the row of 4c111e86 on Windows, byte for byte: a repository
 // below a folder that cannot be looked into, and a repository whose .git is
 // such a folder. Each look logs one network-path line. A missing path, a plain
-// repository and another error pass.
+// repository and another error pass. The test uses Unix paths and fakes.
+// TestPathLookRefusalUnhandledTag sets the real tag on Windows.
 func TestPathLookRefusal(t *testing.T) {
 	dir, err := os.Lstat(t.TempDir())
 	if err != nil {
