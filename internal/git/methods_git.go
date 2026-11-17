@@ -775,6 +775,15 @@ func gitStatus(req *gitCall) rpc.Response {
 	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
+	// with no start test, so no failure is kept (4c111e86, measured on macOS). As in
+	// git.info the folder of the daemon is made (not measured). Linux and Windows are
+	// claustrum's own.
+	// A baseRepo that is no folder and the off switch are not measured: they keep the gate.
+	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		req.shadow.folderWithNoTest()
+		return notRepo
+	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate).
 	//

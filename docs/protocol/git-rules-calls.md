@@ -243,10 +243,10 @@ On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon
   that call and nothing is kept.
 - The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
-  (`683cc6a9`, measured with `git.status` on Linux and macOS). Claustrum's own,
-  not measured: the base is `XDG_CONFIG_HOME`.
-  Unset, empty or relative, it counts as unset, and the base is the home folder plus
-  `.config`. An empty or relative base gives the null device. A regular file
+  (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git does
+  not start keeps nothing: the next request reads again (claustrum's own).
+  Claustrum's own: the base is `XDG_CONFIG_HOME`.
+  Unset, empty or relative, the base is the home folder plus `.config`. A regular file
   `git/ignore` in the base, after symlinks, is the result. Every other case gives the null
   device, also when `XDG_CONFIG_HOME` is set and the file is under the home folder.
 - The read of config text keeps `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` and adds

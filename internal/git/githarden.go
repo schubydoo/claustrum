@@ -1448,6 +1448,11 @@ var (
 // one read for requests 200 to 500 ms apart (measured on Linux). Each call uses
 // the result of its own read. A later result replaces an earlier one
 // (claustrum's own, not measured).
+//
+// A read whose git did not start stores nothing, so the next request reads again.
+// With only gits in session folders on PATH, 4c111e86 logs the passing-over line of a
+// git that came after the first refused git.status (measured on macOS). The reread
+// is how claustrum gives that line.
 func globalExcludesPath() string {
 	userExcludesMu.Lock()
 	if userExcludesDone {
@@ -1460,9 +1465,9 @@ func globalExcludesPath() string {
 	}
 	gen := userExcludesGen
 	userExcludesMu.Unlock()
-	v := excludesFromGlobalConfig()
+	v, started := excludesFromGlobalConfig()
 	userExcludesMu.Lock()
-	if gen == userExcludesGen {
+	if gen == userExcludesGen && started {
 		userExcludesDone, userExcludesCached = true, v
 	}
 	userExcludesMu.Unlock()
@@ -1484,16 +1489,18 @@ func globalExcludesPath() string {
 // a request. GIT_DIR=<null device> makes it read only the user's global and system
 // config, never a repo's own core.excludesFile. A repo must not be able to inject
 // excludes. 683cc6a9 makes one read too and looks up the default file on each
-// git.status call (measured on Linux and macOS).
-func excludesFromGlobalConfig() string {
+// git.status call (measured on Linux and macOS). started is false when git did not
+// start.
+func excludesFromGlobalConfig() (v string, started bool) {
 	windows := gitEnvHere.windows
 	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
-	if out, err := cmd.Output(); err == nil {
+	out, err := cmd.Output()
+	if err == nil {
 		if p := strings.TrimSpace(string(out)); absoluteFor(p, windows) {
-			return p
+			return p, true
 		}
 	}
-	return ""
+	return "", err == nil || errors.As(err, new(*exec.ExitError))
 }
 
 // xdgExcludesPath looks up the default excludes file on each call. A regular
