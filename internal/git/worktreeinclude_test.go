@@ -570,7 +570,7 @@ func TestIncludeManifestAndCopyDetails(t *testing.T) {
 		{name: "no_manifest", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "u.txt"}},
 		{name: "basic", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "b.i", "u.txt"},
 			manifest: "a.i\nu.txt\n", want: []string{"a.i", "sub/a.i"}},
-		{name: "D10_manifest_symlink", ignore: lines("*.i"), files: []string{"a.i"}, posixOnly: true,
+		{name: "manifest_symlink", ignore: lines("*.i"), files: []string{"a.i"}, posixOnly: true,
 			setup: func(t *testing.T, repo string) {
 				writeFile(t, filepath.Join(repo, "real.inc"), "a.i\n", 0o644)
 				if err := os.Symlink("real.inc", filepath.Join(repo, worktreeIncludeFile)); err != nil {
@@ -582,7 +582,7 @@ func TestIncludeManifestAndCopyDetails(t *testing.T) {
 			setup: func(t *testing.T, repo string) {
 				writeFile(t, filepath.Join(repo, worktreeIncludeFile), "", 0o644)
 			}},
-		{name: "D16_nested_repo_in_ignored", ignore: lines("vendor/"),
+		{name: "nested_repo_in_ignored", ignore: lines("vendor/"),
 			files: []string{"vendor/lib/a.txt", "vendor/plain.txt"}, manifest: "vendor/\n*.txt\n",
 			setup: func(t *testing.T, repo string) {
 				runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q")

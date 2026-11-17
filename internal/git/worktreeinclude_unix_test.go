@@ -312,7 +312,8 @@ func TestIncludeLinuxMeasuredCopies(t *testing.T) {
 	})
 }
 
-// TestIncludeManifestShapeCallShape covers R1 with the D10 to D12 fixtures. An
+// TestIncludeManifestShapeCallShape covers the manifest shapes: an empty file, a symlink
+// and a directory. An
 // empty regular file still runs `git version` and the scan, and it copies
 // nothing. With the new scan, f6010b97 runs the listing and one file batch.
 // With the old scan, it runs one `ls-files`. A symlink or a directory runs no
@@ -336,11 +337,11 @@ func TestIncludeManifestShapeCallShape(t *testing.T) {
 		// want lists the manifest-pass calls, by their distinct argument.
 		want []string
 	}{
-		{"D12_empty_new", "git version 2.32.0\n", emptyFile, []string{"a.i"},
+		{"empty_manifest_new", "git version 2.32.0\n", emptyFile, []string{"a.i"},
 			[]string{"version", "--directory", "--literal-pathspecs"}},
-		{"D12_empty_old", "git version 2.31.0\n", emptyFile, []string{"a.i"},
+		{"empty_manifest_old", "git version 2.31.0\n", emptyFile, []string{"a.i"},
 			[]string{"version", "--no-literal-pathspecs"}},
-		{"D10_symlink", "git version 2.32.0\n", symlink, []string{"a.i"}, nil},
+		{"manifest_symlink", "git version 2.32.0\n", symlink, []string{"a.i"}, nil},
 		{"dir", "git version 2.32.0\n", nil, []string{"a.i", ".worktreeinclude/x"}, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -665,7 +666,7 @@ func logIncludeScanCalls(t *testing.T) func() []string {
 //   - The old scan drops runtime-state paths too (nested_old).
 //
 // The want file sets are the f6010b97 sets. The measured sets also hold the tracked
-// sub/t.md, which the checkout writes. The D16 want lists come from a macOS run and
+// sub/t.md, which the checkout writes. The want lists of the nested repository come from a macOS run and
 // a Linux run of f6010b97. The Linux run also covered the old scan.
 func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 	requireGit(t)
@@ -708,12 +709,12 @@ func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 			files: []string{".claude/k.txt", "other.i"}, manifest: ".claude/worktrees/\n**/*.txt\n",
 			want: []string{".claude/k.txt"}},
 			[]string{"batch: <claude>", "check-ignore: .claude/k.txt|"}},
-		{"D16_nested_repo_in_ignored", v232, includeCase{ignore: lines("vendor/"),
+		{"nested_repo_in_ignored", v232, includeCase{ignore: lines("vendor/"),
 			files: []string{"vendor/lib/a.txt", "vendor/plain.txt"}, manifest: "vendor/\n*.txt\n",
 			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
 			want:  []string{"vendor/plain.txt"}},
 			[]string{"batch: vendor", "check-ignore: vendor/plain.txt|"}},
-		{"D16_nested_repo_old", v231, includeCase{ignore: lines("vendor/"),
+		{"nested_repo_old", v231, includeCase{ignore: lines("vendor/"),
 			files: []string{"vendor/lib/a.txt", "vendor/plain.txt"}, manifest: "vendor/\n*.txt\n",
 			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
 			want:  []string{"vendor/plain.txt"}},
