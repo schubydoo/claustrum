@@ -731,7 +731,8 @@ const (
 )
 
 // docNoSectionRunLimit has no section-run limit: the ledger is append-only by the maintainer's
-// decision of 2026-10-21. Its word limit is a row of docWordLimits.
+// decision of 2026-10-21. Its word limit is a row of docWordLimits. A new build entry raises
+// that row by the words of the entry. Nothing else raises a limit.
 const docNoSectionRunLimit = "docs/REFERENCE-BUILDS.md"
 
 // docLimitedFiles lists the files that carry word limits: AGENTS.md, CONTRIBUTING.md,
