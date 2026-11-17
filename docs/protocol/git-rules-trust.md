@@ -443,16 +443,16 @@ On Windows `b3081b51` refuses a repository path through a symbolic link or a jun
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured). The place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
+`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). The other rules are claustrum's own, not measured.
 
 ### A folder with a reparse tag that is no link
 
-Row `w_new_t441` measures two raw reparse tags on Windows, on `4c111e86`, with no provider:
+Row `w_new_t441` measures `4c111e86` on Windows:
 
-- `IO_REPARSE_TAG_PROJFS`, a ProjFS placeholder tag, is no link. A `.git` folder with it works as a plain one. So does a worktree folder with it below `baseRepo` in `git.status`.
-- Below `IO_REPARSE_TAG_WIM`, which no filter handles, a look fails. A repository there gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`. A `.git` folder with that tag gets it on all five methods, naming `<path>\.git\objects`. A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it. No git call runs. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`, Go-quoted.
+- A `.git` or worktree folder with `IO_REPARSE_TAG_PROJFS` works as a plain folder.
+- A repository below an `IO_REPARSE_TAG_WIM` folder, or with such a `.git`, gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` with no git call. For the `.git`, `<path>` is its `objects` folder, and a remove adds the lock-check words. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`
 
-claustrum's own, not measured: only `ERROR_CANT_ACCESS_FILE` refuses, and one line is logged per request. A create in `shadow` with a `IO_REPARSE_TAG_PROJFS` `.git` keeps the link refusal, because the held git directory takes a plain folder only.
+claustrum's own: a create in `shadow` keeps the link refusal for a `.git` with `IO_REPARSE_TAG_PROJFS`.
 
 ### UNC refusals
 
@@ -462,7 +462,7 @@ On Windows `b3081b51` refuses a `\\?\UNC\` path and a path on a missing share. T
 
 `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. ``
 
-A remove answers `"success":false`, a create `"errorCode":"worktree_add_failed"` and the others `-32603`. A missing folder on a share that answers and a missing drive pass (measured on Windows). Other `\\?\` and `\\.\` forms, a share root alone and a host that cannot be reached pass. Any other failed look at the path refuses with the first text. A forward slash counts as a separator, and `UNC` matches in any letter case. A request with `"shadowDirOff":true` gets the same refusal. These rules and the place of the test are claustrum's own, not measured.
+A remove answers `"success":false`, a create `"errorCode":"worktree_add_failed"` and the others `-32603`. A missing folder on a share that answers and a missing drive pass (measured on Windows). The other rules are claustrum's own, not measured.
 
 ## A FIFO where the daemon reads a git file
 
