@@ -20,8 +20,8 @@ daemon. The wire surface is the product.
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
 | Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
-| Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
+| Lint | `golangci-lint run ./...`. Config: `.golangci.yml` (v2) |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). It runs the unit and socket-integration suites. The time limit is explicit, because a race run took over 9 minutes, near the 10 minute default of `go test` |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -129,10 +129,11 @@ in [`SECURITY.md`](SECURITY.md).
 
 Five code paths give a caller-supplied or operator-supplied path to a recursive
 delete. The daemon `~`-expands the RPC paths first, so `"~"` once meant
-`os.RemoveAll($HOME)`. That destroyed a home directory. The five paths remain
-the only recursive deletes whose target a caller or an operator names. The
+`os.RemoveAll($HOME)`. That destroyed a home directory. The
 deletes inside the folder `git-shadow` are not among the five: their root comes
-from the socket, as in `plugins.prune`.
+from the socket, as in `plugins.prune`. `removeall_allowlist_test.go` lists each
+tree delete. It fails on an unlisted site or a lost home guard. A new site needs
+its entry.
 
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
@@ -146,7 +147,7 @@ from the socket, as in `plugins.prune`.
 
 `homeguard.WipesHomeDir` refuses a target that is home or contains home. It resolves a
 relative path with `filepath.Abs` first. It still permits a path under home,
-because `~/.claude/…` is the install path of the daemon itself. The guard is
+because `~/.claude/…` is the install path of the daemon. The guard is
 always-on, not opt-in. Any RPC path param that reaches a recursive delete owes
 this guard. `IsAbs && !homeguard.IsFilesystemRoot` is not a substitute: home passes both
 tests, and neither test resolves a relative path. A running daemon dials only with
