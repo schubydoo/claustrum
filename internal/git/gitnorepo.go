@@ -48,7 +48,7 @@ func discoverGitDir(dir string) (string, bool) {
 		return "", false
 	}
 	across := discoveryAcrossFilesystem()
-	ceilings := discoveryCeilings()
+	ceilings := ceilingDirs()
 	for d := start; ; {
 		if !across && d != start && otherDevice(start, d) {
 			return "", false
@@ -92,10 +92,10 @@ func discoveryAcrossFilesystem() bool {
 	return gitTrue(v)
 }
 
-// discoveryCeilings reads GIT_CEILING_DIRECTORIES of the daemon. Only absolute entries
+// ceilingDirs reads GIT_CEILING_DIRECTORIES of the daemon. Only absolute entries
 // count. Each is resolved through symlinks. After an empty entry the later entries are
 // only cleaned. An entry whose resolution fails is only cleaned.
-func discoveryCeilings() []string {
+func ceilingDirs() []string {
 	var out []string
 	resolve := true
 	for _, e := range filepath.SplitList(os.Getenv("GIT_CEILING_DIRECTORIES")) {

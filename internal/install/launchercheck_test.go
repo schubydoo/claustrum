@@ -78,7 +78,7 @@ func checkFile(t *testing.T, row, p string, chk LauncherCheck, wantFault, wantRe
 const zeroDigest = "0000000000000000000000000000000000000000000000000000000000000000"
 
 func writableText(item, mode string) string {
-	return "`" + item + "` can be changed by accounts other than its owner (mode " + mode + "), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none."
+	return "`" + item + "` can be changed by accounts other than its owner (mode " + mode + "). Remove that write access."
 }
 
 // TestCheckLauncherFileWritable pins the write test: a folder at 0775, 0757 or 1777,

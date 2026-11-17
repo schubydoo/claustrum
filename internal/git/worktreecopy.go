@@ -15,7 +15,7 @@ const worktreeIncludeFile = ".worktreeinclude"
 // <repo>/.claude/worktrees. worktreecontain.go uses it (with worktreesSubdir) to
 // recognise a managed worktrees tree. The reference ALSO seeds a new worktree with
 // the repo's git-ignored `.claude/` files, outside the manifest rule below: see
-// copyClaudeDir in worktreeclaude.go.
+// copyDotClaude in worktreeclaude.go.
 const claudeDirName = ".claude"
 
 // worktreesSubdir is the child of .claude that holds session worktrees.
@@ -40,7 +40,7 @@ func populateWorktree(u gitUse, host *ShadowHost, repo, worktree string) {
 	if copyWorktreeIncludes(u, host, repo, worktree) {
 		return
 	}
-	copyClaudeDir(u, repo, worktree)
+	copyDotClaude(u, repo, worktree)
 }
 
 // copyWorktreeIncludes copies the untracked files that the `.worktreeinclude`
@@ -49,7 +49,7 @@ func populateWorktree(u gitUse, host *ShadowHost, repo, worktree string) {
 // match that git does not ignore is NOT copied (measured against 7d193f89).
 //
 // `.claude/` is NOT part of this pass. It has its own, always-on pass with no
-// manifest involved: copyClaudeDir in worktreeclaude.go.
+// manifest involved: copyDotClaude in worktreeclaude.go.
 //
 // The steps were measured against f6010b97 on macOS. The version parse,
 // opening rules, counts, batches and error arms were re-checked on Linux.
@@ -110,11 +110,11 @@ func copyWorktreeIncludes(u gitUse, host *ShadowHost, repo, worktree string) (st
 		// A path with a trailing `/` is a nested repository. git lists it as one
 		// entry. The reference creates nothing for it, so neither does claustrum.
 		// A runtime-state path under `.claude/` is skipped even when the manifest
-		// names it, matching 90fca6e6. See isClaudeRuntimeState.
-		if strings.HasSuffix(rel, "/") || isClaudeRuntimeState(rel) {
+		// names it, matching 90fca6e6. See isSessionStateFile.
+		if strings.HasSuffix(rel, "/") || isSessionStateFile(rel) {
 			continue
 		}
-		if dst := safeOverlayDest(worktree, rel); dst != "" {
+		if dst := overlayTargetInside(worktree, rel); dst != "" {
 			copyFile(filepath.Join(repo, rel), dst)
 		}
 	}
@@ -158,12 +158,12 @@ func oldWorktreeIncludeScan(u gitUse, repo, excludeFile string) []string {
 	return paths
 }
 
-// safeOverlayDest resolves the destination for a manifest-copied file inside the
+// overlayTargetInside resolves the destination for a manifest-copied file inside the
 // worktree, creating missing intermediate directories (0755) but REFUSING to
 // traverse a ".." or a symlinked component. A planted symlink inside the worktree
 // must not carry a copy outside it. Returns the destination path, or "" if the path
 // is unsafe. rel is worktree-relative.
-func safeOverlayDest(worktree, rel string) string {
+func overlayTargetInside(worktree, rel string) string {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
 	cur := worktree
 	for _, part := range parts[:len(parts)-1] { // intermediate directories only

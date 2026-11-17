@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// cliSessionKey gates superseding: a non-empty key needs stream-json mode AND a
+// resumeKeyOf gates superseding: a non-empty key needs stream-json mode AND a
 // valid session id (session-id wins; resume is the fallback unless --fork-session).
 func TestCliSessionKey(t *testing.T) {
 	cases := []struct {
@@ -34,8 +34,8 @@ func TestCliSessionKey(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := cliSessionKey(tc.args); got != tc.want {
-				t.Errorf("cliSessionKey(%q) = %q, want %q", tc.args, got, tc.want)
+			if got := resumeKeyOf(tc.args); got != tc.want {
+				t.Errorf("resumeKeyOf(%q) = %q, want %q", tc.args, got, tc.want)
 			}
 		})
 	}

@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// retireAbandoned holds a bare pid across two checks that can take seconds: the busy
-// sampler, which runs for up to hcBusyWindow, and verifyListener, which dials the
+// endIdleDaemon holds a bare pid across two checks that can take seconds: the busy
+// sampler, which runs for up to hcBusyWindow, and listenerRefusal, which dials the
 // socket. A daemon that exits in that span can have its pid taken by an unrelated
 // process, so the SIGTERM afterwards needs the identity captured on entry, not the
 // number alone.
@@ -23,7 +23,7 @@ import (
 // once and the swap lands inside the window. When reuse is true the pid comes back as a
 // different process during that sleep: same socket and same marks, different start-ticks.
 //
-// It returns retireAbandoned's answer and every pid that was signalled.
+// It returns endIdleDaemon's answer and every pid that was signalled.
 func retireReuseFixture(t *testing.T, reuse bool) (retired bool, signalled []int) {
 	t.Helper()
 	const pid = noSuchPid + 4200
@@ -71,7 +71,7 @@ func retireReuseFixture(t *testing.T, reuse bool) (retired bool, signalled []int
 
 // TestRetireAbandonedRefusesAPidReusedDuringSampling pins the identity re-check.
 //
-// The control runs first and must retire. Without it a retireAbandoned that refused
+// The control runs first and must retire. Without it a endIdleDaemon that refused
 // every pid would pass the reuse arm, and so would one that never reached the signal
 // because the fixture broke somewhere earlier.
 func TestRetireAbandonedRefusesAPidReusedDuringSampling(t *testing.T) {
@@ -93,7 +93,7 @@ func TestRetireAbandonedRefusesAPidReusedDuringSampling(t *testing.T) {
 		// The answer matters as much as the signal: true counts a retirement in the
 		// summary and lets the tidy pass go on to remove the run dir.
 		if retired {
-			t.Error("retireAbandoned reported a retirement it did not make")
+			t.Error("endIdleDaemon reported a retirement it did not make")
 		}
 	})
 }

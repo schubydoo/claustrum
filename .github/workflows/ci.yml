@@ -31,9 +31,13 @@ jobs:
   # So `ci required checks passed` shows skipped on a draft and does not wait.
   # A draft cannot merge. Its first CI result comes when it is marked ready.
   #
-  # A pull request that changes only documentation skips test, cross-build and
-  # coverage (decision-051). The docs tests still run in the lint job. Any other
-  # path, a push to main, or a failed diff runs every job.
+  # A pull request or a push to main that changes only documentation skips test,
+  # cross-build and coverage (decision-051). The docs tests still run in the lint
+  # job. A change only under .github/ skips them too, except a change to this
+  # file. This file holds every step and action pin of those jobs, and no job
+  # here reads another file under .github/. zizmor in security.yml still audits
+  # each changed workflow. Any other path, a push with no earlier commit to diff
+  # against, or a failed diff runs every job.
   changes:
     name: detect changes
     if: github.event.pull_request.draft != true
@@ -43,19 +47,27 @@ jobs:
       go: ${{ steps.diff.outputs.go }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Diff against base
         id: diff
-        if: github.event_name == 'pull_request'
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          git fetch origin "${BASE_REF}" --depth=50
-          files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          # A push diffs against the tip of main before the push. A new branch
+          # or a force push can leave no such commit, and then files stays
+          # empty, which runs every job.
+          files=""
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            git fetch origin "${BASE_REF}" --depth=50
+            files=$(git diff --no-renames --name-only "origin/${BASE_REF}...HEAD")
+          elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            files=$(git diff --no-renames --name-only "${BEFORE_SHA}" HEAD)
+          fi
           echo "Changed files:"
           printf '%s\n' "$files"
           go=false
@@ -63,12 +75,14 @@ jobs:
             [ -z "$f" ] && continue
             # A case glob matches "/" too, so *.md takes every Markdown file
             # outside a testdata folder. The arms above it name the
-            # documentation paths that are not Markdown. docs_consistency_test.go
+            # documentation paths that are not Markdown, and .github/ but
+            # this file. docs_consistency_test.go
             # holds only the docs tests and their word limits: the lint job
             # compiles it (go vet) and runs it (TestDocs).
             case "$f" in
               testdata/*|*/testdata/*) go=true ;;
-              docs/*|mkdocs.yml|.github/ISSUE_TEMPLATE/*|docs_consistency_test.go) ;;
+              .github/workflows/ci.yml) go=true ;;
+              docs/*|mkdocs.yml|.github/*|docs_consistency_test.go) ;;
               *.md) ;;
               *) go=true ;;
             esac

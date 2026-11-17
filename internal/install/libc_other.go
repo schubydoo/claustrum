@@ -2,7 +2,7 @@
 
 package install
 
-// detectLibc reports no libc off linux. The reference __INSTALL_RESULT__ carries
+// hostLibc reports no libc off linux. The reference __INSTALL_RESULT__ carries
 // an empty libc on Windows, measured below. The darwin side is not
 // probe-measured.
 //
@@ -14,6 +14,6 @@ package install
 // claustrum ran the linux probe everywhere, so `ldd` was absent, no musl loader
 // matched, and it fell through to the "glibc" default — asserting a C library on
 // a platform that has no such notion. claustrum treats darwin the same way.
-func detectLibc() string {
+func hostLibc() string {
 	return ""
 }

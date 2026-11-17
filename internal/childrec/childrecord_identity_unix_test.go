@@ -12,8 +12,8 @@ import (
 )
 
 // identityRecord is a record in the Linux shape of row C12, with made-up values.
-func identityRecord(pid int) childRecord {
-	return childRecord{
+func identityRecord(pid int) spawnRecord {
+	return spawnRecord{
 		Pid:         pid,
 		Node:        "00000000-0000-0000-0000-000000000000/pid:[1234567890]",
 		Host:        "machine-id:0123456789abcdef0123456789abcdef",

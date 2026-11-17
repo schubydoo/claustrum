@@ -35,11 +35,11 @@ func TestKillEndsOnlyTheDirectChild(t *testing.T) {
 		{"kd3-kill-kill", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, "KILL"); return result{} },
 			", asked to end by this daemon (client)"},
 		{"kd4-killAndWait-default", func(m *supervisor.Manager, id string) result {
-			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, true)
+			f, d, a, e := m.SignalAndAwait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
 		{"kd5-killAndWait-no-escalate", func(m *supervisor.Manager, id string) result {
-			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, false)
+			f, d, a, e := m.SignalAndAwait(id, "", 3*time.Second, false)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
 		// The exit line of a clean stop is not measured on Windows. Only the code is, so
@@ -114,7 +114,7 @@ func TestKillWithKidsHoldingThePipes(t *testing.T) {
 		buf := captureLogBuf(t)
 
 		start := time.Now()
-		found, died, already, escalated := m.KillAndWait(id, "", 300*time.Millisecond, true)
+		found, died, already, escalated := m.SignalAndAwait(id, "", 300*time.Millisecond, true)
 		took := time.Since(start)
 
 		if !found || !died || already || !escalated {

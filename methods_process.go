@@ -303,7 +303,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if err != nil {
 		return spawnErrorReply(req.ID, err, p.Cwd)
 	}
-	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.CLITempRoot()}
+	res := rpc.SpawnReply{Success: true, CLITempRoot: mp.CLITempRoot()}
 	if p.WantPid {
 		res.Pid = mp.Pid()
 		res.StartTime = mp.StartTime()
@@ -314,7 +314,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 // spawnErrorReply is the reply of a process.spawn whose start failed with err in
 // cwd: the code and text of a SpawnRefusal, or -32603 and the text of err.
 func spawnErrorReply(id interface{}, err error, cwd string) rpc.Response {
-	reason := supervisor.SpawnFailureReason(err, cwd)
+	reason := supervisor.ReasonForSpawnError(err, cwd)
 	var sr *supervisor.SpawnRefusal
 	if errors.As(err, &sr) {
 		return rpc.ErrResultData(id, sr.Code, sr.Msg, reason)
@@ -379,7 +379,7 @@ func (s *server) processStdin(c *conn.Conn, req *request) rpc.Response {
 	if full {
 		return rpc.ErrResult(req.ID, rpc.CodeStdinBackpressure, "stdin backpressure: queue full")
 	}
-	return rpc.OKResult(req.ID, rpc.StdinResult{Success: true, Applied: applied, Duplicate: duplicate})
+	return rpc.OKResult(req.ID, rpc.StdinReply{Success: true, Applied: applied, Duplicate: duplicate})
 }
 
 type killParams struct {
@@ -406,9 +406,9 @@ func (s *server) processKill(req *request) rpc.Response {
 		// farewell gets "invalid" (claustrum's own, not measured).
 		supervisor.LogFarewellNotSaid(p.ID, rule)
 		_ = s.procs.Kill(p.ID, p.Signal)
-		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: supervisor.FarewellInvalid})
+		return rpc.OKResult(req.ID, rpc.KillReply{Success: true, FarewellEnd: supervisor.FarewellInvalid})
 	case ask != nil:
-		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: s.procs.KillWithFarewell(p.ID, p.Signal, *ask)})
+		return rpc.OKResult(req.ID, rpc.KillReply{Success: true, FarewellEnd: s.procs.KillWithFarewell(p.ID, p.Signal, *ask)})
 	}
 	// A signal that the system refused answers its text (52d82f0a, measured on Linux
 	// and macOS). The case of a bad farewell above keeps its success (claustrum's
@@ -416,7 +416,7 @@ func (s *server) processKill(req *request) rpc.Response {
 	if err := s.procs.Kill(p.ID, p.Signal); err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
-	return rpc.OKResult(req.ID, rpc.KillResult{Success: true})
+	return rpc.OKResult(req.ID, rpc.KillReply{Success: true})
 }
 
 // killAndWaitParams is distinct from killParams: process.killAndWait accepts a
@@ -469,12 +469,12 @@ func (s *server) processKillAndWait(req *request) rpc.Response {
 		// measured for process.killAndWait).
 		supervisor.LogFarewellNotSaid(p.ID, rule)
 	}
-	found, died, alreadyExited, escalated := s.procs.KillAndWait(p.ID, p.Signal, grace, escalate)
+	found, died, alreadyExited, escalated := s.procs.SignalAndAwait(p.ID, p.Signal, grace, escalate)
 	end := ""
 	if rule != "" {
 		end = supervisor.FarewellInvalid
 	}
-	return rpc.OKResult(req.ID, rpc.KillAndWaitResult{
+	return rpc.OKResult(req.ID, rpc.KillAndWaitReply{
 		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated, FarewellEnd: end,
 	})
 }
@@ -512,10 +512,10 @@ func (s *server) processReattach(c *conn.Conn, req *request) rpc.Response {
 	// (c8e2f083, measured on Linux). The order against the id test is not
 	// measured: the empty id keeps its error. Claustrum has no terminal process.
 	if p.Proof != "" {
-		return rpc.OKResult(req.ID, rpc.ReattachResult{})
+		return rpc.OKResult(req.ID, rpc.ReattachReply{})
 	}
 	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.Reattach(c, p.ID, p.FromSeq)
-	res := rpc.ReattachResult{
+	res := rpc.ReattachReply{
 		Found: found, Running: running, FirstSeq: firstSeq, LastSeq: lastSeq,
 		StdinApplied: stdinApplied,
 	}

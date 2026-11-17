@@ -200,7 +200,7 @@ func (w *findState) keep(cut string) {
 // at the bound with the cut "time", and the walk keeps its slot until it ends
 // (4c111e86, measured on Linux). The walk in its own goroutine is claustrum's
 // own. It stops at its next entry after the bound.
-func findRun(p *findParams) rpc.FindResult {
+func findRun(p *findParams) rpc.FindReply {
 	w := &findState{tail: "/" + p.Suffix, seen: map[string]bool{},
 		now: findNow, readDir: findReadDir, maxEntries: findMaxEntries}
 	switch {
@@ -299,7 +299,7 @@ func (w *findState) recovered() {
 
 // result builds the reply under mu. A late reply keeps the first cut that the
 // walk met, else it gives "time" (claustrum's own, not measured).
-func (w *findState) result(late bool) rpc.FindResult {
+func (w *findState) result(late bool) rpc.FindReply {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if late {
@@ -637,8 +637,8 @@ func findJoin(dir, name string) string {
 // lists passedOver and links count the parts of the whole path. With two roots
 // that is not measured. The order of the walk sets which entries a bound keeps.
 // The caller holds mu.
-func (w *findState) reply() rpc.FindResult {
-	res := rpc.FindResult{
+func (w *findState) reply() rpc.FindReply {
+	res := rpc.FindReply{
 		Paths:      findSortedPaths(w.paths, w.depths),
 		Whole:      w.cut == "",
 		Cut:        w.cut,

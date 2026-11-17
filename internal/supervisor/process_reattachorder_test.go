@@ -21,7 +21,7 @@ func TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &Proc{id: "r1", subs: map[*conn.Conn]struct{}{}, running: true}
 	for range 3 {
-		p.emit(StreamFrame{Stream: "stdout", Data: "YQ=="}) // seq 1 to 3
+		p.emit(ChildFrame{Stream: "stdout", Data: "YQ=="}) // seq 1 to 3
 	}
 	m.procs["r1"] = p
 
@@ -31,7 +31,7 @@ func TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds(t *testing.T) {
 	afterReplaySnapshot = func(string) {
 		afterReplaySnapshot = old
 		go func() {
-			p.emit(StreamFrame{Stream: "stdout", Data: "Yg=="}) // seq 4, live
+			p.emit(ChildFrame{Stream: "stdout", Data: "Yg=="}) // seq 4, live
 			close(emitted)
 		}()
 		select {
@@ -46,7 +46,7 @@ func TestReattachNewConnGetsNoLiveFrameBeforeReplayEnds(t *testing.T) {
 		t.Fatalf("reattach found %v, lastSeq %d, want true and 3", found, last)
 	}
 	<-emitted
-	p.emit(StreamFrame{Stream: "stdout", Data: "Yw=="}) // seq 5, after the reattach
+	p.emit(ChildFrame{Stream: "stdout", Data: "Yw=="}) // seq 5, after the reattach
 	got := seqs(collect(t, frames, 5))
 	want := []uint64{1, 2, 3, 4, 5}
 	if len(got) != len(want) {
@@ -65,7 +65,7 @@ func TestReattachNewConnReplayWriteErrorDetaches(t *testing.T) {
 	buf := captureLogBuf(t)
 	m := newTestProcManager(t)
 	p := &Proc{id: "r3", subs: map[*conn.Conn]struct{}{}, running: true}
-	p.emit(StreamFrame{Stream: "stdout", Data: "YQ=="}) // seq 1
+	p.emit(ChildFrame{Stream: "stdout", Data: "YQ=="}) // seq 1
 	m.procs["r3"] = p
 
 	c, _ := pipeConn(t)
@@ -97,7 +97,7 @@ func TestReattachLargeReplayToSlowReaderAnswers(t *testing.T) {
 	data := strings.Repeat("QUFB", 256) // 1 KiB of base64 per frame
 	const stored = 2000
 	for range stored {
-		p.emit(StreamFrame{Stream: "stdout", Data: data})
+		p.emit(ChildFrame{Stream: "stdout", Data: data})
 	}
 	m.procs["big"] = p
 
@@ -110,7 +110,7 @@ func TestReattachLargeReplayToSlowReaderAnswers(t *testing.T) {
 		sc := bufio.NewScanner(server)
 		sc.Buffer(make([]byte, 64*1024), 64*1024)
 		for sc.Scan() {
-			var f StreamFrame
+			var f ChildFrame
 			if json.Unmarshal(sc.Bytes(), &f) == nil {
 				mu.Lock()
 				got = append(got, f.Seq)
@@ -129,7 +129,7 @@ func TestReattachLargeReplayToSlowReaderAnswers(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				p.emit(StreamFrame{Stream: "stdout", Data: data})
+				p.emit(ChildFrame{Stream: "stdout", Data: data})
 			}
 		}
 	}()
@@ -207,7 +207,7 @@ func TestReattachWaitingForAStuckWriterHoldsNoProcessLock(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &Proc{id: "w1", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
-	p.emit(StreamFrame{Stream: "stdout", Data: "YQ=="})
+	p.emit(ChildFrame{Stream: "stdout", Data: "YQ=="})
 	m.procs["w1"] = p
 	m.procs["other"] = &Proc{id: "other", subs: map[*conn.Conn]struct{}{}, running: true}
 
@@ -224,7 +224,7 @@ func TestReattachWaitingForAStuckWriterHoldsNoProcessLock(t *testing.T) {
 	waitHeld(&p.mu)
 
 	within(t, "the prune, the lookup and process.stdin",
-		m.pruneExited,
+		m.dropFinished,
 		func() { _ = m.Get("other") },
 		func() { p.ApplyStdin([]byte("x"), nil, p.IsLive) },
 	)
@@ -248,7 +248,7 @@ func TestReattachPipelinedOnTheSameConnDoesNotDeadlock(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &Proc{id: "w2", subs: map[*conn.Conn]struct{}{}, running: true}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
-	p.emit(StreamFrame{Stream: "stdout", Data: "YQ=="})
+	p.emit(ChildFrame{Stream: "stdout", Data: "YQ=="})
 	m.procs["w2"] = p
 
 	c0, _ := pipeConn(t)

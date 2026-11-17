@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// userExcludesFile resolves the user's global excludes as 7d193f89 does
+// globalExcludesPath resolves the user's global excludes as 7d193f89 does
 // (observed via a git-argv trace): a configured absolute core.excludesFile wins, else
 // the XDG or HOME default when it exists, else /dev/null. Each branch is exercised with
 // a controlled environment. GIT_CONFIG_SYSTEM is neutralised so the host's own config

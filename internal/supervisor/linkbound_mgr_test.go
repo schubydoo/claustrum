@@ -71,7 +71,7 @@ func TestLinkReplayCapKeepsTwoFrames(t *testing.T) {
 	left := 200000
 	for left > 0 {
 		n := min(left, 32*1024)
-		p.emit(StreamFrame{Stream: "stdout", Data: strings.Repeat("A", (n+2)/3*4)})
+		p.emit(ChildFrame{Stream: "stdout", Data: strings.Repeat("A", (n+2)/3*4)})
 		left -= n
 	}
 	if first, last := p.buffer[0].Seq, p.buffer[len(p.buffer)-1].Seq; first != 6 || last != 7 {
