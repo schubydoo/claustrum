@@ -187,8 +187,7 @@ These items stay open:
 - The text of the ssh door in the `GIT_SSH_COMMAND` of the read-tree call differs from
   the reference, by the maintainer's choice. A copy of that text is a copy of code by
   the reference authors.
-- On Windows `files.realpath` through a junction still differs from `4c111e86` and
-  `c9125eb8`. Two Windows texts still differ from `4c111e86` and `c9125eb8`: a remove
+- Two Windows texts still differ from `4c111e86` and `c9125eb8`: a remove
   with a dangling `commondir` junction, and a create on an unborn `HEAD`.
 - Some replies still differ from `4c111e86`. On Linux one is a `cliTempRoot` string or
   object with no `gitRead`. On macOS, a `processWrapper` number and `git.status` with
