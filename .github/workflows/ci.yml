@@ -191,8 +191,7 @@ jobs:
       # of the Makefile runs every test once.
       # macOS runs four shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
-      # of the go test step. The git shard runs the worktree, the git.status,
-      # the TestShadow and the TestProbe tests, and the rest shard skips them.
+      # of the go test step.
       # The macOS rest shard ran 11 to 12 minutes on main with TestShadow and
       # TestProbe in it, and one added test passed the limit.
       # The tests named TestRepoHold are tests of the settings copy too, so they
