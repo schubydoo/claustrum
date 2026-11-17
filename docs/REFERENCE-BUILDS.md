@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `4c111e86…` | 2026-11-08 (built) | the method `files.find`, the refusal of a given-up `id`, the `lost` list and the end of a lost private temp folder, new Git LFS codes of `git.worktree_create`, the unusable `.git` refusal, new launcher and peer check refusals and new features. See below | [PRs 1055, 1057, 1058, 1060–1065, 1068–1070, 1073–1076, 1078–1083, 1085, 1087–1092, 1094–1096, 1098–1101, 1105, 1106, 1108, 1109, 1111–1114, 1116–1118, 1120–1122, 1124, 1128, 1129, 1131–1133, 1136, 1138, 1139, 1142, 1144–1146](https://github.com/schubydoo/claustrum/pull/1146) |
 | `c9125eb8…` | 2026-11-02 (built) | the methods `files.mkdir` and `server.adoptEnv`, the `gitRead` and launcher members of `process.spawn`, the launcher file check, the adopt frame of the bridge, new git refusals and new `plugins.prune` skips. See below | [PRs 1008–1019, 1021–1041](https://github.com/schubydoo/claustrum/pull/1041) |
 | `b3081b51…` | 2026-10-30 (built) | new `server.capabilities` features, the launcher refusal of a value that is not a string, the session folders, the content check of a new worktree, new Windows git refusals and the `cliTempRoot` member. See below | [PRs 906, 907, 909–915, 920, 921, 923–927](https://github.com/schubydoo/claustrum/pull/927) |
 | `be1c1ca5…` | 2026-10-19 (built) | the staged worktree add on every system, the ssh door of the checkout, new worktree texts, the null-device hook path on Windows, new git child variables, a long socket path, `cliRemoved` and a new feature. See below | [PRs 807–818](https://github.com/schubydoo/claustrum/pull/818) |
@@ -73,6 +74,129 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `4c111e86f743b90f84ee752123f94e2d239234ad` — 2026-11-08 (built)
+
+Its `-version` prints
+`claude-ssh 4c111e86f743b90f84ee752123f94e2d239234ad (built 2026-11-08T19:32:31Z)`.
+Issue 1050 reported the build, pinned by Claude Desktop 5.1231.0 for Linux. It carries
+a `go1.25.14` stamp (`go version` on the binary). The rules are on the pages of the
+methods and in [PROTOCOL.md](PROTOCOL.md). Each rule names its systems there.
+
+**Wire delta.**
+
+- The new method [`files.find`](protocol/files-find.md) lists the files whose path ends
+  with a suffix. PRs 1061, 1074 and 1131 follow it, measured on Linux and macOS. Windows
+  answers `-32601`.
+- `process.spawn` refuses a given-up `id` with `-32602`. A `process.kill`, a
+  `killAndWait` or a `process.reattach` of an unknown `id` gives it up (PR 1060,
+  measured on Linux, macOS and Windows).
+- The private temp folder of a spawn is `ccd-<10 hex>` with an inner `t`, where
+  `c9125eb8` made `ccd-<12 hex>` (PRs 1065 and 1073, on Linux and macOS). On macOS the
+  `cliTempRoot` member gains a `lost` list. A spawn after 8 new folders within about a
+  minute gets no folder (PRs 1109, 1120, 1122 and 1129).
+- With `cliTempRootEnd`, a child ends when its private temp folder is lost. Its exit
+  frame carries `"killedBy":"temp_root"` (PRs 1065, 1073 and 1120, measured on Linux and
+  macOS).
+- `git.worktree_create` answers `worktree_add_failed` for a `.git` that git cannot use.
+  Its `commondir` refusal names the accepted forms (PR 1060, measured on Linux, macOS
+  and Windows). On macOS a folder or `.git` that the daemon cannot search gets its own
+  text (PR 1111).
+- `git.worktree_create` gains the codes `worktree_no_space`, `worktree_quota`,
+  `worktree_lfs_not_kept` and `worktree_lfs_no_space` (PRs 1081, 1091, 1100 and 1136). A
+  failed Git LFS download gets new texts (PRs 1064, 1076 and 1113). Both are on Linux
+  and macOS, except `worktree_lfs_no_space`, measured on Linux only. The ssh note of a
+  failed download is measured on Windows too. A stopped seed copy whose file cannot be
+  removed answers `worktree_add_failed` (PR 1145, measured on Linux).
+- The content check reads a Git LFS file under `.claude` from the private store. A
+  sparse checkout file with only comment lines passes (PRs 1108 and 1118, measured on
+  Linux).
+- On Linux the launcher check refuses a launcher on a file system that is not local,
+  with new texts (PRs 1055, 1078 and 1116). On macOS a `launcherCheck` gets the fault
+  `macos_host` with a new text (PR 1057).
+- If files or memory run out, the peer check refuses a caller with `out_of_resources`
+  (PRs 1079 and 1117, measured on Linux).
+- `server.capabilities` lists the new methods and features of these items (measured on
+  Linux, macOS and Windows).
+
+**Off-wire churn.** In the state `shadow` on Linux and macOS, a create checks out
+through a private folder `.checkout-<n>` under `git-shadow`. It holds the index and a
+private Git LFS store, and it goes soon after the reply (PRs 1058, 1063 and 1094). The
+create seeds that store from the store of the repository. It keeps new downloads in the
+repository store by a copy, with 1 GiB spare. It removes its old temp names there. PRs
+1063, 1064, 1087, 1101, 1106, 1114, 1121 and 1136 follow these steps. Two new group
+`SIGKILL`s end a checkout git, each measured on Linux. The first is the space stop of a
+Git LFS download (PR 1100). The second follows a failed checkout git after its exit (PR
+1138). The staged add copies `HEAD`, `config` and `info/exclude` into `.s<n>`, and git
+makes the leaf. The session-folder record comes right after the git-dir answer (PRs
+1088, 1095, 1096, 1098 and 1099). In a daemon folder of mode `0300` an empty request
+folder goes by one rmdir (PR 1105, measured on Linux). After a failed add, a file or a
+link in place of the leaf goes (PR 1089, measured on Linux). A `process.kill` can come
+during the start of a spawn of the same `id`. The new child then ends, and a line
+follows 3 s later (PR 1112, measured on Linux and Windows). A child gets
+`CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER=1` (PRs 1085 and 1117, measured on Linux and
+macOS). `files.find`, the peer check, the launcher check and a held temp folder have new
+or changed log lines. PRs 1117, 1124, 1128, 1132, 1139 and 1146 follow them.
+
+**Older gaps closed.** These fixes follow `c9125eb8` too, measured on Linux unless an
+item names its systems:
+
+- `plugins.prune` counts a young folder that `keep` names in `kept`. The launcher check
+  tests the execute bit first, and a launcher refusal of a spawn carries `launcherFault`
+  (PR 1062).
+- A `gitRead` spawn accepts `git diff --no-color HEAD` (PR 1068).
+- On macOS claustrum makes the private temp folder of a spawn (PR 1073, measured on
+  macOS).
+- The peer check line of too many open files names the caller pid (PR 1069).
+- Git requests go on after a `git-shadow` lock error of `ENOLCK` on Linux or the FIFO
+  lock error on macOS (PR 1070, measured on Linux and macOS).
+- A failed close of the worktree location marker answers `mkdir_failed`. Creates in
+  `fallback-git` or with `worktreeRoot` make the git calls of the reference (PR 1075).
+- The daemon drops `CLAUDE_SSH_CHILD` and `CLAUDE_SSH_RUN_DIR` from its environment (PR
+  1080).
+- A reattach from another open connection holds a `linkBound` child, and two process
+  lines cut a long `id` (PR 1082).
+- The rollback of a failed add removes the empty leaf through a handle of its parent (PR
+  1083).
+- A plain spawn refuses a `pty` value that is not an object and a `pty` object with no
+  key (PR 1090). The bare value is measured on Linux, macOS and Windows.
+- The pair after a removed stale entry and the session-folder record before the add
+  follow both builds (PR 1092).
+- The accept retry line keeps a steady pace, and the remove trust refusal takes a colon
+  (PRs 1088 and 1094). A refusal of a relative `worktreePath` quotes it in backticks (PR
+  1088).
+- The `worktreeRoot` refusals quote the root in backticks (PR 1133).
+- On macOS an unusable managed launcher answer carries `fault` (PR 1132, measured on
+  macOS).
+- After a failed start naming of the peer check, the `files.realpath` start line comes
+  after the serving line (PR 1144).
+
+**How it was bounded.** Each PR ran its rows side by side with `c9125eb8`, and again
+after the fix, on its systems. Then the frame battery ran on the final code beside
+`4c111e86`, on Linux, macOS and Windows. It left out its slowest cases. Each difference
+it showed has a known cause. Some are the held terminal, the version text or a
+divergence. Some are a delete or a signal that its rule keeps in another call form. The
+rest are noise such as a random name, timing, or a known gap.
+
+These items stay open:
+
+- claustrum does not build the terminal: the `pty` member of `process.spawn` and the
+  method `process.resize`. A `pty` object with a key runs the command with no terminal
+  (claustrum's own). The maintainer holds the terminal until a Claude Desktop build
+  calls it.
+- The text of the ssh door in the `GIT_SSH_COMMAND` of the read-tree call differs from
+  the reference, by the maintainer's choice. A copy of that text is a copy of code by
+  the reference authors.
+- On Windows `files.realpath` through a junction still differs from `4c111e86` and
+  `c9125eb8`. Two Windows texts still differ from `4c111e86` and `c9125eb8`: a remove
+  with a dangling `commondir` junction, and a create on an unborn `HEAD`.
+- Some replies still differ from `4c111e86`. On Linux one is the text for a launcher, or
+  a folder above it, that other accounts can write. Another is a `cliTempRoot` string or
+  object with no `gitRead`. On macOS, a `processWrapper` number and `git.status` with
+  only session-folder gits on the `PATH` differ. On Windows, a create and a remove on a
+  share whose `.git` git cannot use differ. On Linux, near the `timeoutMs` cut, the seed
+  of a Git LFS object can end on the other side of the cut.
+- The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `c9125eb87bca9ab294d4190dd79be9dfb8d11806` — 2026-11-02 (built)
 
