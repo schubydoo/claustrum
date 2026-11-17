@@ -6,7 +6,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 )
 
@@ -194,7 +196,7 @@ func TestUnlookablePathRefusal(t *testing.T) {
 		{share, unlookableShareText(share), 1},
 		{`//127.0.0.1/nosuchshare/repo`, unlookableShareText(`//127.0.0.1/nosuchshare/repo`), 1},
 		{gone, "", 1},
-		{`\\localhost\c$\repo\R`, "", 1},
+		{`\\localhost\c$\repo\R`, "", 3},
 		{`\\127.0.0.1\nosuchshare`, "", 0},
 		{long, longUNCText(long), 0},
 		{`\\?\unc\localhost\c$\R`, longUNCText(`\\?\unc\localhost\c$\R`), 0},
@@ -217,5 +219,72 @@ func TestUnlookablePathRefusal(t *testing.T) {
 	networkLinkChecks = false
 	if got := unlookablePathRefusal(share) + unlookablePathRefusal(long); got != "" {
 		t.Errorf("test off: got %q", got)
+	}
+}
+
+// linkInfo is the fs.FileInfo of a fake entry with one mode.
+type linkInfo fs.FileMode
+
+func (m linkInfo) Name() string       { return "e" }
+func (m linkInfo) Size() int64        { return 0 }
+func (m linkInfo) Mode() fs.FileMode  { return fs.FileMode(m) }
+func (m linkInfo) ModTime() time.Time { return time.Time{} }
+func (m linkInfo) IsDir() bool        { return fs.FileMode(m).IsDir() }
+func (m linkInfo) Sys() any           { return nil }
+
+// The three shapes of the share row of 4c111e86 on Windows, byte for byte: a
+// share that does not exist logs one "looking for links" line, a share that
+// denies every account gets the permission text with no line, and a directory
+// symbolic link on a share that answers is refused. A junction and a folder
+// with a reparse tag that is no link are claustrum's own, not measured.
+func TestUnlookableShareRow(t *testing.T) {
+	missing, denied := `\\127.0.0.1\nosuchsharecl\repo`, `\\127.0.0.1\cldeny\sub\repo`
+	lnk, deep, jn, tagged := `\\127.0.0.1\clok\lnk`, `\\127.0.0.1\clok\lnk\sub`, `\\127.0.0.1\clok\jn`, `\\127.0.0.1\clok\tag`
+	modes := map[string]fs.FileMode{
+		lnk:    fs.ModeSymlink,
+		jn:     fs.ModeIrregular,
+		tagged: fs.ModeDir | fs.ModeIrregular,
+	}
+	oldLstat, oldOn := lstatPath, networkLinkChecks
+	lstatPath = func(path string) (fs.FileInfo, error) {
+		switch path {
+		case missing:
+			return nil, &fs.PathError{Op: "CreateFile", Path: path, Err: errors.New("The network name cannot be found.")}
+		case denied:
+			return nil, &fs.PathError{Op: "CreateFile", Path: path, Err: fs.ErrPermission}
+		}
+		if m, ok := modes[path]; ok {
+			return linkInfo(m), nil
+		}
+		return linkInfo(fs.ModeDir), nil
+	}
+	networkLinkChecks = true
+	t.Cleanup(func() { lstatPath, networkLinkChecks = oldLstat, oldOn })
+	buf := captureLogBuf(t)
+	const missingText = "Claude couldn't look at `\\\\127.0.0.1\\nosuchsharecl\\repo` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
+	const deniedText = "Claude couldn't check `\\\\127.0.0.1\\cldeny\\sub\\repo` for links because Windows didn't let your account read `\\\\127.0.0.1\\cldeny\\sub`, so git wasn't run. Ask for read access to that folder."
+	const linkText = "Claude doesn't follow links on a network share, and `\\\\127.0.0.1\\clok\\lnk` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder."
+	const missingLine = `[GitHandler] looking for links in "\\\\127.0.0.1\\nosuchsharecl\\repo": "CreateFile \\\\127.0.0.1\\nosuchsharecl\\repo: The network name cannot be found."`
+	for _, c := range []struct{ path, want string }{
+		{missing, missingText},
+		{denied, deniedText},
+		{lnk, linkText},
+		{deep, linkText},
+		{jn, shareLinkText(jn)},
+		{tagged, ""},
+	} {
+		if got := unlookablePathRefusal(c.path); got != c.want {
+			t.Errorf("%s: got  %q\nwant %q", c.path, got, c.want)
+		}
+		if got := networkLinkRefusal(c.path); got != c.want {
+			t.Errorf("networkLinkRefusal %s: got %q", c.path, got)
+		}
+	}
+	// Two looks at the missing share, two lines. The other paths log none.
+	if n := strings.Count(buf.String(), missingLine+"\n"); n != 2 {
+		t.Errorf("got %d lines %q, want 2", n, missingLine)
+	}
+	if n := strings.Count(buf.String(), "looking for links in"); n != 2 {
+		t.Errorf("got %d lines of the look, want 2:\n%s", n, buf.String())
 	}
 }
