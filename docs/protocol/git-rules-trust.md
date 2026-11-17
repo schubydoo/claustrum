@@ -23,18 +23,20 @@ the daemon walks up from the request folder:
   `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
   the pin of `<P>` too. A junction outside any repository gives "no repository",
   and each git call carries `GIT_DIR=NUL`.
-- On Windows any folder path that does not resolve, such as one with a missing
-  name before `..`, starts the walk as spelled. `git.status` resolves the
-  path first and answers there if that fails (all from the code).
-- On Windows a refusal of a config on `git.info` follows the spelled start too. In
-  the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
+- On Windows any folder path that does not resolve starts the walk as spelled.
+  `git.status` resolves the path first and answers there if that fails (all
+  from the code).
+- On Windows a refusal of a config on `git.info` follows the spelled start too,
+  except a junction `path` (below). In the state `shadow` without
+  `"shadowDirOff":true`, it is the class 1 text of
   [Repository config refusals](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
 - On Windows `git.info` and `git.list_branches` read the config of a junction
-  `path` through its target, and a refusal names that file. A junction to a bare
-  repository answers as that repository (`4c111e86`, measured on Windows).
+  `path` that holds its git directory through its target, and a refusal names
+  that file. A junction to a bare repository answers as that repository
+  (`4c111e86`, measured).
 - `process.spawn` does not use the walk.
 - A `.git` folder that passes the git-directory test is the git directory.
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`

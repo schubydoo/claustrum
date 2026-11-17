@@ -38,8 +38,17 @@ func brokenConfigRefusal(gitDir string) string {
 // t.pinCommonDir in place of dir.
 func TestConfigReadThroughRequestJunction(t *testing.T) {
 	j, _ := configRepo(t)
+	good, _ := configRepo(t)
 	target, targetGit := configRepo(t)
 	setRepoConfig(t, targetGit, "[core]\n\trepositoryformatversion = 0\n"+baseRepoConfig+"[x\n\tbroken\n = = =\n")
+	// A first read through a target with a good config is kept. The same
+	// junction to another target reads again, because the kept read has the
+	// folder of the read as its key. Mutation: key the kept read by
+	// t.pinCommonDir in repoReadVerdict.
+	standInJunction(t, j, good)
+	if r := info(t, j); r.Error != nil {
+		t.Fatalf("info through the good target = %+v", r.Error)
+	}
 	standInJunction(t, j, target)
 	want := brokenConfigRefusal(targetGit)
 	wantRPCError(t, "info", info(t, j), want)
