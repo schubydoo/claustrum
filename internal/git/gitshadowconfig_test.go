@@ -369,10 +369,10 @@ func TestSharedRepositoryValues(t *testing.T) {
 // macOS with a git directory of a group that the user is not in, 4c111e86
 // gives `worktrees` 775 for `group` (measured on macOS). A seam refuses the
 // first call, because a test cannot make such a group. A call that passes
-// gets no second call.
+// or fails with another error gets no second call.
 func TestWorktreesFolderModeWithoutTheGroupBit(t *testing.T) {
 	shared := worktreesModeOf(repoSetting{key: "core.sharedrepository", value: "group", hasValue: true})
-	for _, refuse := range []bool{true, false} {
+	for _, firstErr := range []error{fs.ErrPermission, fs.ErrInvalid, nil} {
 		root, err := os.OpenRoot(t.TempDir())
 		if err != nil {
 			t.Fatal(err)
@@ -382,8 +382,8 @@ func TestWorktreesFolderModeWithoutTheGroupBit(t *testing.T) {
 		old := worktreesChmod
 		worktreesChmod = func(r *os.Root, name string, mode os.FileMode) error {
 			calls = append(calls, mode)
-			if refuse && mode&os.ModeSetgid != 0 {
-				return &fs.PathError{Op: "chmod", Path: name, Err: fs.ErrPermission}
+			if firstErr != nil && mode&os.ModeSetgid != 0 {
+				return &fs.PathError{Op: "chmod", Path: name, Err: firstErr}
 			}
 			return nil
 		}
@@ -395,11 +395,11 @@ func TestWorktreesFolderModeWithoutTheGroupBit(t *testing.T) {
 		}
 		mode, _ := shared.folderMode(fi.Mode())
 		want := []os.FileMode{mode}
-		if refuse {
+		if firstErr == fs.ErrPermission {
 			want = append(want, want[0]&^os.ModeSetgid)
 		}
 		if !slices.Equal(calls, want) {
-			t.Errorf("refused %v: the mode calls %v, want %v", refuse, calls, want)
+			t.Errorf("first error %v: the mode calls %v, want %v", firstErr, calls, want)
 		}
 	}
 }
