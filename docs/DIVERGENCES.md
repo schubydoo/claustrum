@@ -662,8 +662,8 @@ have no flag and no key.
   A process whose `id` a later spawn took keeps its record, and the next start
   ends it. The host cleaner does not read the records. It ends an orphaned
   Claude Code group, a kept one too (not measured with
-  the flag). A child whose start returns after the shutdown began is ended also
-  with the flag (from the code).
+  the flag). On Windows a child whose start returns after the shutdown began is
+  ended also with the flag (from the code).
 - **Rule.** Off-wire extension.
 - **Reopen trigger.** None.
 - **Pointers.** [flags.md → Flags of claustrum

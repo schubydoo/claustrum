@@ -179,23 +179,46 @@ func TestShutdownDropsConnectionsBeforeTheStartGate(t *testing.T) {
 	}
 }
 
-// TestStartAfterShutdownBeganLeavesNoTrace holds a spawn right after the start of its
-// child, begins the shutdown with the production trigger, and then lets the spawn go
-// on. The child is dead when the spawn returns. The spawn logs no start line, has no
-// table entry, writes no record and gets no frame.
-func TestStartAfterShutdownBeganLeavesNoTrace(t *testing.T) {
-	checkLateStartLeavesNoTrace(t, false)
-}
-
-// TestLateStartEndedWithKeepChildren is the same with -keep-children. The child of a
-// late start is ended too, because its client got no reply and has no pid for it.
-// The teardown then runs with the flag and keeps nothing of it.
-func TestLateStartEndedWithKeepChildren(t *testing.T) {
-	checkLateStartLeavesNoTrace(t, true)
-}
-
-func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
+// endLeftChild ends a child that a late start left running, and waits for its end.
+// The spawn reaps it only after that end, so the pid still names that child here.
+func endLeftChild(t *testing.T, pid int) {
 	t.Helper()
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	deadline := time.Now().Add(10 * time.Second)
+	for pidAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pidAlive(pid) {
+		t.Errorf("the child %d did not end after the test killed it", pid)
+	}
+}
+
+// TestStartAfterShutdownBeganLeavesTheChildRunning holds a spawn right after the start
+// of its child, begins the shutdown with the production trigger, and then lets the
+// spawn go on. The spawn sends the child no signal, and the child runs on after the
+// teardown. The spawn logs no start line, has no table entry, writes no record and
+// gets no frame.
+func TestStartAfterShutdownBeganLeavesTheChildRunning(t *testing.T) {
+	checkLateStartLeavesTheChild(t, false)
+}
+
+// TestLateStartLeftWithKeepChildren is the same with -keep-children.
+func TestLateStartLeftWithKeepChildren(t *testing.T) {
+	checkLateStartLeavesTheChild(t, true)
+}
+
+func checkLateStartLeavesTheChild(t *testing.T, keepChildren bool) {
+	t.Helper()
+	// The seam records each signal and sends none, so a wrong kill reaches no process.
+	var sigMu sync.Mutex
+	var sent []string
+	realSignal := supervisor.SetSignalGroupForTest(func(_ *supervisor.ProcGroup, _ *os.Process, signame string) error {
+		sigMu.Lock()
+		sent = append(sent, signame)
+		sigMu.Unlock()
+		return nil
+	})
+	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
 	s, sock, runDir := newTeardownServer(t)
 	s.keepChildren = keepChildren
 	logs := captureLogBuf(t)
@@ -228,6 +251,7 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the spawn did not start its child")
 	}
+	t.Cleanup(func() { endLeftChild(t, pid) })
 	s.requestShutdown()
 	letGo()
 	var resp *rpc.Response
@@ -241,100 +265,22 @@ func checkLateStartLeavesNoTrace(t *testing.T, keepChildren bool) {
 		b, _ := json.Marshal(*resp)
 		t.Errorf("the late start got the frame %s, want none", b)
 	}
-	// No signal here: the spawn reaped pid already, so the pid can belong to
-	// another process now. A child in the table ends through endOwnChild below.
-	if pidAlive(pid) {
-		t.Errorf("the child %d of the late start is alive after the spawn returned", pid)
+	sigMu.Lock()
+	gotSent := append([]string(nil), sent...)
+	sigMu.Unlock()
+	if len(gotSent) != 0 {
+		t.Errorf("the late start and the teardown sent %q, want no signal", gotSent)
+	}
+	if !pidAlive(pid) {
+		t.Errorf("the child %d of the late start ended, want it running after the teardown", pid)
 	}
 	if strings.Contains(logs.String(), "Process late started") {
 		t.Error("the log has a start line for the late start")
 	}
 	if p := s.procs.Get("late"); p != nil {
-		endOwnChild(t, p)
 		t.Error("the late start is in the table")
 	}
 	if ents, err := os.ReadDir(filepath.Join(runDir, childrec.ChildrenDirName)); err == nil && len(ents) != 0 {
 		t.Errorf("children/ after the late start holds %d entries, want none", len(ents))
-	}
-}
-
-// TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown: the kill of a late start
-// is a no-op here, so its child is not reaped. The spawn still returns with no frame
-// after killReapGrace, and the teardown ends. Then the test ends its own child. That
-// pid is not reaped yet, so the signal reaches that child only.
-func TestLateStartWithAnUnreapableChildDoesNotHoldTheTeardown(t *testing.T) {
-	const reapGrace = 100 * time.Millisecond
-	oldGrace := supervisor.SetKillReapGraceForTest(reapGrace)
-	t.Cleanup(func() { supervisor.SetKillReapGraceForTest(oldGrace) })
-	realSignal := supervisor.SetSignalGroupForTest(func(*supervisor.ProcGroup, *os.Process, string) error { return nil })
-	t.Cleanup(func() { supervisor.SetSignalGroupForTest(realSignal) })
-
-	s, sock, _ := newTeardownServer(t)
-	held, release := make(chan int, 1), make(chan struct{})
-	var once sync.Once
-	letGo := func() { once.Do(func() { close(release) }) }
-	t.Cleanup(letGo)
-	oldHook := supervisor.SetAfterChildStartForTest(func(id string, pid int) {
-		if id == "stuck" {
-			held <- pid
-			<-release
-		}
-	})
-	t.Cleanup(func() { supervisor.SetAfterChildStartForTest(oldHook) })
-
-	c, _ := pipeConn(t)
-	exe, env := helperCommand(t, "sleep")
-	body, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken,
-		"params": map[string]any{"id": "stuck", "command": exe, "args": []string{"60"}, "env": env},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := make(chan *rpc.Response, 1)
-	go func() { got <- s.dispatch(c, body) }()
-	var pid int
-	select {
-	case pid = <-held:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the spawn did not start its child")
-	}
-	// endChild ends the child of the test and waits until the wait of the spawn
-	// reaped it.
-	endChild := func() {
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		deadline := time.Now().Add(10 * time.Second)
-		for pidAlive(pid) && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	s.requestShutdown()
-	letGo()
-	select {
-	case resp := <-got:
-		if resp != nil {
-			b, _ := json.Marshal(*resp)
-			t.Errorf("the late start got the frame %s, want none", b)
-		}
-	case <-time.After(30 * reapGrace):
-		endChild()
-		<-got
-		t.Fatal("the late start did not return within 30 times killReapGrace")
-	}
-	done := make(chan struct{})
-	go func() { defer close(done); s.closeAll(sock) }()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		endChild()
-		<-done
-		t.Fatal("the teardown did not end")
-	}
-	if !pidAlive(pid) {
-		t.Fatalf("the child %d ended, so the test did not hold an unreapable child", pid)
-	}
-	endChild()
-	if pidAlive(pid) {
-		t.Errorf("the child %d did not end after the test killed it", pid)
 	}
 }

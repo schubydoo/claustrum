@@ -165,9 +165,24 @@ func TestHeldSpawnsLeaveNoTraceAtShutdown(t *testing.T) {
 			<-releasePast
 		}
 	})
+	// The starts of the 3 return after the shutdown began. On Linux and macOS their
+	// children run on, so the test ends them.
+	var pidMu sync.Mutex
+	var pids []int
+	oldAfter := supervisor.SetAfterChildStartForTest(func(_ string, pid int) {
+		pidMu.Lock()
+		pids = append(pids, pid)
+		pidMu.Unlock()
+	})
 	t.Cleanup(func() {
 		supervisor.SetBeforeChildStartForTest(oldBefore)
 		supervisor.SetPastStartCheckForTest(oldPast)
+		supervisor.SetAfterChildStartForTest(oldAfter)
+		pidMu.Lock()
+		defer pidMu.Unlock()
+		for _, pid := range pids {
+			endLeftChild(t, pid)
+		}
 	})
 
 	c, _ := pipeConn(t)

@@ -399,6 +399,9 @@ component_management:
       name: process supervisor
       paths:
         - internal/supervisor/process.go
+        # The OS split of the end of a late start at the shutdown.
+        - internal/supervisor/latestart_unix.go
+        - internal/supervisor/latestart_windows.go
         # The cut of a long process id in four log lines.
         - internal/supervisor/logid.go
         - internal/supervisor/sysproc_unix.go

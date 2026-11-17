@@ -430,7 +430,7 @@ claustrum's own, not measured: macOS and Windows, and the end time of the child 
 
 ### A spawn during a shutdown
 
-A spawn whose child starts after the shutdown began gets no reply. The daemon ends that child, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). If the reference exits during that start, the child can stay running (measured on Linux and macOS).
+A spawn whose child starts after the shutdown began gets no reply. On Linux and macOS that child gets no signal and outlives the daemon (`4c111e86`, measured on Linux). On Windows the daemon ends it (claustrum's own).
 
 ## Differences from the reference
 
