@@ -1426,6 +1426,8 @@ func TestRepoConfigListingKeepsNothingAfterRefusal(t *testing.T) {
 // long listing written in chunks of many sizes. Each whole record goes to judge
 // once, in order, with no NUL, and the unfinished last record never does. A
 // refusal at one record keeps the same count and text for each chunk size.
+// After each write the search has reached the end of buf, so no byte is
+// searched twice. The test is a guard, not a speed test.
 func TestBoundedListingJudgesEachRecordOnce(t *testing.T) {
 	var text []byte
 	var want [][]byte
@@ -1448,6 +1450,9 @@ func TestBoundedListingJudgesEachRecordOnce(t *testing.T) {
 			n := min(size, len(p))
 			if _, err := b.Write(p[:n]); err != nil {
 				t.Fatalf("chunks of %d: %v", size, err)
+			}
+			if b.scanned != b.buf.Len() {
+				t.Fatalf("chunks of %d: %d of %d bytes searched after a write, want all", size, b.scanned, b.buf.Len())
 			}
 			p = p[n:]
 		}
