@@ -70,9 +70,8 @@ func TestExitLineAfterClientKill(t *testing.T) {
 // TestShutdownSweepRelabelsAWaitingKill pins the label of a child whose kill still
 // waits when the shutdown sweep ends it: killedBy and the exit frame say shutdown,
 // not client (an older build, measured on Linux in the log). The child ignores TERM,
-// so the killAndWait waits. A child that the shutdown ends logs no exited line,
-// measured on Linux (c9125eb8 and 4c111e86 log none), so the line is gone. On macOS 1
-// or 2 of 8 runs of the references still log it.
+// so the killAndWait waits. A child that the shutdown ends logs its exited line with
+// "(shutdown)", as c9125eb8 and 4c111e86 do (measured on Linux). macOS is claustrum's own.
 func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -111,8 +110,8 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "shutdown")
 	}
 	<-done
-	if strings.Contains(logs.String(), "Process c1 exited") {
-		t.Errorf("log = %q\nwant no exited line for c1", logs.String())
+	if want := "[process.Manager] Process c1 exited with code -1, terminated by SIGKILL, asked to end by this daemon (shutdown)\n"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }
 
@@ -132,11 +131,11 @@ func exitFrame(t *testing.T, frames <-chan ChildFrame) ChildFrame {
 	}
 }
 
-// TestShutdownEndedChildLogsNoExitLine: a child that the shutdown sweep ends logs no
-// exited line, and a child that exited before the sweep keeps its line, measured on
-// Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs of the references
-// still log it.
-func TestShutdownEndedChildLogsNoExitLine(t *testing.T) {
+// TestShutdownEndedChildLogsExitLine: a child that the shutdown sweep ends logs its
+// exited line with "(shutdown)", and a child that exited before the sweep keeps its
+// line. c9125eb8 and 4c111e86 log it in a spawn flood (measured on Linux). macOS is
+// claustrum's own.
+func TestShutdownEndedChildLogsExitLine(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
@@ -167,8 +166,8 @@ func TestShutdownEndedChildLogsNoExitLine(t *testing.T) {
 	if want := "[process.Manager] Process early exited with code 0\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
-	if strings.Contains(logs.String(), "Process sweep-en… exited") {
-		t.Errorf("log = %q\nwant no exited line for the child of the sweep", logs.String())
+	if want := "[process.Manager] Process sweep-en… exited with code -1, terminated by SIGKILL, asked to end by this daemon (shutdown)\n"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }
 
@@ -216,9 +215,8 @@ func TestShutdownSweepRelabelsWhenOneOfTwoWaitsEnded(t *testing.T) {
 
 // TestShutdownSweepKeepsReasonOfPlainKill pins a plain process.kill on a child that
 // ignores TERM: nothing waits, so the shutdown sweep keeps "client" in the exit frame
-// (claustrum's own, not measured). The sweep ended the child, so it logs no exited
-// line, measured on Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs
-// of the references still log it.
+// (claustrum's own, not measured). The sweep ended the child, so it logs its exited
+// line with "(client)" (claustrum's own, not measured).
 func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -248,8 +246,8 @@ func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	if got := exitFrame(t, frames); got.KilledBy != "client" {
 		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "client")
 	}
-	if strings.Contains(logs.String(), "Process c1 exited") {
-		t.Errorf("log = %q\nwant no exited line for c1", logs.String())
+	if want := "[process.Manager] Process c1 exited with code -1, terminated by SIGKILL, asked to end by this daemon (client)\n"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
 }
 
