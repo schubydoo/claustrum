@@ -182,20 +182,20 @@ On Windows the text ends `such as C:\\Program Files\\Git` in both frames.
 ## The off switch
 
 `"sessionFoldersOff":true` on a git method or `process.spawn` turns the check off
-while the request runs. The git in the session folder then runs (measured on Linux,
+while the request runs. The session-folder git then runs (measured on Linux,
 macOS and Windows). The session folders
 stay in the variables of the git child (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
-(claustrum's own). Only the first such request logs the first line below. The first
-check after the hold logs the second line. The hold is global: a request
-without the switch gets no check meanwhile (measured on Linux). No request after the hold
-uses its [excludes read](git-rules-calls.md#calls-outside-a-repository)
-(`4c111e86`, measured on Linux).
+(claustrum's own). Only the first such request logs the OFF line below. The first
+check after the hold logs the on-again line. The hold is global: a request
+without the switch gets no check meanwhile (measured on Linux). After the hold, git runs
+once more (`4c111e86`, measured on Linux). The code makes it the
+[excludes read](git-rules-calls.md#calls-outside-a-repository).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
 [sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more
 ```
 
-A `git.info` with the switch and no `"shadowDirOff":true` answers a repository with no
-`settingsControl` member on Windows and macOS, and with it on Linux (measured).
+A `git.info` with the switch and no `"shadowDirOff":true` answers a repository without
+`settingsControl` on Windows and macOS, and with it on Linux (measured).

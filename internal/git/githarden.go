@@ -1466,8 +1466,10 @@ func globalExcludesPath() string {
 	}
 	gen := userExcludesGen
 	// A read while the check of session folders is off is kept only until the check
-	// is on again. A request after that reads again (4c111e86, measured on Linux).
+	// is on again. A request after that reads again. 4c111e86 makes one more git run
+	// after the time off (measured on Linux). That it is this read is from the code.
 	// Requests that share one time off share its read (claustrum's own, not measured).
+	// A time off that starts during the read keeps the read out of both stores.
 	run, off := sessiondirs.OffRun()
 	if off && run == offExcludesRun {
 		v := offExcludesValue
@@ -1483,6 +1485,9 @@ func globalExcludesPath() string {
 	userExcludesMu.Unlock()
 	v := excludesFromGlobalConfig()
 	userExcludesMu.Lock()
+	if now, _ := sessiondirs.OffRun(); now != run {
+		gen = userExcludesGen - 1 // a time off began during the read
+	}
 	if gen == userExcludesGen {
 		userExcludesDone, userExcludesCached = true, v
 	}

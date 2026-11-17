@@ -458,6 +458,7 @@ func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 func TestShadowExcludesReadUnderOffSwitchNotStored(t *testing.T) {
 	h := newLiveFixture(t)
 	release := sessiondirs.PauseCheck()
+	t.Cleanup(release) // a failed reply skips the release below. A second call does nothing
 	h.send(t, 1, "git.info", map[string]any{"path": h.repo, "sessionFoldersOff": true})
 	h.reply(t, 1)
 	if n := excludesReadsIn(t, h); n != 1 {
@@ -475,5 +476,28 @@ func TestShadowExcludesReadUnderOffSwitchNotStored(t *testing.T) {
 	h.reply(t, 4)
 	if n := excludesReadsIn(t, h); n != 2 {
 		t.Errorf("%d reads of the excludes for a time off and two requests after it, want 2", n)
+	}
+}
+
+// A time off of the check of session folders that starts while a read of the
+// user's excludes runs keeps that read out of the store of the daemon. The next
+// request reads again (claustrum's own, not measured). The later calls of the
+// first request make one read of that time off, so 3 reads run. Mutation: in
+// globalExcludesPath, drop the second OffRun test before the store. The read is
+// then stored, and only 1 read runs.
+func TestShadowExcludesReadNotStoredWhenOffSwitchStartsDuringIt(t *testing.T) {
+	h := newLiveFixture(t)
+	holdSecond(t, "config,--includes,--path,core.excludesFile", "", false)
+	h.send(t, 1, "git.info", map[string]any{"path": h.repo})
+	h.waitIn(t, h.gate2)
+	release := sessiondirs.PauseCheck()
+	t.Cleanup(release) // a failed reply skips the release below. A second call does nothing
+	h.open(h.gate2)
+	h.reply(t, 1)
+	release()
+	h.send(t, 2, "git.info", map[string]any{"path": h.repo})
+	h.reply(t, 2)
+	if n := excludesReadsIn(t, h); n != 3 {
+		t.Errorf("%d reads of the excludes after a time off that began during the first read, want 3", n)
 	}
 }
