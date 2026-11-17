@@ -333,7 +333,7 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 		return nil
 	})
 	oldSleep = childrec.SetReapSleepForTest(func(time.Duration) {})
-	(&childrec.Records{RunDir: runDir, InstanceID: "inst-next"}).ReapOrphans()
+	(&childrec.Records{RunDir: runDir, InstanceID: "inst-next"}).EndLeftoverChildren()
 	if len(kills) != 0 {
 		t.Errorf("the reap of the next start signalled kept children: %v", kills)
 	}

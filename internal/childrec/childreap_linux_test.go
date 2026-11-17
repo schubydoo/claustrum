@@ -30,8 +30,8 @@ func TestEarlierBootOfThisMachine(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := earlierBootOfThisMachine(tc.recHost, tc.recNode, tc.ownHost, tc.ownNode); got != tc.want {
-				t.Errorf("earlierBootOfThisMachine = %v, want %v", got, tc.want)
+			if got := priorBootSameHost(tc.recHost, tc.recNode, tc.ownHost, tc.ownNode); got != tc.want {
+				t.Errorf("priorBootSameHost = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -51,45 +51,45 @@ func TestReapOrphansGate(t *testing.T) {
 
 	const orphanPid = noSuchPid + 424242
 	const deadDaemon = noSuchPid + 999999
-	orphanName := writeRec(t, runDir, childRecord{
+	orphanName := writeRec(t, runDir, spawnRecord{
 		Pid: orphanPid, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/usr/bin/node", Start: "9000", At: time.Now().UnixMilli(),
 	})
-	mineName := writeRec(t, runDir, childRecord{
+	mineName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 111, Node: ownNode, Host: ownHost, Instance: ownInstance,
 		DaemonPid: os.Getpid(), Argv0: "/x", Start: "1", At: time.Now().UnixMilli(),
 	})
-	liveOwnerName := writeRec(t, runDir, childRecord{
+	liveOwnerName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 222, Node: ownNode, Host: ownHost, Instance: "inst-other",
 		DaemonPid: noSuchPid + 333, DaemonStart: "50", Argv0: "/y", Start: "2", At: time.Now().UnixMilli(),
 	})
-	goneName := writeRec(t, runDir, childRecord{
+	goneName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 444, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/z", Start: "3", At: time.Now().UnixMilli(),
 	})
-	foreignFreshName := writeRec(t, runDir, childRecord{
+	foreignFreshName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 555, Node: "otherboot/ns", Host: "machine-id:other", Instance: "inst-far",
 		DaemonPid: 6, Argv0: "/a", Start: "4", At: time.Now().UnixMilli(),
 	})
-	foreignStaleName := writeRec(t, runDir, childRecord{
+	foreignStaleName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 666, Node: "otherboot/ns", Host: "machine-id:other", Instance: "inst-far",
 		DaemonPid: 6, Argv0: "/b", Start: "5", At: time.Now().Add(-40 * 24 * time.Hour).UnixMilli(),
 	})
 	// A verify-skip orphan: dead owner, same node, but the live process is not its own
-	// group leader, so verifyOrphan returns a skip and the record is forgotten.
-	skipName := writeRec(t, runDir, childRecord{
+	// group leader, so checkRecordOwnWords returns a skip and the record is forgotten.
+	skipName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 777, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/n", Start: "7", At: time.Now().UnixMilli(),
 	})
 	// A passthrough orphan: the live process disowns this daemon (another namespace), so
 	// the record is kept for a daemon that owns it.
-	passthroughName := writeRec(t, runDir, childRecord{
+	passthroughName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 888, Node: ownNode, Host: ownHost, Instance: "inst-old",
 		DaemonPid: deadDaemon, DaemonStart: "1", Argv0: "/n", Start: "8", At: time.Now().UnixMilli(),
 	})
 	// An earlier-boot record of THIS machine (same host, different boot id): forgotten.
 	_, ownNS, _ := strings.Cut(ownNode, "/")
-	earlierBootName := writeRec(t, runDir, childRecord{
+	earlierBootName := writeRec(t, runDir, spawnRecord{
 		Pid: noSuchPid + 990, Node: "oldboot/" + ownNS, Host: ownHost, Instance: "inst-old",
 		DaemonPid: 6, Argv0: "/n", Start: "9", At: time.Now().UnixMilli(),
 	})
@@ -160,7 +160,7 @@ func TestReapOrphansBatchOverflow(t *testing.T) {
 	ownHost := "machine-id:" + machineID()
 	table := map[int]liveProc{}
 	for _, pid := range []int{noSuchPid + 700001, noSuchPid + 700002} {
-		writeRec(t, runDir, childRecord{
+		writeRec(t, runDir, spawnRecord{
 			Pid: pid, Node: ownNode, Host: ownHost, Instance: "inst-old",
 			DaemonPid: noSuchPid + 999999, DaemonStart: "1", Argv0: "/n", Start: "9", At: time.Now().UnixMilli(),
 		})
