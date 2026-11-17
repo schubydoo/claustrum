@@ -8,7 +8,9 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -180,9 +182,14 @@ func TestShutdownDropsConnectionsBeforeTheStartGate(t *testing.T) {
 }
 
 // endLeftChild ends a child that a late start left running, and waits for its end.
-// The spawn reaps it only after that end, so the pid still names that child here.
+// The spawn reaps it only after that end, so the pid still names that child here. A
+// guard sends no signal to a pid whose parent is not this test process.
 func endLeftChild(t *testing.T, pid int) {
 	t.Helper()
+	if !childOfTest(pid) {
+		t.Logf("the pid %d is no child of the test now, so the test sends it no signal", pid)
+		return
+	}
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
 	deadline := time.Now().Add(10 * time.Second)
 	for pidAlive(pid) && time.Now().Before(deadline) {
@@ -191,6 +198,16 @@ func endLeftChild(t *testing.T, pid int) {
 	if pidAlive(pid) {
 		t.Errorf("the child %d did not end after the test killed it", pid)
 	}
+}
+
+// childOfTest reports if pid runs with this test process as its parent.
+func childOfTest(pid int) bool {
+	out, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false
+	}
+	ppid, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	return err == nil && ppid == os.Getpid()
 }
 
 // TestStartAfterShutdownBeganLeavesTheChildRunning holds a spawn right after the start
@@ -251,7 +268,12 @@ func checkLateStartLeavesTheChild(t *testing.T, keepChildren bool) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the spawn did not start its child")
 	}
-	t.Cleanup(func() { endLeftChild(t, pid) })
+	inTable := false
+	t.Cleanup(func() {
+		if !inTable {
+			endLeftChild(t, pid)
+		}
+	})
 	s.requestShutdown()
 	letGo()
 	var resp *rpc.Response
@@ -278,6 +300,9 @@ func checkLateStartLeavesTheChild(t *testing.T, keepChildren bool) {
 		t.Error("the log has a start line for the late start")
 	}
 	if p := s.procs.Get("late"); p != nil {
+		inTable = true
+		supervisor.SetSignalGroupForTest(realSignal)
+		endOwnChild(t, p)
 		t.Error("the late start is in the table")
 	}
 	if ents, err := os.ReadDir(filepath.Join(runDir, childrec.ChildrenDirName)); err == nil && len(ents) != 0 {
