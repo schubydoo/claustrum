@@ -783,16 +783,31 @@ func gitStatus(req *gitCall) rpc.Response {
 	// daemon on a FIFO or on /dev/null, b3081b51 makes 2 calls: the excludes read
 	// and `version` (measured on Linux). A regular file there and macOS are
 	// claustrum's own, not measured.
+	//
+	// A regular file inside a repository gets the gate with the trust of its folder.
+	// So the gate asks git about that repository (askGit) and reads its config. With
+	// `path` and baseRepo a file, 4c111e86 makes 14 calls in the first request, and a
+	// failing `rev-parse --git-dir` there answers the -32603 text of askGit (measured
+	// on Linux, row l_new_t449). macOS is claustrum's own, and Windows keeps the
+	// trust of the file (not measured).
+	gateTrust, noGate := t, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
-		t.verdict == gitDirTrusted && t.pinCommonDir == "" && !inRepoFolder(filepath.Dir(p.BaseRepo)) {
+		t.verdict == gitDirTrusted && t.pinCommonDir == "" {
+		if folder := readGitDirTrust(filepath.Dir(p.BaseRepo), false); folder.verdict == gitDirTrusted && folder.pinCommonDir != "" {
+			gateTrust = folder
+		} else {
+			noGate = true
+		}
+	}
+	if noGate {
 		req.use = gitUse{stop: req.stop}
-	} else if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo); msg != "" {
+	} else if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, p.BaseRepo); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	} else if noRepo {
 		return notRepo
 	} else {
 		// The later git commands follow the off switch (measured on Linux).
-		req.keepLiveForm(bool(p.ShadowDirOff), t, p.BaseRepo)
+		req.keepLiveForm(bool(p.ShadowDirOff), gateTrust, p.BaseRepo)
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (measured). The listing runs in
 	// baseRepo as sent and carries the heavy profile (call 2 of the measured call log).
@@ -865,12 +880,6 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
 	return rpc.OKResult(req.ID, rpc.GitStatusResult{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
-}
-
-// inRepoFolder reports whether the trust check accepts a repository for dir.
-func inRepoFolder(dir string) bool {
-	ft := readGitDirTrust(dir, false)
-	return ft.verdict == gitDirTrusted && ft.pinCommonDir != ""
 }
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
