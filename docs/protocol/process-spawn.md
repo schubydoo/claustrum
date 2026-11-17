@@ -33,7 +33,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `linkBound` | no | See [its page](process-link-bound.md). |
 | `gitRead` | no | See [its page](process-git-read.md). |
 | `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
-| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux and macOS. Without `gitRead`, any other value counts as absent (claustrum's own). |
+| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux and macOS. A text or an object gets `Invalid params` and starts no child (`4c111e86` and `c9125eb8`, measured on Linux). A number, `null`, and macOS and Windows are claustrum's own. |
 | `cliTempRootEnd` | no | `true` asks the daemon to end the child on Linux and macOS when [its private temp folder is lost](#a-lost-folder-build-4c111e86) (`4c111e86`). Any other value counts as absent (claustrum's own). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
