@@ -788,8 +788,11 @@ func gitStatus(req *gitCall) rpc.Response {
 	// So the gate asks git about that repository (askGit) and reads its config. With
 	// `path` and baseRepo a file, 4c111e86 makes 14 calls in the first request, and a
 	// failing `rev-parse --git-dir` there answers the -32603 text of askGit (measured
-	// on Linux). macOS is claustrum's own, and Windows keeps the
-	// trust of the file (not measured).
+	// on Linux). A 15 s hold of that call changes no reply (measured on Linux, no
+	// test here). macOS is claustrum's own, and Windows keeps the trust of the
+	// file (not measured). gateTrust also takes the pinned git directory of the
+	// folder to syncRepo and keepLiveForm. So the gate can make the git-shadow
+	// copy of that repository for a file baseRepo (not measured).
 	gateTrust, noGate := t, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
 		t.verdict == gitDirTrusted && t.pinCommonDir == "" {
