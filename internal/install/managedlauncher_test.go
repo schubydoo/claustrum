@@ -234,7 +234,7 @@ func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
 }
 
 // TestShownResolveFaultArms pins both arms of shownResolveFault. With shown, a missing
-// launcher, a bare name and a value that is not a string keep their fault, as on macOS
+// launcher, a bare name and a processWrapper of 5 keep their fault, as on macOS
 // (4c111e86, measured on macOS). Other faults and the arm off macOS give none.
 func TestShownResolveFaultArms(t *testing.T) {
 	for _, c := range []struct {
@@ -258,8 +258,8 @@ func TestShownResolveFaultArms(t *testing.T) {
 }
 
 // TestResolveNonStringFault pins the fault of a value that is not a string. With
-// shown, a processWrapper of 5 answers the fault other after reason (4c111e86, row
-// p12_wrapper_5_plus_key, measured on macOS). Without shown it answers none.
+// shown, a processWrapper of 5 answers the fault other after reason (4c111e86,
+// measured on macOS). Without shown it answers none.
 func TestResolveNonStringFault(t *testing.T) {
 	dir := t.TempDir()
 	base := filepath.Join(dir, managedSettingsBase)

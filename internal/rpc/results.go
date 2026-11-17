@@ -329,7 +329,8 @@ type NotRepoResult struct {
 //
 // On macOS a missing launcher, a folder or a file that cannot run adds fault missing
 // after reason, a bare name adds not_absolute and a processWrapper of 5 adds other
-// (4c111e86, measured on macOS). Other refusals add none (claustrum's own, not measured):
+// (4c111e86, measured on macOS). Any other value that is not a string adds other, and
+// other refusals add none (claustrum's own, not measured):
 //
 //	{"status":"unusable","source":"<file>","reason":"<text>","fault":"<fault>"}
 type ManagedLauncherResult struct {

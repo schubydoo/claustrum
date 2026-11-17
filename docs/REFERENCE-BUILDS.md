@@ -192,8 +192,8 @@ These items stay open:
   with a dangling `commondir` junction, and a create on an unborn `HEAD`.
 - Some replies still differ from `4c111e86`. On Linux one is the text for a launcher, or
   a folder above it, that other accounts can write. Another is a `cliTempRoot` string or
-  object with no `gitRead`. On macOS, a `processWrapper` number and `git.status` with
-  only session-folder gits on the `PATH` differ. On Windows, a create and a remove on a
+  object with no `gitRead`. On macOS, `git.status` with only session-folder gits on the
+  `PATH` differs. On Windows, a create and a remove on a
   share whose `.git` git cannot use differ. On Linux, near the `timeoutMs` cut, the seed
   of a Git LFS object can end on the other side of the cut.
 - The pages of the methods mark each case that is claustrum's own or not measured.
