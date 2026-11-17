@@ -12,6 +12,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// The Windows SDK names of the two tags of row w_new_t441. golang.org/x/sys
+// does not define them.
+const (
+	ioReparseTagProjFS = 0x9000001C // IO_REPARSE_TAG_PROJFS
+	ioReparseTagWIM    = 0x80000008 // IO_REPARSE_TAG_WIM
+)
+
 // reparseTagIoctl sends ioctl with the reparse header of tag and no data to the
 // folder dir, as the folders of row w_new_t441 were made.
 func reparseTagIoctl(dir string, ioctl, tag uint32) error {
@@ -50,7 +57,7 @@ func tagFolder(t *testing.T, dir string, tag uint32) {
 	}
 }
 
-// A folder with the reparse tag 0x9000001C is no link: a .git folder with it
+// A folder with the reparse tag IO_REPARSE_TAG_PROJFS is no link: a .git folder with it
 // gets no link refusal, and a worktree folder with it below baseRepo is no link
 // for git.status, as on 4c111e86 (row w_new_t441). A junction still is.
 func TestPlaceholderFolderIsNoLink(t *testing.T) {
@@ -60,7 +67,7 @@ func TestPlaceholderFolderIsNoLink(t *testing.T) {
 	if err := os.Mkdir(filepath.Dir(tagged), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tagFolder(t, tagged, 0x9000001C)
+	tagFolder(t, tagged, ioReparseTagProjFS)
 	if got := gitDirLinkDetail(tagged); got != "" {
 		t.Errorf("gitDirLinkDetail of the tagged folder: %q", got)
 	}
@@ -74,12 +81,12 @@ func TestPlaceholderFolderIsNoLink(t *testing.T) {
 	}
 }
 
-// A repository below a folder with the reparse tag 0x80000008, which no filter
+// A repository below a folder with the reparse tag IO_REPARSE_TAG_WIM, which no filter
 // handles, gets the text of 4c111e86 (row w_new_t441).
 func TestPathLookRefusalUnhandledTag(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	p := filepath.Join(root, "P")
-	tagFolder(t, p, 0x80000008)
+	tagFolder(t, p, ioReparseTagWIM)
 	repo := filepath.Join(p, "repo")
 	want := "Claude couldn't check that `" + repo + "` stays on a local drive, so git wasn't run. Try again."
 	if got := pathLookRefusal(repo); got != want {

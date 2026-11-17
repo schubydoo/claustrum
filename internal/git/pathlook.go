@@ -12,7 +12,7 @@ import (
 // pathLookRefusal is the refusal of a repository path that the network-path
 // check cannot look at, or "". It runs only with networkLinkChecks.
 //
-// 4c111e86 answers it on Windows for a folder with the reparse tag 0x80000008,
+// 4c111e86 answers it on Windows for a folder with the reparse tag IO_REPARSE_TAG_WIM,
 // which no filter of the system handles (row w_new_t441). A repository below
 // such a folder gets it on git.info, git.status and git.list_branches, and the
 // text names the path. A repository whose .git is such a folder gets it on all

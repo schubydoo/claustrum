@@ -449,10 +449,10 @@ On Windows `b3081b51` refuses a repository path through a symbolic link or a jun
 
 Row `w_new_t441` measures two raw reparse tags on Windows, on `4c111e86`, with no provider:
 
-- `0x9000001C`, as on a ProjFS placeholder, is no link. A `.git` folder with it works as a plain one. So does a worktree folder with it below `baseRepo` in `git.status`.
-- Below `0x80000008`, which no filter handles, a look fails. A repository there gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`. A `.git` folder with that tag gets it on all five methods, naming `<path>\.git\objects`. A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it. No git call runs. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`, Go-quoted.
+- `IO_REPARSE_TAG_PROJFS`, a ProjFS placeholder tag, is no link. A `.git` folder with it works as a plain one. So does a worktree folder with it below `baseRepo` in `git.status`.
+- Below `IO_REPARSE_TAG_WIM`, which no filter handles, a look fails. A repository there gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`. A `.git` folder with that tag gets it on all five methods, naming `<path>\.git\objects`. A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it. No git call runs. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`, Go-quoted.
 
-claustrum's own, not measured: only `ERROR_CANT_ACCESS_FILE` refuses, and one line is logged per request. A create in `shadow` with a `0x9000001C` `.git` keeps the link refusal, because the held git directory takes a plain folder only.
+claustrum's own, not measured: only `ERROR_CANT_ACCESS_FILE` refuses, and one line is logged per request. A create in `shadow` with a `IO_REPARSE_TAG_PROJFS` `.git` keeps the link refusal, because the held git directory takes a plain folder only.
 
 ### UNC refusals
 
