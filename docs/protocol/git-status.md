@@ -170,7 +170,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - With no global excludes file of the user, the status runs.
     - The junction rules of Windows do not apply.
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `"isRepo": false`.
-    - A file inside a repository first gets [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository), which can give `-32603` (`4c111e86`, measured on Linux).
+    - A file in a repository gets [the repository call](git-rules-settings-copy.md#the-call-about-the-repository) and its `-32603` (`4c111e86`, measured on Linux). macOS is claustrum's own.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, is not a special case.
     - Letter case in the registration match is exact.
     - `path` matches as sent and as resolved, and in no other spelling.

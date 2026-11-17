@@ -788,7 +788,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	// So the gate asks git about that repository (askGit) and reads its config. With
 	// `path` and baseRepo a file, 4c111e86 makes 14 calls in the first request, and a
 	// failing `rev-parse --git-dir` there answers the -32603 text of askGit (measured
-	// on Linux, row l_new_t449). macOS is claustrum's own, and Windows keeps the
+	// on Linux). macOS is claustrum's own, and Windows keeps the
 	// trust of the file (not measured).
 	gateTrust, noGate := t, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
