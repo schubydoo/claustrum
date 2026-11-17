@@ -185,8 +185,8 @@ type Proc struct {
 	// process. It changes under p.mu, so the shutdown sweep reads it with killedBy.
 	// A count, so one call that returns leaves another call's wait marked.
 	waiting int
-	// endedByShutdown is set when the shutdown sweep delivers its signal. With a sent
-	// temp_root SIGTERM such a child logs no exited line (see waitReapAndDrain). Under p.mu.
+	// endedByShutdown is set when the shutdown sweep delivers its signal. Such a child
+	// can lose its exited line (see shutdownExitQuiet). Under p.mu.
 	endedByShutdown bool
 	// signalled is set when signalIfLive delivers a signal. A farewell on a
 	// signalled record is not said (see holdFarewell). farewell is the pending
@@ -1406,7 +1406,7 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	p.running = false
 	p.exitedAt = time.Now() // starts the procPruneAge clock
 	killedBy := p.killedBy
-	quiet := p.endedByShutdown && p.tempRootTermed && quietShutdownExit
+	quiet := shutdownExitQuiet(p.endedByShutdown, p.tempRootTermed, quietEveryShutdownExit)
 	p.mu.Unlock()
 	// Stop the stdin writer and wake it if it is parked on an empty queue; the
 	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
@@ -1419,11 +1419,11 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	// that job, so the close ends nothing.
 	p.group.Close()
 	sigName := sysproc.ExitSignalName(err)
-	// A child that the shutdown sweep ended logs its exited line. c9125eb8 and
-	// 4c111e86 log it with "(shutdown)" in a spawn flood (measured on Linux). On Linux
-	// and macOS one whose temp-root end still ran logs none (4c111e86, measured on
-	// Linux). claustrum's own, not measured: Windows, macOS, and a stream-json child
-	// that the sweep sent SIGTERM.
+	// On Linux only, a child that the shutdown sweep ended logs its exited line.
+	// 4c111e86 logs it with "(shutdown)", and its exit race loses some lines (measured
+	// on Linux). On macOS it stays quiet (4c111e86, measured on macOS). On Linux and macOS one whose
+	// temp-root end still ran logs none (4c111e86, measured on Linux). claustrum's own,
+	// not measured: Windows, and a stream-json child that the sweep sent SIGTERM.
 	if !quiet {
 		logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
 	}
@@ -1455,7 +1455,7 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 //
 // 89cb6289 printed no exited line in two other runs. c9125eb8 and 4c111e86 print
 // ", terminated by SIGKILL, asked to end by this daemon (shutdown)" in a spawn flood
-// (measured on Linux). claustrum prints it too (see waitReapAndDrain).
+// (measured on Linux). claustrum prints it there (see waitReapAndDrain).
 func exitLogSuffix(sigName, killedBy string) string {
 	suffix := ""
 	if sigName != "" {
@@ -1467,6 +1467,14 @@ func exitLogSuffix(sigName, killedBy string) string {
 		suffix += ", asked to end by this daemon (" + killedBy + ")"
 	}
 	return suffix
+}
+
+// shutdownExitQuiet reports whether the exited line of a child is dropped. Only a
+// child that the shutdown sweep ended loses it, and only where quietShutdownExit
+// holds. Then a sent temp_root SIGTERM drops it, and so does quietAll, the switch of
+// the system (quietEveryShutdownExit).
+func shutdownExitQuiet(endedByShutdown, tempRootTermed, quietAll bool) bool {
+	return endedByShutdown && quietShutdownExit && (tempRootTermed || quietAll)
 }
 
 func pumpStream(p *Proc, name string, r io.Reader) {
