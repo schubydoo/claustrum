@@ -137,3 +137,9 @@ func checkoutWorkTree(leaf, _ string) string {
 // a path with forward slashes and resolved links, and a byte compare refuses that.
 // Leaving the check off there is claustrum's choice.
 const adminRecordChecked = false
+
+// windowsAddTests is true on Windows. A create with "shadowDirOff":true tests
+// the leaf right after a good add (offAddRefusal). After a good checkout a
+// leaf with no `.git` file is refused and stays (4c111e86, measured on
+// Windows).
+const windowsAddTests = true

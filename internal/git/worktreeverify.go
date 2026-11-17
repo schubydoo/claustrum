@@ -633,6 +633,34 @@ func otherEntryRefusal(worktreePath string) string {
 		"other than the one just created for it", parentResolvedPath(worktreePath))
 }
 
+// offAddRefusal tests the leaf of a create with "shadowDirOff":true right after a
+// good add, on Windows. It returns the answer of the create, or "" when the leaf
+// passes. registry is the registrations folder of the git directory. 4c111e86
+// gives each text with unsafe_path, runs no git call after the add, and removes
+// nothing (measured on Windows):
+//
+//   - a link, a folder or a junction at `.git` of the leaf: "`<leaf>\.git` is
+//     not a regular file".
+//   - a registrations folder that was moved away: the text of gitFileGoneText.
+//   - a copy of the leaf in its place: "`<leaf>` is no longer the directory that
+//     was created for the worktree".
+//
+// Not measured: the order of the three tests, a `.git` that Lstat cannot read
+// (it passes), and the default staged add, which does not run this test.
+func offAddRefusal(worktreePath, registry string, cp worktreeCheckpoint) string {
+	gitFile := filepath.Join(worktreePath, ".git")
+	if fi, err := os.Lstat(gitFile); err == nil && !fi.Mode().IsRegular() {
+		return "refusing to create worktree: " + tickPath(gitFile) + " is not a regular file"
+	}
+	if _, err := os.Stat(registry); errors.Is(err, fs.ErrNotExist) {
+		return gitFileGoneText(worktreePath)
+	}
+	if checkNewLeafIdentity(worktreePath, cp) != "" {
+		return "refusing to create worktree: " + tickPath(worktreePath) + " is no longer the directory that was created for the worktree"
+	}
+	return ""
+}
+
 // leafGitFileRefusal tests the .git file of the new worktree right after a good
 // add, on Linux and macOS. adminDir is the path that the file names. refusal is
 // the answer of the create when the file names none, and noFile says that the

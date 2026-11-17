@@ -2008,6 +2008,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	refuseUnsafe := func(text string) rpc.Response {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: "unsafe_path"})
 	}
+	// On Windows a create with "shadowDirOff":true tests the leaf here, before
+	// any other git call (offAddRefusal). A refusal rolls nothing back: the
+	// leaf, the registration and the branch stay (4c111e86, measured on
+	// Windows). Without an answer of git the test does not run, as on Linux.
+	if windowsAddTests && bool(p.ShadowDirOff) && gitAnswered {
+		if text := offAddRefusal(p.WorktreePath, gitDirRegistryDir(gitDir), checkpoint); text != "" {
+			return refuseUnsafe(text)
+		}
+	}
 	var adminDir string
 	if registrationTests {
 		var text string
@@ -2544,16 +2553,20 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// refuses the create. The leaf goes (removeCreatedLeaf). The registration
 		// and the branch stay. be1c1ca5 answers this text with unsafe_path when a
 		// wrapper deletes the `.git` file at the read-tree call (measured on
-		// Linux). Not measured: macOS (it follows Linux), Windows (it keeps the
-		// earlier answer), a `.git` entry of another kind, and a leaf that cannot
+		// Linux). On Windows 4c111e86 gives the same frame and removes nothing:
+		// the leaf keeps the files of the checkout (measured with and without
+		// "shadowDirOff":true). Not measured: macOS (it follows Linux),
+		// a `.git` entry of another kind, and a leaf that cannot
 		// be removed (the text stays alone). The order before the copy step and
 		// the deadline test is claustrum's own, not measured: a good checkout
 		// whose timeoutMs expired gets this answer, and only the leaf goes. A
 		// folder that replaced the leaf gets it too, and the identity guard keeps
 		// that folder.
-		if runtime.GOOS != "windows" && leafGitFileGone(p.WorktreePath) {
-			retake()
-			removeCreatedLeaf(p.WorktreePath, checkpoint)
+		if leafGitFileGone(p.WorktreePath) {
+			if !windowsAddTests {
+				retake()
+				removeCreatedLeaf(p.WorktreePath, checkpoint)
+			}
 			return refuseUnsafe(gitFileGoneText(p.WorktreePath))
 		}
 	}
