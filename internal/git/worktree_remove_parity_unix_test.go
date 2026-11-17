@@ -214,7 +214,7 @@ func TestWorktreeRemoveExternalUnverified(t *testing.T) {
 		f := newExtFixture(t)
 		runGit(t, f.repo, "worktree", "lock", f.e0)
 		writeFile(t, filepath.Join(f.e0, ".git"), "garbage\n", 0o644)
-		wantRemoveError(t, f.remove(t, f.e0, "e0"), lockedWorktreeRefusal(f.e0, lockedPlain))
+		wantRemoveError(t, f.remove(t, f.e0, "e0"), lockRefusalText(f.e0, lockedPlain))
 		mustExist(t, filepath.Join(f.e0, ".git"))
 	})
 	t.Run("unreadable entry", func(t *testing.T) {

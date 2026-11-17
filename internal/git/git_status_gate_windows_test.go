@@ -212,7 +212,7 @@ func TestGitStatusWindowsDanglingJunctionBaseRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	installGitSlowStub(t, realGit)
-	userExcludesFile() // the read of the excludes is not counted below
+	globalExcludesPath() // the read of the excludes is not counted below
 	log := filepath.Join(t.TempDir(), "calls.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 	if got := statusFrame(t, f.W, dl); got != statusNotRepo {

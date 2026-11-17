@@ -705,7 +705,7 @@ func checkIgnored(u gitUse, repo string, paths []string) ([]string, bool) {
 
 // checkIgnoreInput returns the paths that go to check-ignore, in their order.
 // It drops each path that is in skip, each path that ends in `/` (a nested
-// repository), and each runtime-state path (isClaudeRuntimeState).
+// repository), and each runtime-state path (isSessionStateFile).
 //
 // f6010b97 drops the same paths before its check-ignore call. If no path is
 // left, it makes no call. Linux and macOS measured the skip rule, the
@@ -719,7 +719,7 @@ func checkIgnoreInput(paths, skip []string) []string {
 	}
 	var in []string
 	for _, p := range paths {
-		if !skipSet[p] && !strings.HasSuffix(p, "/") && !isClaudeRuntimeState(p) {
+		if !skipSet[p] && !strings.HasSuffix(p, "/") && !isSessionStateFile(p) {
 			in = append(in, p)
 		}
 	}

@@ -451,7 +451,7 @@ func treeOf(t *testing.T, root string) []string {
 // isolateGitConfig points the git commands of the daemon at an empty global and
 // system config and an empty user ignore file, so a fixture's ignore state is
 // decided by its own `.gitignore` alone. It also resets the cache of
-// userExcludesFile (resetUserExcludesCache), or the first test that ran a git
+// globalExcludesPath (resetUserExcludesCache), or the first test that ran a git
 // command decides the value for every later test.
 func isolateGitConfig(t *testing.T) {
 	t.Helper()

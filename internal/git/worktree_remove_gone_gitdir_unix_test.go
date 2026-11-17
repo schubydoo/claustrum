@@ -190,7 +190,7 @@ func TestDaemonGitDirToMissingPathRemoveDotGitFolder(t *testing.T) {
 				}
 				return
 			}
-			if want := refusalFrame(t, lockedWorktreeRefusal(live, lockedPlain)); raw != want {
+			if want := refusalFrame(t, lockRefusalText(live, lockedPlain)); raw != want {
 				t.Errorf("remove = %s\nwant %s", raw, want)
 			}
 			if got := entryNames(t, live); !slices.Contains(got, "keep.txt") || !slices.Contains(got, ".git") {
