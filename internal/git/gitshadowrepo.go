@@ -345,7 +345,7 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	var root *os.Root
 	if err != nil {
 		if root = repoFolderBySearch(path, err); root == nil {
-			return err
+			return unsearchedRepoError(path, err)
 		}
 	} else {
 		defer func() { _ = base.Close() }()
@@ -528,6 +528,24 @@ func repoFolderBySearch(path string, openErr error) *os.Root {
 		return nil
 	}
 	return root
+}
+
+// unsearchedRepoError is the error of a request whose folder of the daemon
+// cannot be opened (openErr), and repoFolderBySearch found no folder at path.
+// When the Lstat of path fails with a permission error too, the folder of the
+// daemon cannot be searched. The error is then the one of a mkdir at path,
+// with no call: `mkdir <S>/<32 hex>: permission denied`, as on 4c111e86 with
+// mode 0000 (measured on Linux). macOS is claustrum's own. Every other case
+// gets openErr (claustrum's own, not measured).
+func unsearchedRepoError(path string, openErr error) error {
+	if !errors.Is(openErr, fs.ErrPermission) {
+		return openErr
+	}
+	var pe *os.PathError
+	if _, err := os.Lstat(path); errors.As(err, &pe) && errors.Is(err, fs.ErrPermission) {
+		return &os.PathError{Op: "mkdir", Path: path, Err: pe.Err}
+	}
+	return openErr
 }
 
 // shadowRepoBeforeMkdir is a seam for the tests. It runs right before the mkdir
