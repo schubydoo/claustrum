@@ -102,6 +102,11 @@ type contentRefusal struct {
 // (measured on Linux, macOS and Windows).
 const contentRefusalStart = "Claude could not confirm that the new worktree matches its commit, so it did not keep it. "
 
+// contentLogHintCap is the most bytes of the refusal text that the log line of the
+// check quotes. A text of 406 bytes keeps 400 on 4c111e86 (measured on macOS).
+// Linux and Windows are claustrum's own.
+const contentLogHintCap = 400
+
 // shadowReadbackDirPrefix starts the name of the folder of the objects that the
 // check writes (measured on Linux). readbackTempPrefix is its prefix in the
 // temporary folder, claustrum's own: the check runs in the state shadow only.
@@ -149,12 +154,22 @@ func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string
 	line := fmt.Sprintf("[GitHandler] worktree_create: checked %d %s under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against %d objects of commit %s (%d of the commits and folder listings read by separate git runs) in %s: ",
 		len(files), word, c.read, short, c.separate, time.Since(start).Round(time.Millisecond))
 	if refusal != nil {
-		// The quoted text has no final period (measured on Linux).
-		logging.Infof("%srefused: %q", line, strings.TrimSuffix(refusal.hint, "."))
+		logging.Infof("%srefused: %q", line, loggedHint(refusal.hint))
 		return refusal
 	}
 	logging.Infof("%smatch", line)
 	return nil
+}
+
+// loggedHint is the refusal text as the log line of the check quotes it. It has no
+// final period (measured on Linux). It keeps its first contentLogHintCap bytes
+// (4c111e86, measured on macOS). A rune that the cut splits goes (claustrum's own).
+func loggedHint(hint string) string {
+	hint = strings.TrimSuffix(hint, ".")
+	if len(hint) > contentLogHintCap {
+		hint = strings.ToValidUTF8(hint[:contentLogHintCap], "")
+	}
+	return hint
 }
 
 // run is the check. files are the files of the commit that it found and
