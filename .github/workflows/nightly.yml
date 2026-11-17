@@ -1,9 +1,10 @@
 # The full CI run on main, once a night (TASK-682).
 #
-# A push to main skips every leg of the test job of ci.yml. The Linux coverage
-# shards still run the race suite. This workflow calls ci.yml on main with
-# every job, so a break that only the skipped legs see shows within a day. A runner image change, a flaky test and an admin
-# merge past the pull request checks are such breaks.
+# A push to main skips the macOS and Windows legs of the test job of ci.yml.
+# The Linux coverage shards still run the race suite. This workflow calls
+# ci.yml on main with every job, so a break that only the skipped legs see
+# shows within a day. A runner image change, a flaky test and an admin merge
+# past the pull request checks are such breaks.
 #
 # A failed scheduled run opens one issue, or adds a comment to the open one.
 # A later green scheduled run closes that issue. A manual start reports
