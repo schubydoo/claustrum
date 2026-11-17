@@ -392,7 +392,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	procs.InstanceID = instanceID
 	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
 	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
-	// recorded children become candidates. ReapOrphans independently re-checks that each
+	// recorded children become candidates. EndLeftoverChildren independently re-checks that each
 	// owning daemon is gone before it touches a child. Synchronous, and BEFORE the bind:
 	// while the reap waits for a group to end, the old socket file stays as it is and
 	// nothing listens. A client that connects in that wait gets ECONNREFUSED from a
@@ -405,7 +405,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// Linux).
 	procs.NoRecords = !claim.Holder
 	if claim.Holder {
-		procs.ReapOrphans()
+		procs.EndLeftoverChildren()
 	}
 
 	_ = os.Remove(socket) // clear a stale socket
