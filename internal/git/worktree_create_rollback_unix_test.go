@@ -490,8 +490,8 @@ func TestWorktreeCreateGitFileGoneAfterCheckout(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateLeafCopiedAtCheckout pins 4c111e86 on Linux and macOS (cells
-// l_new_t321 and m_new_t321, rows of the leaf swap after read-tree): the stub runs
+// TestWorktreeCreateLeafCopiedAtCheckout pins 4c111e86 (measured on Linux and
+// macOS): the stub runs
 // the real read-tree, renames the leaf to w1.old and puts a new folder with a copy
 // of the .git file at its path. The create answers the text of a replaced leaf in
 // backticks, with unsafe_path. Both folders, the registration w1 and branch w1
@@ -1035,7 +1035,7 @@ func TestWorktreeCreateStaleEntryCount(t *testing.T) {
 //   - T3: the old entry is stale and locked. The "other than the one just
 //     created" text.
 //   - T4: T has no worktrees folder. The text of a gone .git file, with the leaf in
-//     backticks (4c111e86, cell l_new_t321, row off_c1_noworktrees_afteradd).
+//     backticks (4c111e86, measured on Linux and macOS).
 //   - T9: the leaf exists before the request. The "already exists" text.
 func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 	for _, tc := range []struct {

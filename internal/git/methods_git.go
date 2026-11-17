@@ -1152,8 +1152,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	}
 	// With no git on PATH, 4c111e86 answers not_a_repo after the marker test and
 	// before the count check, also with a worktreeRoot. Nothing is made (measured
-	// on Linux, macOS and Windows, for a missing baseRepo and a repository). The
-	// order against a trust refusal is not measured.
+	// on Linux and macOS, and on Windows for a missing baseRepo). The order
+	// against a trust refusal is not measured.
 	if gitLookupError() != nil {
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 	}
@@ -1599,8 +1599,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// status 128`. That is measured on Windows: the call exits 128 after
 	// `.git` became a junction to a folder that is no git directory. The text
 	// after the colon is the exec error. On Linux 5fd08069 answers the same
-	// text (measured). macOS is not measured: it gets the same stop. A call
-	// that a signal ended is not measured either. With "shadowDirOff":true a
+	// text (measured). On macOS 4c111e86 stops the same way for a call that
+	// exits 1 (measured). A call that a signal ended is not measured. With "shadowDirOff":true a
 	// call that exits 1 with no answer stops the create the same way, and no
 	// leaf stays (4c111e86, measured on Linux, macOS and Windows). Another
 	// failure there, and the other states, keep the old path: the create goes
@@ -2156,7 +2156,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// (measured on Linux). Nothing is removed. A leaf whose path leads elsewhere or
 	// is no folder gets the same text (claustrum's own, not measured). Without an
 	// answer of git to rev-parse --absolute-git-dir, and on Windows, the test stays
-	// after the checkout alone, with its old frame (not measured).
+	// after the checkout alone.
 	//
 	// A leaf can be deleted and replaced by a new empty folder right before the
 	// add. git then writes its .git file into the new folder. The create answers

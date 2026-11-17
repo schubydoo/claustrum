@@ -297,8 +297,8 @@ answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 | Answer of git | Reply |
 |---|---|
 | exit 1, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. This row holds on all five methods |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after a signal, a remove with `worktreeRoot` |
+| exit 1 or exit 2 with a text | The same text with git's text in place of `exit status 1`. Two lines stand there, one space apart. It holds on all five methods |
+| either of the two rows above | One `git version` call follows. A failed one gives `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method (not a create without git). A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after a signal, a remove with `worktreeRoot` |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows. On Windows the answers `<R>/../OTHER/.git` and `<R>/.git/..` keep their `..` (`b3081b51`, measured on Windows). On Linux and macOS a path that is not clean is shown cleaned, and on every system a path that is not absolute is shown cleaned from `<root>` (claustrum's own, not measured). No output gives `<root>` |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 

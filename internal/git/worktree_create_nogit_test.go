@@ -8,8 +8,8 @@ import (
 )
 
 // With no git on PATH, a create answers not_a_repo after the marker test and before
-// the count check, and makes nothing (4c111e86, cells l_new_cellD, m_new_cellD and
-// w_new_cellD, nightly run of 2026-11-17 on Linux, macOS and Windows). Mutation: drop
+// the count check, and makes nothing (4c111e86, measured on Linux and macOS, and on
+// Windows for a missing baseRepo). Mutation: drop
 // the PATH test of gitWorktreeCreateLocked, and each row but the marker row fails.
 func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {
 	f := newNoRepoFixture(t)
@@ -55,9 +55,8 @@ func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {
 }
 
 // With "shadowDirOff":true a `rev-parse --absolute-git-dir` that exits 1 with no
-// answer stops the create before the add, and no leaf stays (4c111e86, cells
-// l_new_t321, m_new_t321 and w_new_t321, rows of no answer with the off switch,
-// nightly run of 2026-11-17). Mutation: test the state shadow alone at that
+// answer stops the create before the add, and no leaf stays (4c111e86, measured
+// on Linux, macOS and Windows). Mutation: test the state shadow alone at that
 // step, and the create succeeds.
 func TestCreateWithTheOffSwitchStopsOnNoGitDirAnswer(t *testing.T) {
 	requireGit(t)
