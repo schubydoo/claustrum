@@ -174,9 +174,9 @@ func serveFailWriteConn(t *testing.T, line string) string {
 	})
 }
 
-// A connection with no token mark sends one byte and closes. The failed write of
-// its parse-error reply logs no Failed to write response line (measured on Linux,
-// 4c111e86). A failed -32001 reply keeps the line (claustrum's own, not measured).
+// A connection with no token mark logs no Failed to write response line after a
+// bad last line and a close (4c111e86, measured on Linux. macOS and Windows
+// claustrum's own). A failed -32001 reply keeps the line (claustrum's own, not measured).
 func TestUnmarkedParseErrorWriteFailureLogsNoLine(t *testing.T) {
 	failed := `ERROR [Server] Failed to write response: "` + failWriteText + `"`
 	out := serveFailWriteConn(t, "x")

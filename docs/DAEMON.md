@@ -614,18 +614,18 @@ and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 ### Lines of connections
 
-These line rules are claustrum's own unless an item names a build. `89cb6289` and `5fd08069` log the text of the notes.
+These rules are claustrum's own unless an item names a build. `89cb6289` and `5fd08069` log the text of the notes.
 
 - A connection gets the token mark at its first request that passes the token check. `server.shutdown` passes with no token. A parse error and a refused request set no mark.
-- The label of a peer is its address in `%q` form, such as `"@"`.
+- A peer label is its address in `%q` form, such as `"@"`.
 - `[Server] New connection from: <label>` comes once, before the daemon handles the first request that sets the mark. Older builds log it at the accept.
-- `[Server] Connection closed: <label>` comes only for a connection with the mark.
+- `[Server] Connection closed: <label>` comes only with the mark.
 - A connection with no mark counts on the close counter and logs `[Server] Connection number <n> that never showed the token: <label>`, only if it sent a byte (measured on Linux, `683cc6a9`).
-- The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. The older text is `Unauthorized request: method=…, id=…`.
+- The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. Older builds log `Unauthorized request: method=…, id=…`.
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
-- Each kind of line has one counter per daemon. It starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
-- A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
-- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error. The shutdown logs none. A connection with no mark logs no `writeResponse` and no `scanner error` line, and none for its parse-error reply (`4c111e86`, measured on Linux).
+- Each kind of line has one daemon-wide counter, from 1, never reset. A line logs for the counts 1 to 10 and each multiple of 1000.
+- A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later (claustrum's own). 4c111e86 and c9125eb8 log about 10 lines a second (measured on Linux).
+- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error. The shutdown logs none. A connection with no mark logs no `writeResponse` and no `scanner error` line. It logs no `Failed to write response` line after a bad last line and a close (`4c111e86`, measured on Linux). macOS and Windows: claustrum's own.
 
 ### Lines of child processes
 

@@ -956,9 +956,10 @@ func (s *server) serveConn(c *conn.Conn) {
 			// A failed write of this reply ends the read loop and so the
 			// connection. Measured on Linux with c8e2f083. A failed write of
 			// any other reply, which handleRequest writes, keeps it.
-			// A failed write of the parse-error reply to a connection with no
-			// token mark logs no Failed to write response line (measured on Linux,
-			// 4c111e86). The -32001 reply keeps the line (not measured).
+			// A connection with no token mark logs no Failed to write response
+			// line after a bad last line and a close (4c111e86, measured on Linux.
+			// macOS and Windows claustrum's own). The -32001 reply and every reply
+			// of a marked connection keep the line (claustrum's own, not measured).
 			write := c.WriteResponse
 			if resp.Error != nil && resp.Error.Code == rpc.CodeParse && !c.TokenMark().Load() {
 				write = c.WriteResponseQuiet
