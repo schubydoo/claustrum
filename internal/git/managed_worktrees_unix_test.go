@@ -45,7 +45,7 @@ func TestBaseRepoBelowDanglingMarkerLinkRefused(t *testing.T) {
 // A marker beside a `.git` link with no target does not count, and the walk goes on
 // up. The create and the remove with worktreeRoot outside the marker folder both
 // succeed. The remove deletes the worktree pre, its registration and its branch
-// (4c111e86, measured on macOS, the create also on Linux).
+// (4c111e86, measured on macOS, the create also on Linux, in-repo (see the next test)).
 func TestBaseRepoMarkerBesideDanglingGitLinkAccepted(t *testing.T) {
 	requireGit(t)
 	x, err := filepath.EvalSymlinks(t.TempDir())

@@ -161,14 +161,13 @@ not widen it.
 
 #### Path 2: `git.worktree_remove`
 
-The remove deletes `worktreePath` and its registration through an `os.Root`, with no
-`git worktree remove`. Before any delete it refuses a leaf that is a symlink or no
+The remove deletes `worktreePath` and its registration through an `os.Root`. Before any delete it refuses a leaf that is a symlink or no
 directory and a lock that counts (D22). A failed repository check, a Windows junction
 (D19) and `homeguard.WipesHomeDir` refuse it too. Never widen: On Linux and macOS a gone worktree whose locked entry sits
 behind a linked `<git dir>/worktrees` gets success, and its branch goes. That exception
 follows the reference. Do not widen it.
-The marker walk tests `.git` by `os.Lstat`, so a marker beside a dangling `.git` link lets
-the remove go on as on 4c111e86.
+The maintainer approved one widening: a marker beside a dangling `.git` link no longer refuses,
+so the remove deletes the leaf, its registration and its branch, as on 4c111e86.
 
 #### Path 3: the `git.worktree_create` rollback
 
