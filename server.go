@@ -814,7 +814,7 @@ func (s *server) run(socket string) {
 	// is connected (matching 4534d86), or after the idle limit with no client. Exits
 	// with the daemon's shutdown. A no-op on Windows, and unless the durations,
 	// sockInfo, and instanceId are all set. See orphanexit.go.
-	go s.exitWhenOrphaned(socket)
+	go s.watchSocketOwnership(socket)
 
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept), and
@@ -1395,7 +1395,7 @@ func (s *server) dropConns() int {
 func (s *server) stopChildren() int {
 	if s.keepChildren {
 		s.procs.EndPendingFarewells()
-		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.RunningCount())
+		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.AliveCount())
 		return 0
 	}
 	killed := s.procs.KillAllCount()

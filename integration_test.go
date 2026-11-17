@@ -373,7 +373,7 @@ func TestSocketProcessWantPid(t *testing.T) {
 	assertGolden(t, "socket_process_wantpid.golden.json", encodeGolden(t, golden))
 }
 
-func lastExit(t *testing.T, frames []supervisor.StreamFrame) supervisor.StreamFrame {
+func lastExit(t *testing.T, frames []supervisor.ChildFrame) supervisor.ChildFrame {
 	t.Helper()
 	for i := len(frames) - 1; i >= 0; i-- {
 		if frames[i].Stream == "exit" {
@@ -381,10 +381,10 @@ func lastExit(t *testing.T, frames []supervisor.StreamFrame) supervisor.StreamFr
 		}
 	}
 	t.Fatal("no exit frame")
-	return supervisor.StreamFrame{}
+	return supervisor.ChildFrame{}
 }
 
-func assertSeqMonotonic(t *testing.T, frames []supervisor.StreamFrame) {
+func assertSeqMonotonic(t *testing.T, frames []supervisor.ChildFrame) {
 	t.Helper()
 	for i, f := range frames {
 		if f.Seq != uint64(i+1) {

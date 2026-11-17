@@ -314,7 +314,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 // spawnErrorReply is the reply of a process.spawn whose start failed with err in
 // cwd: the code and text of a SpawnRefusal, or -32603 and the text of err.
 func spawnErrorReply(id interface{}, err error, cwd string) rpc.Response {
-	reason := supervisor.SpawnFailureReason(err, cwd)
+	reason := supervisor.ReasonForSpawnError(err, cwd)
 	var sr *supervisor.SpawnRefusal
 	if errors.As(err, &sr) {
 		return rpc.ErrResultData(id, sr.Code, sr.Msg, reason)
@@ -469,7 +469,7 @@ func (s *server) processKillAndWait(req *request) rpc.Response {
 		// measured for process.killAndWait).
 		supervisor.LogFarewellNotSaid(p.ID, rule)
 	}
-	found, died, alreadyExited, escalated := s.procs.KillAndWait(p.ID, p.Signal, grace, escalate)
+	found, died, alreadyExited, escalated := s.procs.SignalAndAwait(p.ID, p.Signal, grace, escalate)
 	end := ""
 	if rule != "" {
 		end = supervisor.FarewellInvalid

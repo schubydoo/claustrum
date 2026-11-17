@@ -146,7 +146,7 @@ func TestSiblingDaemonAliveDialArms(t *testing.T) {
 		// A plain file at rpc.sock: the stat succeeds and the connect fails in a way that
 		// means nobody is listening, so the sweep proceeds. The errno differs per OS —
 		// ECONNREFUSED on linux, ENOTSOCK on macOS, WSAECONNREFUSED on Windows — and
-		// isNobodyListening accepts all three, which is the classification under test. A
+		// isRefusedDial accepts all three, which is the classification under test. A
 		// mutant without it reports "cannot rule out" and keeps another install's plugins
 		// forever.
 		base, sibRun := mkSiblingRunDir(t, "bbbbbbbb")

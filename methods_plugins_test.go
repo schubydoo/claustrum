@@ -93,8 +93,8 @@ func TestIsNobodyListening(t *testing.T) {
 		{"nil", nil, false},
 	}
 	for _, c := range cases {
-		if got := isNobodyListening(c.err); got != c.want {
-			t.Errorf("isNobodyListening(%s) = %v, want %v", c.name, got, c.want)
+		if got := isRefusedDial(c.err); got != c.want {
+			t.Errorf("isRefusedDial(%s) = %v, want %v", c.name, got, c.want)
 		}
 	}
 }
@@ -133,14 +133,14 @@ func TestSiblingDaemonAliveRunDir(t *testing.T) {
 }
 
 // TestLockPluginDir proves the per-name plugin-dir lock serialises the same name
-// and does not block a different name. A mutant whose lockPluginDir returned a
+// and does not block a different name. A mutant whose pluginDirMutex returned a
 // no-op release (no real lock) would let the second same-name acquire succeed while
 // the first is held, failing the "blocked" arm.
 func TestLockPluginDir(t *testing.T) {
-	unlock := lockPluginDir("aaaaaaaaaaaaaaaa")
+	unlock := pluginDirMutex("aaaaaaaaaaaaaaaa")
 	got := make(chan struct{})
 	go func() {
-		u := lockPluginDir("aaaaaaaaaaaaaaaa")
+		u := pluginDirMutex("aaaaaaaaaaaaaaaa")
 		close(got)
 		u()
 	}()
@@ -150,7 +150,7 @@ func TestLockPluginDir(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 	// A different name never blocks on the held one.
-	other := lockPluginDir("bbbbbbbbbbbbbbbb")
+	other := pluginDirMutex("bbbbbbbbbbbbbbbb")
 	other()
 	unlock() // releasing the first must let the waiting goroutine proceed
 	select {
@@ -430,7 +430,7 @@ func TestPluginsPruneSweepsRealRoot(t *testing.T) {
 	mk(legacyRoot, legacyOld, old)
 
 	s := &server{ln: ln, procs: newTestProcManager(t)}
-	// Inject a running child whose argv references the live plugin dir. LiveArgv
+	// Inject a running child whose argv references the live plugin dir. RunningArgs
 	// reads only p.running and p.cmd.Args, so a never-started exec.Cmd is enough and
 	// is deterministic (no real process to race or reap). The command name carries
 	// no 16-hex run, so the live hash is the only one livePluginRefs can find.

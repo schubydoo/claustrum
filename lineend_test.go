@@ -101,7 +101,7 @@ func TestConnLinesCarryRunningEndCount(t *testing.T) {
 		t.Errorf("writeLine changed the shared slice: %q", shared)
 	}
 	c.LockWrites()
-	err := supervisor.WriteFramesLockedForTest(c, []supervisor.StreamFrame{{Type: "stream", ProcessID: "p", Stream: "stderr", Seq: 2}})
+	err := supervisor.WriteFramesLockedForTest(c, []supervisor.ChildFrame{{Type: "stream", ProcessID: "p", Stream: "stderr", Seq: 2}})
 	c.UnlockWrites()
 	if err != nil {
 		t.Fatal(err)
