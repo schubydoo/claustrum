@@ -149,14 +149,14 @@ func repoInsideMarkedTree(repo string) bool {
 // that counts. A marker beside the `.git` folder of a repository does not count, and
 // the walk goes on to the parent (b3081b51, measured on Linux, macOS and Windows). That
 // holds for a marker inside baseRepo beside its own `.git` too (b3081b51, measured on
-// Linux, macOS and Windows). The stat test, which
-// a `.git` file or link passes too, is claustrum's own, not measured. A marker link counts
-// with no target too (4c111e86, measured on Linux). macOS and Windows are claustrum's own.
+// Linux, macOS and Windows). A `.git` file does the same (4c111e86, measured on Linux), and
+// so does a `.git` link with no target (4c111e86, measured on Linux and macOS). A marker link
+// counts with no target too (4c111e86, measured on Linux). The rest is claustrum's own.
 func holdsMarkerEntry(dir string) bool {
 	if _, err := os.Lstat(filepath.Join(dir, managedWorktreesMarker)); err != nil {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(dir, ".git"))
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
 	return err != nil
 }
 

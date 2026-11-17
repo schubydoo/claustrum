@@ -107,12 +107,12 @@ With `worktreeRoot`:
 - `baseRepo` must be absolute and carry no `..` component.
 - A symbolic link at the `<directory>` level gives `refusing to remove worktree: <dir> is a symbolic link; the directory under the worktree location must be a real directory`.
 - A root that is `/`, that is or leads into the repository or one of its worktrees, or that cannot be reached, is refused. The location refusals also include [a reserved name](errors.md#error-string-catalogue) (`.git` and `.claude-managed-worktrees`, in any letter case) and [a link loop](errors.md#error-string-catalogue). The remove runs no ancestor test, so some roots that the create refuses pass here. The location refusals delete nothing.
-- The containment in the repository does not apply here. So the home guard refuses a `worktreePath` that is the home directory or holds it, with the home refusal above ([D2](../DIVERGENCES.md#d2)).
+- The containment in the repository does not apply here. So the home guard refuses a `worktreePath` that is the home directory or holds it ([D2](../DIVERGENCES.md#d2)).
 
 On both:
 
 - The home guard ([D2](../DIVERGENCES.md#d2)) runs before the delete, with and without `worktreeRoot`.
-- A `baseRepo` inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)) is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`. On Windows `..` drops the name before it untested, so `<T>\t.txt\..`, `<T>\missing\..` and a junction before `..` pass (`b3081b51`, measured on Windows). The same walk serves `git.worktree_create` and `git.list_branches`. A parent folder that denies List to the daemon passes it too (claustrum's own, not measured).
+- A `baseRepo` inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)) is refused with the managed-worktrees text. So is a `baseRepo` that is not missing and does not resolve, for example `<T>/a.txt/..`. On Windows `..` drops the name before it untested, so `<T>\t.txt\..`, `<T>\missing\..` and a junction before `..` pass (`b3081b51`, measured on Windows). A marker beside a dangling `.git` link does not count (`4c111e86`, measured on macOS). A parent folder that denies List to the daemon passes (claustrum's own, not measured).
 - If the last component of `worktreePath` is a symbolic link, the text is `refusing to remove worktree: <t> is a symbolic link, not a worktree directory`. If it is not a directory, the text is `refusing to remove worktree: <t> is not a directory`. `<t>` is the path with the symbolic links of `baseRepo`, or of the root, resolved. On macOS a path under `/tmp` therefore reads `/private/tmp/…`.
 - On Windows, a junction at any directory between `baseRepo` and the worktree is refused ([D19](../DIVERGENCES.md#d19)).
 

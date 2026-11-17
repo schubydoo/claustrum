@@ -2,4 +2,4 @@
 default: patch
 ---
 
-A `.claude-managed-worktrees` link with no target above `baseRepo` or `path` now counts as a marker in `git.worktree_create`, `git.worktree_remove` and `git.list_branches`.
+The `baseRepo` marker walk counts a dangling `.claude-managed-worktrees` link and skips a marker beside a dangling `.git` link.

@@ -21,10 +21,9 @@ daemon. The wire surface is the product.
 | Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit (a race run takes over 9 minutes) |
 
-- Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
-  below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
+- Use Go 1.26 and `CGO_ENABLED=0`. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
   and CI resolve Go from `go.mod`, never from `go-version: stable`. See
   [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
   drift.
@@ -96,7 +95,7 @@ Windows lacks two methods: `files.find` and `files.mkdir`.
   to `main` directly.
 - Use Conventional Commits for PR titles (`feat:` / `fix:` / `docs:` /
   `chore:` / `ci:` …). PRs squash-merge, so the title becomes the commit
-  subject. Titles are hygiene only. They do not drive releases.
+  subject.
 - Releases are changesets-only (knope, not release-please). A user-facing change adds a
   `.changeset/*.md` fragment with `knope document-change`. No fragment ⇒ no release. An
   internal PR takes the `no-changelog` label. A changeset body is ONE line, because knope
@@ -168,6 +167,8 @@ directory and a lock that counts (D22). A failed repository check, a Windows jun
 (D19) and `homeguard.WipesHomeDir` refuse it too. Never widen: On Linux and macOS a gone worktree whose locked entry sits
 behind a linked `<git dir>/worktrees` gets success, and its branch goes. That exception
 follows the reference. Do not widen it.
+The marker walk tests `.git` by `os.Lstat`, so a marker beside a dangling `.git` link lets
+the remove go on as on 4c111e86.
 
 #### Path 3: the `git.worktree_create` rollback
 
