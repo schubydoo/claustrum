@@ -118,11 +118,9 @@ end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
 does not fail the test. The test goes on (`b3081b51`, measured on Linux).
 
-The daemon keeps a failure for 10 seconds from the end of the failed test, also
-after its cause is gone. A request in that time gets the kept text with no git call.
-A request with `"shadowDirOff":true` works in that time.
-
-A failure while a request with `"sessionFoldersOff":true` runs is not kept
+The daemon keeps a failure for 10 seconds after the test, also with its cause
+gone. Then a request gets the kept text with no git call. One with
+`"shadowDirOff":true` works. A failure under `"sessionFoldersOff":true` is not kept
 (`4c111e86`, measured on Linux).
 
 ### The folders
