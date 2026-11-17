@@ -184,12 +184,12 @@ jobs:
     # On Windows the setup and the compile take up to about 3.3 minutes. A hung
     # test binary there reaches the 12 minute limit at about 15.3 minutes.
     # So the Windows legs get a job limit of 17 minutes, and the stack of the
-    # hung test prints before the cancel. Linux keeps 15 minutes.
+    # hung test prints before the cancel.
     # macOS gets 40 minutes: GitHub's macOS arm64 runners were short of capacity
     # (its own notice), and the job limit also counted the time a job waited for a
     # runner, so jobs that never started were cancelled at 15 minutes (TASK-544).
     # The go test step keeps its own 16 minute limit, so a hang still stops there.
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 17 || matrix.os == 'macos-latest' && 40 || 15 }}
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 17 || 40 }}
     strategy:
       fail-fast: false
       # Windows runs the suite in five shards, because the top-level tests run
@@ -199,24 +199,18 @@ jobs:
       # of the Makefile runs every test once.
       # macOS runs four shards. One macOS run took 461 s for the whole suite,
       # against the same 600 s default. Each leg now runs with the 12 minute limit
-      # of the go test step. The git shard runs the worktree, the git.status,
-      # the TestShadow and the TestProbe tests, and the rest shard skips them.
+      # of the go test step.
       # The macOS rest shard ran 11 to 12 minutes on main with TestShadow and
       # TestProbe in it, and one added test passed the limit.
-      # Linux runs the same two shards as macOS, so that the Linux legs end sooner.
       # The tests named TestRepoHold are tests of the settings copy too, so they
       # go with TestShadow in every shard set. The Windows rest shard passed its
       # 12 minutes with them in it.
-      # The coverage shards below run the sets of the macOS legs, with the create
-      # and rest sets as one rest shard.
+      # This job has no Linux leg. The coverage shards below run the whole suite
+      # on Linux with the same test flags, and they upload its junit results.
+      # They run the sets of the macOS legs, with the create and rest sets as one
+      # rest shard.
       matrix:
         include:
-          - os: ubuntu-latest
-            shard: git
-            select: -run=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
-          - os: ubuntu-latest
-            shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           # The macOS git half is two shards. It ran 565 to 643 s of the 12
           # minutes on main, and one run with the off-switch tests of git.status
           # and the worktree methods passed the limit.
@@ -353,13 +347,13 @@ jobs:
         # The step limit counts only from the start of the step, unlike the job
         # limit, which also counted the wait for a runner on macOS. It is the
         # 12 minutes of go test plus room to compile (up to about 3.3 minutes on
-        # Windows), so the stack of a hung test prints first. On Linux and Windows
-        # the job limits of 15 and 17 minutes come first, as before.
+        # Windows), so the stack of a hung test prints first. On Windows the job
+        # limit of 17 minutes comes first, as before.
         timeout-minutes: 16
         env:
           GOFLAGS: ${{ matrix.select }}
-        # The time limit is explicit, and 3 minutes below the 15 minutes of a macOS
-        # or Linux job (5 minutes below the 17 of a Windows job).
+        # The time limit is explicit, and 5 minutes below the 17 minutes of a
+        # Windows job.
         # The default of go test is 10 minutes. Plain go test ends a run past it
         # with a panic and marks no test as failed (seen on a Linux host, not in CI).
         run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 -timeout 12m ./...
@@ -429,7 +423,9 @@ jobs:
     # the macOS legs of the test job, so together they run every test once. In
     # one process internal/git alone took up to 720 s of the old 14 minute limit.
     # Each shard writes its own profile with -coverpkg=./..., and the coverage
-    # job below merges them.
+    # job below merges them. These shards are also the Linux test run: the test
+    # job has no Linux leg. Each shard writes a junit.xml through gotestsum, as
+    # the test job does, and uploads it under the Linux flag.
     needs: changes
     if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: coverage shard (${{ matrix.shard }})
@@ -445,6 +441,9 @@ jobs:
             select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)
           - shard: rest
             select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+    env:
+      # The same pin as in the test job. Renovate bumps both lines.
+      GOTESTSUM_VERSION: v1.13.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -453,18 +452,47 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # The comments of the same step in the test job say why gotestsum is a CI
+      # tool and not a module dependency.
+      - name: Install gotestsum
+        shell: bash
+        run: |
+          go install gotest.tools/gotestsum@"${GOTESTSUM_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run tests with coverage
         # GOFLAGS carries the shard's -run or -skip flag, as in the test job.
+        # The go test flags are those of the test job, plus the coverage flags.
+        # gotestsum exits non-zero when a test fails, so a failed test still
+        # fails this job, as plain go test did.
         env:
           GOFLAGS: ${{ matrix.select }}
           SHARD: ${{ matrix.shard }}
         run: |
-          go test -race -count=1 -timeout 12m \
+          gotestsum --format standard-verbose --junitfile junit.xml -- \
+            -race -count=1 -timeout 12m \
             -coverprofile="coverage-${SHARD}.out" \
             -covermode=atomic \
             -coverpkg=./... \
             ./...
+
+      # The same upload as in the test job, under the Linux flag.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: junit.xml
+          disable_search: true
+          flags: ${{ runner.os }}
+          report_type: test_results
+          fail_ci_if_error: false
+      - name: Upload test results artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-ubuntu-latest-${{ matrix.shard }}
+          path: junit.xml
+          retention-days: 7
 
       # `!cancelled()` so a FAILED shard still hands its profile to the merge,
       # and Codecov still gets the drop.
