@@ -636,8 +636,8 @@ func otherEntryRefusal(worktreePath string) string {
 // offAddRefusal tests the leaf of a create with "shadowDirOff":true right after a
 // good add, on Windows. It returns the answer of the create, or "" when the leaf
 // passes. registry is the registrations folder of the git directory. 4c111e86
-// gives each text with unsafe_path, runs no git call after the add, and removes
-// nothing (measured on Windows):
+// gives each text with unsafe_path and removes nothing (measured on Windows). In
+// each row its call log ends at the add:
 //
 //   - a link, a folder or a junction at `.git` of the leaf: "`<leaf>\.git` is
 //     not a regular file".
