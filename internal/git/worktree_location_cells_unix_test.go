@@ -221,6 +221,20 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 				"(at <X>/W); a worktree location must be outside the repository's checkouts"},
 		{name: "C-W9", setup: setM, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
 			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
+		// A marker folder and a marker link with no target count too (4c111e86,
+		// measured on Linux and macOS).
+		{name: "C-W9-folder", setup: func(t *testing.T, c *locCell) {
+			c.dir(t, "<X>/proj/loc/p")
+			c.file(t, "<X>/proj/loc/p/keep")
+			c.dir(t, "<X>/proj/"+managedWorktreesMarker)
+		}, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
+			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
+		{name: "C-W9-dangling", setup: func(t *testing.T, c *locCell) {
+			c.dir(t, "<X>/proj/loc/p")
+			c.file(t, "<X>/proj/loc/p/keep")
+			c.link(t, "<X>/nowhere", "<X>/proj/"+managedWorktreesMarker)
+		}, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
+			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
 		{name: "C-W10", setup: setM, root: "<X>/proj/new", path: "<X>/proj/new/p/w1",
 			text: "refusing to create worktree: <X>/proj/new would be made inside a session worktree or its " +
 				"per-repository directory (at <X>/proj/new" + session},

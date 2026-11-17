@@ -506,7 +506,7 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 // sessionLocationRefusal is the refusal of a create whose worktreeRoot lies in a
 // session worktree, or "". It resolves the root as pathcanon.OfGone does and
 // tests each folder of that path from "/" down. The first folder below a folder
-// with a .claude-managed-worktrees file, or below .claude/worktrees, decides. A
+// with a .claude-managed-worktrees entry, or below .claude/worktrees, decides. A
 // folder that exists gets the "leads into" text, and a missing one the "would be
 // made" text. Then a root that holds that file itself is refused. 5fd08069 refuses
 // so (measured on Linux). A .claude/worktrees folder above the root is not
@@ -542,10 +542,13 @@ func sessionLocationRefusal(worktreeRoot string) string {
 }
 
 // belowSessionFolder reports whether a folder above p holds a
-// .claude-managed-worktrees file, or is a worktrees folder in a .claude folder.
+// .claude-managed-worktrees entry, or is a worktrees folder in a .claude folder.
+// A marker of any kind counts: a file, a folder or a link with no target
+// (4c111e86, measured on Linux and macOS). Windows is claustrum's own, not measured.
 func belowSessionFolder(p string) bool {
 	for at := filepath.Dir(p); ; at = filepath.Dir(at) {
-		if holdsManagedMarker(at) || filepath.Base(at) == worktreesSubdir && filepath.Base(filepath.Dir(at)) == claudeDirName {
+		if _, err := os.Lstat(filepath.Join(at, managedWorktreesMarker)); err == nil ||
+			filepath.Base(at) == worktreesSubdir && filepath.Base(filepath.Dir(at)) == claudeDirName {
 			return true
 		}
 		if filepath.Dir(at) == at {
@@ -555,7 +558,8 @@ func belowSessionFolder(p string) bool {
 }
 
 // holdsManagedMarker reports whether dir holds a .claude-managed-worktrees entry that
-// is not a folder.
+// is not a folder. The "is itself" test of sessionLocationRefusal uses it. A folder or
+// a dangling link there is not measured.
 func holdsManagedMarker(dir string) bool {
 	fi, err := os.Stat(filepath.Join(dir, managedWorktreesMarker))
 	return err == nil && !fi.IsDir()
