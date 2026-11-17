@@ -105,10 +105,10 @@ func StopTermGraceForTest() time.Duration { return stopTermGrace }
 func StopKillGraceForTest() time.Duration { return stopKillGrace }
 
 // SelfBaseForTest returns the base name of this executable, as the holder check reads it.
-func SelfBaseForTest() string { return selfBase() }
+func SelfBaseForTest() string { return ownExeName() }
 
 // ReadOwnerRecordForTest reads the owner record at path.
-func ReadOwnerRecordForTest(path string) (OwnerRecord, error) { return readOwnerRecord(path) }
+func ReadOwnerRecordForTest(path string) (OwnerRecord, error) { return loadLockOwner(path) }
 
 // WriteOwnerRecordForTest writes rec into the locked fd, as the daemon does.
-func WriteOwnerRecordForTest(fd int, rec OwnerRecord) { writeOwnerRecord(fd, rec) }
+func WriteOwnerRecordForTest(fd int, rec OwnerRecord) { storeLockOwner(fd, rec) }

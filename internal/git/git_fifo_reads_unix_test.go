@@ -303,7 +303,7 @@ func TestFifoCommondirOfLockedWorktreeIsLockedRefusal(t *testing.T) {
 	runGit(t, T, "worktree", "lock", wt)
 	fifoInPlaceOf(t, filepath.Join(entry, "commondir"))
 	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")),
-		removeRefused(lockedWorktreeRefusal(wt, lockedPlain)))
+		removeRefused(lockRefusalText(wt, lockedPlain)))
 	wantFileContent(t, filepath.Join(wt, "t.txt"), "t\n")
 	wantFifo(t, filepath.Join(entry, "commondir"))
 	mustExist(t, filepath.Join(entry, "locked"))
@@ -431,13 +431,13 @@ func TestGitFileReadsDoNotWaitOnFifo(t *testing.T) {
 	var belongs bool
 	var belongsErr error
 	doneWithin(t, "the path reads", func() {
-		adminDir = worktreeAdminDir(wt)
+		adminDir = linkedGitDirOf(wt)
 		gitDir = repoGitDir(wt)
 		belongs, belongsErr = worktreeAdminBelongsTo(admin, linked)
 		registryDir = worktreeRegistryDir(linked)
 	})
 	if adminDir != "" {
-		t.Errorf("worktreeAdminDir(FIFO .git) = %q, want \"\"", adminDir)
+		t.Errorf("linkedGitDirOf(FIFO .git) = %q, want \"\"", adminDir)
 	}
 	if want := filepath.Join(wt, ".git"); gitDir != want {
 		t.Errorf("repoGitDir(FIFO .git) = %q, want %q", gitDir, want)

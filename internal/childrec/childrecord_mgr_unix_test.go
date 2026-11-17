@@ -17,7 +17,7 @@ func TestRecordCallsWithNoUsableRunDir(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := &Records{}
 	m.RunDir = filepath.Join(t.TempDir(), "gone")
-	m.writeRecord(childRecord{Pid: 4242, Start: "1", Argv0: "a"})
+	m.writeRecord(spawnRecord{Pid: 4242, Start: "1", Argv0: "a"})
 	if want := "[process.Registry] cannot record child 4242: "; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
@@ -27,7 +27,7 @@ func TestRecordCallsWithNoUsableRunDir(t *testing.T) {
 
 	held := &Records{}
 	held.RunDir = t.TempDir()
-	if err := writeChildRecord(held.RunDir, childRecord{Pid: 1, Start: "1", Argv0: "a"}); err != nil {
+	if err := writeChildRecord(held.RunDir, spawnRecord{Pid: 1, Start: "1", Argv0: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	held.RemoveChildRecord(1)
@@ -97,7 +97,7 @@ func TestRemoveRecordGoesThroughHeldRunDir(t *testing.T) {
 			t.Fatal(err)
 		}
 		rec := filepath.Join(renamed, "children", "4242.json")
-		m.writeRecord(childRecord{Pid: 4242, Start: "1", Argv0: "a"})
+		m.writeRecord(spawnRecord{Pid: 4242, Start: "1", Argv0: "a"})
 		if _, err := os.Stat(rec); err != nil {
 			t.Fatalf("no record under the new name: %v", err)
 		}

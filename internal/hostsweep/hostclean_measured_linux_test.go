@@ -173,7 +173,7 @@ func TestTidyKeepsALockedDirWithTheMeasuredLine(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 
 	want := fmt.Sprintf("[hostclean] run dir %q unused for 40 days: kept, a live process holds its daemon.lock\n", e.dirPath)
 	if got := buf.String(); !strings.Contains(got, want) {
@@ -204,7 +204,7 @@ func TestTidyRefusesAListenerOfAnotherBinary(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 
 	want := fmt.Sprintf("[hostclean] run dir %q unused for 40 days: its daemon (pid %d) was not retired: the listener could not be verified as a daemon of ours (not our daemon binary)\n", e.dirPath, self)
 	if got := buf.String(); !strings.Contains(got, want) {
@@ -328,10 +328,10 @@ func TestRetireChecksTheIdentityAfterThePidfdOpen(t *testing.T) {
 	// The pid changes hands between the open and the send.
 	opened, sent, sentFds, kills, reuse = nil, nil, nil, 0, true
 	plant(victim)
-	e := runDirEntry{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
-	ok, reason := c.retireAbandoned(e, victim, uint32(hcGetuid()))
+	e := staleRunFolder{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+	ok, reason := c.endIdleDaemon(e, victim, uint32(hcGetuid()))
 	if ok || reason != "it is no longer the process that was inspected" {
-		t.Errorf("retireAbandoned = %v, %q, want a refusal for the changed identity", ok, reason)
+		t.Errorf("endIdleDaemon = %v, %q, want a refusal for the changed identity", ok, reason)
 	}
 	if len(opened) != 1 || opened[0] != victim {
 		t.Errorf("pidfd_open calls = %v, want one for %d", opened, victim)
@@ -549,7 +549,7 @@ func TestHostCleaningStartRows(t *testing.T) {
 			if len(c.roots.roots) != 1 || c.roots.roots[0] != R {
 				t.Errorf("roots = %v, want only the root of the socket %s", c.roots.roots, R)
 			}
-			if rr := c.roots.runRoots(); len(rr) != 1 || rr[0] != R+"/run" {
+			if rr := c.roots.runFolders(); len(rr) != 1 || rr[0] != R+"/run" {
 				t.Errorf("run roots = %v, want only %s/run", rr, R)
 			}
 		})
@@ -682,7 +682,7 @@ func TestTwoSpellingRootListTouchesEachRunDirOnce(t *testing.T) {
 	if len(c.roots.roots) != 2 {
 		t.Fatalf("roots = %v, want the two spellings of one folder", c.roots.roots)
 	}
-	entries, done := c.runDirs()
+	entries, done := c.listRunFolders()
 	defer done()
 	var listed []string
 	for _, e := range entries {
@@ -695,7 +695,7 @@ func TestTwoSpellingRootListTouchesEachRunDirOnce(t *testing.T) {
 	}
 	buf := captureLogBuf(t)
 	var sum hcSummary
-	c.tidyRunDirs(entries, &sum)
+	c.sweepRunFolders(entries, &sum)
 
 	if sum.runDirsRemoved != 1 || len(removed) != 1 {
 		t.Errorf("removed %v (summary %d), want the stale folder once", removed, sum.runDirsRemoved)

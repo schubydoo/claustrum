@@ -706,7 +706,7 @@ func spawnFaultFrame(msg, fault string) string {
 	return `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"` + msg + `","data":{"launcherFault":"` + fault + `","reason":"launcher"}}}`
 }
 
-func exitCodeOf(frames []supervisor.StreamFrame) int {
+func exitCodeOf(frames []supervisor.ChildFrame) int {
 	for _, f := range frames {
 		if f.Stream == "exit" && f.ExitCode != nil {
 			return *f.ExitCode

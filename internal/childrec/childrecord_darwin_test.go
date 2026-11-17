@@ -56,7 +56,7 @@ func TestRecordChildDarwin(t *testing.T) {
 		t.Errorf("field order = %v, want %v", gotOrder, wantOrder)
 	}
 
-	var rec childRecord
+	var rec spawnRecord
 	if err := json.Unmarshal(data, &rec); err != nil {
 		t.Fatalf("record not valid JSON: %v", err)
 	}

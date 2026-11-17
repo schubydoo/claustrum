@@ -44,7 +44,7 @@ func TestWatchedBodyEmitsProgressLine(t *testing.T) {
 	// An io.Pipe body: Read blocks until the writer runs, so the download streams
 	// through the watched body and at least one progress line is emitted.
 	pr, pw := io.Pipe()
-	wb := newWatchedBody(pr, 5, time.Now())
+	wb := newMeteredBody(pr, 5, time.Now())
 	go func() { _, _ = pw.Write([]byte("hello")); _ = pw.Close() }()
 	_, _ = io.ReadAll(wb)
 	_ = wb.Close() // joins the ticker; no os.Stdout write can follow
@@ -78,9 +78,9 @@ func TestInstallFetchMarshaling(t *testing.T) {
 			`{"serverVersion":"v","os":"linux","arch":"amd64","libc":"glibc","cliPath":"/p","cliWasPresent":false}`},
 		{"fetch object field order", fetchStats{Bytes: 30, Ms: 4, LongestPauseMs: 0},
 			`{"bytes":30,"ms":4,"longestPauseMs":0}`},
-		{"progress with total", progressLine{Phase: "download", Bytes: 5, Total: 10},
+		{"progress with total", progressFrame{Phase: "download", Bytes: 5, Total: 10},
 			`{"phase":"download","bytes":5,"total":10}`},
-		{"progress without total (chunked) drops total", progressLine{Phase: "download", Bytes: 5},
+		{"progress without total (chunked) drops total", progressFrame{Phase: "download", Bytes: 5},
 			`{"phase":"download","bytes":5}`},
 	}
 	for _, tc := range cases {
@@ -256,7 +256,7 @@ func TestWatchedBodyTickPrintsNothingWithoutNewBytes(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		pr, _ := io.Pipe()
-		wb := newWatchedBody(pr, 0, time.Now())
+		wb := newMeteredBody(pr, 0, time.Now())
 		time.Sleep(60 * time.Millisecond)
 		_ = wb.Close() // joins the ticker, so no os.Stdout write follows
 	})

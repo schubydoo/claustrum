@@ -43,7 +43,7 @@ func TestLauncherChildRecordNamesProgram(t *testing.T) {
 	}
 	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "wrap", "CLAUSTRUM_TEST_WRAP_NEXT": "sleep"}
 	var reply struct {
-		Result rpc.SpawnResult `json:"result"`
+		Result rpc.SpawnReply `json:"result"`
 	}
 	raw := cl.call(launchedSpawnReq(t, map[string]any{"id": "p1", "command": exe, "args": []string{"30"}, "env": env, "launcher": []string{wrap}, "wantPid": true}))
 	if err := json.Unmarshal(raw, &reply); err != nil || reply.Result.Pid == 0 {

@@ -12,7 +12,7 @@ import (
 // state. Both copy paths skip a match: the manifest copy and the `.claude/` copy.
 //
 // The measured behaviour is whole path components, anchored directly under
-// `.claude/`, and case-insensitive. isClaudeRuntimeState carries the fixture that
+// `.claude/`, and case-insensitive. isSessionStateFile carries the fixture that
 // pins each of those three.
 //
 // claustrum has the manifest copy as copyWorktreeIncludes, and this file pins that
