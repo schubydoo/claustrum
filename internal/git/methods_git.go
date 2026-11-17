@@ -2325,7 +2325,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// `git worktree add failed: branch "<b>" could not be resolved to a
 			// commit (<text>)`, and it keeps the branch with that text as the
 			// cause (measured on macOS). The branch of an attach add is
-			// claustrum's own, not measured.
+			// claustrum's own, not measured. On Windows git is asked at the
+			// same place, and the request goes on (createRechecksAfterAdd).
+			if createRechecksAfterAdd {
+				cu.recheck(repo)
+			}
 			if text := cu.askAfterAdd(repo); text != "" {
 				u := req.use
 				u.branchGate = func() string { return cu.askAfterAdd(repo) }

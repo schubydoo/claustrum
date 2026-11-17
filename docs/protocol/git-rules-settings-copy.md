@@ -264,8 +264,8 @@ blocks of rewritten URLs. The file ends with
 ### The call about the repository
 
 In the state `shadow` the daemon runs `rev-parse --git-dir` before the method's
-calls, in the root of the work tree. On Linux and macOS a create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). It passes `-c core.hooksPath=<null device>`
-and `-c core.fsmonitor=` (build `c8e2f083`, measured on Windows). The call names
+calls, in the root of the work tree. A create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). On Windows (`4c111e86`, measured) it comes right after the add, and any answer goes on (claustrum's own). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). It passes `-c core.hooksPath=<null device>`
+and `-c core.fsmonitor=` (`c8e2f083`, measured on Windows). The call names
 the folder `.probe` of the daemon. The daemon removes leftovers like
 `shallow` and keeps a planted `keepme` (measured on Linux). Other names and
 entries are claustrum's own (not measured). It rewrites an emptied `config`, keeps an
@@ -274,8 +274,7 @@ unchanged one and replaces a folder at `HEAD` (measured on Linux). If `.probe` c
 (Linux). The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
-macOS and Windows). So a pair such as `safe.directory` changes the answers (from the
-code). A good answer is kept 5 seconds from the end of the call. A change of the root
+macOS and Windows). A good answer is kept 5 seconds from the end of the call. A change of the root
 folder or of its `.git` entry makes the daemon ask again.
 
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
