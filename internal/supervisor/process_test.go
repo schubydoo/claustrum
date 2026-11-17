@@ -292,7 +292,7 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 	c := conn.New(client, nil, 0, nil, nil, nil)
 	c.BareShown().Store(true)
 
-	if !c.WriteResponse(rpc.PongResult{Pong: true}) {
+	if !c.WriteResponse(rpc.PongReply{Pong: true}) {
 		t.Error("writeResponse did not report the failed write")
 	}
 
@@ -315,7 +315,7 @@ func TestWriteResponseFailureLinesSkips(t *testing.T) {
 	}
 	t.Run("no_token_mark", func(t *testing.T) {
 		buf := captureLogBuf(t)
-		(conn.New(dead(), nil, 0, nil, nil, nil)).WriteResponse(rpc.PongResult{Pong: true})
+		(conn.New(dead(), nil, 0, nil, nil, nil)).WriteResponse(rpc.PongReply{Pong: true})
 		got := buf.String()
 		if strings.Contains(got, "[Server] writeResponse: wrote") {
 			t.Errorf("a connection with no token mark logged the writeResponse line: %q", got)
@@ -330,7 +330,7 @@ func TestWriteResponseFailureLinesSkips(t *testing.T) {
 		close(down)
 		c := conn.New(dead(), nil, 0, nil, nil, down)
 		c.BareShown().Store(true)
-		if !c.WriteResponse(rpc.PongResult{Pong: true}) {
+		if !c.WriteResponse(rpc.PongReply{Pong: true}) {
 			t.Error("writeResponse did not report the failed write")
 		}
 		if got := buf.String(); strings.Contains(got, "[Server]") {
@@ -384,7 +384,7 @@ func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
 		t.Errorf("marshal error not logged: %q", buf.String())
 	}
 	// A closed conn returns before writing (would otherwise block on the pipe).
-	closedConn(conn.New(client, nil, 0, nil, nil, nil)).WriteResponse(rpc.PongResult{Pong: true})
+	closedConn(conn.New(client, nil, 0, nil, nil, nil)).WriteResponse(rpc.PongReply{Pong: true})
 }
 
 // firstStdout drains frames until the first non-empty stdout frame and returns
@@ -840,7 +840,7 @@ func TestWriteJSONClosedConn(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
 	c := closedConn(conn.New(client, nil, 0, nil, nil, nil))
-	if err := c.WriteJSON(rpc.PongResult{Pong: true}); err != net.ErrClosed {
+	if err := c.WriteJSON(rpc.PongReply{Pong: true}); err != net.ErrClosed {
 		t.Errorf("writeJSON on closed conn = %v, want net.ErrClosed", err)
 	}
 }

@@ -10,11 +10,11 @@ package rpc
 // docs/ARCHITECTURE.md → "Inherited wire bytes" for the register, and
 // inherited_encoding_test.go for the assertions that keep it from drifting.
 
-type PongResult struct {
+type PongReply struct {
 	Pong bool `json:"pong"`
 }
 
-type CapabilitiesResult struct {
+type CapabilitiesReply struct {
 	Version string   `json:"version"`
 	Methods []string `json:"methods"`
 	// InstanceID and StartedAt were added by the reference daemon in 4534d86 and
@@ -36,49 +36,49 @@ type CapabilitiesResult struct {
 	PeerCheckBy []string `json:"peerCheckBy,omitempty"`
 }
 
-type StatResult struct {
+type StatReply struct {
 	Exists bool   `json:"exists"`
 	IsDir  bool   `json:"isDir"`
 	Size   int64  `json:"size"`
 	Mode   string `json:"mode"`
 }
 
-type ListEntry struct {
+type DirItem struct {
 	Name  string `json:"name"`
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
 }
 
-type ListResult struct {
-	Entries []ListEntry `json:"entries"`
+type ListReply struct {
+	Entries []DirItem `json:"entries"`
 }
 
-type ReadResult struct {
+type ReadReply struct {
 	Content string `json:"content"`
 	Exists  bool   `json:"exists"`
 	Real    string `json:"real,omitempty"`
 }
 
-// RealpathResult is the files.realpath result. Real and WouldBe are never both
+// RealpathReply is the files.realpath result. Real and WouldBe are never both
 // set. Measured on build 683cc6a9 (measured on Linux, macOS and Windows).
-type RealpathResult struct {
+type RealpathReply struct {
 	Exists   bool   `json:"exists"`
 	Real     string `json:"real,omitempty"`
 	WouldBe  string `json:"wouldBe,omitempty"`
 	Dangling bool   `json:"dangling,omitempty"`
 }
 
-// MkdirResult is the files.mkdir result. Errno is set for a code that an OS
+// MkdirReply is the files.mkdir result. Errno is set for a code that an OS
 // error gave (c9125eb8, measured on Linux and macOS).
-type MkdirResult struct {
+type MkdirReply struct {
 	Code  string `json:"code"`
 	Errno int    `json:"errno,omitempty"`
 }
 
-// FindResult is the files.find result, in the member order of 4c111e86
+// FindReply is the files.find result, in the member order of 4c111e86
 // (measured on Linux and macOS). Cut is absent when Whole is true. The three
 // lists are never null.
-type FindResult struct {
+type FindReply struct {
 	Paths      []string   `json:"paths"`
 	Whole      bool       `json:"whole"`
 	Cut        string     `json:"cut,omitempty"`
@@ -92,41 +92,41 @@ type FindLink struct {
 	LeadsTo string `json:"leadsTo"`
 }
 
-type ValidateResult struct {
+type ValidateReply struct {
 	Valid bool   `json:"valid"`
 	IsDir bool   `json:"isDir"`
 	Error string `json:"error,omitempty"`
 }
 
-type ExtractResult struct {
+type ExtractReply struct {
 	Success         bool   `json:"success"`
 	FileCount       int    `json:"fileCount"`
 	AlreadyComplete bool   `json:"alreadyComplete,omitempty"`
 	Error           string `json:"error,omitempty"`
 }
 
-type SuccessResult struct {
+type SuccessReply struct {
 	Success bool `json:"success"`
 }
 
-// ShutdownResult is server.shutdown's reply. See the methodShutdown case in methods_server.go.
-type ShutdownResult struct {
+// ShutdownReply is server.shutdown's reply. See the methodShutdown case in methods_server.go.
+type ShutdownReply struct {
 	OK bool `json:"ok"`
 }
 
-// AdoptEnvResult is the reply of a good server.adoptEnv: {"ok":true} (c9125eb8).
-type AdoptEnvResult struct {
+// AdoptEnvReply is the reply of a good server.adoptEnv: {"ok":true} (c9125eb8).
+type AdoptEnvReply struct {
 	OK bool `json:"ok"`
 }
 
-// SpawnResult is process.spawn's reply. It is deliberately distinct from the
-// StdinResult of process.stdin and the KillResult: the CT-1 opt-in
+// SpawnReply is process.spawn's reply. It is deliberately distinct from the
+// StdinReply of process.stdin and the KillReply: the CT-1 opt-in
 // ("wantPid":true) adds pid + startTime here only, so those fields can never
 // leak into a stdin/kill reply. Both are omitempty, so without the opt-in the
 // frame is byte-identical to the old {"success":true}. startTime is an opaque
 // daemon token (epoch seconds), not an OS-comparable start time — see
 // supervisor.Proc.startTime.
-type SpawnResult struct {
+type SpawnReply struct {
 	Success bool `json:"success"`
 	// CLITempRoot answers a spawn with "cliTempRoot":true on Linux and macOS. It is
 	// nil when the daemon has nothing to say, so the frame stays {"success":true}.
@@ -157,7 +157,7 @@ type GoneTempRootEntry struct {
 	AgoSeconds int64  `json:"agoSeconds"`
 }
 
-type GitInfoResult struct {
+type GitInfoReply struct {
 	IsRepo bool `json:"isRepo"`
 	// Repo is the base name of Root. It is omitted when that name starts with "-" or
 	// "+" (infoRepoName).
@@ -188,13 +188,13 @@ type GitInfoResult struct {
 	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
-type GitStatusResult struct {
+type GitStatusReply struct {
 	IsRepo  bool     `json:"isRepo"`
 	Clean   bool     `json:"clean"`
 	Changes []string `json:"changes,omitempty"`
 }
 
-type BranchesResult struct {
+type BranchesReply struct {
 	IsRepo   bool     `json:"isRepo"`
 	Branches []string `json:"branches"`
 }
@@ -202,7 +202,7 @@ type BranchesResult struct {
 // Field order: success, path, error, errorCode, sourceBranch. No input populates
 // sourceBranch together with error/errorCode, so the order of those two groups is
 // claustrum's own, not probe-measured.
-// WorktreeRemoveResult is git.worktree_remove's reply. On some failures the
+// WorktreeRemoveReply is git.worktree_remove's reply. On some failures the
 // reference emits an `error` field beside `success`. The lenient cases still
 // answer a bare {"success":true}: removing a nonexistent worktree, or naming a
 // branch that the branch step finds absent. A kept branch adds "branchKept":true.
@@ -222,7 +222,7 @@ type BranchesResult struct {
 // populates error. What the goldens
 // pin is the bare {"success":true} on the inputs the battery exercises — not a
 // property of every reachable input.
-type WorktreeRemoveResult struct {
+type WorktreeRemoveReply struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
 	// BranchKept is true when the branch step kept the branch (89cb6289). That is
@@ -232,7 +232,7 @@ type WorktreeRemoveResult struct {
 	BranchKept bool `json:"branchKept,omitempty"`
 }
 
-type WorktreeResult struct {
+type WorktreeReply struct {
 	Success      bool   `json:"success"`
 	Path         string `json:"path,omitempty"`
 	Error        string `json:"error,omitempty"`
@@ -250,7 +250,7 @@ type WorktreeResult struct {
 	BranchKept bool `json:"branchKept,omitempty"`
 }
 
-type ReattachResult struct {
+type ReattachReply struct {
 	Found    bool   `json:"found"`
 	Running  bool   `json:"running"`
 	FirstSeq uint64 `json:"firstSeq"`
@@ -268,25 +268,25 @@ type ReattachResult struct {
 	StartTime float64 `json:"startTime,omitempty"`
 }
 
-// StdinResult is process.stdin's reply. Before 7c2f88d it was the bare
+// StdinReply is process.stdin's reply. Before 7c2f88d it was the bare
 // {"success":true}; the reference now always reports the cumulative applied byte
 // count, and flags a wholly-duplicate write (offset already covered) so an
 // idempotent client can resume stdin across reconnects. Applied is never
 // omitempty (the reference emits it unconditionally, even at 0); Duplicate is
 // dropped when false.
-type StdinResult struct {
+type StdinReply struct {
 	Success   bool   `json:"success"`
 	Applied   uint64 `json:"applied"`
 	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
-// KillAndWaitResult is process.killAndWait's reply. Found reports whether the id
+// KillAndWaitReply is process.killAndWait's reply. Found reports whether the id
 // was known; Died whether the process is now gone. AlreadyExited flags a process
 // that had already exited before the signal (no kill needed); Escalated flags one
 // that ignored the graceful signal and had to be SIGKILL'd after the grace
 // window. Both bools are omitempty, so a plain running-process kill is
 // {"found":true,"died":true} and an unknown id is {"found":false,"died":false}.
-type KillAndWaitResult struct {
+type KillAndWaitReply struct {
 	Found         bool `json:"found"`
 	Died          bool `json:"died"`
 	AlreadyExited bool `json:"alreadyExited,omitempty"`
@@ -296,29 +296,29 @@ type KillAndWaitResult struct {
 	FarewellEnd string `json:"farewellEnd,omitempty"`
 }
 
-// KillResult is process.kill's reply: success, then farewellEnd (measured on
+// KillReply is process.kill's reply: success, then farewellEnd (measured on
 // Linux, build 52d82f0a). Without a farewell it is {"success":true}.
-type KillResult struct {
+type KillReply struct {
 	Success     bool   `json:"success"`
 	FarewellEnd string `json:"farewellEnd,omitempty"`
 }
 
-// NotRepoResult is the git.info body for non-repository paths. Since 7c2f88d the
+// NotRepoReply is the git.info body for non-repository paths. Since 7c2f88d the
 // reference emits {"isRepo":false,"repoSlug":"","defaultBranch":""} — the two new
-// fields are always present (empty for a non-repo) just as in GitInfoResult.
+// fields are always present (empty for a non-repo) just as in GitInfoReply.
 //
-// SettingsControl is the last member, as in GitInfoResult. 5fd08069 sends
+// SettingsControl is the last member, as in GitInfoReply. 5fd08069 sends
 // {"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}
 // after its start test (measured on Linux, macOS and Windows), and no such
 // member before it.
-type NotRepoResult struct {
+type NotRepoReply struct {
 	IsRepo          bool   `json:"isRepo"`
 	RepoSlug        string `json:"repoSlug"`
 	DefaultBranch   string `json:"defaultBranch"`
 	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
-// ManagedLauncherResult is the launcher.resolve reply (89cb6289). One struct makes
+// ManagedLauncherReply is the launcher.resolve reply (89cb6289). One struct makes
 // all four shapes, because each shape keeps the fields in this order and drops the
 // empty ones. Measured on Linux and macOS:
 //
@@ -332,7 +332,7 @@ type NotRepoResult struct {
 // refusals add none (claustrum's own, not measured):
 //
 //	{"status":"unusable","source":"<file>","reason":"<text>","fault":"<fault>"}
-type ManagedLauncherResult struct {
+type ManagedLauncherReply struct {
 	Status string   `json:"status"`
 	Argv   []string `json:"argv,omitempty"`
 	Source string   `json:"source,omitempty"`
@@ -341,13 +341,13 @@ type ManagedLauncherResult struct {
 	Path   string   `json:"path,omitempty"`
 }
 
-// LauncherCheckResult is the launcher.resolve reply to a request with a launcherCheck
+// LauncherCheckReply is the launcher.resolve reply to a request with a launcherCheck
 // (c9125eb8). The usable shape is measured on Linux, the unusable one on Linux and
 // macOS:
 //
 //	{"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}
 //	{"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
-type LauncherCheckResult struct {
+type LauncherCheckReply struct {
 	Status         string   `json:"status"`
 	Argv           []string `json:"argv,omitempty"`
 	Reason         string   `json:"reason,omitempty"`
