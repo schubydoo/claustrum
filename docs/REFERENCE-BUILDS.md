@@ -172,8 +172,10 @@ item names its systems:
   after the serving line (PR 1144).
 
 **How it was bounded.** Each PR ran its rows side by side with `c9125eb8`, and again
-after the fix, on its systems. BATTERY-RESULT-TBD: the frame battery of the final code
-beside `4c111e86`, on Linux, macOS and Windows.
+after the fix, on its systems. Then the whole cell library ran on the final code beside
+`4c111e86`, on Linux, macOS and Windows. Each difference it showed has a known cause. The
+causes are the held terminal, the version text, a divergence, timing, or an open item
+below. A delete that its rule keeps in another call form also shows.
 
 These items stay open:
 
@@ -187,6 +189,11 @@ These items stay open:
 - On Windows `files.realpath` through a junction still differs from `4c111e86` and
   `c9125eb8`. Two Windows texts, of a remove with a dangling `commondir` junction and of
   a create on an unborn `HEAD`, still differ from `c9125eb8`.
+- Some replies still differ from `4c111e86`. One is the text of a launcher that other
+  accounts can write. One is a `cliTempRoot` that is not `true` with no `gitRead`. On
+  macOS, a `processWrapper` number and `git.status` with only session-folder gits on the
+  `PATH` differ. On Windows, a `.git` that git cannot use on a share differs. On a slow
+  disk the seed of a Git LFS object can end on the other side of its cut.
 - The pages of the methods mark each case that is claustrum's own or not measured.
 
 ### `c9125eb87bca9ab294d4190dd79be9dfb8d11806` — 2026-11-02 (built)
