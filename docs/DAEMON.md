@@ -609,27 +609,27 @@ same refusal with its own prefix. No daemon, socket, `daemon.lock` or
 claustrum: open log: open <path>: is a directory
 ```
 
-On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket there. The first daemon holds the log open, so the rename fails, and the launcher truncates the log. The second daemon then logs there. Each daemon writes at the offset of its own handle, so the first daemon's earlier lines are lost and its later lines sit behind a block of NUL bytes. A log that another process holds with no delete share is truncated too,
+On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket there. The first daemon holds the log open, so the rename fails, and the launcher truncates the log. The second daemon then logs there. Each daemon writes at its own offset, so the first daemon's earlier lines are lost and its later lines sit behind NUL bytes. A log that another process holds with no delete share is truncated too,
 and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 ### Lines of connections
 
-These rules are claustrum's own unless an item names a build. `89cb6289` and `5fd08069` log the text of the notes.
+These line rules are claustrum's own unless an item names a build. `89cb6289` and `5fd08069` log the text of the notes.
 
 - A connection gets the token mark at its first request that passes the token check. `server.shutdown` passes with no token. A parse error and a refused request set no mark.
-- A peer label is its address in `%q` form, such as `"@"`.
-- `[Server] New connection from: <label>` comes once, before the daemon handles the first request that sets the mark. Older builds log it at the accept.
-- `[Server] Connection closed: <label>` comes only with the mark.
+- The label of a peer is its address in `%q` form, such as `"@"`.
+- `[Server] New connection from: <label>` comes once, at the first request that sets the mark and before the daemon handles it. The older builds log it at the accept.
+- `[Server] Connection closed: <label>` comes only for a connection with the mark.
 - A connection with no mark counts on the close counter and logs `[Server] Connection number <n> that never showed the token: <label>`, only if it sent a byte (measured on Linux, `683cc6a9`).
-- The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. Older builds log `Unauthorized request: method=…, id=…`.
+- The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. The older text is `Unauthorized request: method=…, id=…`.
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
-- Each kind of line has one daemon-wide counter, from 1, never reset. A line logs for the counts 1 to 10 and each multiple of 1000.
-- A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later (claustrum's own). 4c111e86 and c9125eb8 log about 10 lines a second (measured on Linux).
+- The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
+- A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later each time (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
 - The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error. The shutdown logs none. A connection with no mark logs no `writeResponse` and no `scanner error` line. It logs no `Failed to write response` line after a bad last line and a close (`4c111e86`, measured on Linux). macOS and Windows: claustrum's own.
 
 ### Lines of child processes
 
-These lines tell of [process.spawn](protocol/process-spawn.md) children and their [records and the reap](#child-records-and-the-reap-linux-and-macos). The levels are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
+The levels of these lines are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
 - A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (`c9125eb8`, measured on Linux, macOS and Windows). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux).
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
@@ -671,7 +671,7 @@ The main `<reason>` texts of a dropped record and of a group that fails the test
 
 #### A long id in a line
 
-Four lines cut an `<id>` of more than 8 bytes to the first 8 bytes and `…`. They are the start, failed-start, exit and `Starting <stream> streaming` lines. This holds for `c9125eb8` and `4c111e86`, measured on Linux, macOS and Windows. The [unattended end](protocol/process-link-bound.md#the-unattended-end) line cuts it too (`c9125eb8` and `4c111e86`, measured on Linux). So does the line of a lost temp folder (`4c111e86`, measured on Linux and macOS). claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
+The start, failed-start, exit and `Starting <stream> streaming` lines cut an `<id>` of more than 8 bytes to its first 8 bytes and `…` (`c9125eb8` and `4c111e86`, measured on Linux, macOS and Windows). The [unattended end](protocol/process-link-bound.md#the-unattended-end) line cuts it too (`c9125eb8` and `4c111e86`, measured on Linux). So does the line of a lost temp folder (`4c111e86`, measured on Linux and macOS). claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
 
 ## Orphan-exit self-probe
 
