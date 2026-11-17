@@ -120,7 +120,7 @@ func TestSpawnLauncherCheckRefusals(t *testing.T) {
 	L := mkExec(t, filepath.Join(d, "bin", "launcher.sh"))
 	bin := filepath.Join(d, "bin")
 	cli := mkExec(t, filepath.Join(d, "cli"))
-	writable := "`" + bin + "` can be changed by accounts other than its owner (mode 1777), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none."
+	writable := "`" + bin + "` can be changed by accounts other than its owner (mode 1777). Remove that write access."
 	fakeFacts(t, map[string][2]uint32{bin: {0, 0o1777}})
 	cases := []struct {
 		row    string
