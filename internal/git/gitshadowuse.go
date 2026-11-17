@@ -914,7 +914,7 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		}
 		return dir, func() { removeTempRequestDir(dir) }, nil
 	}
-	root, err := os.OpenRoot(u.folder)
+	root, err := openRootNoWait(u.folder)
 	if err != nil {
 		// On Linux and macOS a folder of the daemon with mode 0100 cannot be
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there

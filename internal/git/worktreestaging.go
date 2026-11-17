@@ -530,7 +530,7 @@ func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error 
 		return err
 	}
 	hasExclude := err == nil
-	dir, err := os.OpenRoot(st.dir)
+	dir, err := openRootNoWait(st.dir)
 	if err != nil {
 		return err
 	}
@@ -1063,7 +1063,7 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 // held git directory (acceptedGitDir.staged). A rollback removes that entry,
 // and the index goes into it.
 func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
-	dir, err := os.OpenRoot(st.dir)
+	dir, err := openRootNoWait(st.dir)
 	if err != nil {
 		return err
 	}
