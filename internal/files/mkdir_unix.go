@@ -76,12 +76,12 @@ func filesMkdir(req *rpc.Request) rpc.Response {
 }
 
 // mkdirAt runs the checks and the mkdir.
-func mkdirAt(parent, name string) rpc.MkdirResult {
+func mkdirAt(parent, name string) rpc.MkdirReply {
 	if mkdirParentRefused(parent) {
-		return rpc.MkdirResult{Code: "parent_refused"}
+		return rpc.MkdirReply{Code: "parent_refused"}
 	}
 	if mkdirNameRefused(name) {
-		return rpc.MkdirResult{Code: "name_refused"}
+		return rpc.MkdirReply{Code: "name_refused"}
 	}
 	// The parent opens with its links followed. Then the real path of the open
 	// handle must be the parent itself, so a link at or above the parent gives
@@ -95,20 +95,20 @@ func mkdirAt(parent, name string) rpc.MkdirResult {
 	defer unix.Close(fd)
 	realPath, err := mkdirParentPath(fd)
 	if err != nil {
-		return rpc.MkdirResult{Code: "parent_unverified", Errno: int(mkdirErrno(err))}
+		return rpc.MkdirReply{Code: "parent_unverified", Errno: int(mkdirErrno(err))}
 	}
 	if realPath != parent {
-		return rpc.MkdirResult{Code: "parent_elsewhere"}
+		return rpc.MkdirReply{Code: "parent_elsewhere"}
 	}
 	err = mkdirAtFd(fd, name, 0o777)
 	if err == nil {
-		return rpc.MkdirResult{Code: "created"}
+		return rpc.MkdirReply{Code: "created"}
 	}
 	if errors.Is(err, unix.EEXIST) {
-		return rpc.MkdirResult{Code: mkdirExistsCode(fd, name)}
+		return rpc.MkdirReply{Code: mkdirExistsCode(fd, name)}
 	}
 	en := mkdirErrno(err)
-	return rpc.MkdirResult{Code: mkdirErrnoCode(en), Errno: int(en)}
+	return rpc.MkdirReply{Code: mkdirErrnoCode(en), Errno: int(en)}
 }
 
 // mkdirErrnoCode gives the code of an errno from the mkdir of the name
@@ -160,15 +160,15 @@ func openMkdirParent(parent string) (int, error) {
 // parent_denied, and ENOENT and ENOTDIR are parent_gone, also through a link
 // (c9125eb8, measured on Linux and macOS). Any other errno, such as ELOOP, gives
 // failed (claustrum's own, not measured).
-func mkdirParentFailure(err error) rpc.MkdirResult {
+func mkdirParentFailure(err error) rpc.MkdirReply {
 	en := mkdirErrno(err)
 	switch en {
 	case unix.EACCES:
-		return rpc.MkdirResult{Code: "parent_denied", Errno: int(en)}
+		return rpc.MkdirReply{Code: "parent_denied", Errno: int(en)}
 	case unix.ENOENT, unix.ENOTDIR:
-		return rpc.MkdirResult{Code: "parent_gone", Errno: int(en)}
+		return rpc.MkdirReply{Code: "parent_gone", Errno: int(en)}
 	}
-	return rpc.MkdirResult{Code: "failed", Errno: int(en)}
+	return rpc.MkdirReply{Code: "failed", Errno: int(en)}
 }
 
 // mkdirExistsCode names what holds the name, with no link followed: a link is

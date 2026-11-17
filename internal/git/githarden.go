@@ -1551,7 +1551,7 @@ func (c configCheck) refused() bool {
 
 // hostileConfigRefusal runs the configuration listing (`git config -z --list`) that
 // comes first in a git method, and reads it. Callers phrase the method-specific frame
-// (a -32603 for the read methods, an rpc.WorktreeResult for worktree_create, its own
+// (a -32603 for the read methods, an rpc.WorktreeReply for worktree_create, its own
 // message for worktree_remove). The outcomes, in the order 89cb6289 takes them on
 // Linux, macOS and Windows:
 //

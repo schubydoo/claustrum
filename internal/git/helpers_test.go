@@ -202,11 +202,11 @@ const testToken = "s3cret-token"
 // The names of package main for the reply types and codes.
 type (
 	response             = rpc.Response
-	worktreeResult       = rpc.WorktreeResult
-	worktreeRemoveResult = rpc.WorktreeRemoveResult
-	gitInfoResult        = rpc.GitInfoResult
-	gitStatusResult      = rpc.GitStatusResult
-	branchesResult       = rpc.BranchesResult
+	worktreeResult       = rpc.WorktreeReply
+	worktreeRemoveResult = rpc.WorktreeRemoveReply
+	gitInfoResult        = rpc.GitInfoReply
+	gitStatusResult      = rpc.GitStatusReply
+	branchesResult       = rpc.BranchesReply
 )
 
 const (

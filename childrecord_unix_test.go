@@ -51,7 +51,7 @@ func spawnSleeper(t *testing.T, cl *testClient, id string) int {
 		t.Fatal(err)
 	}
 	var reply struct {
-		Result rpc.SpawnResult `json:"result"`
+		Result rpc.SpawnReply `json:"result"`
 	}
 	raw := cl.call(string(body))
 	if err := json.Unmarshal(raw, &reply); err != nil || reply.Result.Pid == 0 {
@@ -178,7 +178,7 @@ func TestChildEndRemovesRecordBeforeDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reply struct {
-		Result rpc.SpawnResult `json:"result"`
+		Result rpc.SpawnReply `json:"result"`
 	}
 	raw := cl.call(string(body))
 	if err := json.Unmarshal(raw, &reply); err != nil || reply.Result.Pid == 0 {

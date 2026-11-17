@@ -89,7 +89,7 @@ func endPipeConn(t *testing.T) (*conn.Conn, func(int) string) {
 
 func TestConnLinesCarryRunningEndCount(t *testing.T) {
 	c, gotN := endPipeConn(t)
-	if c.WriteResponse(rpc.PongResult{Pong: true}) {
+	if c.WriteResponse(rpc.PongReply{Pong: true}) {
 		t.Fatal("writeResponse failed")
 	}
 	shared := []byte(`{"type":"stream","processId":"p","stream":"stdout","seq":1,"data":"AA=="}` + "\n")
@@ -127,9 +127,9 @@ func TestConnLinesCarryRunningEndCount(t *testing.T) {
 func TestEndCountIsPerConnection(t *testing.T) {
 	a, gotA := endPipeConn(t)
 	b, gotB := endPipeConn(t)
-	a.WriteResponse(rpc.PongResult{Pong: true})
-	a.WriteResponse(rpc.PongResult{Pong: true})
-	b.WriteResponse(rpc.PongResult{Pong: true})
+	a.WriteResponse(rpc.PongReply{Pong: true})
+	a.WriteResponse(rpc.PongReply{Pong: true})
+	b.WriteResponse(rpc.PongReply{Pong: true})
 	if want := `{"pong":true,"end":{"at":0,"len":12}}` + "\n" + `{"pong":true,"end":{"at":38,"len":12}}` + "\n"; gotA(2) != want {
 		t.Errorf("conn a wire = %q, want %q", gotA(2), want)
 	}
