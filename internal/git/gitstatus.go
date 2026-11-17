@@ -204,7 +204,8 @@ func resolvedDir(p string) string {
 //     Linux).
 //
 // The --work-tree value of the next call is `path` with its symlinks resolved
-// (measured), on Windows also its junctions (statusProbeDir). When `path` lies
+// (measured). On Windows its junctions are resolved too (statusProbeDir,
+// claustrum's own, not measured). When `path` lies
 // inside baseRepo, it is baseRepo, resolved the same way (measured). A `path`
 // that is baseRepo gives the same value both ways (measured).
 //

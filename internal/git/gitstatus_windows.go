@@ -33,7 +33,8 @@ func statusProbeDir(clean string) string {
 }
 
 // junctionInPath reports whether a folder of p, the last one included, is a
-// junction. Go reports a junction as an irregular file.
+// junction or another irregular entry. Go reports a junction as an irregular
+// file.
 func junctionInPath(p string) bool {
 	abs, err := filepath.Abs(p)
 	if err != nil {
