@@ -96,7 +96,7 @@ Windows lacks two methods: `files.find` and `files.mkdir`.
 - Use Conventional Commits for PR titles (`feat:` / `fix:` / `docs:` /
   `chore:` / `ci:` …). PRs squash-merge, so the title becomes the commit
   subject.
-- Releases are changesets-only (knope, not release-please). A user-facing change adds a
+- Releases are changesets-only (knope). A user-facing change adds a
   `.changeset/*.md` fragment with `knope document-change`. No fragment ⇒ no release. An
   internal PR takes the `no-changelog` label. A changeset body is ONE line, because knope
   renders a multi-line body as a `####` heading block. `scripts/lint_changesets.py` gates
@@ -166,8 +166,9 @@ directory and a lock that counts (D22). A failed repository check, a Windows jun
 (D19) and `homeguard.WipesHomeDir` refuse it too. Never widen: On Linux and macOS a gone worktree whose locked entry sits
 behind a linked `<git dir>/worktrees` gets success, and its branch goes. That exception
 follows the reference. Do not widen it.
-The maintainer approved one widening: a marker beside a dangling `.git` link no longer refuses,
-so the remove deletes the leaf, its registration and its branch, as on 4c111e86.
+The maintainer approved one widening: a marker beside a `.git` link that does not resolve no longer
+refuses, so the remove deletes the leaf and its registration, and the branch step runs as usual
+(4c111e86, measured on macOS with worktreeRoot for a dangling link).
 
 #### Path 3: the `git.worktree_create` rollback
 
@@ -345,8 +346,8 @@ reachable knob, because Claude Desktop owns the argv.
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
   `ci` / `security` aggregators are the required checks). Releases: pending
   `.changeset/` fragments → knope opens a version PR (`knope-prepare.yml`).
-  Merging it tags `v*` (`knope-release.yml`), and the tag fires `release.yml`.
+  Merging it tags `v*` (`knope-release.yml`), which fires `release.yml`.
   That release is signed and carries SBOM and SLSA, via
-  [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the `KNOPE_ENABLED` repo var.
-- Claude Code / Anthropic API specifics → prefer current docs (context7) over memory:
+  [`.goreleaser.yaml`](.goreleaser.yaml).
+- Claude Code / Anthropic API specifics → prefer current docs:
   <https://docs.anthropic.com/en/docs/claude-code/overview>.
