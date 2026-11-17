@@ -73,7 +73,7 @@ A warning of git does not become a branch name. If git warns about a broken ref 
 
 ## Differences by system
 
-On Windows a junction before the last component of `path` passes, and git lists the branches (`b3081b51`, measured on Windows). On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path`, or one on a missing share, gets a `-32603` refusal. [UNC refusals](git-rules-trust.md#unc-refusals).
+On Windows a junction before the last component of `path` passes (`b3081b51`), as does one to a bare repository (`4c111e86`, both measured). On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured). On Windows, a `path` that exists and in which git cannot start, such as a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path`, or one on a missing share, gets a `-32603` refusal. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Differences from the reference
 

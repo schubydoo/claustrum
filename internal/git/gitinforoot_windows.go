@@ -137,3 +137,23 @@ func checkoutWorkTree(leaf, _ string) string {
 // a path with forward slashes and resolved links, and a byte compare refuses that.
 // Leaving the check off there is claustrum's choice.
 const adminRecordChecked = false
+
+// lastNameJunctionTarget is the target of the junction at p, cleaned. Go reports a
+// junction as ModeIrregular, and os.Readlink reads its target. ok is false for any
+// other entry and for a target with no drive letter (claustrum's own, not
+// measured). A junction to another junction gives the first target only (not
+// measured).
+func lastNameJunctionTarget(p string) (string, bool) {
+	fi, err := os.Lstat(p)
+	if err != nil || fi.Mode()&os.ModeIrregular == 0 {
+		return "", false
+	}
+	target, err := os.Readlink(p)
+	if err != nil {
+		return "", false
+	}
+	if v := filepath.VolumeName(target); len(v) != 2 || v[1] != ':' {
+		return "", false
+	}
+	return filepath.Clean(target), true
+}

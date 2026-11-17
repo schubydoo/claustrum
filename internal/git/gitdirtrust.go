@@ -64,6 +64,9 @@ type gitDirTrust struct {
 	// that GIT_DIR. It is empty when the check left the
 	// directory to git with no pin.
 	pinCommonDir string
+	// configDir is the folder of the daemon's read of the config, when it is not
+	// pinCommonDir (configDirThroughJunction). It is empty for every other request.
+	configDir string
 	// noRepoEnv is what commonDirPinEnv returns in place of the pin when verdict is
 	// gitDirNoRepo, so every hardened git call in that folder carries it, whatever the
 	// method. The rows that measure it are removals (see noRepoPin). It is nil when no
@@ -357,6 +360,40 @@ func walkStart(dir string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(dir), nil
+}
+
+// requestJunctionTarget is lastNameJunctionTarget behind a seam, so a test on any
+// system can stand in for a Windows junction.
+var requestJunctionTarget = lastNameJunctionTarget
+
+// configDirThroughJunction is the folder of the daemon's read of the config for
+// git.info and git.list_branches on dir, or "" for pin itself. When the walk start
+// of dir is a junction and pin is in it, the read takes pin through the target of
+// the junction. With a junction <W>\J to a repository T whose config has a bad
+// line, 4c111e86 names <W>\T\.git\config. A junction <W>\jb to a bare repository
+// gets the answers of that repository, with no link refusal (measured on Windows).
+// A daemon GIT_DIR keeps pin, and so do the three other git methods (claustrum's
+// own, not measured).
+func configDirThroughJunction(dir, pin string) string {
+	if dir == "" || pin == "" || os.Getenv("GIT_DIR") != "" {
+		return ""
+	}
+	start, err := walkStart(dir)
+	if err != nil {
+		return ""
+	}
+	if start, err = filepath.Abs(start); err != nil {
+		return ""
+	}
+	rest, ok := strings.CutPrefix(pin, start)
+	if !ok || (rest != "" && !os.IsPathSeparator(rest[0])) {
+		return ""
+	}
+	target, ok := requestJunctionTarget(start)
+	if !ok {
+		return ""
+	}
+	return target + rest
 }
 
 // gitWalkRoot is the root of git.info on Linux and macOS. It is the folder where a walk

@@ -17,22 +17,24 @@ the daemon walks up from the request folder:
 - The walk starts at the request folder with symlinks resolved. A refusal names
   the resolved path, never the alias.
 - On Windows the walk resolves no junction before the last component of the
-  path. It starts at the path as spelled, and it takes a `..` by text. Take a
-  repository `<P>` with a junction `<P>\J` into a repository `<R>`. For
-  `<P>\J\sub` each git call carries `GIT_COMMON_DIR=<P>\.git`. Through a second
-  junction `<KP>` to `<P>`, the pin is `<KP>\.git`. A junction as the last
-  component gives the pin of `<P>` too. A folder symlink in the place of the
-  junction resolves, and the pin is `<R>\.git`. A junction outside any repository
-  gives "no repository", and each git call carries `GIT_DIR=NUL`.
-- On Windows the resolve of a folder path can fail, for example at a missing name
-  before `..`. The walk then starts at the spelled path. `git.status` resolves the
-  path first. If that resolve fails, it answers there (all from the code).
+  path. It starts at the spelled path and takes a `..` by text. With a junction
+  `<P>\J` of `<P>` into repository `<R>`, each git call on
+  `<P>\J\sub` carries `GIT_COMMON_DIR=<P>\.git`. A second junction
+  `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
+  the pin of `<P>` too. A junction outside any repository gives "no repository",
+  and each git call carries `GIT_DIR=NUL`.
+- On Windows any folder path that does not resolve, such as one with a missing
+  name before `..`, starts the walk as spelled. `git.status` resolves the
+  path first and answers there if that fails (all from the code).
 - On Windows a refusal of a config on `git.info` follows the spelled start too. In
   the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
   [Repository config refusals](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
+- On Windows `git.info` and `git.list_branches` read the config of a junction
+  `path` through its target, and a refusal names that file. A junction to a bare
+  repository answers as that repository (`4c111e86`, measured on Windows).
 - `process.spawn` does not use the walk.
 - A `.git` folder that passes the git-directory test is the git directory.
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
@@ -101,8 +103,7 @@ The daemon then judges the git directory G:
   daemon `GIT_DIR` can name an entry as `…\GIT~1\WORKTR~1\<name>`. That G is no
   entry, so its `commondir` gets S1 for `../..` (not measured).
 - On Windows the daemon resolves G when a component of G is a symlink. Else it
-  keeps G as spelled, also with a junction before its last component. For a
-  junction `<KP>` to a repository, the pin is `<KP>\.git`.
+  keeps G as spelled, also with a junction before its last component.
 
 ### A stray `commondir`
 

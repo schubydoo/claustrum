@@ -234,6 +234,7 @@ func gitInfo(req *gitCall) rpc.Response {
 	if t.verdict == gitDirRefused {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
+	t.configDir = configDirThroughJunction(p.Path, t.pinCommonDir)
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
@@ -918,6 +919,7 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if t.verdict == gitDirRefused {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
+	t.configDir = configDirThroughJunction(p.Path, t.pinCommonDir)
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
