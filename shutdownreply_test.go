@@ -35,11 +35,11 @@ func startShutdownOnPipe(t *testing.T, s *server) net.Conn {
 	return client
 }
 
-// No byte reaches the client before the drop starts. After the drop the client
-// reads nothing or the whole frame, then EOF. The rule holds on every system.
-func TestShutdownReplyWaitsForTheDrop(t *testing.T) {
+// checkShutdownReplyWaitsForTheDrop: no byte reaches the client before the drop
+// starts. After the drop the client reads nothing or the whole frame, then EOF.
+func checkShutdownReplyWaitsForTheDrop(t *testing.T) {
 	s := newTestServer(t)
-	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: 5 * time.Second}
+	s.replyRule = &shutdownReplyRule{awaitsDrop: true, wait: 5 * time.Second}
 	client := startShutdownOnPipe(t, s)
 
 	_ = client.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
@@ -58,10 +58,11 @@ func TestShutdownReplyWaitsForTheDrop(t *testing.T) {
 	}
 }
 
-// With no drop the reply goes out once the bound passes.
-func TestShutdownReplyWaitEndsAtItsBound(t *testing.T) {
+// checkShutdownReplyWaitEndsAtItsBound: with no drop the reply goes out once
+// shutdownReplyWait passes.
+func checkShutdownReplyWaitEndsAtItsBound(t *testing.T) {
 	s := newTestServer(t)
-	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: 20 * time.Millisecond}
+	s.replyRule = &shutdownReplyRule{awaitsDrop: true, wait: 20 * time.Millisecond}
 	client := startShutdownOnPipe(t, s)
 
 	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -72,14 +73,14 @@ func TestShutdownReplyWaitEndsAtItsBound(t *testing.T) {
 	s.dropConns()
 }
 
-// The start of dropConns releases a reply that waits in awaitDropStart, long before
+// The start of dropConns releases a reply that waits in awaitShutdownReplyTurn, long before
 // the bound. A second dropConns does not close the channel again.
 func TestDropConnsReleasesTheShutdownReplyWait(t *testing.T) {
 	s := newTestServer(t)
 	s.replyRule = &shutdownReplyRule{awaitsDrop: true, wait: time.Minute}
 	released := make(chan struct{})
 	go func() {
-		s.awaitDropStart()
+		s.awaitShutdownReplyTurn()
 		close(released)
 	}()
 	s.dropConns()
@@ -87,6 +88,6 @@ func TestDropConnsReleasesTheShutdownReplyWait(t *testing.T) {
 	select {
 	case <-released:
 	case <-time.After(5 * time.Second):
-		t.Fatal("dropConns did not release awaitDropStart")
+		t.Fatal("dropConns did not release awaitShutdownReplyTurn")
 	}
 }

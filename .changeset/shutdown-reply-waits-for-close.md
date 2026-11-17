@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Linux and macOS the `server.shutdown` reply now waits for the stop to start closing the connections, as on Windows.
+On Linux and macOS the `server.shutdown` reply now races the close of the connection, so a client can read EOF with no reply.

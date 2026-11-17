@@ -122,7 +122,7 @@ At each connection the daemon reads its own user link again (`4c111e86`). If tha
 
 ### The reply races the close
 
-The handler starts the stop. The reply waits until the stop starts to close the connections, at most 500 ms (claustrum's own, not measured). So the reply write races the close.
+The handler starts the stop. The reply waits until the stop starts, on Windows until it closes the connections, at most 500 ms (claustrum's own). So the write races the close.
 
 - If the reply wins, the client reads `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}` and then EOF.
 - If the close wins, the client reads EOF with no bytes.
