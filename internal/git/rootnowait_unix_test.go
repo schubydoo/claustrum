@@ -108,3 +108,27 @@ func TestRequestDirAtFIFOAnswersAtOnce(t *testing.T) {
 		t.Error("requestDir waits for a writer at a FIFO")
 	}
 }
+
+// TestProbeFolderAtFIFOAnswersAtOnce pins the open of the call about the
+// repository: a FIFO at the folder of the daemon gives prepareProbeFolder an
+// error at once, with no writer.
+func TestProbeFolderAtFIFOAnswersAtOnce(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- (&ShadowHost{}).prepareProbeFolder(fifo) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("prepareProbeFolder at a FIFO: no error")
+		}
+	case <-time.After(10 * time.Second):
+		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+			_ = w.Close()
+		}
+		t.Logf("the open after the writer: %v", <-done)
+		t.Error("prepareProbeFolder waits for a writer at a FIFO")
+	}
+}

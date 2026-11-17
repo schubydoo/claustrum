@@ -201,7 +201,7 @@ var probeRebaseFolders = []string{"rebase-merge", "rebase-apply"}
 func (h *ShadowHost) prepareProbeFolder(dir string) error {
 	probe := filepath.Join(dir, shadowProbeName)
 	var root *os.Root
-	base, err := os.OpenRoot(dir)
+	base, err := openRootNoWait(dir)
 	if err != nil {
 		if root, err = probeFolderBySearch(dir, err); err != nil {
 			return err
@@ -211,7 +211,7 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 		if err := base.Mkdir(shadowProbeName, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return probePathError(dir, err)
 		}
-		if root, err = base.OpenRoot(shadowProbeName); err != nil {
+		if root, err = openInRootNoWait(base, shadowProbeName); err != nil {
 			return probePathError(dir, err)
 		}
 	}
@@ -260,7 +260,7 @@ func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
 	if err != nil || !goesAsTree(fi.Mode()) {
 		return nil, openErr
 	}
-	root, err := os.OpenRoot(probe)
+	root, err := openRootNoWait(probe)
 	if err != nil {
 		return nil, openErr
 	}

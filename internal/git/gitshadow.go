@@ -1095,7 +1095,7 @@ func fillShadowTestCopy(gitDir, shadowDir string, listing []byte) error {
 // number in their second state, in 14 of 14 cells (measured on Linux), and a poll
 // saw `.check-<n>/shadow/.tmp-<digits>` (measured on macOS).
 func writeShadowTestFiles(shadowDir string, head, config []byte) error {
-	root, err := os.OpenRoot(shadowDir)
+	root, err := openRootNoWait(shadowDir)
 	if err != nil {
 		return err
 	}
