@@ -380,7 +380,7 @@ have no flag and no key.
 - **Pointers.** [DAEMON.md → Run-dir lock](DAEMON.md#run-dir-lock-daemonlock).
   The host cleaner has its own gate, which is parity
   ([Signals of the cleaner](DAEMON.md#signals-of-the-cleaner),
-  `retireAbandoned`). Code:
+  `endIdleDaemon`). Code:
   `internal/runlock/daemon_runlock_unix.go` (`holderSignalRefusal`, `StopRunDirHolder`),
   `internal/runlock/daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
   `internal/runlock/daemon_runlock_linux.go`.

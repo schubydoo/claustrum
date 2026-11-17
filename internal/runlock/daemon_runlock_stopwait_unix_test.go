@@ -23,7 +23,7 @@ func holdStopRecord(t *testing.T, dir string) int {
 		_ = syscall.Close(fd)
 		t.Fatal(err)
 	}
-	writeOwnerRecord(fd, OwnerRecord{Pid: 999999, Role: "stop", Node: nodeID()})
+	storeLockOwner(fd, OwnerRecord{Pid: 999999, Role: "stop", Node: nodeID()})
 	return fd
 }
 
