@@ -35,11 +35,11 @@ func startShutdownOnPipe(t *testing.T, s *server) net.Conn {
 	return client
 }
 
-// checkShutdownReplyWaitsForTheDrop: no byte reaches the client before the drop
-// starts. After the drop the client reads nothing or the whole frame, then EOF.
-func checkShutdownReplyWaitsForTheDrop(t *testing.T) {
+// No byte reaches the client before the drop starts. After the drop the client
+// reads nothing or the whole frame, then EOF. The rule holds on every system.
+func TestShutdownReplyWaitsForTheDrop(t *testing.T) {
 	s := newTestServer(t)
-	s.replyRule = &shutdownReplyRule{awaitsDrop: true, wait: 5 * time.Second}
+	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: 5 * time.Second}
 	client := startShutdownOnPipe(t, s)
 
 	_ = client.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
@@ -58,11 +58,10 @@ func checkShutdownReplyWaitsForTheDrop(t *testing.T) {
 	}
 }
 
-// checkShutdownReplyWaitEndsAtItsBound: with no drop the reply goes out once
-// shutdownReplyWait passes.
-func checkShutdownReplyWaitEndsAtItsBound(t *testing.T) {
+// With no drop the reply goes out once the bound passes.
+func TestShutdownReplyWaitEndsAtItsBound(t *testing.T) {
 	s := newTestServer(t)
-	s.replyRule = &shutdownReplyRule{awaitsDrop: true, wait: 20 * time.Millisecond}
+	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: 20 * time.Millisecond}
 	client := startShutdownOnPipe(t, s)
 
 	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))

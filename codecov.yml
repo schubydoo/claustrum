@@ -92,8 +92,6 @@ component_management:
       name: server & lifecycle
       paths:
         - server.go
-        - shutdownreply_other.go
-        - shutdownreply_windows.go
         - internal/conn/lineend.go
         - selflocate_linux.go
         - selflocate_other.go

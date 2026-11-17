@@ -1123,6 +1123,13 @@ func (s *server) runPendingAfterWrites() {
 	}
 }
 
+// shutdownReplyAwaitsDrop makes the server.shutdown reply wait for the start of the
+// connection drop (awaitDropStart). Then the reply races the close. 4c111e86 replies in
+// 14, 10 and 15 of 200 runs (plain, after a ping, with an idle connection, measured on Linux).
+// On macOS it replies in 67, 82 and 83 of 100 (measured). b3081b51 replies in 0, 17
+// and 2 of 60 (measured on Windows).
+const shutdownReplyAwaitsDrop = true
+
 // shutdownReplyWait bounds how long the server.shutdown reply waits for the teardown
 // to start dropping connections (claustrum's own, not measured).
 const shutdownReplyWait = 500 * time.Millisecond
@@ -1294,8 +1301,7 @@ func (s *server) closeAll(socket string) {
 	// removed the path, so this guard does not apply there (measured on Windows).
 	unlinkOwnSocket(socket, s.sockInfo)
 	// Then drop every client, before the slower cleanup below. The server.shutdown
-	// handler returns its reply as soon as the stop has started, so the reply write
-	// races this close. On Windows the write waits for the start of this drop.
+	// reply waits for the start of this drop, so the reply write races this close.
 	closed := s.dropConns()
 	// The steps of the replies that still wait for their write run now, after
 	// the drop, so a blocked write no longer holds them (runPendingAfterWrites).
