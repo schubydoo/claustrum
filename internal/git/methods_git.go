@@ -1175,6 +1175,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
+		// A `.git` folder on a network share that git does not use (shareGitDir).
+		if g := shareGitDir(repo); g != "" && req.gitRefused {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: fmt.Sprintf(unusableGitText, g), ErrorCode: "worktree_add_failed"})
+		}
 		return notARepoResult(req.ID, repo)
 	}
 	// The create holds the git directory that its gate accepted until it answers
@@ -3407,6 +3411,17 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			// another reply, and so did 280 (measured). A worktree folder that
 			// exists and every other length keep the refusal (claustrum's own,
 			// not measured).
+			return keptAll()
+		} else if noRepo && req.gitRefused && shareGitDir(repo) != "" {
+			// A `.git` folder on a network share that git does not use gets success,
+			// and nothing is deleted (shareGitDir). A lock in `<baseRepo>\.git` that
+			// names the worktree keeps the D22 refusal. A registrations folder that
+			// cannot be read keeps the lock-check refusal (claustrum's own, not
+			// measured).
+			if msg := baseRepoLockRefusal(repo, "", "", path, p.WorktreePath,
+				newWorktreePathSet(path, p.WorktreePath), goneLockedWorktreeRefusal); msg != "" {
+				return refuse(msg)
+			}
 			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
