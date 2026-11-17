@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // liveFixture is the git state of a daemon with no start test yet and the
@@ -442,5 +444,30 @@ func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 	h.reply(t, 2)
 	if n := excludesReadsIn(t, h); n != 1 {
 		t.Errorf("%d reads of the excludes for two requests in turn, want 1", n)
+	}
+}
+
+// A request while the check of session folders is off makes one read of the
+// user's excludes, and no later request uses it. The next request reads again,
+// and the request after it uses that stored result. 4c111e86 reads again after a
+// read under the off switch (measured on Linux). Mutation: in globalExcludesPath,
+// drop the gen step of the off switch. The read under the switch is then stored,
+// and only 1 read runs. A second mutation drops the store of the time off: the
+// request under the switch then reads more than once.
+func TestShadowExcludesReadUnderOffSwitchNotStored(t *testing.T) {
+	h := newLiveFixture(t)
+	release := sessiondirs.PauseCheck()
+	h.send(t, 1, "git.info", map[string]any{"path": h.repo, "sessionFoldersOff": true})
+	h.reply(t, 1)
+	release()
+	if n := excludesReadsIn(t, h); n != 1 {
+		t.Errorf("%d reads of the excludes for a request under the off switch, want 1", n)
+	}
+	h.send(t, 2, "git.info", map[string]any{"path": h.repo})
+	h.reply(t, 2)
+	h.send(t, 3, "git.info", map[string]any{"path": h.repo})
+	h.reply(t, 3)
+	if n := excludesReadsIn(t, h); n != 2 {
+		t.Errorf("%d reads of the excludes for a request under the off switch and two after it, want 2", n)
 	}
 }

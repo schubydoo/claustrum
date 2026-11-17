@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -1433,6 +1434,11 @@ var (
 	userExcludesDone   bool
 	userExcludesCached string
 	userExcludesGen    int
+
+	// The read of the time off number offExcludesRun of the check of session
+	// folders (sessiondirs.OffRun). Run numbers start at 1.
+	offExcludesRun   uint64
+	offExcludesValue string
 )
 
 // globalExcludesPath resolves the user's global git excludes file: the configured
@@ -1459,11 +1465,29 @@ func globalExcludesPath() string {
 		return xdgExcludesPath()
 	}
 	gen := userExcludesGen
+	// A read while the check of session folders is off is kept only until the check
+	// is on again. A request after that reads again (4c111e86, measured on Linux).
+	// Requests that share one time off share its read (claustrum's own, not measured).
+	run, off := sessiondirs.OffRun()
+	if off && run == offExcludesRun {
+		v := offExcludesValue
+		userExcludesMu.Unlock()
+		if v != "" {
+			return v
+		}
+		return xdgExcludesPath()
+	}
+	if off {
+		gen-- // an older gen never matches, so the read is not stored for later
+	}
 	userExcludesMu.Unlock()
 	v := excludesFromGlobalConfig()
 	userExcludesMu.Lock()
 	if gen == userExcludesGen {
 		userExcludesDone, userExcludesCached = true, v
+	}
+	if off {
+		offExcludesRun, offExcludesValue = run, v
 	}
 	userExcludesMu.Unlock()
 	if v != "" {

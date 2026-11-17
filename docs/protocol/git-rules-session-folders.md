@@ -161,7 +161,7 @@ Windows). A name in the `env` of the spawn stays. A spawned bare `git` also gets
 `GIT_TRACE2=0`, `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0` (measured on Linux,
 macOS and Windows), and none with the off switch (measured on Linux and macOS). A spawn
 of `git` by a path keeps them (measured on Linux). The other git methods lose them too
-(claustrum's own, not measured).
+(claustrum's own).
 
 ### With no other git
 
@@ -181,15 +181,16 @@ On Windows the text ends `such as C:\\Program Files\\Git` in both frames.
 
 ## The off switch
 
-`"sessionFoldersOff":true` on a git method or on `process.spawn` turns the check off
+`"sessionFoldersOff":true` on a git method or `process.spawn` turns the check off
 while the request runs. The git in the session folder then runs (measured on Linux,
 macOS and Windows). The session folders
 stay in the variables of the git child (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
-(claustrum's own, not measured). The first such request logs the first line below, and later ones log
-nothing. The first check after the last such request logs the second line. The hold is
-global: a request without the switch that runs meanwhile gets no check either
-(measured on Linux).
+(claustrum's own). Only the first such request logs the first line below. The first
+check after the hold logs the second line. The hold is global: a request
+without the switch gets no check meanwhile (measured on Linux). No request after the hold
+uses its [excludes read](git-rules-calls.md#calls-outside-a-repository)
+(`4c111e86`, measured on Linux).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
