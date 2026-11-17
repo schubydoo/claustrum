@@ -122,6 +122,9 @@ The daemon keeps a failure for 10 seconds from the end of the failed test, also
 after its cause is gone. A request in that time gets the kept text with no git call.
 A request with `"shadowDirOff":true` works in that time.
 
+A failure while a request with `"sessionFoldersOff":true` runs is not kept
+(`4c111e86`, measured on Linux).
+
 ### The folders
 
 The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 hex>`.
