@@ -74,7 +74,9 @@ type spawnParams struct {
 	// and macOS. On Windows it changes nothing (b3081b51, measured with true, false and
 	// absent). It is a bool. A text or an object fails the decode, with or without
 	// gitRead (4c111e86 and c9125eb8, measured on Linux). Other types, null and the
-	// other systems are claustrum's own, not measured.
+	// other systems are claustrum's own, not measured. The decode failure comes before
+	// every other test of the spawn, so it wins over the id, launcher, command and
+	// gitRead refusals (claustrum's own, not measured).
 	CLITempRoot bool `json:"cliTempRoot"`
 	// CLITempRootEnd asks the daemon to end the child when its private temp folder is
 	// lost (4c111e86, measured on Linux and macOS with true). Any other value counts
