@@ -214,8 +214,8 @@ func TestHcSelfExeUnreadable(t *testing.T) {
 func TestPeerOfErrorArms(t *testing.T) {
 	// A zero-value UnixConn has no descriptor, so SyscallConn returns EINVAL and a nil
 	// RawConn. Without that error check the next line dereferences nil.
-	if pid, uid, ok := peerOf(&net.UnixConn{}); ok {
-		t.Errorf("peerOf on a zero conn = pid %d uid %d ok=true, want not-ok", pid, uid)
+	if pid, uid, ok := socketPeer(&net.UnixConn{}); ok {
+		t.Errorf("socketPeer on a zero conn = pid %d uid %d ok=true, want not-ok", pid, uid)
 	}
 	// A closed connection: the fd is gone, so raw.Control fails. Without the check the nil
 	// ucred is dereferenced.
@@ -223,13 +223,13 @@ func TestPeerOfErrorArms(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if pid, uid, ok := peerOf(conn); ok {
-		t.Errorf("peerOf on a closed conn = pid %d uid %d ok=true, want not-ok", pid, uid)
+	if pid, uid, ok := socketPeer(conn); ok {
+		t.Errorf("socketPeer on a closed conn = pid %d uid %d ok=true, want not-ok", pid, uid)
 	}
 }
 
 // hcFakeFileInfo is an os.FileInfo whose Sys() the test controls, which is the only way to
-// reach lockFileHeld's two device arms: a real stat always yields a *syscall.Stat_t, and the
+// reach heldInProcLocks's two device arms: a real stat always yields a *syscall.Stat_t, and the
 // anonymous-filesystem case needs st_dev major 0, which a temp file does not have.
 type hcFakeFileInfo struct{ sys any }
 
@@ -254,22 +254,22 @@ func TestLockFileHeldDeviceArms(t *testing.T) {
 
 	// Sys() is not a *syscall.Stat_t: without the type-assertion guard the nil st is
 	// dereferenced when the device is encoded below the locks read.
-	if held, _ := lockFileHeld(hcFakeFileInfo{sys: nil}); held {
-		t.Error("lockFileHeld reported held for a FileInfo with no stat")
+	if held, _ := heldInProcLocks(hcFakeFileInfo{sys: nil}); held {
+		t.Error("heldInProcLocks reported held for a FileInfo with no stat")
 	}
 
 	// An anonymous filesystem reports st_dev major 0, and /proc/locks then names the file by a
 	// device the encoding cannot reproduce (00:01 here against the computed 00:00). Only the
 	// inode-suffix fallback can match it.
 	anon := hcFakeFileInfo{sys: &syscall.Stat_t{Dev: 0, Ino: ino}}
-	if held, read := lockFileHeld(anon); !held || !read {
-		t.Error("lockFileHeld missed the major-0 anonymous-filesystem lock line")
+	if held, read := heldInProcLocks(anon); !held || !read {
+		t.Error("heldInProcLocks missed the major-0 anonymous-filesystem lock line")
 	}
 	// The fallback is inode-exact, not a substring: a different inode with the same suffix
 	// shape must not match.
 	other := hcFakeFileInfo{sys: &syscall.Stat_t{Dev: 0, Ino: ino + 1}}
-	if held, read := lockFileHeld(other); held || !read {
-		t.Error("lockFileHeld matched a lock line for a different inode")
+	if held, read := heldInProcLocks(other); held || !read {
+		t.Error("heldInProcLocks matched a lock line for a different inode")
 	}
 }
 
@@ -309,7 +309,7 @@ func TestHcPrimitivesOnAVanishedProcess(t *testing.T) {
 	}
 	mk(70, "stat", hcRunningStat(70, 1, 70, "9000")) // keep the fixture a plausible process
 
-	// lockFileHeld with no /proc/locks to read: not held, and the read did not answer.
+	// heldInProcLocks with no /proc/locks to read: not held, and the read did not answer.
 	if err := os.Remove(filepath.Join(procRoot(), "locks")); err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestHcPrimitivesOnAVanishedProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if held, read := lockFileHeld(fi); held || read {
-		t.Errorf("lockFileHeld with no /proc/locks to read = %v %v, want false false", held, read)
+	if held, read := heldInProcLocks(fi); held || read {
+		t.Errorf("heldInProcLocks with no /proc/locks to read = %v %v, want false false", held, read)
 	}
 }

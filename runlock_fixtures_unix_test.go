@@ -18,13 +18,13 @@ import (
 // The lock-holder fixtures of the tests of package main that drive -stop and the
 // start of a daemon. internal/runlock has its own copies for its own tests.
 
-// readOwnerRecord reads the owner record at path, as the daemon does.
-func readOwnerRecord(path string) (runlock.OwnerRecord, error) {
+// loadLockOwner reads the owner record at path, as the daemon does.
+func loadLockOwner(path string) (runlock.OwnerRecord, error) {
 	return runlock.ReadOwnerRecordForTest(path)
 }
 
-// writeOwnerRecord writes rec into the locked fd, as the daemon does.
-func writeOwnerRecord(fd int, rec runlock.OwnerRecord) { runlock.WriteOwnerRecordForTest(fd, rec) }
+// storeLockOwner writes rec into the locked fd, as the daemon does.
+func storeLockOwner(fd int, rec runlock.OwnerRecord) { runlock.WriteOwnerRecordForTest(fd, rec) }
 
 // runlockHoldFixture is the "runlock-hold" helper mode: take the flock on args[0],
 // write an owner record naming this process a serve daemon, then linger so runlock.LockRunFolder
@@ -46,7 +46,7 @@ func runlockHoldFixture(args []string) int {
 	if len(args) > 3 && args[3] != "" {
 		node = args[3]
 	}
-	writeOwnerRecord(fd, runlock.OwnerRecord{
+	storeLockOwner(fd, runlock.OwnerRecord{
 		Pid:        os.Getpid(),
 		Role:       "serve",
 		Node:       node,
@@ -116,7 +116,7 @@ func writeRecordFile(t *testing.T, path string, rec runlock.OwnerRecord) {
 		t.Fatalf("open record file: %v", err)
 	}
 	defer func() { _ = syscall.Close(fd) }()
-	writeOwnerRecord(fd, rec)
+	storeLockOwner(fd, rec)
 }
 
 // spawnLockHolder starts the runlock-hold fixture on lockPath and waits for it to be

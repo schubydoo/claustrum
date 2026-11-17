@@ -43,7 +43,7 @@ func hcRunRoot(t *testing.T) (runRoot string, root *os.Root) {
 	return runRoot, root
 }
 
-// TestRunDirsSkipsOwnDirAndSymlinks pins two runDirs rules (issue 429): the cleaner's
+// TestRunDirsSkipsOwnDirAndSymlinks pins two listRunFolders rules (issue 429): the cleaner's
 // own run dir is never listed, so the tidy never dials its own socket, and a symlinked entry
 // is not a run dir, so it is never probed or removed.
 func TestRunDirsSkipsOwnDirAndSymlinks(t *testing.T) {
@@ -71,14 +71,14 @@ func TestRunDirsSkipsOwnDirAndSymlinks(t *testing.T) {
 	hcClock = time.Now
 
 	c := &hostCleaner{roots: &hostRoots{roots: []string{base}}, ownRunDir: filepath.Join(runRoot, "own")}
-	dirs, done := c.runDirs()
+	dirs, done := c.listRunFolders()
 	defer done()
 	var names []string
 	for _, d := range dirs {
 		names = append(names, d.name)
 	}
 	if len(names) != 1 || names[0] != "D" {
-		t.Errorf("runDirs = %v, want only [D]: not the own dir, not the symlink", names)
+		t.Errorf("listRunFolders = %v, want only [D]: not the own dir, not the symlink", names)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestRunDirsCapLogNeedsA65thDir(t *testing.T) {
 		}
 		buf := captureLogBuf(t)
 		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
-		dirs, done := c.runDirs()
+		dirs, done := c.listRunFolders()
 		done()
 		logged := strings.Contains(buf.String(), "[hostclean] more than 64 run dirs under "+filepath.Join(base, "run")+"; only the first 64 are examined\n")
 		if len(dirs) != hcMaxRunDirs || logged != (n > hcMaxRunDirs) {
@@ -158,10 +158,10 @@ func TestRunDirsEnumerationArms(t *testing.T) {
 			t.Fatal(err)
 		}
 		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
-		dirs, done := c.runDirs()
+		dirs, done := c.listRunFolders()
 		defer done()
 		if len(dirs) != 1 || dirs[0].name != "a" {
-			t.Errorf("runDirs = %+v, want only the directory entry", dirs)
+			t.Errorf("listRunFolders = %+v, want only the directory entry", dirs)
 		}
 	})
 
@@ -171,17 +171,17 @@ func TestRunDirsEnumerationArms(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(runRoot, "a"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// A second root that is a symlink to the first: both runRoots() entries list the
+		// A second root that is a symlink to the first: both runFolders() entries list the
 		// same directory, and only the device+inode key can tell that.
 		alias := filepath.Join(t.TempDir(), "alias")
 		if err := os.Symlink(base, alias); err != nil {
 			t.Fatal(err)
 		}
 		c := &hostCleaner{roots: &hostRoots{roots: []string{base, alias}}}
-		dirs, done := c.runDirs()
+		dirs, done := c.listRunFolders()
 		defer done()
 		if len(dirs) != 1 {
-			t.Errorf("runDirs = %d entries, want 1: the same dir under two roots", len(dirs))
+			t.Errorf("listRunFolders = %d entries, want 1: the same dir under two roots", len(dirs))
 		}
 	})
 
@@ -194,10 +194,10 @@ func TestRunDirsEnumerationArms(t *testing.T) {
 			}
 		}
 		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
-		dirs, done := c.runDirs()
+		dirs, done := c.listRunFolders()
 		defer done()
 		if len(dirs) != hcMaxRunDirs {
-			t.Errorf("runDirs = %d entries, want the cap of %d", len(dirs), hcMaxRunDirs)
+			t.Errorf("listRunFolders = %d entries, want the cap of %d", len(dirs), hcMaxRunDirs)
 		}
 	})
 }
