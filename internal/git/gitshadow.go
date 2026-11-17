@@ -279,7 +279,8 @@ func (h *ShadowHost) gate(off bool) string {
 		// is not kept. The next request tests again (4c111e86, measured on Linux).
 		// A failure kept before the switch still answers a request with it
 		// (measured). A hold live at the start or the end of the test counts as off
-		// (claustrum's own, not measured).
+		// (claustrum's own, not measured). No test pins the start or the end read
+		// alone: the test holds the switch across the whole request.
 		if checkOff {
 			return failure
 		}
