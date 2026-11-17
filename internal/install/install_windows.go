@@ -36,6 +36,13 @@ func probeCLIPathMissing(path string) bool {
 // placeStagedCLI tries such a rename again.
 func renameDenied(err error) bool { return errors.Is(err, syscall.ERROR_ACCESS_DENIED) }
 
+// finalProgressAfterRename moves the final progress line of a -cli-url download
+// after the rename of the new CLI. On 4c111e86 a rename onto a directory link, a
+// junction or a dangling link fails with "Access is denied.", and stdout holds
+// the bytes:0 line only (measured on Windows). A var only so a test on any system
+// can run this rule.
+var finalProgressAfterRename = true
+
 // rawCLIDirStep is off on Windows, so -install keeps its folder step on a cache
 // miss only. 5fd08069 makes nothing for C:\D\sub\.. there, also with sub a file
 // (measured on Windows).

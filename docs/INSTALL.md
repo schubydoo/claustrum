@@ -234,8 +234,8 @@ On the `-cli-url` path:
   Content-Length. If the server sends none, `total` is dropped.
 - A leading `bytes:0` line comes after the response headers and before any body
   byte. A server that sends no headers gets no line (Linux and Windows). A final
-  `bytes:<n>` line comes only after the checksum passes. A failed check prints no
-  final line (Linux).
+  `bytes:<n>` line needs a passed checksum (Linux) and, on Windows, a good CLI
+  rename (`4c111e86`).
 - Between those two lines a tick comes each 1 s. If the byte count of a tick equals
   the count of the last printed line, the tick prints nothing. The counts jump irregularly, so a
   consumer treats them as progress, not as a byte-exact sequence. If a tick printed
