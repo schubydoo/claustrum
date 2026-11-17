@@ -111,7 +111,7 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 	"(beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
 	"marker), or could not be validated as a trust root"
 
-// baseRepoUnderManagedWorktrees reports whether repo sits inside a managed
+// repoInsideMarkedTree reports whether repo sits inside a managed
 // worktrees tree: beneath a `.claude/worktrees` directory, or in or beneath a
 // directory that holds a `.claude-managed-worktrees` entry and no `.git`. b3081b51 refuses
 // such a baseRepo on git.worktree_create (errorCode "nested_base_repo") and
@@ -125,7 +125,7 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 // git.worktree_create skips this test for a baseRepo that does not exist, a dangling link
 // included. It answers not_a_repo then (b3081b51, measured on Linux and macOS, and on
 // Windows for a missing path below a marker).
-func baseRepoUnderManagedWorktrees(repo string) bool {
+func repoInsideMarkedTree(repo string) bool {
 	if markerAboveSpelling(repo) {
 		return true
 	}

@@ -86,7 +86,7 @@ func runGitLingering(args []string) int {
 		return 0
 	case has("worktree") && has("add"):
 		// Write the linked `.git` back-pointer into the (already-created) leaf — the last
-		// positional arg — so worktreeAdminDir resolves and the checkout runs.
+		// positional arg — so linkedGitDirOf resolves and the checkout runs.
 		// The registration exists in the repository, as after a real add: the create
 		// tests it, and the index has a place. The add runs in the repository.
 		// The record names the leaf with its symlinks resolved, as git writes it: the

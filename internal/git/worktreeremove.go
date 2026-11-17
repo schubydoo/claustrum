@@ -266,7 +266,7 @@ func worktreeGitFileTarget(leafDir *os.Root, path string) (string, error) {
 		return "", err
 	}
 	rest, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir: ")
-	// Extra white space after "gitdir: " is dropped, as worktreeAdminDir drops it.
+	// Extra white space after "gitdir: " is dropped, as linkedGitDirOf drops it.
 	// No row measures that input.
 	rest = strings.TrimSpace(rest)
 	if !ok || rest == "" {
@@ -766,7 +766,7 @@ func namesOtherGitDir(t gitDirTrust, answer string) bool {
 // whose folder went keeps its answer and runs no second listing, and a failed `git
 // version` after the first listing is the answer, in the form of a failed second
 // listing.
-func removeListingCheck(u gitUse, repo string, noRepo bool) (c configCheck, relisted, final bool) {
+func removeListingCheck(u gitUse, repo string, noRepo bool) (c configVerdict, relisted, final bool) {
 	r := plainListing(u, repo, true)
 	var ee *exec.ExitError
 	if !errors.As(r.err, &ee) || isGitStop(r.err) || copyGone(r.err) {
@@ -777,7 +777,7 @@ func removeListingCheck(u gitUse, repo string, noRepo bool) (c configCheck, reli
 	}
 	if !r.saysNoRepository() {
 		if v := gitVersionRun(u, true); v.err != nil {
-			return configCheck{refusal: gitCannotRunPrefix + v.detail()}, false, true
+			return configVerdict{refusal: gitCannotRunPrefix + v.detail()}, false, true
 		}
 	}
 	return hostileConfigRefusal(u, repo, true), true, true
@@ -974,9 +974,9 @@ func readRootDir(root *os.Root) ([]fs.DirEntry, error) {
 	return dir.ReadDir(-1)
 }
 
-// lockedWorktreeRefusal answers a worktree folder whose entry is locked. The path is
+// lockRefusalText answers a worktree folder whose entry is locked. The path is
 // in backticks (be1c1ca5, measured on Linux, macOS and Windows).
-func lockedWorktreeRefusal(worktreePath string, lock worktreeLock) string {
+func lockRefusalText(worktreePath string, lock worktreeLock) string {
 	if lock == lockedByCreate {
 		return "refusing to remove worktree: " + tickPath(worktreePath) +
 			" was left locked by a create that did not finish; unlock it first (" +

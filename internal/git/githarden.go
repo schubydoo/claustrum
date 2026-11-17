@@ -59,7 +59,7 @@ import (
 // 89cb6289 fails there (measured on Windows).
 //
 // The core.excludesFile entry is a placeholder. profileArgsWithExcludes puts the
-// user's excludes file there (userExcludesFile). On Windows 5fd08069 sends the
+// user's excludes file there (globalExcludesPath). On Windows 5fd08069 sends the
 // user's ignore file there (measured). core.hooksPath is hooksNullDevice.
 var gitHardenLight = []string{
 	"core.hooksPath=" + hooksNullDevice,
@@ -284,12 +284,12 @@ func branchStepEnv(pin, hooks []string, sshOff bool) []string {
 // There is no `-C dir`: every hardened call selects its repository by its working
 // directory, as f6010b97 does on Linux, macOS and Windows. The profile's placeholder
 // core.excludesFile is filled in with the user's resolved global excludes
-// (userExcludesFile) — 7d193f89 runs every git op with the user's
+// (globalExcludesPath) — 7d193f89 runs every git op with the user's
 // ~/.config/git/ignore in force, not /dev/null, so that e.g. git.status classifies a
 // globally-ignored file as ignored. On a host with no global excludes the resolver
 // returns the null device, leaving the old behaviour.
 func hardenedProfileArgs(heavy bool, args ...string) []string {
-	return profileArgsWithExcludes(heavy, userExcludesFile(), args...)
+	return profileArgsWithExcludes(heavy, globalExcludesPath(), args...)
 }
 
 // profileArgsWithExcludes is hardenedProfileArgs with the core.excludesFile value
@@ -321,7 +321,7 @@ func profileArgsWithExcludes(heavy bool, excludes string, args ...string) []stri
 // The user's global excludes are resolved first. f6010b97 reads them before its
 // first listing, measured on Linux and Windows.
 func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listingRun {
-	userExcludesFile()
+	globalExcludesPath()
 	u.recheck(dir)
 	return runListing(ctx, dir, "", u.precursorEnv(heavy, u.pin(dir)))
 }
@@ -369,7 +369,7 @@ func hardenedGitAnswer(ctx context.Context, u gitUse, dir string, heavy bool, pr
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
-// hardenedGitFirst is hardenedGit for the first call after hostileConfigRefusal on
+// hardenedGitFirst is gitUnderLimits for the first call after hostileConfigRefusal on
 // the same dir. It runs no config precursor, because that check was its precursor,
 // and it pins the hooks of that check's listing l.
 func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ...string) (string, bool) {
@@ -401,7 +401,7 @@ func gitDirWorkTreeToplevel(s *gitStop, sshOff bool, gitDir, workTree string, pi
 // gitDirWorkTreeToplevelIn is gitDirWorkTreeToplevel under ctx, the context of
 // the request.
 func gitDirWorkTreeToplevelIn(ctx context.Context, sshOff bool, gitDir, workTree string, pin, front []string) (string, error) {
-	userExcludesFile()
+	globalExcludesPath()
 	profile := withSSHOff(profileEnv(true), sshOff)
 	hooks := runListing(ctx, gitDir, gitDir, precursorEnvWith(profile, pin)).hooks()
 	cmd := gitCommandContext(ctx, withFront(front, hardenedProfileArgs(true,
@@ -412,8 +412,8 @@ func gitDirWorkTreeToplevelIn(ctx context.Context, sshOff bool, gitDir, workTree
 	return strings.TrimRight(string(out), "\r\n"), err
 }
 
-// hardenedGit is hardenedGitContext under the time limits of the request.
-func hardenedGit(u gitUse, dir string, heavy bool, args ...string) (string, bool) {
+// gitUnderLimits is hardenedGitContext under the time limits of the request.
+func gitUnderLimits(u gitUse, dir string, heavy bool, args ...string) (string, bool) {
 	return hardenedGitContext(u.stop.context(), u, dir, heavy, args...)
 }
 
@@ -1322,7 +1322,7 @@ func worktreeBaseGitDir(u gitUse, repo string) (gitDir, printed string, answered
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no
 // answer: the admin dir that repo's .git file names, or <repo>/.git.
 func repoGitDir(repo string) string {
-	if admin := worktreeAdminDir(repo); admin != "" {
+	if admin := linkedGitDirOf(repo); admin != "" {
 		if !filepath.IsAbs(admin) {
 			admin = filepath.Join(repo, admin)
 		}
@@ -1331,7 +1331,7 @@ func repoGitDir(repo string) string {
 	return filepath.Join(repo, ".git")
 }
 
-// hardenedGitStdout is hardenedGit but returns stdout only and the exec error,
+// hardenedGitStdout is gitUnderLimits but returns stdout only and the exec error,
 // for callers that split a warning on stderr from a real failure (git.status,
 // git.list_branches).
 func hardenedGitStdout(u gitUse, dir string, heavy bool, args ...string) (string, error) {
@@ -1435,7 +1435,7 @@ var (
 	userExcludesGen    int
 )
 
-// userExcludesFile resolves the user's global git excludes file: the configured
+// globalExcludesPath resolves the user's global git excludes file: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
 // $HOME/.config/git/ignore when that file exists, else the null device (os.DevNull:
 // /dev/null, and NUL on Windows, as f6010b97 passes on Windows). This is the excludes
@@ -1448,7 +1448,7 @@ var (
 // one read for requests 200 to 500 ms apart (measured on Linux). Each call uses
 // the result of its own read. A later result replaces an earlier one
 // (claustrum's own, not measured).
-func userExcludesFile() string {
+func globalExcludesPath() string {
 	userExcludesMu.Lock()
 	if userExcludesDone {
 		v := userExcludesCached
@@ -1456,11 +1456,11 @@ func userExcludesFile() string {
 		if v != "" {
 			return v
 		}
-		return defaultExcludesFile()
+		return xdgExcludesPath()
 	}
 	gen := userExcludesGen
 	userExcludesMu.Unlock()
-	v := configuredExcludesFile()
+	v := excludesFromGlobalConfig()
 	userExcludesMu.Lock()
 	if gen == userExcludesGen {
 		userExcludesDone, userExcludesCached = true, v
@@ -1469,10 +1469,10 @@ func userExcludesFile() string {
 	if v != "" {
 		return v
 	}
-	return defaultExcludesFile()
+	return xdgExcludesPath()
 }
 
-// configuredExcludesFile reads the configured core.excludesFile of the user: an
+// excludesFromGlobalConfig reads the configured core.excludesFile of the user: an
 // absolute value, or "" when there is none. The read has the filtered environment
 // of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in gitVersionDir
 // (claustrum's own, not measured). f6010b97 adds GIT_DIR=NUL on Windows and runs
@@ -1485,7 +1485,7 @@ func userExcludesFile() string {
 // config, never a repo's own core.excludesFile. A repo must not be able to inject
 // excludes. 683cc6a9 makes one read too and looks up the default file on each
 // git.status call (measured on Linux and macOS).
-func configuredExcludesFile() string {
+func excludesFromGlobalConfig() string {
 	windows := gitEnvHere.windows
 	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
 	if out, err := cmd.Output(); err == nil {
@@ -1496,11 +1496,11 @@ func configuredExcludesFile() string {
 	return ""
 }
 
-// defaultExcludesFile looks up the default excludes file on each call. A regular
+// xdgExcludesPath looks up the default excludes file on each call. A regular
 // file at <base>/git/ignore is the result, else the null device. A file that went
 // or became a folder gives the null device. The lookup with XDG_CONFIG_HOME set is
 // not measured.
-func defaultExcludesFile() string {
+func xdgExcludesPath() string {
 	windows := gitEnvHere.windows
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" || relativeFor(base, windows) {
@@ -1518,8 +1518,8 @@ func defaultExcludesFile() string {
 	return os.DevNull
 }
 
-// configCheck is the outcome of hostileConfigRefusal.
-type configCheck struct {
+// configVerdict is the outcome of hostileConfigRefusal.
+type configVerdict struct {
 	// refusal is the whole refusal text when the method refuses, else "".
 	refusal string
 	// noRepo is true when the method answers as if dir held no repository.
@@ -1545,7 +1545,7 @@ type configCheck struct {
 
 // refused reports whether the method stops on this check, with a refusal or with the
 // "no repository" answer.
-func (c configCheck) refused() bool {
+func (c configVerdict) refused() bool {
 	return c.refusal != "" || c.noRepo
 }
 
@@ -1585,12 +1585,12 @@ func (c configCheck) refused() bool {
 // first. When it refuses, no listing runs, and a directory is refused with its text.
 // A dir that does not exist, or is not a directory, is not refused by that check. See
 // docs/protocol/git-rules-calls.md, "The daemon's own git environment".
-func hostileConfigRefusal(u gitUse, dir string, heavy bool) configCheck {
+func hostileConfigRefusal(u gitUse, dir string, heavy bool) configVerdict {
 	if msg, bad := daemonCountRefusal(); bad {
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-			return configCheck{}
+			return configVerdict{}
 		}
-		return configCheck{refusal: msg}
+		return configVerdict{refusal: msg}
 	}
 	return listingCheck(u, plainListing(u, dir, heavy), dir, heavy)
 }
@@ -1601,16 +1601,16 @@ func plainListing(u gitUse, dir string, heavy bool) listingRun {
 }
 
 // listingCheck reads the listing r of hostileConfigRefusal, after the count check.
-func listingCheck(u gitUse, r listingRun, dir string, heavy bool) configCheck {
+func listingCheck(u gitUse, r listingRun, dir string, heavy bool) configVerdict {
 	if r.err == nil {
 		l, reason := parseConfigListing(r.out)
 		switch reason {
 		case "":
-			return configCheck{listing: l}
+			return configVerdict{listing: l}
 		case listingReadRefusal:
-			return configCheck{refusal: hooksRefusalPrefix + reason}
+			return configVerdict{refusal: hooksRefusalPrefix + reason}
 		default:
-			return configCheck{refusal: hooksPinPrefix + reason}
+			return configVerdict{refusal: hooksPinPrefix + reason}
 		}
 	}
 	return failedListingCheck(u, r, dir, heavy)
@@ -1618,15 +1618,15 @@ func listingCheck(u gitUse, r listingRun, dir string, heavy bool) configCheck {
 
 // failedListingCheck sorts the failed listing r of dir into its class: outcomes 1 to
 // 3 of hostileConfigRefusal. heavy is the profile of the listing.
-func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCheck {
+func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configVerdict {
 	if copyGone(r.err) {
-		return configCheck{refusal: r.err.Error(), gone: true}
+		return configVerdict{refusal: r.err.Error(), gone: true}
 	}
 	if r.gitNotOnPath() {
-		return configCheck{noRepo: true}
+		return configVerdict{noRepo: true}
 	}
 	if r.saysNoRepository() {
-		return configCheck{noRepo: true, noRepoText: worktreeGitText(r.stderr, nil)}
+		return configVerdict{noRepo: true, noRepoText: worktreeGitText(r.stderr, nil)}
 	}
 	// A failure to CHDIR into dir — it does not exist, is a non-directory, or a parent
 	// is not traversable — is NOT a hostile config: git never reached a repo, so there
@@ -1657,12 +1657,12 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configCh
 	if unenterableDir(dir, r.err) {
 		if v := gitVersionRun(u, heavy); v.err != nil {
 			if _, err := os.Stat(dir); err == nil {
-				return configCheck{refusal: gitCannotRunPrefix + v.detail()}
+				return configVerdict{refusal: gitCannotRunPrefix + v.detail()}
 			}
 		}
-		return configCheck{}
+		return configVerdict{}
 	}
-	c := configCheck{refusal: failedListingText(u, r, heavy)}
+	c := configVerdict{refusal: failedListingText(u, r, heavy)}
 	if r.saysGitFileNowhere() {
 		// The text names the folder that holds `.git`, as askGit does, also for a
 		// subfolder (measured on Linux and Windows). A link spelling is not

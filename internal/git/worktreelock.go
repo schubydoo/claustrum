@@ -20,8 +20,8 @@ import (
 // with or without it — this only closes a same-repo race window under concurrency.
 var worktreeRepoLocks sync.Map // canonical repo path -> *sync.Mutex
 
-// withWorktreeRepoLock runs fn while holding the per-repo worktree lock.
-func withWorktreeRepoLock(repo string, fn func() rpc.Response) rpc.Response {
+// underRepoMutex runs fn while holding the per-repo worktree lock.
+func underRepoMutex(repo string, fn func() rpc.Response) rpc.Response {
 	m, _ := worktreeRepoLocks.LoadOrStore(pathcanon.Canonical(repo), &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
@@ -118,7 +118,7 @@ func worktreeGitDirKey(repo string) string {
 }
 
 // worktreeBranchLocks serialises the branch step (worktreebranch.go) per common git
-// dir. The lock of withWorktreeRepoLock is keyed by baseRepo. So it does not cover
+// dir. The lock of underRepoMutex is keyed by baseRepo. So it does not cover
 // two removes through the repository and through one of its linked worktrees.
 // 89cb6289 runs those two branch steps one after the other (measured on Linux). The
 // key is the git dir under whose worktrees directory the entries are removed
