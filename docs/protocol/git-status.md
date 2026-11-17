@@ -168,9 +168,9 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 === "Linux and macOS"
 
     - With no global excludes file of the user, the status runs.
-    - Junction rules do not apply. That covers a `baseRepo` with a junction before its last component, a junction below `baseRepo` in `path`, and a `baseRepo` that is a junction.
+    - The junction rules of Windows do not apply.
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `"isRepo": false`.
-    - A regular file inside a repository as `baseRepo` gets [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). Its failure gives its `-32603` text (`4c111e86`, measured on Linux).
+    - A file inside a repository first gets [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository), which can give `-32603` (`4c111e86`, measured on Linux).
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, is not a special case.
     - Letter case in the registration match is exact.
     - `path` matches as sent and as resolved, and in no other spelling.
