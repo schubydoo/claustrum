@@ -10,7 +10,7 @@ and the variables follow `5fd08069`. The hook pins were measured against `f6010b
 and their limits against `89cb6289`. A rule that names no system was measured on
 Linux, macOS and Windows. `internal/git/githarden.go` holds the lists, and
 `internal/git/githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
-with an empty value (claustrum's own, not measured).
+with an empty value (claustrum's own).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
@@ -245,8 +245,8 @@ On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon
   the daemon keeps it. With none, each call looks up the file again
   (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git does
   not start keeps nothing: the next request reads again (claustrum's own).
-  Claustrum's own: the base is `XDG_CONFIG_HOME`.
-  Unset, empty or relative, the base is the home folder plus `.config`. A regular file
+  Claustrum's own: the base is `XDG_CONFIG_HOME`, or the home folder plus `.config` if
+  that is unset, empty or relative. A regular file
   `git/ignore` in the base, after symlinks, is the result. Every other case gives the null
   device, also when `XDG_CONFIG_HOME` is set and the file is under the home folder.
 - The read of config text keeps `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` and adds
