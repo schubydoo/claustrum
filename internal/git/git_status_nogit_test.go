@@ -2,6 +2,7 @@ package git
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -56,6 +57,12 @@ func TestGitStatusWithNoGitKeepsTheTestOnWindows(t *testing.T) {
 		if !strings.HasPrefix(raw, want) || len(made) != calls {
 			t.Errorf("git.status %d with git again = %s after %d git calls\nwant %s… after %d", i+1, raw, len(made), want, calls)
 		}
+	}
+	// A baseRepo that does not resolve, as one through a junction, gets the kept
+	// refusal too.
+	gone := filepath.Join(f.repo, "missing", "w")
+	if raw, made := f.call(t, "git.status", map[string]any{"path": gone, "baseRepo": gone}); !strings.HasPrefix(raw, want) || len(made) != 0 {
+		t.Errorf("git.status on a path that does not resolve = %s after %d git calls\nwant %s… after none", raw, len(made), want)
 	}
 }
 

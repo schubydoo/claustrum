@@ -746,6 +746,17 @@ func gitStatus(req *gitCall) rpc.Response {
 		globalExcludesPath()
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// On Windows a failed start test that is still kept answers first, also for a
+	// baseRepo through a junction that does not resolve. 4c111e86 answers the kept
+	// refusal there after the no-git request, after the excludes read of the first
+	// request with git (measured on Windows). Its place after the link refusals and
+	// a kept failure of another cause are claustrum's own.
+	if statusNoGitKeepsTest && !bool(p.ShadowDirOff) {
+		if kept := req.shadow.keptFailure(); kept != "" {
+			globalExcludesPath()
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, kept)
+		}
+	}
 	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}

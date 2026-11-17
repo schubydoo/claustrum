@@ -43,13 +43,13 @@ That holds for:
 - a `path` that is the repository itself, a plain folder or a subfolder
 - a nested repository, a missing folder or a regular file
 - a worktree of another repository, or a right worktree with the wrong `baseRepo`
-- a linked worktree as `path` and `baseRepo` with no git on PATH (`4c111e86`, measured, other repositories claustrum's own). On Windows that request keeps its failed start test (measured)
+- a linked worktree as `path` and `baseRepo` with no git on PATH (`4c111e86`, measured, other repositories claustrum's own). On Windows its failed start test is kept and answers first (measured)
 
 [How the daemon finds the worktree](#how-the-daemon-finds-the-worktree) has the rules.
 
 ## Errors
 
-A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in the repository or the worktree.
+A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in the repository or worktree.
 
 ### Shared refusals
 
