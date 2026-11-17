@@ -152,7 +152,7 @@ Each fact has one home. Link to the home. Do not copy its text. A rewrite can mo
 
 **Sentence length: 8 to 20 words in a procedure, 8 to 25 words in a description.** A run of sentences under 8 words reads as a list with no thread. Join two related short sentences, and say why before the rule.
 
-**Words in a page.** Every page except `docs/REFERENCE-BUILDS.md` has a word limit. A row in `docWordLimits` (`docs_consistency_test.go`) sets it, or the default applies: 1500 words, or 1200 under `docs/protocol/`. A new page gets its count plus about 200 words. Do not raise an existing limit: cut instead.
+**Words in a page.** Every page has a word limit. A row in `docWordLimits` (`docs_consistency_test.go`) sets it, or the default applies: 1500 words, or 1200 under `docs/protocol/`. A new page gets its count plus about 200 words. Do not raise an existing limit: cut instead.
 
 Keep these plain-English rules:
 
