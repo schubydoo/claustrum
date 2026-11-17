@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1149,6 +1150,13 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
+	// With no git on PATH, 4c111e86 answers not_a_repo after the marker test and
+	// before the count check, also with a worktreeRoot. Nothing is made (measured
+	// on Linux, macOS and Windows, for a missing baseRepo and a repository). The
+	// order against a trust refusal is not measured.
+	if _, err := exec.LookPath("git"); errors.Is(err, exec.ErrNotFound) {
+		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+	}
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
@@ -1592,12 +1600,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// `.git` became a junction to a folder that is no git directory. The text
 	// after the colon is the exec error. On Linux 5fd08069 answers the same
 	// text (measured). macOS is not measured: it gets the same stop. A call
-	// that a signal ended is not measured either. In the other states the
-	// create goes on with the directory of repoGitDir.
+	// that a signal ended is not measured either. With "shadowDirOff":true a
+	// call that exits 1 with no answer stops the create the same way, and no
+	// leaf stays (4c111e86, measured on Linux, macOS and Windows). In the other
+	// states the create goes on with the directory of repoGitDir.
 	if gitDirMustBeReal && req.use.shadow() && copyGone(gitDirErr) {
 		return refuseAdd(gitDirErr.Error())
 	}
-	if gitDirMustBeReal && req.use.shadow() && gitDirErr != nil {
+	if gitDirMustBeReal && (req.use.shadow() || bool(p.ShadowDirOff)) && gitDirErr != nil {
 		return refuseAdd(gitDirAddWrap + gitDirErr.Error())
 	}
 	// A create of a plain repository makes <repo>/.git a session folder
@@ -2158,8 +2168,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				undoFailedAdd(p.WorktreePath, checkpoint)
 				return refuseUnsafe("refusing to create worktree: " + tickPath(parentResolvedPath(p.WorktreePath)) + " has no .git file")
 			}
-			return refuseUnsafe(fmt.Sprintf("refusing to create worktree: %s is no longer the directory that was created for the worktree",
-				parentResolvedPath(p.WorktreePath)))
+			return refuseUnsafe(leafReplacedText(parentResolvedPath(p.WorktreePath)))
 		}
 		req.use.repointLeaf(repo, p.WorktreePath, checkpoint)
 	}
@@ -2558,12 +2567,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 	}
 	// Post-condition: the add must have populated the directory claustrum created, not
-	// one swapped in during the add. claustrum's own guard; empty on an unraced create.
-	if msg := verifyCreatedWorktree(p.WorktreePath, checkpoint); msg != "" {
+	// one swapped in during the add. A copy of the leaf put in its place at the
+	// read-tree call gets the text of a replaced leaf with unsafe_path (4c111e86,
+	// measured on Linux and macOS, with and without "shadowDirOff":true). A leaf
+	// that leads elsewhere or is no folder gets the same frame (not measured).
+	if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeResult{
 			Success:   false,
-			Error:     msg,
-			ErrorCode: "worktree_add_failed",
+			Error:     leafReplacedText(p.WorktreePath),
+			ErrorCode: "unsafe_path",
 		})
 	}
 	// After a good checkout b3081b51 compares the config files of the new

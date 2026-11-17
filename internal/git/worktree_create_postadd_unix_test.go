@@ -301,7 +301,7 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 			raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
-			wantText := "refusing to create worktree: " + namedLeaf(leaf) + " was not populated by git worktree add"
+			wantText := "refusing to create worktree: `" + namedLeaf(leaf) + "` does not hold the .git file made for it"
 			if tc.otherEntry {
 				wantText = notOursText(leaf)
 			}
@@ -751,7 +751,7 @@ func TestCreatedRegistrationRefusalStates(t *testing.T) {
 	if got := refusalOf(""); got != "" {
 		t.Errorf("no .git value: refusal %q, want none", got)
 	}
-	if got, want := refusalOf(reg), "refusing to create worktree: "+namedLeaf(leaf)+" was not populated by git worktree add"; got != want {
+	if got, want := refusalOf(reg), "refusing to create worktree: `"+namedLeaf(leaf)+"` does not hold the .git file made for it"; got != want {
 		t.Errorf("no registrations directory (B-E1, B-E3 and measured): refusal %q, want %q", got, want)
 	}
 	if err := os.Mkdir(registry, 0o755); err != nil {

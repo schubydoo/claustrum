@@ -490,6 +490,34 @@ func TestWorktreeCreateGitFileGoneAfterCheckout(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateLeafCopiedAtCheckout pins 4c111e86 on Linux and macOS (cells
+// l_new_t321 and m_new_t321, rows of the leaf swap after read-tree): the stub runs
+// the real read-tree, renames the leaf to w1.old and puts a new folder with a copy
+// of the .git file at its path. The create answers the text of a replaced leaf in
+// backticks, with unsafe_path. Both folders, the registration w1 and branch w1
+// stay. Mutation: give the test after the checkout its old frame, and the reply
+// differs.
+func TestWorktreeCreateLeafCopiedAtCheckout(t *testing.T) {
+	f, h := postAddFixture(t)
+	old := f.leaf() + ".old"
+	gitFile := "gitdir: " + filepath.Join(f.realRoot(t), "T", ".git", "worktrees", "w1") + "\n"
+	stubSteps(t, []string{"rename", f.leaf(), old}, []string{"mkdir", f.leaf()},
+		[]string{"write", filepath.Join(f.leaf(), ".git"), gitFile})
+	slowGit(t, "read-tree", "post", 0, "", "")
+
+	raw, _ := f.create(t, h, "w1", "", 0)
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+		jsonString(t, "refusing to create worktree: `"+f.leaf()+"` is no longer the directory that was created for the worktree") +
+		`,"errorCode":"unsafe_path"}}`
+	if raw != want {
+		t.Fatalf("reply = %s\nwant %s", raw, want)
+	}
+	f.wantKept(t, []string{".git"}, []string{"w1"}, "w1")
+	if _, err := os.Stat(filepath.Join(old, ".git")); err != nil {
+		t.Errorf("the folder that was renamed away: %v, want it kept", err)
+	}
+}
+
 // wantGitFileGoneFrame fails the test unless raw is the refusal of a leaf with no
 // .git file, written out as a literal.
 func (f wtFixture) wantGitFileGoneFrame(t *testing.T, raw string) {
@@ -1006,7 +1034,8 @@ func TestWorktreeCreateStaleEntryCount(t *testing.T) {
 //   - T2: a record of another worktree. The "different worktree" text.
 //   - T3: the old entry is stale and locked. The "other than the one just
 //     created" text.
-//   - T4: T has no worktrees folder. The "was not populated" text.
+//   - T4: T has no worktrees folder. The text of a gone .git file, with the leaf in
+//     backticks (4c111e86, cell l_new_t321, row off_c1_noworktrees_afteradd).
 //   - T9: the leaf exists before the request. The "already exists" text.
 func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 	for _, tc := range []struct {
@@ -1015,7 +1044,7 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 		{"T1", "stale", " carries a .git file that does not name this repository's own worktree admin directory"},
 		{"T2", "", " carries a .git file naming an admin directory whose own record is of a different worktree"},
 		{"T3", "stale locked", " carries a .git file naming an admin entry other than the one just created for it"},
-		{"T4", "no folder", " was not populated by git worktree add"},
+		{"T4", "no folder", "` does not hold the .git file made for it"},
 		{"T9", "leaf exists", "` already exists, and a new worktree is only ever created in a fresh directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1048,7 +1077,7 @@ func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
 			}
 			raw := frameWithin(t, "git.worktree_create", createParams(link, sentLeaf, "w1"))
 			shown := realLeaf
-			if tc.stage == "leaf exists" {
+			if tc.stage == "leaf exists" || tc.stage == "no folder" {
 				shown = "`" + realLeaf
 			}
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
