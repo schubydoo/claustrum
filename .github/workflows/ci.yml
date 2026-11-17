@@ -64,9 +64,9 @@ jobs:
           files=""
           if [ "${EVENT_NAME}" = "pull_request" ]; then
             git fetch origin "${BASE_REF}" --depth=50
-            files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+            files=$(git diff --no-renames --name-only "origin/${BASE_REF}...HEAD")
           elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            files=$(git diff --name-only "${BEFORE_SHA}" HEAD)
+            files=$(git diff --no-renames --name-only "${BEFORE_SHA}" HEAD)
           fi
           echo "Changed files:"
           printf '%s\n' "$files"
