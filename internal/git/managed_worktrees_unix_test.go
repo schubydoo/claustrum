@@ -29,3 +29,15 @@ func TestBaseRepoSpelledBelowMarkerRefused(t *testing.T) {
 		})
 	}
 }
+
+// A marker that is a link with no target refuses a baseRepo below it, as a marker
+// file does. The create is 4c111e86, measured on Linux. The remove and list_branches
+// answers are claustrum's own, not measured.
+func TestBaseRepoBelowDanglingMarkerLinkRefused(t *testing.T) {
+	requireGit(t)
+	m := t.TempDir()
+	symlinkForTest(t, "nowhere-marker", filepath.Join(m, managedWorktreesMarker))
+	r := filepath.Join(m, "R")
+	markerLayoutRepo(t, r)
+	markerLayoutFrames(t, r, r)
+}
