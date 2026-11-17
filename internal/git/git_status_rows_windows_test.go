@@ -28,11 +28,11 @@ func TestGitStatusWindowsDotDotRows(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ name, path, want string }{
-		{"y1 outside, folder there", f.W + `\sub\..`, statusClean},
-		{"y2 inside, no folder", wt + `\s0\missing\..`, statusNotRepo},
-		{"y3 inside, no folder before the leaf", wt + `\none\..\s0`, statusNotRepo},
-		{"y4 inside, folder there", wt + `\q\..\s0`, statusNotRepo},
-		{"y5 dot", wt + `\s0\.`, statusClean},
+		{"outside, folder there", f.W + `\sub\..`, statusClean},
+		{"inside, no folder", wt + `\s0\missing\..`, statusNotRepo},
+		{"inside, no folder before the leaf", wt + `\none\..\s0`, statusNotRepo},
+		{"inside, folder there", wt + `\q\..\s0`, statusNotRepo},
+		{"dot", wt + `\s0\.`, statusClean},
 	} {
 		for _, path := range []string{c.path, filepath.ToSlash(c.path)} {
 			if got := statusFrame(t, path, f.T); got != c.want {
@@ -93,19 +93,19 @@ func TestGitStatusWindowsFailingCalls(t *testing.T) {
 		name, match, want string
 		calls             int
 	}{
-		{"n17a absolute-git-dir", "rev-parse,--absolute-git-dir", statusNotRepo, 3},
-		{"n17b show-toplevel", "rev-parse,--show-toplevel", statusNotRepo, 5},
-		{"n17c status", "status,--porcelain", exit1, 9},
-		{"n17d ls-files", "ls-files,-s", exit1, 13},
-		{"n17e diff-index", "diff-index,--cached", exit1, 21},
-		{"n17f hash-object", "hash-object", statusClean, 21},
+		{"absolute-git-dir", "rev-parse,--absolute-git-dir", statusNotRepo, 3},
+		{"show-toplevel", "rev-parse,--show-toplevel", statusNotRepo, 5},
+		{"status", "status,--porcelain", exit1, 9},
+		{"ls-files", "ls-files,-s", exit1, 13},
+		{"diff-index", "diff-index,--cached", exit1, 21},
+		{"hash-object", "hash-object", statusClean, 21},
 		// The listing with --git-dir=<common>, which has back slashes on Windows.
-		{"n17g listing in the common directory", "--git-dir=" + filepath.Join(f.T, ".git") + ",--list",
+		{"listing in the common directory", "--git-dir=" + filepath.Join(f.T, ".git") + ",--list",
 			`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 1: boom"}}`, 5},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stderr := ""
-			if strings.HasPrefix(c.name, "n17g") {
+			if c.name == "listing in the common directory" {
 				stderr = "boom"
 			}
 			slowGit(t, c.match, "fail", 0, stderr, "")
