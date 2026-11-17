@@ -463,9 +463,9 @@ have no flag and no key.
   Linux and macOS a gone worktree whose locked entry sits behind a linked
   `<git dir>/worktrees` gets success, and its branch goes. That follows
   `5fd08069` (measured on Linux), by the maintainer's decision of 2026-10-14.
-- **Reference.** In the plain state it refuses with the same text. On Linux and
-  macOS `89cb6289` answers success in four states. S is a worktree locked in T,
-  the `.git` folder of `baseRepo`, and X is another repository:
+- **Reference.** In the plain state it refuses with the same text. `89cb6289`
+  answers success in four states. S is a worktree locked in T, the `.git` folder
+  of `baseRepo`, and X is another repository:
   - a daemon `GIT_DIR` and `GIT_COMMON_DIR` of X: it deletes the folder of S,
     and the entry in T with its `locked` file stays
   - a daemon `GIT_DIR` of X alone: it deletes the folder of S
