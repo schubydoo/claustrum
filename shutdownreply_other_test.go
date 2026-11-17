@@ -27,7 +27,9 @@ func TestShutdownReplyWaitsForTheTeardown(t *testing.T) {
 }
 
 // After the start of the teardown the reply can win: with the drop held back, the
-// client reads the whole frame. The reply does not wait for the drop.
+// client reads the whole frame. The reply does not wait for the drop. This test and
+// the next pin the two arms of the race. They are not the oracles of the rule:
+// TestShutdownReplyWaitsForTheTeardown and TestCloseAllReleasesTheShutdownReplyWait are.
 func TestShutdownReplyCanWinTheClose(t *testing.T) {
 	s := newTestServer(t)
 	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: time.Minute}
@@ -46,7 +48,8 @@ func TestShutdownReplyCanWinTheClose(t *testing.T) {
 }
 
 // After the start of the teardown the close can win: a drop before the client reads
-// leaves it a clean EOF with no bytes. The pipe holds the write until a read.
+// leaves it a clean EOF with no bytes. The pipe holds the write until a read. It pins
+// one arm of the race and is not an oracle of the rule.
 func TestShutdownCloseCanWinTheReply(t *testing.T) {
 	s := newTestServer(t)
 	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: time.Minute}

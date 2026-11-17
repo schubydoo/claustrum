@@ -268,6 +268,8 @@ func TestShutdownCountKeepsAClosedStopConnection(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	stop := dial(t, sock)
+	// The reply then needs no wait for its bound on Linux and macOS (awaitShutdownReplyTurn).
+	s.startTeardown()
 	reply := string(stop.call(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
 	if reply != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
 		t.Fatalf("server.shutdown reply = %s", reply)

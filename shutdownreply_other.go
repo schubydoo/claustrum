@@ -4,7 +4,7 @@ package main
 
 // shutdownReplyAwaitsDrop is false on Linux and macOS. The server.shutdown reply then
 // waits only for the start of the teardown (startTeardown), and its write races the
-// close of the listener and the connections. 4c111e86 replies in 14, 10 and 15 of 200
-// runs (plain, after a ping, with an idle connection, measured on Linux). On macOS it
-// replies in 67, 82 and 83 of 100 (measured).
+// close of the listener and the connections. The rate depends on timing. 4c111e86
+// replies first in 2 to 17 % of runs on Linux and 60 to 83 % on macOS. This build
+// replies first in 50 to 72 % and 87 to 95 % (measured).
 const shutdownReplyAwaitsDrop = false
