@@ -398,18 +398,27 @@ func TestRunCLIVersion(t *testing.T) {
 	stubDelay(t, 20*time.Second)
 	gate := filepath.Join(f.root, "stop-step-done")
 	t.Setenv("CLAUSTRUM_TEST_STUB_GATE", gate)
+	// runCLIVersion can return once stop has returned, before the write of the
+	// gate. The test waits for that write, so it does not outlive the test.
+	written := make(chan error, 1)
 	old := afterCLIBound
 	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
 		return old(d, func() {
 			stop()
-			if err := os.WriteFile(gate, nil, 0o644); err != nil {
-				t.Error(err)
-			}
+			written <- os.WriteFile(gate, nil, 0o644)
 		})
 	}
 	t.Cleanup(func() { afterCLIBound = old })
 	if got := runCLIVersion(f.cli, 100*time.Millisecond); got != cliRunStopped {
 		t.Errorf("a CLI that waits for the stop step under a 100ms bound: result %d, want cliRunStopped", got)
+	}
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Errorf("the gate file: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("the stop step did not run")
 	}
 }
 
