@@ -3493,7 +3493,8 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (measured
-		// on Linux, macOS and Windows, and with worktreeRoot on Linux).
+		// on Linux, macOS and Windows, and with worktreeRoot on Linux). On Windows c9125eb8
+		// and 4c111e86 refuse too (measured).
 		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLockedWorktreeRefusal); msg != "" {
 			return refuse(msg)
 		}
