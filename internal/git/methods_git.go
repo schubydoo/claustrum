@@ -2941,7 +2941,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	case err != nil:
 		return refuse(worktreeRemoveText(err))
 	case fi.Mode()&fs.ModeSymlink != 0:
-		return refuse(worktreeRemoveText(refuseWorktree("%s is a symbolic link, not a worktree directory", target.path)))
+		return refuse(worktreeRemoveText(refuseWorktree("`%s` is a symbolic link, not a worktree directory", target.path)))
 	case !fi.IsDir():
 		return refuse(worktreeRemoveText(refuseWorktree("%s is not a directory", target.path)))
 	}
