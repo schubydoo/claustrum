@@ -248,7 +248,7 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 		return sp, true
 	}
 	sp.probeTree = statusProbeDir(clean)
-	for _, s := range []string{sp.probeTree, pathcanon.FinalDir(clean)} {
+	for _, s := range []string{resolvedDir(clean), pathcanon.FinalDir(clean)} {
 		if abs, err := filepath.Abs(s); err == nil {
 			sp.spellings = append(sp.spellings, abs)
 		}
