@@ -443,22 +443,20 @@ On Windows `b3081b51` refuses a repository path through a symbolic link or a jun
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured). The place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
+`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). The other rules are claustrum's own, not measured.
 
 ### UNC refusals
 
-On Windows these refuse `path` of `git.info` and `git.list_branches`, and `baseRepo` of `git.status`, `git.worktree_create` and `git.worktree_remove`, with no git call. A remove answers `"success":false`, a create `"errorCode":"worktree_add_failed"` and the others `-32603`.
+On Windows these refuse the repository path of all five methods with no git call: `"success":false` on a remove, `worktree_add_failed` on a create, else `-32603`.
 
-| Path | Text | Build |
-|---|---|---|
-| `\\?\UNC\…` | `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. `` | `b3081b51` |
-| On a missing share | `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. `` The log gets `[GitHandler] looking for links in "<path>": "CreateFile <path>: The network name cannot be found."`, Go-quoted. | `b3081b51`, the line `4c111e86` |
-| On a share that denies every account | `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. `` The folder is the path without its last name. | `4c111e86` |
-| A directory symbolic link on a share | `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. `` | `4c111e86` |
+| Path | Text |
+|---|---|
+| `\\?\UNC\…` | `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. `` |
+| Missing share | `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. `` Log: `[GitHandler] looking for links in "<path>": "CreateFile <path>: The network name cannot be found."` |
+| Share denying every account | `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. `` |
+| Directory link on a share | `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. `` |
 
-Row `w_new_t430` measures `4c111e86`. A missing folder on a share, a missing drive and a host name that does not resolve pass.
-
-claustrum's own, not measured: other `\\?\` and `\\.\` forms and a share root alone pass. `/` is a separator, and `UNC` matches in any case. Any other failed look gets the share text and the line. `ERROR_NETWORK_ACCESS_DENIED` is denied. A junction and a link above the last name are links. So are a request with `"shadowDirOff":true` and the place of the test.
+`b3081b51` gives the first two texts, `4c111e86` the rest and the log line (row `w_new_t430`). `<folder>` is the path without its last name. A missing folder on a share, a missing drive and an unresolved host pass.
 
 ## A FIFO where the daemon reads a git file
 
