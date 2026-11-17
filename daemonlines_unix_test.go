@@ -110,7 +110,7 @@ func TestOrphanExitLines(t *testing.T) {
 	}
 	buf := captureLogBuf(t)
 	done := make(chan struct{})
-	go func() { s.exitWhenOrphaned(sock); close(done) }()
+	go func() { s.watchSocketOwnership(sock); close(done) }()
 	select {
 	case <-s.shutdown:
 	case <-time.After(5 * time.Second):

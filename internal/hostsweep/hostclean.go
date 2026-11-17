@@ -1173,7 +1173,7 @@ func (c *hostCleaner) restoreRunFolder(e staleRunFolder, target, reason string) 
 // The pass ends no stranded daemon, and it signals no child of one. A stranded daemon is a
 // daemon whose socket path no longer leads to it. On Linux, f6010b97 and 89cb6289 sent no
 // signal to such a daemon or to its children. The rows are measured on Linux. The daemon
-// ends by itself after its own timer (exitWhenOrphaned). On macOS the two references sent
+// ends by itself after its own timer (watchSocketOwnership). On macOS the two references sent
 // none either (measured).
 //
 // The two lines about a limit are the reference's, measured on Linux. One is for more

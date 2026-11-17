@@ -30,14 +30,14 @@ const noSuchPid = 1 << 30
 // pipeConn returns a *conn.Conn whose writes are decoded into frames channel. It
 // backs the conn with net.Pipe and drains the read side in a goroutine so
 // synchronous writes (replay) don't deadlock.
-func pipeConn(t *testing.T) (*conn.Conn, <-chan StreamFrame) {
+func pipeConn(t *testing.T) (*conn.Conn, <-chan ChildFrame) {
 	t.Helper()
 	client, server := net.Pipe()
-	frames := make(chan StreamFrame, 64)
+	frames := make(chan ChildFrame, 64)
 	go func() {
 		sc := bufio.NewScanner(server)
 		for sc.Scan() {
-			var f StreamFrame
+			var f ChildFrame
 			if err := json.Unmarshal(sc.Bytes(), &f); err == nil {
 				frames <- f
 			}
@@ -57,8 +57,8 @@ func closedConn(c *conn.Conn) *conn.Conn {
 // as a "stream" notification carrying the process id.
 func TestEmitAssignsSeqAndStamps(t *testing.T) {
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}}
-	p.emit(StreamFrame{Stream: "stdout", Data: "a"})
-	p.emit(StreamFrame{Stream: "stderr", Data: "b"})
+	p.emit(ChildFrame{Stream: "stdout", Data: "a"})
+	p.emit(ChildFrame{Stream: "stderr", Data: "b"})
 
 	if len(p.buffer) != 2 {
 		t.Fatalf("buffer len = %d, want 2", len(p.buffer))
@@ -89,7 +89,7 @@ func TestEmitAssignsSeqAndStamps(t *testing.T) {
 func lineBytesFor(t *testing.T, data string) int64 {
 	t.Helper()
 	probe := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 1 << 30}
-	probe.emit(StreamFrame{Stream: "stdout", Data: data})
+	probe.emit(ChildFrame{Stream: "stdout", Data: data})
 	if len(probe.buffer) != 1 {
 		t.Fatalf("probe buffer len = %d, want 1", len(probe.buffer))
 	}
@@ -106,7 +106,7 @@ func TestEmitBufferCap(t *testing.T) {
 	line := lineBytesFor(t, "aaaaaaaaaa")
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 2 * line}
 	for i := 0; i < 5; i++ {
-		p.emit(StreamFrame{Stream: "stdout", Data: "aaaaaaaaaa"})
+		p.emit(ChildFrame{Stream: "stdout", Data: "aaaaaaaaaa"})
 	}
 	if p.bufBytes > p.bufCap {
 		t.Errorf("bufBytes = %d after cap, want ≤ %d", p.bufBytes, p.bufCap)
@@ -128,7 +128,7 @@ func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 10}
 	// No payload arithmetic here: the test only needs ONE frame that exceeds the
 	// cap, and the accounted size is the serialized line, not the 25 payload bytes.
-	p.emit(StreamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)})
+	p.emit(ChildFrame{Stream: "stdout", Data: strings.Repeat("x", 25)})
 	if len(p.buffer) != 1 {
 		t.Fatalf("buffer len = %d, want 1 (sole over-cap frame must be kept)", len(p.buffer))
 	}
@@ -144,8 +144,8 @@ func TestEmitRetainsAllAtExactCap(t *testing.T) {
 	// Exactly two frames' worth, so the second emit lands on bufBytes == cap.
 	line := lineBytesFor(t, "aaaaa")
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 2 * line}
-	p.emit(StreamFrame{Stream: "stdout", Data: "aaaaa"}) // seq 1
-	p.emit(StreamFrame{Stream: "stdout", Data: "bbbbb"}) // seq 2 -> exactly at cap
+	p.emit(ChildFrame{Stream: "stdout", Data: "aaaaa"}) // seq 1
+	p.emit(ChildFrame{Stream: "stdout", Data: "bbbbb"}) // seq 2 -> exactly at cap
 	if len(p.buffer) != 2 {
 		t.Fatalf("buffer len = %d, want 2 (exactly at cap keeps every frame)", len(p.buffer))
 	}
@@ -168,9 +168,9 @@ func TestReattachUnknownProcess(t *testing.T) {
 func TestReattachReplaysFromSeq(t *testing.T) {
 	m := newTestProcManager(t)
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, running: true}
-	p.emit(StreamFrame{Stream: "stdout", Data: "a"}) // seq 1
-	p.emit(StreamFrame{Stream: "stdout", Data: "b"}) // seq 2
-	p.emit(StreamFrame{Stream: "stdout", Data: "c"}) // seq 3
+	p.emit(ChildFrame{Stream: "stdout", Data: "a"}) // seq 1
+	p.emit(ChildFrame{Stream: "stdout", Data: "b"}) // seq 2
+	p.emit(ChildFrame{Stream: "stdout", Data: "c"}) // seq 3
 	m.procs["p1"] = p
 
 	c, frames := pipeConn(t)
@@ -186,16 +186,16 @@ func TestReattachReplaysFromSeq(t *testing.T) {
 	}
 
 	// The reattached conn is now subscribed: a new emit reaches it live.
-	p.emit(StreamFrame{Stream: "stdout", Data: "d"}) // seq 4
+	p.emit(ChildFrame{Stream: "stdout", Data: "d"}) // seq 4
 	live := collect(t, frames, 1)
 	if len(live) != 1 || live[0].Seq != 4 {
 		t.Fatalf("live frame seqs = %v, want [4]", seqs(live))
 	}
 }
 
-func collect(t *testing.T, ch <-chan StreamFrame, n int) []StreamFrame {
+func collect(t *testing.T, ch <-chan ChildFrame, n int) []ChildFrame {
 	t.Helper()
-	out := make([]StreamFrame, 0, n)
+	out := make([]ChildFrame, 0, n)
 	deadline := time.After(2 * time.Second)
 	for len(out) < n {
 		select {
@@ -208,7 +208,7 @@ func collect(t *testing.T, ch <-chan StreamFrame, n int) []StreamFrame {
 	return out
 }
 
-func seqs(fs []StreamFrame) []uint64 {
+func seqs(fs []ChildFrame) []uint64 {
 	out := make([]uint64, len(fs))
 	for i, f := range fs {
 		out[i] = f.Seq
@@ -225,7 +225,7 @@ func TestEmitDetachesOnWriteError(t *testing.T) {
 	dead := conn.New(client, nil, 0, nil, nil, nil)
 
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{dead: {}}}
-	p.emit(StreamFrame{Stream: "stdout", Data: "x"})
+	p.emit(ChildFrame{Stream: "stdout", Data: "x"})
 
 	p.mu.Lock()
 	_, still := p.subs[dead]
@@ -346,7 +346,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 
 	m := newTestProcManager(t)
 	p := &Proc{id: "p", subs: map[*conn.Conn]struct{}{}, running: true}
-	p.emit(StreamFrame{Stream: "stdout", Data: "a"}) // buffered seq 1
+	p.emit(ChildFrame{Stream: "stdout", Data: "a"}) // buffered seq 1
 	m.procs["p"] = p
 
 	client, server := net.Pipe()
@@ -389,7 +389,7 @@ func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
 
 // firstStdout drains frames until the first non-empty stdout frame and returns
 // its decoded, space-trimmed payload.
-func firstStdout(t *testing.T, ch <-chan StreamFrame) string {
+func firstStdout(t *testing.T, ch <-chan ChildFrame) string {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
 	for {
@@ -809,14 +809,14 @@ func TestSameIDKeepsTheFramesOfTheOldProcess(t *testing.T) {
 
 	// The old process writes after the replace: cat copies its stdin to its stdout.
 	old.enqueueStdin([]byte("after the replace\n"))
-	next := func() StreamFrame {
+	next := func() ChildFrame {
 		t.Helper()
 		select {
 		case f := <-frames1:
 			return f
 		case <-time.After(10 * time.Second):
 			t.Fatal("no frame of the old process on its connection in 10 s")
-			return StreamFrame{}
+			return ChildFrame{}
 		}
 	}
 	f := next()
@@ -863,9 +863,9 @@ func TestEmitFansOutToAllSubscribers(t *testing.T) {
 	c1, f1 := pipeConn(t)
 	c2, f2 := pipeConn(t)
 	p := &Proc{id: "fan", subs: map[*conn.Conn]struct{}{c1: {}, c2: {}}}
-	p.emit(StreamFrame{Stream: "stdout", Data: "abc"})
+	p.emit(ChildFrame{Stream: "stdout", Data: "abc"})
 
-	for i, ch := range []<-chan StreamFrame{f1, f2} {
+	for i, ch := range []<-chan ChildFrame{f1, f2} {
 		got := collect(t, ch, 1)
 		if len(got) != 1 {
 			t.Fatalf("subscriber %d received %d frames, want 1", i+1, len(got))
@@ -889,7 +889,7 @@ func TestEmitFanOutSurvivesDeadSubscriber(t *testing.T) {
 	dead := conn.New(dc, nil, 0, nil, nil, nil)
 
 	p := &Proc{id: "fan2", subs: map[*conn.Conn]struct{}{live: {}, dead: {}}}
-	p.emit(StreamFrame{Stream: "stdout", Data: "x"})
+	p.emit(ChildFrame{Stream: "stdout", Data: "x"})
 
 	got := collect(t, frames, 1)
 	if len(got) != 1 || got[0].Data != "x" {
@@ -996,12 +996,12 @@ func TestEmitUsesDefaultBufferCap(t *testing.T) {
 	if p.bufCap != 0 {
 		t.Fatalf("bufCap = %d, want 0 so the default applies", p.bufCap)
 	}
-	p.emit(StreamFrame{Stream: "stdout", Data: strings.Repeat("a", half)})
+	p.emit(ChildFrame{Stream: "stdout", Data: strings.Repeat("a", half)})
 	if len(p.buffer) != 1 || p.buffer[0].Seq != 1 {
 		t.Fatalf("after one frame: %d frames, first seq %d; want 1 frame at seq 1",
 			len(p.buffer), p.buffer[0].Seq)
 	}
-	p.emit(StreamFrame{Stream: "stdout", Data: strings.Repeat("b", half)})
+	p.emit(ChildFrame{Stream: "stdout", Data: strings.Repeat("b", half)})
 	if len(p.buffer) != 1 {
 		// Fatal, not Error: an empty buffer from a trimming regression would
 		// panic on the p.buffer[0] read below instead of reporting the count.
@@ -1156,7 +1156,7 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 }
 
 // TestKillAndWaitProcTargetsCapturedIdentity guards the supersede reused-id race:
-// supersedeSession captures the victim *Proc, and killAndWaitProc signals
+// endEarlierSpawns captures the victim *Proc, and killAndWaitProc signals
 // THAT process, not whatever the client-visible id resolves to at kill time. A
 // concurrent spawn that reuses the id replaces m.procs[id] and leaves the original
 // running. A kill that resolves the id again then ends the innocent replacement.
@@ -1345,7 +1345,7 @@ func TestSpawnConfinesTheDrainGrace(t *testing.T) {
 func TestEmitAccountsSerializedLineBytes(t *testing.T) {
 	const data = "aaaaaaaaaa"
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 1 << 30}
-	p.emit(StreamFrame{Stream: "stdout", Data: data})
+	p.emit(ChildFrame{Stream: "stdout", Data: data})
 
 	f := p.buffer[0]
 	if f.lineBytes <= int64(len(data)) {
@@ -1374,7 +1374,7 @@ func TestEmitAccountsSerializedLineBytes(t *testing.T) {
 func TestEmitAccountsExitFrameWithNoData(t *testing.T) {
 	code := 0
 	p := &Proc{id: "p1", subs: map[*conn.Conn]struct{}{}, bufCap: 1 << 30}
-	p.emit(StreamFrame{Stream: "exit", ExitCode: &code})
+	p.emit(ChildFrame{Stream: "exit", ExitCode: &code})
 
 	if p.buffer[0].Data != "" {
 		t.Fatalf("fixture: exit frame should carry no Data, got %q", p.buffer[0].Data)

@@ -23,7 +23,7 @@ func endOwnChild(t *testing.T, p *supervisor.Proc) {
 
 // A new stream-json session spawn supersedes the prior process of the same session
 // (its exit frame reaches the client); a spawn of a DIFFERENT session does not.
-// The session args are ignored by the cat helper but read by cliSessionKey; each
+// The session args are ignored by the cat helper but read by resumeKeyOf; each
 // cat stays alive on its stdin until superseded.
 func TestSocketSupersedeSameSession(t *testing.T) {
 	sock := startSocketServer(t)

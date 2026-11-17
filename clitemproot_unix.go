@@ -228,7 +228,7 @@ var tempRootsLost struct {
 
 // tempRootLate decides between the answer of the step and the time limit. A file
 // call that a stuck mount holds cannot be stopped, so the step goes on after the
-// limit. The step keeps its folder only if keep comes before giveUp.
+// limit. The step keeps its folder only if keep comes before markGaveUp.
 type tempRootLate struct {
 	mu           sync.Mutex
 	gaveUp, kept bool
@@ -241,7 +241,7 @@ func (l *tempRootLate) keep() bool {
 	return l.kept
 }
 
-func (l *tempRootLate) giveUp() bool {
+func (l *tempRootLate) markGaveUp() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.gaveUp = !l.kept
@@ -274,7 +274,7 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 	select {
 	case a = <-done:
 	case <-t.C:
-		if late.giveUp() {
+		if late.markGaveUp() {
 			a = answer{env, &rpc.CLITempRoot{WhyNot: tempRootNoReply}, func() {}, func(func()) {}}
 		} else {
 			a = <-done // the step kept its folder right before the limit
