@@ -150,8 +150,9 @@ func gitDirIdentity(path string) os.FileInfo {
 // link that Claude does not follow here; replace the link with what it points
 // to` (measured on Windows). A link in a folder above the git directory is not
 // tested: a repository below a junction answers normally (measured). A `.git`
-// folder with the reparse tag IO_REPARSE_TAG_PROJFS is no link (folderIsLink): 4c111e86
-// answers git.info, git.status and git.list_branches there (row w_new_t441).
+// folder with the reparse tag IO_REPARSE_TAG_PROJFS is no link (folderIsLink).
+// 4c111e86 answers git.info, git.status and git.list_branches there (measured
+// on Windows).
 func gitDirLinkDetail(gitDir string) string {
 	if !gitDirMustBeReal {
 		return ""

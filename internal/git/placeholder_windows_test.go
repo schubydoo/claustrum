@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The Windows SDK names of the two tags of row w_new_t441. golang.org/x/sys
+// The Windows SDK names of the two tags of the rows. golang.org/x/sys
 // does not define them.
 const (
 	ioReparseTagProjFS = 0x9000001C // IO_REPARSE_TAG_PROJFS
@@ -20,7 +20,7 @@ const (
 )
 
 // reparseTagIoctl sends ioctl with the reparse header of tag and no data to the
-// folder dir, as the folders of row w_new_t441 were made.
+// folder dir, as the folders of the rows were made.
 func reparseTagIoctl(dir string, ioctl, tag uint32) error {
 	p, err := windows.UTF16PtrFromString(dir)
 	if err != nil {
@@ -59,7 +59,7 @@ func tagFolder(t *testing.T, dir string, tag uint32) {
 
 // A folder with the reparse tag IO_REPARSE_TAG_PROJFS is no link: a .git folder with it
 // gets no link refusal, and a worktree folder with it below baseRepo is no link
-// for git.status, as on 4c111e86 (row w_new_t441). A junction still is.
+// for git.status, as on 4c111e86 (measured on Windows). A junction still is.
 func TestPlaceholderFolderIsNoLink(t *testing.T) {
 	setGitDirMustBeReal(t, true)
 	root := resolveTestRoot(t, t.TempDir())
@@ -82,7 +82,7 @@ func TestPlaceholderFolderIsNoLink(t *testing.T) {
 }
 
 // A repository below a folder with the reparse tag IO_REPARSE_TAG_WIM, which no filter
-// handles, gets the text of 4c111e86 (row w_new_t441).
+// handles, gets the text of 4c111e86 (measured on Windows).
 func TestPathLookRefusalUnhandledTag(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	p := filepath.Join(root, "P")

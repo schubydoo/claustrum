@@ -12,14 +12,14 @@ import (
 // pathLookRefusal is the refusal of a repository path that the network-path
 // check cannot look at, or "". It runs only with networkLinkChecks.
 //
-// 4c111e86 answers it on Windows for a folder with the reparse tag IO_REPARSE_TAG_WIM,
-// which no filter of the system handles (row w_new_t441). A repository below
+// 4c111e86 answers it for a folder with the reparse tag IO_REPARSE_TAG_WIM,
+// which no filter of the system handles (measured on Windows). A repository below
 // such a folder gets it on git.info, git.status and git.list_branches, and the
 // text names the path. A repository whose .git is such a folder gets it on all
 // five methods, and the text names <path>\.git\objects. No git call on the
-// repository runs, and the daemon logs one network-path line.
+// repository runs, and the daemon logs a network-path line.
 //
-// claustrum's own, not measured: only the error of that row refuses
+// claustrum's own, not measured: only that error refuses
 // (lookCannotAccess), the walk tests each name of the path and then the objects
 // folder of a .git folder at the path, and the text names the whole path.
 func pathLookRefusal(path string) string {

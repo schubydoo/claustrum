@@ -12,8 +12,8 @@ import (
 )
 
 // The frames of the five git methods for a repository whose .git objects folder
-// cannot be looked at, byte for byte in the shape of 4c111e86 on Windows (row
-// w_new_t441), with the id 1. No git call runs on the repository. This test turns
+// cannot be looked at, byte for byte in the shape of 4c111e86 (measured on
+// Windows), with the id 1. No git call runs on the repository. This test turns
 // the Windows test on and fakes the look and its error.
 func TestPathLookFrames(t *testing.T) {
 	f := newStatusFixture(t)
