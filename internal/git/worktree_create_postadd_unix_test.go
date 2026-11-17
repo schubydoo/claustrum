@@ -711,7 +711,7 @@ func TestCreatedIndexDir(t *testing.T) {
 
 // TestCreatedRegistrationRefusalStates pins the tests of createdRegistrationRefusal.
 // A leaf with no .git value is not refused (not measured). With no registrations
-// directory the answer is the "was not populated" text (measured). With a
+// directory the answer is the "does not hold the .git file" text (measured). With a
 // registrations directory and no entry of the name it is the "does not name" text.
 // 89cb6289 answers that text (measured). The state with an entry of another name is
 // not measured, and it gets the same text from the rule.

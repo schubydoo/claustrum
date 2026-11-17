@@ -3,6 +3,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,19 @@ func TestCreateWithTheOffSwitchStopsOnNoGitDirAnswer(t *testing.T) {
 	}
 	if f.hasRef(t, "w1") {
 		t.Fatal("refs/heads/w1 was made, want no add")
+	}
+}
+
+// Only exit 1 is measured for that stop. A call that exits 128 with the off switch
+// keeps the old path, and the create goes on (not measured). Mutation: stop on any
+// failure with the off switch, and the create fails.
+func TestCreateWithTheOffSwitchGoesOnAfterOtherGitDirFailure(t *testing.T) {
+	requireGit(t)
+	f := newWTFixture(t, false)
+	installGitSlowStub(t, f.realGit)
+	stubRule2(t, "rev-parse,--absolute-git-dir", "", 0, "128", "", "")
+	raw, _ := f.createWith(t, newTestGitDeps(), "w1", 0, map[string]any{"shadowDirOff": true})
+	if got := replyPart(t, raw); !strings.HasPrefix(got, `{"success":true`) {
+		t.Fatalf("reply = %s, want a success", got)
 	}
 }
