@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// TestShadowFolderLinkAndFIFO: a link at the folder of the daemon stays, and
-// so does its target. A FIFO there goes (claustrum's own, not measured).
+// TestShadowFolderLinkAndFIFO: a link or a FIFO at the folder of the daemon
+// stays, and so does the target of the link (not measured).
 func TestShadowFolderLinkAndFIFO(t *testing.T) {
 	run := resolveTestRoot(t, t.TempDir())
 	h := NewShadowHost(run)
@@ -42,8 +42,15 @@ func TestShadowFolderLinkAndFIFO(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.removeOwnFolderFile(fifo); err != nil {
-		t.Errorf("remove of a FIFO: %v", err)
+	h.mu.Lock()
+	h.dir = fifo
+	h.remakeFolder()
+	h.mu.Unlock()
+	if err := h.removeOwnFolderFile(fifo); err == nil {
+		t.Error("remove of a FIFO: nil, want an error")
+	}
+	if fi, err := os.Lstat(fifo); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+		t.Errorf("the FIFO: %v, %v, want it kept", fi, err)
 	}
 	if err := h.removeOwnFolderFile(link); err == nil {
 		t.Error("remove of a link: nil, want an error")

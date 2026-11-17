@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -445,13 +444,13 @@ var openShadowLock = openShadowLockFile
 //
 // An empty file at the folder goes, and a folder of the daemon is there again.
 // Every request then succeeds on 4c111e86 (measured on Linux). Whether its name
-// is new is not measured: here it has a new hex part. Another entry that is no
-// folder and no link goes too (removeOwnFolderFile). That kind, macOS and Windows
-// are claustrum's own. A folder or a link at the path stays.
+// is new is not measured: here it has a new hex part. Only a regular file goes
+// (removeOwnFolderFile). macOS and Windows are claustrum's own. Any other entry
+// at the path stays, and the request fails as before (not measured).
 func (h *ShadowHost) remakeFolder() {
 	if h.dir != "" {
 		if fi, err := os.Lstat(h.dir); err == nil {
-			if !goesAsFile(fi.Mode()) || h.removeOwnFolderFile(h.dir) != nil {
+			if !fi.Mode().IsRegular() || h.removeOwnFolderFile(h.dir) != nil {
 				return
 			}
 		}
@@ -503,20 +502,14 @@ func (h *ShadowHost) removeLink(name string) error {
 	return root.Remove(name)
 }
 
-// goesAsFile reports whether an entry of mode is no folder and no link. On
-// Windows a junction has ModeIrregular, so it does not count.
-func goesAsFile(mode fs.FileMode) bool {
-	return !mode.IsDir() && mode&(fs.ModeSymlink|fs.ModeIrregular) == 0
-}
-
 // removeOwnFolderFile deletes the entry at dir, the path of the folder of this
-// daemon, when that entry is no folder and no link (goesAsFile). dir must be a
+// daemon, when that entry is a regular file. dir must be a
 // name in the folder of all daemons. The name comes from makeFolder, never from
 // a request. It is one plain remove through a root at the folder of all
 // daemons, after homeguard.WipesHomeDir, and never a tree delete. The kind is
 // tested again through that root. In the short window after that test, a new
-// link goes as a link, an empty folder goes by one rmdir, and a folder with
-// content stays.
+// entry there goes by the same plain remove: a link as a link, an empty folder
+// by one rmdir. A folder with content stays.
 func (h *ShadowHost) removeOwnFolderFile(dir string) error {
 	base := filepath.Join(h.runDir, shadowRootName)
 	if filepath.Dir(dir) != base {
@@ -535,8 +528,8 @@ func (h *ShadowHost) removeOwnFolderFile(dir string) error {
 	if err != nil {
 		return err
 	}
-	if !goesAsFile(fi.Mode()) {
-		return errors.New("the entry at the folder of the daemon is a folder or a link")
+	if !fi.Mode().IsRegular() {
+		return errors.New("the entry at the folder of the daemon is no regular file")
 	}
 	return root.Remove(name)
 }

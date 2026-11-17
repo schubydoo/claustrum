@@ -138,8 +138,8 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file there goes by one plain remove, and the next request makes the
-  folder again and succeeds (`4c111e86`, measured on Linux). Other entries but a
-  folder or a link go too. Those and macOS are claustrum's own.
+  folder again and succeeds (`4c111e86`, measured on Linux). Any other entry
+  stays, and the request fails (not measured). macOS is claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the path of the git directory. A linked
   worktree uses the folder of its main repository.
