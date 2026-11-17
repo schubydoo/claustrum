@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -360,5 +361,45 @@ func TestSharedRepositoryValues(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWorktreesFolderModeWithoutTheGroupBit: a mode call that the system
+// refuses for its set-group-ID bit gets one more call without that bit. On
+// macOS with a git directory of a group that the user is not in, 4c111e86
+// gives `worktrees` 775 for `group` (measured on macOS). A seam refuses the
+// first call, because a test cannot make such a group. A call that passes
+// gets no second call.
+func TestWorktreesFolderModeWithoutTheGroupBit(t *testing.T) {
+	shared := worktreesModeOf(repoSetting{key: "core.sharedrepository", value: "group", hasValue: true})
+	for _, refuse := range []bool{true, false} {
+		root, err := os.OpenRoot(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = root.Close() })
+		var calls []os.FileMode
+		old := worktreesChmod
+		worktreesChmod = func(r *os.Root, name string, mode os.FileMode) error {
+			calls = append(calls, mode)
+			if refuse && mode&os.ModeSetgid != 0 {
+				return &fs.PathError{Op: "chmod", Path: name, Err: fs.ErrPermission}
+			}
+			return nil
+		}
+		makeWorktreesFolderIn(root, shared)
+		worktreesChmod = old
+		fi, err := root.Lstat(worktreesSubdir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mode, _ := shared.folderMode(fi.Mode())
+		want := []os.FileMode{mode}
+		if refuse {
+			want = append(want, want[0]&^os.ModeSetgid)
+		}
+		if !slices.Equal(calls, want) {
+			t.Errorf("refused %v: the mode calls %v, want %v", refuse, calls, want)
+		}
 	}
 }
