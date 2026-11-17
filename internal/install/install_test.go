@@ -380,16 +380,36 @@ func TestRunCLIVersion(t *testing.T) {
 	if got := runCLIVersion(filepath.Join(dir, "missing"), time.Minute); got != cliRunFailed {
 		t.Errorf("a missing path: result %d, want cliRunFailed", got)
 	}
-	// A 1 s CLI (the leak budget of slowCLI) against both sides of a bound.
+	// A 1 s CLI (the leak budget of slowCLI) under a bound that it meets.
 	slow := filepath.Join(dir, "slow.exe")
 	if err := os.WriteFile(slow, slowCLI(t, 1), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := runCLIVersion(slow, 100*time.Millisecond); got != cliRunStopped {
-		t.Errorf("a 1s CLI under a 100ms bound: result %d, want cliRunStopped", got)
-	}
 	if got := runCLIVersion(slow, 30*time.Second); got != cliRunOK {
 		t.Errorf("a 1s CLI under a 30s bound: result %d, want cliRunOK", got)
+	}
+	// A CLI that still runs at the bound. A late timer once let a 1 s CLI exit
+	// before the stop step, so the stub now waits for the stop step. The gate
+	// file appears after the stop step returned, so only a stub that the step
+	// did not end sees it and exits 0. The 20 s delay ends a stub that never
+	// sees the gate.
+	f := newStubFixture(t)
+	placeStub(t, f.cli)
+	stubDelay(t, 20*time.Second)
+	gate := filepath.Join(f.root, "stop-step-done")
+	t.Setenv("CLAUSTRUM_TEST_STUB_GATE", gate)
+	old := afterCLIBound
+	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
+		return old(d, func() {
+			stop()
+			if err := os.WriteFile(gate, nil, 0o644); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	t.Cleanup(func() { afterCLIBound = old })
+	if got := runCLIVersion(f.cli, 100*time.Millisecond); got != cliRunStopped {
+		t.Errorf("a CLI that waits for the stop step under a 100ms bound: result %d, want cliRunStopped", got)
 	}
 }
 
