@@ -4,7 +4,7 @@
 
 Treat the socket and the token as shell access. See [`SECURITY.md`](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
-An untagged rule on this page is measured against build `89cb6289`. The removal of `CLAUDE_SSH_PEER_CHECK` is measured against `5fd08069`, the spawn during a shutdown against `be1c1ca5`.
+An untagged rule on this page is measured against build `89cb6289`. The removal of `CLAUDE_SSH_PEER_CHECK` is measured against `5fd08069`.
 
 ## Request
 
@@ -430,7 +430,7 @@ claustrum's own, not measured: macOS and Windows, and the end time of the child 
 
 ### A spawn during a shutdown
 
-A spawn whose child starts during the shutdown gets no reply. On Linux and macOS the child gets no signal. A silent one outlives the daemon (`4c111e86`, measured on Linux). Writes fail after the exit (from the code).
+A spawn whose child starts during the shutdown gets no reply. On Linux and macOS the child gets no signal. A silent one outlives the daemon (`4c111e86`, measured on Linux). macOS is claustrum's own. Writes fail after the exit (from the code).
 
 ## Differences from the reference
 
