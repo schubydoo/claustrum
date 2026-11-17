@@ -1090,6 +1090,8 @@ func TestCLITempRootGivenBackBounds(t *testing.T) {
 	cleanTempRoots(t, &rel)
 	ticks := fakeCheckTicks(t)
 	advance := fakeTempRootClock(t)
+	closed, free := stallReleaseCloses(t)
+	free()
 	var first *heldTempRoot
 	for i := range tempRootGivenKeep + 1 {
 		x, runDir := tempRootDir(t, true)
@@ -1108,9 +1110,10 @@ func TestCLITempRootGivenBackBounds(t *testing.T) {
 	n, firstIn := len(tempRoots.given), slices.Contains(tempRoots.given, first)
 	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
 	tempRoots.mu.Unlock()
-	if n != tempRootGivenKeep || firstIn || first.f.Fd() != ^uintptr(0) {
-		t.Fatalf("%d given-back folders, the first kept %v, want %d and the first closed", n, firstIn, tempRootGivenKeep)
+	if n != tempRootGivenKeep || firstIn {
+		t.Fatalf("%d given-back folders, the first kept %v, want %d and the first gone", n, firstIn, tempRootGivenKeep)
 	}
+	wantClosed(t, closed, first.f)
 	ticks.check(t)
 	if n := givenCount(); n != tempRootGivenKeep-1 {
 		t.Errorf("%d given-back folders after the check, want %d: the old one ends", n, tempRootGivenKeep-1)

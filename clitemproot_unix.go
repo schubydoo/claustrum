@@ -137,6 +137,7 @@ var (
 	afterTempRootChildMkdir = func(dir, name string) {}
 	afterTempRootChecks     = func() {}
 	afterTempRootOneCheck   = func() {}
+	closeReleasedTempRoot   = func(f *os.File) { _ = f.Close() }
 )
 
 func randomTempRootName() string {
@@ -446,8 +447,11 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		h.users = slices.DeleteFunc(h.users, func(o *tempRootUser) bool { return o == u })
 		if len(h.users) == 0 {
 			close(h.stop)
+			// The closes of the release run in a goroutine. A close on a stuck mount then
+			// does not hold the release, and the exit frame does not wait for it
+			// (claustrum's own, not measured).
 			if tempRoots.held[filepath.Join(dir, name)] != h {
-				_ = h.f.Close() // a lost folder is not checked again
+				go closeReleasedTempRoot(h.f) // a lost folder is not checked again
 				return
 			}
 			delete(tempRoots.held, filepath.Join(dir, name))
@@ -458,7 +462,7 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 			tempRoots.given = append(tempRoots.given, h)
 			if n := len(tempRoots.given) - tempRootGivenKeep; n > 0 {
 				for _, g := range tempRoots.given[:n] {
-					_ = g.f.Close()
+					go closeReleasedTempRoot(g.f)
 				}
 				tempRoots.given = slices.Delete(tempRoots.given, 0, n)
 			}
