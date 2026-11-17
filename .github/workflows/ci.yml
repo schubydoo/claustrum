@@ -15,6 +15,9 @@ on:
     # `ready_for_review` joins the default types. A draft runs no job here, so
     # the flip to ready starts the whole run on the current head.
     types: [opened, synchronize, reopened, ready_for_review]
+  # nightly.yml calls this file once a night and on a manual start. That run
+  # has the event name of its caller, so it runs every job, the test job too.
+  workflow_call:
 
 permissions:
   contents: read
@@ -26,8 +29,8 @@ concurrency:
 jobs:
   # A draft pull request runs no job of this file. Each job, the aggregator too,
   # carries `github.event.pull_request.draft != true`. The test is `!= true`, not
-  # `== false`, because the field is null on a push to main, and so a push runs
-  # every job. GitHub reports a job skipped by its `if:` as a skipped check run.
+  # `== false`, because the field is null on a push to main and in a nightly run.
+  # GitHub reports a job skipped by its `if:` as a skipped check run.
   # So `ci required checks passed` shows skipped on a draft and does not wait.
   # A draft cannot merge. Its first CI result comes when it is marked ready.
   #
@@ -170,7 +173,12 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
+    # A push to main skips this job (TASK-682). With the squash merge and an
+    # up-to-date head, the push tree is the tree that the pull request run
+    # tested. The coverage shards still run the suite on Linux. nightly.yml runs
+    # this job on main once a night, and it opens an issue when that run fails.
+    # The aggregator counts a skipped job as passed.
+    if: ${{ !cancelled() && github.event_name != 'push' && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     # On Windows the setup and the compile take up to about 3.3 minutes. A hung
