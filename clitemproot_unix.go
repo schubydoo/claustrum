@@ -999,14 +999,17 @@ var tempRootCheckDev = statDev
 //     (macOS). A t of mode 0777 changes nothing (Linux and macOS).
 //   - A temp dir that cannot be read logs the failed-check line, and a later good check
 //     logs the line that all is well. No child is ended, also after 320 s (Linux).
-//   - A temp dir that is gone, and a held folder of mode 0, log their own line and
-//     end no child (macOS). A sticky temp dir of mode 1777 changes nothing (macOS).
+//   - A temp dir that is gone logs its own line and ends no child (macOS). A held
+//     folder of mode 0 does the same (Linux and macOS), with one line for a run of
+//     checks that find mode 0 (Linux). A sticky temp dir of mode 1777 changes nothing
+//     (macOS).
 //
-// Not measured, claustrum's own: one line per run of failed checks, the gone temp
+// Not measured, claustrum's own: one line per run of other failed checks, the gone temp
 // dir and the folder of mode 0 as failed checks, the order of the tests, the word
 // "changed" for the kinds of the macOS rows, an other write bit of the temp dir in a
 // mode other than 0777 (a group write bit alone ends nobody), an
-// owner read or search bit of the folder, and the prefix of the gone and mode 0 lines.
+// owner read or search bit of the folder, and the prefix of the gone line and, on
+// macOS, of the mode 0 line.
 func checkTempRoot(h *heldTempRoot) {
 	failed := func(format string, args ...any) {
 		if !h.checkFailed && !h.given {
