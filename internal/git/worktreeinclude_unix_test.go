@@ -448,14 +448,14 @@ func TestPlanIncludeScanBatchLayout(t *testing.T) {
 		files, dirs  []string
 		wantF, wantD []int
 	}{
-		{"I10a_linux", 56, "d*/\n", nil, dirs, []int{}, []int{8729, 271}},
-		{"I10a_macos", 101, "d*/\n", nil, dirs, []int{}, []int{8726, 274}},
-		{"I10b_linux", 57, "d*/\n", names(100, "f%011d.pad"), dirs, []int{100}, []int{8729, 271}},
-		{"I10b_macos", 100, "d*/\n", names(100, "f%011d.pad"), dirs, []int{100}, []int{8726, 274}},
-		{"I10c_linux", 56, "d*/\n", names(8000, "f%07d.pd"), dirs, []int{8000}, []int{8729, 271}},
-		{"I10c_macos", 100, "d*/\n", names(8000, "f%07d.pd"), dirs, []int{8000}, []int{8726, 274}},
-		{"I11m_linux", 57, "build/\nP0000*\nP0039*\n", pads, []string{"build"}, []int{2976, 1024}, []int{1}},
-		{"I11m_macos", 101, "build/\nP0000*\nP0039*\n", pads, []string{"build"}, []int{2975, 1025}, []int{1}},
+		{"dirs_only_linux", 56, "d*/\n", nil, dirs, []int{}, []int{8729, 271}},
+		{"dirs_only_macos", 101, "d*/\n", nil, dirs, []int{}, []int{8726, 274}},
+		{"dirs_100_files_linux", 57, "d*/\n", names(100, "f%011d.pad"), dirs, []int{100}, []int{8729, 271}},
+		{"dirs_100_files_macos", 100, "d*/\n", names(100, "f%011d.pad"), dirs, []int{100}, []int{8726, 274}},
+		{"dirs_8000_files_linux", 56, "d*/\n", names(8000, "f%07d.pd"), dirs, []int{8000}, []int{8729, 271}},
+		{"dirs_8000_files_macos", 100, "d*/\n", names(8000, "f%07d.pd"), dirs, []int{8000}, []int{8726, 274}},
+		{"pads_two_globs_linux", 57, "build/\nP0000*\nP0039*\n", pads, []string{"build"}, []int{2976, 1024}, []int{1}},
+		{"pads_two_globs_macos", 101, "build/\nP0000*\nP0039*\n", pads, []string{"build"}, []int{2975, 1025}, []int{1}},
 	} {
 		arg := "--exclude-from=" + strings.Repeat("t", c.argLen-len("--exclude-from="))
 		p := planIncludeScan([]byte(c.manifest), listing(c.files, c.dirs), arg, nil)
@@ -662,7 +662,7 @@ func logIncludeScanCalls(t *testing.T) func() []string {
 //   - An open root `.claude/` becomes its children in the directory batch, and
 //     `worktrees` is left out (measured). `<claude>` stands for those
 //     children in the order of the directory read.
-//   - The old scan drops runtime-state paths too (I15c_old).
+//   - The old scan drops runtime-state paths too (nested_old).
 //
 // The want file sets are the f6010b97 sets. The measured sets also hold the tracked
 // sub/t.md, which the checkout writes. The D16 want lists come from a macOS run and
@@ -718,11 +718,11 @@ func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
 			want:  []string{"vendor/plain.txt"}},
 			[]string{"batch: :(exclude).claude/worktrees", "check-ignore: vendor/plain.txt|"}},
-		{"I15c_nested_new", v232, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
+		{"nested_new", v232, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
 			files:    []string{"sub/.claude/worktrees/x.dd", "sub/.claude/ok.dd", "sub/.claude/checkpoints/c.dd"},
 			manifest: "*.dd\n", want: []string{"sub/.claude/ok.dd", "sub/t.md"}},
 			[]string{"batch: sub/.claude", "check-ignore: sub/.claude/ok.dd|"}},
-		{"I15c_nested_old", v231, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
+		{"nested_old", v231, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
 			files:    []string{"sub/.claude/worktrees/x.dd", "sub/.claude/ok.dd", "sub/.claude/checkpoints/c.dd"},
 			manifest: "*.dd\n", want: []string{"sub/.claude/ok.dd", "sub/t.md"}},
 			[]string{"batch: :(exclude).claude/worktrees", "check-ignore: sub/.claude/ok.dd|"}},

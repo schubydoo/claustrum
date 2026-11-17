@@ -913,10 +913,10 @@ func TestProbeExitWithHeldPipes(t *testing.T) {
 	// PATH would take the first one for the real git.
 	var wantRaw string
 	var wantCalls []envCall
-	t.Run("P0: no child", func(t *testing.T) {
+	t.Run("no child", func(t *testing.T) {
 		wantRaw, wantCalls = status(t, newSeededShadowFixture(t))
 	})
-	t.Run("P1: the git directory", func(t *testing.T) {
+	t.Run("the git directory", func(t *testing.T) {
 		if wantCalls == nil {
 			t.Skip("needs the control P0")
 		}
@@ -931,7 +931,7 @@ func TestProbeExitWithHeldPipes(t *testing.T) {
 		}
 		noVersion(t, calls)
 	})
-	t.Run("P3: no output", func(t *testing.T) {
+	t.Run("no output", func(t *testing.T) {
 		f := newSeededShadowFixture(t)
 		holdProbeOutput(t, false, hold)
 		raw, calls := status(t, f)

@@ -162,7 +162,7 @@ func TestDaemonLogOpensAnOwnLinkToAnOwnFile(t *testing.T) {
 
 // Measured cases, and the target tests of an own link: each link here fails the open
 // with "permission denied". The target keeps its bytes, a missing name is not made, and
-// the link stays. S1 and S2 are a link of another user, which the owner seam stages. The
+// the link stays. The first two rows are a link of another user, which the owner seam stages. The
 // target tests (a missing name, a folder, a file with two links) are claustrum's own.
 // The fixes are the owner test of the link and the target tests in openHeldDaemonLog.
 func TestDaemonLogRefusesALink(t *testing.T) {
@@ -171,8 +171,8 @@ func TestDaemonLogRefusesALink(t *testing.T) {
 		foreign bool
 		target  string // "file", "missing", "folder" or "two links"
 	}{
-		{"S1 link of another user to an own file", true, "file"},
-		{"S2 link of another user to a missing name", true, "missing"},
+		{"link of another user to an own file", true, "file"},
+		{"link of another user to a missing name", true, "missing"},
 		{"own link to a missing name", false, "missing"},
 		{"own link to a folder", false, "folder"},
 		{"own link to a file with two links", false, "two links"},

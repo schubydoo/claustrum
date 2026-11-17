@@ -190,7 +190,7 @@ var (
 	dotdFiles       = []string{".envd/a.txt", "sub/.envd/b.txt"}
 )
 
-// TestIncludeOpeningRules covers R4: only the ignored directories that the
+// TestIncludeOpeningRules covers the opening rule: only the ignored directories that the
 // manifest opens are searched. It also covers the controls where every build
 // agrees.
 func TestIncludeOpeningRules(t *testing.T) {
@@ -206,7 +206,7 @@ func TestIncludeOpeningRules(t *testing.T) {
 	checkIncludeCases(t, []includeCase{
 		bt("dir_explicit", "build/\n", buildTreeFiles...),
 		bt("file_in_ignored_dir", "build/a.txt\n", "build/a.txt"),
-		bt("B03_anydepth_ext", "*.txt\n"),
+		bt("anydepth_ext", "*.txt\n"),
 		bt("anydepth_basename", "b.txt\n"),
 		bt("dir_doublestar_file", "build/**/c.txt\n", "build/x/y/c.txt"),
 		bt("leading_doublestar", "**/b.txt\n"),
@@ -232,7 +232,7 @@ func TestIncludeOpeningRules(t *testing.T) {
 		b2("build_anchored", "/build/\n", "build/a.txt"),
 		nm("star_seg_nm_file", "*/node_modules/x.json\n", "pkg/node_modules/x.json"),
 		nm("dstar_nm_file", "**/node_modules/x.json\n", nmFiles...),
-		b2("X06_neg_only", "!build/\n"),
+		b2("neg_only", "!build/\n"),
 		b2("pos_then_neg", "build/\n!build/\n"),
 		bt("subdir_of_ignored", "build/x/\n", "build/x/b.txt", "build/x/y/c.txt"),
 		{name: "glob_first_seg_file", ignore: lines("*.cache/"),
@@ -272,7 +272,7 @@ func TestIncludeOpeningRules(t *testing.T) {
 		bt("crlf_dir", "build/\r\n", buildTreeFiles...),
 		bt("bom_dir", "\ufeffbuild/\n", buildTreeFiles...),
 		bt("comment_dir", "#build/\n"),
-		bt("X38_dotslash_dir", "./build/\n"),
+		bt("dotslash_dir", "./build/\n"),
 		bt("double_slash", "build//a.txt\n"),
 		{name: "escaped_hash_dir", ignore: lines(`\#h/`), files: []string{"#h/a.txt"}, manifest: `\#h/` + "\n"},
 		{name: "negated_dir_pattern_literal", ignore: lines(`\!b/`), files: []string{"!b/a.txt"}, manifest: `\!b/` + "\n"},
@@ -334,7 +334,7 @@ func TestIncludeOpeningShapes(t *testing.T) {
 	})
 }
 
-// TestIncludeAnyDepthDotDirs covers R5 to R7: the any-depth flag, the 128 cap
+// TestIncludeAnyDepthDotDirs covers the any-depth flag, the 128 cap
 // with the place of `.claude/`, and the skip list.
 func TestIncludeAnyDepthDotDirs(t *testing.T) {
 	d := func(name, manifest string, want ...string) includeCase {
@@ -392,8 +392,8 @@ func TestIncludeAnyDepthDotDirs(t *testing.T) {
 		d("dstar_dotdir", "**\n", dotdFiles...),
 		d("basename_dotdir", "a.txt\n", ".envd/a.txt"),
 		d("lead_dstar_dotdir", "**/b.txt\n", "sub/.envd/b.txt"),
-		d("X23_slash_pattern_dotdir", "x/**/a.txt\n"),
-		d("X24_neg_anydepth_dotdir", "!*.txt\n"),
+		d("slash_pattern_dotdir", "x/**/a.txt\n"),
+		d("neg_anydepth_dotdir", "!*.txt\n"),
 		d("dotstar_pattern", ".*\n", dotdFiles...),
 		d("dotdir_dstar_suffix", ".envd/**\n", ".envd/a.txt"),
 		d("dotdir_anydepth_pattern_with_dotdir", "**/.envd/\n", dotdFiles...),
@@ -441,7 +441,7 @@ func TestIncludeAnyDepthDotDirs(t *testing.T) {
 	})
 }
 
-// TestIncludePatternCaps covers R8 to R10: the 256 counted patterns, the
+// TestIncludePatternCaps covers the caps: the 256 counted patterns, the
 // 1024-byte length cap and the 32-segment cap, with each boundary pair.
 func TestIncludePatternCaps(t *testing.T) {
 	// manyDirs follows the matrix: dNNN/ ignored by `/d*/`, each with f.txt.
@@ -563,8 +563,8 @@ func TestIncludePatternCaps(t *testing.T) {
 	})
 }
 
-// TestIncludeManifestAndCopyDetails covers R1 and R16, including the two older
-// gaps D10 (a symlinked manifest) and D16 (a nested repository).
+// TestIncludeManifestAndCopyDetails covers the manifest and copy details, including
+// a symlinked manifest and a nested repository.
 func TestIncludeManifestAndCopyDetails(t *testing.T) {
 	checkIncludeCases(t, []includeCase{
 		{name: "no_manifest", ignore: lines("*.i"), files: []string{"a.i", "sub/a.i", "u.txt"}},
@@ -591,7 +591,7 @@ func TestIncludeManifestAndCopyDetails(t *testing.T) {
 	})
 }
 
-// TestVersionSelectsIncludeScan covers the R2 parse table, measured with a
+// TestVersionSelectsIncludeScan covers the parse table of the git version, measured with a
 // fake `git version` answer.
 func TestVersionSelectsIncludeScan(t *testing.T) {
 	for out, newScan := range map[string]bool{
@@ -648,7 +648,7 @@ func TestVersionSelectsIncludeScan(t *testing.T) {
 	}
 }
 
-// TestIncludeOpenerIgnoresCase covers the case rule of R4 without a
+// TestIncludeOpenerIgnoresCase covers the case rule of the opening without a
 // case-insensitive file system. `BUILD/` opens `build` and `build/` opens
 // `Build`, as measured on APFS. A measurement shows the same opening with
 // core.ignorecase=false.
@@ -679,14 +679,14 @@ func TestIncludeOpenerIgnoresCase(t *testing.T) {
 func TestIncludePlanOpensNothing(t *testing.T) {
 	dirs := []string{".bx", "a", "a/x", "a/x/build", "build", "sub", "sub/build"}
 	for manifest, want := range map[string][]string{
-		"./build/\n":     nil,              // X38
-		"!build/\n":      nil,              // X06: a negation opens nothing
-		"!*.txt\n":       nil,              // X24: a negation sets no flag
-		"x/**/a.txt\n":   nil,              // X23: an inner `/` sets no flag
-		"**/b*/\n":       {".bx"},          // Y12: `**/` and a glob opens no non-dot dir
-		"**/[ab]uild/\n": {".bx"},          // Y13
-		"*.txt\n":        {".bx"},          // B03, Y32
-		"b*/\n":          {".bx", "build"}, // Y08: root level only
+		"./build/\n":     nil,
+		"!build/\n":      nil,     // a negation opens nothing
+		"!*.txt\n":       nil,     // a negation sets no flag
+		"x/**/a.txt\n":   nil,     // an inner `/` sets no flag
+		"**/b*/\n":       {".bx"}, // `**/` and a glob opens no non-dot dir
+		"**/[ab]uild/\n": {".bx"},
+		"*.txt\n":        {".bx"},
+		"b*/\n":          {".bx", "build"}, // root level only
 	} {
 		got := openIncludeDirs(parseIncludePlan([]byte(manifest)), dirs, nil)
 		if !slices.Equal(got, want) {
@@ -744,7 +744,7 @@ func TestTrimTrailingSpaces(t *testing.T) {
 	}
 }
 
-// TestIncludeFilesOverLimit covers the R11 boundary. At 1 048 576 bytes of
+// TestIncludeFilesOverLimit covers the size boundary of the new scan. At 1 048 576 bytes of
 // (length + 3) the new scan runs. At 1 048 577 the old scan runs.
 func TestIncludeFilesOverLimit(t *testing.T) {
 	files := make([]string, 10180)
@@ -761,7 +761,7 @@ func TestIncludeFilesOverLimit(t *testing.T) {
 	}
 }
 
-// TestIncludeFallbackAboveOneMiB covers R11 end to end, with the M fixture:
+// TestIncludeFallbackAboveOneMiB covers the size boundary end to end, with the M fixture:
 // `build/` ignored, the manifest `*.txt`, and ignored `*.pad` files as padding.
 // The manifest also names the last pad file, so the copy reaches the last
 // batch of the new scan (measured).
@@ -1020,7 +1020,7 @@ func TestIncludeAnchoredOneSegment(t *testing.T) {
 	for manifest, want := range map[string][]string{
 		"/build/\n*.txt\n": {".bx", "build"},                           // O2_anch
 		"/build/\n":        {"build"},                                  // O_anch
-		"/b*/\n":           {"build"},                                  // Y22: the glob form
+		"/b*/\n":           {"build"},                                  // the glob form
 		"build/\n":         {".bx", "a/x/build", "build", "sub/build"}, // control
 	} {
 		if got := openIncludeDirs(parseIncludePlan([]byte(manifest)), yTreeDirs, nil); !slices.Equal(got, want) {
@@ -1072,9 +1072,9 @@ var (
 // listed directory whose path starts with the literal prefix of the segment.
 // The prefix ends before the first `*`, `?`, `[` or `\`, and case does not
 // matter. It also covers a leading `/`, a `//` and a lone `\` in a longer
-// pattern. The want lists are the f6010b97 directory batches. The O2 and O3
-// rows were measured on Windows and macOS. The rows whose names start with `L`
-// were measured on Linux, and the other rows on macOS. A row with a `*.txt`
+// pattern. The want lists are the f6010b97 directory batches. The rows whose names
+// start with `winmac_` were measured on Windows and macOS. The rows whose names start
+// with `linux_` were measured on Linux, and the other rows on macOS. A row with a `*.txt`
 // line opens the dot directory `.bx` too.
 func TestIncludePrefixOpening(t *testing.T) {
 	aAll := []string{"a  b", "a b", "a*", "a/ b", "a/b", "a/c", "aXb", `a\ b`, `a\`, `a\b`, "a_b", "ab", "ac"}
@@ -1117,18 +1117,18 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"a_b_ctl", "a/b/\n*.txt\n", spTreeDirs, []string{"a/b"}},
 		{"a_sp_b_multi_ctl", "a/ b/\n*.txt\n", spTreeDirs, []string{"a/ b"}},
 		{"bui_bs_q", "bui\\q/\n", yTreeDirs, []string{".bx", "build"}},
-		{"O2_bslash_sep", "sub\\build/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
-		{"O3_sub_esc_b_star", "sub\\\\build/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
-		{"O2_bslash_trail", "build\\\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"O2_bslash_glob", "sub\\b*/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
-		{"O2_bslash_file", "build\\a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"O2_bslash_axbuild", "a\\x\\build/\n*.txt\n", yTreeDirs, []string{".bx", "a", "a/x", "a/x/build"}},
-		{"O2_bslash_lead", "\\build/\n*.txt\n", yTreeDirs, []string{".bx"}},
-		{"O2_bslash_ds", "**\\build/\n*.txt\n", yTreeDirs, []string{".bx"}},
-		{"O3_bu_esc_ild", "bu\\ild/\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
-		{"Y35", "b\\*/\n", yTreeDirs, []string{".bx", "build"}},
-		{"X17b", "we\\[i\\]rd/\n", weird, weird},
-		{"X18", "we[i]rd/\n", []string{"weird"}, []string{"weird"}},
+		{"winmac_bslash_sep", "sub\\build/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
+		{"winmac_sub_esc_b_star", "sub\\\\build/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
+		{"winmac_bslash_trail", "build\\\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"winmac_bslash_glob", "sub\\b*/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
+		{"winmac_bslash_file", "build\\a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"winmac_bslash_axbuild", "a\\x\\build/\n*.txt\n", yTreeDirs, []string{".bx", "a", "a/x", "a/x/build"}},
+		{"winmac_bslash_lead", "\\build/\n*.txt\n", yTreeDirs, []string{".bx"}},
+		{"winmac_bslash_ds", "**\\build/\n*.txt\n", yTreeDirs, []string{".bx"}},
+		{"winmac_bu_esc_ild", "bu\\ild/\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
+		{"bs_star_dir", "b\\*/\n", yTreeDirs, []string{".bx", "build"}},
+		{"weird_escaped_class", "we\\[i\\]rd/\n", weird, weird},
+		{"weird_class", "we[i]rd/\n", []string{"weird"}, []string{"weird"}},
 		{"bs_sub_build", "sub\\build/\n*.txt\n", bsTreeDirs, subAll},
 		{"bs_sub_bsbs_build", "sub\\\\build/\n*.txt\n", bsTreeDirs, subAll},
 		{"bs_build_trail", "build\\\n*.txt\n", bsTreeDirs, []string{".bx", "build", `build\`}},
@@ -1154,29 +1154,29 @@ func TestIncludePrefixOpening(t *testing.T) {
 		// Q1 on Linux: case folds on ext4 too.
 		{"AB_q", "AB\\q/\n*.txt\n", lcTreeDirs, []string{"ab", "abc"}},
 		{"AB_q_alone", "AB\\q/\n", lcTreeDirs, []string{"ab", "abc"}},
-		{"L1c_A_q", "A\\q/\n*.txt\n", lcTreeDirs, lcA},
-		{"L1c_B_star", "B*/\n*.txt\n", lcTreeDirs, []string{"bu", "build", "bx"}},
-		{"L1c_BU_qm_ld", "BU?ld/\n*.txt\n", lcTreeDirs, []string{"bu", "build"}},
-		{"L1c_BUILD_lit", "BUILD/\n*.txt\n", lcTreeDirs, []string{"build"}},
+		{"linux_lc_A_q", "A\\q/\n*.txt\n", lcTreeDirs, lcA},
+		{"linux_lc_B_star", "B*/\n*.txt\n", lcTreeDirs, []string{"bu", "build", "bx"}},
+		{"linux_lc_BU_qm_ld", "BU?ld/\n*.txt\n", lcTreeDirs, []string{"bu", "build"}},
+		{"linux_lc_BUILD_lit", "BUILD/\n*.txt\n", lcTreeDirs, []string{"build"}},
 		{"ctl_ab_q", "ab\\q/\n*.txt\n", lcTreeDirs, []string{"ab", "abc"}},
 		{"ctl_a_q", "a\\q/\n*.txt\n", lcTreeDirs, lcA},
 		{"ctl_b_star", "b*/\n*.txt\n", lcTreeDirs, []string{"bu", "build", "bx"}},
 		{"ctl_bu_qm_ld", "bu?ld/\n*.txt\n", lcTreeDirs, []string{"bu", "build"}},
 		{"ctl_build_lit", "build/\n*.txt\n", lcTreeDirs, []string{"build"}},
-		{"L1c_txt_ctl", "*.txt\n", lcTreeDirs, nil},
-		{"L1m_A_q", "A\\q/\n*.txt\n", mixTreeDirs, []string{"Ab", "ab"}},
-		{"L1m_B_star", "B*/\n*.txt\n", mixTreeDirs, mixB},
+		{"linux_lc_txt_ctl", "*.txt\n", lcTreeDirs, nil},
+		{"linux_mix_A_q", "A\\q/\n*.txt\n", mixTreeDirs, []string{"Ab", "ab"}},
+		{"linux_mix_B_star", "B*/\n*.txt\n", mixTreeDirs, mixB},
 		{"b_star", "b*/\n*.txt\n", mixTreeDirs, mixB},
-		{"L1m_BU_qm_ld", "BU?ld/\n*.txt\n", mixTreeDirs, mixB},
+		{"linux_mix_BU_qm_ld", "BU?ld/\n*.txt\n", mixTreeDirs, mixB},
 		{"Bu_qm_ld", "Bu?ld/\n*.txt\n", mixTreeDirs, mixB},
 		{"bu_qm_ld", "bu?ld/\n*.txt\n", mixTreeDirs, mixB},
 		{"Bu_q", "Bu\\q/\n*.txt\n", mixTreeDirs, mixB},
 		{"bu_q", "bu\\q/\n*.txt\n", mixTreeDirs, mixB},
 		{"Build_lit", "Build/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
 		{"build_lit", "build/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
-		{"L1m_BUILD_lit", "BUILD/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
-		{"L1m_txt_ctl", "*.txt\n", mixTreeDirs, nil},
-		{"L5y_SUB_BUILD", "SUB/BUILD/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
+		{"linux_mix_BUILD_lit", "BUILD/\n*.txt\n", mixTreeDirs, []string{"Build", "build"}},
+		{"linux_mix_txt_ctl", "*.txt\n", mixTreeDirs, nil},
+		{"linux_SUB_BUILD", "SUB/BUILD/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
 		{"anch_BUILD", "/BUILD/\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
 		{"Sub_q_star", "SUB\\q/\n*.txt\n", yTreeDirs, []string{".bx", "sub", "sub/build"}},
 		{"anch_AB", "/AB/\n*.txt\n", anTreeDirs, []string{"ab"}},
@@ -1196,7 +1196,7 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"ctl_acls", "a[_]b/\n*.txt\n", anTreeDirs, anA},
 		{"ctl_bstar", "b*/\n*.txt\n", anTreeDirs, []string{"build", "bx"}},
 		{"ctl_lit_ab", "ab/\n*.txt\n", anTreeDirs, []string{"ab", "sub/ab"}},
-		{"L2_txt_ctl", "*.txt\n", anTreeDirs, nil},
+		{"linux_an_txt_ctl", "*.txt\n", anTreeDirs, nil},
 		// Q3 on Linux: a `//` keeps an empty segment that matches no name.
 		{"ds_file_txt", "build//a.txt\n*.txt\n", yTreeDirs, []string{".bx", "build"}},
 		{"ds_file_alone", "build//a.txt\n", yTreeDirs, []string{"build"}},
@@ -1227,7 +1227,7 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"ctl_sub_build", "sub/build/\n*.txt\n", pTreeDirs, []string{"sub/build"}},
 		{"ctl_sub_x", "sub/x/\n*.txt\n", pTreeDirs, []string{"sub/x"}},
 		{"ctl_zz_x", "zz/x/\n*.txt\n", pTreeDirs, nil},
-		{"L4_txt_ctl", "*.txt\n", pTreeDirs, nil},
+		{"linux_p_txt_ctl", "*.txt\n", pTreeDirs, nil},
 		// Second Linux probe, Q1: an even run of trailing `\` is a literal `\`.
 		// A run of three acts like a run of one and matches any name.
 		{"zz_bs2_x_a", `zz\\/x/` + "\n", cTreeDirs, []string{`zz\/x`}},
@@ -1258,17 +1258,17 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"dsl_x_t", "//x\n*.txt\n", dTreeDirs, nil},
 		{"dsl_x_sl_a", "//x/\n", dTreeDirs, nil},
 		{"dsl_x_sl_t", "//x/\n*.txt\n", dTreeDirs, nil},
-		{"LC4d_a_ds_b_a", "a//b\n", dTreeDirs, nil},
-		{"LC4d_a_ds_b_t", "a//b\n*.txt\n", dTreeDirs, nil},
-		{"LC4d_a_ds_b_sl_a", "a//b/\n", dTreeDirs, nil},
-		{"LC4d_a_ds_b_sl_t", "a//b/\n*.txt\n", dTreeDirs, nil},
+		{"linux_d_a_ds_b_a", "a//b\n", dTreeDirs, nil},
+		{"linux_d_a_ds_b_t", "a//b\n*.txt\n", dTreeDirs, nil},
+		{"linux_d_a_ds_b_sl_a", "a//b/\n", dTreeDirs, nil},
+		{"linux_d_a_ds_b_sl_t", "a//b/\n*.txt\n", dTreeDirs, nil},
 		{"ctl_anch_x_a", "/x/\n", dTreeDirs, []string{"x"}},
-		{"LC4d_ctl_a_b_a", "a/b/\n", dTreeDirs, []string{"a/b"}},
-		{"LC4w_a_ds_b_a", "a//b\n", dTree2Dirs, []string{"a"}},
-		{"LC4w_a_ds_b_t", "a//b\n*.txt\n", dTree2Dirs, []string{"a"}},
-		{"LC4w_a_ds_b_sl_a", "a//b/\n", dTree2Dirs, []string{"a"}},
-		{"LC4w_a_ds_b_sl_t", "a//b/\n*.txt\n", dTree2Dirs, []string{"a"}},
-		{"LC4w_ctl_a_b_a", "a/b/\n", dTree2Dirs, []string{"a"}},
+		{"linux_d_ctl_a_b_a", "a/b/\n", dTreeDirs, []string{"a/b"}},
+		{"linux_d2_a_ds_b_a", "a//b\n", dTree2Dirs, []string{"a"}},
+		{"linux_d2_a_ds_b_t", "a//b\n*.txt\n", dTree2Dirs, []string{"a"}},
+		{"linux_d2_a_ds_b_sl_a", "a//b/\n", dTree2Dirs, []string{"a"}},
+		{"linux_d2_a_ds_b_sl_t", "a//b/\n*.txt\n", dTree2Dirs, []string{"a"}},
+		{"linux_d2_ctl_a_b_a", "a/b/\n", dTree2Dirs, []string{"a"}},
 		// Q5: an anchored glob matches the first segment of each listed entry.
 		{"anch_star_sl_a", "/*/\n", sTreeDirs, sAll},
 		{"anch_star_sl_t", "/*/\n*.txt\n", sTreeDirs, sAll},

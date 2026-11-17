@@ -60,10 +60,10 @@ func copyGitDir(t *testing.T, from, to string) {
 // `.claude-new-worktree-x`, its marker and one more file. At one step of the
 // create, `repo\.git` goes to `repo\.git-real` and a junction to T takes its
 // place. 5fd08069 then refuses the create with the text of the row, removes
-// nothing in T and makes nothing in T. Rows X1c-06 and X1c-10 have the texts
+// nothing in T and makes nothing in T. The answered and staged rows have the texts
 // of b3081b51, which changed both (measured on Windows).
 //
-// The last two rows are points 11 and 13 of 5fd08069 (measured): the junction
+// The last two rows are measured on 5fd08069: the junction
 // comes while the first listing of the checkout runs, and after the read-tree
 // call ended. The registration and the branch stay in the real git directory,
 // and the registration has no index.
@@ -77,32 +77,32 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 		// want is the error for the refusal of the config link and the leaf.
 		want func(link, leaf string) string
 	}{
-		{"X1c-01", "leaf", func(link, _ string) string { return link }},
-		{"X1c-03", "gitdir", func(link, _ string) string {
+		{"junction", "leaf", func(link, _ string) string { return link }},
+		{"junction", "gitdir", func(link, _ string) string {
 			return "git worktree add failed: cannot locate the repository's git directory: " + link
 		}},
-		{"X1c-06", "answered", func(string, string) string {
+		{"junction", "answered", func(string, string) string {
 			return "cannot add a worktree: cannot list the repository's worktree entries: " + realDir
 		}},
-		{"X1c-05", "add", func(link, _ string) string { return "git worktree add failed: " + link }},
-		{"X1c-09", "prepare", func(link, _ string) string {
+		{"junction", "add", func(link, _ string) string { return "git worktree add failed: " + link }},
+		{"junction", "prepare", func(link, _ string) string {
 			return "git worktree add failed: cannot prepare the repository's worktrees directory: " + link
 		}},
-		{"X1c-10", "staged", func(link, leaf string) string {
+		{"junction", "staged", func(link, leaf string) string {
 			return "git worktree add failed (completing the new worktree's git files): " + link +
 				"; and the undo could not finish for " + leaf + ": branch w1 still exists; delete it by hand " +
 				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
 				"this branch name: could not check whether another branch or remote-tracking ref reaches its commits (" + link + ")"
 		}},
-		{"X1c-11", "checkout", func(link, leaf string) string {
+		{"junction", "checkout", func(link, leaf string) string {
 			return "git worktree add failed (checkout): " + link + "; and the undo could not finish for " + leaf +
 				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
 		}},
-		{"point 11", "listed", func(link, leaf string) string {
+		{"late junction", "listed", func(link, leaf string) string {
 			return "git worktree add failed (checkout): " + link + "; and the undo could not finish for " + leaf +
 				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
 		}},
-		{"point 13", "index", func(_, leaf string) string {
+		{"late junction", "index", func(_, leaf string) string {
 			return "git worktree add failed (checkout): " + realDir + "; and the undo could not finish for " + leaf +
 				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
 		}},
@@ -186,8 +186,8 @@ func TestSymbolicLinkAtTheGitDirOnWindows(t *testing.T) {
 		cell string
 		late bool
 	}{
-		{"D-symd-start", false},
-		{"DT-symd-late-to-T", true},
+		{"link at the start", false},
+		{"late link to T", true},
 	} {
 		t.Run(row.cell, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
