@@ -40,10 +40,10 @@ If the request does not name a linked worktree of the repository of `baseRepo`, 
 
 That holds for:
 
-- a `path` that is the repository itself, a plain folder or a subfolder of the repository
+- a `path` that is the repository itself, a plain folder or a subfolder
 - a nested repository, a missing folder or a regular file
 - a worktree of another repository, or a right worktree with the wrong `baseRepo`
-- a linked worktree as `path` and `baseRepo` with no git on PATH (measured on macOS with `4c111e86`, otherwise claustrum's own)
+- a linked worktree as `path` and `baseRepo` with no git on PATH, on Linux and macOS (`4c111e86`, measured, other repositories claustrum's own). Windows keeps the start test refusal (measured)
 
 [How the daemon finds the worktree](#how-the-daemon-finds-the-worktree) has the rules.
 
@@ -88,11 +88,11 @@ Each of these gives `"isRepo": false` before any git call:
 
 - `baseRepo` has the components `.claude/worktrees` in it, or is that folder. `<dir>/.claude` alone passes.
 - A folder above `baseRepo` holds an entry named `.claude-managed-worktrees` and no `.git`. A marker inside `baseRepo` itself does not count. A marker one or two levels above counts (measured on Linux). Further up the test is claustrum's own.
-- `baseRepo` does not resolve. For example, it does not exist, or a `..` after a symbolic link goes up from the target of the link and finds no folder.
+- `baseRepo` does not resolve. For example, it is missing, or a `..` after a symbolic link goes up from the target of the link and finds no folder.
 
 Then the [git-directory trust check](git-rules-trust.md#git-directory-trust-check) runs on `baseRepo`, not on `path`. A refusal answers `-32603`, also for a good linked worktree as `path`. If the check finds no repository, the answer is `"isRepo": false`, with [exceptions](#rare-states). A config of `baseRepo` that the daemon does not accept answers `-32603`, as in [Repository config refusals](git-rules-config.md#repository-config-refusals).
 
-`baseRepo` can be a symbolic link to the repository, a bare repository, a submodule checkout or a subfolder. If git prints no git directory, the answer is `"isRepo": false`. So is a repository with no `worktrees` folder.
+`baseRepo` can be a symbolic link to the repository, a bare repository, a submodule checkout or a subfolder. If git prints no git directory, or there is no `worktrees` folder, the answer is `"isRepo": false`.
 
 ### `path`
 

@@ -243,8 +243,8 @@ On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon
   that call and nothing is kept.
 - The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
-  (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git does
-  not start keeps nothing: the next request reads again (claustrum's own).
+  (`683cc6a9`, measured with `git.status` on Linux and macOS). Except on Windows, a read
+  whose git did not start keeps nothing (claustrum's own).
   Claustrum's own: the base is `XDG_CONFIG_HOME`, or the home folder plus `.config` if
   that is unset, empty or relative. A regular file
   `git/ignore` in the base, after symlinks, is the result. Every other case gives the null

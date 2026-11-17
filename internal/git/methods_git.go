@@ -697,6 +697,12 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
+// statusNoGitAnswer is true where git.status answers isRepo:false with no start
+// test when PATH holds no git: 4c111e86 does so on Linux and macOS (measured). On
+// Windows 4c111e86 keeps the first refusal after a git appears (measured), so
+// Windows keeps the gate there.
+var statusNoGitAnswer = runtime.GOOS != "windows"
+
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
@@ -776,11 +782,10 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
-	// with no start test, so no failure is kept (4c111e86, measured on macOS). As in
-	// git.info the folder of the daemon is made (not measured). Linux and Windows are
-	// claustrum's own.
-	// A baseRepo that is no folder and the off switch are not measured: they keep the gate.
-	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
+	// with no start test, so no failure is kept (statusNoGitAnswer). As in git.info
+	// the folder of the daemon is made (not measured). A baseRepo that is no folder
+	// and the off switch are not measured: they keep the gate.
+	if fi, err := os.Stat(p.BaseRepo); statusNoGitAnswer && err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
 		req.shadow.folderWithNoTest()
 		return notRepo
 	}
