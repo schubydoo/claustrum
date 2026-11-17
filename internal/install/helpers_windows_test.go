@@ -53,11 +53,15 @@ func holdOpen(t *testing.T, path string, dir bool) (release func()) {
 	return release
 }
 
+// pidFileWait bounds the wait for the pid file of a helper. One Windows CI run saw no pid
+// file within 5 s. The bound is long for a slow runner. A good run returns at once.
+const pidFileWait = 30 * time.Second
+
 // readPIDFile polls until the file holds a parseable PID (the helper writes it
 // asynchronously).
 func readPIDFile(t *testing.T, path string) int {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(pidFileWait)
 	for time.Now().Before(deadline) {
 		if b, err := os.ReadFile(path); err == nil {
 			if s := strings.TrimSpace(string(b)); s != "" {
@@ -68,7 +72,7 @@ func readPIDFile(t *testing.T, path string) int {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("grandchild pid file never written: %s", path)
+	t.Fatalf("grandchild pid file never written in %v: %s", pidFileWait, path)
 	return 0
 }
 
