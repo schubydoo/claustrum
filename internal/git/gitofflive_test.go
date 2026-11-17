@@ -447,27 +447,33 @@ func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 	}
 }
 
-// A request while the check of session folders is off makes one read of the
-// user's excludes, and no later request uses it. The next request reads again,
-// and the request after it uses that stored result. 4c111e86 reads again after a
-// read under the off switch (measured on Linux). Mutation: in globalExcludesPath,
-// drop the gen step of the off switch. The read under the switch is then stored,
-// and only 1 read runs. A second mutation drops the store of the time off: the
-// request under the switch then reads more than once.
+// Requests in one time off of the check of session folders make one read of the
+// user's excludes, and no request after it uses that read. The next request reads
+// again, and the request after it uses that stored result. 4c111e86 reads again
+// after a read under the off switch (measured on Linux). The share of one read by
+// two requests of one time off is claustrum's own. Mutation: in
+// globalExcludesPath, drop the gen step of the off switch. The read under the
+// switch is then stored, and only 1 read runs. A second mutation drops the store
+// of the time off: the requests under the switch then read more than once.
 func TestShadowExcludesReadUnderOffSwitchNotStored(t *testing.T) {
 	h := newLiveFixture(t)
 	release := sessiondirs.PauseCheck()
 	h.send(t, 1, "git.info", map[string]any{"path": h.repo, "sessionFoldersOff": true})
 	h.reply(t, 1)
-	release()
 	if n := excludesReadsIn(t, h); n != 1 {
 		t.Errorf("%d reads of the excludes for a request under the off switch, want 1", n)
 	}
-	h.send(t, 2, "git.info", map[string]any{"path": h.repo})
+	h.send(t, 2, "git.info", map[string]any{"path": h.repo, "sessionFoldersOff": true})
 	h.reply(t, 2)
+	release()
+	if n := excludesReadsIn(t, h); n != 1 {
+		t.Errorf("%d reads of the excludes for two requests in one time off, want 1", n)
+	}
 	h.send(t, 3, "git.info", map[string]any{"path": h.repo})
 	h.reply(t, 3)
+	h.send(t, 4, "git.info", map[string]any{"path": h.repo})
+	h.reply(t, 4)
 	if n := excludesReadsIn(t, h); n != 2 {
-		t.Errorf("%d reads of the excludes for a request under the off switch and two after it, want 2", n)
+		t.Errorf("%d reads of the excludes for a time off and two requests after it, want 2", n)
 	}
 }
