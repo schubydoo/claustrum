@@ -1,0 +1,79 @@
+# The full CI run on main, once a night (TASK-682).
+#
+# A push to main skips the macOS and Windows test legs of ci.yml. This
+# workflow calls ci.yml on main with every job, so a break that only those legs
+# see shows within a day. A runner image change, a flaky test and an admin
+# merge past the pull request checks are such breaks.
+#
+# A failed scheduled run opens one issue, or adds a comment to the open one.
+# A later green scheduled run closes that issue. A manual start reports
+# nothing to an issue, so a test of a branch opens none.
+name: nightly
+
+on:
+  schedule:
+    # 09:41 UTC, away from the twice-daily upstream-desktop-watch run.
+    - cron: "41 9 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: ci
+    permissions:
+      contents: read
+    # The local path form is the one in the GitHub docs, and actionlint 1.7.12
+    # rejects the newer `$/` form that zizmor asks for.
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
+
+  report:
+    name: report the nightly result
+    needs: ci
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Open, update or close the nightly issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI_RESULT: ${{ needs.ci.result }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          title="Nightly CI failed on main"
+          existing="$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n1)"
+
+          if [ "$CI_RESULT" = "success" ]; then
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" --repo "$REPO" --reason completed \
+                --comment "The nightly run $RUN_URL on \`$SHA\` passed."
+            fi
+            echo "The nightly run passed."
+            exit 0
+          fi
+
+          failed="$(gh run view "$RUN_ID" --repo "$REPO" --json jobs --jq '
+            .jobs[]
+            | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
+            | "- \(.name): \(.conclusion)"')"
+          [ -n "$failed" ] || failed="- the ci call ended with ${CI_RESULT}"
+
+          body="$(printf "The nightly run %s on \`%s\` ended with %s.\n\nJobs that did not pass:\n%s\n" \
+            "$RUN_URL" "$SHA" "$CI_RESULT" "$failed")"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi
