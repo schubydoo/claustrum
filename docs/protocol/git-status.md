@@ -43,7 +43,7 @@ That holds for:
 - a `path` that is the repository itself, a plain folder or a subfolder
 - a nested repository, a missing folder or a regular file
 - a worktree of another repository, or a right worktree with the wrong `baseRepo`
-- a linked worktree as `path` and `baseRepo` with no git on PATH, on Linux and macOS (`4c111e86`, measured, other repositories claustrum's own). Windows keeps the start test refusal (measured)
+- a linked worktree as `path` and `baseRepo` with no git on PATH (`4c111e86`, measured, other repositories claustrum's own). On Windows that request keeps its failed start test (measured)
 
 [How the daemon finds the worktree](#how-the-daemon-finds-the-worktree) has the rules.
 

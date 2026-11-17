@@ -1435,13 +1435,6 @@ var (
 	userExcludesGen    int
 )
 
-// excludesRereadAfterNoStart is true where a read that did not start is read
-// again. With only gits in session folders on PATH, 4c111e86 logs the passing-over
-// line of a git that came after the first refused git.status (measured on Linux and
-// macOS). The reread is how claustrum gives that line. Windows logs no such line
-// there, and its read stays kept (measured).
-var excludesRereadAfterNoStart = runtime.GOOS != "windows"
-
 // globalExcludesPath resolves the user's global git excludes file: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
 // $HOME/.config/git/ignore when that file exists, else the null device (os.DevNull:
@@ -1456,8 +1449,11 @@ var excludesRereadAfterNoStart = runtime.GOOS != "windows"
 // the result of its own read. A later result replaces an earlier one
 // (claustrum's own, not measured).
 //
-// On Linux and macOS a read whose git did not start stores nothing, so the next
-// request reads again (excludesRereadAfterNoStart).
+// A read whose git did not start stores nothing, so the next request reads again.
+// With only gits in session folders on PATH, 4c111e86 logs the passing-over line of a
+// git that came after the first refused git.status (measured on Linux and macOS).
+// The reread is how claustrum gives that line. On Windows 4c111e86 makes that one
+// read after a git appears (measured).
 func globalExcludesPath() string {
 	userExcludesMu.Lock()
 	if userExcludesDone {
@@ -1472,7 +1468,7 @@ func globalExcludesPath() string {
 	userExcludesMu.Unlock()
 	v, started := excludesFromGlobalConfig()
 	userExcludesMu.Lock()
-	if gen == userExcludesGen && (started || !excludesRereadAfterNoStart) {
+	if gen == userExcludesGen && started {
 		userExcludesDone, userExcludesCached = true, v
 	}
 	userExcludesMu.Unlock()

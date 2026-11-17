@@ -697,11 +697,15 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
-// statusNoGitAnswer is true where git.status answers isRepo:false with no start
-// test when PATH holds no git: 4c111e86 does so on Linux and macOS (measured). On
-// Windows 4c111e86 keeps the first refusal after a git appears (measured), so
-// Windows keeps the gate there.
-var statusNoGitAnswer = runtime.GOOS != "windows"
+// statusNoGitKeepsTest is true where git.status with no git on PATH also keeps the
+// failure of a start test. Each system answers isRepo:false there (4c111e86,
+// measured on Linux, macOS and Windows). On Windows 4c111e86 then answers the
+// later requests with the kept refusal "exec: \"git\": executable file not found
+// in %PATH%" after a git appears, and runs no test (measured). Only the no-git
+// request can fail so. So claustrum keeps the failed test of that request (from
+// the rows, not measured directly). On Linux and macOS a later request runs its own
+// test (measured).
+var statusNoGitKeepsTest = runtime.GOOS == "windows"
 
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
@@ -782,11 +786,15 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
-	// with no start test, so no failure is kept (statusNoGitAnswer). As in git.info
-	// the folder of the daemon is made (not measured). A baseRepo that is no folder
-	// and the off switch are not measured: they keep the gate.
-	if fi, err := os.Stat(p.BaseRepo); statusNoGitAnswer && err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
-		req.shadow.folderWithNoTest()
+	// (statusNoGitKeepsTest). Elsewhere than Windows no start test runs, so no failure
+	// is kept, and as in git.info the folder of the daemon is made (not measured). A
+	// baseRepo that is no folder and the off switch are not measured: they keep the gate.
+	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		if statusNoGitKeepsTest {
+			_ = req.shadow.gate(false)
+		} else {
+			req.shadow.folderWithNoTest()
+		}
 		return notRepo
 	}
 	// The daemon's own read of the repository's config comes before the listing
