@@ -445,6 +445,15 @@ On Windows `b3081b51` refuses a repository path through a symbolic link or a jun
 
 `git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured). The place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
 
+### A folder with a reparse tag that is no link
+
+Row `w_new_t441` measures two raw reparse tags on Windows, on `4c111e86`, with no provider:
+
+- `0x9000001C`, as on a ProjFS placeholder, is no link. A `.git` folder with it works as a plain one. So does a worktree folder with it below `baseRepo` in `git.status`.
+- Below `0x80000008`, which no filter handles, a look fails. A repository there gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`. A `.git` folder with that tag gets it on all five methods, naming `<path>\.git\objects`. A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it. No git call runs. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`, Go-quoted.
+
+claustrum's own, not measured: only `ERROR_CANT_ACCESS_FILE` refuses, and one line is logged per request. A create in `shadow` with a `0x9000001C` `.git` keeps the link refusal, because the held git directory takes a plain folder only.
+
 ### UNC refusals
 
 On Windows `b3081b51` refuses a `\\?\UNC\` path and a path on a missing share. The path is `path` of `git.info` and `git.list_branches`, and `baseRepo` of `git.status`, `git.worktree_create` and `git.worktree_remove`. The texts are:

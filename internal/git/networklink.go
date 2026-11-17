@@ -37,9 +37,13 @@ func networkLinkText(path string) string {
 // \\?\GLOBALROOT path, also when the link leads to a local folder. A SUBST
 // drive, a mapped drive and a UNC path with no link on a share that answers
 // pass (measured on Windows).
-// The test of unlookablePathRefusal comes first (claustrum's own, not measured).
+// The tests of unlookablePathRefusal and pathLookRefusal come first (claustrum's
+// own, not measured).
 func networkLinkRefusal(path string) string {
 	if msg := unlookablePathRefusal(path); msg != "" {
+		return msg
+	}
+	if msg := pathLookRefusal(path); msg != "" {
 		return msg
 	}
 	if networkLinkChecks && throughNetworkLink(path) {
