@@ -337,7 +337,7 @@ func (f *stubFixture) stubChildRecorded() bool {
 func factsHead(t *testing.T, cliPath string) string {
 	t.Helper()
 	return `__INSTALL_RESULT__{"serverVersion":` + jsonString(t, Version) + `,"os":"` + runtime.GOOS +
-		`","arch":"` + runtime.GOARCH + `","libc":"` + detectLibc() + `","cliPath":` + jsonString(t, cliPath) +
+		`","arch":"` + runtime.GOARCH + `","libc":"` + hostLibc() + `","cliPath":` + jsonString(t, cliPath) +
 		`,"cliWasPresent":`
 }
 

@@ -14,7 +14,7 @@ func TestProbeSocketAtALongPathWithNoShorterName(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = ln.Close() // a listener bound by another name keeps its file
-	if state, _, _ := probeSocket(sock); state != hcSockUnknown {
+	if state, _, _ := classifySocket(sock); state != hcSockUnknown {
 		t.Errorf("dead long socket with no shorter name: state %d, want %d", state, hcSockUnknown)
 	}
 }

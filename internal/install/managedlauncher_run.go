@@ -119,7 +119,7 @@ func managedRunReason(err error) string {
 var installManaged *installManagedState
 
 type installManagedState struct {
-	res rpc.ManagedLauncherResult
+	res rpc.ManagedLauncherReply
 	run *managedRun // the launcher run, nil until it runs
 }
 
@@ -227,7 +227,7 @@ func RunProbeCLI(stdout, stderr io.Writer, path string) {
 	writeProbeCLIResult(stdout, probeCLIRunnable(path))
 }
 
-func probeViaManagedLauncher(stdout, stderr io.Writer, path string, res rpc.ManagedLauncherResult) {
+func probeViaManagedLauncher(stdout, stderr io.Writer, path string, res rpc.ManagedLauncherReply) {
 	switch res.Status {
 	case StatusUnusable:
 		fmt.Fprintln(stdout, "__CLI_LAUNCHER__")

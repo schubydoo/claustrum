@@ -181,7 +181,7 @@ func resolved(t *testing.T, out string) string {
 }
 
 // streamOf is the bytes of the frames of stream in fs.
-func streamOf(t *testing.T, fs []supervisor.StreamFrame, stream string) string {
+func streamOf(t *testing.T, fs []supervisor.ChildFrame, stream string) string {
 	t.Helper()
 	var b strings.Builder
 	for _, f := range fs {

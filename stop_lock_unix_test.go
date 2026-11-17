@@ -118,7 +118,7 @@ func TestRunStopTerminatesLockHolder(t *testing.T) {
 	sock := filepath.Join(dir, "rpc.sock")
 	lockPath := filepath.Join(dir, runlock.LockName)
 	holder := spawnLockHolder(t, lockPath, "", "")
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestRunStopKillsHolderThatIgnoresSIGTERM(t *testing.T) {
 	sock := filepath.Join(dir, "rpc.sock")
 	lockPath := filepath.Join(dir, runlock.LockName)
 	holder := spawnLockHolder(t, lockPath, "term-ignore", "")
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 			if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 				t.Fatal(err)
 			}
-			writeOwnerRecord(fd, runlock.OwnerRecord{Pid: 1 << 30, Role: "serve", Node: procinfo.NodeID(), InstanceID: instance, StartedAt: 1})
+			storeLockOwner(fd, runlock.OwnerRecord{Pid: 1 << 30, Role: "serve", Node: procinfo.NodeID(), InstanceID: instance, StartedAt: 1})
 			stageStaleSocket(t, sock)
 			token := stageToken(t, sock)
 			logs := captureStopLog(t)
@@ -352,7 +352,7 @@ func holdLockOf(t *testing.T, dir string, rec *runlock.OwnerRecord) func() {
 		t.Fatal(err)
 	}
 	if rec != nil {
-		writeOwnerRecord(fd, *rec)
+		storeLockOwner(fd, *rec)
 	}
 	var once sync.Once
 	letGo := func() { once.Do(func() { _ = syscall.Close(fd) }) }

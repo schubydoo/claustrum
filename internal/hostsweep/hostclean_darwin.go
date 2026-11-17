@@ -73,7 +73,7 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 // with no output well before the abandon bound. So time tells the two empty results
 // apart, and both are no reading (hcBusyRead).
 //
-// The cost of getting this wrong is a whole cleaner pass: retireAbandoned samples
+// The cost of getting this wrong is a whole cleaner pass: endIdleDaemon samples
 // hcBusy for up to hcBusyWindow, and on darwin every one of those samples is an lsof
 // run.
 var (
@@ -188,10 +188,10 @@ func sysctlBytes(mib []int32) ([]byte, bool) {
 func le32(b []byte, off int) uint32 { return binary.LittleEndian.Uint32(b[off : off+4]) }
 func le64(b []byte, off int) uint64 { return binary.LittleEndian.Uint64(b[off : off+8]) }
 
-// kinfoStart formats the process start-time as "<sec>.<usec>", the pid-reuse identity token.
+// startTokenFromKinfo formats the process start-time as "<sec>.<usec>", the pid-reuse identity token.
 // It is only ever compared kinfo-to-kinfo (snapshot vs the inspect re-read), so it needs to be
 // self-consistent, not byte-identical to any ps rendering.
-func kinfoStart(buf []byte) string {
+func startTokenFromKinfo(buf []byte) string {
 	return strconv.FormatUint(le64(buf, offStartSec), 10) + "." + strconv.FormatUint(uint64(le32(buf, offStartUsec)), 10)
 }
 
@@ -219,7 +219,7 @@ func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {
 	if !k || len(buf) < kinfoStride || buf[offStat] == statZOMB {
 		return 0, "", false
 	}
-	return int(int32(le32(buf, offPgid))), kinfoStart(buf), true
+	return int(int32(le32(buf, offPgid))), startTokenFromKinfo(buf), true
 }
 
 // hcProcArgs reads pid's KERN_PROCARGS2 block: the executable path, argv, and (when wantEnv)
@@ -276,7 +276,7 @@ func inspect(pid int, wantEnv bool) (hcTracked, hcInspectResult) {
 	if !ok || len(buf) < kinfoStride || buf[offStat] == statZOMB {
 		return hcTracked{}, hcInspectGone
 	}
-	startTicks := kinfoStart(buf)
+	startTicks := startTokenFromKinfo(buf)
 	uid := uint32(hcGetuid())
 	t := hcTracked{
 		pid:        pid,
@@ -302,7 +302,7 @@ func inspect(pid int, wantEnv bool) (hcTracked, hcInspectResult) {
 	// Re-read: a pid reused (or gone) mid-inspect has a different (or absent) start-time, and a
 	// pid that turned into a zombie mid-inspect is gone too (matching the first-read SZOMB skip
 	// and linux's re-read, which drops state Z/X).
-	if buf2, ok := hcKinfoPID(pid); !ok || len(buf2) < kinfoStride || buf2[offStat] == statZOMB || kinfoStart(buf2) != startTicks {
+	if buf2, ok := hcKinfoPID(pid); !ok || len(buf2) < kinfoStride || buf2[offStat] == statZOMB || startTokenFromKinfo(buf2) != startTicks {
 		return hcTracked{}, hcInspectGone
 	}
 	return t, hcInspectOK
@@ -338,10 +338,10 @@ func hcSnapshot() (pids []int, overflow bool, ok bool) {
 	return pids, overflow, true
 }
 
-// peerOf returns the pid and uid of the process on the other end of a unix connection. darwin's
+// socketPeer returns the pid and uid of the process on the other end of a unix connection. darwin's
 // LOCAL_PEERPID yields only the peer pid (unlike linux SO_PEERCRED, which also gives the uid),
 // so the uid is derived by reading the peer pid's kinfo. ok is false when either read fails.
-func peerOf(conn *net.UnixConn) (pid int, uid uint32, ok bool) {
+func socketPeer(conn *net.UnixConn) (pid int, uid uint32, ok bool) {
 	raw, err := conn.SyscallConn()
 	if err != nil {
 		return 0, 0, false

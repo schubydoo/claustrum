@@ -35,7 +35,7 @@ func runlockHoldFixture(args []string) int {
 	if len(args) > 3 && args[3] != "" {
 		node = args[3]
 	}
-	writeOwnerRecord(fd, OwnerRecord{
+	storeLockOwner(fd, OwnerRecord{
 		Pid:        os.Getpid(),
 		Role:       "serve",
 		Node:       node,
@@ -199,7 +199,7 @@ func writeRecordFile(t *testing.T, path string, rec OwnerRecord) {
 		t.Fatalf("open record file: %v", err)
 	}
 	defer func() { _ = syscall.Close(fd) }()
-	writeOwnerRecord(fd, rec)
+	storeLockOwner(fd, rec)
 }
 
 func TestLockRunDirFlockError(t *testing.T) {
@@ -272,19 +272,19 @@ func TestWriteOwnerRecordTruncateError(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	_ = syscall.Close(fd) // Ftruncate on the closed fd fails; the write must bail out.
-	writeOwnerRecord(fd, OwnerRecord{Pid: 2, Role: "serve"})
+	storeLockOwner(fd, OwnerRecord{Pid: 2, Role: "serve"})
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(b) != "stale" {
-		t.Errorf("file changed to %q; writeOwnerRecord must bail when truncate fails", b)
+		t.Errorf("file changed to %q; storeLockOwner must bail when truncate fails", b)
 	}
 }
 
 func TestReadOwnerRecordMissingFile(t *testing.T) {
-	if _, err := readOwnerRecord(filepath.Join(shortTempDir(t), "does-not-exist")); err == nil {
-		t.Error("readOwnerRecord must return the read error for a missing file")
+	if _, err := loadLockOwner(filepath.Join(shortTempDir(t), "does-not-exist")); err == nil {
+		t.Error("loadLockOwner must return the read error for a missing file")
 	}
 }
 
@@ -364,7 +364,7 @@ func TestCompleteDoesNotTruncateTheLock(t *testing.T) {
 	if after.Size() != before.Size() {
 		t.Errorf("daemon.lock is %d bytes after complete, %d before: complete truncated the file", after.Size(), before.Size())
 	}
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatalf("read owner record: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
 		t.Fatal("predecessor was not evicted by SIGTERM")
 	}
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatalf("read owner record after eviction: %v", err)
 	}
@@ -603,7 +603,7 @@ func TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects(t *testing.T) {
 					t.Errorf("log holds %q\n--- got ---\n%s", no, got)
 				}
 			}
-			if rec, err := readOwnerRecord(lockPath); err != nil || rec.Pid != os.Getpid() {
+			if rec, err := loadLockOwner(lockPath); err != nil || rec.Pid != os.Getpid() {
 				t.Errorf("owner record = %+v (err %v), want the record of this process", rec, err)
 			}
 		})
@@ -627,7 +627,7 @@ func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	// role=stop; the role gate returns before any signal, so the pid is never touched.
-	writeOwnerRecord(fd, OwnerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+	storeLockOwner(fd, OwnerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 	_ = syscall.Close(fd)
 
 	buf := captureLogBuf(t)
@@ -663,7 +663,7 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
 		t.Fatal("predecessor survived the SIGTERM->SIGKILL ladder")
 	}
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatalf("read owner record after escalation: %v", err)
 	}
@@ -762,7 +762,7 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeOwnerRecord(fd, OwnerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+			storeLockOwner(fd, OwnerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 			_ = syscall.Close(fd)
 
 			buf := captureLogBuf(t)
@@ -791,7 +791,7 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 // attacker in a shared socket dir would leave) must NOT be followed and its target
 // must NOT be truncated. The daemon serves without run-dir ownership instead. The
 // mutant (drop O_NOFOLLOW) follows the link and
-// writeOwnerRecord truncates the victim, failing the content check.
+// storeLockOwner truncates the victim, failing the content check.
 func TestClaimRunDirRefusesSymlinkLock(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")

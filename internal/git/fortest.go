@@ -11,7 +11,7 @@ func ShadowFolderForTest(runDir string) string {
 	return filepath.Join(runDir, shadowRootName)
 }
 
-// ResetUserExcludesCacheForTest makes the next userExcludesFile call resolve
+// ResetUserExcludesCacheForTest makes the next globalExcludesPath call resolve
 // again. It returns a func that puts the old value back. Each change counts in
 // userExcludesGen, so a read that began before it stores nothing.
 func ResetUserExcludesCacheForTest() (restore func()) {

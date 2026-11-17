@@ -67,7 +67,7 @@ func TestWorktreeCreateRefusesSwappedLeaf(t *testing.T) {
 // holds the leaf and its parent open until release. The references hold open
 // descriptors on both during the create (measured in /proc/<pid>/fd on Linux). The
 // held leaf keeps its inode allocated, so a directory made at the same path after
-// a delete gets a new inode number, and verifyCreatedWorktree reports it. Without
+// a delete gets a new inode number, and checkNewLeafIdentity reports it. Without
 // the hold, ext4 reused the number 4 times in 6 on Linux, and the replacement
 // passed the check. A tmpfs did not reuse the number in local runs, so this test
 // checks the hold itself, then the refusal after many replacements.
@@ -105,7 +105,7 @@ func TestCheckpointHoldsLeafAndParent(t *testing.T) {
 		if err := os.Mkdir(leaf, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if msg := verifyCreatedWorktree(leaf, cp); !strings.Contains(msg, "was not populated by git worktree add") {
+		if msg := checkNewLeafIdentity(leaf, cp); !strings.Contains(msg, "was not populated by git worktree add") {
 			t.Fatalf("replacement %d: verify = %q, want the not-populated refusal", i, msg)
 		}
 	}

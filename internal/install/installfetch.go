@@ -46,7 +46,7 @@ var lastInstallFetch *fetchStats
 // lastInstallFinal is the final __INSTALL_PROGRESS__ line of a complete -cli-url
 // download. fetchCLI sets it, and ensureCLI prints it only after the checksum
 // passes (emitFinalProgress). runInstall resets it with lastInstallFetch.
-var lastInstallFinal *progressLine
+var lastInstallFinal *progressFrame
 
 // fetchStats is the `fetch` object 4534d86 adds to __INSTALL_RESULT__ whenever a
 // -cli-url download was attempted, even a 0-byte 404. installFacts has its place.
@@ -61,19 +61,19 @@ type fetchStats struct {
 	LongestPauseMs int64 `json:"longestPauseMs"`
 }
 
-// progressLine is one __INSTALL_PROGRESS__ frame. total carries the Content-Length
+// progressFrame is one __INSTALL_PROGRESS__ frame. total carries the Content-Length
 // and is omitempty: the reference drops it when the server sends none (chunked).
-type progressLine struct {
+type progressFrame struct {
 	Phase string `json:"phase"`
 	Bytes int64  `json:"bytes"`
 	Total int64  `json:"total,omitempty"`
 }
 
-// watchedBody wraps the -cli-url response body to reproduce 4534d86's download
+// meteredBody wraps the -cli-url response body to reproduce 4534d86's download
 // instrumentation: a ~1s __INSTALL_PROGRESS__ ticker on -install stdout, a read-idle
 // stall abort, and the fetch stats. The idle timer resets on every byte, so only a
 // true stall (no data for installIdleTimeout) trips it.
-type watchedBody struct {
+type meteredBody struct {
 	inner io.ReadCloser
 	total int64
 
@@ -94,11 +94,11 @@ type watchedBody struct {
 	once       sync.Once
 }
 
-// newWatchedBody wraps inner. start is the fetch's start time (before the request),
+// newMeteredBody wraps inner. start is the fetch's start time (before the request),
 // so fetchStats.ms covers the whole exchange; lastAt is set to now (wrap time) so the
 // read-idle clock and the first pause measure from when the body became readable.
-func newWatchedBody(inner io.ReadCloser, total int64, start time.Time) *watchedBody {
-	w := &watchedBody{inner: inner, total: total, lastAt: time.Now(), start: start, stop: make(chan struct{}), tickerDone: make(chan struct{})}
+func newMeteredBody(inner io.ReadCloser, total int64, start time.Time) *meteredBody {
+	w := &meteredBody{inner: inner, total: total, lastAt: time.Now(), start: start, stop: make(chan struct{}), tickerDone: make(chan struct{})}
 	// The leading bytes:0 line is printed HERE, before any Read, so it always
 	// says 0. Printed from the ticker goroutine, it raced the first Read and
 	// once said bytes:57 with no bytes:0 line. The reference printed bytes:0
@@ -112,7 +112,7 @@ func newWatchedBody(inner io.ReadCloser, total int64, start time.Time) *watchedB
 // onIdle fires when no byte arrived for installIdleTimeout: it records the stall
 // gap (so longestPauseMs reports ~60000) and closes the body so a blocked Read
 // returns at once.
-func (w *watchedBody) onIdle() {
+func (w *meteredBody) onIdle() {
 	w.mu.Lock()
 	w.stalled = true
 	if p := time.Since(w.lastAt); p > w.longest {
@@ -122,7 +122,7 @@ func (w *watchedBody) onIdle() {
 	_ = w.inner.Close()
 }
 
-func (w *watchedBody) Read(p []byte) (int, error) {
+func (w *meteredBody) Read(p []byte) (int, error) {
 	n, err := w.inner.Read(p)
 	if n > 0 {
 		now := time.Now()
@@ -171,7 +171,7 @@ func (w *watchedBody) Read(p []byte) (int, error) {
 // failure is the first read error of the body that is not io.EOF. fetchCLI
 // reports it over the answer of the decoder, which then saw only a short
 // stream.
-func (w *watchedBody) failure() error {
+func (w *meteredBody) failure() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.failed
@@ -227,7 +227,7 @@ func (e *stalledError) Error() string {
 // Close stops the ticker and idle timer and closes the body. It WAITS for the
 // ticker goroutine to exit before returning, so no stray __INSTALL_PROGRESS__ line
 // can be emitted after the caller moves on to print __INSTALL_RESULT__. Idempotent.
-func (w *watchedBody) Close() error {
+func (w *meteredBody) Close() error {
 	w.once.Do(func() { close(w.stop) })
 	<-w.tickerDone
 	w.idle.Stop()
@@ -235,7 +235,7 @@ func (w *watchedBody) Close() error {
 }
 
 // stats returns the fetch object for __INSTALL_RESULT__.
-func (w *watchedBody) stats() fetchStats {
+func (w *meteredBody) stats() fetchStats {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return fetchStats{
@@ -247,13 +247,13 @@ func (w *watchedBody) stats() fetchStats {
 
 // lastByteMs is the time from the start of the fetch to the last read that
 // returned a byte.
-func (w *watchedBody) lastByteMs() int64 {
+func (w *meteredBody) lastByteMs() int64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.lastAt.Sub(w.start).Milliseconds()
 }
 
-func (w *watchedBody) ticker() {
+func (w *meteredBody) ticker() {
 	defer close(w.tickerDone)
 	t := time.NewTicker(installProgressInterval)
 	defer t.Stop()
@@ -271,7 +271,7 @@ func (w *watchedBody) ticker() {
 // byte count equals the count of the last printed line. Measured on 89cb6289.
 // A body of 6 parts 20 s apart gives 7 lines, not one per second. A body with
 // no byte gives the leading line only.
-func (w *watchedBody) emitProgress(tick bool) {
+func (w *meteredBody) emitProgress(tick bool) {
 	w.mu.Lock()
 	if tick && w.bytes == w.printed {
 		w.mu.Unlock()
@@ -279,7 +279,7 @@ func (w *watchedBody) emitProgress(tick bool) {
 	}
 	w.printed = w.bytes
 	w.byTick = tick
-	pl := progressLine{Phase: "download", Bytes: w.bytes}
+	pl := progressFrame{Phase: "download", Bytes: w.bytes}
 	if w.total > 0 {
 		pl.Total = w.total
 	}
@@ -290,7 +290,7 @@ func (w *watchedBody) emitProgress(tick bool) {
 // tickPrinted reports whether the last progress line was a tick line with this
 // byte count. The leading line does not count. Call it after Close, when the
 // ticker prints no more.
-func (w *watchedBody) tickPrinted(n int64) bool {
+func (w *meteredBody) tickPrinted(n int64) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.byTick && w.printed == n
@@ -307,7 +307,7 @@ func emitFinalProgress() {
 	}
 }
 
-func printProgress(pl progressLine) {
+func printProgress(pl progressFrame) {
 	b, _ := json.Marshal(pl)
 	fmt.Printf("__INSTALL_PROGRESS__%s\n", b)
 }

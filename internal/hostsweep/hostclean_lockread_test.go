@@ -24,7 +24,7 @@ type hcLockReadFix struct {
 	c       *hostCleaner
 	runRoot string
 	root    *os.Root
-	entries []runDirEntry
+	entries []staleRunFolder
 	asked   []string // the paths the holder query was asked about
 }
 
@@ -65,7 +65,7 @@ func (f *hcLockReadFix) dir(name string, lock []byte) string {
 	if err := os.Chtimes(dir, at, at); err != nil {
 		f.t.Fatal(err)
 	}
-	f.entries = append(f.entries, runDirEntry{root: f.root, name: name, dirPath: dir, socket: filepath.Join(dir, rpcSockBasename), idle: idle})
+	f.entries = append(f.entries, staleRunFolder{root: f.root, name: name, dirPath: dir, socket: filepath.Join(dir, rpcSockBasename), idle: idle})
 	return dir
 }
 
@@ -73,7 +73,7 @@ func (f *hcLockReadFix) dir(name string, lock []byte) string {
 func (f *hcLockReadFix) tidy() (hcSummary, string) {
 	buf := captureLogBuf(f.t)
 	var sum hcSummary
-	f.c.tidyRunDirs(f.entries, &sum)
+	f.c.sweepRunFolders(f.entries, &sum)
 	return sum, buf.String()
 }
 

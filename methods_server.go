@@ -30,7 +30,7 @@ var capabilityMethods = append(append([]string{
 }, osCapabilityMethods...), "files.realpath")
 
 // capabilityFeatures advertises optional protocol extensions, in the reference's order.
-// process.stdin.offset (the stdin-offset idempotency contract, see process.stdin / rpc.StdinResult)
+// process.stdin.offset (the stdin-offset idempotency contract, see process.stdin / rpc.StdinReply)
 // landed in 7c2f88d; 7d193f89 added two more: git.status.baseRepo (git.status now keys off a
 // session worktree of baseRepo) and git.worktree.external_root (a worktreeRoot param places the
 // session worktree OUTSIDE the repo, under that caller-chosen root, instead of inside it).
@@ -134,9 +134,9 @@ func (s *server) featuresFor() []string {
 func (s *server) handleServer(c *conn.Conn, req *request) *rpc.Response {
 	switch req.Method {
 	case "server.ping":
-		return rpc.Ptr(rpc.OKResult(req.ID, rpc.PongResult{Pong: true}))
+		return rpc.Ptr(rpc.OKResult(req.ID, rpc.PongReply{Pong: true}))
 	case "server.capabilities":
-		return rpc.Ptr(rpc.OKResult(req.ID, rpc.CapabilitiesResult{
+		return rpc.Ptr(rpc.OKResult(req.ID, rpc.CapabilitiesReply{
 			Version:     Version,
 			Methods:     capabilityMethods,
 			InstanceID:  s.instanceID,
@@ -166,7 +166,7 @@ func (s *server) handleServer(c *conn.Conn, req *request) *rpc.Response {
 			s.mu.Unlock()
 		}
 		s.signalShutdown()
-		return rpc.Ptr(rpc.OKResult(req.ID, rpc.ShutdownResult{OK: true}))
+		return rpc.Ptr(rpc.OKResult(req.ID, rpc.ShutdownReply{OK: true}))
 	case methodAdoptEnv:
 		return s.handleAdoptEnv(c, req)
 	default:

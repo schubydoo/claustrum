@@ -36,7 +36,7 @@ func TestReapWaitKeepsGroupItCannotInspect(t *testing.T) {
 			}
 			start := sim.now
 			var counts reapCounts
-			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 			if sim.sigCount(syscall.SIGTERM) != 1 {
 				t.Errorf("kills = %v, want exactly one SIGTERM", sim.kills)
@@ -86,7 +86,7 @@ func TestReapWaitGroupThatVerifiesAgain(t *testing.T) {
 	}
 	sim.diesOn(tg.pid, syscall.SIGKILL)
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if sim.sigCount(syscall.SIGKILL) != 1 || counts.reapedEscalate != 1 || counts.skipped != 0 {
 		t.Errorf("kills = %v, counts = %+v, want one SIGKILL and one group in the escalate bucket", sim.kills, counts)
@@ -114,8 +114,8 @@ func TestSameLeaderCannotInspect(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeLiveProcs(t, map[int]liveProc{pid: tc.live})
-			if got, _ := sameLeader(pid, "100"); got != tc.want {
-				t.Errorf("sameLeader = %d, want %d", got, tc.want)
+			if got, _ := leaderStillMatches(pid, "100"); got != tc.want {
+				t.Errorf("leaderStillMatches = %d, want %d", got, tc.want)
 			}
 		})
 	}
@@ -128,7 +128,7 @@ func TestReapTargetsCannotInspectBeforeSIGTERM(t *testing.T) {
 	sim, runDir, tg := simTarget(t)
 	sim.live[tg.pid] = &liveProc{state: procUnknown, why: "unparseable stat"}
 	var counts reapCounts
-	reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts)
+	reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts)
 	if len(sim.kills) != 0 || !recordExists(runDir, tg.name) || counts != (reapCounts{skipped: 1}) {
 		t.Errorf("kills = %v, record there = %v, counts = %+v, want no signal, the record and one kept", sim.kills, recordExists(runDir, tg.name), counts)
 	}
@@ -140,8 +140,8 @@ func TestReapTargetsCannotInspectBeforeSIGTERM(t *testing.T) {
 func TestDaemonAliveCannotInspect(t *testing.T) {
 	for _, state := range []int{procUnknown, procNotOurs} {
 		fakeLiveProcs(t, map[int]liveProc{800: {state: state}})
-		if !daemonAlive(800, "5", 42) {
-			t.Errorf("daemonAlive = false for state %d, want true", state)
+		if !recordedDaemonLives(800, "5", 42) {
+			t.Errorf("recordedDaemonLives = false for state %d, want true", state)
 		}
 	}
 }

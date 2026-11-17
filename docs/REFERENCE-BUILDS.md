@@ -190,8 +190,7 @@ These items stay open:
 - On Windows `files.realpath` through a junction still differs from `4c111e86` and
   `c9125eb8`. Two Windows texts still differ from `4c111e86` and `c9125eb8`: a remove
   with a dangling `commondir` junction, and a create on an unborn `HEAD`.
-- Some replies still differ from `4c111e86`. On Linux one is the text for a launcher, or
-  a folder above it, that other accounts can write. On macOS, a `processWrapper` number and `git.status` with
+- Some replies still differ from `4c111e86`. On macOS, a `processWrapper` number and `git.status` with
   only session-folder gits on the `PATH` differ. On Windows, a create and a remove on a
   share whose `.git` git cannot use differ. On Linux, near the `timeoutMs` cut, the seed
   of a Git LFS object can end on the other side of the cut.
