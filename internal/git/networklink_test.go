@@ -236,14 +236,17 @@ func (m linkInfo) Sys() any           { return nil }
 // share that does not exist logs one "looking for links" line, a share that
 // denies every account gets the permission text with no line, and a directory
 // symbolic link on a share that answers is refused. A junction and a folder
-// with a reparse tag that is no link are claustrum's own, not measured.
+// with a reparse tag that is no link are claustrum's own, not measured. So is
+// the end of the walk at a name that fails its look, with a link below it.
 func TestUnlookableShareRow(t *testing.T) {
 	missing, denied := `\\127.0.0.1\nosuchsharecl\repo`, `\\127.0.0.1\cldeny\sub\repo`
 	lnk, deep, jn, tagged := `\\127.0.0.1\clok\lnk`, `\\127.0.0.1\clok\lnk\sub`, `\\127.0.0.1\clok\jn`, `\\127.0.0.1\clok\tag`
+	unread, belowUnread := `\\127.0.0.1\clok\unread`, `\\127.0.0.1\clok\unread\lnk`
 	modes := map[string]fs.FileMode{
-		lnk:    fs.ModeSymlink,
-		jn:     fs.ModeIrregular,
-		tagged: fs.ModeDir | fs.ModeIrregular,
+		lnk:         fs.ModeSymlink,
+		belowUnread: fs.ModeSymlink,
+		jn:          fs.ModeIrregular,
+		tagged:      fs.ModeDir | fs.ModeIrregular,
 	}
 	oldLstat, oldOn := lstatPath, networkLinkChecks
 	lstatPath = func(path string) (fs.FileInfo, error) {
@@ -252,6 +255,8 @@ func TestUnlookableShareRow(t *testing.T) {
 			return nil, &fs.PathError{Op: "CreateFile", Path: path, Err: errors.New("The network name cannot be found.")}
 		case denied:
 			return nil, &fs.PathError{Op: "CreateFile", Path: path, Err: fs.ErrPermission}
+		case unread:
+			return nil, &fs.PathError{Op: "CreateFile", Path: path, Err: errors.New("unreadable")}
 		}
 		if m, ok := modes[path]; ok {
 			return linkInfo(m), nil
@@ -272,6 +277,7 @@ func TestUnlookableShareRow(t *testing.T) {
 		{deep, linkText},
 		{jn, shareLinkText(jn)},
 		{tagged, ""},
+		{belowUnread, ""},
 	} {
 		if got := unlookablePathRefusal(c.path); got != c.want {
 			t.Errorf("%s: got  %q\nwant %q", c.path, got, c.want)
