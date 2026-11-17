@@ -168,7 +168,7 @@ M2 to M5 are texts of `f6010b97`, S1 of `4c111e86`, S2 of `683cc6a9`, M6 and S3 
 M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
 quoting of the path cut to its first 300 runes. An invalid UTF-8 byte prints as `\xff`.
-The rest of the text is never cut. A create runs the excludes read before the refusal
+Nothing else in the text is cut. The first request of a create runs the excludes read before the refusal
 (`4c111e86`, measured for S2 on macOS and Windows, claustrum's own elsewhere).
 
 | id | text after the prefix | operands |
@@ -186,7 +186,7 @@ The rest of the text is never cut. A create runs the excludes read before the re
 The M4 and S2 reasons are `commondir is not a regular file`,
 `"commondir" is larger than 1 MiB` (`be1c1ca5`, measured on Linux) or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). M4 drops its operation and path (`b3081b51`, measured for `permission denied` on Linux, a missing target on Windows, `path escapes from parent` on Linux and macOS). Other OS errors of S2 and M4 are claustrum's own.
 
-M5 has no common prefix. It is `config-defined hooks could not be pinned off; git
+M5 has no common prefix: `config-defined hooks could not be pinned off; git
 not run: the worktree entry this folder's .git names no longer exists`.
 
 On Linux, for a G of 4086 or 4087 bytes, the Lstat of `<G>/commondir` fails with `file name too long`.
