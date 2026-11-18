@@ -9,8 +9,9 @@ import (
 
 // With no git on PATH, a create answers not_a_repo after the marker test and before
 // the count check, and makes nothing (4c111e86, measured on Linux and macOS, and on
-// Windows for a missing baseRepo). Mutation: drop
-// the PATH test of gitWorktreeCreateLocked, and each row but the marker row fails.
+// Windows for a missing baseRepo). On Windows the rows of an existing baseRepo are
+// claustrum's own, not measured. Mutation: drop the PATH test of
+// gitWorktreeCreateLocked, and each row but the marker row fails.
 func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {
 	f := newNoRepoFixture(t)
 	// The daemon state of -serve, with a settings control, as on the VM rows.
