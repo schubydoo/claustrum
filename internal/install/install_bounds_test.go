@@ -51,7 +51,7 @@ func newStubFixture(t *testing.T) *stubFixture {
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "cli-stub")
 	t.Setenv("CLAUSTRUM_TEST_STUB_LOG", f.log)
 	t.Setenv("CLAUSTRUM_TEST_STUB_CHILDPID", f.childPID)
-	for _, k := range []string{"MS", "EXIT", "CHILD", "IGNORETERM"} {
+	for _, k := range []string{"MS", "EXIT", "CHILD", "IGNORETERM", "GATE"} {
 		t.Setenv("CLAUSTRUM_TEST_STUB_"+k, "")
 	}
 	// No launcher gate from the environment of the test run.
