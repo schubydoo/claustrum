@@ -215,9 +215,9 @@ func TestLauncherResolveKeysAndPrecedence(t *testing.T) {
 
 // TestLauncherResolveRefusesANonString pins measured rows (b3081b51, Linux): a
 // processWrapper of 5, true, [] or {} and an env value of 5, null, true, [] or {}
-// answer unusable with
-// the kind text and log one refusal line. A processWrapper of null and
-// {"env":"x"} answer none with no line. With a string env value the env key wins,
+// answer unusable with the kind text and log one refusal line. On macOS each adds
+// the fault other (4c111e86, measured on macOS for a processWrapper of 5 only). A
+// processWrapper of null and {"env":"x"} answer none with no line. With a string env value the env key wins,
 // and a processWrapper of 5 beside it gets no kind text.
 func TestLauncherResolveRefusesANonString(t *testing.T) {
 	logs := captureLogBuf(t)
@@ -226,16 +226,16 @@ func TestLauncherResolveRefusesANonString(t *testing.T) {
 	base := filepath.Join(dir, managedSettingsBase)
 	const tail = " must be one string (the launcher and its arguments), not "
 	for _, c := range []struct{ settings, reason, fault string }{
-		{`{"processWrapper":5}`, "processWrapper" + tail + "a number", ""},
-		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean", ""},
-		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array", ""},
-		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object", ""},
+		{`{"processWrapper":5}`, "processWrapper" + tail + "a number", install.FaultOther},
+		{`{"processWrapper":true}`, "processWrapper" + tail + "a boolean", install.FaultOther},
+		{`{"processWrapper":[]}`, "processWrapper" + tail + "an array", install.FaultOther},
+		{`{"processWrapper":{}}`, "processWrapper" + tail + "an object", install.FaultOther},
 		{`{"processWrapper":null}`, "", ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number", ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null", ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean", ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", ""},
-		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object", ""},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a number", install.FaultOther},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":null}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "null", install.FaultOther},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "a boolean", install.FaultOther},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":[]}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an array", install.FaultOther},
+		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":{}}}`, "env.CLAUDE_CODE_PROCESS_WRAPPER" + tail + "an object", install.FaultOther},
 		{`{"env":"x"}`, "", ""},
 		{`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"/w"},"processWrapper":5}`, "launcher `/w` does not exist or is not an executable regular file", install.FaultMissing},
 	} {
@@ -278,9 +278,9 @@ func TestLauncherResolveNonStringBesideAValue(t *testing.T) {
 		{"b env 5", `{"processWrapper":` + jsonText(t, w) + `,"env":{"CLAUDE_CODE_PROCESS_WRAPPER":5}}`, "", usableFrame(base, w)},
 		{"b env true", `{"processWrapper":` + jsonText(t, w) + `,"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`, "", usableFrame(base, w)},
 		{"c1", pw, `{"processWrapper":5}`, usableFrame(base, w)},
-		{"c2", `{}`, `{"processWrapper":5}`, unusableFrame(later, "processWrapper"+tail+"a number")},
+		{"c2", `{}`, `{"processWrapper":5}`, unusableFaultFrame(later, "processWrapper"+tail+"a number", install.FaultOther)},
 		{"c3", `{"processWrapper":5}`, pw, usableFrame(later, w)},
-		{"c4", `{"processWrapper":5}`, `{"processWrapper":[]}`, unusableFrame(later, "processWrapper"+tail+"an array")},
+		{"c4", `{"processWrapper":5}`, `{"processWrapper":[]}`, unusableFaultFrame(later, "processWrapper"+tail+"an array", install.FaultOther)},
 	} {
 		if err := os.RemoveAll(dropDir); err != nil {
 			t.Fatal(err)

@@ -72,6 +72,12 @@ func SetAfterChildStartForTest(f func(id string, pid int)) (prev func(id string,
 	return prev
 }
 
+// SetLateStartEndsForTest sets lateStartEnds and returns the old value.
+func SetLateStartEndsForTest(b bool) (prev bool) {
+	prev, lateStartEnds = lateStartEnds, b
+	return prev
+}
+
 // SetConfineProcForTest sets the confineProc seam and returns the old one.
 func SetConfineProcForTest(f func(*os.Process, ChildJobs) (*ProcGroup, error)) (prev func(*os.Process, ChildJobs) (*ProcGroup, error)) {
 	prev, confineProc = confineProc, f

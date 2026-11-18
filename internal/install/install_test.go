@@ -1681,6 +1681,71 @@ func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
 	}
 }
 
+// The Windows rule of the final progress line: it waits for the rename of the new
+// CLI. On 4c111e86 a failed rename leaves the bytes:0 line only, and a good
+// rename prints both lines (measured on Windows). The test sets the rule on any
+// system. blockCLIRename makes the rename fail.
+func TestInstallFinalProgressWaitsForTheRename(t *testing.T) {
+	old := finalProgressAfterRename
+	finalProgressAfterRename = true
+	t.Cleanup(func() { finalProgressAfterRename = old })
+	zst := fakeCLIZst(t, 0)
+	sum := sha256.Sum256(zst)
+	checksum := hex.EncodeToString(sum[:])
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(zst)))
+		_, _ = w.Write(zst)
+	}))
+	defer srv.Close()
+	n := len(zst)
+	lead := fmt.Sprintf(`__INSTALL_PROGRESS__{"phase":"download","bytes":0,"total":%d}`, n)
+	final := fmt.Sprintf(`__INSTALL_PROGRESS__{"phase":"download","bytes":%d,"total":%d}`, n, n)
+	progress := func(out string) string {
+		var got []string
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "__INSTALL_PROGRESS__") {
+				got = append(got, l)
+			}
+		}
+		return strings.Join(got, "\n")
+	}
+
+	t.Run("good rename", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "cli")
+		out := captureInstallOutput(t, installOpts{cliDir: dir, cliVersion: "1.0.0",
+			cliURL: srv.URL + "/cli.zst", cliChecksum: checksum})
+		if got, want := progress(out), lead+"\n"+final; got != want {
+			t.Fatalf("progress lines =\n%s\nwant\n%s", got, want)
+		}
+	})
+
+	t.Run("failed rename", func(t *testing.T) {
+		oldBound := cliRenameBound
+		cliRenameBound = 0
+		t.Cleanup(func() { cliRenameBound = oldBound })
+		lastInstallFetch, lastInstallFinal = nil, nil
+		t.Cleanup(func() { lastInstallFetch, lastInstallFinal = nil, nil })
+		dir := t.TempDir()
+		cliPath := filepath.Join(dir, "1.0.0")
+		block := blockCLIRename(t, cliPath)
+		stage := func(d string) (string, error) {
+			tmp, err := stageDownload(srv.URL+"/cli.zst", checksum, d)
+			if err != nil {
+				return "", err
+			}
+			return tmp, block(tmp)
+		}
+		var err error
+		out := captureStdout(t, func() { err = stageAndInstall(cliPath, stage, "") })
+		if err == nil || !strings.HasPrefix(err.Error(), "rename: ") {
+			t.Fatalf("stageAndInstall = %v, want a rename error", err)
+		}
+		if got := progress(out); got != lead {
+			t.Fatalf("progress lines =\n%s\nwant\n%s", got, lead)
+		}
+	})
+}
+
 // A cache miss with no source flag still creates the cli-dir (0700, with its
 // parents) before the source check, and leaves it empty. Measured on Linux
 // against f6010b97, two runs: the answer is the same text on both binaries, and

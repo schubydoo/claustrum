@@ -44,8 +44,9 @@ var HeaderTimeout = 60 * time.Second
 var lastInstallFetch *fetchStats
 
 // lastInstallFinal is the final __INSTALL_PROGRESS__ line of a complete -cli-url
-// download. fetchCLI sets it, and ensureCLI prints it only after the checksum
-// passes (emitFinalProgress). runInstall resets it with lastInstallFetch.
+// download. fetchCLI sets it. emitFinalProgress prints it after the checksum passes,
+// on Windows after the rename (finalProgressAfterRename). runInstall resets it with
+// lastInstallFetch.
 var lastInstallFinal *progressFrame
 
 // fetchStats is the `fetch` object 4534d86 adds to __INSTALL_RESULT__ whenever a

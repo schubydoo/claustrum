@@ -168,12 +168,13 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
 === "Linux and macOS"
 
-    - With no global excludes file of the user, the status runs.
-    - Junction rules do not apply. That covers a `baseRepo` with a junction before its last component, a junction below `baseRepo` in `path`, and a `baseRepo` that is a junction.
-    - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `"isRepo": false`.
-    - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, is not a special case.
+    - With no user excludes file, the status runs.
+    - The junction rules of Windows do not apply.
+    - A `baseRepo` where git cannot start, such as a file, gives `"isRepo": false`.
+    - A repository file gets [the repository call](git-rules-settings-copy.md#the-call-about-the-repository), `-32603` and the settings copy, also after a 15 s hold. A file link into another repository gives `"isRepo": false`. `4c111e86` is measured on Linux, and macOS is claustrum's own.
+    - A last `path` component inside `baseRepo` that ends in a dot or space, or holds a colon, is not special.
     - Letter case in the registration match is exact.
-    - `path` matches as sent and as resolved, and in no other spelling.
+    - `path` matches only as sent and as resolved.
     - A gitlink path that is a regular file gives ` (submodule; could not be inspected)` (measured on Linux).
 
 === "macOS"
