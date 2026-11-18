@@ -50,3 +50,9 @@ func checkoutWorkTree(leaf, resolved string) string {
 // case is not measured on Linux. Other measurements show the record test on Linux
 // (adminRecordMismatch).
 const adminRecordChecked = true
+
+// windowsAddTests is false on Linux and macOS. They have their own tests after
+// the add (leafGitFileRefusal), and a leaf with no `.git` file after the
+// checkout goes there. It is a variable so that a test can switch the steps of
+// Windows on.
+var windowsAddTests = false

@@ -157,3 +157,9 @@ func lastNameJunctionTarget(p string) (string, bool) {
 	}
 	return filepath.Clean(target), true
 }
+
+// windowsAddTests is true on Windows. A create with "shadowDirOff":true tests
+// the leaf right after a good add (offAddRefusal). After a good checkout a
+// leaf with no `.git` file is refused and stays (4c111e86, measured on
+// Windows).
+const windowsAddTests = true

@@ -467,10 +467,22 @@ var openShadowLock = openShadowLockFile
 // 5fd08069 answered the next request normally and made the folder again, with
 // the same pid and another hex part (measured on Linux). No test ran then. A
 // folder that cannot be made again is not measured: the request goes on.
+//
+// An empty file or a FIFO at the folder goes, and a folder of the daemon is
+// there again (4c111e86, measured on Linux and macOS). A link there goes as
+// a link, and the new folder has another hex part. Its target gets nothing
+// (4c111e86, measured on Linux and macOS, also for a link to nothing). Every
+// request then succeeds. Here the new folder always has a new hex part. That
+// name is in no reply but an error text. Other kinds that are no folder go too
+// (removeOwnFolderFile, claustrum's own). A folder at the path stays. Only the
+// Lstat looks at the entry, so a FIFO is never opened. Windows is claustrum's
+// own: there only a regular file goes.
 func (h *ShadowHost) remakeFolder() {
 	if h.dir != "" {
-		if _, err := os.Lstat(h.dir); err == nil {
-			return
+		if fi, err := os.Lstat(h.dir); err == nil {
+			if !goesAtFolderPath(fi.Mode()) || h.removeOwnFolderFile(h.dir) != nil {
+				return
+			}
 		}
 	}
 	h.dropLock()
@@ -518,6 +530,37 @@ func (h *ShadowHost) removeLink(name string) error {
 	}
 	defer func() { _ = root.Close() }()
 	return root.Remove(name)
+}
+
+// removeOwnFolderFile deletes the entry at dir, the path of the folder of this
+// daemon, when goesAtFolderPath allows its kind. dir must be a name in the
+// folder of all daemons. The name comes from makeFolder, never from a request
+// or a link target. After homeguard.WipesHomeDir, a root at the folder of all
+// daemons tests the kind by Lstat, and one remove of a file follows
+// (removeOwnFolderFileAt). It is never a tree delete. On Linux and macOS it
+// never removes a folder, and a link goes as a link, never its target.
+func (h *ShadowHost) removeOwnFolderFile(dir string) error {
+	base := filepath.Join(h.runDir, shadowRootName)
+	if filepath.Dir(dir) != base {
+		return errors.New("the folder of the daemon is not in git-shadow")
+	}
+	if homeguard.WipesHomeDir(dir) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	root, err := openRootNoWait(base)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	name := filepath.Base(dir)
+	fi, err := root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !goesAtFolderPath(fi.Mode()) {
+		return errors.New("the entry at the folder of the daemon stays")
+	}
+	return removeOwnFolderFileAt(root, name)
 }
 
 // Close removes the folder of this daemon at a shutdown. 5fd08069 removes it at
