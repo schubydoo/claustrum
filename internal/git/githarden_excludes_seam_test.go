@@ -2,9 +2,9 @@ package git
 
 import "testing"
 
-// resetUserExcludesCache forces the next userExcludesFile call to resolve again.
+// resetUserExcludesCache forces the next globalExcludesPath call to resolve again.
 //
-// userExcludesFile memoizes for the life of the process, which is right in
+// globalExcludesPath memoizes for the life of the process, which is right in
 // production: the daemon resolves the user's global excludes once at the first git
 // op and every later op agrees with it. In a test it means the FIRST test to run a
 // git command fixes the value for the whole binary, so a later test that moves
@@ -31,9 +31,9 @@ func resetUserExcludesCache(t *testing.T) {
 }
 
 // excludesNow forces a fresh configured read, then returns the value of
-// userExcludesFile.
+// globalExcludesPath.
 func excludesNow(t *testing.T) string {
 	t.Helper()
 	resetUserExcludesCache(t)
-	return userExcludesFile()
+	return globalExcludesPath()
 }

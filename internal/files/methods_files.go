@@ -130,9 +130,9 @@ func filesStat(req *rpc.Request) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
 	if absent {
-		return rpc.OKResult(req.ID, rpc.StatResult{})
+		return rpc.OKResult(req.ID, rpc.StatReply{})
 	}
-	return rpc.OKResult(req.ID, rpc.StatResult{
+	return rpc.OKResult(req.ID, rpc.StatReply{
 		Exists: true, IsDir: fi.IsDir(), Size: fi.Size(), Mode: fi.Mode().String(),
 	})
 }
@@ -165,7 +165,7 @@ func filesList(req *rpc.Request) rpc.Response {
 	// explicitly — dropping it would silently break list ordering while fixing
 	// an error string.
 	sort.Slice(ents, func(i, j int) bool { return ents[i].Name() < ents[j].Name() })
-	out := make([]rpc.ListEntry, 0, len(ents))
+	out := make([]rpc.DirItem, 0, len(ents))
 	for _, e := range ents {
 		// The reference omits hidden entries (any name beginning with ".",
 		// e.g. .git/.env) from files.list — probe-confirmed against the
@@ -177,9 +177,9 @@ func filesList(req *rpc.Request) rpc.Response {
 		full := filepath.Join(p.Path, e.Name())
 		// listIsDir has the rules of each system.
 		isDir := listIsDir(full, p.JunctionsAsDirs)
-		out = append(out, rpc.ListEntry{Name: e.Name(), Path: full, IsDir: isDir})
+		out = append(out, rpc.DirItem{Name: e.Name(), Path: full, IsDir: isDir})
 	}
-	return rpc.OKResult(req.ID, rpc.ListResult{Entries: out})
+	return rpc.OKResult(req.ID, rpc.ListReply{Entries: out})
 }
 
 // filesRead opens the path first and tests the kind of the open file after it.
@@ -195,7 +195,7 @@ func filesRead(req *rpc.Request) rpc.Response {
 	}
 	f, err := os.OpenFile(p.Path, os.O_RDONLY|readOpenFlag, 0)
 	if errors.Is(err, fs.ErrNotExist) {
-		return rpc.OKResult(req.ID, rpc.ReadResult{})
+		return rpc.OKResult(req.ID, rpc.ReadReply{})
 	}
 	if err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
@@ -229,7 +229,7 @@ func filesRead(req *rpc.Request) rpc.Response {
 	if _, err := buf.ReadFrom(f); err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
-	res := rpc.ReadResult{Content: buf.String(), Exists: true}
+	res := rpc.ReadReply{Content: buf.String(), Exists: true}
 	if p.Real {
 		res.Real = readRealName(p.Path)
 	}
@@ -273,12 +273,12 @@ func filesValidate(req *rpc.Request) rpc.Response {
 	// rather than as an RPC error — the stat text replaces "Path does not
 	// exist" in the error field (probe-measured).
 	if err != nil {
-		return rpc.OKResult(req.ID, rpc.ValidateResult{Error: err.Error()})
+		return rpc.OKResult(req.ID, rpc.ValidateReply{Error: err.Error()})
 	}
 	if absent {
-		return rpc.OKResult(req.ID, rpc.ValidateResult{Error: "Path does not exist"})
+		return rpc.OKResult(req.ID, rpc.ValidateReply{Error: "Path does not exist"})
 	}
-	return rpc.OKResult(req.ID, rpc.ValidateResult{Valid: true, IsDir: fi.IsDir()})
+	return rpc.OKResult(req.ID, rpc.ValidateReply{Valid: true, IsDir: fi.IsDir()})
 }
 
 type extractTarParams struct {
@@ -431,7 +431,7 @@ func filesExtractTar(req *rpc.Request) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "archivePath and destDir are required")
 	}
 	if !filepath.IsAbs(p.DestDir) || homeguard.IsFilesystemRoot(p.DestDir) {
-		return rpc.OKResult(req.ID, rpc.ExtractResult{Error: fmt.Sprintf("destDir must be an absolute, non-root path: %q", p.DestDir)})
+		return rpc.OKResult(req.ID, rpc.ExtractReply{Error: fmt.Sprintf("destDir must be an absolute, non-root path: %q", p.DestDir)})
 	}
 	// A home directory is absolute and is not a filesystem root, so it clears the
 	// gate above and reaches the wipe. `"destDir":"~"` expands to exactly that
@@ -441,16 +441,16 @@ func filesExtractTar(req *rpc.Request) rpc.Response {
 	// open, so the archive is not consumed either. See internal/homeguard/homeguard.go for why
 	// containment is the test and why ~/... stays allowed.
 	if homeguard.WipesHomeDir(p.DestDir) {
-		return rpc.OKResult(req.ID, rpc.ExtractResult{Error: errDestDirHoldsHome(p.DestDir).Error()})
+		return rpc.OKResult(req.ID, rpc.ExtractReply{Error: errDestDirHoldsHome(p.DestDir).Error()})
 	}
 	count, err := extractTarGz(p.ArchivePath, p.DestDir)
 	if errors.Is(err, errAlreadyComplete) {
-		return rpc.OKResult(req.ID, rpc.ExtractResult{Success: true, AlreadyComplete: true})
+		return rpc.OKResult(req.ID, rpc.ExtractReply{Success: true, AlreadyComplete: true})
 	}
 	if err != nil {
-		return rpc.OKResult(req.ID, rpc.ExtractResult{Success: false, FileCount: count, Error: err.Error()})
+		return rpc.OKResult(req.ID, rpc.ExtractReply{Success: false, FileCount: count, Error: err.Error()})
 	}
-	return rpc.OKResult(req.ID, rpc.ExtractResult{Success: true, FileCount: count})
+	return rpc.OKResult(req.ID, rpc.ExtractReply{Success: true, FileCount: count})
 }
 
 // MaxExtractBytes caps the total uncompressed bytes written by extractTarGz.

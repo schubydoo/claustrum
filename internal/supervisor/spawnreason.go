@@ -27,19 +27,19 @@ type GitReadStepError struct{ Err error }
 func (e *GitReadStepError) Error() string { return e.Err.Error() }
 func (e *GitReadStepError) Unwrap() error { return e.Err }
 
-// CwdError marks the two cwd refusals of the start path (missing, or not a folder).
-type CwdError struct{ Err error }
+// CwdRefusal marks the two cwd refusals of the start path (missing, or not a folder).
+type CwdRefusal struct{ Err error }
 
-func (e *CwdError) Error() string { return e.Err.Error() }
-func (e *CwdError) Unwrap() error { return e.Err }
+func (e *CwdRefusal) Error() string { return e.Err.Error() }
+func (e *CwdRefusal) Unwrap() error { return e.Err }
 
-// SpawnFailureReason gives the reason of a refusal that spawnVia returned (build
+// ReasonForSpawnError gives the reason of a refusal that spawnVia returned (build
 // 52d82f0a). Measured on Linux and on Windows: cwd_missing, launcher, not_found and
 // other. Measured on Linux only: not_executable, and cwd_unusable for a cwd of mode
 // 000 (also on macOS). The reasons on macOS other
 // than cwd_unusable, the -32005 launcher start refusal, a pipe failure and an errno
 // that no row lists are claustrum's own, not measured.
-func SpawnFailureReason(err error, cwd string) SpawnReason {
+func ReasonForSpawnError(err error, cwd string) SpawnReason {
 	var ge *GitReadStepError
 	if errors.As(err, &ge) {
 		return SpawnReason{Reason: "other"}
@@ -51,7 +51,7 @@ func SpawnFailureReason(err error, cwd string) SpawnReason {
 		}
 		return SpawnReason{LauncherFault: sr.Fault, Reason: "launcher"}
 	}
-	var ce *CwdError
+	var ce *CwdRefusal
 	if errors.As(err, &ce) {
 		return SpawnReason{Reason: "cwd_missing"}
 	}

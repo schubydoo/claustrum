@@ -44,5 +44,5 @@ func realIsServeCmdline(pid int, socket string) bool {
 		return false
 	}
 	argv := strings.Split(strings.TrimRight(string(b), "\x00"), "\x00")
-	return matchesServeArgv(argv, socket, selfBase())
+	return matchesServeArgv(argv, socket, ownExeName())
 }

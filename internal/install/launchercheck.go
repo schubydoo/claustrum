@@ -267,7 +267,8 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 		}
 	}
 	if f.mode&0o022 != 0 {
-		return FaultWritable, fmt.Sprintf("%s can be changed by accounts other than its owner (mode %04o), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none.", shown, f.mode)
+		// The text follows 4c111e86 (measured on Linux).
+		return FaultWritable, fmt.Sprintf("%s can be changed by accounts other than its owner (mode %04o). Remove that write access.", shown, f.mode)
 	}
 	return "", ""
 }

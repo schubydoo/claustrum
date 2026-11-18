@@ -228,7 +228,7 @@ var tempRootsLost struct {
 
 // tempRootLate decides between the answer of the step and the time limit. A file
 // call that a stuck mount holds cannot be stopped, so the step goes on after the
-// limit. The step keeps its folder only if keep comes before giveUp.
+// limit. The step keeps its folder only if keep comes before markGaveUp.
 type tempRootLate struct {
 	mu           sync.Mutex
 	gaveUp, kept bool
@@ -241,7 +241,7 @@ func (l *tempRootLate) keep() bool {
 	return l.kept
 }
 
-func (l *tempRootLate) giveUp() bool {
+func (l *tempRootLate) markGaveUp() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.gaveUp = !l.kept
@@ -274,7 +274,7 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 	select {
 	case a = <-done:
 	case <-t.C:
-		if late.giveUp() {
+		if late.markGaveUp() {
 			a = answer{env, &rpc.CLITempRoot{WhyNot: tempRootNoReply}, func() {}, func(func()) {}}
 		} else {
 			a = <-done // the step kept its folder right before the limit
@@ -1000,13 +1000,15 @@ var tempRootCheckDev = statDev
 //   - A temp dir that cannot be read logs the failed-check line, and a later good check
 //     logs the line that all is well. No child is ended, also after 320 s (Linux).
 //   - A temp dir that is gone, and a held folder of mode 0, log their own line and
-//     end no child (macOS). A sticky temp dir of mode 1777 changes nothing (macOS).
+//     end no child (macOS). The mode 0 line comes once for a run of checks that find
+//     mode 0 (Linux). A sticky temp dir of mode 1777 changes nothing (macOS).
 //
-// Not measured, claustrum's own: one line per run of failed checks, the gone temp
+// Not measured, claustrum's own: one line per run of other failed checks, the gone temp
 // dir and the folder of mode 0 as failed checks, the order of the tests, the word
 // "changed" for the kinds of the macOS rows, an other write bit of the temp dir in a
 // mode other than 0777 (a group write bit alone ends nobody), an
-// owner read or search bit of the folder, and the prefix of the gone and mode 0 lines.
+// owner read or search bit of the folder, and the prefix of the gone line and, on
+// macOS, of the mode 0 line.
 func checkTempRoot(h *heldTempRoot) {
 	failed := func(format string, args ...any) {
 		if !h.checkFailed && !h.given {

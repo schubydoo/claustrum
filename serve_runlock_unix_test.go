@@ -31,7 +31,7 @@ func TestNewServerOnSocketWritesRunLock(t *testing.T) {
 	t.Cleanup(func() { s.procs.KillAll() })
 
 	lockPath := filepath.Join(dir, runlock.LockName)
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatalf("daemon.lock not written at boot: %v", err)
 	}

@@ -883,7 +883,7 @@ func unenterableBaseListing(repo string) string {
 			// The symlink chain. The one git call of 89cb6289 is the read of the user
 			// excludes, and no `git version` runs (rows LNKb-g and LNKr-g on Linux,
 			// LNKb-g on macOS).
-			userExcludesFile()
+			globalExcludesPath()
 			return hooksRefusalPrefix + r.detail()
 		}
 		return failedListingText(gitUse{}, r, false)
@@ -979,7 +979,7 @@ const managedWorktreesMarkerBody = "This directory holds Claude Code session wor
 	"managed checkouts; open the repository itself, not one of them, as a\n" +
 	"session folder. Safe to delete once the directory is otherwise empty.\n"
 
-// ensureManagedWorktreesMarker writes the marker into dir, the <directory> level of
+// placeWorktreesMarker writes the marker into dir, the <directory> level of
 // an external worktree with the symlinks of its root resolved. claustrum writes it
 // after the parent step and before `git worktree add`. The directory is then
 // tagged as managed before git runs.
@@ -994,7 +994,7 @@ const managedWorktreesMarkerBody = "This directory holds Claude Code session wor
 // do both on Linux (measured). The name of the file is that of openMarkerFile.
 // Not measured: a close that fails after the open on macOS. The
 // create goes on there (markerCloseStops).
-func ensureManagedWorktreesMarker(dir string) error {
+func placeWorktreesMarker(dir string) error {
 	f, release, err := openMarkerFile(dir)
 	if errors.Is(err, fs.ErrExist) {
 		return nil

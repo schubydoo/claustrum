@@ -204,12 +204,12 @@ func TestWorktreeCreateSettleSkipped(t *testing.T) {
 
 // A call that its limit stops changes nothing: the create answers success and
 // keeps the worktree, its registration and the branch (timeoutMs 11500, Linux).
-// The margin here leaves 15 s before the call, so a slow host still makes it,
+// The margin here leaves 10 s before the call, so a slow host still makes it,
 // and the call gets less than its hold.
 func TestWorktreeCreateSettleStopKeepsTheCreate(t *testing.T) {
 	const hold = 50 * time.Second
 	f, h, log := settleFixture(t, 1, hold)
-	setDuration(t, &settleMargin, 45*time.Second)
+	setDuration(t, &settleMargin, 50*time.Second)
 	raw, took := f.create(t, h, "w1", "", markerTimeoutMs)
 	f.wantSettledCreate(t, raw)
 	if n := len(diffFilesCalls(readSettleCalls(t, log))); n != 1 {

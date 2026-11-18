@@ -42,7 +42,7 @@ func TestReattachTransfersTheFrameStream(t *testing.T) {
 	drain(oldFrames)
 	drain(freshFrames)
 
-	p.emit(StreamFrame{Stream: "stdout", Data: "postreattach"})
+	p.emit(ChildFrame{Stream: "stdout", Data: "postreattach"})
 
 	select {
 	case <-freshFrames:
@@ -58,7 +58,7 @@ func TestReattachTransfersTheFrameStream(t *testing.T) {
 }
 
 // drain empties a frame channel without blocking.
-func drain(ch <-chan StreamFrame) {
+func drain(ch <-chan ChildFrame) {
 	for {
 		select {
 		case <-ch:
@@ -156,7 +156,7 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		go func() {
 			defer emitter.Done()
 			for !stop.Load() {
-				p.emit(StreamFrame{Stream: "stdout", Data: "eA=="})
+				p.emit(ChildFrame{Stream: "stdout", Data: "eA=="})
 			}
 		}()
 		time.Sleep(200 * time.Microsecond) // let the emitter get going
@@ -210,7 +210,7 @@ const sentinelID = "\x00end-of-frames"
 // sentinelLine is that frame already encoded, so the test writes it with the same
 // Conn.WriteLine path (and therefore the same conn write lock) as a real frame.
 var sentinelLine = func() []byte {
-	b, err := json.Marshal(StreamFrame{Type: "stream", ProcessID: sentinelID})
+	b, err := json.Marshal(ChildFrame{Type: "stream", ProcessID: sentinelID})
 	if err != nil {
 		panic(err)
 	}

@@ -587,6 +587,14 @@ func on() bool {
 	return true
 }
 
+// CheckOff reports whether a request that carries the off switch runs now. It
+// logs no line, unlike on.
+func CheckOff() bool {
+	offMu.Lock()
+	defer offMu.Unlock()
+	return offHolds > 0
+}
+
 // PickGit makes cmd, a command of git by its bare name, skip a git in a session
 // folder. b3081b51 runs the next git on PATH and logs each git that it passes
 // over (measured on Linux, macOS and Windows). With no other git, cmd fails to
@@ -602,7 +610,7 @@ func PickGit(cmd *exec.Cmd) {
 	if !on() || cmd.Err != nil || len(s.folders) == 0 || !s.holds(cmd.Path) {
 		return
 	}
-	s.passOver(cmd.Path)
+	s.logSkippedGit(cmd.Path)
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if !filepath.IsAbs(dir) {
 			continue
@@ -612,7 +620,7 @@ func PickGit(cmd *exec.Cmd) {
 			continue
 		}
 		if s.holds(p) {
-			s.passOver(p)
+			s.logSkippedGit(p)
 			continue
 		}
 		cmd.Path = p
@@ -621,7 +629,7 @@ func PickGit(cmd *exec.Cmd) {
 	cmd.Err = NoOtherGitError{}
 }
 
-func (s *store) passOver(p string) {
+func (s *store) logSkippedGit(p string) {
 	if s.passed[p] {
 		return
 	}

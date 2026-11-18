@@ -138,7 +138,7 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
 | [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
-| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | all |
+| [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | Linux, macOS |
 | [D23](#d23) | A child's environment block is in name order | off-wire (child environment, visible in stream output) | always-on | Windows |
 | [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | on-wire (the index-placement text, and the Windows `.git` swap) | always-on | all |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists | on-wire | always-on | Windows |
@@ -180,11 +180,12 @@ have no flag and no key.
     tests paths behind Windows junctions too. With and without `worktreeRoot`,
     the leaf folder is tested by identity too.
   - Each rollback delete of `git.worktree_create`, and from the code its stale
-    step before the add. The leaf folder is tested by identity too. It is defense in depth and emits no frame. The
+    step before the add. The leaf folder is tested by identity too. A refused leaf stays and changes the
+    [text of a kept branch](protocol/git-rules-calls.md#the-branch-step-in-an-undo-text). The
     exception is the registration delete of a create that holds no git
-    directory and accepted no registration. That delete tests the `gitdir` record and the registrations
-    directory instead. The guard also runs before the cleanup of old
-    `.claude-new-worktree-*` entries and before the two staging removes. A
+    directory and accepted no registration. It tests the `gitdir` record and the registrations
+    directory instead. The guard also covers the cleanup of old
+    `.claude-new-worktree-*` entries and the two staging removes. A
     refused entry stays.
   - The deletes inside the folder `git-shadow` of the daemon.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
@@ -380,7 +381,7 @@ have no flag and no key.
 - **Pointers.** [DAEMON.md → Run-dir lock](DAEMON.md#run-dir-lock-daemonlock).
   The host cleaner has its own gate, which is parity
   ([Signals of the cleaner](DAEMON.md#signals-of-the-cleaner),
-  `retireAbandoned`). Code:
+  `endIdleDaemon`). Code:
   `internal/runlock/daemon_runlock_unix.go` (`holderSignalRefusal`, `StopRunDirHolder`),
   `internal/runlock/daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
   `internal/runlock/daemon_runlock_linux.go`.
@@ -467,15 +468,12 @@ have no flag and no key.
   answers success in four states. S is a worktree locked in T, the `.git` folder
   of `baseRepo`, and X is another repository:
   - a daemon `GIT_DIR` and `GIT_COMMON_DIR` of X: it deletes the folder of S,
-    and the entry in T with its `locked` file stays (Linux, macOS and Windows)
-  - a daemon `GIT_DIR` of X alone: it deletes the folder of S (Linux, macOS and
-    Windows)
+    and the entry in T with its `locked` file stays
+  - a daemon `GIT_DIR` of X alone: it deletes the folder of S
   - `baseRepo` `<T>/missing/..` with no folder `missing`: it deletes the folder
-    of S with `"branchKept":true` (Linux and macOS). This state is not measured
-    on Windows
+    of S with `"branchKept":true`. This state is not measured on Windows
   - the `GIT_DIR` and `GIT_COMMON_DIR` state with the folder of S gone: it
-    deletes nothing (Linux, macOS and Windows). claustrum answers a
-    gone-worktree lock refusal
+    deletes nothing. claustrum answers a gone-worktree lock refusal
 
   On Linux, with `worktreeRoot` in the `GIT_DIR` states, `89cb6289` answers the
   `could not verify` text, or success with the folder gone. It deletes nothing,
@@ -487,7 +485,10 @@ have no flag and no key.
   locked refusal there when a locked entry in the `.git` folder of `baseRepo`
   has a `gitdir` record that names S ([which lock
   counts](protocol/git-worktree-remove.md#the-repository-checks)).
-- **Systems and switch.** Linux, macOS and Windows. Always on, no switch.
+- **Systems and switch.** Linux and macOS. Always on, no switch. On Windows
+  `c9125eb8` and `4c111e86` refuse in the first, second and fourth state. On
+  `4c111e86` the frames and the disk equal those of claustrum (measured on
+  Windows).
 - **Cost.** In these states claustrum sends `success:false` with a locked text,
   and a folder stays that the reference deletes. A caller must unlock the
   worktree first. Each state needs a daemon `GIT_DIR`, a `baseRepo` spelled
