@@ -128,7 +128,7 @@ The handler starts the stop. The reply waits until the teardown starts (`closeAl
 - If the close wins, the client reads EOF with no bytes.
 - Another connection that is idle gets a clean EOF with no bytes.
 
-A client must treat EOF after a shutdown request as a success. The rate depends on timing. `4c111e86` replies first in 2 to 17 % of runs on Linux and 60 to 83 % on macOS. claustrum replies first in 50 to 72 % and 87 to 95 % (measured). On Windows `b3081b51` replied in 0, 17 and 2 of 60. Both send equal reply bytes.
+A client must treat EOF after a shutdown request as a success. The rate depends on timing. On Linux claustrum still replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured). On Windows `b3081b51` replied in 0 of 60 plain runs, 17 of 60 after a ping and 2 of 60 with a second idle connection. Both send equal reply bytes.
 
 ### What the stop does
 
