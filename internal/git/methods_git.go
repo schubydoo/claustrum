@@ -1973,11 +1973,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// An add that its time limit stopped gets this rollback too, with the stop
 		// text. On 5fd08069 the leaf is gone, and no git call follows (measured. One
 		// case ran on Linux, macOS and Windows, one on Linux and macOS, and one on
-		// Linux).
+		// Linux). A staged path in the text of git becomes "the new folder"
+		// (stagedAddText). The two texts of an attach add above keep the path (not measured).
 		undoFailedAdd(p.WorktreePath, checkpoint)
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
-			Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
+			Error:     "git worktree add failed: " + stagedAddText(addStderr, addErr, p.WorktreePath),
 			ErrorCode: "worktree_add_failed",
 		})
 	}
@@ -2977,7 +2978,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	case err != nil:
 		return refuse(worktreeRemoveText(err))
 	case fi.Mode()&fs.ModeSymlink != 0:
-		return refuse(worktreeRemoveText(refuseWorktree("%s is a symbolic link, not a worktree directory", target.path)))
+		return refuse(worktreeRemoveText(refuseWorktree("`%s` is a symbolic link, not a worktree directory", target.path)))
 	case !fi.IsDir():
 		return refuse(worktreeRemoveText(refuseWorktree("%s is not a directory", target.path)))
 	}
@@ -3033,9 +3034,11 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// lock-check text there on Linux. Windows is claustrum's own, not
 			// measured. A stray commondir whose content is not ".", "./" or "./." answers
 			// so too, with a bad HEAD and a good one (`b3081b51`, measured on Linux,
-			// macOS and Windows). Every other refusal keeps the lock-check text (not
-			// measured on b3081b51).
-			if strings.HasSuffix(t.refusal, strayShapeTail) || strings.HasSuffix(t.refusal, strayContentTail) {
+			// macOS and Windows). On Windows a stray commondir that is not a small plain
+			// file answers so too (removeNamesStrayFile). Every other refusal keeps the
+			// lock-check text (not measured on b3081b51).
+			if strings.HasSuffix(t.refusal, strayShapeTail) || strings.HasSuffix(t.refusal, strayContentTail) ||
+				(removeNamesStrayFile && strings.HasSuffix(t.refusal, strayFileTail)) {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + t.refusal)
 			}
 			return refuse(lockCheckRefusal(p.WorktreePath))
