@@ -2662,7 +2662,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// a `.git` entry of another kind, and a leaf that cannot
 		// be removed (the text stays alone). The order before the copy step and
 		// the deadline test is claustrum's own, not measured: a good checkout
-		// whose timeoutMs expired gets this answer, and only the leaf goes. A
+		// whose timeoutMs expired gets this answer, and on Linux and macOS only the leaf goes. A
 		// folder that replaced the leaf gets it too, and the identity guard keeps
 		// that folder.
 		if leafGitFileGone(p.WorktreePath) {
