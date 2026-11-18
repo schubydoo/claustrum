@@ -21,7 +21,15 @@ import (
 
 // heldPipe is the life of the child that holds the pipes in these tests. It is
 // longer than gitDrainWait, so the short wait for the pipes reads differently.
-const heldPipe = 5 * time.Second
+// A test whose mutation is that short wait lowers it with shortDrain.
+const heldPipe = 2500 * time.Millisecond
+
+// shortDrain lowers gitDrainWait for the test. Then the short wait for the
+// pipes ends well before heldPipe, also after a stop at the limit of 1 s.
+func shortDrain(t *testing.T) {
+	t.Helper()
+	setDuration(t, &gitDrainWait, 500*time.Millisecond)
+}
 
 // holdNthCall makes the stub hold the pipes of call nth of those that match.
 // With last set, a call must end with that word.
@@ -70,6 +78,7 @@ func TestShadowHookListingWaitsForHeldPipes(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	want, _ := f.info(t, f.repo, nil)
 	setDuration(t, &configListingLimit, time.Second)
+	shortDrain(t)
 	holdHookListing(t, "hold", heldPipe)
 	raw, _, took := timedCall(t, f, "git.info", map[string]any{"path": f.repo})
 	if raw != want {
@@ -88,6 +97,7 @@ func TestShadowHookListingWaitsForHeldPipes(t *testing.T) {
 func TestShadowHookListingStopTextAtPipeEOF(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setDuration(t, &configListingLimit, time.Second)
+	shortDrain(t)
 	holdHookListing(t, "holdwait", heldPipe)
 	raw, _, took := timedCall(t, f, "git.info", map[string]any{"path": f.repo})
 	want := errorFrame(t, "config-defined hooks could not be pinned off; git not run: listing the configuration in force: "+
@@ -132,6 +142,7 @@ func TestGitStatusScansWaitForHeldPipes(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			m := f.fiveRequests(nil)[1]
 			want, _ := f.call(t, m.method, m.params)
+			shortDrain(t)
 			holdNthCall(t, match, "hold", "", 1, heldPipe)
 			raw, _, took := timedCall(t, f, m.method, m.params)
 			if raw != want {
@@ -280,13 +291,17 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 // Mutation: set the short wait for the pipes again in gitRunLimited. The clock
 // of the kept answer moves only by the wait for the held listing
 // (heldListingClock), so the time of the other calls on a slow runner does not
-// count.
+// count. The test lowers probeKeep to 3.5 s and the short wait to 500 ms. The
+// short row holds the listing 500 ms, so 3 s is left before the kept answer is
+// old.
 func TestProbeAgainAfterALongHookListing(t *testing.T) {
+	setDuration(t, &probeKeep, 3500*time.Millisecond)
+	shortDrain(t)
 	for _, row := range []struct {
 		name string
 		hold time.Duration
 		want int
-	}{{"long", probeKeep + 2*time.Second, 2}, {"short", time.Second, 1}} {
+	}{{"long", probeKeep + 2*time.Second, 2}, {"short", 500 * time.Millisecond, 1}} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			holdHookListing(t, "hold", row.hold)
