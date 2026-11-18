@@ -1002,7 +1002,7 @@ func linkBelowRepo(repo, target string) bool {
 	return false
 }
 
-// folderIsLink reports whether the walk of linkBelowRepo counts an entry with
+// folderIsLink reports whether the link tests of this package count an entry with
 // the mode m of its Lstat as a link: a symbolic link, or an irregular entry
 // without the folder bit, such as a Windows junction. Go gives the folder bit
 // and the irregular bit to a Windows folder with a reparse tag that is not a

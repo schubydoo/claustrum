@@ -59,9 +59,9 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. [The rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or `path` has the wrong type. [`params` rules](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](git-rules-trust.md#git-directory-trust-check). |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](git-rules-calls.md#refusal-texts) and [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](git-rules-calls.md#refusal-texts) and [Own git environment](git-rules-calls.md#the-daemons-own-git-environment). |
 | `-32603` | `git cannot run on this host; git not run: …` | A config listing, a call of the start test or the call about the repository failed, and then `git version` failed too. [A failed configuration listing](git-rules-trust.md#a-failed-configuration-listing), [The start test](git-rules-settings-copy.md#the-start-test) and [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. [Repository config refusals](git-rules-config.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](git-rules-settings-copy.md#the-start-test). |
@@ -72,7 +72,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits](git-rules-calls.md#time-limits-of-git-calls). |
 
 A `GIT_COMMON_DIR` in the daemon's environment turns the git-directory trust check off for this method.
 
@@ -131,7 +131,7 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 - On Windows and macOS a repository answer to a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member (`b3081b51`, measured on Windows and macOS).
 - An error reply has no member.
 
-The section [The states and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.
+The section [States and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.
 
 ## What changes on disk
 
@@ -143,10 +143,11 @@ The settings copy can add files to the folder `git-shadow` beside the socket: th
 |---|---|---|
 | `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk does not resolve a junction. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
-| An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows). |
+| An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows). |
 | A `path` behind 32 or more links | No link test (claustrum's own). | `-32603` with the link-chain text (measured on Windows). |
-| A `path` through a link to a network or device path | No link test (claustrum's own). | `-32603`, and no git call runs on it. [A link to a network or device path](git-rules-trust.md#a-link-to-a-network-or-device-path). |
-| A `\\?\UNC\` or refused-share `path` | Does not apply. | `-32603`. [UNC refusals](git-rules-trust.md#unc-refusals). |
+| A `path` through a link to a network or device path | No link test (claustrum's own). | `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path). |
+| A `\\?\UNC\` or refused-share `path` | Does not apply. | `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals). |
+| A `path` below an `IO_REPARSE_TAG_WIM` folder | Does not apply. | `-32603` (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link). |
 | A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""` (measured on Windows). |
 
 ## Differences from the reference
