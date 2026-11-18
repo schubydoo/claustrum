@@ -44,9 +44,9 @@ func TestShadowFolderFileIsMadeAFolderAgain(t *testing.T) {
 	}
 }
 
-// TestRemoveOwnFolderFile: the remove takes only an entry that is no folder
-// and no link, at a name in git-shadow. A folder and a path outside
-// git-shadow stay.
+// TestRemoveOwnFolderFile: the remove takes only a regular file
+// at a name in git-shadow. A folder, a path outside git-shadow
+// and a path below a folder of git-shadow stay.
 func TestRemoveOwnFolderFile(t *testing.T) {
 	run := resolveTestRoot(t, t.TempDir())
 	h := NewShadowHost(run)
@@ -68,6 +68,16 @@ func TestRemoveOwnFolderFile(t *testing.T) {
 	}
 	if _, err := os.Lstat(folder); err != nil {
 		t.Errorf("the folder: %v, want it kept", err)
+	}
+	// A path one folder below git-shadow names its last part in the root
+	// without the folder test.
+	twin := filepath.Join(base, "twin")
+	mustWrite(t, twin, "")
+	if err := h.removeOwnFolderFile(filepath.Join(base, "sub", "twin")); err == nil {
+		t.Error("remove of a path below a folder of git-shadow: nil, want an error")
+	}
+	if _, err := os.Lstat(twin); err != nil {
+		t.Errorf("the file of that name in git-shadow: %v, want it kept", err)
 	}
 	outside := filepath.Join(run, "outside")
 	mustWrite(t, outside, "")

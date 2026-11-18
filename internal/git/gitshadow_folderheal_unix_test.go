@@ -3,59 +3,115 @@
 package git
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
-// TestShadowFolderLinkAndFIFO: a link or a FIFO at the folder of the daemon
-// stays, and so does the target of the link (not measured).
-func TestShadowFolderLinkAndFIFO(t *testing.T) {
-	run := resolveTestRoot(t, t.TempDir())
-	h := NewShadowHost(run)
-	base := filepath.Join(run, shadowRootName)
-	target := t.TempDir()
-	mustWrite(t, filepath.Join(target, "keep"), "x")
-	link := filepath.Join(base, "link")
-	if err := os.MkdirAll(base, 0o700); err != nil {
+// replaceDaemonFolder runs one git.info, then puts an entry in place of the
+// folder of the daemon by make. It returns the old folder path.
+func replaceDaemonFolder(t *testing.T, f shadowFixture, make func(path string) error) string {
+	t.Helper()
+	f.info(t, f.repo, nil)
+	first := daemonFolder(t, f.run)
+	f.d.Shadow.mu.Lock()
+	f.d.Shadow.dropLock()
+	f.d.Shadow.mu.Unlock()
+	if err := os.RemoveAll(first); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, link); err != nil {
+	if err := make(first); err != nil {
 		t.Fatal(err)
 	}
-	h.mu.Lock()
-	h.dir = link
-	h.remakeFolder()
-	h.mu.Unlock()
-	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("the link: %v, %v, want it kept", fi, err)
+	return first
+}
+
+// requestsWithLimit runs git.info, git.status, git.list_branches and
+// git.worktree_create, each within 15 s. A request that hangs fails the test.
+func requestsWithLimit(t *testing.T, f shadowFixture) {
+	t.Helper()
+	for _, m := range f.fiveRequests(nil)[:4] {
+		done := make(chan string, 1)
+		go func() {
+			raw, _ := f.call(t, m.method, m.params)
+			done <- raw
+		}()
+		select {
+		case raw := <-done:
+			if strings.Contains(raw, `"error"`) {
+				t.Errorf("%s = %s", m.method, raw)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatalf("%s gave no reply in 15 s", m.method)
+		}
 	}
-	if h.dir != link {
-		t.Errorf("the folder of the daemon = %s, want the link %s", h.dir, link)
+}
+
+// TestShadowFolderFIFOIsMadeAFolderAgain: a FIFO at the folder of the daemon
+// goes, and each request succeeds with no wait, as on 4c111e86 (measured on
+// Linux).
+func TestShadowFolderFIFOIsMadeAFolderAgain(t *testing.T) {
+	f := newShadowFixture(t)
+	first := replaceDaemonFolder(t, f, func(p string) error { return syscall.Mkfifo(p, 0o600) })
+	requestsWithLimit(t, f)
+	if _, err := os.Lstat(first); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the FIFO: %v, want it gone", err)
 	}
-	if got := entryNames(t, target); len(got) != 1 || got[0] != "keep" {
-		t.Errorf("the target of the link holds %v, want keep only", got)
+	if fi, err := os.Lstat(daemonFolder(t, f.run)); err != nil || !fi.IsDir() {
+		t.Errorf("the folder of the daemon: %v, %v, want a folder", fi, err)
 	}
-	fifo := filepath.Join(base, "fifo")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
+}
+
+// TestShadowFolderLinkGoesAsALink: a link at the folder of the daemon goes as
+// a link, a new folder is made, and its target gets nothing. Each request
+// succeeds, also with a link to nothing (4c111e86, measured on Linux and
+// macOS).
+func TestShadowFolderLinkGoesAsALink(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		file bool
+		gone bool
+	}{{"empty target", false, false}, {"target with a file", true, false}, {"no target", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newShadowFixture(t)
+			target := filepath.Join(t.TempDir(), "T")
+			if !tc.gone {
+				if err := os.Mkdir(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.file {
+				mustWrite(t, filepath.Join(target, "keep"), "x")
+			}
+			first := replaceDaemonFolder(t, f, func(p string) error { return os.Symlink(target, p) })
+			requestsWithLimit(t, f)
+			if _, err := os.Lstat(first); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("the link: %v, want it gone", err)
+			}
+			if fi, err := os.Lstat(daemonFolder(t, f.run)); err != nil || !fi.IsDir() {
+				t.Errorf("the folder of the daemon: %v, %v, want a folder", fi, err)
+			}
+			switch {
+			case tc.gone:
+				if _, err := os.Lstat(target); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("the target: %v, want nothing there", err)
+				}
+			case tc.file:
+				if got := entryNames(t, target); len(got) != 1 || got[0] != "keep" {
+					t.Errorf("the target holds %v, want keep only", got)
+				}
+			default:
+				if got := entryNames(t, target); len(got) != 0 {
+					t.Errorf("the target holds %v, want nothing", got)
+				}
+			}
+		})
 	}
-	h.mu.Lock()
-	h.dir = fifo
-	h.remakeFolder()
-	h.mu.Unlock()
-	if err := h.removeOwnFolderFile(fifo); err == nil {
-		t.Error("remove of a FIFO: nil, want an error")
-	}
-	if fi, err := os.Lstat(fifo); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
-		t.Errorf("the FIFO: %v, %v, want it kept", fi, err)
-	}
-	if err := h.removeOwnFolderFile(link); err == nil {
-		t.Error("remove of a link: nil, want an error")
-	}
-	h.Close()
 }
 
 // TestUnsearchableDaemonFolderTexts: with mode 0000 4c111e86 answers the
@@ -104,5 +160,40 @@ func TestSearchOnlyDaemonFolderProbe(t *testing.T) {
 	}
 	if n := len(probeCalls(calls)); n != 1 {
 		t.Errorf("git.info made %d calls about the repository, want 1", n)
+	}
+}
+
+// TestRemoveOwnFolderFileHomeGuard: a path that the home guard refuses stays.
+func TestRemoveOwnFolderFileHomeGuard(t *testing.T) {
+	run := resolveTestRoot(t, t.TempDir())
+	h := NewShadowHost(run)
+	file := filepath.Join(run, shadowRootName, "home")
+	mustWrite(t, file, "")
+	t.Setenv("HOME", file)
+	if err := h.removeOwnFolderFile(file); err == nil {
+		t.Error("remove of the home path: nil, want an error")
+	}
+	if _, err := os.Lstat(file); err != nil {
+		t.Errorf("the home path: %v, want it kept", err)
+	}
+}
+
+// TestRemoveOwnFolderFileAtKeepsAFolder: the remove itself never takes a
+// folder, also an empty one that took the place of the file after the test.
+func TestRemoveOwnFolderFileAtKeepsAFolder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "empty"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := removeOwnFolderFileAt(root, "empty"); err == nil {
+		t.Error("remove of an empty folder: nil, want an error")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "empty")); err != nil {
+		t.Errorf("the empty folder: %v, want it kept", err)
 	}
 }

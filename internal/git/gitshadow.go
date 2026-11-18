@@ -442,15 +442,19 @@ var openShadowLock = openShadowLockFile
 // the same pid and another hex part (measured on Linux). No test ran then. A
 // folder that cannot be made again is not measured: the request goes on.
 //
-// An empty file at the folder goes, and a folder of the daemon is there again.
-// Every request then succeeds on 4c111e86 (measured on Linux). Whether its name
-// is new is not measured: here it has a new hex part. Only a regular file goes
-// (removeOwnFolderFile). macOS and Windows are claustrum's own. Any other entry
-// at the path stays, and the request fails as before (not measured).
+// An empty file or a FIFO at the folder goes, and a folder of the daemon is
+// there again (4c111e86, measured on Linux). A link there goes as a link, and
+// the new folder has another hex part. Its target gets nothing (4c111e86,
+// measured on Linux and macOS, also for a link to nothing). Every request then
+// succeeds. Here the new folder always has a new hex part. That name is in no
+// reply but an error text. Other kinds that are no folder go too
+// (removeOwnFolderFile, claustrum's own). A folder at the path stays. Only the
+// Lstat looks at the entry, so a FIFO is never opened. Windows is claustrum's
+// own: there only a regular file goes.
 func (h *ShadowHost) remakeFolder() {
 	if h.dir != "" {
 		if fi, err := os.Lstat(h.dir); err == nil {
-			if !fi.Mode().IsRegular() || h.removeOwnFolderFile(h.dir) != nil {
+			if !goesAtFolderPath(fi.Mode()) || h.removeOwnFolderFile(h.dir) != nil {
 				return
 			}
 		}
@@ -503,13 +507,12 @@ func (h *ShadowHost) removeLink(name string) error {
 }
 
 // removeOwnFolderFile deletes the entry at dir, the path of the folder of this
-// daemon, when that entry is a regular file. dir must be a
-// name in the folder of all daemons. The name comes from makeFolder, never from
-// a request. It is one plain remove through a root at the folder of all
-// daemons, after homeguard.WipesHomeDir, and never a tree delete. The kind is
-// tested again through that root. In the short window after that test, a new
-// entry there goes by the same plain remove: a link as a link, an empty folder
-// by one rmdir. A folder with content stays.
+// daemon, when goesAtFolderPath allows its kind. dir must be a name in the
+// folder of all daemons. The name comes from makeFolder, never from a request
+// or a link target. After homeguard.WipesHomeDir, a root at the folder of all
+// daemons tests the kind by Lstat, and one remove of a file follows
+// (removeOwnFolderFileAt). It is never a tree delete. On Linux and macOS it
+// never removes a folder, and a link goes as a link, never its target.
 func (h *ShadowHost) removeOwnFolderFile(dir string) error {
 	base := filepath.Join(h.runDir, shadowRootName)
 	if filepath.Dir(dir) != base {
@@ -528,10 +531,10 @@ func (h *ShadowHost) removeOwnFolderFile(dir string) error {
 	if err != nil {
 		return err
 	}
-	if !fi.Mode().IsRegular() {
-		return errors.New("the entry at the folder of the daemon is no regular file")
+	if !goesAtFolderPath(fi.Mode()) {
+		return errors.New("the entry at the folder of the daemon stays")
 	}
-	return root.Remove(name)
+	return removeOwnFolderFileAt(root, name)
 }
 
 // Close removes the folder of this daemon at a shutdown. 5fd08069 removes it at

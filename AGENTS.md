@@ -21,7 +21,7 @@ daemon. The wire surface is the product.
 | Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run took more than 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit: a race run took over 9 minutes, near the 10-minute `go test` default |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -203,13 +203,13 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
-  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`, `removeOwnFolderFile`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the seed copy remove and the keep swap
+  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy, request folder, seed copy and keep swap sites
   (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
-  ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by
-  `removeTempRequestDir`, after `homeguard.WipesHomeDir`. Never widen: `removeOwnFolderFile` removes a regular file only, at the daemon's folder path.
-- **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a `git-shadow` copy (`removeEmptyHeadFolder`). Never widen: no tree.
-- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the folder of the daemon keeps its identity of the mkdir. Linux runs it through an `O_PATH` handle. macOS tests the identity, then runs it by path. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the folder of the daemon has the identity of the mkdir.
+  ([D8](docs/DIVERGENCES.md#d8)). Outside it,
+  `removeTempRequestDir` removes a request's temp folder after `homeguard.WipesHomeDir`. Never widen: `removeOwnFolderFile` removes a non-folder entry at the daemon's folder path by one file `unlinkat`, never a tree or link target.
+- **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a copy (`removeEmptyHeadFolder`). Never widen: no tree.
+- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the daemon folder keeps its mkdir identity. Linux uses an `O_PATH` handle. macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the folder of the daemon has the identity of the mkdir.
 - **The LFS store.** On Linux and macOS a create in `shadow` removes `.claude-<8 hex>-<oid>` temp files from one shard
   of `<git dir>/lfs/objects`, each by one file `unlinkat` after `homeguard.WipesHomeDir` (`removeLFSStoreEntry`,
   [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). Never widen: Remove no other
@@ -218,7 +218,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   seed just made, by one plain unlinkat, never a tree. The keep (macOS: claustrum's own) renames its `.kept-<oid>` link over the downloaded copy
   in the private store, after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only the `.kept-<oid>` link of the file that the keep just wrote, and only onto that copy.
 - **The LFS space stop.** On Linux and macOS a Git LFS download can leave under a tenth of the free space at the start. Then the
-  group of the read-tree call gets one `SIGKILL` (`lfsRoomWatch`). It goes through `reapCheckoutGroup` after `gitStillRuns`, and the private folder then goes
+  group of the read-tree call gets one `SIGKILL` (`lfsRoomWatch`). It goes through `reapCheckoutGroup` after `gitStillRuns`, and the private folder goes
   by its usual remove before the reply ([the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)).
   Never widen: send it only to the group of the checkout git that this create started, and none after its reap.
 - **`session-folders`.** One plain `os.Root.Remove` by name, of the temp file of a failed write and in the prune ([session

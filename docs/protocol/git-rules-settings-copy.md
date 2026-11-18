@@ -137,9 +137,10 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `git-shadow` stays (Linux, macOS and Windows).
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
-- An empty file there goes by one plain remove, and the next request makes the
-  folder again and succeeds (`4c111e86`, measured on Linux). Any other entry
-  stays, and the request fails (not measured). macOS is claustrum's own.
+- A file, a FIFO or a link there goes by one file `unlinkat`, never the link
+  target, and a folder with another hex part is made. Requests
+  succeed (`4c111e86` on Linux, the link also on macOS). Other kinds but
+  a folder, a file or FIFO on macOS, and Windows (a file only) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the path of the git directory. A linked
   worktree uses the folder of its main repository.
@@ -211,8 +212,7 @@ held lock keeps the folder of a live daemon.
 - `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
   follows. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
-- The rows show 8 days removed and 1 hour kept. Linux measured a folder of another
-  host's name, and macOS one of this host's name form.
+- The rows show 8 days removed and 1 hour kept.
 - Another lock error keeps the entry, and so does a FIFO lock on Linux. A link whose
   target lock gives an error stays. All three are claustrum's own, not measured.
 - A folder with no lock file that is less than 1 minute old stays and gets none
