@@ -671,7 +671,7 @@ The main `<reason>` texts of a dropped record and of a group that fails the test
 
 #### A long id in a line
 
-The start, failed-start, exit and `Starting <stream> streaming` lines cut an `<id>` of more than 8 bytes to its first 8 bytes and `…` (`c9125eb8` and `4c111e86`, measured on Linux, macOS and Windows). The [unattended end](protocol/process-link-bound.md#the-unattended-end) line cuts it too (`c9125eb8` and `4c111e86`, measured on Linux). So does the line of a lost temp folder (`4c111e86`, measured on Linux and macOS). claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
+The start, failed-start, exit and `Starting <stream> streaming` lines cut an `<id>` over 8 bytes to its first 8 bytes and `…`. `c9125eb8` and `4c111e86` do so, measured on Linux, macOS and Windows. The [unattended end](protocol/process-link-bound.md#the-unattended-end) line cuts it too (`c9125eb8` and `4c111e86`, measured on Linux). So does the line of a lost temp folder (`4c111e86`, measured on Linux and macOS). claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
 
 ## Orphan-exit self-probe
 
