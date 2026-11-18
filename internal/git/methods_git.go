@@ -1224,7 +1224,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	}
 	// With no git on PATH, 4c111e86 answers not_a_repo after the marker test and
 	// before the count check, also with a worktreeRoot. Nothing is made (measured
-	// on Linux and macOS, and on Windows for a missing baseRepo). The order
+	// on Linux and macOS, and on Windows for a missing baseRepo). On Windows an
+	// existing baseRepo gets it too (claustrum's own, not measured). The order
 	// against a trust refusal is not measured.
 	if gitLookupError() != nil {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
