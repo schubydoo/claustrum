@@ -140,9 +140,10 @@ func TestProbeFolderInAWriteSearchDaemonFolder(t *testing.T) {
 	}
 }
 
-// TestProbeFolderBySearchRefusals: only a permission error of a folder of
-// mode 0300 passes, and `.probe` must be a real folder. A link at `.probe`
-// gets the open error, and nothing is made in its target.
+// TestProbeFolderBySearchRefusals: only a permission error passes, and
+// `.probe` must be a real folder. Mode 0100 with no `.probe` gets the error of
+// its mkdir. A link at `.probe` gets the open error, and nothing is made in
+// its target.
 func TestProbeFolderBySearchRefusals(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the root user opens a folder of any mode")
@@ -156,8 +157,9 @@ func TestProbeFolderBySearchRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	if _, err := probeFolderBySearch(dir, openErr); err != openErr {
-		t.Errorf("mode 0100: %v, want the open error", err)
+	want := "mkdir " + filepath.Join(dir, shadowProbeName) + ": permission denied"
+	if _, err := probeFolderBySearch(dir, openErr); err == nil || err.Error() != want {
+		t.Errorf("mode 0100: %v, want %s", err, want)
 	}
 	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -178,9 +180,10 @@ func TestProbeFolderBySearchRefusals(t *testing.T) {
 }
 
 // TestWriteSearchStepsKeepOtherOpenErrors: a folder of the daemon whose owner
-// bits allow no write and search gets the error of its open at `.probe` and
-// at `.s<n>`, as before (claustrum's own, not measured). Without the mode test
-// of writeSearchFolder the steps run by path.
+// bits allow no write and search gets the error of its open at `.s<n>`, as
+// before (claustrum's own, not measured). Without the mode test of
+// writeSearchFolder that step runs by path. At `.probe` the mkdir by its path
+// fails with its own error.
 func TestWriteSearchStepsKeepOtherOpenErrors(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the root user opens a folder of any mode")
@@ -194,10 +197,11 @@ func TestWriteSearchStepsKeepOtherOpenErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	want := "open " + dir + ": permission denied"
-	if err := NewShadowHost(run).prepareProbeFolder(dir); err == nil || err.Error() != want {
-		t.Errorf("prepareProbeFolder = %v, want %s", err, want)
+	probeWant := "mkdir " + filepath.Join(dir, shadowProbeName) + ": permission denied"
+	if err := NewShadowHost(run).prepareProbeFolder(dir); err == nil || err.Error() != probeWant {
+		t.Errorf("prepareProbeFolder = %v, want %s", err, probeWant)
 	}
+	want := "open " + dir + ": permission denied"
 	u := gitUse{host: NewShadowHost(run), folder: dir}
 	if _, _, err := u.requestDir(addCopyPrefix, ""); err == nil || err.Error() != want {
 		t.Errorf("requestDir = %v, want %s", err, want)

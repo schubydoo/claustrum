@@ -34,8 +34,8 @@ func ConfineProcess(*os.Process, ChildJobs) (*ProcGroup, error) { return &ProcGr
 // ResumeChild has nothing to do on Unix: no child starts suspended.
 func ResumeChild(*os.Process, *syscall.SysProcAttr) error { return nil }
 
-// quietShutdownExit drops the exited line of a child that the shutdown sweep ended
-// (see waitReapAndDrain). Measured on Linux.
+// quietShutdownExit lets shutdownExitQuiet drop the exited line of a child that the
+// shutdown sweep ended. Measured on macOS, and on Linux for a temp-root end.
 const quietShutdownExit = true
 
 // childJobsAtStart gives JobsOff and logs no line: Linux and macOS have no jobs. The

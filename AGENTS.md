@@ -205,13 +205,13 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
-  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the `.probe` of the folder of the daemon (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the seed copy remove and the keep swap
+  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the seed copy remove and the keep swap
   (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
-  ([D8](docs/DIVERGENCES.md#d8)). Outside it, a temp folder of a request goes by
-  `removeTempRequestDir`, after `homeguard.WipesHomeDir`.
+  ([D8](docs/DIVERGENCES.md#d8)). Never widen: `removeOwnFolderFile` removes one entry at the daemon's folder path, never a tree, link target or (Linux, macOS) folder ([rule](docs/protocol/git-rules-settings-copy.md#the-folders)). Outside `git-shadow`,
+  `removeTempRequestDir` removes a request's temp folder after `homeguard.WipesHomeDir`.
 - **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a `git-shadow` copy (`removeEmptyHeadFolder`). Never widen: no tree.
-- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a folder of the daemon of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the folder of the daemon keeps its identity of the mkdir. Linux runs it through an `O_PATH` handle. macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the folder of the daemon has the identity of the mkdir.
+- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the daemon folder keeps its mkdir identity. Linux uses an `O_PATH` handle, and macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a daemon folder of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the daemon folder has its mkdir identity.
 - **The LFS store.** On Linux and macOS a create in `shadow` removes `.claude-<8 hex>-<oid>` temp files from one shard
   of `<git dir>/lfs/objects`, each by one file `unlinkat` after `homeguard.WipesHomeDir` (`removeLFSStoreEntry`,
   [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). Never widen: Remove no other
