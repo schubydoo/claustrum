@@ -507,10 +507,10 @@ func removeEmptyHeadFolder(root *os.Root, dir string) error {
 // repoFolderBySearch opens the folder path of a repository when the folder of
 // the daemon cannot be opened (openErr). A folder of the daemon with mode 0100
 // can be searched but not read. 4c111e86 then answers a create with the mkdir
-// error of `.s<n>`, as with mode 0500 (measured on Linux). The folder must
-// already be there as a real folder, and the opened folder must be the folder
-// of its Lstat. Else the result is nil, and the request gets openErr
-// (claustrum's own, not measured).
+// error of `.s<n>` (measured on Linux and macOS), as with mode 0500 (measured
+// on Linux). The folder must already be there as a real folder, and the
+// opened folder must be the folder of its Lstat. Else the result is nil, and
+// the request gets openErr (claustrum's own, not measured).
 func repoFolderBySearch(path string, openErr error) *os.Root {
 	if !errors.Is(openErr, fs.ErrPermission) {
 		return nil
