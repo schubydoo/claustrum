@@ -66,12 +66,13 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
     `path` that holds its git directory through its target. A refusal names that
     file. A junction to a bare repository answers as that repository
     (`4c111e86`, measured). Other methods, a daemon `GIT_DIR` and a target with
-    no drive letter keep the pin, and a junction chain is refused (claustrum's
+    no drive letter keep the pin (claustrum's own, not measured). A junction chain
+    reads its first target, so one to a bare repository is refused (claustrum's
     own, not measured).
 
 ### How the daemon judges the git directory
 
-The daemon then judges the git directory G:
+The daemon judges the git directory G:
 
 - G is a linked-worktree entry when its parent is named `worktrees`, its own name
   is not `.git`, and its grandparent passes the git-directory test. The entries of
@@ -153,8 +154,8 @@ these steps:
   Each failure of the copy step there gives that answer (claustrum's own, not measured).
 - On Linux and macOS a `GIT_DIR` that names a `.git` file means "no repository".
   On Windows that `.git` file is trusted and pinned to itself. Without
-  `"shadowDirOff":true` class 2 of
-  [Repository config refusals](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
+  `"shadowDirOff":true`
+  [class 2](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
 - Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the
   daemon's environment sets `GIT_COMMON_DIR` (measured on Linux and Windows). A
   relative value is first joined to the request folder (measured on Linux and
@@ -484,8 +485,7 @@ git that walks past a FIFO `.git`:
   With `worktreeRoot` the remove gives no answer in 40 s, and nothing is deleted. It
   waits in `git worktree list --porcelain -z`.
 - A remove of a worktree whose entry has a `commondir` regular file of 2 MiB
-  succeeds and deletes the folder, the entry and the branch (measured on Linux and
-  macOS).
+  succeeds and deletes the folder, the entry and the branch.
 - A `gitdir` record FIFO of the entry of the worktree: the remove without
   `worktreeRoot` succeeds, the folder and the branch go, and the entry stays. A
   locked worktree there gets the same success, and the entry and its `locked` file
@@ -495,11 +495,10 @@ git that walks past a FIFO `.git`:
   create in that repository waits in git's own `git worktree add`. It also waits
   with `timeoutMs` 3000 (measured on Linux only).
 
-The [time limit](git-rules-calls.md#time-limits-of-git-calls) of the add ends that create (from the
-code). A device file or a socket as a `commondir` file or a `gitdir` record is no
-usable file (from the code). claustrum reads nothing from a FIFO that a writer
-opens during the request (from the code). After `git worktree add`, a `commondir`
+The [time limit](git-rules-calls.md#time-limits-of-git-calls) of the add ends that create. A device file or a socket as a `commondir` file or a `gitdir` record is no
+usable file. claustrum reads nothing from a FIFO that a writer
+opens during the request. After `git worktree add`, a `commondir`
 of the git directory of `baseRepo` that is not a regular file counts as none, so
-that git directory is its own common directory (from the code). A FIFO as the
+that git directory is its own common directory. These four rules are all from the code. A FIFO as the
 config is in
 [Repository config refusals](git-rules-config.md#repository-config-refusals).
