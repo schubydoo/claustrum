@@ -26,7 +26,7 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. Requ
 | `isRepo` | If the daemon accepts `path` as a repository, `true`. |
 | `branches` | The short names of the local branches, in the byte order of the names. |
 
-Each response has both members. The list has the local branches only. It has no remote-tracking branch and no tag, and no member says which branch is checked out. A repository with no commit gives `"isRepo": true` and an empty list.
+Each response has both members. The list has no remote-tracking branch and no tag, and no member says which branch is checked out. A repository with no commit gives `"isRepo": true` and an empty list.
 
 If the daemon finds no repository, the response is not an error:
 
@@ -34,14 +34,14 @@ If the daemon finds no repository, the response is not an error:
 {"isRepo": false, "branches": []}
 ```
 
-`"isRepo": false` has more causes than a missing repository. The main ones:
+The main causes of `"isRepo": false`:
 
 - `path` is not inside a git repository.
 - `refs` of mode 0600 on Linux and macOS (build `52d82f0a`).
-- `path` does not resolve. For example, it does not exist. That is not an error.
-- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file or folder `.claude-managed-worktrees` (`b3081b51`, measured on Linux). A marker beside a `.git` folder, also the repository's own, does not count, and the walk goes up (`b3081b51`, measured on Linux, macOS and Windows). A `.git` file or dangling link does the same (`4c111e86`, measured by a create on Linux, the link also on macOS). A marker above the path as sent counts too (`b3081b51`, measured on Linux). That walk tests the marker only, not `.claude/worktrees`, and folds `..` by name. These two are claustrum's own, not measured. A dangling marker link counts (`4c111e86`, measured on Linux by a create). macOS for the marker link, Windows and this method are claustrum's own. Send the base repository instead. `git.list_branches` ignores a `baseRepo` member (measured on Linux). The daemon makes that test on its own working directory too.
-- The daemon cannot find git on its `PATH`, and `path` holds no repository (measured on Linux). A request with `"shadowDirOff":true` gets that answer from the failed listing too (from the code, not measured). Else a repository gets the failure of the daemon's first start test (from the code, not measured).
-- git itself does not accept the repository. For example, the repository belongs to another user and git has no `safe.directory` line for it.
+- `path` does not resolve. For example, it does not exist.
+- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file or folder `.claude-managed-worktrees` (`b3081b51`, measured on Linux). A marker beside a `.git` folder, also the repository's own, does not count, and the walk goes up (`b3081b51`, measured on Linux, macOS and Windows). A `.git` file or dangling link does the same (`4c111e86`, measured by a create on Linux, the link also by a create and a remove with `worktreeRoot` on macOS). A dangling marker link counts (`4c111e86`, measured on Linux by a create). For both links, Windows, this method, macOS for the marker link and a remove with no `worktreeRoot` are claustrum's own. A marker above the path as sent counts too (`b3081b51`, measured on Linux). That walk tests the marker only, not `.claude/worktrees`, and folds `..` by name. These two are claustrum's own, not measured. Send the path of the base repository to list its branches. `git.list_branches` ignores a `baseRepo` member (measured on Linux). The daemon makes that test on its own working directory too.
+- The daemon cannot find git on its `PATH`, and `path` holds no repository (measured on Linux). A request with `"shadowDirOff":true` gets it from the failed listing too (from the code, not measured). Else a repository gets the failure of the daemon's first start test (from the code, not measured).
+- git does not accept the repository. For example, the repository belongs to another user and git has no `safe.directory` line.
 
 ## Errors
 
