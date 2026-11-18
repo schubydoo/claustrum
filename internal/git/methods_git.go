@@ -891,9 +891,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if bad != nil {
 		return *bad
 	}
-	// On Windows a \\?\UNC\ path and a path on a share that cannot be found are
-	// refused (measured on Windows, unlookablePathRefusal). No git call runs (from
-	// the code). Its place first is claustrum's own, not measured.
+	// On Windows a \\?\UNC\ path, a path on a share that cannot be found or
+	// that denies every account, and a directory link on a share are refused
+	// (measured on Windows, unlookablePathRefusal). No git call runs (from the
+	// code). Its place first is claustrum's own, not measured.
 	if msg := unlookablePathRefusal(p.Path); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -2755,8 +2756,9 @@ func removeRefusal(req *gitCall) func(msg string) rpc.Response {
 
 func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Response {
 	refuse := removeRefusal(req)
-	// On Windows a \\?\UNC\ baseRepo and a baseRepo on a share that cannot be found
-	// are refused (measured on Windows, unlookablePathRefusal). No git call and no
+	// On Windows a \\?\UNC\ baseRepo, a baseRepo on a share that cannot be found or
+	// that denies every account, and a directory link on a share are refused
+	// (measured on Windows, unlookablePathRefusal). No git call and no
 	// delete run (from the code). Its place first and the test of baseRepo alone
 	// are claustrum's own, not measured: the rows send worktreePath below baseRepo.
 	if msg := unlookablePathRefusal(repo); msg != "" {
