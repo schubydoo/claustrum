@@ -830,12 +830,13 @@ func gitStatus(req *gitCall) rpc.Response {
 	//
 	// A file link from that folder into another repository makes git find the other
 	// repository. 4c111e86 answers "no repository" there, not the "disagree" text
-	// (measured on Linux). macOS is claustrum's own.
-	gateTrust, noGate, folderGate := t, false, false
+	// (measured on Linux). macOS is claustrum's own. A regular file keeps the
+	// "disagree" text of askGit (linkOutOfFolder).
+	gateTrust, noGate, outLink := t, false, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
 		t.verdict == gitDirTrusted && t.pinCommonDir == "" {
 		if folder := readGitDirTrust(filepath.Dir(p.BaseRepo), false); folder.verdict == gitDirTrusted && folder.pinCommonDir != "" {
-			gateTrust, folderGate = folder, true
+			gateTrust, outLink = folder, linkOutOfFolder(p.BaseRepo)
 		} else {
 			noGate = true
 		}
@@ -843,7 +844,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	if noGate {
 		req.use = gitUse{stop: req.stop}
 	} else if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, p.BaseRepo); msg != "" {
-		if folderGate && req.gitDisagreed {
+		if outLink && req.gitDisagreed {
 			return notRepo
 		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
@@ -924,6 +925,20 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
 	return rpc.OKResult(req.ID, rpc.GitStatusReply{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
+}
+
+// linkOutOfFolder reports whether p is a symbolic link whose resolved target is
+// in another folder than the resolved folder of p.
+func linkOutOfFolder(p string) bool {
+	if fi, err := os.Lstat(p); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	target, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	folder, err := filepath.EvalSymlinks(filepath.Dir(p))
+	return err == nil && filepath.Dir(target) != folder
 }
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.

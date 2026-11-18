@@ -69,3 +69,22 @@ func TestGitStatusFileLinkIntoOtherRepoNotRepo(t *testing.T) {
 		t.Errorf("frame = %s\nwant %s", raw, statusNotRepo)
 	}
 }
+
+// git.status on a regular file inside a repository keeps the "disagree" text
+// when git names another git directory, as a folder baseRepo does. Only a file
+// link out of its folder answers "no repository".
+func TestGitStatusRegularFileDisagreeKeepsError(t *testing.T) {
+	f := newShadowFixture(t)
+	setProbeClock(t)
+	file := filepath.Join(f.repo, "README.disagree")
+	if err := os.WriteFile(file, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	answerProbe(t, 0, "/elsewhere/.git\n", "")
+	raw, _ := f.call(t, "git.status", map[string]any{"path": file, "baseRepo": file})
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"git and Claude disagree about which repository holds this folder: from \"` +
+		f.repo + `\" git finds \"/elsewhere/.git\", Claude finds \"` + f.gitDir + `\"; try again"}}`
+	if raw != want {
+		t.Errorf("frame = %s\nwant %s", raw, want)
+	}
+}
