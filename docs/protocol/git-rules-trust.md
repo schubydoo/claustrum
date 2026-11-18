@@ -28,8 +28,8 @@ the daemon walks up from the request folder:
   before `..`. The walk then starts at the spelled path. `git.status` resolves the
   path first. If that resolve fails, it answers there (all from the code).
 - On Windows a refusal of a config on `git.info` follows the spelled start too. In
-  the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
-  [Repository config refusals](git-rules-config.md#repository-config-refusals). A
+  the state `shadow` without `"shadowDirOff":true`, it is the
+  [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
@@ -232,8 +232,8 @@ on `PATH`, the exec error replaces both texts (class 1 below).
 ### A folder with no repository
 
 Where the trust check finds no repository, the daemon still runs the configuration
-listing in that folder. In a plain folder it carries `GIT_DIR=<null>` (see
-[The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
+listing in that folder. In a plain folder it carries `GIT_DIR=<null>`
+([The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
 are those of the "no repository" column. A listing that fails by class 3
 below gives the "refused" column. A `.git` file to a gone entry under the
 `worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux, and
@@ -354,7 +354,7 @@ On Windows git cannot start in some paths that exist, and the listing fails by
 class 3 with the start error `fork/exec <git.exe path>: The directory name is
 invalid.`. `<git.exe path>` is the git that `PATH` resolves. The hooks refusal
 with that error answers these requests in the "refused" frame of
-[Trust refusal texts and frames](#trust-refusal-texts-and-frames),
+[Trust refusal texts](#trust-refusal-texts-and-frames),
 and nothing changes on disk:
 
 - `git.info` with `path` a regular file in a plain folder or in a repository, a
@@ -409,8 +409,8 @@ this rule is measured on Windows. For the "cannot run" text it is claustrum's ow
 
 With the `GIT_COMMON_DIR` pin, git names a corrupt config by its absolute path
 (measured on Linux and macOS). On claustrum a syntax error in a config file of the
-repository gets the class 1 text first: see
-[Repository config refusals](git-rules-config.md#repository-config-refusals).
+repository gets the
+[class 1 text](git-rules-config.md#repository-config-refusals) first.
 
 ## The object sources on Windows
 
@@ -498,4 +498,5 @@ opens during the request (from the code). After `git worktree add`, a `commondir
 of the git directory of `baseRepo` that is not a regular file counts as none, so
 that git directory is its own common directory (from the code). A FIFO as the
 config is in
-[Repository config refusals](git-rules-config.md#repository-config-refusals).
+[Repository config refusals](git-rules-config.md#repository-config-refusals), and one at a folder of the daemon in
+[the folders](git-rules-settings-copy.md#the-folders).

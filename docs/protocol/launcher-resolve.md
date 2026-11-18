@@ -20,7 +20,7 @@ An untagged rule on this page matches build `89cb6289`, measured on Linux. A rul
 
 ## Response
 
-The result has one of four shapes. Each keeps this member order:
+The result has one of four shapes, in this member order:
 
 ```jsonc
 {"status":"none"}
@@ -32,11 +32,11 @@ The result has one of four shapes. Each keeps this member order:
 | Status | Meaning |
 |---|---|
 | `none` | No settings file sets a launcher. |
-| `usable` | `argv` is the launcher and its arguments. `source` is the settings file that set the value. |
+| `usable` | `argv` is the launcher and its arguments. `source` is the settings file that set it. |
 | `unusable` | A value is set, but the daemon refuses it. `reason` says why. |
 | `unreadable` | A settings file or the drop-in folder cannot be read. `path` names it. |
 
-On macOS `fault` follows `reason`: `missing` for a missing launcher, folder or file that cannot run, `not_absolute` for a bare name (`4c111e86`, measured on macOS). Other refusals send none (claustrum's own).
+On macOS `fault` follows `reason`: `missing` for a missing launcher, folder or file that cannot run, `not_absolute` for a bare name (`4c111e86`, measured on macOS). A `processWrapper` of `5` gets `other` (`4c111e86`, measured on macOS). Any other value that is not a string sends `other`, other refusals none (claustrum's own).
 
 With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, measured on Linux):
 
@@ -45,9 +45,9 @@ With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, me
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
 
-`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). It is `false` for a file that is not a JSON object, a file that cannot be read and a file over 2 MiB too (claustrum's own, not measured). On Linux a `launcherCheck` with no `path` gets the second shape with the fault `not_absolute` (`c9125eb8`, measured on Linux).
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or drop-in holds any key but `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). Also `false`: a file that is not a JSON object, cannot be read or is over 2 MiB (claustrum's own, not measured). On Linux a `launcherCheck` with no `path` gets the second shape and fault `not_absolute` (`c9125eb8`, measured on Linux).
 
-The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
+The daemon reads the files on every call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
 The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` come out as JSON escapes, and so does U+2028 in an `argv`. U+0085, U+FFFD and the dash U+2014 (bytes `e2 80 94`) of the reason texts stay raw.
 

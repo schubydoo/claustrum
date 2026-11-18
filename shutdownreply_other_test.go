@@ -3,62 +3,82 @@
 package main
 
 import (
-	"bufio"
+	"errors"
 	"io"
-	"net"
+	"os"
 	"testing"
 	"time"
-
-	"github.com/schubydoo/claustrum/internal/conn"
 )
 
-// The server.shutdown handler returns its reply as soon as the stop has started. It
-// does not wait for the close of the connections. 5fd08069 answers before the close
-// in part of the runs (measured). The stand-in teardown here waits for the reply
-// for at most 5 s after the shutdown signal. Then it drops the connections. The
-// reply must reach the client before that drop.
-func TestShutdownReplyIsWrittenBeforeTheClose(t *testing.T) {
-	// A long wait makes a reply that waits for the drop miss the 5 s stand-in.
-	const want = `{"jsonrpc":"2.0","id":7,"result":{"ok":true},"end":{"at":0,"len":44}}` + "\n"
+// On Linux and macOS no byte of the server.shutdown reply reaches the client before
+// the teardown starts.
+func TestShutdownReplyWaitsForTheTeardown(t *testing.T) {
+	s := newTestServer(t)
+	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: 5 * time.Second}
+	client := startShutdownOnPipe(t, s)
+
+	_ = client.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	buf := make([]byte, 256)
+	if n, err := client.Read(buf); n != 0 || !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("before the teardown the client read %q (%v), want no bytes", buf[:n], err)
+	}
+	s.startTeardown()
+	s.dropConns()
+}
+
+// After the start of the teardown the reply can win: with the drop held back, the
+// client reads the whole frame. The reply does not wait for the drop. This test and
+// the next pin the two arms of the race. They are not the oracles of the rule:
+// TestShutdownReplyWaitsForTheTeardown and TestCloseAllReleasesTheShutdownReplyWait are.
+func TestShutdownReplyCanWinTheClose(t *testing.T) {
 	s := newTestServer(t)
 	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: time.Minute}
-	srv, client := net.Pipe()
-	t.Cleanup(func() { _ = client.Close() })
-	c := conn.New(srv, nil, 0, nil, nil, nil)
-	s.mu.Lock()
-	s.conns[c] = struct{}{}
-	s.mu.Unlock()
-	serveConnForTest(t, s, c)
+	client := startShutdownOnPipe(t, s)
 
-	var line string
-	read := make(chan struct{})
-	go func() {
-		line, _ = bufio.NewReader(client).ReadString('\n')
-		close(read)
-	}()
-	dropped := make(chan struct{})
-	go func() {
-		<-s.shutdown
-		select {
-		case <-read:
-		case <-time.After(5 * time.Second):
-		}
-		s.dropConns()
-		close(dropped)
-	}()
+	s.startTeardown()
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	buf := make([]byte, len(shutdownReplyFrame))
+	if _, err := io.ReadFull(client, buf); err != nil || string(buf) != shutdownReplyFrame {
+		t.Fatalf("before the drop the client read %q (%v), want %q", buf, err, shutdownReplyFrame)
+	}
+	s.dropConns()
+	if rest, err := io.ReadAll(client); err != nil || len(rest) != 0 {
+		t.Errorf("after the frame the client read %q (%v), want a clean EOF", rest, err)
+	}
+}
 
-	if _, err := io.WriteString(client, `{"jsonrpc":"2.0","id":7,"method":"server.shutdown"}`+"\n"); err != nil {
-		t.Fatal(err)
+// After the start of the teardown the close can win: a drop before the client reads
+// leaves it a clean EOF with no bytes. The pipe holds the write until a read. It pins
+// one arm of the race and is not an oracle of the rule.
+func TestShutdownCloseCanWinTheReply(t *testing.T) {
+	s := newTestServer(t)
+	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: time.Minute}
+	client := startShutdownOnPipe(t, s)
+
+	s.startTeardown()
+	s.dropConns()
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if got, err := io.ReadAll(client); err != nil || len(got) != 0 {
+		t.Errorf("after the drop the client read %q (%v), want a clean EOF with no bytes", got, err)
 	}
-	for _, ch := range []chan struct{}{dropped, read} {
-		select {
-		case <-ch:
-		case <-time.After(10 * time.Second):
-			t.Fatal("the shutdown did not finish")
-		}
-	}
-	if line != want {
-		t.Errorf("shutdown connection got %q before the close, want %q", line, want)
+}
+
+// closeAll releases a reply that waits for the start of the teardown, long before the
+// bound.
+func TestCloseAllReleasesTheShutdownReplyWait(t *testing.T) {
+	s, sock := bootLineServer(t, false)
+	s.replyRule = &shutdownReplyRule{awaitsDrop: shutdownReplyAwaitsDrop, wait: time.Minute}
+	released := make(chan struct{})
+	go func() {
+		s.awaitShutdownReplyTurn()
+		close(released)
+	}()
+	s.signalShutdown()
+	s.closeAll(sock)
+	select {
+	case <-released:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closeAll did not release awaitShutdownReplyTurn")
 	}
 }
 
