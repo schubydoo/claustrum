@@ -116,7 +116,7 @@ func TestShadowFolderLinkGoesAsALink(t *testing.T) {
 
 // TestUnsearchableDaemonFolderTexts: with mode 0000 4c111e86 answers the
 // mkdir of the folder of the repository, and at `.probe` the mkdir of
-// `.probe` (measured on Linux and macOS).
+// `.probe` (measured on Linux, and in `shadow` on macOS).
 func TestUnsearchableDaemonFolderTexts(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the root user opens a folder of mode 0000")
@@ -140,7 +140,7 @@ func TestUnsearchableDaemonFolderTexts(t *testing.T) {
 
 // TestSearchOnlyDaemonFolderProbe: with mode 0100 the call about the
 // repository runs with the `.probe` that is there, and git.info succeeds, as
-// on 4c111e86 after the kept answer is over (measured on Linux and macOS).
+// on 4c111e86 after the kept answer is over (measured on Linux, and in `shadow` on macOS).
 func TestSearchOnlyDaemonFolderProbe(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the root user opens a folder of mode 0100")

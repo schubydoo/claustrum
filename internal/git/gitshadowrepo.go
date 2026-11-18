@@ -535,7 +535,7 @@ func repoFolderBySearch(path string, openErr error) *os.Root {
 // When the Lstat of path fails with a permission error too, the folder of the
 // daemon cannot be searched. The error is then the one of a mkdir at path,
 // with no call: `mkdir <S>/<32 hex>: permission denied`, as on 4c111e86 with
-// mode 0000 (measured on Linux and macOS). Every other case
+// mode 0000 (measured on Linux, and in `shadow` on macOS). Every other case
 // gets openErr (claustrum's own, not measured).
 func unsearchedRepoError(path string, openErr error) error {
 	if !errors.Is(openErr, fs.ErrPermission) {
