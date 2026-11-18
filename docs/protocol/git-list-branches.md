@@ -24,24 +24,24 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. Requ
 | Member | Meaning |
 |---|---|
 | `isRepo` | If the daemon accepts `path` as a repository, `true`. |
-| `branches` | The short names of the local branches, in the byte order of the names. |
+| `branches` | The short names of the local branches, in byte order. |
 
-Each response has both members. The list has the local branches only. It has no remote-tracking branch and no tag, and no member says which branch is checked out. A repository with no commit gives `"isRepo": true` and an empty list.
+Each response has both members. The list has no remote-tracking branch or tag, and no member names the checked-out branch. A repository with no commit gives `"isRepo": true` and an empty list.
 
-If the daemon finds no repository, the response is not an error:
+With no repository the response is no error:
 
 ```json
 {"isRepo": false, "branches": []}
 ```
 
-`"isRepo": false` has more causes than a missing repository. The main ones:
+The main causes of `"isRepo": false`:
 
 - `path` is not inside a git repository.
-- `refs` of mode 0600 on Linux and macOS (build `52d82f0a`).
-- `path` does not resolve. For example, it does not exist. That is not an error.
-- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file or folder `.claude-managed-worktrees` (`b3081b51`, measured on Linux). So the worktree of a session gives `"isRepo": false`. A marker beside a `.git` folder, also the repository's own, does not count, and the walk goes on up (`b3081b51`, measured on Linux, macOS and Windows). A `.git` file or a link to an existing one does the same (claustrum's own, not measured). A marker above the path as sent counts too (`b3081b51`, measured on Linux). That walk tests the marker only, not the `.claude/worktrees` name, and folds `..` by name. A marker that is a link counts when its target exists. These three are claustrum's own, not measured. Send the path of the base repository to list its branches. `git.list_branches` ignores a `baseRepo` member (measured on Linux). The daemon makes that test on its own working directory too.
-- The daemon cannot find git on its `PATH`, and `path` holds no repository (measured on Linux). A request with `"shadowDirOff":true` gets that answer from the failed listing too (from the code, not measured). Else a repository gets the failure of the daemon's first start test (from the code, not measured).
-- git itself does not accept the repository. For example, the repository belongs to another user and git has no `safe.directory` line for it.
+- `refs` of mode 0600 on Linux and macOS (`52d82f0a`).
+- `path` is missing or does not resolve.
+- `path` is inside a directory of managed worktrees: a path under `.claude/worktrees`, or under a directory with the marker file or folder `.claude-managed-worktrees` (`b3081b51`, measured on Linux). A marker beside a `.git` folder, also the repository's own, does not count, and the walk goes up (`b3081b51`, measured on Linux, macOS and Windows). A dangling `.git` link does the same (`4c111e86`, measured by a create on Linux, by a create on macOS with `worktreeRoot` and by a `worktreeRoot` remove on macOS). So do a `.git` file and looping, live or unreachable links (claustrum's own, not measured). A marker link counts, dangling (`4c111e86`, measured on Linux by a create) or live, looping or unreachable (claustrum's own, not measured). Windows, this method, a marker link on macOS and a remove on Linux or with no `worktreeRoot` are claustrum's own, not measured. A marker above the path as sent counts too (`b3081b51`, measured on Linux). That walk tests the marker only, not `.claude/worktrees`, and folds `..` by name. These two walk rules are claustrum's own, not measured. Send the base repository path to list branches. `git.list_branches` ignores a `baseRepo` member (measured on Linux). The daemon makes that test on its own working directory too.
+- The daemon cannot find git on its `PATH`, and `path` holds no repository (measured on Linux). A request with `"shadowDirOff":true` gets it from the failed listing (from the code, not measured). Else a repository gets the failure of the first start test (from the code, not measured).
+- git does not accept the repository, as for one of another user with no `safe.directory` line.
 
 ## Errors
 
@@ -73,7 +73,7 @@ A warning of git does not become a branch name. If git warns about a broken ref 
 
 ## Differences by system
 
-On Windows a junction before the last component of `path` passes, and git lists the branches (`b3081b51`, measured on Windows). On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path`, or one on a missing share, gets a `-32603` refusal. [UNC refusals](git-rules-trust.md#unc-refusals).
+On Windows a junction before the last component of `path` passes, and git lists the branches (`b3081b51`, measured on Windows). On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path` or a refused share gets a `-32603` refusal. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Differences from the reference
 

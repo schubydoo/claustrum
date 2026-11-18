@@ -200,7 +200,7 @@ A gone worktree directory is no error by itself. After the repository checks, th
     - The path compare of a registration ignores letter case and slash direction. An 8.3 short name does not match a worktree that exists. A `baseRepo` through a `subst` drive or a junction to the repository matches, and the registration goes.
     - A `baseRepo` with a junction before its last name, such as `<out>\JP\repo`, finds a worktree that exists. The leaf, the registration and the branch go (measured on Windows). A parent folder of `baseRepo` that denies List takes the same path, and the remove goes on (claustrum's own, not measured). If the path behind the junction is home or holds home, the reply is `worktreePath must not be or contain the home directory: "<path behind the junction>"`, and nothing is deleted ([D2](../DIVERGENCES.md#d2), claustrum's own, not measured).
     - An alternates file with Windows line endings or too many object directories gets `… is locked: <text>`, and nothing is deleted, also for a gone worktree folder (measured on Windows). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
-    - A `\\?\UNC\` `baseRepo`, or one on a missing share, gets `"success":false`. [UNC refusals](git-rules-trust.md#unc-refusals).
+    - A `\\?\UNC\` `baseRepo` or a refused share gets `"success":false`. [UNC refusals](git-rules-trust.md#unc-refusals).
 
 ## Rare states
 

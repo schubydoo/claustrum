@@ -193,15 +193,15 @@ var probeRebaseFolders = []string{"rebase-merge", "rebase-apply"}
 // Each delete goes through removeProbeEntry, with fixed names in `.probe`. An
 // error names its full path (probePathError).
 //
-// On Linux and macOS a folder of the daemon whose owner bits allow write and
-// search but no read cannot be opened as a root. `.probe` is then made and
+// On Linux and macOS a folder of the daemon whose owner bits allow no read
+// cannot be opened as a root. `.probe` is then made and
 // opened by its path (probeFolderBySearch). With mode 0300 4c111e86 opens the
 // files of `.probe` by their paths, and the create succeeds (measured on
 // Linux). macOS is claustrum's own.
 func (h *ShadowHost) prepareProbeFolder(dir string) error {
 	probe := filepath.Join(dir, shadowProbeName)
 	var root *os.Root
-	base, err := os.OpenRoot(dir)
+	base, err := openRootNoWait(dir)
 	if err != nil {
 		if root, err = probeFolderBySearch(dir, err); err != nil {
 			return err
@@ -211,7 +211,7 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 		if err := base.Mkdir(shadowProbeName, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return probePathError(dir, err)
 		}
-		if root, err = base.OpenRoot(shadowProbeName); err != nil {
+		if root, err = openInRootNoWait(base, shadowProbeName); err != nil {
 			return probePathError(dir, err)
 		}
 	}
@@ -244,12 +244,13 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 
 // probeFolderBySearch makes `.probe` in dir by its path and opens it, when dir,
 // the folder of the daemon, cannot be opened (openErr). Only a permission
-// error of a folder whose owner bits allow write and search passes. The
-// folder must be a real folder, and the opened folder must be the folder of
-// its Lstat. Else the result is the error of the open of dir. A failed mkdir
-// gives its own error (claustrum's own, not measured).
+// error passes. The folder must be a real folder, and the opened folder must
+// be the folder of its Lstat. Else the result is the error of the open of dir.
+// A failed mkdir gives its own error. With mode 0000 4c111e86 answers `mkdir
+// <S>/.probe: permission denied`. With mode 0100 it uses the `.probe` that is
+// there, and the request succeeds (measured on Linux, and in `shadow` on macOS).
 func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
-	if stagedAddWindowsSteps || !errors.Is(openErr, fs.ErrPermission) || !writeSearchFolder(dir) {
+	if stagedAddWindowsSteps || !errors.Is(openErr, fs.ErrPermission) {
 		return nil, openErr
 	}
 	probe := filepath.Join(dir, shadowProbeName)
@@ -260,7 +261,7 @@ func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
 	if err != nil || !goesAsTree(fi.Mode()) {
 		return nil, openErr
 	}
-	root, err := os.OpenRoot(probe)
+	root, err := openRootNoWait(probe)
 	if err != nil {
 		return nil, openErr
 	}

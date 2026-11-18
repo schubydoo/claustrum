@@ -142,7 +142,7 @@ func main() {
 		probeCLI  = flag.String("probe-cli", "", "Run the bounded --version probe on this CLI binary and exit 0: prints nothing if it runs, __CLI_HUNG__ if it had to be killed, __CLI_BAD__ if it is missing or does not run; with CLAUDE_SSH_MANAGED_LAUNCHER=1 it runs through the host's managed launcher and prints __CLI_LAUNCHER__ when the launcher is unusable, the managed settings are unreadable, or the launcher's run of it failed (reason on stderr)")
 		socket    = flag.String("socket", "", "Path to the daemon's Unix socket")
 		tokenFile = flag.String("token-file", "", "Read auth token from this file at startup, then unlink it. Used by the daemonized child so the token never appears in /proc/<pid>/environ.")
-		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — this handoff never touches disk. -serve only.")
+		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — this handoff never touches disk. -serve only, Linux and macOS only.")
 
 		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
 

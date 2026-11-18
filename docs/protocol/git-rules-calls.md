@@ -14,9 +14,9 @@ with an empty value (claustrum's own).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
-listing, a request with no cached value runs the excludes read, `git config
+listing, a request with no [kept value](git-rules-session-folders.md#the-off-switch) runs the excludes read, `git config
 --includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
-gives it and the probe `git --attr-source=<empty tree> version`. There are two profiles:
+gives it and the `--attr-source` probe. There are two profiles:
 
 - The heavy profile forbids every transport protocol
   (`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`). `git.info`, `git.list_branches` and
@@ -197,10 +197,9 @@ after `LANGUAGE=C`, in this order (`be1c1ca5`, measured on Linux). `GIT_SSH_COMM
 is the [ssh door](git-worktree-create.md#the-ssh-door). `CLAUDE_SSH_PERSONS_SSH`
 is the person's ssh command. Then come `CLAUDE_SSH_PERSONS_ENV`,
 `CLAUDE_SSH_DOOR_MARK` with 16 hex digits, and `GIT_SSH_VARIANT`. One mark for
-each daemon process is claustrum's own. On Linux and macOS the second listing gets them too
-([ssh door](git-worktree-create.md#the-ssh-door)).
+each daemon process is claustrum's own. On Linux and macOS the second listing gets them too.
 
-- With no ssh setting the person's command is `'ssh'`, with the single quotes
+- With no ssh setting the person's command is `'ssh'`, in single quotes
   (Linux and Windows). The daemon's `GIT_SSH` gets single quotes too, such as
   `'plink.exe'` (Windows). The daemon's `GIT_SSH_COMMAND` and `core.sshCommand` of
   the user's own config stay as they are (Linux and Windows).
@@ -223,8 +222,8 @@ These rules are claustrum's own (not measured). Six calls run outside any
 repository: the `git version` run after a failed listing, the `--attr-source`
 probe, the version gate of the include scan, the excludes read, the read of config
 text and the `git version` of the start test. Each one starts from the cleaned
-environment above and runs in one folder. That folder is `/` on Linux and macOS.
-On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon executable, else the working folder.
+environment above and runs in `/` on Linux and macOS,
+and on Windows in `SystemRoot` if that is absolute. Else the folder of the daemon executable, else the working folder.
 
 - The `git version` run removes `GIT_DIR`, `GIT_CONFIG`, `GIT_NAMESPACE`,
   `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
@@ -244,7 +243,8 @@ On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon
 - The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
   (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git did
-  not start keeps nothing (claustrum's own).
+  not start keeps nothing (claustrum's own). A read under the [off switch](git-rules-session-folders.md#the-off-switch)
+  has its own keep rules.
   Claustrum's own: the base is `XDG_CONFIG_HOME`, or the home folder plus `.config` if
   that is unset, empty or relative. A regular file
   `git/ignore` in the base, after symlinks, is the result. Every other case gives the null
@@ -273,7 +273,7 @@ upper-case names. On Windows it does not see a lower-case `git_config_count` or
   index where one is not set is refused with
   `inherited GIT_CONFIG pair <n> is incomplete`.
 - An empty key is not refused here. git then fails the listing, also in a folder
-  that holds no repository (see the next section).
+  that holds no repository.
 
 `GIT_CONFIG_PARAMETERS='x` changes no frame in a plain folder.
 

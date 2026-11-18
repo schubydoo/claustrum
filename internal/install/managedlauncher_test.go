@@ -234,8 +234,8 @@ func TestManagedLauncherRefusalAcrossFiles(t *testing.T) {
 }
 
 // TestShownResolveFaultArms pins both arms of shownResolveFault. With shown, a missing
-// launcher and a bare name keep their fault, as on macOS (4c111e86, measured on
-// macOS). Other faults and the arm off macOS give none.
+// launcher, a bare name and a processWrapper of 5 keep their fault, as on macOS
+// (4c111e86, measured on macOS). Other faults and the arm off macOS give none.
 func TestShownResolveFaultArms(t *testing.T) {
 	for _, c := range []struct {
 		fault string
@@ -244,13 +244,36 @@ func TestShownResolveFaultArms(t *testing.T) {
 	}{
 		{FaultMissing, true, FaultMissing},
 		{FaultNotAbsolute, true, FaultNotAbsolute},
+		{FaultOther, true, FaultOther},
 		{FaultScriptSuffix, true, ""},
 		{"", true, ""},
 		{FaultMissing, false, ""},
 		{FaultNotAbsolute, false, ""},
+		{FaultOther, false, ""},
 	} {
 		if got := shownResolveFault(c.fault, c.shown); got != c.want {
 			t.Errorf("shownResolveFault(%q, %v) = %q, want %q", c.fault, c.shown, got, c.want)
+		}
+	}
+}
+
+// TestResolveNonStringFault pins the fault of a value that is not a string. With
+// shown, a processWrapper of 5 answers the fault other after reason (4c111e86,
+// measured on macOS). Without shown it answers none.
+func TestResolveNonStringFault(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, managedSettingsBase)
+	if err := os.WriteFile(base, []byte(`{"processWrapper":5,"x":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reason := "processWrapper must be one string (the launcher and its arguments), not a number"
+	for _, c := range []struct {
+		shown bool
+		fault string
+	}{{true, FaultOther}, {false, ""}} {
+		got := resolveManagedLauncherShown(dir, "/opt/claude/cli", c.shown)
+		if got.Status != StatusUnusable || got.Source != base || got.Reason != reason || got.Fault != c.fault {
+			t.Errorf("shown %v: got %+v, want fault %q", c.shown, got, c.fault)
 		}
 	}
 }

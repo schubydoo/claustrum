@@ -960,9 +960,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if bad != nil {
 		return *bad
 	}
-	// On Windows a \\?\UNC\ path and a path on a share that cannot be found are
-	// refused (measured on Windows, unlookablePathRefusal). No git call runs (from
-	// the code). Its place first is claustrum's own, not measured.
+	// On Windows a \\?\UNC\ path, a path on a share that cannot be found or
+	// that denies every account, and a directory link on a share are refused
+	// (measured on Windows, unlookablePathRefusal). No git call runs (from the
+	// code). Its place first is claustrum's own, not measured.
 	if msg := unlookablePathRefusal(p.Path); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -2112,6 +2113,16 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	refuseUnsafe := func(text string) rpc.Response {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: "unsafe_path"})
 	}
+	// On Windows a create with "shadowDirOff":true tests the leaf here, before
+	// any other git call (offAddRefusal). A refusal rolls nothing back: the
+	// leaf, the registration and the branch stay (4c111e86, measured on
+	// Windows). Without an answer of git the test does not run
+	// (Windows: claustrum's own, not measured).
+	if windowsAddTests && bool(p.ShadowDirOff) && gitAnswered {
+		if text := offAddRefusal(p.WorktreePath, gitDirRegistryDir(gitDir), checkpoint); text != "" {
+			return refuseUnsafe(text)
+		}
+	}
 	var adminDir string
 	if registrationTests {
 		var text string
@@ -2651,16 +2662,20 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// refuses the create. The leaf goes (removeCreatedLeaf). The registration
 		// and the branch stay. be1c1ca5 answers this text with unsafe_path when a
 		// wrapper deletes the `.git` file at the read-tree call (measured on
-		// Linux). Not measured: macOS (it follows Linux), Windows (it keeps the
-		// earlier answer), a `.git` entry of another kind, and a leaf that cannot
+		// Linux). On Windows 4c111e86 gives the same frame and removes nothing:
+		// the leaf keeps the files of the checkout (measured with and without
+		// "shadowDirOff":true). Not measured: macOS (it follows Linux),
+		// a `.git` entry of another kind, and a leaf that cannot
 		// be removed (the text stays alone). The order before the copy step and
 		// the deadline test is claustrum's own, not measured: a good checkout
-		// whose timeoutMs expired gets this answer, and only the leaf goes. A
+		// whose timeoutMs expired gets this answer, and on Linux and macOS only the leaf goes. A
 		// folder that replaced the leaf gets it too, and the identity guard keeps
 		// that folder.
-		if runtime.GOOS != "windows" && leafGitFileGone(p.WorktreePath) {
-			retake()
-			removeCreatedLeaf(p.WorktreePath, checkpoint)
+		if leafGitFileGone(p.WorktreePath) {
+			if !windowsAddTests {
+				retake()
+				removeCreatedLeaf(p.WorktreePath, checkpoint)
+			}
 			return refuseUnsafe(gitFileGoneText(p.WorktreePath))
 		}
 	}
@@ -2668,8 +2683,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// one swapped in during the add. A copy of the leaf put in its place at the
 	// read-tree call gets the text of a replaced leaf with unsafe_path (4c111e86,
 	// measured on Linux and macOS, with and without "shadowDirOff":true). On
-	// Windows a leaf copied right after the add reaches this test, and 4c111e86
-	// answers the same frame there (measured with "shadowDirOff":true). A leaf
+	// Windows with "shadowDirOff":true, offAddRefusal answers the same frame
+	// earlier for a leaf copied right after the add (4c111e86, measured). A leaf
 	// that leads elsewhere or is no folder gets the same frame (not measured).
 	if checkNewLeafIdentity(p.WorktreePath, checkpoint) != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
@@ -2867,8 +2882,9 @@ func removeRefusal(req *gitCall) func(msg string) rpc.Response {
 
 func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Response {
 	refuse := removeRefusal(req)
-	// On Windows a \\?\UNC\ baseRepo and a baseRepo on a share that cannot be found
-	// are refused (measured on Windows, unlookablePathRefusal). No git call and no
+	// On Windows a \\?\UNC\ baseRepo, a baseRepo on a share that cannot be found or
+	// that denies every account, and a directory link on a share are refused
+	// (measured on Windows, unlookablePathRefusal). No git call and no
 	// delete run (from the code). Its place first and the test of baseRepo alone
 	// are claustrum's own, not measured: the rows send worktreePath below baseRepo.
 	if msg := unlookablePathRefusal(repo); msg != "" {

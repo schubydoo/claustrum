@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The test of a repository path that goes through a symbolic link or a junction to
@@ -61,6 +63,19 @@ func unlookableShareText(path string) string {
 	return "Claude couldn't look at `" + filepath.Clean(path) + "` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
 }
 
+// deniedShareText names the path cleaned and the folder above its last name, as
+// the row shows for a share that denies every account (measured on Windows).
+// The folder of a deeper path is claustrum's own, not measured.
+func deniedShareText(path string) string {
+	p := filepath.Clean(path)
+	return "Claude couldn't check `" + p + "` for links because Windows didn't let your account read `" + p[:strings.LastIndexAny(p, `\/`)] + "`, so git wasn't run. Ask for read access to that folder."
+}
+
+// shareLinkText names the link on the share.
+func shareLinkText(link string) string {
+	return "Claude doesn't follow links on a network share, and `" + link + "` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder."
+}
+
 func longUNCText(path string) string {
 	return "Claude can't check where `" + filepath.Clean(path) + "` leads because it doesn't start with a drive letter (C:\\...) or a share (\\\\server\\share\\...), so git wasn't run. Open the folder again using a path that does."
 }
@@ -72,10 +87,17 @@ func longUNCText(path string) string {
 // git.worktree_create and git.worktree_remove (measured on Windows). A missing
 // folder on a share and a path on a missing drive pass (measured on Windows).
 //
+// 4c111e86 logs one "looking for links" line for a share that does not exist.
+// It gives deniedShareText for a share that denies every account. It refuses a
+// directory symbolic link on a share that answers with shareLinkText. A host
+// name that does not resolve passes (measured on Windows, all five methods).
+//
 // claustrum's own, not measured: other \\?\ and \\.\ forms pass, and so does
 // the share root alone. A forward slash counts as a separator. Any failed look
-// other than a missing entry refuses. Go reads a host that cannot be reached
-// (ERROR_BAD_NETPATH) as a missing entry, so that path passes.
+// other than a missing entry or a denied read refuses and logs the line. Go reads
+// a host that cannot be reached (ERROR_BAD_NETPATH) as a missing entry, so that
+// path passes. A junction counts as a link, and so does a link above the last
+// name. A path that is missing below a link passes.
 func unlookablePathRefusal(path string) string {
 	if !networkLinkChecks || len(path) < 4 || !isSlash(path[0]) || !isSlash(path[1]) {
 		return ""
@@ -89,8 +111,37 @@ func unlookablePathRefusal(path string) string {
 	if len(strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })) < 3 {
 		return ""
 	}
-	if _, err := lstatPath(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	_, err := lstatPath(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return ""
+	case errors.Is(err, fs.ErrPermission) || networkAccessDenied(err):
+		return deniedShareText(path)
+	case err != nil:
+		logging.Infof("[GitHandler] looking for links in %q: %q", path, err.Error())
 		return unlookableShareText(path)
+	}
+	if link := linkOnShare(path); link != "" {
+		return shareLinkText(link)
+	}
+	return ""
+}
+
+// linkOnShare returns the first name below the share of the UNC path that is a
+// link (folderIsLink), as a path with backslashes, or "". A name that cannot be
+// read ends the walk with "" (claustrum's own, not measured).
+func linkOnShare(path string) string {
+	names := strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })
+	cur := `\\` + names[0] + `\` + names[1]
+	for _, name := range names[2:] {
+		cur += `\` + name
+		fi, err := lstatPath(cur)
+		if err != nil {
+			return ""
+		}
+		if folderIsLink(fi.Mode()) {
+			return cur
+		}
 	}
 	return ""
 }

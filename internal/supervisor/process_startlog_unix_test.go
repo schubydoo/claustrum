@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -70,9 +71,8 @@ func TestExitLineAfterClientKill(t *testing.T) {
 // TestShutdownSweepRelabelsAWaitingKill pins the label of a child whose kill still
 // waits when the shutdown sweep ends it: killedBy and the exit frame say shutdown,
 // not client (an older build, measured on Linux in the log). The child ignores TERM,
-// so the killAndWait waits. A child that the shutdown ends logs no exited line,
-// measured on Linux (c9125eb8 and 4c111e86 log none), so the line is gone. On macOS 1
-// or 2 of 8 runs of the references still log it.
+// so the killAndWait waits. On Linux a child that the shutdown ends logs its exited
+// line with "(shutdown)", as c9125eb8 and 4c111e86 do. On macOS 4c111e86 logs almost none.
 func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -111,9 +111,7 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "shutdown")
 	}
 	<-done
-	if strings.Contains(logs.String(), "Process c1 exited") {
-		t.Errorf("log = %q\nwant no exited line for c1", logs.String())
-	}
+	checkShutdownExitLine(t, logs.String(), "[process.Manager] Process c1 exited with code -1, terminated by SIGKILL, asked to end by this daemon (shutdown)\n")
 }
 
 // exitFrame reads frames until the exit frame and returns it.
@@ -132,11 +130,11 @@ func exitFrame(t *testing.T, frames <-chan ChildFrame) ChildFrame {
 	}
 }
 
-// TestShutdownEndedChildLogsNoExitLine: a child that the shutdown sweep ends logs no
-// exited line, and a child that exited before the sweep keeps its line, measured on
-// Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs of the references
-// still log it.
-func TestShutdownEndedChildLogsNoExitLine(t *testing.T) {
+// TestShutdownEndedChildLogsExitLine: on Linux a child that the shutdown sweep ends logs its
+// exited line with "(shutdown)", and a child that exited before the sweep keeps its
+// line. c9125eb8 and 4c111e86 log it in a spawn flood (measured on Linux). On macOS
+// 4c111e86 logs almost none (measured on macOS).
+func TestShutdownEndedChildLogsExitLine(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
@@ -167,9 +165,7 @@ func TestShutdownEndedChildLogsNoExitLine(t *testing.T) {
 	if want := "[process.Manager] Process early exited with code 0\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
 	}
-	if strings.Contains(logs.String(), "Process sweep-en… exited") {
-		t.Errorf("log = %q\nwant no exited line for the child of the sweep", logs.String())
-	}
+	checkShutdownExitLine(t, logs.String(), "[process.Manager] Process sweep-en… exited with code -1, terminated by SIGKILL, asked to end by this daemon (shutdown)\n")
 }
 
 // TestShutdownSweepRelabelsWhenOneOfTwoWaitsEnded: two killAndWait calls wait on one
@@ -216,9 +212,8 @@ func TestShutdownSweepRelabelsWhenOneOfTwoWaitsEnded(t *testing.T) {
 
 // TestShutdownSweepKeepsReasonOfPlainKill pins a plain process.kill on a child that
 // ignores TERM: nothing waits, so the shutdown sweep keeps "client" in the exit frame
-// (claustrum's own, not measured). The sweep ended the child, so it logs no exited
-// line, measured on Linux (c9125eb8 and 4c111e86 log none). On macOS 1 or 2 of 8 runs
-// of the references still log it.
+// (claustrum's own, not measured). The sweep ended the child, so on Linux it logs its
+// exited line with "(client)", and on macOS none (claustrum's own, not measured).
 func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -248,9 +243,7 @@ func TestShutdownSweepKeepsReasonOfPlainKill(t *testing.T) {
 	if got := exitFrame(t, frames); got.KilledBy != "client" {
 		t.Errorf("killedBy of the exit frame = %q, want %q", got.KilledBy, "client")
 	}
-	if strings.Contains(logs.String(), "Process c1 exited") {
-		t.Errorf("log = %q\nwant no exited line for c1", logs.String())
-	}
+	checkShutdownExitLine(t, logs.String(), "[process.Manager] Process c1 exited with code -1, terminated by SIGKILL, asked to end by this daemon (client)\n")
 }
 
 // TestExitLineAfterOutsideSIGKILL pins the exited line of a child that a signal from
@@ -362,5 +355,47 @@ func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	}
 	if want := "[process.Manager] exec trampoline failed for p1 (fork/exec " + noSelf + ": no such file or directory); starting it directly"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)
+	}
+}
+
+// checkShutdownExitLine asks for the exited line of a child that the shutdown sweep
+// ended where quietEveryShutdownExit is off (Linux), and for no exited line of that
+// child where it is on (macOS).
+func checkShutdownExitLine(t *testing.T, logs, line string) {
+	t.Helper()
+	if quietEveryShutdownExit {
+		if head, _, _ := strings.Cut(line, " exited "); strings.Contains(logs, head+" exited") {
+			t.Errorf("log = %q\nwant no exited line of %q", logs, head)
+		}
+		return
+	}
+	if !strings.Contains(logs, line) {
+		t.Errorf("log = %q\nwant it to hold %q", logs, line)
+	}
+}
+
+// TestShutdownExitQuietBySystem pins the switch of each system and both of its
+// values. On Linux a child that the shutdown sweep ended logs its exited line
+// (c9125eb8 and 4c111e86, measured on Linux). On macOS it logs almost none (4c111e86,
+// measured on macOS). A sent temp_root SIGTERM drops the line on both (4c111e86,
+// measured on Linux, and macOS is claustrum's own).
+func TestShutdownExitQuietBySystem(t *testing.T) {
+	want := map[string]bool{"linux": false, "darwin": true}
+	if w, ok := want[runtime.GOOS]; ok && quietEveryShutdownExit != w {
+		t.Errorf("quietEveryShutdownExit on %s = %v, want %v", runtime.GOOS, quietEveryShutdownExit, w)
+	}
+	for _, c := range []struct {
+		ended, tempRoot, quietAll, want bool
+	}{
+		{false, false, true, false},
+		{false, true, true, false},
+		{true, false, false, false},
+		{true, false, true, true},
+		{true, true, false, true},
+		{true, true, true, true},
+	} {
+		if got := shutdownExitQuiet(c.ended, c.tempRoot, c.quietAll); got != c.want {
+			t.Errorf("shutdownExitQuiet(%v, %v, %v) = %v, want %v", c.ended, c.tempRoot, c.quietAll, got, c.want)
+		}
 	}
 }
