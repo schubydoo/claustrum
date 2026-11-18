@@ -718,7 +718,7 @@ func TestReapOrphansUnreadableRecordAndRunDir(t *testing.T) {
 // children entry is a symlink to a folder that holds a valid record of a live process,
 // which passes every test of the sweep. The sweep sends no signal, removes nothing and
 // logs the reaping-nothing line, for a folder outside the run dir and for one inside
-// it (f6010b97 and 89cb6289, Linux rows SYa and SYb). Before, the sweep listed the
+// it (f6010b97 and 89cb6289, two Linux rows). Before, the sweep listed the
 // folder by its path, followed the symlink and sent SIGTERM.
 func TestReapOrphansChildrenSymlink(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {

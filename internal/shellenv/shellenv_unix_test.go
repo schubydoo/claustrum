@@ -6,9 +6,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -241,16 +243,36 @@ func TestLoginPATHTimeLimits(t *testing.T) {
 	}
 }
 
-// groupGone polls until no process of the group pgid is left.
+// groupGone polls until no process of the group pgid is left. A failure lists the
+// processes of the group that ps shows, so a CI log names what was left.
 func groupGone(t *testing.T, pgid int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for syscall.Kill(-pgid, 0) == nil {
 		if time.Now().After(deadline) {
-			t.Fatalf("a process of the group %d is still there", pgid)
+			t.Fatalf("a process of the group %d is still there:\n%s", pgid, groupMembers(pgid))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// groupMembers returns the lines of ps for the processes of the group pgid: pid,
+// parent pid, group, state and command.
+func groupMembers(pgid int) string {
+	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,command=").Output()
+	if err != nil {
+		return "ps failed: " + err.Error()
+	}
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if f := strings.Fields(l); len(f) > 2 && f[2] == strconv.Itoa(pgid) {
+			lines = append(lines, strings.TrimSpace(l))
+		}
+	}
+	if len(lines) == 0 {
+		return "ps shows no process of the group"
+	}
+	return strings.Join(lines, "\n")
 }
 
 // startSleepingRead starts a real read whose shell starts a child in its own group,

@@ -36,3 +36,24 @@ func TestSocketFilesRealpathWindowsCleansDotDot(t *testing.T) {
 		}
 	}
 }
+
+// TestSocketFilesRealpathWindowsJunction pins the Windows rows on 4c111e86 and
+// c9125eb8: files.realpath follows a junction, both for a name below it and for
+// the junction itself.
+func TestSocketFilesRealpathWindowsJunction(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	makeJunction(t, filepath.Join(root, "junc"), filepath.Join(root, "dir"))
+	writeFile(t, filepath.Join(root, "dir", "f.txt"), "hi\n", 0o644)
+	got := realpathCalls(t, root, []map[string]any{
+		{"path": filepath.Join(root, "junc", "f.txt")},
+		{"path": filepath.Join(root, "junc")},
+	})
+	for i, w := range []string{
+		`"result":{"exists":true,"real":"<DIR>/dir/f.txt"}`,
+		`"result":{"exists":true,"real":"<DIR>/dir"}`,
+	} {
+		if !strings.Contains(string(got[i]), w) {
+			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
+		}
+	}
+}

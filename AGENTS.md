@@ -20,10 +20,11 @@ daemon. The wire surface is the product.
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
 | Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
-| Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit (a race run takes over 9 minutes) |
+| Lint | `golangci-lint run ./...`. Config: `.golangci.yml` (v2) |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). It runs the unit and socket-integration suites. The time limit is explicit, because a race run took over 9 minutes, near the 10 minute default of `go test` |
 
-- Use Go 1.26 and `CGO_ENABLED=0`. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
+- Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
+  below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
   and CI resolve Go from `go.mod`, never from `go-version: stable`. See
   [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
   drift.
@@ -128,10 +129,11 @@ in [`SECURITY.md`](SECURITY.md).
 
 Five code paths give a caller-supplied or operator-supplied path to a recursive
 delete. The daemon `~`-expands the RPC paths first, so `"~"` once meant
-`os.RemoveAll($HOME)`. That destroyed a home directory. The five paths remain
-the only recursive deletes whose target a caller or an operator names. The
+`os.RemoveAll($HOME)`. That destroyed a home directory. The
 deletes inside the folder `git-shadow` are not among the five: their root comes
-from the socket, as in `plugins.prune`.
+from the socket, as in `plugins.prune`. `removeall_allowlist_test.go` lists each
+tree delete. It fails on an unlisted site, or on a listed guard function that
+calls no homeguard check.
 
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
@@ -145,7 +147,7 @@ from the socket, as in `plugins.prune`.
 
 `homeguard.WipesHomeDir` refuses a target that is home or contains home. It resolves a
 relative path with `filepath.Abs` first. It still permits a path under home,
-because `~/.claude/…` is the install path of the daemon itself. The guard is
+because `~/.claude/…` is the install path of the daemon. The guard is
 always-on, not opt-in. Any RPC path param that reaches a recursive delete owes
 this guard. `IsAbs && !homeguard.IsFilesystemRoot` is not a substitute: home passes both
 tests, and neither test resolves a relative path. A running daemon dials only with
@@ -161,14 +163,13 @@ not widen it.
 
 #### Path 2: `git.worktree_remove`
 
-The remove deletes `worktreePath` and its registration through an `os.Root`. Before any delete it refuses a leaf that is a symlink or no
+The remove deletes `worktreePath` and its registration through an `os.Root`, with no
+`git worktree remove`. Before any delete it refuses a leaf that is a symlink or no
 directory and a lock that counts (D22). A failed repository check, a Windows junction
 (D19) and `homeguard.WipesHomeDir` refuse it too. Never widen: On Linux and macOS a gone worktree whose locked entry sits
 behind a linked `<git dir>/worktrees` gets success, and its branch goes. That exception
-follows the reference. Do not widen it.
-The maintainer approved one widening: a marker beside a `.git` link that does not resolve no longer
-refuses, so the remove deletes the leaf and its registration, and the branch step runs as usual
-(4c111e86, measured on macOS with worktreeRoot for a dangling link).
+follows the reference. Do not widen it. The maintainer approved that a marker beside a
+dangling `.git` link passes the remove ([marker rule](docs/protocol/git-list-branches.md#response)).
 
 #### Path 3: the `git.worktree_create` rollback
 
@@ -314,7 +315,7 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D19 | Remove refuses a junction between `baseRepo` and the leaf | always-on | Windows |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
-| D22 | Remove refuses a worktree locked in the `.git` folder of `baseRepo` | always-on | all |
+| D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |
 | D23 | The environment of a child is in name order | always-on | Windows |
 | D24 | Create rollback keeps a folder that replaced the registration | always-on | all |
 | D27 | The stale step keeps an entry with a live record | always-on | Windows |
@@ -348,6 +349,6 @@ reachable knob, because Claude Desktop owns the argv.
   `.changeset/` fragments → knope opens a version PR (`knope-prepare.yml`).
   Merging it tags `v*` (`knope-release.yml`), which fires `release.yml`.
   That release is signed and carries SBOM and SLSA, via
-  [`.goreleaser.yaml`](.goreleaser.yaml).
+  [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the `KNOPE_ENABLED` repo var.
 - Claude Code / Anthropic API specifics → prefer current docs:
   <https://docs.anthropic.com/en/docs/claude-code/overview>.
