@@ -439,18 +439,18 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 
 ### A link to a network or device path
 
-On Windows `b3081b51` refuses a repository path through a symbolic link or a junction to a network or device path (measured on Windows). The targets of the rows are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository. The text is:
+On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository, and the text is:
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer `-32603`. A create answers `"errorCode":"worktree_add_failed"` and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). The other rules are claustrum's own, not measured.
+`git.status` and `git.info` answer `-32603`, while a create answers `"errorCode":"worktree_add_failed"` and makes no folder or branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). The other rules are claustrum's own, not measured.
 
 ### UNC refusals
 
 On Windows these refuse the repository path of all five methods with no git call: `"success":false` on a remove, `worktree_add_failed` on a create, else `-32603`.
 
 - `\\?\UNC\…`: `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. ``
-- Missing share: `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. `` Log: `[GitHandler] looking for links in "<path>": "CreateFile <path>: The network name cannot be found."`
+- Missing share: `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. ``, and the log gets `[GitHandler] looking for links in "<path>": "CreateFile <path>: The network name cannot be found."`
 - Share denying every account: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 
