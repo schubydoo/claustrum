@@ -8,4 +8,4 @@ package supervisor
 // on Linux under a flood of process.spawn: in each run the count of ended groups
 // equaled the count of start lines, and some runs left children with no start line
 // running after the exit. The row does not show if their starts had returned.
-const lateStartEnds = false
+var lateStartEnds = false

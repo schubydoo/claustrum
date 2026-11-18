@@ -309,3 +309,74 @@ func checkLateStartLeavesTheChild(t *testing.T, keepChildren bool) {
 		t.Errorf("children/ after the late start holds %d entries, want none", len(ents))
 	}
 }
+
+// TestLateStartEndsTheChildWhereLateStartEndsHolds turns lateStartEnds on, as on
+// Windows, and holds a spawn right after the start of its child. After the shutdown
+// began, the spawn ends its own child and reaps it, with no frame, no table entry and
+// no record.
+func TestLateStartEndsTheChildWhereLateStartEndsHolds(t *testing.T) {
+	oldEnds := supervisor.SetLateStartEndsForTest(true)
+	t.Cleanup(func() { supervisor.SetLateStartEndsForTest(oldEnds) })
+	s, sock, runDir := newTeardownServer(t)
+	held, release := make(chan int, 1), make(chan struct{})
+	var once sync.Once
+	letGo := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(letGo)
+	oldHook := supervisor.SetAfterChildStartForTest(func(id string, pid int) {
+		if id == "ended" {
+			held <- pid
+			<-release
+		}
+	})
+	t.Cleanup(func() { supervisor.SetAfterChildStartForTest(oldHook) })
+
+	c, _ := pipeConn(t)
+	exe, env := helperCommand(t, "sleep")
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{"id": "ended", "command": exe, "args": []string{"60"}, "env": env},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan *rpc.Response, 1)
+	go func() { got <- s.dispatch(c, body) }()
+	var pid int
+	select {
+	case pid = <-held:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the spawn did not start its child")
+	}
+	inTable := false
+	t.Cleanup(func() {
+		if !inTable && pidAlive(pid) {
+			endLeftChild(t, pid)
+		}
+	})
+	s.requestShutdown()
+	letGo()
+	var resp *rpc.Response
+	select {
+	case resp = <-got:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the held spawn did not return after the release")
+	}
+	s.closeAll(sock)
+	if resp != nil {
+		b, _ := json.Marshal(*resp)
+		t.Errorf("the late start got the frame %s, want none", b)
+	}
+	// The kill of the spawn comes before its wait, and the spawn returns after the
+	// reap, so the child is gone here.
+	if pidAlive(pid) {
+		t.Errorf("the child %d of the late start is alive after the spawn returned", pid)
+	}
+	if p := s.procs.Get("ended"); p != nil {
+		inTable = true
+		endOwnChild(t, p)
+		t.Error("the late start is in the table")
+	}
+	if ents, err := os.ReadDir(filepath.Join(runDir, childrec.ChildrenDirName)); err == nil && len(ents) != 0 {
+		t.Errorf("children/ after the late start holds %d entries, want none", len(ents))
+	}
+}
