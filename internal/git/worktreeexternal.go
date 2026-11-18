@@ -506,7 +506,7 @@ func repoTopLevelCall(u gitUse, repo string, pre *configListing) (top string, er
 // sessionLocationRefusal is the refusal of a create whose worktreeRoot lies in a
 // session worktree, or "". It resolves the root as pathcanon.OfGone does and
 // tests each folder of that path from "/" down. The first folder below a folder
-// with a .claude-managed-worktrees entry, or below .claude/worktrees, decides. A
+// with a .claude-managed-worktrees file, or below .claude/worktrees, decides. A
 // folder that exists gets the "leads into" text, and a missing one the "would be
 // made" text. Then a root that holds that file itself is refused. 5fd08069 refuses
 // so (measured on Linux). A .claude/worktrees folder above the root is not
@@ -543,10 +543,11 @@ func sessionLocationRefusal(worktreeRoot string) string {
 
 // belowSessionFolder reports whether a folder above p holds a
 // .claude-managed-worktrees entry, or is a worktrees folder in a .claude folder.
-// A file, a folder or a link with no target counts (4c111e86, measured on Linux
-// and macOS). A link to a folder or a link loop counts too (claustrum's own, not
-// measured). Windows never reaches this test: externalWorktreeUnsupportedRefusal
-// refuses every worktreeRoot there first.
+// For the "leads into" text of an existing root, a file, a folder or a link with no
+// target counts (4c111e86, measured on Linux and macOS). Another link counts too,
+// and so does a folder or a link above a missing root for the "would be made" text
+// (claustrum's own, not measured). Windows never reaches this
+// test: externalWorktreeUnsupportedRefusal refuses every worktreeRoot there first.
 func belowSessionFolder(p string) bool {
 	for at := filepath.Dir(p); ; at = filepath.Dir(at) {
 		if _, err := os.Lstat(filepath.Join(at, managedWorktreesMarker)); err == nil ||
