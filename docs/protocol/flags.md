@@ -74,7 +74,7 @@ The daemon writes its reason to its own stderr, which is the
 - The daemon reads the token as a line. It strips every trailing `\r` and `\n` (a single
   `\n` or `\r\n` is measured). It keeps other whitespace verbatim (from the code). It then removes the
   `-token-file`, as under [Authentication](../PROTOCOL.md#authentication).
-- `-token-fd <n>` is claustrum-only. On Windows it starts no daemon: `-token-fd 0` gives
+- `-token-fd <n>` is claustrum-only, and on Windows it starts no daemon: `-token-fd 0` gives
   exit `1` and `claustrum: read --token-fd: read token-fd: The handle is invalid.`
   (measured on Windows). On Linux and macOS the launcher reads the token from an open fd
   (`0` is stdin). It passes the token to the daemon over a pipe, never on disk. A failed
