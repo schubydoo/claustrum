@@ -60,8 +60,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   the remove deletes nothing. On a config that only the daemon refuses, the remove
   deletes. macOS and Windows are not measured for these replies and removes.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes during the hold, nor after the holder answers
-  (claustrum's own, not measured). A held call
+  the hold is not stopped at 2 minutes during the hold. It is not stopped at 2
+  minutes also after the holder answers (claustrum's own, not measured). A held call
   that starts after that answer has the 2 minute limit (claustrum's own, not
   measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
@@ -136,10 +136,9 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `git-shadow` stays (Linux, macOS and Windows).
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
-- An empty file, a FIFO or a link there goes, never the link target, and a folder
-  with another hex part is made. Requests succeed (`4c111e86` on Linux, the link also
-  on macOS). Other kinds but a folder, a file with content, the rest of macOS and
-  Windows (a regular file only) are claustrum's own.
+- An empty file, a FIFO or a link there goes, never the link target, and a new
+  folder is made. Requests succeed (`4c111e86` on Linux and macOS). Other kinds but a
+  folder, a file with content and Windows (a file only) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the path of the git directory. A linked
   worktree uses the folder of its main repository.
@@ -182,7 +181,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux). The other methods get the same steps (claustrum's own,
   not measured). Mode `0100` uses the entries there, and a create fails at `.s<n>`.
   Mode `0000` gives the `mkdir` error of the folder or `.probe` (`4c111e86`, measured
-  on Linux). macOS is claustrum's own.
+  on Linux and macOS). For mode `0300` macOS is claustrum's own.
 
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:
@@ -209,7 +208,7 @@ held lock keeps the folder of a live daemon.
 - `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
   follows. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
-- The rows show 8 days removed and 1 hour kept: another host's name form on Linux,
+- The rows show 8 days removed and 1 hour kept: another host's name on Linux,
   this host's on macOS.
 - Another lock error keeps the entry, and so does a FIFO lock on Linux. A link whose
   target lock gives an error stays. All three are claustrum's own, not measured.
