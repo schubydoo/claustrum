@@ -16,6 +16,11 @@ func probeCLIPathMissing(string) bool { return false }
 // renameDenied is false off Windows: the rename of the new CLI runs once.
 func renameDenied(error) bool { return false }
 
+// finalProgressAfterRename is false off Windows: the final progress line comes
+// right after the checksum passes (see stageDownload). A var only so a test on
+// any system can run the Windows rule.
+var finalProgressAfterRename = false
+
 // rawCLIDirStep turns on the folder step of makeCLIDir. Linux and macOS make the
 // folders of the raw -cli-dir text (measured).
 const rawCLIDirStep = true

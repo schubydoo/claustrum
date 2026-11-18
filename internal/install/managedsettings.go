@@ -145,6 +145,12 @@ func Resolve(cliPath string) (rpc.ManagedLauncherReply, string) {
 // refusal, and a later refusal replaces an earlier one. Measured on Linux against
 // b3081b51 with a base file and one drop-in.
 func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherReply {
+	return resolveManagedLauncherShown(dir, cliPath, managedResolveFaultShown)
+}
+
+// resolveManagedLauncherShown is resolveManagedLauncherIn with shown, the switch of
+// shownResolveFault, as a parameter.
+func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLauncherReply {
 	var value, refused, source string
 	take := func(path string) *rpc.ManagedLauncherReply {
 		v, r, bad := readManagedSettingsValue(path)
@@ -175,7 +181,7 @@ func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherReply {
 		return rpc.ManagedLauncherReply{Status: managedStatusNone}
 	}
 	if refused != "" {
-		return rpc.ManagedLauncherReply{Status: StatusUnusable, Source: source, Reason: refused}
+		return rpc.ManagedLauncherReply{Status: StatusUnusable, Source: source, Reason: refused, Fault: shownResolveFault(FaultOther, shown)}
 	}
 	argv, reason := parseManagedLauncherValue(value)
 	fault := ""
@@ -183,17 +189,22 @@ func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherReply {
 		fault, reason = checkFault(argv, cliPath)
 	}
 	if reason != "" {
-		return rpc.ManagedLauncherReply{Status: StatusUnusable, Source: source, Reason: reason, Fault: shownResolveFault(fault, managedResolveFaultShown)}
+		return rpc.ManagedLauncherReply{Status: StatusUnusable, Source: source, Reason: reason, Fault: shownResolveFault(fault, shown)}
 	}
 	return rpc.ManagedLauncherReply{Status: managedStatusUsable, Argv: argv, Source: source}
 }
 
+// FaultOther is the fault of a launcher value that is not a string.
+const FaultOther = "other"
+
 // shownResolveFault is the fault member of a refusal of the managed launcher. With
 // shown, a missing launcher file or folder gives missing and a bare name not_absolute
-// (4c111e86, measured on macOS). A refusal of a parse error, the own path or a script
-// name gives none (claustrum's own, not measured).
+// (4c111e86, measured on macOS). A processWrapper of 5 gives other (4c111e86, measured
+// on macOS). The other values that are not a string give other too (claustrum's own,
+// not measured). A refusal of a parse error, the own path or a script name gives none
+// (claustrum's own, not measured).
 func shownResolveFault(fault string, shown bool) string {
-	if shown && (fault == FaultMissing || fault == FaultNotAbsolute) {
+	if shown && (fault == FaultMissing || fault == FaultNotAbsolute || fault == FaultOther) {
 		return fault
 	}
 	return ""

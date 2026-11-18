@@ -512,7 +512,7 @@ func openSeenRegular(root *os.Root, path string, seen os.FileInfo) (*os.File, er
 // brought up to date. Each file is written in place: a poll of 5fd08069 saw a
 // file with 0 bytes first and with its full size 4 to 5 ms later (measured).
 func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error {
-	repo, err := os.OpenRoot(st.u.repoDir)
+	repo, err := openRootNoWait(st.u.repoDir)
 	if err != nil {
 		return err
 	}
@@ -530,7 +530,7 @@ func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error 
 		return err
 	}
 	hasExclude := err == nil
-	dir, err := os.OpenRoot(st.dir)
+	dir, err := openRootNoWait(st.dir)
 	if err != nil {
 		return err
 	}
@@ -1094,7 +1094,7 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 // held git directory (acceptedGitDir.staged). A rollback removes that entry,
 // and the index goes into it.
 func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
-	dir, err := os.OpenRoot(st.dir)
+	dir, err := openRootNoWait(st.dir)
 	if err != nil {
 		return err
 	}

@@ -28,8 +28,8 @@ the daemon walks up from the request folder:
   before `..`. The walk then starts at the spelled path. `git.status` resolves the
   path first. If that resolve fails, it answers there (all from the code).
 - On Windows a refusal of a config on `git.info` follows the spelled start too. In
-  the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
-  [config refusals](git-rules-config.md#repository-config-refusals). A
+  the state `shadow` without `"shadowDirOff":true`, it is the
+  [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
@@ -229,7 +229,7 @@ on `PATH`, the exec error replaces both texts (class 1 below).
 ### A folder with no repository
 
 Where the trust check finds no repository, the daemon still runs the configuration
-listing in that folder. In a plain folder it carries `GIT_DIR=<null>` ([its git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
+listing in that folder. In a plain folder it carries [`GIT_DIR=<null>`](git-rules-calls.md#the-daemons-own-git-environment). The frames
 are those of the "no repository" column. A listing that fails by class 3
 below gives the "refused" column. A `.git` file to a gone entry under the
 `worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux, and
@@ -306,7 +306,7 @@ The classes come in this order:
    runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
    If that call fails too, the text is the ["cannot run" text](#the-cannot-run-and-hooks-refusal-texts). Else it is the hooks refusal.
 
-The `git version` call of class 3 has the profile of the failed listing ([Hardened git calls](git-rules-calls.md#hardened-git-calls)). It gets no `-c` option and no `GIT_CONFIG_COUNT`,
+The `git version` call of class 3 has the [profile](git-rules-calls.md#hardened-git-calls) of the failed listing. It gets no `-c` option and no `GIT_CONFIG_COUNT`,
 `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon.
 claustrum matches these names by their exact upper-case letters, so on Windows a
 lower-case name stays on the call (from the code). The call drops the daemon's
@@ -400,8 +400,8 @@ this rule is measured on Windows. For the "cannot run" text it is claustrum's ow
 
 With the `GIT_COMMON_DIR` pin, git names a corrupt config by its absolute path
 (measured on Linux and macOS). On claustrum a syntax error in a config file of the
-repository gets the class 1 text first
-([config refusals](git-rules-config.md#repository-config-refusals)).
+repository gets the
+[class 1 text](git-rules-config.md#repository-config-refusals) first.
 
 ## The object sources on Windows
 
@@ -488,4 +488,5 @@ opens during the request. After `git worktree add`, a `commondir`
 of the git directory of `baseRepo` that is not a regular file counts as none, so
 that git directory is its own common directory (all from the code). A FIFO as the
 config is in
-[config refusals](git-rules-config.md#repository-config-refusals).
+[config refusals](git-rules-config.md#repository-config-refusals), and one at a folder of the daemon in
+[the folders](git-rules-settings-copy.md#the-folders).
