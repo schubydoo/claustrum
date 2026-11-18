@@ -134,9 +134,9 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `git-shadow` stays (Linux, macOS and Windows).
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
-- An empty file, FIFO or link there goes, never the link target, and requests
+- An empty file, FIFO or link there goes, never its target, and requests
   succeed in a new folder (`4c111e86` on Linux and macOS). Other non-folder
-  kinds, a file with content and Windows (a file only) are claustrum's own.
+  kinds, a file with content and Windows (a regular file only) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the git directory's path. A linked
   worktree uses the folder of its main repository.
