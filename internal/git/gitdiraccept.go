@@ -152,7 +152,8 @@ func gitDirIdentity(path string) os.FileInfo {
 // tested: a repository below a junction answers normally (measured). A `.git`
 // folder with the reparse tag IO_REPARSE_TAG_PROJFS is no link (folderIsLink).
 // 4c111e86 answers git.info, git.status and git.list_branches there (measured
-// on Windows).
+// on Windows). Every other tag that is no name surrogate is no link here too
+// (claustrum's own, not measured).
 func gitDirLinkDetail(gitDir string) string {
 	if !gitDirMustBeReal {
 		return ""

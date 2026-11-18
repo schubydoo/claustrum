@@ -277,7 +277,8 @@ func statusSpellingRefused(sent string) bool {
 // linkBelow reports whether a component of p below base is a symbolic link or a
 // junction (folderIsLink). p lies strictly under base. A worktree folder with
 // the reparse tag IO_REPARSE_TAG_PROJFS is no link. 4c111e86 answers isRepo
-// true for it (measured on Windows).
+// true for it (measured on Windows). Every other tag that is no name surrogate
+// is no link here too (claustrum's own, not measured).
 func linkBelow(base, p string) bool {
 	rel, err := filepath.Rel(base, p)
 	if err != nil {
