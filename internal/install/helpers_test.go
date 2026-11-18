@@ -188,8 +188,20 @@ func runCLIStub() int {
 		}
 	}
 	ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_TEST_STUB_MS"))
-	time.Sleep(time.Duration(ms) * time.Millisecond)
 	code, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_TEST_STUB_EXIT"))
+	// CLAUSTRUM_TEST_STUB_GATE names a file. The stub then exits as soon as
+	// that file exists, or after the delay at the latest.
+	if gate := os.Getenv("CLAUSTRUM_TEST_STUB_GATE"); gate != "" {
+		end := time.Now().Add(time.Duration(ms) * time.Millisecond)
+		for time.Now().Before(end) {
+			if _, err := os.Stat(gate); err == nil {
+				return code
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		return code
+	}
+	time.Sleep(time.Duration(ms) * time.Millisecond)
 	return code
 }
 
