@@ -17,7 +17,7 @@ the daemon walks up from the request folder:
 - The walk starts at the request folder with symlinks resolved. A refusal names
   the resolved path, never the alias.
 - On Windows the walk resolves no junction before the last component of the
-  path. It starts at the spelled path and takes a `..` by text. With a junction
+  path. It starts at the spelled path and takes `..` by text. With a junction
   `<P>\J` of `<P>` into repository `<R>`, each git call on
   `<P>\J\sub` carries `GIT_COMMON_DIR=<P>\.git`. A second junction
   `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
@@ -33,10 +33,6 @@ the daemon walks up from the request folder:
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
-- On Windows `git.info` and `git.list_branches` read the config of a junction
-  `path` that holds its git directory through its target, and a refusal names
-  that file. A junction to a bare repository answers as that repository
-  (`4c111e86`, measured).
 - `process.spawn` does not use the walk.
 - A `.git` folder that passes the git-directory test is the git directory.
 - A `.git` folder that fails the test ends the walk. If it holds a `commondir`
@@ -64,6 +60,12 @@ passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
 then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
 starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
+
+??? note "Junction paths"
+    On Windows `git.info` and `git.list_branches` read the config of a junction
+    `path` that holds its git directory through its target. A refusal names that
+    file. A junction to a bare repository answers as that repository
+    (`4c111e86`, measured).
 
 ### How the daemon judges the git directory
 
