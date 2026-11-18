@@ -439,11 +439,11 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 
 ### A link to a network or device path
 
-On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path. The targets are a UNC path, `\\.\NUL`, and `\\?\Volume{guid}` and `\\?\GLOBALROOT` paths, also to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository, and the text is:
+On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, and `\\?\Volume{guid}` and `\\?\GLOBALROOT` paths, also to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository, and the text is:
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer `-32603`, and a create `worktree_add_failed` with no folder or branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum's own (`networklink.go`): a link to a drive letter is not followed, and `"shadowDirOff":true` is refused too.
+`git.status` and `git.info` answer `-32603`, and a create `worktree_add_failed` with no folder or branch. A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum's own, not measured: a link to a drive letter is not followed, and `"shadowDirOff":true` is refused too.
 
 ### A folder with a reparse tag that is no link
 
@@ -454,13 +454,13 @@ These rows are measured on Windows on `4c111e86`:
 
 ### UNC refusals
 
-On Windows `b3081b51` refuses a `\\?\UNC\` path and a path on a missing share. The path is `path` of `git.info` and `git.list_branches`, and `baseRepo` of `git.status`, `git.worktree_create` and `git.worktree_remove`. The texts are:
+On Windows `b3081b51` refuses a `\\?\UNC\` path and a missing share. The path is `path` of `git.info` and `git.list_branches`, and `baseRepo` of `git.status`, `git.worktree_create` and `git.worktree_remove`. The texts are:
 
 `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. ``
 
 `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. ``
 
-A remove answers `"success":false`, a create `"errorCode":"worktree_add_failed"` and the others `-32603`. A missing folder on a share that answers and a missing drive pass (measured on Windows). claustrum's own (`networklink.go`): other `\\?\` and `\\.\` forms and a share root alone pass.
+A remove answers `"success":false`, a create `"errorCode":"worktree_add_failed"` and the others `-32603`. A missing folder on a share that answers and a missing drive pass (measured on Windows). claustrum's own, not measured: other `\\?\` and `\\.\` forms and a share root alone pass.
 
 ## A FIFO where the daemon reads a git file
 
