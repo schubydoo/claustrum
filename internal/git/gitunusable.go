@@ -41,6 +41,27 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 	return rpc.OKResult(id, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 }
 
+// shareGitDir is the `.git` folder of repo when repo is on a network share
+// (repoOnShare) and holds a real `.git` folder. It is "" otherwise. The caller
+// uses it only where git found no repository in a folder that the trust check
+// accepted (askGit). 4c111e86 then answers a create with unusableGitText for
+// `<baseRepo>\.git`. It answers a remove of a gone worktree with success and a
+// kept branch, and it deletes nothing (measured on Windows, a share
+// `\\127.0.0.1\<share>\repo` with a good repository). The error output of git
+// there is not recorded. A baseRepo below the top folder of the repository, a
+// mapped drive, a `.git` file and a `.git` link keep the answers of a local
+// folder (claustrum's own, not measured).
+func shareGitDir(repo string) string {
+	if !repoOnShare(repo) {
+		return ""
+	}
+	g := filepath.Join(repo, ".git")
+	if fi, err := os.Lstat(g); err != nil || !fi.IsDir() {
+		return ""
+	}
+	return g
+}
+
 // unusableDotGit is the path of the first `.git` that git cannot use on the walk of
 // findGitDir from dir. It is "" when the walk meets none, or when it ends at a usable
 // git directory. The path has the spelling of the walk: dir after walkStart and

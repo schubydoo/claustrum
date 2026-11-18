@@ -542,7 +542,14 @@ func offWorktreesRefusal(repo string) string {
 // registration that git makes in the folder takes the set-group-ID bit from it:
 // `d 2755` with umask 022.
 //
-// Not measured: a folder `worktrees` that is there before the create, macOS and
+// On macOS a git directory whose group the user is not in refuses the mode
+// call with the set-group-ID bit. 4c111e86 then gives the folder the same mode
+// without that bit, for example `775` for `group` at umask 022 (measured on
+// macOS). So a refused mode call gets one more without the bit. On Linux the
+// kernel drops the bit with no error, so the second call does not run (from
+// the code, claustrum's own).
+//
+// Not measured: a folder `worktrees` that is there before the create, and
 // Windows. A folder that is there gets no mode call.
 func (u gitUse) makeWorktreesFolder() {
 	if u.accepted != nil {
@@ -568,8 +575,16 @@ func makeWorktreesFolderIn(root *os.Root, shared sharedRepository) {
 		return
 	}
 	if mode, ok := shared.folderMode(fi.Mode()); ok {
-		_ = root.Chmod(worktreesSubdir, mode)
+		if err := worktreesChmod(root, worktreesSubdir, mode); errors.Is(err, fs.ErrPermission) {
+			_ = worktreesChmod(root, worktreesSubdir, mode&^os.ModeSetgid)
+		}
 	}
+}
+
+// worktreesChmod is the mode call of makeWorktreesFolderIn through root. A test
+// replaces it. Production never does.
+var worktreesChmod = func(root *os.Root, name string, mode os.FileMode) error {
+	return root.Chmod(name, mode)
 }
 
 // repointLeaf is the step of a create in repo that looks at the `.git` file of
@@ -914,7 +929,7 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		}
 		return dir, func() { removeTempRequestDir(dir) }, nil
 	}
-	root, err := os.OpenRoot(u.folder)
+	root, err := openRootNoWait(u.folder)
 	if err != nil {
 		// On Linux and macOS a folder of the daemon with mode 0100 cannot be
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there

@@ -189,8 +189,8 @@ These items stay open:
   the reference authors.
 - Two Windows texts still differ from `4c111e86` and `c9125eb8`: a remove
   with a dangling `commondir` junction, and a create on an unborn `HEAD`.
-- Some replies still differ from `4c111e86`. On macOS, a `processWrapper` number and `git.status` with
-  only session-folder gits on the `PATH` differ. On Windows, a create and a remove on a
+- Some replies still differ from `4c111e86`: on macOS, `git.status` with only
+  session-folder gits on the `PATH` differs. On Windows, a create and a remove on a
   share whose `.git` git cannot use differ. On Linux, near the `timeoutMs` cut, the seed
   of a Git LFS object can end on the other side of the cut.
 - The pages of the methods mark each case that is claustrum's own or not measured.

@@ -92,6 +92,8 @@ type server struct {
 	once         sync.Once
 	dropOnce     sync.Once          // makes dropping, on first use
 	dropping     chan struct{}      // closed when dropConns starts (see dropStarted)
+	teardownOnce sync.Once          // makes tearing, on first use
+	tearing      chan struct{}      // closed when closeAll starts (see teardownStarted)
 	replyRule    *shutdownReplyRule // test seam: nil uses shutdownReplyAwaitsDrop and shutdownReplyWait
 	metricsLn    net.Listener       // optional Prometheus listener; nil unless -metrics-addr set
 	pipeLn       net.Listener       // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
@@ -1073,8 +1075,8 @@ func (s *server) handleRequest(c *conn.Conn, raw []byte, req request, ordered bo
 	}()
 	if resp != nil {
 		after := s.holdAfterWrite(resp.AfterWrite)
-		if awaits, _ := s.shutdownReply(); method == methodShutdown && awaits && isChanClosed(s.shutdown) {
-			s.awaitDropStart()
+		if method == methodShutdown && isChanClosed(s.shutdown) {
+			s.awaitShutdownReplyTurn()
 		}
 		c.WriteResponse(*resp)
 		s.runAfterWrite(after)
@@ -1131,8 +1133,8 @@ func (s *server) runPendingAfterWrites() {
 	}
 }
 
-// shutdownReplyWait bounds how long the server.shutdown reply waits for the teardown
-// to start dropping connections (claustrum's own, not measured).
+// shutdownReplyWait bounds how long the server.shutdown reply waits for the start of
+// the teardown or of the drop (claustrum's own, not measured).
 const shutdownReplyWait = 500 * time.Millisecond
 
 // shutdownReplyRule holds the reply rule of one test server, so that a test changes
@@ -1157,14 +1159,35 @@ func (s *server) dropStarted() chan struct{} {
 	return s.dropping
 }
 
-// awaitDropStart blocks until dropConns starts, or until shutdownReplyWait passes.
-// Then a reply to a connection that dropConns marked closed writes nothing.
-func (s *server) awaitDropStart() {
-	_, wait := s.shutdownReply()
+// teardownStarted returns the channel that startTeardown closes.
+func (s *server) teardownStarted() chan struct{} {
+	s.teardownOnce.Do(func() { s.tearing = make(chan struct{}) })
+	return s.tearing
+}
+
+// startTeardown closes the teardownStarted channel once. closeAll calls it first,
+// so a waiting server.shutdown reply and the close of the listener start together.
+func (s *server) startTeardown() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ch := s.teardownStarted(); !isChanClosed(ch) {
+		close(ch)
+	}
+}
+
+// awaitShutdownReplyTurn blocks until the teardown starts, or until dropConns starts
+// when shutdownReplyAwaitsDrop is set. shutdownReplyWait bounds the wait. A reply to
+// a connection that dropConns marked closed writes nothing.
+func (s *server) awaitShutdownReplyTurn() {
+	awaitsDrop, wait := s.shutdownReply()
+	turn := s.teardownStarted()
+	if awaitsDrop {
+		turn = s.dropStarted()
+	}
 	t := time.NewTimer(wait)
 	defer t.Stop()
 	select {
-	case <-s.dropStarted():
+	case <-turn:
 	case <-t.C:
 	}
 }
@@ -1295,6 +1318,9 @@ func (s *server) teardown(socket string) {
 // count is the children that got the kill. Not measured: the counts for a child that
 // ended by itself just before the shutdown.
 func (s *server) closeAll(socket string) {
+	// On Linux and macOS this releases the server.shutdown reply, so its write races
+	// the closes below (awaitShutdownReplyTurn).
+	s.startTeardown()
 	s.ln.Close()
 	// Unlink the socket only if it still has the file identity that we bound. The
 	// test comes right after the listener close and before the connections close,
@@ -1302,8 +1328,7 @@ func (s *server) closeAll(socket string) {
 	// removed the path, so this guard does not apply there (measured on Windows).
 	unlinkOwnSocket(socket, s.sockInfo)
 	// Then drop every client, before the slower cleanup below. The server.shutdown
-	// handler returns its reply as soon as the stop has started, so the reply write
-	// races this close. On Windows the write waits for the start of this drop.
+	// reply write races this close. On Windows the write waits for the start of this drop.
 	closed := s.dropConns()
 	// The steps of the replies that still wait for their write run now, after
 	// the drop, so a blocked write no longer holds them (runPendingAfterWrites).
@@ -1373,7 +1398,7 @@ func (s *server) closeAll(socket string) {
 // before the mark (claustrum's own, not measured).
 //
 // Before the loop, dropConns closes the dropStarted channel. That releases a
-// server.shutdown reply that waits in awaitDropStart.
+// server.shutdown reply that waits in awaitShutdownReplyTurn on Windows.
 func (s *server) dropConns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
