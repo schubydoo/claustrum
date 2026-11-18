@@ -188,10 +188,10 @@ stay in the git child's variables (measured on macOS and Windows for `git.status
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
 (claustrum's own, not measured). Only the first such request logs the OFF line below, and the first
 check after the hold the on-again line. The hold is global: a request
-without the switch gets no check meanwhile (measured on Linux). claustrum's own, not
-measured: a hold uses a stored value, or one shared read. With no stored value, git runs
-once more after the hold (`4c111e86`, measured on Linux). The code makes it the
-[excludes read](git-rules-calls.md#calls-outside-a-repository).
+without the switch gets no check meanwhile (measured on Linux). A hold uses a stored
+value, or else git runs once more after it (`4c111e86`, measured on Linux). The code makes
+it the [excludes read](git-rules-calls.md#calls-outside-a-repository). Requests in one
+hold share that read (claustrum's own, not measured).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone

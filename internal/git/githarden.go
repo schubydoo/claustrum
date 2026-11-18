@@ -1462,7 +1462,8 @@ var (
 // read after a git appears (measured).
 //
 // While the check of session folders is off, a read is kept for that time off only
-// (docs/protocol/git-rules-session-folders.md, the off switch).
+// (docs/protocol/git-rules-session-folders.md, the off switch). A stored result
+// serves a time off too (4c111e86, measured on Linux).
 func globalExcludesPath() string {
 	userExcludesMu.Lock()
 	if userExcludesDone {
