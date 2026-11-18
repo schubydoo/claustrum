@@ -138,3 +138,29 @@ func TestStartTestWithAFailingGit(t *testing.T) {
 		t.Errorf("git.info = %s\nwant %s", raw, want)
 	}
 }
+
+// A start test that failed while a request with the off switch held the check of
+// session folders is not kept: the next request without it tests again, and its
+// good test answers the repository.
+func TestStartTestFailureUnderOffSwitchIsNotKept(t *testing.T) {
+	requireGit(t)
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	slowGit(t, "version", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "init")
+	t.Setenv("CLAUSTRUM_GITSTUB_MODE2", "fail")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
+	release := sessiondirs.PauseCheck()
+	raw, _ := f.call(t, "git.info", map[string]any{"path": f.repo, "sessionFoldersOff": true})
+	release()
+	if want := `"message":"git cannot run on this host; git not run: exit status 1"`; !strings.Contains(raw, want) {
+		t.Fatalf("git.info with the off switch = %s\nwant %s", raw, want)
+	}
+	slowGit(t, "", "", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "")
+	raw, _ = f.call(t, "git.info", map[string]any{"path": f.repo})
+	if want := `"isRepo":true`; !strings.Contains(raw, want) {
+		t.Errorf("git.info after the off switch = %s\nwant %s", raw, want)
+	}
+}
