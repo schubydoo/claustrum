@@ -14,7 +14,7 @@ with an empty value (claustrum's own).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
-listing, a request with no cached value runs the excludes read, `git config
+listing, a request with no [kept value](git-rules-session-folders.md#the-off-switch) runs the excludes read, `git config
 --includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
 gives it and the probe `git --attr-source=<empty tree> version`. There are two profiles:
 

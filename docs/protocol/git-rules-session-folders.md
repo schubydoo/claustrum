@@ -1,7 +1,7 @@
 # Session folders
 
 The git methods and a bare `git` spawn skip a git on PATH in a session folder: a folder
-that a Claude Code session works in. The request can turn this check off. Each rule on this page is of build `b3081b51`, and it names its systems.
+that a Claude Code session works in. Each rule on this page is of build `b3081b51`, and it names its systems.
 
 ## Which spawn makes a session folder
 
@@ -80,7 +80,7 @@ write that makes the folder again are claustrum's own).
 
 ### A write and the prune
 
-- A file goes to a temp file `.new-<pid>-<ns>` first, and then by one rename to its
+- A file goes to a temp file `.new-<pid>-<ns>`, then by one rename to its
   name. A folder at that name fails the write. The folder stays, the temp file goes,
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
   macOS and Windows). Each later spawn in that folder tries the write again and logs
@@ -120,8 +120,8 @@ and Windows). It logs the second line (measured on Linux and macOS).
 
 ## A git in a session folder
 
-The git calls of the git methods pass over a git in a session folder. So does a
-`process.spawn` of the bare command `git`. Only that exact name counts: on Windows
+The git methods and a `process.spawn` of the bare command `git` pass over a git
+in a session folder. Only that exact name counts: on Windows
 `git.exe`, `GIT` and `Git.EXE` run the git in the session folder and keep their env
 (measured on Windows). A PATH entry with a link to such a folder
 counts too. The next git on the PATH of the daemon runs, and the daemon logs the first
@@ -140,7 +140,7 @@ Another bare command that PATH finds in a session folder runs, with the second l
 
 ### The variables of a git child
 
-These variables of a git child lose the session folders by their text. That holds for
+These variables lose the session folders by their text. That holds for
 a bare `git` spawn (measured on Linux, macOS and Windows) and for the calls of
 `git.status` and `git.info` (measured on macOS and Windows):
 
@@ -186,10 +186,11 @@ during the request. The session-folder git then runs (measured on Linux,
 macOS and Windows). The session folders
 stay in the git child's variables (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
-(claustrum's own, not measured). Only the first such request logs the OFF line below. The first
-check after the hold logs the on-again line. The hold is global: a request
-without the switch gets no check meanwhile (measured on Linux). After the hold, git runs
-once more (`4c111e86`, measured on Linux). The code makes it the
+(claustrum's own, not measured). Only the first such request logs the OFF line below, and the first
+check after the hold the on-again line. The hold is global: a request
+without the switch gets no check meanwhile (measured on Linux). claustrum's own, not
+measured: a hold uses a stored value, or one shared read. With no stored value, git runs
+once more after the hold (`4c111e86`, measured on Linux). The code makes it the
 [excludes read](git-rules-calls.md#calls-outside-a-repository).
 
 ```text
