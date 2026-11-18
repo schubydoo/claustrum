@@ -20,8 +20,8 @@ daemon. The wire surface is the product.
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
 | Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
-| Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). This runs the unit suites and the socket-integration suites. The time limit is explicit: a race run took over 9 minutes, near the 10-minute `go test` default |
+| Lint | `golangci-lint run ./...`. Config: `.golangci.yml` (v2) |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). It runs the unit and socket-integration suites. The time limit is explicit, because a race run took over 9 minutes, near the 10 minute default of `go test` |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -129,10 +129,11 @@ in [`SECURITY.md`](SECURITY.md).
 
 Five code paths give a caller-supplied or operator-supplied path to a recursive
 delete. The daemon `~`-expands the RPC paths first, so `"~"` once meant
-`os.RemoveAll($HOME)`. That destroyed a home directory. The five paths remain
-the only recursive deletes whose target a caller or an operator names. The
+`os.RemoveAll($HOME)`. That destroyed a home directory. The
 deletes inside the folder `git-shadow` are not among the five: their root comes
-from the socket, as in `plugins.prune`.
+from the socket, as in `plugins.prune`. `removeall_allowlist_test.go` lists each
+tree delete. It fails on an unlisted site, or on a listed guard function that
+calls no homeguard check.
 
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
@@ -146,7 +147,7 @@ from the socket, as in `plugins.prune`.
 
 `homeguard.WipesHomeDir` refuses a target that is home or contains home. It resolves a
 relative path with `filepath.Abs` first. It still permits a path under home,
-because `~/.claude/…` is the install path of the daemon itself. The guard is
+because `~/.claude/…` is the install path of the daemon. The guard is
 always-on, not opt-in. Any RPC path param that reaches a recursive delete owes
 this guard. `IsAbs && !homeguard.IsFilesystemRoot` is not a substitute: home passes both
 tests, and neither test resolves a relative path. A running daemon dials only with
@@ -203,20 +204,20 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
-  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy, request folder, seed copy and keep swap sites
+  at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy, request folder, seed copy and keep swap
   (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
   ([D8](docs/DIVERGENCES.md#d8)). Outside it,
-  `removeTempRequestDir` removes a request's temp folder after `homeguard.WipesHomeDir`. Never widen: `removeOwnFolderFile` removes a non-folder entry at the daemon's folder path by one file `unlinkat` (Linux, macOS; Windows: `os.Root.Remove`, which can take an empty folder, claustrum's own), never a tree or link target.
-- **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a copy (`removeEmptyHeadFolder`). Never widen: no tree.
-- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` removes an empty request folder (`removeEmptyRequestDir`), while the daemon folder keeps its mkdir identity. Linux uses an `O_PATH` handle. macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the folder of the daemon has the identity of the mkdir.
+  `removeTempRequestDir` removes a request's temp folder after `homeguard.WipesHomeDir`. Never widen: `removeOwnFolderFile` removes a non-folder entry at the daemon's folder path by one file `unlinkat` (Linux, macOS), never a tree or link target. Windows: `os.Root.Remove`, which can take an empty folder (claustrum's own).
+- **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a `git-shadow` copy (`removeEmptyHeadFolder`). Never widen: no tree.
+- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the daemon folder keeps its mkdir identity. Linux uses an `O_PATH` handle, and macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a daemon folder of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the daemon folder has its mkdir identity.
 - **The LFS store.** On Linux and macOS a create in `shadow` removes `.claude-<8 hex>-<oid>` temp files from one shard
   of `<git dir>/lfs/objects`, each by one file `unlinkat` after `homeguard.WipesHomeDir` (`removeLFSStoreEntry`,
   [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). Never widen: Remove no other
   name and never a tree. The sweep removes only a regular file named by the directory read. A failed or stopped
   copy of the seed removes its own object file (`copySeed`). Never widen: remove only the object file that the
-  seed just made, by one plain unlinkat, never a tree. The keep (macOS: claustrum's own) renames its `.kept-<oid>` link over the downloaded copy,
-  after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only the `.kept-<oid>` link of the file that the keep just wrote, and only onto that copy.
+  seed just made, by one plain unlinkat, never a tree. The keep (macOS: claustrum's own) renames its `.kept-<oid>` link over the downloaded copy
+  in the private store, after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only the `.kept-<oid>` link of the file that the keep just wrote, and only onto that copy.
 - **The LFS space stop.** On Linux and macOS a Git LFS download can leave under a tenth of the free space at the start. Then the
   group of the read-tree call gets one `SIGKILL` (`lfsRoomWatch`). It goes through `reapCheckoutGroup` after `gitStillRuns`, and the private folder goes
   before the reply ([the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)).
@@ -313,7 +314,7 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D19 | Remove refuses a junction between `baseRepo` and the leaf | always-on | Windows |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
-| D22 | Remove refuses a worktree locked in the `.git` folder of `baseRepo` | always-on | all |
+| D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |
 | D23 | The environment of a child is in name order | always-on | Windows |
 | D24 | Create rollback keeps a folder that replaced the registration | always-on | all |
 | D27 | The stale step keeps an entry with a live record | always-on | Windows |

@@ -301,7 +301,7 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 			raw := gitDispatch(t, h, rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
-			wantText := "refusing to create worktree: " + namedLeaf(leaf) + " was not populated by git worktree add"
+			wantText := "refusing to create worktree: `" + namedLeaf(leaf) + "` does not hold the .git file made for it"
 			if tc.otherEntry {
 				wantText = notOursText(leaf)
 			}
@@ -711,7 +711,7 @@ func TestCreatedIndexDir(t *testing.T) {
 
 // TestCreatedRegistrationRefusalStates pins the tests of createdRegistrationRefusal.
 // A leaf with no .git value is not refused (not measured). With no registrations
-// directory the answer is the "was not populated" text (measured). With a
+// directory the answer is the "does not hold the .git file" text (measured). With a
 // registrations directory and no entry of the name it is the "does not name" text.
 // 89cb6289 answers that text (measured). The state with an entry of another name is
 // not measured, and it gets the same text from the rule.
@@ -751,7 +751,7 @@ func TestCreatedRegistrationRefusalStates(t *testing.T) {
 	if got := refusalOf(""); got != "" {
 		t.Errorf("no .git value: refusal %q, want none", got)
 	}
-	if got, want := refusalOf(reg), "refusing to create worktree: "+namedLeaf(leaf)+" was not populated by git worktree add"; got != want {
+	if got, want := refusalOf(reg), "refusing to create worktree: `"+namedLeaf(leaf)+"` does not hold the .git file made for it"; got != want {
 		t.Errorf("no registrations directory (B-E1, B-E3 and measured): refusal %q, want %q", got, want)
 	}
 	if err := os.Mkdir(registry, 0o755); err != nil {

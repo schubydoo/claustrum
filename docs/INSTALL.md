@@ -82,10 +82,10 @@ form a driver sees:
 - `download failed: response exceeds <n> bytes`: D10 cap on the download body, opt-in
 - `download failed: <transport err>`: a transport error before the body, for example a refused connection. The prefix `download failed: ` also wraps every other download error that has no bare form in this table
 - `download failed: Get "<url>": net/http: timeout awaiting response headers`: no response headers for 60 s (always-on, parity)
-- `download interrupted after <got>/<total> bytes: <transport err>`: a body read with a `Content-Length` that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity)
+- `download interrupted after <got>/<total> bytes: <transport err>`: a body read with a `Content-Length` that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, measured on Linux)
 - `download interrupted after <got> bytes: <transport err>`: the same for a body with no length. The chunked cut (`unexpected EOF`) is `b3081b51`, measured on Linux. A reset there is claustrum's own, not measured
 - `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)`: D12 download deadline, opt-in
-- `download stalled: no data for 60s after <got>/<total> bytes`: read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, parity)
+- `download stalled: no data for 60s after <got>/<total> bytes`: the read-idle abort below (always-on, parity)
 - `mkdir cli dir: <err>`: cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup)
 - `cli version "…" must be a single path component`: D6 hardening
 - `cli path must not be or contain the home directory: "<path>"`: D2 hardening (see Staging and cleanup)
@@ -234,8 +234,12 @@ On the `-cli-url` path:
   Content-Length. If the server sends none, `total` is dropped.
 - A leading `bytes:0` line comes after the response headers and before any body
   byte. A server that sends no headers gets no line (Linux and Windows). A final
-  `bytes:<n>` line comes only after the checksum passes. A failed check prints no
-  final line (Linux).
+  `bytes:<n>` line needs a passed checksum (Linux). On Windows it also waits for
+  the CLI rename. A rename onto a directory link, a junction or a dangling link
+  fails with `Access is denied.` and prints none (`4c111e86`, measured on
+  Windows). A denied rename onto a CLI with the same bytes counts as done and
+  prints the line. A failed chmod, the D2 refusal and a folder that cannot be
+  cleared print none on Windows. Both are claustrum's own, not measured.
 - Between those two lines a tick comes each 1 s. If the byte count of a tick equals
   the count of the last printed line, the tick prints nothing. The counts jump irregularly, so a
   consumer treats them as progress, not as a byte-exact sequence. If a tick printed
@@ -258,22 +262,19 @@ On the `-cli-url` path:
   `download failed: Get "<url>": net/http: timeout awaiting response headers`. No
   progress line is printed, and `fetch` reads `"bytes":0` and
   `"longestPauseMs":0`.
-- A body read that ends with a transport error fails the install with
-  `download interrupted after <got>/<total> bytes: <transport err>` (Linux). On a
-  body with no length, a reset gives `download interrupted after <got> bytes:
-  <transport err>` (claustrum's own, not measured). The
+- A body read that ends with a transport error fails the install with a
+  `download interrupted` text above. The
   wait from the last byte to the error counts for `longestPauseMs`. One progress
   line is printed, and the cli-dir stays empty. A body that ends early with a clean
   close answers `download interrupted after <got>/<total> bytes: unexpected EOF`.
-  A chunked body with no final chunk answers `download interrupted after <got>
-  bytes: unexpected EOF` (`b3081b51`, measured on Linux). claustrum words other
+  claustrum words other
   read errors the same way (claustrum's own).
 - The body has an always-on 60 s read-idle abort, reset on every byte. It fails
   the install with the `download stalled: …` text above. It is no total deadline,
   so a slow download that keeps sending completes. The total deadline is the
-  opt-in [D12](DIVERGENCES.md#d12), off by default. When armed, it bounds the
+  opt-in [D12](DIVERGENCES.md#d12). When armed, it bounds the
   whole exchange, so an honest download that is too slow fails with
-  `download failed: context deadline exceeded (…)`.
+  its text above.
 
 The other clocks: each `-install` clock on this page is a clock of the reference and is
 always on. The opt-in D12 deadline is one exception. The 2 s output wait of a
@@ -340,8 +341,7 @@ The hardening of `-cli-version` is [D6](DIVERGENCES.md#d6):
   (claustrum's own).
 - claustrum clears an occupied `cliPath` only when it is a directory, because
   `rename(2)` refuses to replace a directory. A regular file is replaced
-  by the rename. A directory that claustrum cannot remove answers
-  `clearing stale dir at <path>: <err>`. On Windows the cleared name is
+  by the rename. On Windows the cleared name is
   `<version>.exe`. The D6 rule runs first, so `cliPath` is a direct child of the
   cli-dir.
 - claustrum does not remove a folder at the final path that is the home folder or

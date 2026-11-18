@@ -303,6 +303,8 @@ component_management:
         - internal/git/gitshadowsweep.go
         - internal/git/gitshadow_unix.go
         - internal/git/gitshadow_windows.go
+        - internal/git/rootnowait_unix.go
+        - internal/git/rootnowait_windows.go
         # the Linux and macOS call about the repository after the add of a create (c9125eb8).
         - internal/git/worktreeprobe_unix.go
         - internal/git/worktreeprobe_windows.go
@@ -325,6 +327,8 @@ component_management:
         - internal/git/gitworktreeconfig_windows.go
         # the gate and the answer of git.status (89cb6289).
         - internal/git/gitstatus.go
+        - internal/git/gitstatus_unix.go
+        - internal/git/gitstatus_windows.go
         # the git.info root per OS (89cb6289).
         - internal/git/gitinforoot_other.go
         - internal/git/gitinforoot_windows.go
@@ -399,6 +403,9 @@ component_management:
       name: process supervisor
       paths:
         - internal/supervisor/process.go
+        # The OS split of the end of a late start at the shutdown.
+        - internal/supervisor/latestart_unix.go
+        - internal/supervisor/latestart_windows.go
         # The cut of a long process id in four log lines.
         - internal/supervisor/logid.go
         - internal/supervisor/sysproc_unix.go

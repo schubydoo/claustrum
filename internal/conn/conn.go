@@ -283,12 +283,22 @@ func (c *Conn) WriteLineLocked(b []byte) error {
 // reports a failed write. Only the read loop acts on that, for its -32001 and
 // -32700 replies.
 func (c *Conn) WriteResponse(v interface{}) (failed bool) {
+	return c.sendReply(v, true)
+}
+
+// WriteResponseQuiet is WriteResponse with no log line for a failed write. The
+// read loop uses it for the parse-error reply to a connection with no token mark.
+func (c *Conn) WriteResponseQuiet(v interface{}) (failed bool) {
+	return c.sendReply(v, false)
+}
+
+func (c *Conn) sendReply(v interface{}, logFail bool) (failed bool) {
 	// json.Marshal, not an Encoder: this is the encode that carries EVERY
 	// JSON-RPC reply, and its HTML escaping is inherited wire behaviour — see
 	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on WriteJSON.
 	b, err := json.Marshal(v)
 	if err != nil {
-		if !c.ShuttingDown() {
+		if logFail && !c.ShuttingDown() {
 			logging.Errorf(FmtReplyFailed, err)
 		}
 		return false
@@ -310,7 +320,7 @@ func (c *Conn) WriteResponse(v interface{}) (failed bool) {
 		// Claustrum's own, not measured: the error text is quoted, the first line
 		// is skipped for a connection that never showed the token, and both lines
 		// are skipped once the daemon shuts down.
-		if !c.ShuttingDown() {
+		if logFail && !c.ShuttingDown() {
 			if c.TokenMark().Load() {
 				logging.Debugf(FmtWriteFailed, n, len(b), err)
 			}

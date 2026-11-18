@@ -121,10 +121,10 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 // takes the set-group-ID bit from it. The rows to `0640` are measured rows
 // (`5fd08069`, measured on Linux). A measurement has the row `group` too.
 // The next four rows are measured on Linux. The fourth has nine values in
-// its config. The eight rows to Q10 are measured on Linux. Q10 has its
+// its config. The eight rows to `worktree config` are measured on Linux. That row has its
 // value in `config.worktree` only. The registration is now staged, and it
-// takes the mode that git gave it in `.s<n>` (stagedEntryModes). For Q10
-// that is 2775, where 5fd08069 gives 775 (claustrum's own, not measured on
+// takes the mode that git gave it in `.s<n>` (stagedEntryModes). For the worktree config
+// row that is 2775, where 5fd08069 gives 775 (claustrum's own, not measured on
 // be1c1ca5). The last two rows are measured on macOS only. On Linux they
 // hold the modes of claustrum (claustrum's own, not measured). On macOS
 // b3081b51 gives `worktrees` the same modes in all rows, and the
@@ -158,15 +158,15 @@ func TestWorktreesFolderOfASharedRepository(t *testing.T) {
 		{"yes", 0o002, 0o2775, 0o2775, "", ""},
 		{"660", 0o002, 0o2770, 0o2775, "", ""},
 		{"2", 0o002, 0o2775, 0o2775, "", ""},
-		{"C2", 0o002, 0o2777, 0o2775, c2Lines, ""},
-		{"Q1", 0o002, 0o2775, 0o2775, "[core]\n\tsharedrepository\n", ""},
+		{"many lines", 0o002, 0o2777, 0o2775, c2Lines, ""},
+		{"bare key", 0o002, 0o2775, 0o2775, "[core]\n\tsharedrepository\n", ""},
 		{"on", 0o002, 0o2775, 0o2775, "", ""},
 		{"9", 0o002, 0o2775, 0o2775, "", ""},
 		{"640", 0o002, 0o2750, 0o2775, "", ""},
 		{"1660", 0o002, 0o2770, 0o2775, "", ""},
 		{"00660", 0o002, 0o2770, 0o2775, "", ""},
 		{"0771", 0o002, 0o2770, 0o2775, "", ""},
-		{"Q10", 0o002, 0o775, 0o2775, "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n",
+		{"worktree config", 0o002, 0o775, 0o2775, "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tworktreeConfig = true\n",
 			"[core]\n\tsharedRepository = group\n"},
 		{"group", 0o002, 0o2775, 0o2775, "", ""},
 		{"0660", 0o002, 0o2770, 0o2775, "", ""},

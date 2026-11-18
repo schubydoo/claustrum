@@ -28,8 +28,8 @@ the daemon walks up from the request folder:
   before `..`. The walk then starts at the spelled path. `git.status` resolves the
   path first. If that resolve fails, it answers there (all from the code).
 - On Windows a refusal of a config on `git.info` follows the spelled start too. In
-  the state `shadow` without `"shadowDirOff":true`, it is the class 1 text of
-  [Repository config refusals](git-rules-config.md#repository-config-refusals). A
+  the state `shadow` without `"shadowDirOff":true`, it is the
+  [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
@@ -167,8 +167,9 @@ The daemon's own environment changes the check as follows:
 M2 to M5 are texts of `f6010b97`, S1 of `4c111e86`, S2 of `683cc6a9`, M6 and S3 of `52d82f0a`.
 M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
-quoting of the path cut to its first 300 runes. A non-ASCII path is cut by runes, not bytes. An invalid
-UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
+quoting of the path cut to its first 300 runes. An invalid UTF-8 byte prints as `\xff`.
+Nothing else in the refusal text is cut. A create's first request runs the excludes read before the refusal
+(`4c111e86`, measured for S2 on macOS and Windows, claustrum's own elsewhere).
 
 | id | text after the prefix | operands |
 |---|---|---|
@@ -180,13 +181,12 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 | S2 | `%q is not a small plain file (<reason>); git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
 | S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 
-`<name>` in S1 and S2 is literal text, and the JSON encoder writes it as
-`\u003cname\u003e`.
+`<name>` in S1 and S2 is literal text, written as `\u003cname\u003e` in JSON.
 
 The M4 and S2 reasons are `commondir is not a regular file`,
-`"commondir" is larger than 1 MiB` (build `be1c1ca5`, measured on Linux) or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). M4 drops its operation and path (`b3081b51`, measured for `permission denied` on Linux, a missing target on Windows, `path escapes from parent` on Linux and macOS). Other OS errors of S2 and M4 are claustrum's own, not measured.
+`"commondir" is larger than 1 MiB` (`be1c1ca5`, measured on Linux) or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). M4 drops its operation and path (`b3081b51`, measured for `permission denied` on Linux, a missing target on Windows, `path escapes from parent` on Linux and macOS). Other OS errors of S2 and M4 are claustrum's own.
 
-M5 has no common prefix. It is `config-defined hooks could not be pinned off; git
+M5 has no common prefix: `config-defined hooks could not be pinned off; git
 not run: the worktree entry this folder's .git names no longer exists`.
 
 On Linux, for a G of 4086 or 4087 bytes, the Lstat of `<G>/commondir` fails with `file name too long`.
@@ -194,7 +194,7 @@ The answer is `config-defined hooks could not be pinned off; git not run: this r
 directory could not be examined (file name too long); if .git is a file, check the path
 written in it` (`683cc6a9`, measured on Linux). In a git directory that the walk accepted, each
 other failed Lstat of `<G>/commondir` but "does not exist" gets that text with the OS error and no
-path, as does a failed Stat of an entry G with no `commondir` (claustrum's own, not measured, as
+path, as does a failed Stat of an entry G with no `commondir` (claustrum's own, as
 are macOS and Windows).
 
 ### A git directory that the daemon cannot search
@@ -232,8 +232,8 @@ on `PATH`, the exec error replaces both texts (class 1 below).
 ### A folder with no repository
 
 Where the trust check finds no repository, the daemon still runs the configuration
-listing in that folder. In a plain folder it carries `GIT_DIR=<null>` (see
-[The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
+listing in that folder. In a plain folder it carries `GIT_DIR=<null>`
+([The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment)). The frames
 are those of the "no repository" column. A listing that fails by class 3
 below gives the "refused" column. A `.git` file to a gone entry under the
 `worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux, and
@@ -354,7 +354,7 @@ On Windows git cannot start in some paths that exist, and the listing fails by
 class 3 with the start error `fork/exec <git.exe path>: The directory name is
 invalid.`. `<git.exe path>` is the git that `PATH` resolves. The hooks refusal
 with that error answers these requests in the "refused" frame of
-[Trust refusal texts and frames](#trust-refusal-texts-and-frames),
+[Trust refusal texts](#trust-refusal-texts-and-frames),
 and nothing changes on disk:
 
 - `git.info` with `path` a regular file in a plain folder or in a repository, a
@@ -409,8 +409,8 @@ this rule is measured on Windows. For the "cannot run" text it is claustrum's ow
 
 With the `GIT_COMMON_DIR` pin, git names a corrupt config by its absolute path
 (measured on Linux and macOS). On claustrum a syntax error in a config file of the
-repository gets the class 1 text first: see
-[Repository config refusals](git-rules-config.md#repository-config-refusals).
+repository gets the
+[class 1 text](git-rules-config.md#repository-config-refusals) first.
 
 ## The object sources on Windows
 
@@ -498,4 +498,5 @@ opens during the request (from the code). After `git worktree add`, a `commondir
 of the git directory of `baseRepo` that is not a regular file counts as none, so
 that git directory is its own common directory (from the code). A FIFO as the
 config is in
-[Repository config refusals](git-rules-config.md#repository-config-refusals).
+[Repository config refusals](git-rules-config.md#repository-config-refusals), and one at a folder of the daemon in
+[the folders](git-rules-settings-copy.md#the-folders).

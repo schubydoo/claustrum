@@ -315,13 +315,22 @@ func TestAwaitLoginPATHReturnsWhenNeverArmed(t *testing.T) {
 }
 
 // TestLoginPATHReadPanicFailsTheRead: a panic in the read fails it and does not end
-// the daemon (claustrum's own).
+// the daemon (claustrum's own). The extractor panics only after the test holds the
+// read. A read that panics at once can end before runningRead looks for it.
 func TestLoginPATHReadPanicFailsTheRead(t *testing.T) {
 	buf := captureLogBuf(t)
 	installPathReadFake(t)
-	LoginPATHExtractor = func(context.Context) (string, error) { panic("boom") }
+	held := make(chan struct{})
+	LoginPATHExtractor = func(ctx context.Context) (string, error) {
+		select {
+		case <-held:
+		case <-ctx.Done():
+		}
+		panic("boom")
+	}
 	WarmAtStart()
 	r := runningRead()
+	close(held)
 	if r == nil {
 		t.Fatal("no read started")
 	}

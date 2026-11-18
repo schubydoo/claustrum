@@ -132,9 +132,9 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 		// the expected error text.
 		plant func(t *testing.T, f *wrFixture) (base, target, branch, want string)
 	}{
-		// On f6010b97 WR01 planted "." and was refused. 89cb6289 trusts "."
+		// On f6010b97 the measured row planted "." and was refused. 89cb6289 trusts "."
 		// (measured), so the row plants "x" here.
-		{"WR01_stray_commondir_x", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		{"stray_commondir_x", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
 			wrWrite(t, cd, "x\n")
 			return f.T, f.e0, "e0", strayText(wantTR(cd, "x"))
@@ -180,9 +180,9 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 		})
 	}
 
-	// WR08: a plain folder as the target gets the trust text too, not the
+	// A plain folder as the target gets the trust text too, not the
 	// "not a worktree" refusal of the registration check.
-	t.Run("WR08_stray_commondir_plain_folder", func(t *testing.T) {
+	t.Run("stray_commondir_plain_folder", func(t *testing.T) {
 		f := newWRFixture(t)
 		cd := filepath.Join(f.T, ".git", "commondir")
 		wrWrite(t, cd, "x\n")
@@ -196,7 +196,7 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 }
 
 // Measured: a baseRepo with no repository answers the prefix and "exit status 128".
-// Nothing is deleted. git 2.56 fails the listing of WR13 with its gitfile text, and
+// Nothing is deleted. git 2.56 fails the listing of linked_base_entry_removed with its gitfile text, and
 // 5fd08069 gives the same frame (measured on Linux). So the frame is the same with
 // git 2.43 and 2.56.
 func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
@@ -223,7 +223,7 @@ func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
 			wrWrite(t, filepath.Join(a, ".git"), "junk\n")
 			return a, f.e0, "e0"
 		}},
-		{"WR13_linked_base_entry_removed", func(t *testing.T, f *wrFixture) (string, string, string) {
+		{"linked_base_entry_removed", func(t *testing.T, f *wrFixture) (string, string, string) {
 			if err := os.RemoveAll(f.eTW); err != nil {
 				t.Fatal(err)
 			}
@@ -270,18 +270,18 @@ func TestWorktreeRemoveExternalHooksRefusal(t *testing.T) {
 // Measured: the removal resolves baseRepo to its repository git directory and
 // removes the worktree, its entry and its branch.
 func TestWorktreeRemoveExternalResolvesBaseRepository(t *testing.T) {
-	// WR07: a linked worktree as baseRepo.
-	t.Run("WR07_linked_base", func(t *testing.T) {
+	// A linked worktree as baseRepo.
+	t.Run("linked_base", func(t *testing.T) {
 		f := newWRFixture(t)
 		if got, want := f.remove(t, f.TW, f.e1, "e1"), `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 		f.removed(t, f.e1, "e1")
 	})
-	// WR14: the main repository carries a stray commondir. The check judges the git
+	// The main repository carries a stray commondir. The check judges the git
 	// directory of baseRepo, which is the entry T/.git/worktrees/T_wt. T/.git is only
 	// the pin, and the check does not judge it again.
-	t.Run("WR14_stray_commondir_in_main_linked_base", func(t *testing.T) {
+	t.Run("stray_commondir_in_main_linked_base", func(t *testing.T) {
 		f := newWRFixture(t)
 		wrWrite(t, filepath.Join(f.T, ".git", "commondir"), ".\n")
 		if got, want := f.remove(t, f.TW, f.e1, "e1"), `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
@@ -289,8 +289,8 @@ func TestWorktreeRemoveExternalResolvesBaseRepository(t *testing.T) {
 		}
 		f.removed(t, f.e1, "e1")
 	})
-	// K02: a subdirectory of the repository as baseRepo.
-	t.Run("K02_subdir_base", func(t *testing.T) {
+	// A subdirectory of the repository as baseRepo.
+	t.Run("subdir_base", func(t *testing.T) {
 		f := newWRFixture(t)
 		sub := filepath.Join(f.T, "p", "q")
 		if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -301,8 +301,8 @@ func TestWorktreeRemoveExternalResolvesBaseRepository(t *testing.T) {
 		}
 		f.removed(t, f.e0, "e0")
 	})
-	// K09: a submodule as baseRepo. Its `.git` file names S/.git/modules/sub.
-	t.Run("K09_submodule_base", func(t *testing.T) {
+	// A submodule as baseRepo. Its `.git` file names S/.git/modules/sub.
+	t.Run("submodule_base", func(t *testing.T) {
 		f := newWRFixture(t)
 		sub := filepath.Join(f.base, "S", "sub")
 		mods := filepath.Join(f.base, "S", ".git", "modules", "sub")
@@ -522,7 +522,7 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 		}
 		f.kept(t, f.e0, "e0")
 	})
-	t.Run("K14_base_is_regular_file", func(t *testing.T) {
+	t.Run("base_is_regular_file", func(t *testing.T) {
 		f := newWRFixture(t)
 		file := filepath.Join(f.base, "F")
 		wrWrite(t, file, "f\n")
@@ -716,7 +716,7 @@ func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
 			}
 			return wrRow{base: f.T, target: f.e0, want: gitx}
 		}},
-		{"L13u_base_is_regular_file", true, func(t *testing.T, f *wrFixture) wrRow {
+		{"base_is_regular_file", true, func(t *testing.T, f *wrFixture) wrRow {
 			file := filepath.Join(f.base, "F")
 			wrWrite(t, file, "f\n")
 			return wrRow{base: file, target: f.p0, want: gitx}
@@ -872,7 +872,7 @@ func wrSymlinkChain(t *testing.T, target string, n int) string {
 	return filepath.Join(dir, name)
 }
 
-// Rows LNKb, LNKr and their twins with git (`89cb6289`, `f6010b97`, measured on Linux).
+// A bare repository and a work tree, each with and without git (`89cb6289`, `f6010b97`, measured on Linux).
 // baseRepo is the head of a chain of 45 relative symlinks to a repository. The kernel does not
 // follow that chain, so os.Stat fails, but the trust check resolves it. The removal is
 // refused, and the registered worktree and its entry stay. With no git on PATH the reason is
@@ -887,10 +887,10 @@ func TestWorktreeRemoveExternalDeepSymlinkChainBase(t *testing.T) {
 		name        string
 		bare, noGit bool
 	}{
-		{"LNKb_bare_no_git", true, true},
-		{"LNKb-g_bare_with_git", true, false},
-		{"LNKr_work_tree_no_git", false, true},
-		{"LNKr-g_work_tree_with_git", false, false},
+		{"bare_no_git", true, true},
+		{"bare_with_git", true, false},
+		{"work_tree_no_git", false, true},
+		{"work_tree_with_git", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newWRFixture(t)
@@ -1016,11 +1016,11 @@ func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
 		}
 		f.kept(t, f.e0, "e0")
 	})
-	t.Run("DG2-info", func(t *testing.T) {
+	t.Run("info", func(t *testing.T) {
 		f, _, shape := arm(t, true)
 		wantRPCError(t, "info(T)", info(t, f.T), shape)
 	})
-	t.Run("DG2-status", func(t *testing.T) {
+	t.Run("status", func(t *testing.T) {
 		f, _, shape := arm(t, true)
 		wantRPCError(t, "status(T,T)", status(t, f.T, f.T), shape)
 	})

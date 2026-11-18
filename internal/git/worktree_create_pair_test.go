@@ -83,8 +83,8 @@ func TestCreatePairCases(t *testing.T) {
 		stage  func(t *testing.T, f checkoutRuleFixture)
 		pair   bool
 	}{
-		{"R-Q2b", false, nil, true},
-		{"50a with the member", true, nil, true},
+		{"plain", false, nil, true},
+		{"with the member", true, nil, true},
 		{"a stale entry", false, stale, !stagedAddWindowsSteps},
 		{"with the member and a stale entry", true, stale, false},
 		{"no registrations folder", false, noFolder, true},

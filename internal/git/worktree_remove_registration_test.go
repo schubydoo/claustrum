@@ -151,7 +151,7 @@ func TestWorktreeRemoveDaemonGitDirAndOtherCommonDir(t *testing.T) {
 
 // Measured on Linux, macOS and Windows, divergence D22: the daemon has GIT_DIR and GIT_COMMON_DIR of
 // X, and S is locked in T. claustrum refuses and deletes nothing. 89cb6289 answers success and
-// deletes S.
+// deletes S. On Windows c9125eb8 and 4c111e86 refuse too (measured).
 func TestWorktreeRemoveDaemonGitDirLockedInBaseRepoIsRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)
@@ -167,7 +167,8 @@ func TestWorktreeRemoveDaemonGitDirLockedInBaseRepoIsRefused(t *testing.T) {
 
 // Measured on Linux, macOS and Windows, D22 for a folder that is gone: the same
 // environment, S locked in T and its folder removed by hand. claustrum refuses.
-// 89cb6289 answers success and deletes nothing.
+// 89cb6289 answers success and deletes nothing. On Windows c9125eb8 and 4c111e86
+// refuse too (measured).
 func TestWorktreeRemoveDaemonGitDirGoneLockedInBaseRepoIsRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)
@@ -203,7 +204,7 @@ func TestWorktreeRemoveDaemonGitDirLockedInOtherRepoIsRefused(t *testing.T) {
 
 // Measured on Linux, macOS and Windows, divergence D22: the daemon has GIT_DIR of
 // X alone, and S is locked in T. claustrum refuses and deletes nothing. 89cb6289
-// answers success and deletes S.
+// answers success and deletes S. On Windows c9125eb8 and 4c111e86 refuse too (measured).
 func TestWorktreeRemoveDaemonGitDirOnlyLockedInBaseRepoIsRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)

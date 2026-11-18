@@ -255,8 +255,10 @@ func (h *ShadowHost) gate(off bool) string {
 	if kept, done := h.decided(); done {
 		return kept
 	}
+	checkOff := sessiondirs.CheckOff()
 	state, cause := h.startTest()
 	end := shadowClock()
+	checkOff = checkOff || sessiondirs.CheckOff()
 
 	if state == "" && cause == "" {
 		// The shutdown came first: no test ran.
@@ -269,10 +271,20 @@ func (h *ShadowHost) gate(off bool) string {
 		// The frame of every cause (measured on Linux, and in part on
 		// macOS and Windows). A cause with gitCannotRunPrefix is the
 		// whole text (cannotRunText).
-		h.failure = cause
+		failure := cause
 		if !strings.HasPrefix(cause, gitCannotRunPrefix) {
-			h.failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
+			failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
 		}
+		// A failure of a test that ran while the check of session folders was off
+		// is not kept. The next request tests again (4c111e86, measured on Linux).
+		// A failure kept before the switch still answers a request with it
+		// (measured). A hold live at the start or the end of the test counts as off
+		// (claustrum's own, not measured). No test pins the start or the end read
+		// alone: the test holds the switch across the whole request.
+		if checkOff {
+			return failure
+		}
+		h.failure = failure
 		h.failed = end
 		return h.failure
 	}
@@ -302,6 +314,20 @@ func (h *ShadowHost) folderWithNoTest() {
 	if !h.closed {
 		h.remakeFolder()
 	}
+}
+
+// keptFailure is the text of a failed test that is still kept, or "". It changes
+// nothing and runs no test.
+func (h *ShadowHost) keptFailure() string {
+	if !h.active() {
+		return ""
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed || h.failure == "" || shadowClock().Sub(h.failed) >= shadowFailureKeep {
+		return ""
+	}
+	return h.failure
 }
 
 // decided reports whether a request needs no test now. kept is then the text of
@@ -1138,7 +1164,7 @@ func fillShadowTestCopy(gitDir, shadowDir string, listing []byte) error {
 // number in their second state, in 14 of 14 cells (measured on Linux), and a poll
 // saw `.check-<n>/shadow/.tmp-<digits>` (measured on macOS).
 func writeShadowTestFiles(shadowDir string, head, config []byte) error {
-	root, err := os.OpenRoot(shadowDir)
+	root, err := openRootNoWait(shadowDir)
 	if err != nil {
 		return err
 	}

@@ -341,7 +341,7 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	}
 	st := h.repos[name]
 	path := filepath.Join(dir, name)
-	base, err := os.OpenRoot(dir)
+	base, err := openRootNoWait(dir)
 	var root *os.Root
 	if err != nil {
 		if root = repoFolderBySearch(path, err); root == nil {
@@ -374,7 +374,7 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 		if err := mkdirShadowRepo(base, name, path); err != nil {
 			return err
 		}
-		if root, err = base.OpenRoot(name); err != nil {
+		if root, err = openInRootNoWait(base, name); err != nil {
 			return err
 		}
 	}
@@ -519,7 +519,7 @@ func repoFolderBySearch(path string, openErr error) *os.Root {
 	if err != nil || !goesAsTree(fi.Mode()) {
 		return nil
 	}
-	root, err := os.OpenRoot(path)
+	root, err := openRootNoWait(path)
 	if err != nil {
 		return nil
 	}

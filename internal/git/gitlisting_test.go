@@ -463,9 +463,9 @@ func stubListing(t *testing.T, code int, stderr string) {
 // same shape. Mutation: make listingFindsNoRepository return false.
 func TestListingNotARepository(t *testing.T) {
 	for _, tc := range []struct{ name, stderr string }{
-		{"L14a", "fatal: not a git repository (stub)"},
-		{"L14b", "FATAL: NOT A GIT REPOSITORY"},
-		{"L14d", strings.Repeat(`\n `, 40) + "fatal: not a git repository (stub)"},
+		{"stub text", "fatal: not a git repository (stub)"},
+		{"upper case", "FATAL: NOT A GIT REPOSITORY"},
+		{"after 40 blank lines", strings.Repeat(`\n `, 40) + "fatal: not a git repository (stub)"},
 		{"another language", "fatal: kein Git-Repository (oder irgendein Elternverzeichnis): .git"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

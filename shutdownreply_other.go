@@ -2,6 +2,9 @@
 
 package main
 
-// shutdownReplyAwaitsDrop is false on Linux and macOS: the server.shutdown reply is
-// written as soon as the handler returns. A test turns it on through replyRule.
+// shutdownReplyAwaitsDrop is false on Linux and macOS. The server.shutdown reply then
+// waits only for the start of the teardown (startTeardown), and its write races the
+// close of the listener and the connections. The rate depends on timing. On Linux
+// this build still replies first far more often than 4c111e86. On macOS both reply
+// first in most runs (measured on macOS).
 const shutdownReplyAwaitsDrop = false

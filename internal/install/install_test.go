@@ -380,16 +380,45 @@ func TestRunCLIVersion(t *testing.T) {
 	if got := runCLIVersion(filepath.Join(dir, "missing"), time.Minute); got != cliRunFailed {
 		t.Errorf("a missing path: result %d, want cliRunFailed", got)
 	}
-	// A 1 s CLI (the leak budget of slowCLI) against both sides of a bound.
+	// A 1 s CLI (the leak budget of slowCLI) under a bound that it meets.
 	slow := filepath.Join(dir, "slow.exe")
 	if err := os.WriteFile(slow, slowCLI(t, 1), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := runCLIVersion(slow, 100*time.Millisecond); got != cliRunStopped {
-		t.Errorf("a 1s CLI under a 100ms bound: result %d, want cliRunStopped", got)
-	}
 	if got := runCLIVersion(slow, 30*time.Second); got != cliRunOK {
 		t.Errorf("a 1s CLI under a 30s bound: result %d, want cliRunOK", got)
+	}
+	// A CLI that still runs at the bound. A late timer once let a 1 s CLI exit
+	// before the stop step, so the stub now waits for the stop step. The gate
+	// file appears after the stop step returned, so only a stub that the step
+	// did not end sees it and exits 0. The 20 s delay ends a stub that never
+	// sees the gate.
+	f := newStubFixture(t)
+	placeStub(t, f.cli)
+	stubDelay(t, 20*time.Second)
+	gate := filepath.Join(f.root, "stop-step-done")
+	t.Setenv("CLAUSTRUM_TEST_STUB_GATE", gate)
+	// runCLIVersion can return once stop has returned, before the write of the
+	// gate. The test waits for that write, so it does not outlive the test.
+	written := make(chan error, 1)
+	old := afterCLIBound
+	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
+		return old(d, func() {
+			stop()
+			written <- os.WriteFile(gate, nil, 0o644)
+		})
+	}
+	t.Cleanup(func() { afterCLIBound = old })
+	if got := runCLIVersion(f.cli, 100*time.Millisecond); got != cliRunStopped {
+		t.Errorf("a CLI that waits for the stop step under a 100ms bound: result %d, want cliRunStopped", got)
+	}
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Errorf("the gate file: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("the stop step did not run")
 	}
 }
 
@@ -1650,6 +1679,71 @@ func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The Windows rule of the final progress line: it waits for the rename of the new
+// CLI. On 4c111e86 a failed rename leaves the bytes:0 line only, and a good
+// rename prints both lines (measured on Windows). The test sets the rule on any
+// system. blockCLIRename makes the rename fail.
+func TestInstallFinalProgressWaitsForTheRename(t *testing.T) {
+	old := finalProgressAfterRename
+	finalProgressAfterRename = true
+	t.Cleanup(func() { finalProgressAfterRename = old })
+	zst := fakeCLIZst(t, 0)
+	sum := sha256.Sum256(zst)
+	checksum := hex.EncodeToString(sum[:])
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(zst)))
+		_, _ = w.Write(zst)
+	}))
+	defer srv.Close()
+	n := len(zst)
+	lead := fmt.Sprintf(`__INSTALL_PROGRESS__{"phase":"download","bytes":0,"total":%d}`, n)
+	final := fmt.Sprintf(`__INSTALL_PROGRESS__{"phase":"download","bytes":%d,"total":%d}`, n, n)
+	progress := func(out string) string {
+		var got []string
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "__INSTALL_PROGRESS__") {
+				got = append(got, l)
+			}
+		}
+		return strings.Join(got, "\n")
+	}
+
+	t.Run("good rename", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "cli")
+		out := captureInstallOutput(t, installOpts{cliDir: dir, cliVersion: "1.0.0",
+			cliURL: srv.URL + "/cli.zst", cliChecksum: checksum})
+		if got, want := progress(out), lead+"\n"+final; got != want {
+			t.Fatalf("progress lines =\n%s\nwant\n%s", got, want)
+		}
+	})
+
+	t.Run("failed rename", func(t *testing.T) {
+		oldBound := cliRenameBound
+		cliRenameBound = 0
+		t.Cleanup(func() { cliRenameBound = oldBound })
+		lastInstallFetch, lastInstallFinal = nil, nil
+		t.Cleanup(func() { lastInstallFetch, lastInstallFinal = nil, nil })
+		dir := t.TempDir()
+		cliPath := filepath.Join(dir, "1.0.0")
+		block := blockCLIRename(t, cliPath)
+		stage := func(d string) (string, error) {
+			tmp, err := stageDownload(srv.URL+"/cli.zst", checksum, d)
+			if err != nil {
+				return "", err
+			}
+			return tmp, block(tmp)
+		}
+		var err error
+		out := captureStdout(t, func() { err = stageAndInstall(cliPath, stage, "") })
+		if err == nil || !strings.HasPrefix(err.Error(), "rename: ") {
+			t.Fatalf("stageAndInstall = %v, want a rename error", err)
+		}
+		if got := progress(out); got != lead {
+			t.Fatalf("progress lines =\n%s\nwant\n%s", got, lead)
+		}
+	})
 }
 
 // A cache miss with no source flag still creates the cli-dir (0700, with its

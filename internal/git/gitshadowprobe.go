@@ -201,7 +201,7 @@ var probeRebaseFolders = []string{"rebase-merge", "rebase-apply"}
 func (h *ShadowHost) prepareProbeFolder(dir string) error {
 	probe := filepath.Join(dir, shadowProbeName)
 	var root *os.Root
-	base, err := os.OpenRoot(dir)
+	base, err := openRootNoWait(dir)
 	if err != nil {
 		if root, err = probeFolderBySearch(dir, err); err != nil {
 			return err
@@ -211,7 +211,7 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 		if err := base.Mkdir(shadowProbeName, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return probePathError(dir, err)
 		}
-		if root, err = base.OpenRoot(shadowProbeName); err != nil {
+		if root, err = openInRootNoWait(base, shadowProbeName); err != nil {
 			return probePathError(dir, err)
 		}
 	}
@@ -261,7 +261,7 @@ func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
 	if err != nil || !goesAsTree(fi.Mode()) {
 		return nil, openErr
 	}
-	root, err := os.OpenRoot(probe)
+	root, err := openRootNoWait(probe)
 	if err != nil {
 		return nil, openErr
 	}
@@ -735,7 +735,9 @@ func (h *ShadowHost) asksGit(t gitDirTrust, off bool) bool {
 
 // recheck asks git again before a call of the request in dir, when the kept
 // answer is no longer good. It runs before the listing of each hardened call
-// that has no --git-dir= in its argv and names the copy (hookPrecursor).
+// that has no --git-dir= in its argv and names the copy (hookPrecursor). On
+// Windows a create of a branch also calls it right after the add
+// (createRechecksAfterAdd).
 //
 // 5fd08069 tests the kept answer at more than one step of a request. A
 // git.info that came 4.95 s after the call made the next call as its fifth,

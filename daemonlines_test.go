@@ -35,7 +35,9 @@ func bootLineServer(t *testing.T, keepChildren bool) (*server, string) {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
 	t.Cleanup(func() { s.procs.KillAll() }) // a failed run leaves no helper behind
-	t.Cleanup(func() { _ = s.ln.Close() })
+	// The shutdown comes before the close, so an accept loop that a failed test left
+	// running returns and logs no retry line into the log capture of a later test.
+	t.Cleanup(func() { s.signalShutdown(); _ = s.ln.Close() })
 	s.startAcceptLoops()
 	return s, sock
 }
@@ -268,6 +270,8 @@ func TestShutdownCountKeepsAClosedStopConnection(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	stop := dial(t, sock)
+	// The reply then needs no wait for its bound on Linux and macOS (awaitShutdownReplyTurn).
+	s.startTeardown()
 	reply := string(stop.call(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
 	if reply != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
 		t.Fatalf("server.shutdown reply = %s", reply)
