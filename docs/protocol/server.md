@@ -118,17 +118,17 @@ At each connection the daemon reads its own user link again (`4c111e86`). If tha
 {"ok": true}
 ```
 
-`server.shutdown` stops the daemon. It is not authenticated: a shutdown frame stops the daemon with any `auth` member or none. The exemption covers auth only. A frame with a missing or wrong `jsonrpc` version gets `-32600 Invalid JSON-RPC version`, and the daemon stays up. See [Authentication](../PROTOCOL.md#authentication). `-stop` sends this method with no `auth` member.
+`server.shutdown` is not authenticated: a shutdown frame stops the daemon with any `auth` member or none. The exemption covers auth only. A frame with a missing or wrong `jsonrpc` version gets `-32600 Invalid JSON-RPC version`, and the daemon stays up. See [Authentication](../PROTOCOL.md#authentication). `-stop` sends this method with no `auth` member.
 
 ### The reply races the close
 
-The reply waits until teardown starts, on Windows until the stop starts to close the connections, at most 500 ms (claustrum's own, not measured). So the reply write races the close.
+Once the handler starts the stop, the reply waits until teardown starts, on Windows until the stop starts to close the connections, at most 500 ms (claustrum's own, not measured).
 
 - If the reply wins, the client reads `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`, then EOF.
 - If the close wins, the client reads EOF with no bytes.
-- Another idle connection gets a clean EOF with no bytes.
+- Another idle connection gets EOF with no bytes.
 
-A client must treat EOF after a shutdown request as success. On Linux claustrum still replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured on macOS). In one round on Windows `b3081b51` replied in 0 of 60 plain runs, 17 of 60 after a ping and 2 of 60 with a second idle connection (measured on Windows). Both daemons send the same reply bytes.
+A client must treat EOF after a shutdown request as success. On Linux claustrum replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured on macOS). In one round on Windows `b3081b51` replied in 0 of 60 plain runs and 17 of 60 after a ping (measured on Windows). With a second idle connection it replied in 2 of 60. If claustrum and `b3081b51` both send the reply, the frame bytes are equal.
 
 ### What the stop does
 
@@ -149,7 +149,7 @@ On `server.shutdown` the daemon logs these two lines before it closes any connec
 [Server] shutdown requested
 ```
 
-If the daemon logs a `[Server] Connection closed: <label>` line, the line comes after the close of its connection. Then the daemon logs:
+If the daemon logs a `[Server] Connection closed: <label>` line, it comes after the close of its connection. Then the daemon logs:
 
 ```
 [Server] cleanup: closed <n> connection(s), ended <n> child process group(s)
