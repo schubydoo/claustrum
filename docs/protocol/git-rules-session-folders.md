@@ -83,14 +83,14 @@ write that makes the folder again are claustrum's own).
 - A file goes to a temp file `.new-<pid>-<ns>`, then by one rename to its
   name. A folder at that name fails the write. The folder stays, the temp file goes,
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
-  macOS and Windows). Each later spawn in that folder tries the write again and logs
+  macOS and Windows). Each later spawn in that folder tries the write and logs
   the line again (claustrum's own, not measured).
 - After a spawn the folder keeps at most 2048 record files. After a good write the
   records with the lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS
   and Windows).
 - The rename of a write replaces a file at the record name. A plain remove takes an
-  empty folder that was put at a name too (from the code).
+  empty folder put at a name too (from the code).
 
 With a socket of another layout the daemon writes no file (measured on Linux, macOS
 and Windows). It logs the second line (measured on Linux and macOS).
@@ -191,7 +191,7 @@ without the switch gets no check meanwhile (measured on Linux). Only the first s
 request logs the OFF line below, and the first check after the hold the on-again line.
 A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
 Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
-A hold shares that read and stores none it interrupts (claustrum's own, not measured).
+A hold keeps that read for later requests, and none it interrupts (claustrum's own, not measured).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
