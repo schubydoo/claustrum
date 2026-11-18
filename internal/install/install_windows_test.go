@@ -27,11 +27,11 @@ func TestInstallWindowsCLIFileIsVersionExe(t *testing.T) {
 	}
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: f.stubBlob(t)})
 	if wantOut := factsHead(t, want) + "false}\n"; out != wantOut {
-		t.Errorf("W01: stdout\n got %q\nwant %q", out, wantOut)
+		t.Errorf("stdout\n got %q\nwant %q", out, wantOut)
 	}
-	f.wantNames(t, "W01", "9.9.9.exe")
+	f.wantNames(t, "good install", "9.9.9.exe")
 	if start := mustLogLine(t, f, "START "); !strings.HasPrefix(start, "START argv0="+want+" ") {
-		t.Errorf("W01: stub START %q, want argv[0] %s", start, want)
+		t.Errorf("stub START %q, want argv[0] %s", start, want)
 	}
 }
 
@@ -43,14 +43,14 @@ func TestInstallWindowsErrorTextsNameTheExePath(t *testing.T) {
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: f.stubBlob(t)})
 	want := factsHead(t, f.cli) + `false,"cliError":` + jsonString(t, "installed cli at "+f.cli+" is not runnable") + "}\n"
 	if out != want {
-		t.Errorf("F12: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNamesAfterFailedRun(t, "F12")
+	f.wantNamesAfterFailedRun(t, "failed run")
 
 	out = captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
 	want = factsHead(t, f.cli) + `false,"cliError":"cli 9.9.9 missing and no --cli-url or --cli-zst provided"}` + "\n"
 	if out != want {
-		t.Errorf("E01: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 }
 
@@ -119,16 +119,16 @@ func TestProbeCLIWindowsNeedsTheExactPath(t *testing.T) {
 		placeStub(t, f.cli)
 		bare := filepath.Join(f.cliDir, "9.9.9")
 		if got := probe(t, bare); got != "__CLI_BAD__\n" {
-			t.Errorf("W08a: stdout %q, want __CLI_BAD__", got)
+			t.Errorf("stdout %q, want __CLI_BAD__", got)
 		}
 		if _, n := f.stubLogLine(t, "START "); n != 0 {
-			t.Errorf("W08a: the stub ran %d times, want 0", n)
+			t.Errorf("the stub ran %d times, want 0", n)
 		}
 		if got := probe(t, f.cli); got != "" {
-			t.Errorf("W08b: stdout %q, want it empty", got)
+			t.Errorf("stdout %q, want it empty", got)
 		}
 		if _, n := f.stubLogLine(t, "START "); n != 1 {
-			t.Errorf("W08b: the stub ran %d times, want 1", n)
+			t.Errorf("the stub ran %d times, want 1", n)
 		}
 	})
 	t.Run("only the bare file", func(t *testing.T) {
@@ -136,13 +136,13 @@ func TestProbeCLIWindowsNeedsTheExactPath(t *testing.T) {
 		bare := filepath.Join(f.cliDir, "9.9.9")
 		placeStub(t, bare)
 		if got := probe(t, bare); got != "" {
-			t.Errorf("W08c: stdout %q, want it empty", got)
+			t.Errorf("stdout %q, want it empty", got)
 		}
 		if _, n := f.stubLogLine(t, "START "); n != 1 {
-			t.Errorf("W08c: the stub ran %d times, want 1", n)
+			t.Errorf("the stub ran %d times, want 1", n)
 		}
 		if got := probe(t, f.cli); got != "__CLI_BAD__\n" {
-			t.Errorf("W08d: stdout %q, want __CLI_BAD__", got)
+			t.Errorf("stdout %q, want __CLI_BAD__", got)
 		}
 		if err := os.Remove(bare); err != nil {
 			t.Fatal(err)
