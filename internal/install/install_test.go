@@ -1684,7 +1684,7 @@ func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
 // The Windows rule of the final progress line: it waits for the rename of the new
 // CLI. On 4c111e86 a failed rename leaves the bytes:0 line only, and a good
 // rename prints both lines (measured on Windows). The test sets the rule on any
-// system. A folder in place of the staging file makes the rename fail.
+// system. blockCLIRename makes the rename fail.
 func TestInstallFinalProgressWaitsForTheRename(t *testing.T) {
 	old := finalProgressAfterRename
 	finalProgressAfterRename = true
@@ -1727,18 +1727,13 @@ func TestInstallFinalProgressWaitsForTheRename(t *testing.T) {
 		t.Cleanup(func() { lastInstallFetch, lastInstallFinal = nil, nil })
 		dir := t.TempDir()
 		cliPath := filepath.Join(dir, "1.0.0")
-		if err := os.WriteFile(cliPath, []byte("old"), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		block := blockCLIRename(t, cliPath)
 		stage := func(d string) (string, error) {
 			tmp, err := stageDownload(srv.URL+"/cli.zst", checksum, d)
 			if err != nil {
 				return "", err
 			}
-			if err := os.Remove(tmp); err != nil {
-				return "", err
-			}
-			return tmp, os.Mkdir(tmp, 0o755)
+			return tmp, block(tmp)
 		}
 		var err error
 		out := captureStdout(t, func() { err = stageAndInstall(cliPath, stage, "") })
