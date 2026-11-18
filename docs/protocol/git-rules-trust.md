@@ -18,16 +18,16 @@ the daemon walks up from the request folder:
   the resolved path, never the alias.
 - On Windows the walk resolves no junction before the last component of the
   path. It starts at the spelled path and takes `..` by text. With a junction
-  `<P>\J` of `<P>` into repository `<R>`, each git call on
-  `<P>\J\sub` carries `GIT_COMMON_DIR=<P>\.git`. A second junction
+  `<P>\J` into repository `<R>`, each git call on
+  `<P>\J\sub` carries `GIT_COMMON_DIR=<P>\.git` (a folder symlink gives `<R>\.git`). A second junction
   `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
   the pin of `<P>` too. A junction outside any repository gives "no repository",
   and each git call carries `GIT_DIR=NUL`.
-- On Windows any folder path that does not resolve starts the walk as spelled.
-  `git.status` resolves the path first and answers there if that fails (all
+- On Windows any folder path that does not resolve, like `<P>\gone\..`, starts the walk as spelled.
+  `git.status` resolves it first and answers there if that fails (all
   from the code).
 - On Windows a config refusal of `git.info` follows the spelled start too,
-  except a junction `path` (below). In `shadow` without
+  except a junction `path`. In `shadow` without
   `"shadowDirOff":true`, it is the
   [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
@@ -66,8 +66,8 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
     `path` that holds its git directory through its target. A refusal names that
     file. A junction to a bare repository answers as that repository
     (`4c111e86`, measured). Other methods, a daemon `GIT_DIR` and a target with
-    no drive letter keep the pin (claustrum's own, not measured). A junction chain
-    reads its first target: one to a bare repository is refused (claustrum's
+    no drive letter keep the pin. A junction chain
+    reads its first target: one to a bare repository is refused (both claustrum's
     own, not measured).
 
 ### How the daemon judges the git directory
