@@ -132,11 +132,11 @@ rev-parse --verify -q HEAD^{commit}
 diff-index --cached --raw -z --ignore-submodules=none HEAD --
 ```
 
-If `HEAD` names no commit, `diff-index` compares the staged changes with the empty tree.
+If `HEAD` names no commit, `diff-index` compares with the empty tree.
 
-- The calls ignore the `.gitattributes` files of the repository, so no clean filter runs. A git older than 2.40 has no option for that, and then the attributes apply.
-- The calls do not read replace objects (`refs/replace`), so the status is that of the real commits.
-- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). The item comes before the other items, and it stays where the user config sets `lfs.storage` (claustrum's own, not measured).
+- The calls ignore the `.gitattributes` files, so no clean filter runs, but before git 2.40 the attributes apply.
+- The calls read no replace objects from `refs/replace`.
+- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). On Windows the item follows `--work-tree` (`4c111e86`). Elsewhere it comes first, also where the user config sets `lfs.storage` (claustrum's own, not measured).
 - `status`, `ls-files` and `diff-index` carry `GIT_OPTIONAL_LOCKS=0`. All calls run as [hardened git calls](git-rules-calls.md#hardened-git-calls).
 - If the user has a global excludes file, the status uses it.
 
@@ -189,6 +189,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
     - The folder compare of the registration match ignores letter case. A `gitdir` value that ends in `.GIT` fails.
+    - A junction `path` outside `baseRepo` gets no `rev-parse --show-toplevel` with that spelling (`4c111e86`). claustrum uses the real path (not measured).
     - A subst drive, a junction, a `\\?\` path and 8.3 short names match `path` too. A `path` with short names inside a `baseRepo` in short names finds no registration.
     - A `commondir` value with forward or back slashes passes. Another letter case, a short name, a `\\?\` prefix and a value with no drive letter fail.
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.
