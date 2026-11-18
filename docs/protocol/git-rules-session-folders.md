@@ -161,7 +161,7 @@ Windows). A name in the `env` of the spawn stays. A spawned bare `git` also gets
 `GIT_TRACE2=0`, `GIT_TRACE2_EVENT=0` and `GIT_TRACE2_PERF=0` (measured on Linux,
 macOS and Windows), and none with the off switch (measured on Linux and macOS). A spawn
 of `git` by a path keeps them (measured on Linux). The other git methods lose them too
-(claustrum's own).
+(claustrum's own, not measured).
 
 ### With no other git
 
@@ -182,11 +182,11 @@ On Windows the text ends `such as C:\\Program Files\\Git` in both frames.
 ## The off switch
 
 `"sessionFoldersOff":true` on a git method or `process.spawn` turns the check off
-while the request runs. The session-folder git then runs (measured on Linux,
+during the request. The session-folder git then runs (measured on Linux,
 macOS and Windows). The session folders
-stay in the variables of the git child (measured on macOS and Windows for `git.status`
+stay in the git child's variables (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
-(claustrum's own). Only the first such request logs the OFF line below. The first
+(claustrum's own, not measured). Only the first such request logs the OFF line below. The first
 check after the hold logs the on-again line. The hold is global: a request
 without the switch gets no check meanwhile (measured on Linux). After the hold, git runs
 once more (`4c111e86`, measured on Linux). The code makes it the
