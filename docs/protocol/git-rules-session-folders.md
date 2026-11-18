@@ -1,7 +1,7 @@
 # Session folders
 
 The git methods and a bare `git` spawn skip a git on PATH in a session folder: a folder
-that a Claude Code session works in. The request can turn this check off. Each rule on this page is of build `b3081b51`, and it names its systems.
+that a Claude Code session works in. Each rule on this page is of build `b3081b51`, and it names its systems.
 
 ## Which spawn makes a session folder
 
@@ -74,23 +74,23 @@ write that makes the folder again are claustrum's own).
   follows the link before a `..`. So `<home>/lnk2/../x`, with `lnk2` a link to
   `/data/w/sub`, gives `<home>/x` and `/data/w/x` (`b3081b51` and `c9125eb8`, measured
   on Linux). On macOS `c9125eb8` writes both files also while `x` does not exist yet,
-  each with `0 0`, and then passes over a git in `/data/w/x` (measured on macOS). A
+  each with `0 0`, then passes over a git in `/data/w/x` (measured on macOS). A
   missing folder on Linux, more than one missing name or a `..` after one, Windows and
   a create are claustrum's own: the last two get no second file (not measured).
 
 ### A write and the prune
 
-- A file goes to a temp file `.new-<pid>-<ns>` first, and then by one rename to its
+- A file goes to a temp file `.new-<pid>-<ns>`, then by one rename to its
   name. A folder at that name fails the write. The folder stays, the temp file goes,
   the spawn succeeds, and the daemon logs the first line below (measured on Linux,
-  macOS and Windows). Each later spawn in that folder tries the write again and logs
+  macOS and Windows). Each later spawn in that folder tries the write and logs
   the line again (claustrum's own, not measured).
 - After a spawn the folder keeps at most 2048 record files. After a good write the
   records with the lowest ms field go, each by one plain remove of its name. The file time does not
   count, and a gone folder does not make its record go first (measured on Linux, macOS
   and Windows).
 - The rename of a write replaces a file at the record name. A plain remove takes an
-  empty folder that was put at a name too (from the code).
+  empty folder put at a name too (from the code).
 
 With a socket of another layout the daemon writes no file (measured on Linux, macOS
 and Windows). It logs the second line (measured on Linux and macOS).
@@ -107,11 +107,11 @@ and Windows). It logs the second line (measured on Linux and macOS).
   `-32603` with the reason `other`, and no child starts (measured on Linux, macOS and
   Windows). That holds for a file at the folder name and a folder that denies the
   write. Linux and macOS also measured a full disk. The daemon logs the line of the
-  failure and then the failed-start line.
+  failure, then the failed-start line.
 - The first entry holds a git or is empty (measured on Linux). With no entry in the
   folder the spawn starts, also with a git or a repository in the folder (measured on
   Linux, and on macOS for an empty folder). claustrum's own, not measured: a later
-  entry counts too, and an entry that is a link into the folder or names it in other
+  entry counts too, and an entry that links into the folder or names it in other
   letter case on macOS does not count.
 - The folder stays in memory, so `git.status` and `git.info` still pass over a git in
   it (measured on Linux and macOS). The next spawn tries the write again. After the
@@ -120,8 +120,8 @@ and Windows). It logs the second line (measured on Linux and macOS).
 
 ## A git in a session folder
 
-The git calls of the git methods pass over a git in a session folder. So does a
-`process.spawn` of the bare command `git`. Only that exact name counts: on Windows
+The git methods and a bare `git` spawn pass over a git
+in a session folder. Only that exact name counts: on Windows
 `git.exe`, `GIT` and `Git.EXE` run the git in the session folder and keep their env
 (measured on Windows). A PATH entry with a link to such a folder
 counts too. The next git on the PATH of the daemon runs, and the daemon logs the first
@@ -140,7 +140,7 @@ Another bare command that PATH finds in a session folder runs, with the second l
 
 ### The variables of a git child
 
-These variables of a git child lose the session folders by their text. That holds for
+These variables lose the session folders by their text. That holds for
 a bare `git` spawn (measured on Linux, macOS and Windows) and for the calls of
 `git.status` and `git.info` (measured on macOS and Windows):
 
@@ -181,20 +181,23 @@ On Windows the text ends `such as C:\\Program Files\\Git` in both frames.
 
 ## The off switch
 
-`"sessionFoldersOff":true` on a git method or on `process.spawn` turns the check off
-while the request runs. The git in the session folder then runs (measured on Linux,
-macOS and Windows). The session folders
-stay in the variables of the git child (measured on macOS and Windows for `git.status`
+`"sessionFoldersOff":true` on a git method or `process.spawn` turns the check off
+during the request. The session-folder git runs (measured on Linux,
+macOS and Windows). Session folders
+stay in the git child's variables (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
-(claustrum's own, not measured). The first such request logs the first line below, and later ones log
-nothing. The first check after the last such request logs the second line. The hold is
-global: a request without the switch that runs meanwhile gets no check either
-(measured on Linux).
+(claustrum's own, not measured). The hold is global: a request
+without the switch gets no check meanwhile (measured on Linux). Only the first such
+request logs the OFF line, and the first check after the hold the on-again line.
+A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
+Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
+Claustrum's own, not measured: a hold keeps that read for later requests and none it
+interrupts, and requests sent together each read, the later winning.
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
 [sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more
 ```
 
-A `git.info` with the switch and no `"shadowDirOff":true` answers a repository with no
-`settingsControl` member on Windows and macOS, and with it on Linux (measured).
+A `git.info` with the switch and no `"shadowDirOff":true` answers a repository without
+`settingsControl` on Windows and macOS, and with it on Linux (measured).

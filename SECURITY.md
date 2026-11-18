@@ -40,9 +40,8 @@ token did not already give. See
 ### Auth & tokens
 
 - Auth is an in-band per-request token. The `-serve` daemon takes it from
-  `-token-file`, which it unlinks right after the read, or from `-token-fd`. A
-  `-token-fd` token goes to the detached daemon over a pipe, never on disk, in
-  argv or in the environment.
+  `-token-file`, which it unlinks right after reading, or from `-token-fd` (Linux and macOS).
+  A `-token-fd` token goes to the detached daemon over a pipe, never on disk, argv or the environment.
 - No mode reads `CLAUDE_RPC_TOKEN`. `-bridge` is a relay, and its client carries
   its own `auth`. Its own adopt frame takes `auth` from `daemon.token`. The daemon unsets the variable before it daemonizes, and it
   strips the variable from every spawned child.
