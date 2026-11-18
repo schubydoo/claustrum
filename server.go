@@ -392,7 +392,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	procs.InstanceID = instanceID
 	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
 	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
-	// recorded children become candidates. ReapOrphans independently re-checks that each
+	// recorded children become candidates. EndLeftoverChildren independently re-checks that each
 	// owning daemon is gone before it touches a child. Synchronous, and BEFORE the bind:
 	// while the reap waits for a group to end, the old socket file stays as it is and
 	// nothing listens. A client that connects in that wait gets ECONNREFUSED from a
@@ -405,7 +405,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// Linux).
 	procs.NoRecords = !claim.Holder
 	if claim.Holder {
-		procs.ReapOrphans()
+		procs.EndLeftoverChildren()
 	}
 
 	_ = os.Remove(socket) // clear a stale socket
@@ -814,7 +814,7 @@ func (s *server) run(socket string) {
 	// is connected (matching 4534d86), or after the idle limit with no client. Exits
 	// with the daemon's shutdown. A no-op on Windows, and unless the durations,
 	// sockInfo, and instanceId are all set. See orphanexit.go.
-	go s.exitWhenOrphaned(socket)
+	go s.watchSocketOwnership(socket)
 
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept), and
@@ -1395,7 +1395,7 @@ func (s *server) dropConns() int {
 func (s *server) stopChildren() int {
 	if s.keepChildren {
 		s.procs.EndPendingFarewells()
-		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.RunningCount())
+		logging.Infof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.AliveCount())
 		return 0
 	}
 	killed := s.procs.KillAllCount()

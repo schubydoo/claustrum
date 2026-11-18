@@ -37,7 +37,7 @@ const genericHintChars = "$'"
 //
 // A registration lives at <common git dir>/worktrees/<name>/gitdir and points at
 // "<worktree>/.git" (staleRegistryDir). Both paths are compared through
-// resolveAsFarAsExists, so a symlinked ancestor matches. Best-effort: any failure
+// canonicalExistingPrefix, so a symlinked ancestor matches. Best-effort: any failure
 // leaves git to report its own error. 5fd08069 removes the entry of a separate
 // git directory (measured on Windows). A linked worktree as repo is not measured
 // on Windows, and neither is a relative record.

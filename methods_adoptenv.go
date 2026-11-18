@@ -99,5 +99,5 @@ func (s *server) handleAdoptEnv(c *conn.Conn, req *request) *rpc.Response {
 		label = c.RemoteLabel()
 	}
 	logging.Infof(fmtAdopted, label, every, own, changed)
-	return rpc.Ptr(rpc.OKResult(req.ID, rpc.AdoptEnvResult{OK: true}))
+	return rpc.Ptr(rpc.OKResult(req.ID, rpc.AdoptEnvReply{OK: true}))
 }

@@ -79,9 +79,18 @@ func TestPipeTransportServesJSONRPC(t *testing.T) {
 		conns:    make(map[*conn.Conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
-	go s.acceptLoop(s.pipeLn)
+	done := make(chan struct{})
+	go func() { s.acceptLoop(s.pipeLn); close(done) }()
+	// The shutdown comes before the close, so the loop returns and logs no retry
+	// line into the log capture of a later test.
 	t.Cleanup(func() {
+		s.signalShutdown()
 		_ = pln.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("acceptLoop did not return after shutdown + pipe close")
+		}
 		removePipeNameFile(sock)
 		s.procs.KillAll()
 	})

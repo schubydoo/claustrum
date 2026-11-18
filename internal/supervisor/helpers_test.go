@@ -369,7 +369,7 @@ func unsetForTest(t *testing.T, key string) {
 
 // waitExitFrame reads frames until the exit frame, so the exit line of the child
 // goes into the log of this test.
-func waitExitFrame(t *testing.T, frames <-chan StreamFrame) {
+func waitExitFrame(t *testing.T, frames <-chan ChildFrame) {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {

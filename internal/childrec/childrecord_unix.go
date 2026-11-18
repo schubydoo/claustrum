@@ -50,7 +50,7 @@ func (r *Records) runDirRoot() (*os.Root, error) {
 // writeRecord writes the record of a just-spawned child and logs a failure. It never
 // affects the spawn. The two log texts are the reference's (measured on Linux). The
 // level tag before them is claustrum's own.
-func (r *Records) writeRecord(rec childRecord) {
+func (r *Records) writeRecord(rec spawnRecord) {
 	r.writtenMu.Lock()
 	defer r.writtenMu.Unlock()
 	root, err := r.runDirRoot()
@@ -60,7 +60,7 @@ func (r *Records) writeRecord(rec childRecord) {
 	switch {
 	case err == nil:
 		if r.written == nil {
-			r.written = make(map[int]childRecord)
+			r.written = make(map[int]spawnRecord)
 		}
 		r.written[rec.Pid] = rec
 	case errors.Is(err, errChildrenNotDir):
@@ -120,7 +120,7 @@ type recordIdentity struct {
 	Start string `json:"start"`
 }
 
-func identityOf(rec childRecord) recordIdentity {
+func identityOf(rec spawnRecord) recordIdentity {
 	return recordIdentity{Start: rec.Start}
 }
 
@@ -129,7 +129,7 @@ func identityOf(rec childRecord) recordIdentity {
 // never recursive, and the os.Root keeps it inside the run dir. A record that does
 // not exist is not an error. A file that is not the record of want stays, and no line
 // is logged (c9125eb8, measured on Linux).
-func removeChildRecordIn(root *os.Root, want childRecord) error {
+func removeChildRecordIn(root *os.Root, want spawnRecord) error {
 	name := childRecordName(want.Pid)
 	if !holdsRecord(root, name, want) {
 		return nil
@@ -153,7 +153,7 @@ var recordCompared = func() {}
 // bytes stays. The last Lstat shows that the name still holds the file
 // that was read, just before the remove. No lock reaches a writer outside this
 // daemon, so that test is the nearest form there.
-func holdsRecord(root *os.Root, name string, want childRecord) bool {
+func holdsRecord(root *os.Root, name string, want spawnRecord) bool {
 	before, err := root.Lstat(name)
 	if err != nil || !before.Mode().IsRegular() {
 		return false

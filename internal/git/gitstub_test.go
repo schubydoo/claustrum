@@ -86,7 +86,7 @@ func runGitLingering(args []string) int {
 		return 0
 	case has("worktree") && has("add"):
 		// Write the linked `.git` back-pointer into the (already-created) leaf — the last
-		// positional arg — so worktreeAdminDir resolves and the checkout runs.
+		// positional arg — so linkedGitDirOf resolves and the checkout runs.
 		// The registration exists in the repository, as after a real add: the create
 		// tests it, and the index has a place. The add runs in the repository.
 		// The record names the leaf with its symlinks resolved, as git writes it: the
@@ -794,7 +794,9 @@ func applyGitStubStep(w []string) error {
 }
 
 // runGitSlowTimed runs runGitSlow. With CLAUSTRUM_GITSTUB_TIMELOG set, it logs
-// the start and the end of the call there. See runGitSlow.
+// the start and the end of the call there. See runGitSlow. With
+// CLAUSTRUM_GITSTUB_EXITLOG set, it appends one line to that file at the end:
+// the exit code and the argv, joined by a unit separator.
 func runGitSlowTimed(args []string) int {
 	log := os.Getenv("CLAUSTRUM_GITSTUB_TIMELOG")
 	pid := strconv.Itoa(os.Getpid())
@@ -804,6 +806,9 @@ func runGitSlowTimed(args []string) int {
 	code := runGitSlow(args)
 	if log != "" {
 		appendLine(log, "end\x1f"+strconv.FormatInt(time.Now().UnixNano(), 10)+"\x1f"+pid)
+	}
+	if exitLog := os.Getenv("CLAUSTRUM_GITSTUB_EXITLOG"); exitLog != "" {
+		appendLine(exitLog, strconv.Itoa(code)+"\x1f"+strings.Join(args, "\x1f"))
 	}
 	return code
 }

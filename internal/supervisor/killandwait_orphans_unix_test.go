@@ -49,7 +49,7 @@ func TestKillAndWaitEscalationReapsOrphanedGroup(t *testing.T) {
 	}
 
 	// A short grace so the test does not sit through the production default.
-	found, _, _, _ := m.KillAndWait("orphans", "TERM", 300*time.Millisecond, true)
+	found, _, _, _ := m.SignalAndAwait("orphans", "TERM", 300*time.Millisecond, true)
 	if !found {
 		t.Fatal("killAndWait did not find the process")
 	}
@@ -132,7 +132,7 @@ func TestKillAndWaitSendsNoGroupKillAfterACleanExit(t *testing.T) {
 	p, kid := spawnTreeWithKid(t, m, "c1")
 	sent := groupKills(t, p)
 
-	found, died, alreadyExited, escalated := m.KillAndWait("c1", "TERM", 10*time.Second, true)
+	found, died, alreadyExited, escalated := m.SignalAndAwait("c1", "TERM", 10*time.Second, true)
 	if !found || !died || alreadyExited || escalated {
 		t.Errorf("killAndWait = found %v, died %v, alreadyExited %v, escalated %v, want true, true, false, false",
 			found, died, alreadyExited, escalated)

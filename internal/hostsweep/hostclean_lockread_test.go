@@ -24,7 +24,7 @@ type hcLockReadFix struct {
 	c       *hostCleaner
 	runRoot string
 	root    *os.Root
-	entries []runDirEntry
+	entries []staleRunFolder
 	asked   []string // the paths the holder query was asked about
 }
 
@@ -65,7 +65,7 @@ func (f *hcLockReadFix) dir(name string, lock []byte) string {
 	if err := os.Chtimes(dir, at, at); err != nil {
 		f.t.Fatal(err)
 	}
-	f.entries = append(f.entries, runDirEntry{root: f.root, name: name, dirPath: dir, socket: filepath.Join(dir, rpcSockBasename), idle: idle})
+	f.entries = append(f.entries, staleRunFolder{root: f.root, name: name, dirPath: dir, socket: filepath.Join(dir, rpcSockBasename), idle: idle})
 	return dir
 }
 
@@ -73,7 +73,7 @@ func (f *hcLockReadFix) dir(name string, lock []byte) string {
 func (f *hcLockReadFix) tidy() (hcSummary, string) {
 	buf := captureLogBuf(f.t)
 	var sum hcSummary
-	f.c.tidyRunDirs(f.entries, &sum)
+	f.c.sweepRunFolders(f.entries, &sum)
 	return sum, buf.String()
 }
 
@@ -163,7 +163,7 @@ func TestTidyAsksAboutALockThatIsNoRecord(t *testing.T) {
 // the lock, and the dir stays with the held line. Measured: the lock holds the record of a
 // dead pid and has no holder, and the dir goes.
 func TestTidyLockReadControls(t *testing.T) {
-	t.Run("C2: a holder keeps the dir", func(t *testing.T) {
+	t.Run("a holder keeps the dir", func(t *testing.T) {
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return true, true })
 		z1 := f.dir("z1", hcDeadRecord)
 		sum, log := f.tidy()
@@ -172,7 +172,7 @@ func TestTidyLockReadControls(t *testing.T) {
 			t.Errorf("there=%v summary=%+v log=%q, want the dir kept with %q", hcDirThere(t, z1), sum, log, want)
 		}
 	})
-	t.Run("C6: a dead record with no holder goes", func(t *testing.T) {
+	t.Run("a dead record with no holder goes", func(t *testing.T) {
 		for _, needsRecord := range []bool{false, true} {
 			f := newHcLockReadFix(t, needsRecord, func(string) (bool, bool) { return false, true })
 			z6 := f.dir("z6", hcDeadRecord)
