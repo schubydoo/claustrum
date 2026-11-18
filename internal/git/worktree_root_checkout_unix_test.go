@@ -15,7 +15,7 @@ import (
 )
 
 // These tests cover a worktreeRoot that leads into a checkout of the repository: the
-// main checkout, the checkout of baseRepo or a linked worktree. Each row name is a row
+// main checkout, the checkout of baseRepo or a linked worktree. Each row is a measured row
 // of the side-by-side runs against f6010b97 and 89cb6289 on Linux and macOS. The
 // fixture of r0Fixture is extended here. <B>/W and <B>/X/o/w0 are linked worktrees of
 // <T>, made by plain git. worktreeRoot is unix-only.
@@ -224,24 +224,24 @@ func TestWorktreeRemoveRootInMainCheckout(t *testing.T) {
 	for _, r := range []r0cRow{
 		// A root that does not exist, under a symlink to <T>. Its longest existing
 		// prefix is resolved. The live worktree w1 holds wt1.
-		{name: "E1", root: "<B>/L/missing", wp: "<B>/L/missing/cp/w1", leaf: w1,
+		{name: "missing root under a link to T", root: "<B>/L/missing", wp: "<B>/L/missing/cp/w1", leaf: w1,
 			want: "refusing to remove worktree: <B>/L/missing leads into the repository <T> (at <T>)" + r0Tail},
 		// baseRepo is the linked worktree W, and the root is in the main checkout.
-		{name: "W1", base: "<B>/W", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
+		{name: "baseRepo W and root in the main checkout", base: "<B>/W", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
 			setup: withW,
 			want:  "refusing to remove worktree: <T>/.claude leads into the repository <B>/W (at <T>)" + r0Tail},
 		// The root is in W, the checkout that holds baseRepo W/sub.
-		{name: "Y4", base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/w1", leaf: "<B>/W/.claude/cp/w1",
+		{name: "root in the checkout of baseRepo", base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/w1", leaf: "<B>/W/.claude/cp/w1",
 			setup: withW,
 			want:  "refusing to remove worktree: <B>/W/.claude leads into the repository <B>/W/sub (at <B>/W)" + r0Tail},
 		// The main checkout wins over the linked worktree w1 nearer to the root.
-		{name: "Y6", base: "<B>/W", root: w1 + "/r", wp: w1 + "/r/cp/w2", leaf: w1 + "/r/cp/w2", branch: "wt2",
+		{name: "main checkout before an inner linked worktree", base: "<B>/W", root: w1 + "/r", wp: w1 + "/r/cp/w2", leaf: w1 + "/r/cp/w2", branch: "wt2",
 			setup: func(t *testing.T, f *r0Fixture) { withW(t, f); f.linked(t, w1, "wt1") },
 			want:  "refusing to remove worktree: <T>/.claude/worktrees/w1/r leads into the repository <B>/W (at <T>)" + r0Tail},
 		// The linked worktree W2 inside the main checkout holds baseRepo W2/sub. So the
 		// checkout of baseRepo and the main checkout both hold the root. The main
 		// checkout names the path. It is also the outer one here.
-		{name: "T2b", base: "<T>/in/W2/sub", root: "<T>/in/W2/.claude",
+		{name: "linked worktree inside the main checkout", base: "<T>/in/W2/sub", root: "<T>/in/W2/.claude",
 			wp: "<T>/in/W2/.claude/cp/w1", leaf: "<T>/in/W2/.claude/cp/w1",
 			setup: func(t *testing.T, f *r0Fixture) {
 				f.linked(t, "<T>/in/W2", "lw2")
@@ -258,26 +258,26 @@ func TestWorktreeRemoveRootInMainCheckout(t *testing.T) {
 // A root that leads into a linked worktree of the repository is refused on remove with
 // the linked form. The listed path is compared as a string with the resolved root.
 // Before, claustrum answered {"success":true} to each row. It deleted the dirty leaf,
-// its entry and its branch, or with Y10 the branch of a live worktree.
+// its entry and its branch, or with the missing root under a link the branch of a live worktree.
 func TestWorktreeRemoveRootInLinkedWorktree(t *testing.T) {
 	requireWorktreeListZ(t)
 	const w0 = "<B>/X/o/w0"
 	for _, r := range []r0cRow{
-		// W2 is also measured: the gitdir file of w0 as git wrote it.
-		{name: "W2", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0,
+		// The gitdir file of w0 as git wrote it.
+		{name: "root w0", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0,
 			want: "refusing to remove worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T> (at <B>/X/o/w0)" + r0cLinkedTail},
-		{name: "Y1", base: "<T>/sub", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0,
+		{name: "root w0 with baseRepo sub", base: "<T>/sub", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0,
 			want: "refusing to remove worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T>/sub (at <B>/X/o/w0)" + r0cLinkedTail},
-		{name: "Y5", base: "<B>/W", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1",
+		{name: "root w0 with baseRepo W", base: "<B>/W", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1",
 			setup: func(t *testing.T, f *r0Fixture) { withW(t, f); withW0(t, f) },
 			want:  "refusing to remove worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <B>/W (at <B>/X/o/w0)" + r0cLinkedTail},
 		// Of two nested linked worktrees, the outer w0 is listed first and named.
-		{name: "Y6n", root: w0 + "/in/w3/r", wp: w0 + "/in/w3/r/cp/w1", leaf: w0 + "/in/w3/r/cp/w1",
+		{name: "nested linked worktrees", root: w0 + "/in/w3/r", wp: w0 + "/in/w3/r/cp/w1", leaf: w0 + "/in/w3/r/cp/w1",
 			setup: func(t *testing.T, f *r0Fixture) { withW0(t, f); f.linked(t, w0+"/in/w3", "o3") },
 			want:  "refusing to remove worktree: <B>/X/o/w0/in/w3/r leads into <B>/X/o/w0, a worktree of the repository <T> (at <B>/X/o/w0)" + r0cLinkedTail},
 		// A root that does not exist, under a symlink to w0. The live worktree w1
 		// holds wt1.
-		{name: "Y10", root: "<B>/L2/missing", wp: "<B>/L2/missing/cp/w1", leaf: "<T>/.claude/worktrees/w1",
+		{name: "missing root under a link to w0", root: "<B>/L2/missing", wp: "<B>/L2/missing/cp/w1", leaf: "<T>/.claude/worktrees/w1",
 			setup: func(t *testing.T, f *r0Fixture) {
 				withW0(t, f)
 				if err := os.Symlink(f.expand(w0), filepath.Join(f.B, "L2")); err != nil {
@@ -305,20 +305,20 @@ func TestWorktreeRemoveRootMissing(t *testing.T) {
 		}
 	}
 	for _, r := range []r0cRow{
-		{name: "Y9", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0, after: gone,
+		{name: "gone linked worktree", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0, after: gone,
 			want: "failed to remove worktree: the worktree location <B>/X/o/w0 is not reachable (<B>/X/o/w0 does not " +
 				"exist); nothing was removed — retry once it is available, or remove the worktree by hand"},
-		{name: "T3", root: w0, wp: w0 + "/cp/w1", leaf: w1, setup: withW0,
+		{name: "gone locked linked worktree", root: w0, wp: w0 + "/cp/w1", leaf: w1, setup: withW0,
 			after: func(t *testing.T, f *r0Fixture) {
 				runGit(t, f.T, "worktree", "lock", f.expand(w0))
 				gone(t, f)
 			},
 			want: "failed to remove worktree: the worktree location <B>/X/o/w0 is not reachable (<B>/X/o/w0 does not " +
 				"exist); nothing was removed — retry once it is available, or remove the worktree by hand"},
-		{name: "T4", root: "<B>/gone/r", wp: "<B>/gone/r/cp/w1", leaf: w1,
+		{name: "two missing levels", root: "<B>/gone/r", wp: "<B>/gone/r/cp/w1", leaf: w1,
 			want: "failed to remove worktree: the worktree location <B>/gone/r is not reachable (<B>/gone/r does not " +
 				"exist); nothing was removed — retry once it is available, or remove the worktree by hand"},
-		{name: "T5", root: "<B>/D", wp: "<B>/D/cp/w1", leaf: w1,
+		{name: "dangling link", root: "<B>/D", wp: "<B>/D/cp/w1", leaf: w1,
 			setup: func(t *testing.T, f *r0Fixture) {
 				if err := os.Symlink(filepath.Join(f.B, "nothere"), filepath.Join(f.B, "D")); err != nil {
 					t.Fatal(err)
@@ -362,7 +362,7 @@ func TestWorktreeRemoveListFailsTwiceRefuses(t *testing.T) {
 }
 
 // When only the -z form fails, the second call succeeds, and the daemon reads its
-// lines. The W2-shaped row then gets its refusal, as with a working -z form. A git
+// lines. The row of the root w0 then gets its refusal, as with a working -z form. A git
 // older than 2.36 has no -z form. This case is claustrum's choice (not measured).
 // Mutation: do not read the output of the second call.
 func TestWorktreeRemoveListWithoutZIsRead(t *testing.T) {
@@ -384,7 +384,7 @@ func TestWorktreeRemoveRootBesideLinkedWorktree(t *testing.T) {
 		}
 	}
 	for _, r := range []r0cRow{
-		{name: "Y2", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0, check: keptW0,
+		{name: "w0 listed through a link", root: w0, wp: w0 + "/cp/w1", leaf: w0 + "/cp/w1", setup: withW0, check: keptW0,
 			after: func(t *testing.T, f *r0Fixture) {
 				if err := os.Symlink(f.X, filepath.Join(f.B, "S")); err != nil {
 					t.Fatal(err)
@@ -399,7 +399,7 @@ func TestWorktreeRemoveRootBesideLinkedWorktree(t *testing.T) {
 					t.Fatalf("fixture: git lists\n%s(%v), want <B>/S/o/w0 and nothing prunable", out, err)
 				}
 			}},
-		{name: "Y7", root: "<B>/X/o", wp: "<B>/X/o/cp/w1", leaf: "<B>/X/o/cp/w1", setup: withW0, check: keptW0},
+		{name: "root holds w0", root: "<B>/X/o", wp: "<B>/X/o/cp/w1", leaf: "<B>/X/o/cp/w1", setup: withW0, check: keptW0},
 	} {
 		t.Run(r.name, r.remove)
 	}
@@ -412,13 +412,13 @@ func TestWorktreeRemoveRootBesideLinkedWorktree(t *testing.T) {
 // goes on to the ownership refusal. Both rows are skipped on a case-sensitive file
 // system.
 func TestWorktreeRemoveRootCaseVariant(t *testing.T) {
-	t.Run("E8", func(t *testing.T) {
+	t.Run("case variant of T", func(t *testing.T) {
 		r := r0cRow{root: "<B>/t/.claude", wp: "<B>/t/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
 			setup: func(t *testing.T, f *r0Fixture) { sameFileOrSkip(t, filepath.Join(f.B, "t"), f.T) },
 			want:  "refusing to remove worktree: <B>/t/.claude leads into the repository <T> (at <B>/t)" + r0Tail}
 		r.remove(t)
 	})
-	t.Run("Y3", func(t *testing.T) {
+	t.Run("case variant of w0", func(t *testing.T) {
 		r := r0cRow{root: "<B>/x/o/w0", wp: "<B>/x/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", anyCalls: true,
 			setup: func(t *testing.T, f *r0Fixture) { sameFileOrSkip(t, filepath.Join(f.B, "x"), f.X); withW0(t, f) },
 			want: "refusing to remove worktree: <B>/x/o/w0/cp/w1 is not a worktree of <T> (<B>/x/o/w0/cp/w1 carries " +
@@ -438,19 +438,19 @@ func TestWorktreeCreateRootInCheckout(t *testing.T) {
 	const w1 = "<T>/.claude/worktrees/w1"
 	for _, r := range []r0cRow{
 		// <T>/.claude does not exist.
-		{name: "E2", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
+		{name: "missing dot claude with baseRepo sub", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
 			want: "refusing to create worktree: <T>/.claude leads into the repository <T>/sub (at <T>)" + r0Tail},
-		{name: "W3", base: "<B>/W", root: "<T>/.claude", wp: "<T>/.claude/cp/c1", leaf: "<T>/.claude/cp/w1",
+		{name: "baseRepo W and root in the main checkout", base: "<B>/W", root: "<T>/.claude", wp: "<T>/.claude/cp/c1", leaf: "<T>/.claude/cp/w1",
 			setup: withW,
 			want:  "refusing to create worktree: <T>/.claude leads into the repository <B>/W (at <T>)" + r0Tail},
-		{name: "W4", root: w0, wp: w0 + "/cp/c1", leaf: w0 + "/cp/w1", setup: withW0,
+		{name: "root w0", root: w0, wp: w0 + "/cp/c1", leaf: w0 + "/cp/w1", setup: withW0,
 			want: "refusing to create worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T> (at <B>/X/o/w0)" + r0cLinkedTail},
-		{name: "Y11a", base: "<T>/sub", root: w0, wp: w0 + "/cp/c1", leaf: w0 + "/cp/w1", setup: withW0,
+		{name: "root w0 with baseRepo sub", base: "<T>/sub", root: w0, wp: w0 + "/cp/c1", leaf: w0 + "/cp/w1", setup: withW0,
 			want: "refusing to create worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T>/sub (at <B>/X/o/w0)" + r0cLinkedTail},
-		{name: "Y11b", base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/c1", leaf: "<B>/W/.claude/cp/w1",
+		{name: "root in the checkout of baseRepo", base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/c1", leaf: "<B>/W/.claude/cp/w1",
 			setup: withW,
 			want:  "refusing to create worktree: <B>/W/.claude leads into the repository <B>/W/sub (at <B>/W)" + r0Tail},
-		{name: "Y11c", base: "<B>/W", root: w1 + "/r", wp: w1 + "/r/cp/c1", leaf: w1 + "/r/cp/w2", branch: "wt2",
+		{name: "main checkout before an inner linked worktree", base: "<B>/W", root: w1 + "/r", wp: w1 + "/r/cp/c1", leaf: w1 + "/r/cp/w2", branch: "wt2",
 			setup: func(t *testing.T, f *r0Fixture) { withW(t, f); f.linked(t, w1, "wt1") },
 			want:  "refusing to create worktree: <T>/.claude/worktrees/w1/r leads into the repository <B>/W (at <T>)" + r0Tail},
 	} {

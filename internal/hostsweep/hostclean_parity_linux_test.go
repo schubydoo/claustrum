@@ -84,6 +84,10 @@ type hcPassFix struct {
 	group   []int // group signals
 }
 
+// hcFixtureOwnDial bounds the dial of the own socket of the fixture. It is a test bound,
+// 100 times hcDialTimeout, so a short stall of a loaded runner does not skip the pass.
+const hcFixtureOwnDial = 30 * time.Second
+
 func hcNewPassFixture(t *testing.T) *hcPassFix {
 	t.Helper()
 	f := &hcPassFix{uid: os.Getuid()}
@@ -137,7 +141,9 @@ func hcNewPassFixture(t *testing.T) *hcPassFix {
 	f.dial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
 	hcDial = func(addr string) (net.Conn, error) {
 		if addr == ownSock {
-			return net.DialTimeout("unix", addr, hcDialTimeout)
+			// The own socket of the fixture always answers. A stall of the runner past
+			// hcDialTimeout inside the dial gives an i/o timeout, and the pass then skips.
+			return net.DialTimeout("unix", addr, hcFixtureOwnDial)
 		}
 		return f.dial(addr)
 	}

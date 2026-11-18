@@ -9,8 +9,8 @@
 # profiles of the three `coverage-shard` cells in CI and uploads one report, so
 # COVERAGE flags / carryforward / report-merging in Codecov aren't needed.
 #
-# TEST RESULTS are separate and DO carry flags. The `test` job runs seven cells on
-# three OSes (two shards on Linux and macOS, three on Windows) and uploads a gotestsum-produced junit.xml
+# TEST RESULTS are separate and DO carry flags. The `test` job (macOS and Windows)
+# and the three `coverage-shard` cells (Linux) upload a gotestsum-produced junit.xml
 # per cell with `report_type: test_results` and `flags: <Linux|macOS|Windows>`.
 # The shards of one OS share the flag of that OS and hold different tests. Test Analytics
 # (flaky + slow tests) breaks out per platform — the axis claustrum actually varies
@@ -325,6 +325,8 @@ component_management:
         - internal/git/gitworktreeconfig_windows.go
         # the gate and the answer of git.status (89cb6289).
         - internal/git/gitstatus.go
+        - internal/git/gitstatus_unix.go
+        - internal/git/gitstatus_windows.go
         # the git.info root per OS (89cb6289).
         - internal/git/gitinforoot_other.go
         - internal/git/gitinforoot_windows.go

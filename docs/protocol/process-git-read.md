@@ -18,13 +18,13 @@ The result is `{"success":true}`, as for a plain spawn. The output comes in stre
 
 The combine test comes before the shape test (measured on Linux). The `cwd` test comes before the shape test too (measured on Linux, macOS and Windows). The place of the `cwd` test after the combine test is claustrum's own, not measured. Each member below is measured on one system at least.
 
-1. The combine test gives `-32602` `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot, cliTempRootEnd or sessionFoldersOff` with `"data":{"reason":"other"}`. It refuses a command other than the bare name `git`, no `cwd` and a non-empty `env`. It also refuses `"sessionFoldersOff":true`, a `linkBound` object, `"cliTempRoot":true` and a `pty` object with a key. An empty `env` object passes (measured on Linux). The text names `cliTempRootEnd` on `4c111e86` (measured on Linux). claustrum's own: `"cliTempRootEnd":true` alone is not refused.
+1. The combine test gives `-32602` `gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot, cliTempRootEnd or sessionFoldersOff` with `"data":{"reason":"other"}`. It refuses a command other than the bare name `git`, no `cwd` and a non-empty `env`. It also refuses `"sessionFoldersOff":true`, a `linkBound` object, `"cliTempRoot":true` and a `pty` object with a key. An empty `env` object passes (measured on Linux). The text names `cliTempRootEnd` on `4c111e86` (Linux). claustrum's own: `"cliTempRootEnd":true` alone is not refused. It logs its failed-start line (Linux, macOS and Windows).
 2. The `cwd` test of every spawn: a `cwd` that does not exist gets `-32603` `chdir <cwd>: ...` with `cwd_missing`, also with a refused shape.
-3. The shape test gives `-32602` `not one of the Changes pane's git commands (<N> arguments)` with `"data":{"reason":"other"}`, where `<N>` is the count of `args`. The daemon logs `[process.Manager] Failed to start process <id>: <text>` (measured on Linux).
+3. The shape test gives `-32602` `not one of the Changes pane's git commands (<N> arguments)` with `"data":{"reason":"other"}`, where `<N>` is the count of `args`. It logs `[process.Manager] Failed to start process <id>: <text>` (Linux).
 
 ### Other members
 
-With `gitRead`, `"pty":true` gets `Invalid params` (measured on Linux and Windows). So does a `cliTempRoot` text or object (measured on Linux). A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex` with `gitRead` (measured on Linux and macOS). A plain spawn has [its own row](process-spawn.md#errors).
+With `gitRead`, `"pty":true` (Linux and Windows) and a `cliTempRoot` text or object (Linux) get `Invalid params`. A `pty` object with no valid key gets `A terminal needs a key of 32 bytes in hex` with `gitRead` (measured on Linux and macOS). A plain spawn has [its own row](process-spawn.md#errors).
 
 claustrum's own: a `launcher` array gets the combine text. The [linkBound](process-link-bound.md#the-refusals) tests come before these tests. So `gitRead` with a `linkBound` object and a `launcher` gets the `linkBound` text. A spent `id` gets its refusal before the shape test.
 

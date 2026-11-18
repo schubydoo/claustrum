@@ -570,9 +570,11 @@ func baseRepoGitFileEndsInSpace(repo string) bool {
 // refused. 89cb6289 answers success for it in these rows, on Linux, macOS and
 // Windows: with GIT_DIR and GIT_COMMON_DIR of another repository in the daemon's
 // environment (measured, also with the folder gone), and with GIT_DIR alone
-// (measured). With worktreeRoot it deletes nothing (measured on Linux). A
-// `<repo>/.git/worktrees` that is a symbolic link counts as not readable, so the
-// remove answers the lock-check refusal (openRegistrationsFolder, not measured).
+// (measured). On Windows c9125eb8 and 4c111e86 refuse in these rows, so D22 is on
+// Linux and macOS only (measured). With worktreeRoot it deletes nothing (measured
+// on Linux). A `<repo>/.git/worktrees` that is a symbolic link counts as not
+// readable, so the remove answers the lock-check refusal (openRegistrationsFolder,
+// not measured).
 func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (lock worktreeLock, readable bool) {
 	base := filepath.Join(repo, ".git")
 	if pathcanon.Canonical(base) == pathcanon.Canonical(commonDir) {

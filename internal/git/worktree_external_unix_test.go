@@ -264,15 +264,15 @@ func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
 		who           string // "" means accepted
 	}{
 		{name: "private", passwd: other + me, group: grp("sgme", ""), perm: 0o775},
-		{name: "M11_M14_user_listed", passwd: me + other, group: grp("sgme", "sgme"), perm: 0o775},
+		{name: "user_listed", passwd: me + other, group: grp("sgme", "sgme"), perm: 0o775},
 		{name: "private_among_other_groups", passwd: me, group: fmt.Sprintf("sgother:x:%d:sgme\n", gid+1) + grp("sgme", ""), perm: 0o775},
-		{name: "L5_other_member", passwd: me, group: grp("sgme", "sgother"), perm: 0o775, who: "its group"},
-		{name: "M16_other_member", passwd: me, group: grp("sgme", "sgme,sgother"), perm: 0o775, who: "its group"},
-		{name: "L5b_other_primary_user", passwd: me + otherSameGID, group: grp("sgme", ""), perm: 0o775, who: "its group"},
-		{name: "M15_other_primary_user", passwd: me + otherSameGID, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
+		{name: "other_member", passwd: me, group: grp("sgme", "sgother"), perm: 0o775, who: "its group"},
+		{name: "other_member_and_self", passwd: me, group: grp("sgme", "sgme,sgother"), perm: 0o775, who: "its group"},
+		{name: "other_primary_user", passwd: me + otherSameGID, group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "other_primary_user_self_listed", passwd: me + otherSameGID, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
 		{name: "no_passwd_line", passwd: other, group: grp("sgme", ""), perm: 0o775, who: "its group"},
-		{name: "P11_only_gid_line_is_another_user", passwd: otherSameGID + meElsewhere, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
-		{name: "P11b_only_gid_line_is_another_user", passwd: otherSameGID + meElsewhere, group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "only_gid_line_is_another_user_self_listed", passwd: otherSameGID + meElsewhere, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
+		{name: "only_gid_line_is_another_user", passwd: otherSameGID + meElsewhere, group: grp("sgme", ""), perm: 0o775, who: "its group"},
 		{name: "group_named_after_the_other_user", passwd: otherSameGID + meElsewhere, group: grp("sgother", ""), perm: 0o775, who: "its group"},
 		{name: "group_renamed", passwd: me, group: grp("sgpriv", ""), perm: 0o775, who: "its group"},
 		{name: "no_user_with_that_primary_gid", passwd: meElsewhere, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
@@ -322,9 +322,9 @@ func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
 		})
 	}
 
-	// L12, M13: the group is the user's private group in the files, but it is
+	// The group is the user's private group in the files, but it is
 	// not the daemon's gid. That needs a supplementary group of the test user.
-	t.Run("L12_M13_not_the_daemon_gid", func(t *testing.T) {
+	t.Run("not_the_daemon_gid", func(t *testing.T) {
 		groups, err := os.Getgroups()
 		if err != nil {
 			t.Skipf("getgroups: %v", err)
