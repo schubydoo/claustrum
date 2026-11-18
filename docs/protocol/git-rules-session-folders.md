@@ -182,16 +182,16 @@ On Windows the text ends `such as C:\\Program Files\\Git` in both frames.
 ## The off switch
 
 `"sessionFoldersOff":true` on a git method or `process.spawn` turns the check off
-during the request. The session-folder git then runs (measured on Linux,
-macOS and Windows). The session folders
+during the request. The session-folder git runs (measured on Linux,
+macOS and Windows). Session folders
 stay in the git child's variables (measured on macOS and Windows for `git.status`
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
-(claustrum's own, not measured). Only the first such request logs the OFF line below, and the first
-check after the hold the on-again line. The hold is global: a request
-without the switch gets no check meanwhile (measured on Linux). A hold uses a stored
-value, or else git runs once more after it (`4c111e86`, measured on Linux). The code makes
-it the [excludes read](git-rules-calls.md#calls-outside-a-repository). Requests in one
-hold share that read (claustrum's own, not measured).
+(claustrum's own, not measured). The hold is global: a request
+without the switch gets no check meanwhile (measured on Linux). Only the first such
+request logs the OFF line below, and the first check after the hold the on-again line.
+A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
+Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
+A hold shares that read and stores none it interrupts (claustrum's own, not measured).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
