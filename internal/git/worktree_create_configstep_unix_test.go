@@ -82,8 +82,8 @@ func writeIn(t *testing.T, p, text string) {
 
 // TestConfigStepFailureFailsTheCreate: a failure of the step of the
 // `config.worktree` file fails the create with the prefix and its cause. No
-// read-tree runs, and the undo of a failed checkout runs. The rows C2,
-// C6, C7, C9, C10 and C11 are measured on Linux and macOS. The stub or the seam
+// read-tree runs, and the undo of a failed checkout runs. Every row
+// is measured on Linux and macOS. The stub or the seam
 // after the add stands in for the wrapper of the measurement. In two measured cases the
 // branch step reads the config again, gets its refusal and keeps the branch.
 // Another case is TestConfigStepUnsetAllFailureFailsTheCreate.
@@ -105,7 +105,7 @@ func TestConfigStepFailureFailsTheCreate(t *testing.T) {
 		// every row.
 		regKept, branchKept bool
 	}{
-		{"C2 the --unset-all call is ended at its bound", bare, func(t *testing.T, f configStepFixture) {
+		{"the --unset-all call is ended at its bound", bare, func(t *testing.T, f configStepFixture) {
 			old := shadowCallBound
 			t.Cleanup(func() { shadowCallBound = old })
 			shadowCallBound = 3 * time.Second
@@ -114,12 +114,12 @@ func TestConfigStepFailureFailsTheCreate(t *testing.T) {
 		}, func(configStepFixture) string {
 			return "removing core.bare from the new worktree's config.worktree: signal: killed"
 		}, false, false},
-		{"C6 a folder with content at the destination", filemode, func(t *testing.T, f configStepFixture) {
+		{"a folder with content at the destination", filemode, func(t *testing.T, f configStepFixture) {
 			atStep(t, "added", func() { writeIn(t, filepath.Join(f.reg, worktreeConfigName, "f"), "y\n") })
 		}, func(configStepFixture) string {
 			return "removeat config.worktree: directory not empty"
 		}, false, false},
-		{"C7 a registration folder that is read-only", filemode, func(t *testing.T, f configStepFixture) {
+		{"a registration folder that is read-only", filemode, func(t *testing.T, f configStepFixture) {
 			if os.Geteuid() == 0 {
 				t.Skip("root writes into a read-only folder")
 			}
@@ -133,13 +133,13 @@ func TestConfigStepFailureFailsTheCreate(t *testing.T) {
 			return "openat config.worktree: permission denied; and the undo could not finish for " + f.leaf +
 				": the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
 		}, true, true},
-		{"C9 a FIFO in place of the source after the add", filemode, func(t *testing.T, f configStepFixture) {
+		{"a FIFO in place of the source after the add", filemode, func(t *testing.T, f configStepFixture) {
 			atStep(t, "added", func() { fifoAt(t, f.main) })
 		}, func(f configStepFixture) string {
 			cause := repoConfigPrefix + `"` + f.main + `" is not a regular file`
 			return cause + kept(f, cause)
 		}, false, true},
-		{"C10 a link to a file outside the git directory", filemode, func(t *testing.T, f configStepFixture) {
+		{"a link to a file outside the git directory", filemode, func(t *testing.T, f configStepFixture) {
 			outside := filepath.Join(filepath.Dir(f.repo), "outside-cw")
 			mustWrite(t, outside, filemode)
 			atStep(t, "added", func() {
@@ -153,7 +153,7 @@ func TestConfigStepFailureFailsTheCreate(t *testing.T) {
 		}, func(f configStepFixture) string {
 			return repoConfigPrefix + `"` + f.main + `": it is a link that is absolute, or does not lead to a regular file inside the git directory; replace it with a copy of the file`
 		}, false, false},
-		{"C11 a source rewritten broken after the add", filemode, func(t *testing.T, f configStepFixture) {
+		{"a source rewritten broken after the add", filemode, func(t *testing.T, f configStepFixture) {
 			atStep(t, "added", func() { writeIn(t, f.main, "[core]\n\tbare = false\n[broken\n") })
 		}, func(f configStepFixture) string {
 			cause := repoConfigPrefix + `fatal: bad config line 3 in "` + f.main + `"`

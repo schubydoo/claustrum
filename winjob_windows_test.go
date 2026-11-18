@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -363,21 +364,35 @@ func TestChildSurvivesAKilledDaemon(t *testing.T) {
 	}
 }
 
+// firstLineOutEnv names the file where the child run of TestFirstLogLineOnWindows writes
+// the log of its serve.
+const firstLineOutEnv = "CLAUSTRUM_TEST_FIRST_LINE_OUT"
+
 // TestFirstLogLineOnWindows: the first log line of a daemon start is the "not the run dir's
-// lock holder" line (in every daemon start that was measured).
+// lock holder" line (in every daemon start that was measured). The serve runs in a new run
+// of this test binary. Its log then holds no line of another test.
 func TestFirstLogLineOnWindows(t *testing.T) {
-	buf := captureLogBuf(t)
-	s, sock := bootLineServer(t, false)
-	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	// Another test can leave a child whose exit line lands in this buffer. Take the first
-	// line that is not a [process.Manager] line.
-	first := ""
-	for _, ln := range strings.Split(buf.String(), "\n") {
-		if ln != "" && !strings.Contains(ln, "[process.Manager]") {
-			first = ln
-			break
-		}
+	if out := os.Getenv(firstLineOutEnv); out != "" {
+		buf := captureLogBuf(t)
+		s, sock := bootLineServer(t, false)
+		s.signalShutdown()
+		s.closeAll(sock)
+		writeFile(t, out, buf.String(), 0o600)
+		return
 	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "serve.log")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	child := exec.CommandContext(ctx, exe, "-test.run=^TestFirstLogLineOnWindows$")
+	child.Env = append(os.Environ(), firstLineOutEnv+"="+out)
+	if b, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("child run: %v\n%s", err, b)
+	}
+	first, _, _ := strings.Cut(readLogFile(t, out), "\n")
 	if want := "[daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none"; !strings.HasSuffix(first, want) {
 		t.Errorf("first log line = %q, want %q", first, want)
 	}

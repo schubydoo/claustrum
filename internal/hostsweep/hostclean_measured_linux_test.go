@@ -55,7 +55,7 @@ func TestPassLogsTheProcessLimit(t *testing.T) {
 			wantRemoved = 0
 		}
 		if sum.runDirsRemoved != wantRemoved {
-			t.Errorf("%d processes: runDirsRemoved = %d, want %d", n, sum.runDirsRemoved, wantRemoved)
+			t.Errorf("%d processes: runDirsRemoved = %d, want %d\nlog: %s", n, sum.runDirsRemoved, wantRemoved, buf.String())
 		}
 	}
 }

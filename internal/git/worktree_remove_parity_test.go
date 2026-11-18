@@ -96,7 +96,7 @@ func TestWorktreeRemoveSymlinkLeafIsRefused(t *testing.T) {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
 	raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": lnk, "branchName": "wt1"})
-	wantRemoveError(t, raw, "refusing to remove worktree: "+lnk+" is a symbolic link, not a worktree directory")
+	wantRemoveError(t, raw, "refusing to remove worktree: `"+lnk+"` is a symbolic link, not a worktree directory")
 	mustExist(t, lnk)
 	mustExist(t, filepath.Join(f.wt, ".git"))
 	mustExist(t, f.entry())

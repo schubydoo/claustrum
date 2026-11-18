@@ -67,7 +67,7 @@ func TestContentCheckSkippedFilePresent(t *testing.T) {
 	if want := contentFrame(t, "worktree_verify_content", hint); raw != want {
 		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
 	}
-	if want := checkedLine("1", "file", 4, commit, fmt.Sprintf("refused: %q", strings.TrimSuffix(hint, "."))); !want.MatchString(logs.String()) {
+	if want := checkedLine("1", "file", 4, commit, fmt.Sprintf("refused: %q", loggedHint(hint))); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	if n := lsFilesCalls(calls); n != 1 {
@@ -109,7 +109,7 @@ func TestContentCheckMissingFileNotSparse(t *testing.T) {
 	if want := contentFrame(t, "worktree_verify_retry", hint); raw != want {
 		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
 	}
-	if want := checkedLine("0", "files", 2, commit, fmt.Sprintf("refused: %q", strings.TrimSuffix(hint, "."))); !want.MatchString(logs.String()) {
+	if want := checkedLine("0", "files", 2, commit, fmt.Sprintf("refused: %q", loggedHint(hint))); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	if n := lsFilesCalls(calls); n != 1 {

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// These tests cover a worktreeRoot in the repository. Each row name is a row of the
+// These tests cover a worktreeRoot in the repository. Each row is a measured row of the
 // side-by-side run against f6010b97 and 89cb6289 on Linux. A macOS test measured the
 // same texts. In the rows, <B> is the temp dir and <T> the repository in it. <T2>
 // is a second repository and <X> a plain folder. <B>/L is a symlink to <T>, and
@@ -168,29 +168,30 @@ func (r r0RemoveRow) run(t *testing.T, wantSteps []string) {
 // A worktreeRoot that is baseRepo or lies beneath it is refused on remove, with no
 // git call. Before, claustrum answered {"success":true} to each destructive row and
 // deleted the worktree with its files, its entry and branch wt1. With the leaf
-// absent it deleted wt1 while the live worktree had it checked out (measured). Rows
-// Q2, Q10 and Q16 pin the order: the shape and baseRepo checks come first, and the
-// <directory> symlink check comes after.
+// absent it deleted wt1 while the live worktree had it checked out (measured). The rows
+// "root T with a leaf of no level", "baseRepo sub dotdot" and "dot claude with a linked cp"
+// pin the order: the shape and baseRepo checks come first, and the <directory> symlink
+// check comes after.
 func TestWorktreeRemoveRootInRepo(t *testing.T) {
 	const w1 = "<T>/.claude/worktrees/w1"
 	for _, r := range []r0RemoveRow{
-		{name: "Q1", root: "<T>/.claude", wp: w1, leaf: w1,
+		{name: "dot claude", root: "<T>/.claude", wp: w1, leaf: w1,
 			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
-		{name: "Q7", root: "<T>/.claude/", wp: w1, leaf: w1,
+		{name: "dot claude with a trailing slash", root: "<T>/.claude/", wp: w1, leaf: w1,
 			want: "refusing to remove worktree: `<T>/.claude/` is the repository <T> or inside it" + r0Tail},
-		{name: "Q8", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: w1,
+		{name: "dot claude with a level", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: w1,
 			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
-		{name: "Q8b", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
+		{name: "dot claude with the leaf at its level", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
 			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
-		{name: "Q2s", root: "<T>", wp: "<T>/cp/w1", leaf: "<T>/cp/w1",
+		{name: "root T", root: "<T>", wp: "<T>/cp/w1", leaf: "<T>/cp/w1",
 			want: "refusing to remove worktree: `<T>` is the repository <T> or inside it" + r0Tail},
-		{name: "Q3s", root: "<T>/.claude/worktrees", wp: "<T>/.claude/worktrees/cp/w1", leaf: "<T>/.claude/worktrees/cp/w1",
+		{name: "dot claude worktrees", root: "<T>/.claude/worktrees", wp: "<T>/.claude/worktrees/cp/w1", leaf: "<T>/.claude/worktrees/cp/w1",
 			want: "refusing to remove worktree: `<T>/.claude/worktrees` is the repository <T> or inside it" + r0Tail},
-		{name: "Q4s", root: "<T>/sub", wp: "<T>/sub/cp/w1", leaf: "<T>/sub/cp/w1",
+		{name: "sub folder", root: "<T>/sub", wp: "<T>/sub/cp/w1", leaf: "<T>/sub/cp/w1",
 			want: "refusing to remove worktree: `<T>/sub` is the repository <T> or inside it" + r0Tail},
-		{name: "Q5s", root: "<T>/missing", wp: "<T>/missing/cp/w1", leaf: w1,
+		{name: "missing folder", root: "<T>/missing", wp: "<T>/missing/cp/w1", leaf: w1,
 			want: "refusing to remove worktree: `<T>/missing` is the repository <T> or inside it" + r0Tail},
-		{name: "Q16", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: w1,
+		{name: "dot claude with a linked cp", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: w1,
 			setup: func(t *testing.T, f *r0Fixture) {
 				if err := os.MkdirAll(filepath.Join(f.T, ".claude"), 0o755); err != nil {
 					t.Fatal(err)
@@ -200,9 +201,9 @@ func TestWorktreeRemoveRootInRepo(t *testing.T) {
 				}
 			},
 			want: "refusing to remove worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
-		{name: "Q2", root: "<T>", wp: w1, leaf: w1,
+		{name: "root T with a leaf of no level", root: "<T>", wp: w1, leaf: w1,
 			want: "refusing to remove worktree: `<T>/.claude/worktrees/w1` is not <worktree location>/<directory>/<name> beneath <T>"},
-		{name: "Q10", base: "<T>/sub/..", root: "<T>/.claude", wp: w1, leaf: w1,
+		{name: "baseRepo sub dotdot", base: "<T>/sub/..", root: "<T>/.claude", wp: w1, leaf: w1,
 			want: `refusing to remove worktree: <T>/sub/.. contains a ".." component; choose the session folder by its absolute path, without ".."`},
 	} {
 		t.Run(r.name, func(t *testing.T) { r.run(t, nil) })
@@ -216,13 +217,13 @@ func TestWorktreeRemoveRootInRepo(t *testing.T) {
 // with its files, its entry and branch wt1.
 func TestWorktreeRemoveRootResolvesIntoRepo(t *testing.T) {
 	for _, r := range []r0RemoveRow{
-		{name: "Q6s", root: "<B>/L", wp: "<B>/L/cp/w1", leaf: "<T>/cp/w1",
+		{name: "link to T", root: "<B>/L", wp: "<B>/L/cp/w1", leaf: "<T>/cp/w1",
 			want: "refusing to remove worktree: <B>/L leads into the repository <T> (at <T>)" + r0Tail},
-		{name: "Q17", root: "<B>/L/sub", wp: "<B>/L/sub/cp/w1", leaf: "<T>/sub/cp/w1",
+		{name: "sub of a link to T", root: "<B>/L/sub", wp: "<B>/L/sub/cp/w1", leaf: "<T>/sub/cp/w1",
 			want: "refusing to remove worktree: <B>/L/sub leads into the repository <T> (at <T>)" + r0Tail},
-		{name: "Q18", root: "<B>/M", wp: "<B>/M/cp/w1", leaf: "<T>/sub/cp/w1",
+		{name: "link to T sub", root: "<B>/M", wp: "<B>/M/cp/w1", leaf: "<T>/sub/cp/w1",
 			want: "refusing to remove worktree: <B>/M leads into the repository <T> (at <T>)" + r0Tail},
-		{name: "Q19", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
+		{name: "baseRepo below the top level", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/w1", leaf: "<T>/.claude/cp/w1",
 			want: "refusing to remove worktree: <T>/.claude leads into the repository <T>/sub (at <T>)" + r0Tail},
 	} {
 		t.Run(r.name, func(t *testing.T) {
@@ -235,7 +236,7 @@ func TestWorktreeRemoveRootResolvesIntoRepo(t *testing.T) {
 // of another repository gets the ownership refusal when <T> has a linked worktree
 // (measured). Both as on f6010b97 and 89cb6289.
 func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
-	t.Run("Q15s", func(t *testing.T) {
+	t.Run("root holds the repository", func(t *testing.T) {
 		f := newR0Fixture(t)
 		leaf := filepath.Join(f.B, "cp", "w1")
 		dirtyWorktree(t, f.T, leaf, "wt1")
@@ -248,7 +249,7 @@ func TestWorktreeRemoveRootOutsideRepo(t *testing.T) {
 			t.Errorf("worktree %s or branch wt1 is still there, but all three remove them", leaf)
 		}
 	})
-	t.Run("Q20b", func(t *testing.T) {
+	t.Run("root in another checkout", func(t *testing.T) {
 		f := newR0Fixture(t)
 		runGit(t, f.T, "worktree", "add", "-q", "-b", "w0", filepath.Join(f.X, "o", "w0"))
 		r0Repo(t, f.T2)
@@ -278,22 +279,22 @@ func TestWorktreeCreateRootInRepo(t *testing.T) {
 		name, base, root, wp, want string
 		created                    bool
 	}{
-		{name: "K1", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
+		{name: "dot claude", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
 			want: "refusing to create worktree: `<T>/.claude` is the repository <T> or inside it" + r0Tail},
-		{name: "K2", root: "<T>", wp: "<T>/cp/c1",
+		{name: "root T", root: "<T>", wp: "<T>/cp/c1",
 			want: "refusing to create worktree: `<T>` is the repository <T> or inside it" + r0Tail},
-		{name: "K3", root: "<T>/sub", wp: "<T>/sub/cp/c1",
+		{name: "sub folder", root: "<T>/sub", wp: "<T>/sub/cp/c1",
 			want: "refusing to create worktree: `<T>/sub` is the repository <T> or inside it" + r0Tail},
-		{name: "K4", root: "<B>/L", wp: "<B>/L/cp/c1",
+		{name: "link to T", root: "<B>/L", wp: "<B>/L/cp/c1",
 			want: "refusing to create worktree: <B>/L leads into the repository <T> (at <T>)" + r0Tail},
-		{name: "K8", root: "<B>/L/sub", wp: "<B>/L/sub/cp/c1",
+		{name: "sub of a link to T", root: "<B>/L/sub", wp: "<B>/L/sub/cp/c1",
 			want: "refusing to create worktree: <B>/L/sub leads into the repository <T> (at <T>)" + r0Tail},
-		{name: "K9", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
+		{name: "baseRepo below the top level", base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
 			want: "refusing to create worktree: <T>/.claude leads into the repository <T>/sub (at <T>)" + r0Tail},
-		{name: "K10", root: "<T2>/.claude", wp: "<T2>/.claude/cp/c1",
+		{name: "root in another checkout", root: "<T2>/.claude", wp: "<T2>/.claude/cp/c1",
 			want: "refusing to create worktree: `<T2>/.claude" + s7},
-		{name: "K6", root: "<B>", wp: "<B>/cp/c1", created: true},
-		{name: "K7", root: "<B>/Tx", wp: "<B>/Tx/cp/c1", created: true},
+		{name: "root holds the repository", root: "<B>", wp: "<B>/cp/c1", created: true},
+		{name: "folder beside the repository", root: "<B>/Tx", wp: "<B>/Tx/cp/c1", created: true},
 	} {
 		t.Run(r.name, func(t *testing.T) {
 			f := newR0Fixture(t)

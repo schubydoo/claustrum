@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -326,6 +327,34 @@ func TestShadowAllCatFilterGetsNoItem(t *testing.T) {
 	}
 }
 
+// readTreeExits is the exit code of each read-tree call in the exit log of the
+// git stub (CLAUSTRUM_GITSTUB_EXITLOG), in decimal and in hex. A Windows status
+// such as a failed start of a DLL shows in hex.
+func readTreeExits(t *testing.T, log string) string {
+	t.Helper()
+	b, err := os.ReadFile(log)
+	if err != nil {
+		return err.Error()
+	}
+	var out []string
+	for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+		code, argv, _ := strings.Cut(line, "\x1f")
+		if !slices.Contains(strings.Split(argv, "\x1f"), "read-tree") {
+			continue
+		}
+		n, err := strconv.ParseInt(code, 10, 64)
+		if err != nil {
+			out = append(out, code)
+			continue
+		}
+		out = append(out, fmt.Sprintf("%d (0x%X)", n, uint32(n)))
+	}
+	if out == nil {
+		return "none logged"
+	}
+	return strings.Join(out, ", ")
+}
+
 // filterItems is the filter items of the read-tree call, in their order.
 func filterItems(calls []envCall) []string {
 	var items []string
@@ -406,13 +435,17 @@ func TestShadowFilterRules(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			f := newShadowFilterFixture(t, "* filter=x\n")
 			user, repo := filepath.Join(t.TempDir(), "user"), filepath.Join(t.TempDir(), "repository")
+			exits := filepath.Join(t.TempDir(), "exits")
+			t.Setenv("CLAUSTRUM_GITSTUB_EXITLOG", exits)
 			row.stage(t, f, user, repo)
 			raw, calls := f.create(t, nil)
 			if row.refused {
 				wantError(t, raw, repositoryOnlyFilterText("x"), "repository_only_filter")
 				f.wantGone(t)
 			} else if !strings.Contains(raw, `"success":true`) {
-				t.Fatalf("git.worktree_create = %s, want success", raw)
+				// The exit code of the read-tree call names the cause of a
+				// failure with no fatal line. One Windows CI run had one.
+				t.Fatalf("git.worktree_create = %s, want success\nexit codes of the read-tree calls: %s", raw, readTreeExits(t, exits))
 			}
 			if items := filterItems(calls); !slices.Equal(items, row.items) {
 				t.Errorf("filter items of read-tree = %q, want %q", items, row.items)
