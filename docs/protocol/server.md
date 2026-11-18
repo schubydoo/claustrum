@@ -128,7 +128,7 @@ Once the handler starts the stop, the reply waits until teardown starts, on Wind
 - If the close wins, the client reads EOF with no bytes.
 - Another idle connection gets a clean EOF with no bytes.
 
-A client must treat EOF after a shutdown request as success. Timing sets the rate: on Linux claustrum still replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured). `b3081b51` replied in 0 of 60 plain runs, 17 of 60 after a ping and 2 of 60 with a second idle connection (measured on Windows). The two daemons send the same reply bytes.
+A client must treat EOF after a shutdown request as success. On Linux claustrum still replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured). In one round on Windows `b3081b51` replied in 0 of 60 plain runs, 17 of 60 after a ping and 2 of 60 with a second idle connection (measured on Windows). Both daemons send the same reply bytes.
 
 ### What the stop does
 
