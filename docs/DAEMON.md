@@ -517,8 +517,8 @@ After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the who
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read
 or write. This matches `f6010b97` (measured on Linux). `5fd08069` closes at the
-same times as claustrum (measured on Linux and macOS). The timeout is fixed and
-always on: no flag, no configuration key. A watcher of each connection
+same times as claustrum (measured on Linux and macOS). The timeout is fixed:
+no flag, no configuration key. A watcher of each connection
 checks at a quarter of the timeout, capped at 30 s. At the timeout it closes the
 socket and logs `[Server] closing connection idle <d> in both directions:
 <addr>`. `89cb6289` logs that text with `5m0s` and `@` (measured on Linux). Claustrum quotes the address and logs no line for a connection that never showed the token ([Lines of connections](#lines-of-connections)). The watcher ends with its
@@ -534,7 +534,7 @@ system was measured on that system, and an unmarked rule on Linux and macOS.
 
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old` and creates a fresh one
-with mode `0600`. The daemonized child writes its stdout and stderr there. claustrum keeps the log at shutdown (from the code), unlike the socket and `daemon.token`. The name and location are fixed, not configurable.
+with mode `0600`. The daemonized child writes its stdout and stderr there. claustrum keeps the log at shutdown (from the code), unlike the socket and `daemon.token`. The name and location are fixed.
 
 claustrum writes a level tag before each line of its logger. The banner and a
 start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
@@ -624,22 +624,22 @@ These line rules are claustrum's own unless an item names a build. `89cb6289` an
 - The refused request logs `[Server] Unauthorized request number <n>: method=<method>`, with the method cut to 64 characters and quoted and no id. The older text is `Unauthorized request: method=…, id=…`.
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
 - The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
-- A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later each time (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
+- A failed accept logs `[Server] accept error (retrying): <error>`. Each retry comes 100 ms later (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
 - The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error, and the shutdown logs none. An unmarked connection logs no `writeResponse` or `scanner error` line.
 - After a bad last line and a close, an unmarked connection logs no `Failed to write response` line (`4c111e86`, measured on Linux). macOS and Windows are claustrum's own.
 
 ### Lines of child processes
 
-The levels of these lines are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
+The levels of these lines are claustrum's own. Unless an item says otherwise, each text is that of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
-- A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (`c9125eb8`, measured on Linux, macOS and Windows). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux).
-- A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the text of the error frame
-- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (`52d82f0a`, measured on Linux and macOS for `client`). On Linux and macOS a child that the shutdown ends logs none, measured on Linux (`c9125eb8` and `4c111e86` log none). On macOS 1 or 2 of 8 runs of the references still log it. A child whose temp-folder end still runs logs none too (`4c111e86`, measured on Linux). On Windows the line stays (claustrum's own, not measured)
+- A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (`c9125eb8`, measured on Linux, macOS and Windows). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux). On Linux start lines come after `[Server] shutdown requested` (`4c111e86`, measured on Linux).
+- A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the error frame's text
+- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (`52d82f0a`, measured on Linux and macOS for `client`). On Linux a child that the shutdown ends logs `(shutdown)` (`4c111e86`, measured on Linux), or `(client)` after a plain `process.kill` ([`killedBy`](protocol/streams.md#stream-notifications), claustrum's own, not measured). The exit race loses some lines. On macOS such a child logs almost none (`4c111e86`, measured on macOS). A child that the shutdown ends while its temp-folder end runs logs none (`4c111e86`, measured on Linux). On Windows the line stays (claustrum's own, not measured)
 - A bad `process.kill` farewell (INFO): `[process] kill <id>: its farewell is not said: <rule>` (same build and systems)
 - A refused `process.killAndWait` (WARN): `[process.Manager] KillAndWait <id>: signal terminated failed: <error>`, `group kill failed: <error>` and `still running 7s after SIGKILL (D-state?)` (`52d82f0a`, measured on Linux and macOS)
-- A refused signal (WARN): `[signal] refused a signal to pid <n>: a pid below 2 is never a child`, from `sysproc.KillChildGroup`, `sysproc.ReapProcessGroup`, `procinfo.KillGroup` and `supervisor.SignalProcessGroup`. The same text is the error of a refused `process.kill` (claustrum's own, not measured)
+- A refused signal (WARN): `[signal] refused a signal to pid <n>: a pid below 2 is never a child`, from `sysproc.KillChildGroup`, `sysproc.ReapProcessGroup`, `procinfo.KillGroup` and `supervisor.SignalProcessGroup`. It is also the error of a refused `process.kill` (claustrum's own, not measured)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
-- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS). For a missing folder, `open` names its nearest existing parent folder (claustrum's own, not measured).
+- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS). For a missing folder, `open` names its nearest existing parent (claustrum's own, not measured).
 - A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once from the spawn that started the test (claustrum's own, not measured)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
@@ -656,9 +656,9 @@ The levels of these lines are claustrum's own. Unless an item says otherwise, ea
 - A group fails the test (INFO): `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it`
 - The reap summary (INFO): `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`
 
-At a shutdown the exit line can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
+A reap that sent no `SIGTERM` and kept no record writes no summary.
 
-The main `<reason>` texts of a dropped record and of a group that fails the test are these:
+The main `<reason>` texts of a dropped record and a failed group test are these:
 
 - `it does not run the recorded program "<argv0>"`, with `and neither runs nor was handed "<program>"` after it for a record with `program`
 - `it does not lead its own process group`

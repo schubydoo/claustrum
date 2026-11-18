@@ -410,6 +410,10 @@ component_management:
         - internal/supervisor/logid.go
         - internal/supervisor/sysproc_unix.go
         - internal/supervisor/sysproc_windows.go
+        # The switch per system of the exit line of a child that the shutdown ends.
+        - internal/supervisor/shutdownexit_linux.go
+        - internal/supervisor/shutdownexit_darwin.go
+        - internal/supervisor/shutdownexit_other.go
         # The refused-signal error, the live-pid test and the test seams of the package.
         - internal/supervisor/signalfailed.go
         - internal/supervisor/pidinuse.go
