@@ -288,15 +288,16 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 // its pipes, so a second such call follows. After a short wait none follows.
 // 5fd08069 makes the second call after the 45 s wait (measured on Linux).
 // Mutation: set the short wait for the pipes again in gitRunLimited. The test
-// lowers probeKeep to 2.5 s and the short wait to 500 ms.
+// lowers probeKeep to 3.5 s and the short wait to 500 ms. The short row holds
+// the listing 500 ms, so 3 s is left before the kept answer is old.
 func TestProbeAgainAfterALongHookListing(t *testing.T) {
-	setDuration(t, &probeKeep, 2500*time.Millisecond)
+	setDuration(t, &probeKeep, 3500*time.Millisecond)
 	shortDrain(t)
 	for _, row := range []struct {
 		name string
 		hold time.Duration
 		want int
-	}{{"long", probeKeep + 2*time.Second, 2}, {"short", time.Second, 1}} {
+	}{{"long", probeKeep + 2*time.Second, 2}, {"short", 500 * time.Millisecond, 1}} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			holdHookListing(t, "hold", row.hold)
