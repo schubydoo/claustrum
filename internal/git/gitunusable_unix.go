@@ -31,3 +31,7 @@ func heldByOtherAccount(d string) bool {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	return ok && int(st.Uid) != walkOwnUID()
 }
+
+// repoOnShare is false on Linux and macOS: shareGitDir has no step there (from the
+// code). A variable, so that a test can run that step.
+var repoOnShare = func(repo string) bool { return false }

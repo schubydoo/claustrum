@@ -816,16 +816,43 @@ func gitStatus(req *gitCall) rpc.Response {
 	// daemon on a FIFO or on /dev/null, b3081b51 makes 2 calls: the excludes read
 	// and `version` (measured on Linux). A regular file there and macOS are
 	// claustrum's own, not measured.
+	//
+	// A regular file inside a repository gets the gate with the trust of its folder.
+	// So the gate asks git about that repository (askGit) and reads its config. With
+	// `path` and baseRepo a file, 4c111e86 makes 14 calls in the first request, and a
+	// failing `rev-parse --git-dir` there answers the -32603 text of askGit (measured
+	// on Linux). A 15 s hold of that call changes no reply (measured on Linux, no
+	// test here). macOS is claustrum's own, and Windows keeps the trust of the
+	// file (not measured). gateTrust also takes the pinned git directory of the
+	// folder to syncRepo and keepLiveForm. So the gate makes the git-shadow copy
+	// of that repository and `.probe` for a file baseRepo, as 4c111e86 does
+	// (measured on Linux).
+	//
+	// A file link from that folder into another repository makes git find the other
+	// repository. 4c111e86 answers "no repository" there, not the "disagree" text
+	// (measured on Linux). macOS is claustrum's own. A regular file keeps the
+	// "disagree" text of askGit (linkOutOfFolder).
+	gateTrust, noGate, outLink := t, false, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
-		t.verdict == gitDirTrusted && t.pinCommonDir == "" && !inRepoFolder(filepath.Dir(p.BaseRepo)) {
+		t.verdict == gitDirTrusted && t.pinCommonDir == "" {
+		if folder := readGitDirTrust(filepath.Dir(p.BaseRepo), false); folder.verdict == gitDirTrusted && folder.pinCommonDir != "" {
+			gateTrust, outLink = folder, linkOutOfFolder(p.BaseRepo)
+		} else {
+			noGate = true
+		}
+	}
+	if noGate {
 		req.use = gitUse{stop: req.stop}
-	} else if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo); msg != "" {
+	} else if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, p.BaseRepo); msg != "" {
+		if outLink && req.gitDisagreed {
+			return notRepo
+		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	} else if noRepo {
 		return notRepo
 	} else {
 		// The later git commands follow the off switch (measured on Linux).
-		req.keepLiveForm(bool(p.ShadowDirOff), t, p.BaseRepo)
+		req.keepLiveForm(bool(p.ShadowDirOff), gateTrust, p.BaseRepo)
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (measured). The listing runs in
 	// baseRepo as sent and carries the heavy profile (call 2 of the measured call log).
@@ -900,10 +927,18 @@ func gitStatus(req *gitCall) rpc.Response {
 	return rpc.OKResult(req.ID, rpc.GitStatusReply{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
 }
 
-// inRepoFolder reports whether the trust check accepts a repository for dir.
-func inRepoFolder(dir string) bool {
-	ft := readGitDirTrust(dir, false)
-	return ft.verdict == gitDirTrusted && ft.pinCommonDir != ""
+// linkOutOfFolder reports whether p is a symbolic link whose resolved target is
+// in another folder than the resolved folder of p.
+func linkOutOfFolder(p string) bool {
+	if fi, err := os.Lstat(p); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	target, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	folder, err := filepath.EvalSymlinks(filepath.Dir(p))
+	return err == nil && filepath.Dir(target) != folder
 }
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
@@ -1221,6 +1256,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
+		// A `.git` folder on a network share that git does not use (shareGitDir).
+		if g := shareGitDir(repo); g != "" && req.gitRefused {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: fmt.Sprintf(unusableGitText, g), ErrorCode: "worktree_add_failed"})
+		}
 		return notARepoResult(req.ID, repo)
 	}
 	// The create holds the git directory that its gate accepted until it answers
@@ -3462,6 +3501,14 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			// exists and every other length keep the refusal (claustrum's own,
 			// not measured).
 			return keptAll()
+		} else if noRepo && shareGitDir(repo) != "" {
+			// A `.git` folder on a network share that git does not use gets success,
+			// and nothing is deleted (shareGitDir). This noRepo is the answer of
+			// askGit, since a daemon GIT_DIR to a missing path answered above. No
+			// lock is checked. A locked registration in the share, the local drive
+			// or the 8.3 spelling gets success, and the lock, the registration and
+			// the branch stay (4c111e86, measured on Windows).
+			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
@@ -3533,18 +3580,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			probe = newRegistrationProbe(req.use, answered, inRepoWorkTree(repo))
 			probe.pairIfWorktreesDir(commonDir)
 		}
-		// The baseRepo part of the path is also matched in its resolved form, and the
-		// rest as sent. So a baseRepo sent in 8.3 form or through a junction still finds
-		// a locked registration when the worktree and its parent are gone (measured on
-		// Windows). A present worktree does not get this spelling, so an 8.3 leaf keeps
-		// its entry (measured).
-		underBase := ""
-		if p.WorktreeRoot == "" {
-			if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.IsLocal(rel) {
-				underBase = filepath.Join(pathcanon.FinalDir(repo), rel)
-			}
-		}
-		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
+		sp := goneWorktreePathSet(p, repo, path)
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (measured
 		// on Linux, macOS and Windows, and with worktreeRoot on Linux). On Windows c9125eb8
@@ -3584,6 +3620,22 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 	// for-each-ref fails, and the branch counts as kept (measured).
 	kept := runBranchStep(req.use, repo, p.BranchName).kept()
 	return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
+}
+
+// goneWorktreePathSet is the set of spellings that the lock tests of a gone
+// worktree match. The baseRepo part of the path is also matched in its resolved
+// form, and the rest as sent. So a baseRepo sent in 8.3 form or through a junction
+// still finds a locked registration when the worktree and its parent are gone
+// (measured on Windows). A present worktree does not get this spelling, so an 8.3
+// leaf keeps its entry (measured).
+func goneWorktreePathSet(p *gitParams, repo, path string) worktreePathSet {
+	underBase := ""
+	if p.WorktreeRoot == "" {
+		if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.IsLocal(rel) {
+			underBase = filepath.Join(pathcanon.FinalDir(repo), rel)
+		}
+	}
+	return newWorktreePathSet(path, p.WorktreePath, underBase)
 }
 
 // worktreeRemoveHomeRefusal is the home guard of git.worktree_remove (D2). It refuses a
