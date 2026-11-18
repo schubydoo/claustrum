@@ -12,12 +12,10 @@ import (
 // baseRepo as a network share. On Windows 4c111e86 answers the create with
 // unusableGitText for `<baseRepo>\.git`, and a remove of a gone worktree with
 // success and a kept branch (measured on a share). Nothing is made or deleted.
-// A lock that names the gone worktree keeps the D22 refusal, also where baseRepo
-// is sent through a link and the registration names the resolved path. On
-// Windows the link is a junction. Where the parent folder of the leaf exists,
-// the spelling of the leaf finds the registration. Where it is gone too, only
-// the resolved baseRepo of goneWorktreePathSet finds it on Windows. On Linux
-// and macOS AsRecorded finds it in both rows. A
+// A lock that names the gone worktree gets the same success, and the lock and
+// the registration stay. 4c111e86 answers so for a record in the share and in
+// the local drive spelling (measured on Windows). The rows with a link record
+// the resolved path or the sent path. On Windows the link is a junction. A
 // worktree that exists keeps the lock-check refusal. A `.git` file keeps the
 // answers of a local folder (claustrum's own, not measured). A folder that is
 // not on a share keeps not_a_repo and the lock-check refusal.
@@ -47,34 +45,39 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 		locked      bool
 		// goneParent puts the gone leaf below a folder that does not exist.
 		goneParent bool
+		// recordSent makes the lock record name the leaf below the sent baseRepo.
+		recordSent bool
 		method     string
 		want       func(base, leaf string) string
 	}{
-		{"create on a share", repoBase, true, true, false, false, "git.worktree_create", func(base, _ string) string {
+		{"create on a share", repoBase, true, true, false, false, false, "git.worktree_create", func(base, _ string) string {
 			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(base, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
 		}},
-		{"create on a local folder", repoBase, false, true, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
-		{"create from a .git file on a share", gitFileBase, true, true, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
-		{"remove of a gone worktree on a share", repoBase, true, true, false, false, "git.worktree_remove", func(string, string) string {
+		{"create on a local folder", repoBase, false, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
+		{"create from a .git file on a share", gitFileBase, true, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
+		{"remove of a gone worktree on a share", repoBase, true, true, false, false, false, "git.worktree_remove", func(string, string) string {
 			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
 		}},
-		{"remove of a gone locked worktree on a share", repoBase, true, true, true, false, "git.worktree_remove", func(_, leaf string) string {
-			return refused(goneLockedWorktreeRefusal(leaf, lockedPlain))
+		{"remove of a gone locked worktree on a share", repoBase, true, true, true, false, false, "git.worktree_remove", func(string, string) string {
+			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
 		}},
-		{"remove of a gone locked worktree on a share through a link", linkedBase, true, true, true, false, "git.worktree_remove", func(_, leaf string) string {
-			return refused(goneLockedWorktreeRefusal(leaf, lockedPlain))
+		{"remove of a gone locked worktree on a share through a link", linkedBase, true, true, true, false, false, "git.worktree_remove", func(string, string) string {
+			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
 		}},
-		{"remove of a gone locked worktree with a gone parent on a share through a link", linkedBase, true, true, true, true, "git.worktree_remove", func(_, leaf string) string {
-			return refused(goneLockedWorktreeRefusal(leaf, lockedPlain))
+		{"remove of a gone locked worktree with a gone parent on a share through a link", linkedBase, true, true, true, true, false, "git.worktree_remove", func(string, string) string {
+			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
 		}},
-		{"remove of a worktree that exists on a share", repoBase, true, false, false, false, "git.worktree_remove", func(_, leaf string) string {
+		{"remove of a gone worktree whose lock names the sent spelling on a share through a link", linkedBase, true, true, true, false, true, "git.worktree_remove", func(string, string) string {
+			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
+		}},
+		{"remove of a worktree that exists on a share", repoBase, true, false, false, false, false, "git.worktree_remove", func(_, leaf string) string {
 			return refused(lockCheckRefusal(leaf))
 		}},
-		{"remove of a gone worktree on a local folder", repoBase, false, true, false, false, "git.worktree_remove", func(_, leaf string) string {
+		{"remove of a gone worktree on a local folder", repoBase, false, true, false, false, false, "git.worktree_remove", func(_, leaf string) string {
 			return refused(lockCheckRefusal(leaf))
 		}},
-		{"remove from a .git file on a share", gitFileBase, true, true, false, false, "git.worktree_remove", func(_, leaf string) string {
+		{"remove from a .git file on a share", gitFileBase, true, true, false, false, false, "git.worktree_remove", func(_, leaf string) string {
 			return refused(lockCheckRefusal(leaf))
 		}},
 	} {
@@ -98,7 +101,11 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 			entry := filepath.Join(f.gitDir, "worktrees", "w1")
 			if row.locked {
 				// The record names the resolved path of the gone worktree.
-				writeFile(t, filepath.Join(entry, "gitdir"), filepath.Join(f.repo, rel, ".git")+"\n", 0o644)
+				record := filepath.Join(f.repo, rel, ".git")
+				if row.recordSent {
+					record = filepath.Join(base, rel, ".git")
+				}
+				writeFile(t, filepath.Join(entry, "gitdir"), record+"\n", 0o644)
 				writeFile(t, filepath.Join(entry, "locked"), "held\n", 0o644)
 			}
 			raw, _ := f.call(t, row.method, map[string]any{"baseRepo": base, "worktreePath": leaf, "branchName": "w1"})
@@ -116,8 +123,10 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 				}
 			}
 			if row.locked {
-				if _, err := os.Stat(filepath.Join(entry, "locked")); err != nil {
-					t.Errorf("the locked registration: %v", err)
+				for _, name := range []string{"locked", "gitdir"} {
+					if _, err := os.Stat(filepath.Join(entry, name)); err != nil {
+						t.Errorf("the locked registration: %v", err)
+					}
 				}
 			}
 		})
