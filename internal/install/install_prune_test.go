@@ -65,13 +65,13 @@ func TestPruneRows(t *testing.T) {
 	}{
 		// Only a version file counts and goes. The file 1.1.0 has mode 0644,
 		// and on Windows it has no ".exe".
-		{id: "L4/M1/W3", keep: 1, before: []pruneFixture{
+		{id: "only version files count", keep: 1, before: []pruneFixture{
 			{vf("1.0.0"), pruneFile, 3 * pruneHour}, {"1.1.0", pruneNoExec, 2 * pruneHour},
 			{vf("0.9.0"), pruneEmptyDir, 4 * pruneHour}, {vf("0.7.0"), pruneFullDir, 4 * pruneHour},
 			{"README", pruneFile, 5 * pruneHour}, {"README.exe", pruneFile, 5 * pruneHour},
 			{".blob-planted", pruneFile, 1 * pruneHour}, {vf("0.8.0"), pruneFileLink, 0},
 		}, want: []string{pruneCLIName, "1.1.0", vf("0.9.0"), vf("0.7.0"), "README", "README.exe", ".blob-planted", vf("0.8.0")}},
-		{id: "L5/M2a/W4a", keep: 0, before: []pruneFixture{
+		{id: "keep 0", keep: 0, before: []pruneFixture{
 			{vf("1.0.0"), pruneFile, 2 * pruneHour}, {vf("1.1.0"), pruneFile, 1 * pruneHour},
 		}, want: []string{pruneCLIName}},
 		// The new CLI always stays, also past the keep value (claustrum's own:
@@ -188,7 +188,7 @@ func TestInstallNegativeKeep(t *testing.T) {
 	if got, _ := os.ReadFile(errPath); len(got) != 0 {
 		t.Errorf("stderr = %q, want empty", got)
 	}
-	f.wantNames(t, "L6", filepath.Base(f.cli))
+	f.wantNames(t, "keep -1", filepath.Base(f.cli))
 }
 
 // Entries with the same mtime stay in name order. This test has forty version
@@ -445,7 +445,7 @@ func TestSweepRows(t *testing.T) {
 		hit    bool
 		want   []string
 	}{
-		{id: "L8/M3a/W5", before: cells, want: append([]string{pruneCLIName}, stays...)},
+		{id: "old part and fetch files", before: cells, want: append([]string{pruneCLIName}, stays...)},
 		{id: "cache hit", before: cells, hit: true,
 			want: append([]string{pruneCLIName, ".fetch-123", "1.0.0.zst"}, stays...)},
 		{id: "link", before: links, want: []string{pruneCLIName, "2.0.0.zst"}},
