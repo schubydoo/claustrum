@@ -219,21 +219,21 @@ func TestWorktreeRemoveExternalLockedUnderUnreadableRoot(t *testing.T) {
 func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 	skipIfRoot(t)
 	for _, c := range []struct {
-		cell  string
+		name  string
 		rel   string
 		level string
 		mode  os.FileMode
 		want  string
 	}{
-		{"U17a", filepath.Join("a", "wt"), "a", 0o300, "openat a"},
-		{"U17b", filepath.Join("a", "wt"), "a", 0o600, "statat ."},
-		{"U18a", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o300, "openat b"},
-		{"U18b", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o600, "statat ."},
-		{"U19", "wt", ".", 0o600, "statat wt"},
-		{"N6a", filepath.Join("a", "wt"), ".", 0o600, "statat a"},
-		{"N6b", filepath.Join("a", "b", "c", "wt"), ".", 0o600, "statat a"},
+		{"a 0300", filepath.Join("a", "wt"), "a", 0o300, "openat a"},
+		{"a 0600", filepath.Join("a", "wt"), "a", 0o600, "statat ."},
+		{"a b 0300", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o300, "openat b"},
+		{"a b 0600", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o600, "statat ."},
+		{"repository 0600, leaf at the top", "wt", ".", 0o600, "statat wt"},
+		{"repository 0600", filepath.Join("a", "wt"), ".", 0o600, "statat a"},
+		{"repository 0600, nested leaf", filepath.Join("a", "b", "c", "wt"), ".", 0o600, "statat a"},
 	} {
-		t.Run(c.cell, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			f := newRmFixture(t)
 			wt := filepath.Join(f.repo, c.rel)
 			runGit(t, f.repo, "worktree", "add", "-q", "-b", "wt", wt)

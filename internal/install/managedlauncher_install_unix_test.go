@@ -144,14 +144,14 @@ func TestInstallGateAndDirectRuns(t *testing.T) {
 	_ = os.Remove(f.base)
 	_ = os.Remove(f.cliLog)
 	if got := f.install(t, ""); got != `"cliWasPresent":true,"launcherStatus":"none"}`+"\n" {
-		t.Errorf("I1: facts tail %q", got)
+		t.Errorf("facts tail %q", got)
 	}
 	if got := readLog(t, f.cliLog); got != "CLI --version gate=1\n" {
-		t.Errorf("I1: CLI log %q, want a direct run that keeps the gate", got)
+		t.Errorf("CLI log %q, want a direct run that keeps the gate", got)
 	}
 }
 
-// TestInstallThroughLauncher pins I2: a usable launcher runs the CLI once, as
+// TestInstallThroughLauncher pins a measured rule: a usable launcher runs the CLI once, as
 // `<launcher> <cli> --version`, with no direct run, and the gate does not reach it.
 // The facts carry launcherStatus, launcher and launcherSource in that order.
 func TestInstallThroughLauncher(t *testing.T) {
@@ -161,13 +161,13 @@ func TestInstallThroughLauncher(t *testing.T) {
 	t.Setenv(managedLauncherGateEnv, "1")
 	want := `"cliWasPresent":true,"launcherStatus":"usable","launcher":["` + f.wrap + `"],"launcherSource":"` + f.base + `"}` + "\n"
 	if got := f.install(t, ""); got != want {
-		t.Errorf("I2: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 	if got, want := readLog(t, f.wrapLog), "LAUNCH "+f.cli+" --version\n"; got != want {
-		t.Errorf("I2: launcher log %q, want %q", got, want)
+		t.Errorf("launcher log %q, want %q", got, want)
 	}
 	if got := readLog(t, f.cliLog); got != "CLI --version gate=\n" {
-		t.Errorf("I2: CLI log %q, want one run through the launcher without the gate", got)
+		t.Errorf("CLI log %q, want one run through the launcher without the gate", got)
 	}
 }
 
@@ -183,14 +183,14 @@ func TestInstallRefusedLauncherRunsNothing(t *testing.T) {
 	f.settings(t, "wrap")
 	want := `"cliWasPresent":true,"launcherStatus":"unusable","launcherSource":"` + f.base + `","launcherReason":"the launcher must be an absolute path, not a bare name resolved via PATH"}` + "\n"
 	if got := f.install(t, ""); got != want {
-		t.Errorf("I3: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 
 	f.settings(t, f.wrap)
 	denySettingsRead(t)
 	want = `"cliWasPresent":true,"launcherStatus":"unreadable","launcherPath":"` + f.base + `","launcherReason":"permission denied"}` + "\n"
 	if got := f.install(t, ""); got != want {
-		t.Errorf("I4: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 	if readLog(t, f.cliLog)+readLog(t, f.wrapLog) != "" {
 		t.Error("a refused launcher must run nothing")
@@ -231,7 +231,7 @@ func TestInstallNoCliPathAddsNoLauncherField(t *testing.T) {
 	}
 }
 
-// TestInstallLauncherRunFails pins I5, I7 and I11: a failed launcher run is
+// TestInstallLauncherRunFails pins measured rules: a failed launcher run is
 // probe_failed with the reason and the capped stderr; the CLI file stays,
 // cliWasPresent stays true and there is no cliError. A signal reads "terminated by
 // SIGTERM" and an empty stderr omits launcherStderr.
@@ -242,29 +242,29 @@ func TestInstallLauncherRunFails(t *testing.T) {
 	head := `"cliWasPresent":true,"launcherStatus":"probe_failed","launcher":["` + f.wrap + `"],"launcherSource":"` + f.base + `",`
 
 	helperMode(t, "fail-launcher", "")
-	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", "L5: to stderr\n")
+	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", "launcher: to stderr\n")
 	t.Setenv("CLAUSTRUM_TEST_LAUNCH_EXIT", "3")
-	if got, want := f.install(t, ""), head+`"launcherReason":"exit status 3","launcherStderr":"L5: to stderr\n"}`+"\n"; got != want {
-		t.Errorf("I5: facts tail\n got %q\nwant %q", got, want)
+	if got, want := f.install(t, ""), head+`"launcherReason":"exit status 3","launcherStderr":"launcher: to stderr\n"}`+"\n"; got != want {
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 
 	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", strings.Repeat("E", 10000))
 	t.Setenv("CLAUSTRUM_TEST_LAUNCH_EXIT", "1")
 	want := head + `"launcherReason":"exit status 1","launcherStderr":"` + strings.Repeat("E", 8192) + `\n[` + "\xe2\x80\xa6" + ` 1808 more bytes]"}` + "\n"
 	if got := f.install(t, ""); got != want {
-		t.Errorf("I7: facts tail (len %d, want %d) ends %q, want %q", len(got), len(want), got[max(0, len(got)-60):], want[len(want)-60:])
+		t.Errorf("facts tail (len %d, want %d) ends %q, want %q", len(got), len(want), got[max(0, len(got)-60):], want[len(want)-60:])
 	}
 
 	helperMode(t, "selfterm", "")
 	if got, want := f.install(t, ""), head+`"launcherReason":"terminated by SIGTERM"}`+"\n"; got != want {
-		t.Errorf("I11: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 	if !isRegularFile(f.cli) {
 		t.Error("the CLI file must stay")
 	}
 }
 
-// TestInstallLauncherRunStopped pins I6 with a short bound: a launcher run that does
+// TestInstallLauncherRunStopped pins a measured rule with a short bound: a launcher run that does
 // not end is stopped, cliWasPresent is false with the unresponsive cliError and
 // cliUnresponsive, the status is unresponsive, and the CLI file stays.
 func TestInstallLauncherRunStopped(t *testing.T) {
@@ -278,7 +278,7 @@ func TestInstallLauncherRunStopped(t *testing.T) {
 		` and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish","cliUnresponsive":true,"launcherStatus":"unresponsive","launcher":["` +
 		f.wrap + `"],"launcherSource":"` + f.base + `","launcherReason":"did not exit within 33s and was stopped"}` + "\n"
 	if got := f.install(t, ""); got != want {
-		t.Errorf("I6: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 	if d := time.Since(start); d > 4*time.Second {
 		t.Errorf("the stop took %v, want about the 300ms bound", d)
@@ -288,7 +288,7 @@ func TestInstallLauncherRunStopped(t *testing.T) {
 	}
 }
 
-// TestInstallFreshExtractThroughLauncher pins I10: a fresh install extracts, then
+// TestInstallFreshExtractThroughLauncher pins a measured rule: a fresh install extracts, then
 // runs the CLI once through the launcher, and reports cliWasPresent false with the
 // usable fields. The launcher gets the final path, as on the reference (measured
 // on Linux). The run right after the extract has its own bound: a launcher that
@@ -310,13 +310,13 @@ func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 	writeFileMode(t, blob, zstdOf(t, []byte("#\n")), 0o644)
 	want := `"cliWasPresent":false,"launcherStatus":"usable","launcher":["` + f.wrap + `"],"launcherSource":"` + f.base + `"}` + "\n"
 	if got := f.install(t, blob); got != want {
-		t.Errorf("I10: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 	if log, want := readLog(t, f.wrapLog), "LAUNCH "+f.cli+" --version\n"; log != want {
-		t.Errorf("I10: launcher log %q, want one run on the final path %q", log, want)
+		t.Errorf("launcher log %q, want one run on the final path %q", log, want)
 	}
 	if !isRegularFile(f.cli) {
-		t.Error("I10: the CLI was not installed")
+		t.Error("the CLI was not installed")
 	}
 
 	if err := os.Remove(f.cli); err != nil {
@@ -327,10 +327,10 @@ func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 	setManagedFirstRunBound(t, 30*time.Second)
 	writeFileMode(t, blob, zstdOf(t, []byte("#\n")), 0o644)
 	if got := f.install(t, blob); got != want {
-		t.Errorf("H4: a first run longer than the cache-hit bound: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("a first run longer than the cache-hit bound: facts tail\n got %q\nwant %q", got, want)
 	}
 	if !isRegularFile(f.cli) {
-		t.Error("H4: the CLI was not installed")
+		t.Error("the CLI was not installed")
 	}
 
 	if err := os.Remove(f.cli); err != nil {
@@ -343,20 +343,20 @@ func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 		` and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish","cliUnresponsive":true,"launcherStatus":"unresponsive","launcher":["` +
 		f.wrap + `"],"launcherSource":"` + f.base + `","launcherReason":"did not exit within 123s and was stopped"}` + "\n"
 	if got := f.install(t, blob); got != want {
-		t.Errorf("H2: facts tail\n got %q\nwant %q", got, want)
+		t.Errorf("facts tail\n got %q\nwant %q", got, want)
 	}
 	if !isRegularFile(f.cli) {
-		t.Error("H2: a stopped first run still installs the CLI")
+		t.Error("a stopped first run still installs the CLI")
 	}
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
-		t.Errorf("H2: the blob must be consumed, Lstat err = %v", err)
+		t.Errorf("the blob must be consumed, Lstat err = %v", err)
 	}
 }
 
 // TestInstallFetchComesBeforeLauncherFields pins the -cli-url rows with the gate
 // (`89cb6289`, measured on Linux): fetch comes after cliError and cliUnresponsive
-// and before launcherStatus. Rows F-U (usable), F-E404 (a failed download) and H1
-// (a stopped first run).
+// and before launcherStatus. The rows are a usable launcher, a failed download and
+// a stopped first run.
 func TestInstallFetchComesBeforeLauncherFields(t *testing.T) {
 	f := newInstallFixture(t)
 	if err := os.Remove(f.cli); err != nil {
@@ -387,22 +387,22 @@ func TestInstallFetchComesBeforeLauncherFields(t *testing.T) {
 			t.Errorf("%s: facts line %q, want the tail %s", row, out, wantTail)
 		}
 	}
-	run("F-U", "/cli.zst", fetch+usable)
+	run("usable", "/cli.zst", fetch+usable)
 	if !isRegularFile(f.cli) {
-		t.Fatal("F-U: the CLI was not installed")
+		t.Fatal("the CLI was not installed")
 	}
 	if err := os.Remove(f.cli); err != nil {
 		t.Fatal(err)
 	}
-	run("F-E404", "/missing", `"cliError":"download failed with status 404",`+fetch+usable)
+	run("failed download", "/missing", `"cliError":"download failed with status 404",`+fetch+usable)
 
 	helperMode(t, "slow:5", "")
 	setManagedFirstRunBound(t, 300*time.Millisecond)
-	run("H1", "/cli.zst", `"cliError":"cli unresponsive: [^"]*","cliUnresponsive":true,`+fetch+
+	run("stopped first run", "/cli.zst", `"cliError":"cli unresponsive: [^"]*","cliUnresponsive":true,`+fetch+
 		`"launcherStatus":"unresponsive","launcher":\["`+regexp.QuoteMeta(f.wrap)+`"\],"launcherSource":"`+regexp.QuoteMeta(f.base)+
 		`","launcherReason":"did not exit within 123s and was stopped"`)
 	if !isRegularFile(f.cli) {
-		t.Error("H1: a stopped first run still installs the CLI")
+		t.Error("a stopped first run still installs the CLI")
 	}
 }
 
@@ -426,10 +426,10 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 
 	helperMode(t, "wrap", "cli-log")
 	if o, e := f.probe(t); o != "" || e != "" {
-		t.Errorf("P1: stdout %q stderr %q, want both empty", o, e)
+		t.Errorf("stdout %q stderr %q, want both empty", o, e)
 	}
 	if got := readLog(t, f.wrapLog) + readLog(t, f.cliLog); got != "LAUNCH "+f.cli+" --version\nCLI --version gate=\n" {
-		t.Errorf("P1: runs %q, want one run through the launcher", got)
+		t.Errorf("runs %q, want one run through the launcher", got)
 	}
 
 	_ = os.Remove(f.wrapLog)
@@ -437,7 +437,7 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 	f.settings(t, "wrap")
 	o, e := f.probe(t)
 	if want := "claude-ssh: " + f.cli + " was not run: managed launcher unusable: the launcher must be an absolute path, not a bare name resolved via PATH\n"; o != "__CLI_LAUNCHER__\n" || e != want {
-		t.Errorf("P2: stdout %q stderr %q, want __CLI_LAUNCHER__ and %q", o, e, want)
+		t.Errorf("stdout %q stderr %q, want __CLI_LAUNCHER__ and %q", o, e, want)
 	}
 
 	f.settings(t, f.wrap)
@@ -445,20 +445,20 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 	denySettingsRead(t)
 	o, e = f.probe(t)
 	if want := "claude-ssh: " + f.cli + " was not run: managed settings unreadable: " + f.base + ": permission denied\n"; o != "__CLI_LAUNCHER__\n" || e != want {
-		t.Errorf("P3: stdout %q stderr %q, want __CLI_LAUNCHER__ and %q", o, e, want)
+		t.Errorf("stdout %q stderr %q, want __CLI_LAUNCHER__ and %q", o, e, want)
 	}
 	readManagedSettingsFile = realRead
 	if readLog(t, f.cliLog)+readLog(t, f.wrapLog) != "" {
-		t.Error("P2/P3 must run nothing")
+		t.Error("the unusable and the unreadable launcher must run nothing")
 	}
 
 	helperMode(t, "fail-launcher", "")
-	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", "L5: to stderr\n")
+	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", "launcher: to stderr\n")
 	t.Setenv("CLAUSTRUM_TEST_LAUNCH_EXIT", "3")
 	o, e = f.probe(t)
-	want := "claude-ssh: the managed launcher's run printed:\nL5: to stderr\n\nclaude-ssh: " + f.cli + " --version through the managed launcher " + f.wrap + " did not succeed: exit status 3\n"
+	want := "claude-ssh: the managed launcher's run printed:\nlauncher: to stderr\n\nclaude-ssh: " + f.cli + " --version through the managed launcher " + f.wrap + " did not succeed: exit status 3\n"
 	if o != "__CLI_LAUNCHER__\n" || e != want {
-		t.Errorf("P4: stdout %q stderr\n%q, want __CLI_LAUNCHER__ and\n%q", o, e, want)
+		t.Errorf("stdout %q stderr\n%q, want __CLI_LAUNCHER__ and\n%q", o, e, want)
 	}
 	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", "")
 	if _, e = f.probe(t); e != "claude-ssh: "+f.cli+" --version through the managed launcher "+f.wrap+" did not succeed: exit status 3\n" {
@@ -470,7 +470,7 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 	o, e = f.probe(t)
 	want = "claude-ssh: cli unresponsive: the installed Claude Code binary was started through the host's managed launcher " + f.wrap + " and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish\n"
 	if o != "__CLI_HUNG__\n" || e != want {
-		t.Errorf("P5: stdout %q stderr %q, want __CLI_HUNG__ and %q", o, e, want)
+		t.Errorf("stdout %q stderr %q, want __CLI_HUNG__ and %q", o, e, want)
 	}
 
 	helperMode(t, "cli-log", "")
@@ -478,7 +478,7 @@ func TestProbeCLIThroughLauncher(t *testing.T) {
 	_ = os.Remove(f.cliLog)
 	t.Setenv(managedLauncherGateEnv, "")
 	if o, e := f.probe(t); o != "" || e != "" || readLog(t, f.cliLog) != "CLI --version gate=\n" || readLog(t, f.wrapLog) != "" {
-		t.Errorf("P6: stdout %q stderr %q runs %q, want one direct run", o, e, readLog(t, f.cliLog)+readLog(t, f.wrapLog))
+		t.Errorf("stdout %q stderr %q runs %q, want one direct run", o, e, readLog(t, f.cliLog)+readLog(t, f.wrapLog))
 	}
 	t.Setenv(managedLauncherGateEnv, "1")
 	_ = os.Remove(f.base)

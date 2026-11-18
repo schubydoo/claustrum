@@ -43,10 +43,10 @@ lint:
 # packages.
 # Each process writes its own log, and the logs print at the end.
 # scripts/check_git_shards.py checks that the four sets run each test once.
-GIT_SHARD_WORKTREE := -run '^TestWorktree'
-GIT_SHARD_STATUS   := -run '^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)'
-GIT_SHARD_CREATE   := -run '^(TestCreate|TestLFS|TestContent)'
-GIT_SHARD_REST     := -skip '^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestCreate|TestLFS|TestContent)'
+GIT_SHARD_WORKTREE := -run '^TestWorktree' -skip '^TestWorktreeRemove'
+GIT_SHARD_STATUS   := -run '^(TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestWorktreeRemove)'
+GIT_SHARD_CREATE   := -run '^(TestCreate|TestLFS|TestContent|TestGitCall)'
+GIT_SHARD_REST     := -skip '^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestCreate|TestLFS|TestContent|TestGitCall)'
 
 test:
 	@pkgs=$$(go list ./... | grep -v '/internal/git$$'); \
