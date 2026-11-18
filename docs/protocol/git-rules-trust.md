@@ -65,8 +65,9 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
     On Windows `git.info` and `git.list_branches` read the config of a junction
     `path` that holds its git directory through its target. A refusal names that
     file. A junction to a bare repository answers as that repository
-    (`4c111e86`, measured). The other methods, a daemon `GIT_DIR` and a target
-    with no drive letter keep the pin (claustrum's own, not measured).
+    (`4c111e86`, measured). Other methods, a daemon `GIT_DIR` and a target with
+    no drive letter keep the pin, and a junction chain is refused (claustrum's
+    own, not measured).
 
 ### How the daemon judges the git directory
 
@@ -252,15 +253,14 @@ config on the five methods: `this repository's git config cannot be used: open
 (measured on Linux and macOS).
 
 Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
-listing gets no `GIT_DIR=<null>`, and a `.git` file that names
+listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
 a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
-repository, and it keeps the "no repository" column (from the code).
-`git.worktree_remove` keeps that column unless its listing fails (from the code).
-For the `.git` file, `git.info` and `git.list_branches` run no listing either
-(from the code).
+repository, and it keeps the "no repository" column.
+`git.worktree_remove` keeps that column unless its listing fails.
+For the `.git` file, `git.info` and `git.list_branches` run no listing either.
 The listing of `git.status` still carries `GIT_DIR=<null>`, and
-its failure is the refusal of `git.status` (from the code). With an incomplete
+its failure is the refusal of `git.status`. These four rules are all from the code. With an incomplete
 `GIT_CONFIG` pair of the daemon, each method answers "no repository" for the
 `.git` file, and a remove of a gone worktree gets success (`b3081b51`).
 
@@ -447,7 +447,7 @@ On Windows `b3081b51` refuses a repository path through a symbolic link or a jun
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal (claustrum's own, not measured). The place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
+`git.status` and `git.info` answer it as `-32603`. A create answers it with `"errorCode":"worktree_add_failed"`, and makes no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum tests each name of the path, and it does not follow a link to a drive letter (claustrum's own, not measured). The test of `baseRepo` alone in `git.status` and the other forms of target are claustrum's own too. A request with `"shadowDirOff":true` gets the same refusal. That, the place of this test after the link chain test and the cleaned path in the text are claustrum's own, not measured.
 
 ### UNC refusals
 
