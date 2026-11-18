@@ -2,7 +2,11 @@
 
 package git
 
-import "golang.org/x/sys/windows"
+import (
+	"errors"
+
+	"golang.org/x/sys/windows"
+)
 
 // linkTarget reads the reparse data of the entry at path itself, with
 // FILE_FLAG_OPEN_REPARSE_POINT, and returns its substitute name
@@ -26,4 +30,11 @@ func linkTarget(path string) (string, bool) {
 		return "", false
 	}
 	return reparseSubstituteName(buf[:n])
+}
+
+// networkAccessDenied reports whether err is ERROR_NETWORK_ACCESS_DENIED. Go
+// reads ERROR_ACCESS_DENIED as fs.ErrPermission, but not this code. Which of the
+// two a share that denies every account gives is not measured.
+func networkAccessDenied(err error) bool {
+	return errors.Is(err, windows.ERROR_NETWORK_ACCESS_DENIED)
 }
