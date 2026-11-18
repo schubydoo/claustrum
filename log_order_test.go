@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"log"
 	"net"
 	"strings"
@@ -138,6 +139,65 @@ func TestTokenlessConnectionLogsOnlyTheCountedClose(t *testing.T) {
 			t.Errorf("a connection with no token mark logged %q; got:\n%s", bad, out)
 		}
 	}
+}
+
+// failWriteConn is a markConn whose every write fails with its own error text, so
+// a test finds its own Failed to write response line in the shared log.
+type failWriteConn struct{ markConn }
+
+const failWriteText = "write refused by failWriteConn"
+
+func (failWriteConn) Write([]byte) (int, error) { return 0, errors.New(failWriteText) }
+
+// serveFailWriteConn sends line on a connection whose writes fail, closes the client
+// end and returns the captured log once serveConn has returned. With marked set,
+// the connection holds the token mark before the read loop starts.
+func serveFailWriteConn(t *testing.T, line string, marked bool) string {
+	t.Helper()
+	s := &server{
+		token:    testToken,
+		procs:    newTestProcManager(t),
+		conns:    make(map[*conn.Conn]struct{}),
+		shutdown: make(chan struct{}),
+	}
+	cli, srv := net.Pipe()
+	return captureLog(t, func() {
+		done := make(chan struct{})
+		c := conn.New(failWriteConn{markConn{srv}}, nil, 0, nil, nil, nil)
+		if marked {
+			c.ShowToken()
+		}
+		go func() {
+			defer close(done)
+			s.serveConn(c)
+		}()
+		if _, err := cli.Write([]byte(line)); err != nil {
+			t.Errorf("client write: %v", err)
+		}
+		_ = cli.Close()
+		<-done
+	})
+}
+
+// A connection with no token mark logs no Failed to write response line after a
+// bad last line and a close (4c111e86, measured on Linux. macOS and Windows
+// claustrum's own). A failed -32001 reply keeps the line, and so does a failed
+// -32700 reply to a marked connection (claustrum's own, not measured).
+func TestUnmarkedParseErrorWriteFailureLogsNoLine(t *testing.T) {
+	failed := `ERROR [Server] Failed to write response: "` + failWriteText + `"`
+	out := serveFailWriteConn(t, "x", false)
+	p := indexOrFail(t, out, "WARN  [Server] Parse error number 1: invalid character 'x' looking for beginning of value\n")
+	c := indexOrFail(t, out, "INFO  [Server] Connection number 1 that never showed the token: "+markLabel+"\n")
+	if p > c {
+		t.Errorf("the parse-error line must precede the counted close; got:\n%s", out)
+	}
+	if strings.Contains(out, failed) {
+		t.Errorf("a parse-error reply to a connection with no mark logged %q; got:\n%s", failed, out)
+	}
+	out = serveFailWriteConn(t, `{"jsonrpc":"2.0","id":7,"method":"server.ping"}`, false)
+	indexOrFail(t, out, failed)
+	out = serveFailWriteConn(t, "x", true)
+	indexOrFail(t, out, failed)
 }
 
 // The first request that passes the token check logs the New connection line, once,

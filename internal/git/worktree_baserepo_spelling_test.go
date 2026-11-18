@@ -35,15 +35,16 @@ const spellRemoveOK = `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 // with the texts of the worktreePath check, and names baseRepo as sent. The check
 // comes after the worktreeRoot and worktreePath checks and before the shape check.
 // A ".." baseRepo keeps its text under a refused daemon GIT_CONFIG_COUNT (measured).
-// An empty worktreePath reads as relative there. The rows are Linux and macOS rows of
-// group R. Linux ran R12 to R14 in the validation round only.
+// An empty worktreePath reads as relative there. The rows are Linux and macOS rows.
+// Linux ran the last three rows in a later check only.
 //
 // Every row removes a plain directory, where the measured rows had a registered
-// worktree. Only R13 and R14 reach the delete. R10 sends baseRepo T, where the row
-// sent <T>/missing/... R11 runs in the working directory B, where the row ran in T.
+// worktree. Only the d..d row and the <T>/. row reach the delete. The empty worktreePath
+// row sends baseRepo T, where the measured row sent <T>/missing/... The absent baseRepo
+// row runs in the working directory B, where the measured row ran in T.
 //
-// On Windows the worktreeRoot refusal comes first (measured on Windows). R10 is row
-// WR2 there. An earlier build put the trust-root refusal before it for <T>\missing\..
+// On Windows the worktreeRoot refusal comes first (measured on Windows, also for the
+// empty worktreePath). An earlier build put the trust-root refusal before it for <T>\missing\..
 // there (measured). b3081b51 judges that baseRepo as <T> (measured on Windows without a
 // worktreeRoot), so the worktreeRoot refusal comes first for it too (not measured).
 func TestWorktreeRemoveRootChecksBaseRepoSpelling(t *testing.T) {
@@ -82,26 +83,26 @@ func TestWorktreeRemoveRootChecksBaseRepoSpelling(t *testing.T) {
 		want       string // "" = spellRemoveOK
 		plantCount bool
 	}{
-		{"R1", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": root}, dotdot(missing), false},
-		{"R1 P1", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": root}, dotdot(missing), true},
-		{"R3", map[string]any{"baseRepo": b + sep + "missing" + sep + ".." + sep + "T", "worktreePath": leaf, "worktreeRoot": root},
+		{"missing dotdot", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": root}, dotdot(missing), false},
+		{"missing dotdot with a refused count", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": root}, dotdot(missing), true},
+		{"missing dotdot then T", map[string]any{"baseRepo": b + sep + "missing" + sep + ".." + sep + "T", "worktreePath": leaf, "worktreeRoot": root},
 			dotdot(b + sep + "missing" + sep + ".." + sep + "T"), false},
-		{"R4", map[string]any{"baseRepo": "T", "worktreePath": leaf, "worktreeRoot": root}, rel("T"), false},
-		{"R5", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": "R"},
+		{"relative baseRepo", map[string]any{"baseRepo": "T", "worktreePath": leaf, "worktreeRoot": root}, rel("T"), false},
+		{"relative worktreeRoot", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": "R"},
 			`refusing to remove worktree: R is a relative path; choose the worktree location by its absolute path, without "..", beneath the filesystem root`, false},
-		{"R6b", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": rootDotDot},
+		{"worktreeRoot with dotdot", map[string]any{"baseRepo": missing, "worktreePath": leaf, "worktreeRoot": rootDotDot},
 			"refusing to remove worktree: " + rootDotDot +
 				` contains a ".." component; choose the worktree location by its absolute path, without "..", beneath the filesystem root`, false},
-		{"R7", map[string]any{"baseRepo": missing, "worktreePath": "cp" + sep + "w5", "worktreeRoot": root}, rel("cp" + sep + "w5"), false},
-		{"R8", map[string]any{"baseRepo": missing, "worktreePath": root + sep + "cp" + sep + "x" + sep + ".." + sep + "w5", "worktreeRoot": root},
+		{"relative worktreePath", map[string]any{"baseRepo": missing, "worktreePath": "cp" + sep + "w5", "worktreeRoot": root}, rel("cp" + sep + "w5"), false},
+		{"worktreePath with dotdot", map[string]any{"baseRepo": missing, "worktreePath": root + sep + "cp" + sep + "x" + sep + ".." + sep + "w5", "worktreeRoot": root},
 			dotdot(root + sep + "cp" + sep + "x" + sep + ".." + sep + "w5"), false},
-		{"R9", map[string]any{"baseRepo": missing, "worktreePath": filepath.Join(root, "w5"), "worktreeRoot": root}, dotdot(missing), false},
-		{"R10", map[string]any{"baseRepo": f.top, "worktreePath": "", "worktreeRoot": root}, rel(""), false},
-		{"R11", map[string]any{"worktreePath": leaf, "worktreeRoot": root}, rel(""), false},
-		{"R12", map[string]any{"baseRepo": f.top + sep + "sub" + sep + "..", "worktreePath": leaf, "worktreeRoot": root},
+		{"worktreePath one level below worktreeRoot", map[string]any{"baseRepo": missing, "worktreePath": filepath.Join(root, "w5"), "worktreeRoot": root}, dotdot(missing), false},
+		{"empty worktreePath", map[string]any{"baseRepo": f.top, "worktreePath": "", "worktreeRoot": root}, rel(""), false},
+		{"absent baseRepo", map[string]any{"worktreePath": leaf, "worktreeRoot": root}, rel(""), false},
+		{"sub dotdot", map[string]any{"baseRepo": f.top + sep + "sub" + sep + "..", "worktreePath": leaf, "worktreeRoot": root},
 			dotdot(f.top + sep + "sub" + sep + ".."), false},
-		{"R13", map[string]any{"baseRepo": dd, "worktreePath": leaf, "worktreeRoot": root}, "", false},
-		{"R14", map[string]any{"baseRepo": f.top + sep + ".", "worktreePath": leaf, "worktreeRoot": root}, "", false},
+		{"dotdot inside a folder name", map[string]any{"baseRepo": dd, "worktreePath": leaf, "worktreeRoot": root}, "", false},
+		{"T dot", map[string]any{"baseRepo": f.top + sep + ".", "worktreePath": leaf, "worktreeRoot": root}, "", false},
 	} {
 		t.Run(r.row, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
@@ -185,8 +186,8 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 	params := map[string]any{"baseRepo": f.top + sep + "missing" + sep + "..", "worktreePath": f.leaf()}
 
 	for _, r := range []struct{ row, base string }{
-		{"A1 P1", f.top + sep + "missing" + sep + ".."},
-		{"A3 P1", filepath.Dir(f.top) + sep + "missing" + sep + ".." + sep + "T"},
+		{"missing dotdot", f.top + sep + "missing" + sep + ".."},
+		{"missing dotdot then T", filepath.Dir(f.top) + sep + "missing" + sep + ".." + sep + "T"},
 	} {
 		t.Run(r.row, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
@@ -201,7 +202,7 @@ func TestWorktreeRemoveCountRefusalUnresolvedBase(t *testing.T) {
 			}
 		})
 	}
-	t.Run("P0", func(t *testing.T) {
+	t.Run("nothing planted", func(t *testing.T) {
 		clearDaemonConfigEnv(t)
 		want := spellRemoveOK
 		if got := gitDispatch(t, h, rpcLine(t, "git.worktree_remove", params)); got != want {
@@ -252,24 +253,24 @@ func TestBaseRepoWalkFailureGetsTrustRootRefusal(t *testing.T) {
 		want        string
 		plantCount  bool
 	}{
-		{"A1", "git.worktree_remove", func(f wtFixture) map[string]any { return map[string]any{"worktreePath": f.leaf()} }, tr, false},
-		{"A1 P1", "git.worktree_remove", func(f wtFixture) map[string]any { return map[string]any{"worktreePath": f.leaf()} }, tr, true},
-		{"O1", "git.worktree_remove", func(wtFixture) map[string]any { return map[string]any{"worktreePath": ""} }, tr, false},
-		{"O2", "git.worktree_remove", func(wtFixture) map[string]any { return map[string]any{"worktreePath": "w1"} }, tr, false},
-		{"O3", "git.worktree_remove", func(f wtFixture) map[string]any {
+		{"remove", "git.worktree_remove", func(f wtFixture) map[string]any { return map[string]any{"worktreePath": f.leaf()} }, tr, false},
+		{"remove with a refused count", "git.worktree_remove", func(f wtFixture) map[string]any { return map[string]any{"worktreePath": f.leaf()} }, tr, true},
+		{"remove of an empty worktreePath", "git.worktree_remove", func(wtFixture) map[string]any { return map[string]any{"worktreePath": ""} }, tr, false},
+		{"remove of a relative worktreePath", "git.worktree_remove", func(wtFixture) map[string]any { return map[string]any{"worktreePath": "w1"} }, tr, false},
+		{"remove of a worktreePath with dotdot", "git.worktree_remove", func(f wtFixture) map[string]any {
 			return map[string]any{"worktreePath": filepath.Join(f.top, ".claude", "worktrees") + sep + "x" + sep + ".." + sep + "w1"}
 		}, tr, false},
-		{"O4", "git.worktree_remove", func(f wtFixture) map[string]any {
+		{"remove of a worktreePath outside the repository", "git.worktree_remove", func(f wtFixture) map[string]any {
 			return map[string]any{"worktreePath": filepath.Join(filepath.Dir(f.top), "N", "w1")}
 		}, tr, false},
-		{"WR1", "git.worktree_remove", func(f wtFixture) map[string]any {
+		{"remove with a worktreeRoot", "git.worktree_remove", func(f wtFixture) map[string]any {
 			b := filepath.Dir(f.top)
 			return map[string]any{"worktreePath": filepath.Join(b, "R", "cp", "w5"), "worktreeRoot": filepath.Join(b, "R")}
 		}, tr, false},
-		{"C1", "git.worktree_create", func(f wtFixture) map[string]any {
+		{"create", "git.worktree_create", func(f wtFixture) map[string]any {
 			return map[string]any{"worktreePath": c1(f), "branchName": "c1"}
 		}, trc, false},
-		{"C1 P1", "git.worktree_create", func(f wtFixture) map[string]any {
+		{"create with a refused count", "git.worktree_create", func(f wtFixture) map[string]any {
 			return map[string]any{"worktreePath": c1(f), "branchName": "c1"}
 		}, trc, true},
 	} {
@@ -331,11 +332,11 @@ func TestBaseRepoMissingDotDotWalk(t *testing.T) {
 		params      map[string]any
 		want        string
 	}{
-		{"A2", "git.worktree_remove", map[string]any{"baseRepo": missing, "worktreePath": f.leaf()}, spellRemoveOK},
-		{"O1", "git.worktree_remove", map[string]any{"baseRepo": missing, "worktreePath": ""},
+		{"remove of a gone worktree", "git.worktree_remove", map[string]any{"baseRepo": missing, "worktreePath": f.leaf()}, spellRemoveOK},
+		{"remove of an empty worktreePath", "git.worktree_remove", map[string]any{"baseRepo": missing, "worktreePath": ""},
 			spellRemoveFrame(t, `failed to remove worktree: "" does not name a directory`)},
-		{"C1", "git.worktree_create", map[string]any{"baseRepo": missing, "worktreePath": c1, "branchName": "c1"}, created},
-		{"A4", "git.worktree_remove", map[string]any{"baseRepo": f.top + sep + "sub" + sep + "..", "worktreePath": f.leaf()}, spellRemoveOK},
+		{"create", "git.worktree_create", map[string]any{"baseRepo": missing, "worktreePath": c1, "branchName": "c1"}, created},
+		{"remove with sub dotdot", "git.worktree_remove", map[string]any{"baseRepo": f.top + sep + "sub" + sep + "..", "worktreePath": f.leaf()}, spellRemoveOK},
 	} {
 		if got := gitDispatch(t, h, rpcLine(t, r.method, r.params)); got != r.want {
 			t.Errorf("%s: got  %s\nwant %s", r.row, got, r.want)
@@ -412,9 +413,9 @@ func missingBaseTree(t *testing.T, dir string) []string {
 // remove and on create. One case uses the tracked file t.txt, where the rows used
 // a.txt. On Windows <T>\t.txt\.. stats, and b3081b51 judges it as <T> (measured on
 // Windows). There the remove deletes the leaf, the registration and the branch, and the
-// create makes c1. G2 and G4 run on Linux and macOS only. G4 skips as root, because
-// root can search a directory with mode 000. Mutation: drop the fold arm of
-// spelledWalkFails (on Windows G1 and G1c get the trust-root refusal).
+// create makes c1. The link loop and the mode 0 rows run on Linux and macOS only. The
+// mode 0 rows skip as root, because root can search a directory with mode 000. Mutation:
+// drop the fold arm of spelledWalkFails (on Windows both t.txt rows get the trust-root refusal).
 func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 	sep := string(filepath.Separator)
 	for _, r := range []struct {
@@ -422,14 +423,14 @@ func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 		unixOnly bool
 		base     func(t *testing.T, f wtFixture) string
 	}{
-		{"G1", false, func(_ *testing.T, f wtFixture) string { return f.top + sep + "t.txt" + sep + ".." }},
-		{"G2", true, func(t *testing.T, f wtFixture) string {
+		{"file then dotdot", false, func(_ *testing.T, f wtFixture) string { return f.top + sep + "t.txt" + sep + ".." }},
+		{"link loop then dotdot", true, func(t *testing.T, f wtFixture) string {
 			if err := os.Symlink("loop", filepath.Join(f.top, "loop")); err != nil {
 				t.Fatal(err)
 			}
 			return f.top + sep + "loop" + sep + ".."
 		}},
-		{"G4", true, func(t *testing.T, f wtFixture) string {
+		{"folder of mode 0 then dotdot", true, func(t *testing.T, f wtFixture) string {
 			if os.Geteuid() == 0 {
 				t.Skip("root can search a directory with mode 000")
 			}
@@ -447,7 +448,7 @@ func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 		for _, create := range []bool{false, true} {
 			row := r.row
 			if create {
-				row += "c"
+				row += " create"
 			}
 			t.Run(row, func(t *testing.T) {
 				if r.unixOnly && runtime.GOOS == "windows" {
@@ -466,7 +467,7 @@ func TestBaseRepoStatErrorGetsTrustRootRefusal(t *testing.T) {
 					method, params = "git.worktree_create", map[string]any{"baseRepo": base, "worktreePath": c1, "branchName": "c1"}
 					want = spellCreateFrame(t, managedWorktreesRefusal, "nested_base_repo")
 				}
-				asRepo := r.row == "G1" && runtime.GOOS == "windows"
+				asRepo := r.row == "file then dotdot" && runtime.GOOS == "windows"
 				if asRepo {
 					want = spellRemoveOK
 					if create {
@@ -519,10 +520,10 @@ func TestWorktreeCreateRootChecksBaseRepoSpelling(t *testing.T) {
 		base   func(f wtFixture) string
 		text   func(p string) string // nil for the control
 	}{
-		{"C7", false, false, func(f wtFixture) string { return f.top + sep + "sub" + sep + ".." }, dotdot},
-		{"C8", false, false, func(wtFixture) string { return "T" }, rel},
-		{"C9", true, true, func(wtFixture) string { return "" }, rel},
-		{"C10", false, false, func(f wtFixture) string { return f.top + sep + "." }, nil},
+		{"sub dotdot", false, false, func(f wtFixture) string { return f.top + sep + "sub" + sep + ".." }, dotdot},
+		{"relative T", false, false, func(wtFixture) string { return "T" }, rel},
+		{"absent in T", true, true, func(wtFixture) string { return "" }, rel},
+		{"T dot control", false, false, func(f wtFixture) string { return f.top + sep + "." }, nil},
 	} {
 		t.Run(r.row, func(t *testing.T) {
 			f := newWTFixture(t, false)

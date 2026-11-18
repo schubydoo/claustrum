@@ -325,6 +325,8 @@ component_management:
         - internal/git/gitworktreeconfig_windows.go
         # the gate and the answer of git.status (89cb6289).
         - internal/git/gitstatus.go
+        - internal/git/gitstatus_unix.go
+        - internal/git/gitstatus_windows.go
         # the git.info root per OS (89cb6289).
         - internal/git/gitinforoot_other.go
         - internal/git/gitinforoot_windows.go

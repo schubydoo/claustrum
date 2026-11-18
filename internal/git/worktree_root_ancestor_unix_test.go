@@ -150,19 +150,19 @@ func TestRootAncestorFault(t *testing.T) {
 		{name: "private_0775", private: true, uid: me, gid: gid, mode: 0o775},
 		{name: "shared_0775", uid: me, gid: gid, mode: 0o775, want: write("its group", "0775")},
 		// Measured.
-		{name: "G2_0757", private: true, uid: me, gid: gid, mode: 0o757, want: write("every user on this host", "0757")},
+		{name: "private_0757", private: true, uid: me, gid: gid, mode: 0o757, want: write("every user on this host", "0757")},
 		{name: "linux_private_0777", private: true, uid: me, gid: gid, mode: 0o777, want: write("every user on this host", "0777")},
 		{name: "macos_shared_0777", uid: me, gid: gid, mode: 0o777, want: write("its group and every user on this host", "0777")},
 		// Measured.
-		{name: "G4_1777", uid: me, gid: gid, mode: 0o777 | fs.ModeSticky},
+		{name: "shared_1777", uid: me, gid: gid, mode: 0o777 | fs.ModeSticky},
 		{name: "shared_1775", uid: me, gid: gid, mode: 0o775 | fs.ModeSticky},
 		// Measured: the permission bits only, four digits.
 		{name: "setgid_2775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetgid, want: write("its group", "0775")},
 		{name: "setuid_4775", uid: me, gid: gid, mode: 0o775 | fs.ModeSetuid, want: write("its group", "0775")},
-		{name: "G36a_0070", uid: me, gid: gid, mode: 0o070, want: write("its group", "0070")},
+		{name: "shared_0070", uid: me, gid: gid, mode: 0o070, want: write("its group", "0070")},
 		// Measured.
-		{name: "G29_0111", uid: me, gid: gid, mode: 0o111},
-		{name: "G38b_0000", uid: me, gid: gid, mode: 0},
+		{name: "shared_0111", uid: me, gid: gid, mode: 0o111},
+		{name: "shared_0000", uid: me, gid: gid, mode: 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -215,7 +215,7 @@ func TestRootAncestorWorldWritable(t *testing.T) {
 		mode    fs.FileMode
 		who     string
 	}{
-		{"G2_0757", true, 0o757, "every user on this host"},
+		{"private_0757", true, 0o757, "every user on this host"},
 		{"private_0777", true, 0o777, "every user on this host"},
 		{"shared_0777", false, 0o777, "its group and every user on this host"},
 	} {
@@ -254,7 +254,7 @@ func TestRootAncestorNoWriteBits(t *testing.T) {
 		name  string
 		mode  fs.FileMode
 		lstat bool
-	}{{"G29_0111", 0o111, false}, {"G38a_0600", 0o600, true}} {
+	}{{"shared_0111", 0o111, false}, {"mode_0600", 0o600, true}} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.lstat {
 				skipIfRoot(t)
@@ -279,9 +279,9 @@ func TestRootAncestorTopFirst(t *testing.T) {
 		shared []string // under <B>, top first
 		root   string
 	}{
-		{"G11", []string{"H"}, "H/G/o"},
-		{"G12", []string{"H", "H/G"}, "H/G/o"},
-		{"G35", []string{"H", "H/G", "H/G/K"}, "H/G/K/o"},
+		{"one shared level", []string{"H"}, "H/G/o"},
+		{"two shared levels", []string{"H", "H/G"}, "H/G/o"},
+		{"three shared levels", []string{"H", "H/G", "H/G/K"}, "H/G/K/o"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sharedGroup(t)
@@ -341,7 +341,7 @@ func TestRootAncestorRootExcluded(t *testing.T) {
 // Measured: a missing level ends the walk, and every existing
 // directory above it is judged. <root> is the absent root.
 func TestRootAncestorMissingLevels(t *testing.T) {
-	for _, c := range []struct{ name, root string }{{"G13a", "G/o"}, {"G13b", "G/n1/n2"}} {
+	for _, c := range []struct{ name, root string }{{"one missing level", "G/o"}, {"two missing levels", "G/n1/n2"}} {
 		t.Run(c.name, func(t *testing.T) {
 			sharedGroup(t)
 			b := ancBase(t)
@@ -672,7 +672,7 @@ func TestWorktreeCreateRootAncestorKeepsChainTexts(t *testing.T) {
 		{name: "dangling_link", rootAt: "G/o",
 			setup: func(t *testing.T, f *ancFixture) { ancLink(t, f.p("nonexistent"), f.p("G")) },
 			text:  "failed to create parent directory: lstat <B>/nonexistent: no such file or directory", code: "mkdir_failed"},
-		{name: "G38a_0600", root: true, rootAt: "G/o",
+		{name: "mode_0600", root: true, rootAt: "G/o",
 			setup: func(t *testing.T, f *ancFixture) {
 				ancDir(t, f.p("G/o"), 0o755)
 				ancDir(t, f.p("G"), 0o600)

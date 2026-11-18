@@ -146,6 +146,12 @@ var baseRepoWalksAsSpelled = true
 // open handle (leafResolve). b3081b51 creates such a worktree (measured on Windows).
 var leafResolvesByHandle = true
 
+// removeNamesStrayFile is true on Windows. A remove of a worktree folder that
+// exists answers the S2 refusal of a stray commondir after `is locked: `.
+// 4c111e86 and c9125eb8 answer so for a dangling junction at commondir
+// (measured on Windows).
+var removeNamesStrayFile = true
+
 // removeRegistrationsLinked reports whether the registrations folder dir is a
 // junction or a directory symbolic link. Go reports a junction as ModeIrregular.
 // A remove of a worktree folder that exists then deletes nothing and answers
