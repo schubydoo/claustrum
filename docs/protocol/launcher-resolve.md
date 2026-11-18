@@ -45,7 +45,7 @@ With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, me
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
 
-`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or drop-in holds any key but `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). So does a file that is not a JSON object, cannot be read or is over 2 MiB (claustrum's own, not measured). On Linux a `launcherCheck` with no `path` gets the second shape and fault `not_absolute` (`c9125eb8`, measured on Linux).
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or drop-in holds any key but `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). Also `false`: a file that is not a JSON object, cannot be read or is over 2 MiB (claustrum's own, not measured). On Linux a `launcherCheck` with no `path` gets the second shape and fault `not_absolute` (`c9125eb8`, measured on Linux).
 
 The daemon reads the files on every call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
