@@ -5,6 +5,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -130,5 +131,29 @@ func TestProbeFolderAtFIFOAnswersAtOnce(t *testing.T) {
 		}
 		t.Logf("the open after the writer: %v", <-done)
 		t.Error("prepareProbeFolder waits for a writer at a FIFO")
+	}
+}
+
+// TestStagingFillAtFIFOAnswersAtOnce pins the open of the repository folder in
+// the staging fill: a FIFO there gives the "not a directory" error at once,
+// with no writer.
+func TestStagingFillAtFIFOAnswersAtOnce(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- (&addStage{u: gitUse{repoDir: fifo}}).fill(nil, nil) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.HasSuffix(err.Error(), "not a directory") {
+			t.Errorf("fill at a FIFO: %v, want an error that ends with not a directory", err)
+		}
+	case <-time.After(10 * time.Second):
+		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+			_ = w.Close()
+		}
+		t.Logf("the open after the writer: %v", <-done)
+		t.Error("fill waits for a writer at a FIFO")
 	}
 }

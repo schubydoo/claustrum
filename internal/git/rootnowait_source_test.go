@@ -57,7 +57,6 @@ var plainOpenRootCalls = map[string]struct {
 	// openAddStage opens u.gitDir only when gitDirMustBeReal is false, which is
 	// Windows.
 	"worktreestaging.go openAddStage os":                   {1, rootKeepWindows},
-	"worktreestaging.go fill os":                           {1, rootKeepOutside},
 	"worktreestaging.go move root":                         {2, rootKeepOutside},
 	"worktreestaging.go leafHoldsNoGitFile os":             {1, rootKeepOutside},
 	"worktreestaging.go writeLeafGitFile os":               {1, rootKeepOutside},

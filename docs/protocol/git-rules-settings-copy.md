@@ -100,7 +100,7 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 | `<cause>` | When |
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder. Each line end is one space. An empty line and the blanks at line ends stay, each blank as one space, except at both ends of the text (`b3081b51`, measured on Linux) |
-| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS). The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
+| `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS), not the first `config --get`. The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
 | the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`, and for `config`, `commit-tree` and `update-ref` on `b3081b51` on Linux) |
 | `this repository's git config cannot be used: <error lines of git>` | The read of the test repository's config failed, and the plain `git version` after it works |
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
@@ -111,7 +111,7 @@ If git refuses the copy and the same call works without it, the state is
 it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
-does not fail the test. The test goes on (`b3081b51`, measured on Linux).
+does not fail the test (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure 10 seconds after the test, also with its cause
 gone. In that time a request gets the failure with no git call, but works with
@@ -184,7 +184,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   not measured). macOS is claustrum's own.
 
 ??? note "A FIFO at a folder (Linux and macOS)"
-    A FIFO at `.probe`, `.s<n>` or the folder of the daemon or a repository gives `open <path>: not a directory` at once. One put there during the open, and the remove steps, still wait (claustrum's own, not measured).
+    A FIFO at `.probe`, `.s<n>` or the daemon's folder or a repository folder gives `open <path>: not a directory` at once. One put there during the open, and the remove steps, still wait (claustrum's own, not measured).
 
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:

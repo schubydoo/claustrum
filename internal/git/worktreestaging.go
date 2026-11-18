@@ -512,7 +512,7 @@ func openSeenRegular(root *os.Root, path string, seen os.FileInfo) (*os.File, er
 // brought up to date. Each file is written in place: a poll of 5fd08069 saw a
 // file with 0 bytes first and with its full size 4 to 5 ms later (measured).
 func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error {
-	repo, err := os.OpenRoot(st.u.repoDir)
+	repo, err := openRootNoWait(st.u.repoDir)
 	if err != nil {
 		return err
 	}
