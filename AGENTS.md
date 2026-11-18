@@ -96,8 +96,8 @@ Windows lacks two methods: `files.find` and `files.mkdir`.
   to `main` directly.
 - Use Conventional Commits for PR titles (`feat:` / `fix:` / `docs:` /
   `chore:` / `ci:` …). PRs squash-merge, so the title becomes the commit
-  subject.
-- Releases are changesets-only (knope). A user-facing change adds a
+  subject. Titles are hygiene only. They do not drive releases.
+- Releases are changesets-only (knope, not release-please). A user-facing change adds a
   `.changeset/*.md` fragment with `knope document-change`. No fragment ⇒ no release. An
   internal PR takes the `no-changelog` label. A changeset body is ONE line, because knope
   renders a multi-line body as a `####` heading block. `scripts/lint_changesets.py` gates
@@ -163,13 +163,13 @@ not widen it.
 
 #### Path 2: `git.worktree_remove`
 
-The remove deletes `worktreePath` and its registration through an `os.Root`, with no
-`git worktree remove`. Before any delete it refuses a leaf that is a symlink or no
-directory and a lock that counts (D22). A failed repository check, a Windows junction
+It deletes `worktreePath` and its registration through an `os.Root`, not
+`git worktree remove`. Before any delete it refuses a symlink or non-directory leaf
+and a lock that counts (D22). A failed repository check, a Windows junction
 (D19) and `homeguard.WipesHomeDir` refuse it too. Never widen: On Linux and macOS a gone worktree whose locked entry sits
-behind a linked `<git dir>/worktrees` gets success, and its branch goes. That exception
-follows the reference. Do not widen it. The maintainer approved that a marker beside a
-dangling `.git` link passes the remove ([marker rule](docs/protocol/git-list-branches.md#response)).
+behind a linked `<git dir>/worktrees` succeeds, and its branch goes. Markers beside dangling
+`.git` links pass (macOS, [rule](docs/protocol/git-list-branches.md#response)). Both follow
+the reference. Do not widen them.
 
 #### Path 3: the `git.worktree_create` rollback
 
@@ -347,8 +347,8 @@ reachable knob, because Claude Desktop owns the argv.
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
   `ci` / `security` aggregators are the required checks). Releases: pending
   `.changeset/` fragments → knope opens a version PR (`knope-prepare.yml`).
-  Merging it tags `v*` (`knope-release.yml`), which fires `release.yml`.
+  Merging it tags `v*` (`knope-release.yml`), and the tag fires `release.yml`.
   That release is signed and carries SBOM and SLSA, via
   [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the `KNOPE_ENABLED` repo var.
-- Claude Code / Anthropic API specifics → prefer current docs:
+- Claude Code / Anthropic API specifics → prefer current docs (context7) over memory:
   <https://docs.anthropic.com/en/docs/claude-code/overview>.
