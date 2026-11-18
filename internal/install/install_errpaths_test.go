@@ -222,7 +222,7 @@ func symlinkOrFailOnCI(t *testing.T, target, link string) {
 // replaces the link itself, so the target keeps its contents.
 func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("a directory link at the CLI path: the rename onto it is refused on Windows (from the code, not measured)")
+		t.Skip("on Windows the rename onto a folder link fails with Access is denied and keeps the link and its target (4c111e86, measured on Windows)")
 	}
 	root := t.TempDir()
 	cliDir := filepath.Join(root, "clidir")

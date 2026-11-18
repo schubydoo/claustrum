@@ -154,7 +154,7 @@ func TestWorktreeRemoveExternalLeafKinds(t *testing.T) {
 	if err := os.Symlink(f.e0, lnk); err != nil {
 		t.Fatal(err)
 	}
-	wantRemoveError(t, f.remove(t, lnk, ""), "refusing to remove worktree: "+lnk+" is a symbolic link, not a worktree directory")
+	wantRemoveError(t, f.remove(t, lnk, ""), "refusing to remove worktree: `"+lnk+"` is a symbolic link, not a worktree directory")
 	file := filepath.Join(proj, "f0")
 	writeFile(t, file, "x\n", 0o644)
 	wantRemoveError(t, f.remove(t, file, ""), "refusing to remove worktree: "+file+" is not a directory")

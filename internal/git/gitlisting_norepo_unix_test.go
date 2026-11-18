@@ -57,12 +57,12 @@ func TestGitVersionFailsWhereGitCannotStart(t *testing.T) {
 		params       map[string]any
 		want         string
 	}{
-		{"A-M2", "git.info", map[string]any{"path": nFile}, errFrame(t, versionFailsText)},
-		{"A-X1", "git.info", map[string]any{"path": n0}, errFrame(t, versionFailsText)},
-		{"A-M1", "git.info", map[string]any{"path": f.m}, resultOf(notRepoInfo)},
-		{"A-M3", "git.list_branches", map[string]any{"path": f.m}, resultOf(notRepoList)},
-		{"A-M4", "git.worktree_create", map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": leaf}, resultOf(notRepoCreate)},
-		{"A-M5", "git.worktree_remove", map[string]any{"baseRepo": f.m, "worktreePath": leaf}, resultOf(`{"success":true}`)},
+		{"file in the plain folder", "git.info", map[string]any{"path": nFile}, errFrame(t, versionFailsText)},
+		{"folder of mode 0000", "git.info", map[string]any{"path": n0}, errFrame(t, versionFailsText)},
+		{"missing path", "git.info", map[string]any{"path": f.m}, resultOf(notRepoInfo)},
+		{"missing path", "git.list_branches", map[string]any{"path": f.m}, resultOf(notRepoList)},
+		{"missing path", "git.worktree_create", map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": leaf}, resultOf(notRepoCreate)},
+		{"missing path", "git.worktree_remove", map[string]any{"baseRepo": f.m, "worktreePath": leaf}, resultOf(`{"success":true}`)},
 	} {
 		if got := f.frame(t, row.method, row.params); got != row.want {
 			t.Errorf("%s %s = %s\nwant %s", row.name, row.method, got, row.want)
