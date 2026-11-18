@@ -547,7 +547,7 @@ func (h *ShadowHost) removeOwnFolderFile(dir string) error {
 	if homeguard.WipesHomeDir(dir) {
 		return errors.New("refusing to delete a path that holds the home folder")
 	}
-	root, err := os.OpenRoot(base)
+	root, err := openRootNoWait(base)
 	if err != nil {
 		return err
 	}
