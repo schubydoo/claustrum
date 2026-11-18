@@ -1462,7 +1462,8 @@ var (
 // read after a git appears (measured).
 //
 // While the check of session folders is off, a read is kept for that time off only
-// (docs/protocol/git-rules-session-folders.md, the off switch). A stored result
+// (claustrum's own, not measured, docs/protocol/git-rules-session-folders.md, the
+// off switch). A stored result
 // serves a time off too (4c111e86, measured on Linux).
 func globalExcludesPath() string {
 	userExcludesMu.Lock()
@@ -1478,9 +1479,9 @@ func globalExcludesPath() string {
 	// A read while the check of session folders is off is kept only until the check
 	// is on again. A request after that reads again. 4c111e86 makes one more git run
 	// after the time off (measured on Linux). That it is this read is from the code.
-	// A later request of the same time off uses its read. Requests sent together each
-	// read, as outside a time off (claustrum's own, not measured). A time off that
-	// starts during the read keeps the read out of both stores.
+	// Claustrum's own, not measured: a later request of the same time off uses its
+	// read, requests sent together each read as outside a time off, and a time off
+	// that starts during the read keeps the read out of both stores.
 	run, off := sessiondirs.OffRun()
 	if off && run == offExcludesRun {
 		v := offExcludesValue
@@ -1521,9 +1522,10 @@ func globalExcludesPath() string {
 // `config --includes --path` follows includes and expands a leading ~, matching the
 // reference. It runs WITHOUT the hardening profile so git reports the real global
 // setting, not the pin. The read is kept for the daemon, or under the off switch for
-// that time off only (globalExcludesPath), so it has no time limit of a request. GIT_DIR=<null device> makes it read only the user's global and system
-// config, never a repo's own core.excludesFile. A repo must not be able to inject
-// excludes. 683cc6a9 makes one read too and looks up the default file on each
+// that time off only (claustrum's own, not measured, see globalExcludesPath). So it
+// has no time limit of a request. GIT_DIR=<null device> makes it read only the
+// user's global and system config, never a repo's own core.excludesFile. A repo
+// must not be able to inject excludes. 683cc6a9 makes one read too and looks up the default file on each
 // git.status call (measured on Linux and macOS). started is false when git did not
 // start.
 func excludesFromGlobalConfig() (v string, started bool) {

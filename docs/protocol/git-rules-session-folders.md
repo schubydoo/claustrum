@@ -191,7 +191,8 @@ without the switch gets no check meanwhile (measured on Linux). Only the first s
 request logs the OFF line, and the first check after the hold the on-again line.
 A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
 Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
-A hold keeps that read for later requests, and none it interrupts. Requests sent together each read, and the later wins (claustrum's own, not measured).
+claustrum's own, not measured: a hold keeps that read for later requests and none it
+interrupts, and requests sent together each read, the later winning.
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone

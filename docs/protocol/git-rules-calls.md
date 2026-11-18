@@ -243,8 +243,8 @@ and on Windows in `SystemRoot` if that is absolute. Else the folder of the daemo
 - The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
   (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git did
-  not start keeps nothing (claustrum's own). The [off switch](git-rules-session-folders.md#the-off-switch)
-  keeps a read for its hold only, and none it interrupts (claustrum's own).
+  not start keeps nothing (claustrum's own). A read under the [off switch](git-rules-session-folders.md#the-off-switch)
+  has its own keep rules.
   Claustrum's own: the base is `XDG_CONFIG_HOME`, or the home folder plus `.config` if
   that is unset, empty or relative. A regular file
   `git/ignore` in the base, after symlinks, is the result. Every other case gives the null

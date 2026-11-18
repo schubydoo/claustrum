@@ -451,7 +451,8 @@ func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 // user's excludes, and no request after it uses that read. The next request reads
 // again, and the request after it uses that stored result. 4c111e86 runs git once
 // more after the time off (measured on Linux). That it is this read is from the code.
-// The use of that read by a later request of the time off is claustrum's own. Mutation: in
+// The use of that read by a later request of the time off is claustrum's own, not
+// measured. Mutation: in
 // globalExcludesPath, drop the gen step of the off switch. The read under the
 // switch is then stored, and only 1 read runs. A second mutation drops the store
 // of the time off: the requests under the switch then read more than once.
@@ -479,9 +480,9 @@ func TestShadowExcludesReadUnderOffSwitchNotStored(t *testing.T) {
 	}
 }
 
-// A time off of the check of session folders that starts while a read of the
-// user's excludes runs keeps that read out of the store of the daemon. The next
-// request reads again (claustrum's own, not measured). The later calls of the
+// Claustrum's own, not measured: a time off of the check of session folders that
+// starts while a read of the user's excludes runs keeps that read out of the store
+// of the daemon, and the next request reads again. The later calls of the
 // first request make one read of that time off, so 3 reads run. Mutation: in
 // globalExcludesPath, drop the second OffRun test before the store. The read is
 // then stored, and only 1 read runs.
