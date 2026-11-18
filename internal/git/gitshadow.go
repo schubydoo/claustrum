@@ -255,8 +255,10 @@ func (h *ShadowHost) gate(off bool) string {
 	if kept, done := h.decided(); done {
 		return kept
 	}
+	checkOff := sessiondirs.CheckOff()
 	state, cause := h.startTest()
 	end := shadowClock()
+	checkOff = checkOff || sessiondirs.CheckOff()
 
 	if state == "" && cause == "" {
 		// The shutdown came first: no test ran.
@@ -269,10 +271,20 @@ func (h *ShadowHost) gate(off bool) string {
 		// The frame of every cause (measured on Linux, and in part on
 		// macOS and Windows). A cause with gitCannotRunPrefix is the
 		// whole text (cannotRunText).
-		h.failure = cause
+		failure := cause
 		if !strings.HasPrefix(cause, gitCannotRunPrefix) {
-			h.failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
+			failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
 		}
+		// A failure of a test that ran while the check of session folders was off
+		// is not kept. The next request tests again (4c111e86, measured on Linux).
+		// A failure kept before the switch still answers a request with it
+		// (measured). A hold live at the start or the end of the test counts as off
+		// (claustrum's own, not measured). No test pins the start or the end read
+		// alone: the test holds the switch across the whole request.
+		if checkOff {
+			return failure
+		}
+		h.failure = failure
 		h.failed = end
 		return h.failure
 	}
