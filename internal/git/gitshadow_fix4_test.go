@@ -38,10 +38,10 @@ func TestShadowConfigCarriesSha1AndNoopV1(t *testing.T) {
 		name, key, value, block string
 		size                    int
 	}{
-		{"X8-objectFormat-sha1", "objectFormat", "sha1", "[extensions]\n\tobjectformat = \"sha1\"\n", 192},
-		{"X8-OBJECTFORMAT-sha1", "OBJECTFORMAT", "sha1", "[extensions]\n\tobjectformat = \"sha1\"\n", 192},
-		{"X8-noop-v1-true", "noop-v1", "true", "[extensions]\n\tnoop-v1 = \"true\"\n", 187},
-		{"X8-NOOP-V1-true", "NOOP-V1", "true", "[extensions]\n\tnoop-v1 = \"true\"\n", 187},
+		{"objectFormat-sha1", "objectFormat", "sha1", "[extensions]\n\tobjectformat = \"sha1\"\n", 192},
+		{"OBJECTFORMAT-sha1", "OBJECTFORMAT", "sha1", "[extensions]\n\tobjectformat = \"sha1\"\n", 192},
+		{"noop-v1-true", "noop-v1", "true", "[extensions]\n\tnoop-v1 = \"true\"\n", 187},
+		{"NOOP-V1-true", "NOOP-V1", "true", "[extensions]\n\tnoop-v1 = \"true\"\n", 187},
 	} {
 		for _, version := range []string{"0", "1"} {
 			config := "[core]\n\trepositoryformatversion = " + version + "\n" + baseRepoConfig +

@@ -11,12 +11,12 @@ import (
 
 // The stop of the second listing of the checkout at its bound: SIGTERM to the git that still runs, and SIGKILL
 // gitStopGrace later (measured on Linux, also with strace). The answer comes from how git ended. An exit 0 at the
-// SIGTERM is a success (measured on Linux). An exit 1 there gives the stop text (measured on Linux). The bound is 3 s
-// here, so the stub catches SIGTERM before it comes, and the grace is 3 s. The stub logs each SIGTERM. Mutation: in
+// SIGTERM is a success (measured on Linux). An exit 1 there gives the stop text (measured on Linux). The bound is 2 s
+// here, so the stub catches SIGTERM before it comes, and the grace is 2 s. The stub logs each SIGTERM. Mutation: in
 // ownConfigListing, Kill git at the bound in the place of stopThenKill (every row), or give the stop text to every
 // stopped git (the row "exits 0 at SIGTERM").
 func TestOwnConfigListingTermThenKill(t *testing.T) {
-	const grace = 3 * time.Second
+	const grace = 2 * time.Second
 	for _, row := range []struct {
 		name, termExit string
 		success        bool
@@ -27,7 +27,7 @@ func TestOwnConfigListingTermThenKill(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
-			setDuration(t, &ownConfigBound, 3*time.Second)
+			setDuration(t, &ownConfigBound, 2*time.Second)
 			setDuration(t, &gitStopGrace, grace)
 			slowGit(t, "config,-z,--list", "logterm", 60*time.Second, "", "")
 			t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_INDEX_FILE=index")

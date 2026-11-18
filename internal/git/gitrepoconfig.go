@@ -283,8 +283,9 @@ type boundedListing struct {
 	judge   func(rec []byte) string
 	refusal string
 	// taken counts the bytes taken, kept or not. judged counts the bytes of buf
-	// that judge has seen.
-	taken, judged int
+	// that judge has seen. scanned counts the bytes of buf searched for a NUL, so
+	// the unfinished last record is not searched again on each write.
+	taken, judged, scanned int
 }
 
 func (b *boundedListing) Write(p []byte) (int, error) {
@@ -307,16 +308,18 @@ func (b *boundedListing) judgeRecords() {
 		return
 	}
 	for {
-		rest := b.buf.Bytes()[b.judged:]
-		end := bytes.IndexByte(rest, 0)
-		if end < 0 {
+		buf := b.buf.Bytes()
+		i := bytes.IndexByte(buf[b.scanned:], 0)
+		if i < 0 {
+			b.scanned = len(buf)
 			return
 		}
-		if d := b.judge(rest[:end]); d != "" {
+		end := b.scanned + i
+		if d := b.judge(buf[b.judged:end]); d != "" {
 			b.refusal, b.buf = d, bytes.Buffer{}
 			return
 		}
-		b.judged += end + 1
+		b.judged, b.scanned = end+1, end+1
 	}
 }
 

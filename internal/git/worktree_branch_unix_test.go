@@ -55,16 +55,16 @@ func TestWorktreeRemoveEntryDropFailureKeepsBranch(t *testing.T) {
 	}
 }
 
-// Measured on Linux. C05: the leaf rmdir fails and the branch holds a
+// Measured on Linux. In the first case the leaf rmdir fails and the branch holds a
 // commit that no other ref reaches. The branch part follows the leaf part after
 // "; ", without "the worktree itself was removed, but ", and the member is set.
-// C08b: in attach mode the leaf clear fails, and the text names no branch,
+// In the second case, in attach mode, the leaf clear fails, and the text names no branch,
 // because the call made none (f6010b97 and 89cb6289 agree there).
 func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 	skipIfRoot(t)
 	realGit := realGitPath(t)
 
-	t.Run("C05", func(t *testing.T) {
+	t.Run("leaf rmdir fails", func(t *testing.T) {
 		f := newWTFixture(t, false)
 		runGit(t, f.top, "checkout", "-q", "--detach")
 		runGit(t, f.top, "commit", "-q", "--allow-empty", "-m", "c2")
@@ -86,7 +86,7 @@ func TestWorktreeCreateRollbackLeafAndBranchTexts(t *testing.T) {
 		}
 	})
 
-	t.Run("C08b", func(t *testing.T) {
+	t.Run("attach mode leaf clear fails", func(t *testing.T) {
 		f := newWTFixture(t, false)
 		ex := refAt(t, realGit, f.top, "ex")
 		t.Cleanup(func() { _ = os.Chmod(filepath.Join(f.leaf(), "hsub"), 0o755) })

@@ -15,6 +15,9 @@ on:
     # `ready_for_review` joins the default types. A draft runs no job here, so
     # the flip to ready starts the whole run on the current head.
     types: [opened, synchronize, reopened, ready_for_review]
+  # nightly.yml calls this file once a night and on a manual start. That run
+  # has the event name of its caller, so it runs every job, the test job too.
+  workflow_call:
 
 permissions:
   contents: read
@@ -26,8 +29,8 @@ concurrency:
 jobs:
   # A draft pull request runs no job of this file. Each job, the aggregator too,
   # carries `github.event.pull_request.draft != true`. The test is `!= true`, not
-  # `== false`, because the field is null on a push to main, and so a push runs
-  # every job. GitHub reports a job skipped by its `if:` as a skipped check run.
+  # `== false`, because the field is null on a push to main and in a nightly run.
+  # GitHub reports a job skipped by its `if:` as a skipped check run.
   # So `ci required checks passed` shows skipped on a draft and does not wait.
   # A draft cannot merge. Its first CI result comes when it is marked ready.
   #
@@ -170,7 +173,12 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
+    # A push to main skips this job (TASK-682). With the squash merge and an
+    # up-to-date head, the push tree is the tree that the pull request run
+    # tested. The coverage shards still run the suite on Linux. nightly.yml runs
+    # this job on main once a night, and it opens an issue when that run fails.
+    # The aggregator counts a skipped job as passed.
+    if: ${{ !cancelled() && github.event_name != 'push' && github.event.pull_request.draft != true && needs.changes.outputs.go != 'false' }}
     name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     # On Windows the setup and the compile take up to about 3.3 minutes. A hung
@@ -199,29 +207,32 @@ jobs:
       # 12 minutes with them in it.
       # This job has no Linux leg. The coverage shards below run the whole suite
       # on Linux with the same test flags, and they upload its junit results.
-      # They run the sets of the macOS legs, with the create and rest sets as one
-      # rest shard.
+      #
+      # The name groups of each leg come from the junit times of 12 runs of
+      # 2026-11-17 (TASK-682). internal/git is the slowest package of every leg,
+      # so each leg takes an even part of its tests. Before the move the slowest
+      # leg of internal/git took 505 s on Windows and 435 s on macOS (medians).
       matrix:
         include:
-          # The macOS git half is two shards. It ran 565 to 643 s of the 12
-          # minutes on main, and one run with the off-switch tests of git.status
-          # and the worktree methods passed the limit.
+          # The macOS worktree leg gives the tests named TestWorktreeRemove to
+          # the status leg. They took about 85 s of its 435 s.
           - os: macos-latest
             shard: worktree
-            select: -run=^TestWorktree
+            select: -run=^TestWorktree -skip=^TestWorktreeRemove
           - os: macos-latest
             shard: status
-            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestWorktreeRemove)
           # The tests named TestCreate, TestLFS and TestContent have their own
           # shard. In 5 runs the rest shard took 650 to 701 s of its 720 s in
           # internal/git with them, and one run passed the limit. They took 276
-          # to 295 s of it.
+          # to 295 s of it. The tests named TestGitCall moved here from the
+          # rest leg too (about 21 s).
           - os: macos-latest
             shard: create
-            select: -run=^(TestCreate|TestLFS|TestContent)
+            select: -run=^(TestCreate|TestLFS|TestContent|TestGitCall)
           - os: macos-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestCreate|TestLFS|TestContent)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestCreate|TestLFS|TestContent|TestGitCall)
           # The Windows worktree shard also takes the tests named TestCreate and
           # TestCheckout.
           # The tests named TestWorktreeCreate have their own shard. The go test
@@ -229,9 +240,12 @@ jobs:
           - os: windows-latest
             shard: worktree
             select: -run=^(TestWorktree|TestCreate|TestCheckout) -skip=^TestWorktreeCreate
+          # The create, install and rest legs share the tests of the rest leg,
+          # which took 505 s in internal/git. The create leg takes the tests
+          # named TestRepoConfig (about 26 s).
           - os: windows-latest
             shard: create
-            select: -run=^TestWorktreeCreate
+            select: -run=^(TestWorktreeCreate|TestRepoConfig)
           # The status and install shards were one shard. It ran 7.8 to 11.9
           # minutes of the 12, so it is now two. On 0997cf1 the Windows tests of
           # the status half ran 201 s in sum, and those of the install half 247 s.
@@ -240,12 +254,14 @@ jobs:
             select: -run=^(TestGitStatus|TestShadow)
           # Most tests named TestProbe and TestRepoHold are tests of the settings
           # copy. Most tests named TestInstall and TestEnsure are tests of -install.
+          # The tests named TestContentCheck, TestGitDir, TestStartTest and
+          # TestBaseRepo moved here from the rest leg (about 170 s).
           - os: windows-latest
             shard: install
-            select: -run=^(TestProbe|TestRepoHold|TestInstall|TestEnsure)
+            select: -run=^(TestProbe|TestRepoHold|TestInstall|TestEnsure|TestContentCheck|TestGitDir|TestStartTest|TestBaseRepo)
           - os: windows-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestCreate|TestCheckout|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure)
+            select: -skip=^(TestWorktree|TestCreate|TestCheckout|TestRepoConfig|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestInstall|TestEnsure|TestContentCheck|TestGitDir|TestStartTest|TestBaseRepo)
     env:
       # Renovate bumps this via a customManagers entry in the shared
       # schubydoo/renovate-config:claustrum preset — the same shape as
@@ -411,9 +427,11 @@ jobs:
           done
 
   coverage-shard:
-    # The coverage run is three Ubuntu shards with the -run and -skip sets of
-    # the macOS legs of the test job, so together they run every test once. In
-    # one process internal/git alone took up to 720 s of the old 14 minute limit.
+    # The coverage run is three Ubuntu shards with their own -run and -skip
+    # sets, so together they run every test once. In one process internal/git
+    # alone took up to 720 s of the old 14 minute limit. The status shard takes
+    # the tests named TestLFS. In 4 runs of 2026-11-17 they took about 113 s of
+    # the 404 s of internal/git in the rest shard (medians).
     # Each shard writes its own profile with -coverpkg=./..., and the coverage
     # job below merges them. These shards are also the Linux test run: the test
     # job has no Linux leg. Each shard writes a junit.xml through gotestsum, as
@@ -430,9 +448,9 @@ jobs:
           - shard: worktree
             select: -run=^TestWorktree
           - shard: status
-            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+            select: -run=^(TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestLFS)
           - shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe|TestRepoHold|TestLFS)
     env:
       # The same pin as in the test job. Renovate bumps both lines.
       GOTESTSUM_VERSION: v1.13.0
