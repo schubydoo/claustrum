@@ -12,7 +12,8 @@ import (
 // The tests of the Windows steps of git.worktree_create right after the add and
 // after the checkout (windowsAddTests), run on Linux and macOS with the steps
 // of Windows switched on. A symbolic link takes the place of the junction of
-// the Windows rows. The frames are those of 4c111e86 (measured on Windows).
+// the Windows rows. The frames are those of 4c111e86 (measured on Windows),
+// except the spelling of a leaf behind a link (below).
 
 // setWindowsAddTests switches the Windows steps on for one test.
 func setWindowsAddTests(t *testing.T) {
@@ -28,7 +29,8 @@ func setWindowsAddTests(t *testing.T) {
 // registration w1 and branch w1 stay. The cases "worktrees moved" and "leaf
 // copied" send baseRepo through a symbolic link: the Windows text names the
 // leaf as sent, and the text of Linux and macOS resolves its parent, so the two
-// differ.
+// differ. No Windows row had a link at baseRepo, so that spelling on Windows is
+// claustrum's own, not measured.
 func TestWorktreeCreateOffAddTestsOfWindows(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

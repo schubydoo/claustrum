@@ -654,7 +654,8 @@ func otherEntryRefusal(worktreePath string) string {
 //
 // Not measured: the order of the three tests, a `.git` that Lstat cannot read
 // (it passes), a leaf that resolves to another place (it gets the text of a
-// copy), and the default staged add, which does not run this test.
+// copy), a leaf behind a link (the texts name it as sent), and the default
+// staged add, which does not run this test.
 func offAddRefusal(worktreePath, registry string, cp worktreeCheckpoint) string {
 	gitFile := filepath.Join(worktreePath, ".git")
 	if fi, err := os.Lstat(gitFile); err == nil && !fi.Mode().IsRegular() {
