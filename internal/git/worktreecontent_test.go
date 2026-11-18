@@ -688,7 +688,7 @@ func TestContentCheckRefusals(t *testing.T) {
 				word = "files"
 			}
 			// The log quotes the text with no final period (measured on Linux).
-			if want := checkedLine(row.files, word, row.objects, commit, fmt.Sprintf("refused: %q", strings.TrimSuffix(hint, "."))); !want.MatchString(logs.String()) {
+			if want := checkedLine(row.files, word, row.objects, commit, fmt.Sprintf("refused: %q", loggedHint(hint))); !want.MatchString(logs.String()) {
 				t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 			}
 			f.wantGone(t)
@@ -909,7 +909,7 @@ func TestContentCheckChangedDuringTheHash(t *testing.T) {
 	if want := contentFrame(t, "worktree_verify_other_writer", hint); raw != want {
 		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
 	}
-	if want := checkedLine("0", "files", 2, commit, fmt.Sprintf("refused: %q", strings.TrimSuffix(hint, "."))); !want.MatchString(logs.String()) {
+	if want := checkedLine("0", "files", 2, commit, fmt.Sprintf("refused: %q", loggedHint(hint))); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	if slices.ContainsFunc(calls, func(c envCall) bool { return containsSeq(c.argv, "cat-file", "blob") }) {
@@ -942,7 +942,7 @@ func TestContentCheckFileGoneDuringTheHash(t *testing.T) {
 	if want := contentFrame(t, "worktree_verify_retry", hint); raw != want {
 		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
 	}
-	if want := checkedLine("0", "files", 2, commit, fmt.Sprintf("refused: %q", strings.TrimSuffix(hint, "."))); !want.MatchString(logs.String()) {
+	if want := checkedLine("0", "files", 2, commit, fmt.Sprintf("refused: %q", loggedHint(hint))); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	f.wantGone(t)
