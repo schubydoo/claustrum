@@ -362,6 +362,13 @@ func gitFileGoneText(worktreePath string) string {
 	return "refusing to create worktree: " + tickPath(worktreePath) + " does not hold the .git file made for it"
 }
 
+// leafReplacedText is the refusal of a create whose leaf is no longer the folder
+// that the create made, with the path in the form of tickPath (4c111e86, measured
+// on Linux and macOS).
+func leafReplacedText(worktreePath string) string {
+	return "refusing to create worktree: " + tickPath(worktreePath) + " is no longer the directory that was created for the worktree"
+}
+
 // clearWorktreeLeaf is step A of undoFailedCheckout. It deletes each entry at the top
 // of leaf in the order that the directory read returns them, and stops at the first
 // failure. The names are not sorted: both references delete in that raw order
@@ -790,12 +797,11 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 // or a descriptive message when it is not.
 //
 // Reaching a non-empty return needs a concurrent swap during the add — the repo's
-// own hooks are pinned off, so no honest input gets here. The frame of the test
-// after the checkout is claustrum's own and NOT a byte-parity claim (the
-// frame battery cannot exercise it and the exact errorCode was not measured); it
-// exists so a raced create fails loudly instead of reporting a false success.
-// On Linux and macOS the create also runs this test before the checkout, with
-// the text and the code of 5fd08069 (measured on Linux).
+// own hooks are pinned off, so no honest input gets here. After the checkout the
+// create answers leafReplacedText with unsafe_path, not this text (4c111e86,
+// measured on Linux and macOS for a copy of the leaf). On Linux and macOS the
+// create also runs this test before the checkout, with the text and the code of
+// 5fd08069 (measured on Linux).
 //
 // git worktree add populates the pre-created leaf in place, preserving its identity
 // (measured), so an unraced create always matches and passes.
@@ -866,8 +872,8 @@ func gitDirRegistryDir(gitDir string) string {
 //     last name of the path. That entry is a real folder (measured). With
 //     GIT_COMMON_DIR of another repository in the daemon environment, git makes
 //     the registration in that repository, and baseRepo has none. Folder absent:
-//     baseRepo has no worktrees folder at all, and the answer is the "was not
-//     populated" text (measured, and on macOS only:
+//     baseRepo has no worktrees folder at all, and the answer is the "does not
+//     hold the .git file" text (measured, and on macOS only:
 //     on Linux the add fails). Folder present, no entry of the name: 89cb6289
 //     answers the "does not name" text (measured on Linux and macOS). The old
 //     entry of that case is gone at the reply there. Its record names the .git of
@@ -945,8 +951,12 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	}
 	registry := gitDirRegistryDir(gitDir)
 	registration = filepath.Join(registry, filepath.Base(admin))
+	// With no registrations folder, 4c111e86 answers the text of a gone `.git`
+	// file, with the path in backticks (measured on Linux and macOS with
+	// "shadowDirOff":true, for a moved `worktrees` folder and for a daemon
+	// GIT_COMMON_DIR of a clone).
 	if _, err := os.Stat(registry); errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", leafText)
+		return "", gitFileGoneText(leafText)
 	}
 	// The entry must be a real folder. With a symbolic link there, to the folder
 	// that was the entry, 5fd08069 answers this text and removes nothing: the link
@@ -1053,7 +1063,7 @@ func compareAdminRecord(admin, worktreePath string, cleaned bool) adminRecord {
 // another repository X, and git makes the registration in X. Its record names the new leaf. baseRepo holds an old entry of
 // the same name, and the record of that entry names another worktree. 89cb6289 refuses with the text of adminRecordRefusal
 // and changes nothing: the index of the old entry keeps its bytes. With no worktrees folder in baseRepo, the answer is the
-// "was not populated" text (measured). A measured state with an old registration, with a timeoutMs that expired during the
+// "does not hold the .git file" text (measured). A measured state with an old registration, with a timeoutMs that expired during the
 // add, gets the same refusal, and the leaf and the branch stay (measured on Linux and macOS). So the create runs this test
 // before its deadline test.
 //

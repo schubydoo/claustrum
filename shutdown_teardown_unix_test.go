@@ -18,7 +18,7 @@ import (
 )
 
 // server.shutdown signals the teardown, and the teardown closes every connection
-// before its slower cleanup. The handler returns its {"ok":true} reply at once, so
+// before its slower cleanup. The handler returns its {"ok":true} reply, so
 // the reply write races the close. The reply reaches the
 // client only when its write wins. An idle connection gets a clean EOF.
 //

@@ -42,8 +42,33 @@ func TestStatusCallNamesTheLfsFolderOfTheTemporaryGitFolder(t *testing.T) {
 	if status, other := lfsCalls(calls); status != 1 || other != 0 {
 		t.Errorf("calls with lfs.storage: %d status calls with the item of .gitdir-<n>, %d others, want 1 and 0", status, other)
 	}
+	checkStatusLFSPlace(t, calls)
 	_, calls = f.call(t, "git.status", map[string]any{"path": f.wt, "baseRepo": f.repo, "shadowDirOff": true})
 	if status, other := lfsCalls(calls); status+other != 0 {
 		t.Errorf("with the member %d calls carry lfs.storage, want none", status+other)
 	}
+}
+
+// checkStatusLFSPlace tests the place of the lfs.storage item in the `status`
+// call. With statusLFSAfterWorkTree it comes right after --work-tree and
+// before `status` (4c111e86, measured on Windows). Without it the item comes
+// first (claustrum's own, not measured).
+func checkStatusLFSPlace(t *testing.T, calls []envCall) {
+	t.Helper()
+	for _, c := range calls {
+		i := slices.IndexFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "lfs.storage=") })
+		if i < 1 || !slices.Contains(c.argv, "status") {
+			continue
+		}
+		ok := i == 1
+		if statusLFSAfterWorkTree {
+			ok = i >= 2 && strings.HasPrefix(c.argv[i-2], "--work-tree=") && i+1 < len(c.argv) && c.argv[i+1] == "status"
+		}
+		if !ok {
+			t.Errorf("status call %q: lfs.storage item at %d, want it %s", c.argv, i,
+				map[bool]string{true: "between --work-tree and status", false: "first"}[statusLFSAfterWorkTree])
+		}
+		return
+	}
+	t.Error("no status call with an lfs.storage item")
 }

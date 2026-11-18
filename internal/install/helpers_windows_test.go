@@ -98,3 +98,17 @@ func waitProcessGone(pid int, d time.Duration) bool {
 	}
 	return false
 }
+
+// blockCLIRename makes the rename of a staging file onto cliPath fail. cliPath
+// gets a junction to an empty folder. On 4c111e86 a rename onto a junction fails
+// with "Access is denied." (measured on Windows). A folder in place of the
+// staging file does not do it on Windows: the rename onto the file goes through.
+// A junction needs no privilege, so a failed mklink fails the test.
+func blockCLIRename(t *testing.T, cliPath string) func(tmp string) error {
+	t.Helper()
+	target := t.TempDir()
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", cliPath, target).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J %s %s: %v\n%s", cliPath, target, err, out)
+	}
+	return func(string) error { return nil }
+}
