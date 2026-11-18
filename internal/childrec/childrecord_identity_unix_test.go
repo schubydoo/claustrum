@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// identityRecord is a record in the Linux shape of row C12, with made-up values.
+// identityRecord is a record in the measured Linux shape, with made-up values.
 func identityRecord(pid int) spawnRecord {
 	return spawnRecord{
 		Pid:         pid,
@@ -26,7 +26,7 @@ func identityRecord(pid int) spawnRecord {
 	}
 }
 
-// replaceRecord puts data at path by a rename over the file, as the C12 rows did.
+// replaceRecord puts data at path by a rename over the file, as the measured rows did.
 func replaceRecord(t *testing.T, path string, data []byte) {
 	t.Helper()
 	tmp := path + ".other"

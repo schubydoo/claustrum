@@ -450,16 +450,16 @@ func TestGitStatusSharedIndexBudget(t *testing.T) {
 	}
 	hexA, hexB, hexC := "sharedindex."+strings.Repeat("a", 40), "sharedindex."+strings.Repeat("b", 40), "sharedindex."+strings.Repeat("c", 40)
 
-	for _, c := range []struct{ cell, name string }{{"R3a", "sharedindex.x"}, {"R3d", "sharedindex.ab"}} {
+	for _, name := range []string{"sharedindex.x", "sharedindex.ab"} {
 		copied = nil
-		f.write(t, c.name, zeros(unit+1))
+		f.write(t, name, zeros(unit+1))
 		if got := f.status(t); got != statusClean {
-			t.Errorf("%s %s over the bound of one file = %s\nwant %s", c.cell, c.name, got, statusClean)
+			t.Errorf("%s over the bound of one file = %s\nwant %s", name, got, statusClean)
 		}
-		if slices.Contains(copied, c.name) {
-			t.Errorf("%s copied %v, want no %s", c.cell, copied, c.name)
+		if slices.Contains(copied, name) {
+			t.Errorf("%s: copied %v, want no %s", name, copied, name)
 		}
-		remove(c.name)
+		remove(name)
 	}
 
 	f.write(t, hexA, zeros(unit))
@@ -479,10 +479,10 @@ func TestGitStatusSharedIndexBudget(t *testing.T) {
 
 	copied = nil
 	if got := f.status(t); got != statusClean {
-		t.Errorf("R3K one hex file at the bound = %s\nwant %s", got, statusClean)
+		t.Errorf("one hex file at the bound = %s\nwant %s", got, statusClean)
 	}
 	if !slices.Contains(copied, hexA) {
-		t.Errorf("R3K copied %v, want %s", copied, hexA)
+		t.Errorf("one hex file at the bound: copied %v, want %s", copied, hexA)
 	}
 }
 
@@ -497,19 +497,19 @@ func TestStatusIndexFilesRealSizes(t *testing.T) {
 	hexA, hexB, hexC := "sharedindex."+strings.Repeat("a", 40), "sharedindex."+strings.Repeat("b", 40), "sharedindex."+strings.Repeat("c", 40)
 	long1, long2 := "sharedindex."+strings.Repeat("d", 64), "sharedindex."+strings.Repeat("e", 64)
 	for _, c := range []struct {
-		cell  string
+		name  string
 		files map[string]int64
 		ok    bool
 		copy  []string
 	}{
-		{"R3a", map[string]int64{"sharedindex.x": gib + 1}, true, nil},
-		{"R3b", map[string]int64{hexA: gib, hexB: gib, hexC: 1}, false, nil},
-		{"R3c", map[string]int64{"sharedindex.x": gib + 1, "sharedindex.y": gib}, false, nil},
-		{"R3d", map[string]int64{"sharedindex.ab": gib + 1}, true, nil},
-		{"R3f", map[string]int64{hexA: gib + 1}, false, nil},
-		{"R3g", map[string]int64{"sharedindex.x": gib + 1, hexA: gib}, false, nil},
-		{"R3h", map[string]int64{long1: gib, long2: gib, hexC: 1}, false, nil},
-		{"R3K", map[string]int64{hexA: gib}, true, []string{hexA}},
+		{"one short name over 1 GiB", map[string]int64{"sharedindex.x": gib + 1}, true, nil},
+		{"three hex files over the sum", map[string]int64{hexA: gib, hexB: gib, hexC: 1}, false, nil},
+		{"two short names over the sum", map[string]int64{"sharedindex.x": gib + 1, "sharedindex.y": gib}, false, nil},
+		{"one two-letter name over 1 GiB", map[string]int64{"sharedindex.ab": gib + 1}, true, nil},
+		{"one hex file over 1 GiB", map[string]int64{hexA: gib + 1}, false, nil},
+		{"short name and hex file over the sum", map[string]int64{"sharedindex.x": gib + 1, hexA: gib}, false, nil},
+		{"two long hex names over the sum", map[string]int64{long1: gib, long2: gib, hexC: 1}, false, nil},
+		{"one hex file at 1 GiB", map[string]int64{hexA: gib}, true, []string{hexA}},
 	} {
 		dir := t.TempDir()
 		writeFile(t, filepath.Join(dir, "index"), "index", 0o644)
@@ -526,7 +526,7 @@ func TestStatusIndexFilesRealSizes(t *testing.T) {
 		shared, ok := statusIndexFiles(root)
 		_ = root.Close()
 		if ok != c.ok || !slices.Equal(shared, c.copy) {
-			t.Errorf("%s: statusIndexFiles = %q, %v\nwant %q, %v", c.cell, shared, ok, c.copy, c.ok)
+			t.Errorf("%s: statusIndexFiles = %q, %v\nwant %q, %v", c.name, shared, ok, c.copy, c.ok)
 		}
 	}
 }
