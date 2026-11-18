@@ -2110,7 +2110,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// On Windows a create with "shadowDirOff":true tests the leaf here, before
 	// any other git call (offAddRefusal). A refusal rolls nothing back: the
 	// leaf, the registration and the branch stay (4c111e86, measured on
-	// Windows). Without an answer of git the test does not run, as on Linux
+	// Windows). Without an answer of git the test does not run
 	// (Windows: claustrum's own, not measured).
 	if windowsAddTests && bool(p.ShadowDirOff) && gitAnswered {
 		if text := offAddRefusal(p.WorktreePath, gitDirRegistryDir(gitDir), checkpoint); text != "" {
