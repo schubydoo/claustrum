@@ -125,7 +125,7 @@ The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 he
 written as `_` (measured for `-` and `.` on Linux and macOS). On Linux and macOS that
 folder and each folder of a copy have mode `0700`, and their files
 `0600`. The daemon makes the folder at the first request that runs the test. It holds
-an exclusive lock on its file `lock` for its whole life. On Windows the hold is
+an exclusive lock on its file `lock` for life. On Windows the hold is
 an open handle with no sharing. On a mount whose `flock` answers `ENOLCK`, `c9125eb8`
 goes on with no lock, and each git request succeeds (measured on Linux). claustrum
 follows. Any other `flock` error still fails the request (claustrum's own, not measured).
@@ -135,17 +135,18 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file, FIFO or link there goes, never its target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). One file `unlinkat`
-  after the home guard removes it, never a folder or tree (from the code). Other
-  non-folder kinds, a file with content and Windows (a regular file only, by one
-  `os.Root.Remove`) are claustrum's own.
+  succeed in a new folder (`4c111e86` on Linux and macOS). Only `shadow`,
+  `fallback-git` inside the 10 minutes and a missing git heal it. A start test
+  fails at it, or tests in a link's target (claustrum's own, not measured). On Linux
+  and macOS one file `unlinkat` after the home guard removes it, never a folder or
+  tree (from the code). Other non-folder kinds, a file with content and Windows (a
+  regular file, or an empty folder there) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the git directory's path. A linked
   worktree uses the folder of its main repository.
 - That folder holds `HEAD`, `config`, the empty folders `objects` and `refs`, and
   `info/exclude` where the repository has it. On Linux and macOS it holds a link
-  `worktrees` to the git directory's `worktrees` folder. On Windows it has no
-  such entry.
+  `worktrees` to the git directory's `worktrees` folder, and none on Windows.
 - More copies follow the repository state: `shallow`, `info/attributes`,
   `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`.
 - The daemon makes the folder at the first request that accepts the repository
@@ -157,18 +158,17 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   removes it by one rmdir (`removeEmptyHeadFolder`). On Windows it stays, and the
   create fails (claustrum's own). A folder with content stays, and the create fails
   (not measured). The other methods get the same rule (claustrum's own).
-- `.probe` is the folder of [the call about the
-  repository](#the-call-about-the-repository).
+- `.probe` is the folder of [the repository
+  call](#the-call-about-the-repository).
 - A request also keeps short-lived entries in the daemon's folder:
-  `.gitdir-<n>` for a `git.status`, and `.index-<n>` (`.checkout-<n>` on Linux and
-  macOS, below) and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
+  `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In the state `fallback-git` the first three are there
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
   `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
-  Linux and macOS). On Windows it is not measured.
-- On Linux and macOS `4c111e86` names the index folder of a create
+  Linux and macOS). Windows is not measured.
+- `4c111e86` names the index folder of a create
   `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
   soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
@@ -182,9 +182,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   content check (`b3081b51`, measured on Linux).
 - On Windows, if the daemon's folder denies new folders, a create still works
   with the backup and restore privileges on. With both off it fails at `.s<n>`.
-- On Linux and macOS a daemon folder with mode `0300` (write and search, no
-  read) still takes a create. The daemon makes `.probe` and `.s<n>` by their paths. After
-  it an empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
+- On Linux and macOS a daemon folder with mode `0300` still takes a create. An empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
   `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
   not measured). Mode `0100` uses its entries, and a create fails at `.s<n>`.
   Mode `0000` gives the `mkdir` error of the folder or `.probe` (`4c111e86`, measured
