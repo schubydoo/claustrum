@@ -73,7 +73,7 @@ A warning of git does not become a branch name. If git warns about a broken ref 
 
 ## Differences by system
 
-On Windows a junction before the last component of `path` passes (`b3081b51`, measured), and [a junction `path`](git-rules-trust.md#how-the-daemon-finds-the-git-directory) has its own rule. On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, an existing `path` where git cannot start, such as a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path` or a refused share gets a `-32603` refusal. [UNC refusals](git-rules-windows-paths.md#unc-refusals). A `path` below an `IO_REPARSE_TAG_WIM` folder gets one too (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
+On Windows a junction before the last component of `path` passes, and git lists the branches (`b3081b51`, measured on Windows). [A junction `path`](git-rules-trust.md#how-the-daemon-finds-the-git-directory) has its own rule. On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, an existing `path` where git cannot start, such as a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path` or a [refused share](git-rules-windows-paths.md#unc-refusals) gets a `-32603` refusal. A `path` below an [`IO_REPARSE_TAG_WIM` folder](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link) gets one too (`4c111e86`).
 
 ## Differences from the reference
 
