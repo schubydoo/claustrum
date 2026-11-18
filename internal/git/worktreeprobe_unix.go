@@ -7,3 +7,7 @@ package git
 // content check after the add of a commit id (contentCheck.ask). It is a
 // variable so that a test can switch the step off.
 var createAsksAfterAdd = true
+
+// createRechecksAfterAdd is false on Linux and macOS, where askAfterAdd makes
+// the call after the add.
+var createRechecksAfterAdd = false

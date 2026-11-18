@@ -127,19 +127,19 @@ func TestBranchStdin(t *testing.T) {
 		target string
 		want   string
 	}{
-		// R01: main is the only other branch.
-		{"R01", []branchRecord{rec("refs/heads/main", ""), rec("refs/heads/s", "")}, "refs/heads/s", "^refs/heads/main\n"},
-		// R04: every other branch, in listing order.
-		{"R04", []branchRecord{rec("refs/heads/k", ""), rec("refs/heads/main", ""), rec("refs/heads/s", "")}, "refs/heads/s",
+		// Main is the only other branch.
+		{"main only", []branchRecord{rec("refs/heads/main", ""), rec("refs/heads/s", "")}, "refs/heads/s", "^refs/heads/main\n"},
+		// Every other branch, in listing order.
+		{"every other branch", []branchRecord{rec("refs/heads/k", ""), rec("refs/heads/main", ""), rec("refs/heads/s", "")}, "refs/heads/s",
 			"^refs/heads/k\n^refs/heads/main\n"},
-		// R08: a symref to the target is left out.
-		{"R08", []branchRecord{rec("refs/heads/alias", "refs/heads/s"), rec("refs/heads/main", ""), rec("refs/heads/s", "")},
+		// A symref to the target is left out.
+		{"symref to the target", []branchRecord{rec("refs/heads/alias", "refs/heads/s"), rec("refs/heads/main", ""), rec("refs/heads/s", "")},
 			"refs/heads/s", "^refs/heads/main\n"},
-		// B2-05: the target is the symref, and the branch it names is a normal record.
-		{"B2-05", []branchRecord{rec("refs/heads/alias", "refs/heads/s"), rec("refs/heads/main", ""), rec("refs/heads/s", "")},
+		// The target is the symref, and the branch it names is a normal record.
+		{"target is the symref", []branchRecord{rec("refs/heads/alias", "refs/heads/s"), rec("refs/heads/main", ""), rec("refs/heads/s", "")},
 			"refs/heads/alias", "^refs/heads/main\n^refs/heads/s\n"},
-		// B2-04a: the target is the only branch.
-		{"B2-04a", []branchRecord{rec("refs/heads/s", "")}, "refs/heads/s", ""},
+		// The target is the only branch.
+		{"only branch", []branchRecord{rec("refs/heads/s", "")}, "refs/heads/s", ""},
 	} {
 		if got := branchStdin(tc.recs, tc.target); got != tc.want {
 			t.Errorf("%s: stdin = %q, want %q", tc.name, got, tc.want)
@@ -197,12 +197,12 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 		// deleted row wants wt1 gone.
 		check func(t *testing.T, f rmFixture, before string)
 	}{
-		{name: "R01 main at the tip"},
-		{name: "R02 a commit no other ref reaches", setup: func(t *testing.T, f rmFixture) { unique(t, f) }, kept: true},
+		{name: "main at the tip"},
+		{name: "a commit no other ref reaches", setup: func(t *testing.T, f rmFixture) { unique(t, f) }, kept: true},
 		{name: "a remote-tracking ref at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "update-ref", "refs/remotes/origin/wt1", unique(t, f))
 		}},
-		{name: "R04 another branch at the tip", setup: func(t *testing.T, f rmFixture) {
+		{name: "another branch at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "branch", "k", unique(t, f))
 		}},
 		{name: "another branch past the tip", setup: func(t *testing.T, f rmFixture) {
@@ -217,11 +217,11 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 		{name: "a detached HEAD at the tip", setup: func(t *testing.T, f rmFixture) {
 			runGit(t, f.repo, "checkout", "-q", "--detach", unique(t, f))
 		}, kept: true},
-		{name: "R08 a symref to the branch", setup: func(t *testing.T, f rmFixture) {
+		{name: "a symref to the branch", setup: func(t *testing.T, f rmFixture) {
 			unique(t, f)
 			runGit(t, f.repo, "symbolic-ref", "refs/heads/alias", "refs/heads/wt1")
 		}, kept: true},
-		{name: "B2-05 the symref itself", branch: "alias", setup: func(t *testing.T, f rmFixture) {
+		{name: "the symref itself", branch: "alias", setup: func(t *testing.T, f rmFixture) {
 			unique(t, f)
 			runGit(t, f.repo, "symbolic-ref", "refs/heads/alias", "refs/heads/wt1")
 		}, check: func(t *testing.T, f rmFixture, before string) {
@@ -253,13 +253,13 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 				t.Errorf("wt1 = %q, want it kept at %s", got, before)
 			}
 		}},
-		{name: "R15a 10001 heads", setup: func(t *testing.T, f rmFixture) {
+		{name: "10001 heads", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), numbered("zz", branchListLimit-2))
 		}, kept: true},
 		{name: "10002 heads, wt1 not listed", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), numbered("b", branchListLimit-1))
 		}, kept: true},
-		{name: "R15b 10000 heads", setup: func(t *testing.T, f rmFixture) {
+		{name: "10000 heads", setup: func(t *testing.T, f rmFixture) {
 			addPackedHeads(t, gitDir(f), refAt(t, realGit, f.repo, "wt1"), numbered("zz", branchListLimit-3))
 		}},
 		{name: "gone path, a commit no other ref reaches", setup: func(t *testing.T, f rmFixture) {
@@ -273,7 +273,7 @@ func TestWorktreeRemoveBranchStep(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
-		{name: "B2-04a the only local branch", setup: func(t *testing.T, f rmFixture) {
+		{name: "the only local branch", setup: func(t *testing.T, f rmFixture) {
 			unique(t, f)
 			runGit(t, f.repo, "checkout", "-q", "--detach")
 			runGit(t, f.repo, "update-ref", "-d", "refs/heads/main")
@@ -338,12 +338,12 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		checkBound   time.Duration
 		deleteBounds time.Duration
 	}{
-		// B2-03: rev-list exits 128.
-		{name: "B2-03 rev-list fails", arm: func(t *testing.T) {
+		// Rev-list exits 128.
+		{name: "rev-list fails", arm: func(t *testing.T) {
 			stubRule2(t, "rev-list", "", 0, "128", "", "")
 		}, kept: true},
-		// R22a: for-each-ref runs past the bound, and is killed there.
-		{name: "R22a for-each-ref stopped at the bound", checkBound: time.Second, arm: func(t *testing.T) {
+		// For-each-ref runs past the bound, and is killed there.
+		{name: "for-each-ref stopped at the bound", checkBound: time.Second, arm: func(t *testing.T) {
 			stubRule2(t, "for-each-ref", "", stubNever, "", "", "")
 		}, kept: true, maxElapsed: stoppedCeiling},
 		// A rev-parse stopped at the bound is not an absent branch, also on Windows,
@@ -351,17 +351,17 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		{name: "rev-parse stopped at the bound", branch: "nosuch", checkBound: time.Second, arm: func(t *testing.T) {
 			stubRule2(t, "rev-parse,--verify", "", stubNever, "", "", "")
 		}, kept: true, maxElapsed: stoppedCeiling},
-		// R22b: a for-each-ref under the bound finishes, and the check goes on.
-		{name: "R22b for-each-ref under the bound", checkBound: 3 * time.Second, arm: func(t *testing.T) {
+		// A for-each-ref under the bound finishes, and the check goes on.
+		{name: "for-each-ref under the bound", checkBound: 3 * time.Second, arm: func(t *testing.T) {
 			stubRule2(t, "for-each-ref", "", 200*time.Millisecond, "", "", "")
 		}},
-		// B2-01: for-each-ref and rev-list share one bound. Each one alone fits in it,
+		// For-each-ref and rev-list share one bound. Each one alone fits in it,
 		// the two together do not.
-		{name: "B2-01 the bound is shared", checkBound: 1500 * time.Millisecond, arm: func(t *testing.T) {
+		{name: "the bound is shared", checkBound: 1500 * time.Millisecond, arm: func(t *testing.T) {
 			slowGit(t, "for-each-ref", "pre", 900*time.Millisecond, "", "")
 			stubRule2(t, "rev-list", "", 900*time.Millisecond, "", "", "")
 		}, kept: true},
-		// R23a: update-ref is stopped at updateRefStop, so git never deletes wt1.
+		// Update-ref is stopped at updateRefStop, so git never deletes wt1.
 		// The update-ref stop counts from the start of update-ref, after its config
 		// listing (measured: SIGTERM 5 s after update-ref started). A slow listing
 		// therefore does not use up the stop, and the delete goes through. The stop
@@ -377,7 +377,7 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 			stubRule2(t, "config,-z,--list", "", 1500*time.Millisecond, "", "", "")
 			t.Setenv("CLAUSTRUM_GITSTUB_AFTER2", marker)
 		}, minElapsed: 1500 * time.Millisecond},
-		{name: "R23a update-ref stopped", deleteBounds: 300 * time.Millisecond, arm: func(t *testing.T) {
+		{name: "update-ref stopped", deleteBounds: 300 * time.Millisecond, arm: func(t *testing.T) {
 			stubRule2(t, "update-ref", "", stubNever, "", "", "")
 		}, kept: true, maxElapsed: stoppedCeiling},
 	} {
@@ -722,20 +722,20 @@ func TestWorktreeCreateRollbackBranchStep(t *testing.T) {
 		bounded bool // a bound stops a stub call that never ends
 	}{
 		{name: "main at the tip"},
-		// X1 and X2: a name that the skip rule leaves alone stays, with its own text
+		// A name that the skip rule leaves alone stays, with its own text
 		// and no member, whatever reaches it (`f6010b97`, `89cb6289`, measured on
 		// Linux).
-		{name: "X1 a name that starts with +", branch: "+x",
+		{name: "a name that starts with +", branch: "+x",
 			undo: "branch +x left in place (its name is unsafe to pass to update-ref); delete it by hand", w1Stays: true},
-		{name: "X2 a name that starts with +, a commit no other ref reaches", branch: "+x", unique: true,
+		{name: "a name that starts with +, a commit no other ref reaches", branch: "+x", unique: true,
 			undo: "branch +x left in place (its name is unsafe to pass to update-ref); delete it by hand", w1Stays: true},
-		{name: "C02 a commit no other ref reaches", unique: true,
+		{name: "a commit no other ref reaches", unique: true,
 			undo: "the worktree itself was removed, but " + undoKeptText, kept: true, w1Stays: true},
-		{name: "C06 10001 heads", setup: func(t *testing.T, f wtFixture) {
+		{name: "10001 heads", setup: func(t *testing.T, f wtFixture) {
 			// main, ex and w1 make 10001 with these.
 			addPackedHeads(t, commonGit(f), refAt(t, realGit, f.top, "main"), numbered("zz", branchListLimit-3))
 		}, undo: undoUnchecked, w1Stays: true},
-		{name: "C06c 10000 heads", setup: func(t *testing.T, f wtFixture) {
+		{name: "10000 heads", setup: func(t *testing.T, f wtFixture) {
 			addPackedHeads(t, commonGit(f), refAt(t, realGit, f.top, "main"), numbered("zz", branchListLimit-4))
 		}},
 		{name: "for-each-ref fails", arm: func(t *testing.T, f wtFixture) {

@@ -589,6 +589,14 @@ func on() bool {
 	return true
 }
 
+// CheckOff reports whether a request that carries the off switch runs now. It
+// logs no line, unlike on.
+func CheckOff() bool {
+	offMu.Lock()
+	defer offMu.Unlock()
+	return offHolds > 0
+}
+
 // PickGit makes cmd, a command of git by its bare name, skip a git in a session
 // folder. b3081b51 runs the next git on PATH and logs each git that it passes
 // over (measured on Linux, macOS and Windows). With no other git, cmd fails to

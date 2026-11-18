@@ -71,24 +71,24 @@ func TestStartErrorInRegularFileRefuses(t *testing.T) {
 	text := hooksRefusalPrefix + start
 	leaf := filepath.Join(nFile, ".claude", "worktrees", "w1")
 	for _, row := range []struct {
-		cell, method string
+		name, method string
 		params       map[string]any
 		want         string
 	}{
-		{"A-01", "git.info", map[string]any{"path": nFile}, errFrame(t, text)},
-		{"A-02", "git.info", map[string]any{"path": tFile}, errFrame(t, text)},
-		{"A-03", "git.list_branches", map[string]any{"path": nFile}, errFrame(t, text)},
-		{"A-04", "git.status", map[string]any{"path": nFile, "baseRepo": nFile}, errFrame(t, text)},
-		{"A-04b2", "git.status", map[string]any{"path": f.top, "baseRepo": nFile}, errFrame(t, text)},
-		{"A-06", "git.worktree_create", map[string]any{"baseRepo": nFile, "branchName": "w1", "worktreePath": leaf},
+		{"regular file", "git.info", map[string]any{"path": nFile}, errFrame(t, text)},
+		{"file in the repository", "git.info", map[string]any{"path": tFile}, errFrame(t, text)},
+		{"regular file", "git.list_branches", map[string]any{"path": nFile}, errFrame(t, text)},
+		{"regular file", "git.status", map[string]any{"path": nFile, "baseRepo": nFile}, errFrame(t, text)},
+		{"baseRepo a regular file", "git.status", map[string]any{"path": f.top, "baseRepo": nFile}, errFrame(t, text)},
+		{"regular file", "git.worktree_create", map[string]any{"baseRepo": nFile, "branchName": "w1", "worktreePath": leaf},
 			resultFrame(t, worktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})},
-		{"A-04b1", "git.status", map[string]any{"path": nFile, "baseRepo": f.top}, resultOf(notRepoStatus)},
-		{"A-07m", "git.info", map[string]any{"path": f.m}, resultOf(notRepoInfo)},
-		{"A-07s", "git.info", map[string]any{"path": filepath.Join(nFile, "sub")}, resultOf(notRepoInfo)},
-		{"A-08", "git.info", map[string]any{"path": f.n}, resultOf(notRepoInfo)},
+		{"path a regular file", "git.status", map[string]any{"path": nFile, "baseRepo": f.top}, resultOf(notRepoStatus)},
+		{"missing path", "git.info", map[string]any{"path": f.m}, resultOf(notRepoInfo)},
+		{"path below the file", "git.info", map[string]any{"path": filepath.Join(nFile, "sub")}, resultOf(notRepoInfo)},
+		{"plain folder", "git.info", map[string]any{"path": f.n}, resultOf(notRepoInfo)},
 	} {
 		if got := f.frame(t, row.method, row.params); got != row.want {
-			t.Errorf("%s %s = %s\nwant %s", row.cell, row.method, got, row.want)
+			t.Errorf("%s %s = %s\nwant %s", row.name, row.method, got, row.want)
 		}
 	}
 	if got := dirNames(t, f.n); len(got) != 1 || got[0] != "n.txt" {
@@ -114,7 +114,7 @@ func TestStartErrorInRegularFileWithFailingVersion(t *testing.T) {
 	writeFile(t, nFile, "n\n", 0o644)
 	versionFails(t)
 	if got, want := f.frame(t, "git.info", map[string]any{"path": nFile}), errFrame(t, versionFailsText); got != want {
-		t.Errorf("A-14 = %s\nwant %s", got, want)
+		t.Errorf("git.info of the regular file = %s\nwant %s", got, want)
 	}
 }
 
@@ -137,6 +137,6 @@ func TestStartErrorInFileSymlinkRefuses(t *testing.T) {
 	}
 	wantWindowsStartText(t, start)
 	if got, want := f.frame(t, "git.info", map[string]any{"path": lnk}), errFrame(t, hooksRefusalPrefix+start); got != want {
-		t.Errorf("A-10 = %s\nwant %s", got, want)
+		t.Errorf("git.info of the file symlink = %s\nwant %s", got, want)
 	}
 }
