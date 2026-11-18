@@ -72,8 +72,8 @@ The first request without the member that reaches a repository runs the test. On
 missing path the steps after the test differ from `5fd08069` (measured on macOS and
 Windows), with equal frames
 ([UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
-test makes a small repository and a copy of it in the daemon's folder
-`.check-<n>`, and runs git calls there. One of them is the read of the test repository's
+test makes a small repository and a copy of it in a folder `.check-<n>` of the
+daemon, and runs git calls there. One of them is the read of the test repository's
 config. It runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
 The test folder is gone at the reply. If the test fails, the request gets this
 text:
@@ -134,9 +134,9 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `git-shadow` stays (Linux, macOS and Windows).
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
-- An empty file, a FIFO or a link there goes, never the link target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). Other kinds but a
-  folder, a file with content and Windows (a file only) are claustrum's own.
+- An empty file, FIFO or link there goes, never the link target, and requests
+  succeed in a new folder (`4c111e86` on Linux and macOS). Other non-folder
+  kinds, a file with content and Windows (a file only) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the git directory's path. A linked
   worktree uses the folder of its main repository.
@@ -168,8 +168,8 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   Linux and macOS). On Windows it is not measured.
 - On Linux and macOS `4c111e86` names the index folder of a create
   `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
-  soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
-  removes either after the write of the reply, or at the shutdown if that write
+  soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
+  removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request that uses the
   copy (measured on Linux and macOS).
@@ -184,7 +184,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   read) still takes a create. The daemon makes `.probe` and `.s<n>` by their paths. After
   it an empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
   `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
-  not measured). Mode `0100` uses the entries there, and a create fails at `.s<n>`.
+  not measured). Mode `0100` uses its entries, and a create fails at `.s<n>`.
   Mode `0000` gives the `mkdir` error of the folder or `.probe` (`4c111e86`, measured
   on Linux and macOS).
 

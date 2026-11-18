@@ -469,11 +469,11 @@ var openShadowLock = openShadowLockFile
 // folder that cannot be made again is not measured: the request goes on.
 //
 // An empty file or a FIFO at the folder goes, and a folder of the daemon is
-// there again (4c111e86, measured on Linux). A link there goes as a link, and
-// the new folder has another hex part. Its target gets nothing (4c111e86,
-// measured on Linux and macOS, also for a link to nothing). Every request then
-// succeeds. Here the new folder always has a new hex part. That name is in no
-// reply but an error text. Other kinds that are no folder go too
+// there again (4c111e86, measured on Linux and macOS). A link there goes as
+// a link, and the new folder has another hex part. Its target gets nothing
+// (4c111e86, measured on Linux and macOS, also for a link to nothing). Every
+// request then succeeds. Here the new folder always has a new hex part. That
+// name is in no reply but an error text. Other kinds that are no folder go too
 // (removeOwnFolderFile, claustrum's own). A folder at the path stays. Only the
 // Lstat looks at the entry, so a FIFO is never opened. Windows is claustrum's
 // own: there only a regular file goes.
