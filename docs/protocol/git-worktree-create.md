@@ -38,7 +38,7 @@ Success:
 
 `path` is `worktreePath` as sent, after the `~` expansion. `branch` is `existingBranch` after an attach, and `branchName` otherwise.
 
-If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, it selects `origin/<name>` in most states. The response holds the name as sent. If the name matches neither ref, that is not an error. The branch then starts at HEAD, and `sourceBranch` is the current branch. On a detached HEAD the response then has no `sourceBranch`.
+If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, it selects `origin/<name>` in most states. The response holds the name as sent. If the name matches neither ref, the branch starts at HEAD with no error, and `sourceBranch` is the current branch. On a detached HEAD the response then has no `sourceBranch`.
 
 Failure:
 
@@ -50,10 +50,10 @@ Decide by `errorCode` first.
 
 | `errorCode` | Meaning |
 |---|---|
-| `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
+| `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. An unsafe `worktreeRoot` and a worktree that git registered in an unexpected place give this code too. |
 | `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link. |
-| `not_a_repo` | `baseRepo` is not a git repository, as with `refs` 0600 (build `52d82f0a`, Linux and macOS), or git itself does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
-| `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)), or the daemon does not accept it as a trust root. A marker above the path as sent counts too (`b3081b51`, measured on Linux). A missing `baseRepo` gets `not_a_repo` with no [start test](git-rules-settings-copy.md#the-start-test) (`4c111e86`, measured on all three systems), and a later Windows create makes no git call. `<T>/missing/..` on Linux and macOS is claustrum's own. On Windows `<out>\J\..\repo` (J a junction), `<T>\missing\..` and `<T>\t.txt\..` pass as the folder that `..` leaves, and the create makes the worktree there ([the walk](git-worktree-remove.md#where-the-paths-can-be), `b3081b51`, measured on Windows). A refused daemon count [answers first](git-rules-calls.md#where-each-method-answers-the-refusal) (from the code). |
+| `not_a_repo` | `baseRepo` is not a git repository, as with `refs` 0600 (build `52d82f0a`, Linux and macOS), or git does not accept it. A bare `baseRepo` gets this code too while the daemon works on its settings copy. |
+| `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees ([the marker rule](git-list-branches.md#response)), or the daemon does not accept it as a trust root. A marker above the path as sent counts too (`b3081b51`, measured on Linux). A missing `baseRepo` gets `not_a_repo` with no [start test](git-rules-settings-copy.md#the-start-test) (`4c111e86`, measured on all three systems), and a later Windows create makes no git call. On Linux and macOS, another missing cause, such as `<T>/missing/..`, and no `git version` call are claustrum's own. So is the early answer to `"shadowDirOff":true`. On Windows `<out>\J\..\repo` (J a junction), `<T>\missing\..` and `<T>\t.txt\..` pass as the folder that `..` leaves, and the create makes the worktree there ([the walk](git-worktree-remove.md#where-the-paths-can-be), `b3081b51`, measured on Windows). A refused daemon count [answers first](git-rules-calls.md#where-each-method-answers-the-refusal) (from the code). |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. Or, with `worktreeRoot`, a git call or a `.git` test failed first. |
 | `worktree_add_failed` | `git worktree add`, the checkout or the `config.worktree` step failed. The text holds the message of git, or a refusal of the daemon before the add. A `git worktree add` that runs 2 minutes is stopped. |
 | `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |
@@ -68,7 +68,7 @@ Decide by `errorCode` first.
 | `worktree_verify_other_writer` | A file of the content check is in the new worktree but not in the commit. |
 | `worktree_verify_repository` | git cannot read an object of the commit for the content check. |
 
-A git config of the repository that the daemon does not accept gives `worktree_add_failed`, and nothing is made. The texts are in [Repository config refusals](git-rules-config.md#repository-config-refusals). Three failures of the settings copy do the same: a failed test of the host git, a failed call about the repository, and no folder for the copy.
+A git config of the repository that the daemon does not accept gives `worktree_add_failed`, and nothing is made ([the texts](git-rules-config.md#repository-config-refusals)). Three failures of the settings copy do the same: a failed host git test, a failed call about the repository, and no copy folder.
 
 ## Error texts
 
