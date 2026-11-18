@@ -286,7 +286,7 @@ func liveSiblings(base, own string) []liveSibling {
 			out = append(out, liveSibling{rel + " answers", e.Name()})
 			continue
 		}
-		if isNobodyListening(derr) {
+		if isRefusedDial(derr) {
 			continue
 		}
 		out = append(out, liveSibling{"cannot rule out " + rel + ": " + derr.Error(), e.Name()})
@@ -294,7 +294,7 @@ func liveSiblings(base, own string) []liveSibling {
 	return out
 }
 
-// isNobodyListening reports whether a sibling dial error means the socket has no
+// isRefusedDial reports whether a sibling dial error means the socket has no
 // live listener — connection refused, the path is not a socket, or the socket file
 // is gone — so the sibling counts as absent and does not gate the legacy sweep.
 // Any other error (permission denied, timeout, connection reset) leaves the sibling
@@ -302,7 +302,7 @@ func liveSiblings(base, own string) []liveSibling {
 // extraNobodyListening adds the Windows-only Winsock refused error
 // (pluginsibling_windows.go), because a refused dial there is WSAECONNREFUSED, not
 // syscall.ECONNREFUSED.
-func isNobodyListening(err error) bool {
+func isRefusedDial(err error) bool {
 	return errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ENOTSOCK) ||
 		errors.Is(err, syscall.ENOENT) ||
@@ -340,7 +340,7 @@ func (s *server) livePluginRefs() map[string]bool {
 	if s.procs == nil {
 		return set
 	}
-	for _, argv := range s.procs.LiveArgv() {
+	for _, argv := range s.procs.RunningArgs() {
 		for _, arg := range argv {
 			for _, tok := range strings.FieldsFunc(arg, notHexDigit) {
 				if len(tok) == 16 {
@@ -424,7 +424,7 @@ var pluginRemoveAll = os.RemoveAll
 // passes keep for the per-install root only. That choice of root, and that a live
 // dir stays live, are claustrum's own, not measured.
 func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live, keep map[string]bool, res *pruneResult) {
-	unlock := lockPluginDir(name)
+	unlock := pluginDirMutex(name)
 	defer unlock()
 	dir := filepath.Join(root, name)
 	if live[name] {
@@ -470,11 +470,11 @@ var (
 	pluginDirLocks   = map[string]*sync.Mutex{}
 )
 
-// lockPluginDir acquires the lock for one plugin-directory name and returns its
+// pluginDirMutex acquires the lock for one plugin-directory name and returns its
 // release. claustrum exposes only plugins.prune (no plugin-install RPC), so the
 // lock serialises concurrent prunes of the same directory, keyed by name so two
 // prunes of the same content-hash dir never interleave.
-func lockPluginDir(name string) func() {
+func pluginDirMutex(name string) func() {
 	pluginDirLocksMu.Lock()
 	m := pluginDirLocks[name]
 	if m == nil {

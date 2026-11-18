@@ -36,9 +36,9 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 		if noLook {
 			text = cannotLookText
 		}
-		return rpc.OKResult(id, rpc.WorktreeResult{Success: false, Error: fmt.Sprintf(text, g), ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(id, rpc.WorktreeReply{Success: false, Error: fmt.Sprintf(text, g), ErrorCode: "worktree_add_failed"})
 	}
-	return rpc.OKResult(id, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+	return rpc.OKResult(id, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 }
 
 // unusableDotGit is the path of the first `.git` that git cannot use on the walk of

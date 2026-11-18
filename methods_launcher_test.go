@@ -13,8 +13,8 @@ import (
 // repeat logs no line until a usable answer comes between, as on Linux (4c111e86,
 // measured on Linux).
 func TestLauncherCheckLogRepeatsArm(t *testing.T) {
-	refused := rpc.LauncherCheckResult{Status: install.StatusUnusable, Reason: "arm-test reason"}
-	usable := rpc.LauncherCheckResult{Status: "usable"}
+	refused := rpc.LauncherCheckReply{Status: install.StatusUnusable, Reason: "arm-test reason"}
+	usable := rpc.LauncherCheckReply{Status: "usable"}
 	line := "[LauncherHandler] the launcher that the desktop names is refused: arm-test reason\n"
 	for _, c := range []struct {
 		logsRepeats bool
@@ -22,7 +22,7 @@ func TestLauncherCheckLogRepeatsArm(t *testing.T) {
 	}{{true, 3}, {false, 2}} {
 		logs := captureLogBuf(t)
 		var l managedLauncherLog
-		for _, res := range []rpc.LauncherCheckResult{refused, refused, usable, refused} {
+		for _, res := range []rpc.LauncherCheckReply{refused, refused, usable, refused} {
 			l.noteChecked(res, c.logsRepeats)
 		}
 		if n := strings.Count(logs.String(), line); n != c.want {
@@ -35,7 +35,7 @@ func TestLauncherCheckLogRepeatsArm(t *testing.T) {
 // as after an answer with no launcherCheck on macOS (4c111e86, measured on macOS).
 func TestLauncherCheckResetArm(t *testing.T) {
 	logs := captureLogBuf(t)
-	refused := rpc.LauncherCheckResult{Status: install.StatusUnusable, Reason: "reset-test reason"}
+	refused := rpc.LauncherCheckReply{Status: install.StatusUnusable, Reason: "reset-test reason"}
 	line := "[LauncherHandler] the launcher that the desktop names is refused: reset-test reason\n"
 	var l managedLauncherLog
 	l.noteChecked(refused, false)

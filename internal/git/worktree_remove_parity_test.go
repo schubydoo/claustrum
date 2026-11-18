@@ -278,7 +278,7 @@ func TestWorktreeRemoveDanglingLockMarker(t *testing.T) {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
 	raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"})
-	wantRemoveError(t, raw, lockedWorktreeRefusal(f.wt, lockedPlain))
+	wantRemoveError(t, raw, lockRefusalText(f.wt, lockedPlain))
 	mustExist(t, filepath.Join(f.wt, ".git"))
 	if !f.hasBranch("wt1") {
 		t.Error("branch wt1 was deleted")

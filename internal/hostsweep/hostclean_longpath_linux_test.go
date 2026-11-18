@@ -20,11 +20,11 @@ func TestProbeSocketAtALongPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state, pid, _ := probeSocket(sock); state != hcSockLive || pid != os.Getpid() {
+	if state, pid, _ := classifySocket(sock); state != hcSockLive || pid != os.Getpid() {
 		t.Errorf("live long socket: state %d pid %d, want %d and pid %d", state, pid, hcSockLive, os.Getpid())
 	}
 	_ = ln.Close() // a listener bound by another name keeps its file
-	if state, _, _ := probeSocket(sock); state != hcSockStale {
+	if state, _, _ := classifySocket(sock); state != hcSockStale {
 		t.Errorf("dead long socket: state %d, want %d", state, hcSockStale)
 	}
 }
@@ -54,7 +54,7 @@ func TestTidyRemovesADeadRunDirAtALongRoot(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 
 	want := fmt.Sprintf("[hostclean] removed run dir %q: unused for 40 days, nothing answers on its socket, no process holds its lock\n", dir)
 	if got := buf.String(); !strings.Contains(got, want) {

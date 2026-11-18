@@ -181,7 +181,7 @@ func resolved(t *testing.T, out string) string {
 }
 
 // streamOf is the bytes of the frames of stream in fs.
-func streamOf(t *testing.T, fs []supervisor.StreamFrame, stream string) string {
+func streamOf(t *testing.T, fs []supervisor.ChildFrame, stream string) string {
 	t.Helper()
 	var b strings.Builder
 	for _, f := range fs {
@@ -229,6 +229,25 @@ func TestGitReadCwdBeforeShape(t *testing.T) {
 	}
 	if line := "[process.Manager] Failed to start process gr-c5: not one of the Changes pane's git commands (2 arguments)"; !strings.Contains(logs.String(), line) {
 		t.Errorf("log lacks %q", line)
+	}
+}
+
+// TestGitReadCombineLogLine pins the failed-start line of the combine refusal
+// (4c111e86, measured on Linux, macOS and Windows: l_r15_c6 row d_with_env and its
+// peers). A cliTempRoot text with gitRead gets Invalid params and no line (l_r15_c6
+// row e3_cliTempRoot, measured on Linux).
+func TestGitReadCombineLogLine(t *testing.T) {
+	cwd := t.TempDir()
+	logs := captureLogBuf(t)
+	top := []string{"rev-parse", "--show-toplevel"}
+	spawnErrorOf(t, map[string]any{"id": "gr-l1", "command": "git", "args": top, "cwd": cwd, "gitRead": true, "env": map[string]string{"FOO": "bar"}})
+	spawnErrorOf(t, map[string]any{"id": "gr-l2", "command": "git", "args": top, "cwd": cwd, "gitRead": true, "cliTempRoot": cwd})
+	line := `[process.Manager] Failed to start process gr-l1: gitRead needs the command "git" and a cwd, and cannot be combined with env, launcher, pty, linkBound, cliTempRoot, cliTempRootEnd or sessionFoldersOff`
+	if !strings.Contains(logs.String(), line) {
+		t.Errorf("log lacks %q", line)
+	}
+	if strings.Contains(logs.String(), "process gr-l2") {
+		t.Errorf("log names gr-l2, want no line for Invalid params:\n%s", logs.String())
 	}
 }
 

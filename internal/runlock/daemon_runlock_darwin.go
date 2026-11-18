@@ -33,7 +33,7 @@ func realIsServeCmdline(pid int, socket string) bool {
 	if !ok {
 		return false
 	}
-	return matchesServeArgv(argv, socket, selfBase())
+	return matchesServeArgv(argv, socket, ownExeName())
 }
 
 // procArgv returns pid's argument vector via sysctl KERN_PROCARGS2, or ok=false when it

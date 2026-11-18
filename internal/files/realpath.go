@@ -87,7 +87,7 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // A dangling link with missingLeaf gives dangling, and wouldBe only if the parent
 // of its target exists. A dangling link without missingLeaf gives the plain
 // exists:false (claustrum's own, not measured).
-func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathResult, error) {
+func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	path = realpathClean(path)
 	_, err := os.Stat(path)
 	var real string
@@ -95,21 +95,21 @@ func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathResult, error) 
 		real, err = realpathEval(path)
 	}
 	if err == nil {
-		return rpc.RealpathResult{Exists: true, Real: filepath.ToSlash(real)}, nil
+		return rpc.RealpathReply{Exists: true, Real: filepath.ToSlash(real)}, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return rpc.RealpathResult{}, err
+		return rpc.RealpathReply{}, err
 	}
 	if !missingLeaf {
-		return rpc.RealpathResult{}, nil
+		return rpc.RealpathReply{}, nil
 	}
 	if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
 		return resolveDangling(path), nil
 	}
 	if wouldBe, ok := wouldBeUnder(path); ok {
-		return rpc.RealpathResult{WouldBe: wouldBe}, nil
+		return rpc.RealpathReply{WouldBe: wouldBe}, nil
 	}
-	return rpc.RealpathResult{}, nil
+	return rpc.RealpathReply{}, nil
 }
 
 // splitLast splits an absolute path at its last separator without cleaning it.
@@ -134,8 +134,8 @@ func splitLast(path string) (parent, last string) {
 // resolveDangling never fails. The answers of the system for the folders on the
 // way were all good when the caller got here, so a later failure (a race) gives
 // the answer with no wouldBe (claustrum's own, not measured).
-func resolveDangling(path string) rpc.RealpathResult {
-	res := rpc.RealpathResult{Dangling: true}
+func resolveDangling(path string) rpc.RealpathReply {
+	res := rpc.RealpathReply{Dangling: true}
 	target, err := os.Readlink(path)
 	if err == nil && !filepath.IsAbs(target) {
 		// Linux and macOS: the kernel reads a relative target from the real folder

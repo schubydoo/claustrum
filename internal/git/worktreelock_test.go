@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// withWorktreeRepoLock must make same-repo calls mutually exclusive. A non-atomic
+// underRepoMutex must make same-repo calls mutually exclusive. A non-atomic
 // read-modify-write inside the critical section stays consistent only if the lock
 // serialises; without it the update is lost (and -race flags the data race).
 func TestWithWorktreeRepoLockSerializesSameRepo(t *testing.T) {
@@ -16,7 +16,7 @@ func TestWithWorktreeRepoLockSerializesSameRepo(t *testing.T) {
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			withWorktreeRepoLock(repo, func() response {
+			underRepoMutex(repo, func() response {
 				c := counter
 				runtime.Gosched() // widen the window a lost update would need
 				counter = c + 1
@@ -36,8 +36,8 @@ func TestWithWorktreeRepoLockSerializesSameRepo(t *testing.T) {
 func TestWithWorktreeRepoLockDistinctReposDoNotShare(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
-		withWorktreeRepoLock("/tmp/repo-a", func() response {
-			withWorktreeRepoLock("/tmp/repo-b", func() response { return response{} })
+		underRepoMutex("/tmp/repo-a", func() response {
+			underRepoMutex("/tmp/repo-b", func() response { return response{} })
 			return response{}
 		})
 		close(done)
