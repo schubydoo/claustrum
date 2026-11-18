@@ -422,7 +422,8 @@ func (m *Manager) RefuseStarts() { m.startsStopped.Store(true) }
 // before it kills the children. Such a spawn holds startGate. If its start returned
 // before the shutdown began, this waits until its child is in the table and has its
 // record, so the kill of the teardown reaches that child. If not, the spawn ends
-// the child itself. No temp file of a record stays. Idempotent.
+// the child itself where lateStartEnds holds, and leaves it running elsewhere. No
+// temp file of a record stays. Idempotent.
 func (m *Manager) StopStarts() {
 	m.RefuseStarts()
 	m.startGate.Lock()
@@ -1188,10 +1189,21 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		return nil, err
 	}
 	// A start that returns after the shutdown began leaves no start line, no
-	// count, no table entry and no record. The kill here ends the child at once,
-	// also with -keep-children, and the wait reaps it.
+	// count, no table entry and no record. Where lateStartEnds holds, the kill here
+	// ends the child at once, also with -keep-children, and the wait reaps it.
+	// Elsewhere the child gets no signal. A wait reaps it after its own end and then
+	// drops the pipes.
 	if m.startsStopped.Load() {
-		_, _ = endUnstarted(killReapGrace)
+		if lateStartEnds {
+			_, _ = endUnstarted(killReapGrace)
+		} else {
+			go func() {
+				_ = cmd.Wait()
+				group.Close()
+				sysproc.CloseAll(stdoutR, stderrR)
+				_ = stdin.Close()
+			}()
+		}
 		return nil, ErrStartsStopped
 	}
 	program := ""
