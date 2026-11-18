@@ -405,7 +405,7 @@ func excludesReadsIn(t *testing.T, h liveFixture) int {
 
 // Two git requests sent together on a fresh daemon make two reads of the
 // user's excludes, one each, also while the first read still runs. 5fd08069
-// does so (measured on Linux). Mutation: in userExcludesFile, hold the mutex
+// does so (measured on Linux). Mutation: in globalExcludesPath, hold the mutex
 // during the read. The second request then waits for the first read and makes
 // none. A second mutation stores no result: each later git command then reads
 // again.
@@ -432,7 +432,7 @@ func TestShadowExcludesReadOfEachRequestWithNoResult(t *testing.T) {
 
 // Two git requests one after the other make one read of the user's excludes:
 // the second uses the stored result. 5fd08069 does so with requests 200 to
-// 500 ms apart (measured on Linux). Mutation: in userExcludesFile, store no
+// 500 ms apart (measured on Linux). Mutation: in globalExcludesPath, store no
 // result. Each git command then reads again.
 func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 	h := newLiveFixture(t)

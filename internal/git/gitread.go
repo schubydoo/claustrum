@@ -367,7 +367,7 @@ func PaneGitRun(d *Deps, cwd string, args []string) (PaneRun, error) {
 	req.use.stop = req.stop
 	defer req.runAtReply()
 	// The excludes read is the first call (measured on Linux).
-	userExcludesFile()
+	globalExcludesPath()
 	t := readGitDirTrust(cwd, true)
 	if t.verdict == gitDirRefused {
 		return PaneRun{}, errors.New(t.refusal)

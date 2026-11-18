@@ -1226,7 +1226,7 @@ func (st *addStage) writeStagedRecord(reg *os.Root, staging, leaf string) error 
 	}
 	stagedGit := filepath.Join(st.dir, stagedLeafFolder, st.leafName, ".git")
 	rec := strings.TrimSuffix(string(old), "\n")
-	if filepath.Clean(filepath.FromSlash(rec)) != filepath.Clean(stagedGit) && !sameGitDirPath(resolveAsFarAsExists(filepath.FromSlash(rec)), resolveAsFarAsExists(stagedGit)) {
+	if filepath.Clean(filepath.FromSlash(rec)) != filepath.Clean(stagedGit) && !sameGitDirPath(canonicalExistingPrefix(filepath.FromSlash(rec)), canonicalExistingPrefix(stagedGit)) {
 		return nil
 	}
 	path := filepath.Join(staging, "gitdir")
@@ -1526,7 +1526,7 @@ func stagedRecordRefusal(a *acceptedGitDir, leaf string) string {
 		if !filepath.IsAbs(rec) {
 			rec = filepath.Join(a.path, rel, rec)
 		}
-		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(rec)), leafRecordPath(leaf)) {
+		if sameGitDirPath(canonicalExistingPrefix(filepath.Dir(rec)), leafRecordPath(leaf)) {
 			return ""
 		}
 	}

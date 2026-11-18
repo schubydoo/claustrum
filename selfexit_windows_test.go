@@ -14,7 +14,7 @@ import (
 
 // In a measurement on Windows, a daemon whose socket file was deleted wrote no
 // line and was still alive after 14 min. The idle exit does not run on Windows
-// either (not measured). With short timers and both exits due, exitWhenOrphaned
+// either (not measured). With short timers and both exits due, watchSocketOwnership
 // returns at once and starts no shutdown.
 func TestSelfExitOffOnWindows(t *testing.T) {
 	oi, og, oe := orphanCheckInterval, orphanGrace, idleExitAfter
@@ -38,13 +38,13 @@ func TestSelfExitOffOnWindows(t *testing.T) {
 		instanceID: "0123456789abcdef0123456789abcdef",
 	}
 	done := make(chan struct{})
-	go func() { s.exitWhenOrphaned(filepath.Join(dir, "gone.sock")); close(done) }()
+	go func() { s.watchSocketOwnership(filepath.Join(dir, "gone.sock")); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		s.signalShutdown()
 		<-done
-		t.Fatal("exitWhenOrphaned ran its checks on Windows")
+		t.Fatal("watchSocketOwnership ran its checks on Windows")
 	}
 	select {
 	case <-s.shutdown:

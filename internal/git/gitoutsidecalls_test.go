@@ -408,7 +408,7 @@ func TestConfigTextReadCall(t *testing.T) {
 	}
 }
 
-// With no configured value, userExcludesFile makes one config read and looks up
+// With no configured value, globalExcludesPath makes one config read and looks up
 // the default file again on each call: a new file is passed on the next call, a
 // removed file or a folder gives the null device (683cc6a9).
 func TestExcludesDefaultFileLookedUpOnEachCall(t *testing.T) {
@@ -420,23 +420,23 @@ func TestExcludesDefaultFileLookedUpOnEachCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	resetUserExcludesCache(t)
-	if got := userExcludesFile(); got != os.DevNull {
+	if got := globalExcludesPath(); got != os.DevNull {
 		t.Fatalf("no file: %q, want %q", got, os.DevNull)
 	}
 	writeFile(t, ignore, "*.tmp\n", 0o644)
-	if got := userExcludesFile(); got != ignore {
+	if got := globalExcludesPath(); got != ignore {
 		t.Errorf("file made: %q, want %q", got, ignore)
 	}
 	if err := os.Remove(ignore); err != nil {
 		t.Fatal(err)
 	}
-	if got := userExcludesFile(); got != os.DevNull {
+	if got := globalExcludesPath(); got != os.DevNull {
 		t.Errorf("file removed: %q, want %q", got, os.DevNull)
 	}
 	if err := os.Mkdir(ignore, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := userExcludesFile(); got != os.DevNull {
+	if got := globalExcludesPath(); got != os.DevNull {
 		t.Errorf("folder: %q, want %q", got, os.DevNull)
 	}
 	reads := 0

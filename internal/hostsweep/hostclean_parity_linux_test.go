@@ -19,32 +19,32 @@ import (
 
 // Helpers shared by the host-cleaner tests.
 
-// hcRetire calls retireAbandoned for pid on socket, the way the tidy does for a run dir idle
+// hcRetire calls endIdleDaemon for pid on socket, the way the tidy does for a run dir idle
 // 40 days, with the peer uid the cleaner itself runs as. It returns only whether the daemon
 // was retired.
 func hcRetire(c *hostCleaner, pid int, socket string) bool {
-	e := runDirEntry{
+	e := staleRunFolder{
 		name: filepath.Base(filepath.Dir(socket)), dirPath: filepath.Dir(socket),
 		socket: socket, idle: 40 * 24 * time.Hour,
 	}
-	ok, _ := c.retireAbandoned(e, pid, uint32(hcGetuid()))
+	ok, _ := c.endIdleDaemon(e, pid, uint32(hcGetuid()))
 	return ok
 }
 
 // hcEntry makes the run dir <runRoot>/<name>, sets its mtime idle before hcClock(), and
-// returns the entry runDirs would list for it.
-func hcEntry(t *testing.T, runRoot string, root *os.Root, name string, idle time.Duration) runDirEntry {
+// returns the entry listRunFolders would list for it.
+func hcEntry(t *testing.T, runRoot string, root *os.Root, name string, idle time.Duration) staleRunFolder {
 	t.Helper()
 	dir := filepath.Join(runRoot, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	hcBackdate(t, dir, idle)
-	return runDirEntry{root: root, name: name, dirPath: dir, socket: filepath.Join(dir, rpcSockBasename), idle: idle}
+	return staleRunFolder{root: root, name: name, dirPath: dir, socket: filepath.Join(dir, rpcSockBasename), idle: idle}
 }
 
 // hcNewEntry is hcEntry in a run root of its own.
-func hcNewEntry(t *testing.T, name string, idle time.Duration) runDirEntry {
+func hcNewEntry(t *testing.T, name string, idle time.Duration) staleRunFolder {
 	t.Helper()
 	runRoot, root := hcRunRoot(t)
 	return hcEntry(t, runRoot, root, name, idle)
@@ -234,7 +234,7 @@ func TestTidyRemovesADirWithAnEmptyLock(t *testing.T) {
 		buf := captureLogBuf(t)
 
 		var sum hcSummary
-		c.tidyRunDirs([]runDirEntry{e}, &sum)
+		c.sweepRunFolders([]staleRunFolder{e}, &sum)
 		if sum.daemonsRetired != 1 || sum.runDirsRemoved != 1 {
 			t.Errorf("summary = %+v, want 1 retired and 1 removed in the same pass", sum)
 		}
@@ -263,7 +263,7 @@ func TestTidyRemovesADirWithAnEmptyLock(t *testing.T) {
 		t.Cleanup(func() { hcDial = oldDial })
 		hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
 		var sum hcSummary
-		c.tidyRunDirs([]runDirEntry{e}, &sum)
+		c.sweepRunFolders([]staleRunFolder{e}, &sum)
 		if sum.runDirsRemoved != 1 {
 			t.Errorf("a dead dir with a 0-byte lock was kept (removed %d)", sum.runDirsRemoved)
 		}
@@ -293,7 +293,7 @@ func TestTidyKeepsADirWhoseSocketStaysAfterTheRetire(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 	if sum.daemonsRetired != 1 || removes != 0 {
 		t.Errorf("retired=%d removes=%d, want 1 retired and the dir kept", sum.daemonsRetired, removes)
 	}
@@ -325,7 +325,7 @@ func TestTidyRetireLogUsesTheFreshAge(t *testing.T) {
 	hcRemoveAll = func(*os.Root, string) error { return nil }
 	buf := captureLogBuf(t)
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 	if want := "has seen no connection for 40 days: SIGTERM"; !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}
@@ -365,7 +365,7 @@ func TestTidyRemovesLeftoversOfBothNamings(t *testing.T) {
 	renames := 0
 	hcRename = func(*os.Root, string, string) error { renames++; return nil }
 	runRoot, root := hcRunRoot(t)
-	var entries []runDirEntry
+	var entries []staleRunFolder
 	for _, n := range []string{".removing-L1-abc123", "L2.removing-999-abc123"} {
 		e := hcEntry(t, runRoot, root, n, 0)
 		if err := os.WriteFile(filepath.Join(e.dirPath, "f"), []byte("x"), 0o600); err != nil {
@@ -374,7 +374,7 @@ func TestTidyRemovesLeftoversOfBothNamings(t *testing.T) {
 		entries = append(entries, e)
 	}
 	var sum hcSummary
-	c.tidyRunDirs(entries, &sum)
+	c.sweepRunFolders(entries, &sum)
 	if sum.runDirsRemoved != 2 || renames != 0 {
 		t.Errorf("removed=%d renames=%d, want both leftovers removed with no rename", sum.runDirsRemoved, renames)
 	}
@@ -458,21 +458,21 @@ func TestRetireAbandonedRefusesParentAndForeignUID(t *testing.T) {
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
 	link(pid, "fd/1", "/dev/null")
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	e := runDirEntry{name: "x", dirPath: "/opt/claude/run/x", socket: socket, idle: 40 * 24 * time.Hour}
+	e := staleRunFolder{name: "x", dirPath: "/opt/claude/run/x", socket: socket, idle: 40 * 24 * time.Hour}
 
 	hcGetppid = func() int { return pid }
-	if ok, reason := c.retireAbandoned(e, pid, 1000); ok || reason != "" {
+	if ok, reason := c.endIdleDaemon(e, pid, 1000); ok || reason != "" {
 		t.Errorf("parent pid: ok=%v reason=%q, want a silent refusal", ok, reason)
 	}
 	hcGetppid = func() int { return 1 }
-	if ok, reason := c.retireAbandoned(e, pid, 4242); ok || reason != "" {
+	if ok, reason := c.endIdleDaemon(e, pid, 4242); ok || reason != "" {
 		t.Errorf("foreign uid: ok=%v reason=%q, want a silent refusal", ok, reason)
 	}
 	if len(*single) != 0 {
 		t.Errorf("signals = %v, want none", *single)
 	}
 	// Control: the same daemon with our uid and another parent is retired.
-	if ok, reason := c.retireAbandoned(e, pid, 1000); !ok {
+	if ok, reason := c.endIdleDaemon(e, pid, 1000); !ok {
 		t.Errorf("control: not retired (%q)", reason)
 	}
 }
@@ -493,8 +493,8 @@ func TestRetireAbandonedReasonForAYoungDaemon(t *testing.T) {
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "9994000")
 	link(pid, "fd/1", "/dev/null")
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	e := runDirEntry{name: "y", dirPath: "/opt/claude/run/y", socket: socket, idle: 40 * 24 * time.Hour}
-	if ok, reason := c.retireAbandoned(e, pid, 1000); ok || reason != "it is too young to judge" {
+	e := staleRunFolder{name: "y", dirPath: "/opt/claude/run/y", socket: socket, idle: 40 * 24 * time.Hour}
+	if ok, reason := c.endIdleDaemon(e, pid, 1000); ok || reason != "it is too young to judge" {
 		t.Errorf("young daemon: ok=%v reason=%q, want the too-young reason", ok, reason)
 	}
 	if len(*single) != 0 {

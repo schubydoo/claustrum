@@ -109,7 +109,7 @@ func SetFarewellSweepHookForTest(f func(fireTimer func())) {
 }
 
 // WriteFramesLockedForTest is writeFramesLocked.
-func WriteFramesLockedForTest(c *conn.Conn, frames []StreamFrame) error {
+func WriteFramesLockedForTest(c *conn.Conn, frames []ChildFrame) error {
 	return writeFramesLocked(c, frames)
 }
 

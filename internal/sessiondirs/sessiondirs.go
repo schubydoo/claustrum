@@ -602,7 +602,7 @@ func PickGit(cmd *exec.Cmd) {
 	if !on() || cmd.Err != nil || len(s.folders) == 0 || !s.holds(cmd.Path) {
 		return
 	}
-	s.passOver(cmd.Path)
+	s.logSkippedGit(cmd.Path)
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if !filepath.IsAbs(dir) {
 			continue
@@ -612,7 +612,7 @@ func PickGit(cmd *exec.Cmd) {
 			continue
 		}
 		if s.holds(p) {
-			s.passOver(p)
+			s.logSkippedGit(p)
 			continue
 		}
 		cmd.Path = p
@@ -621,7 +621,7 @@ func PickGit(cmd *exec.Cmd) {
 	cmd.Err = NoOtherGitError{}
 }
 
-func (s *store) passOver(p string) {
+func (s *store) logSkippedGit(p string) {
 	if s.passed[p] {
 		return
 	}

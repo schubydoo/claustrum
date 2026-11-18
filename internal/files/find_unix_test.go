@@ -61,11 +61,11 @@ func findCall(t *testing.T, root string, params any) string {
 }
 
 // findResult is the result of one files.find with the params as given.
-func findResult(t *testing.T, params map[string]any) rpc.FindResult {
+func findResult(t *testing.T, params map[string]any) rpc.FindReply {
 	t.Helper()
 	var resp struct {
-		Result *rpc.FindResult `json:"result"`
-		Error  any             `json:"error"`
+		Result *rpc.FindReply `json:"result"`
+		Error  any            `json:"error"`
 	}
 	frame := findCall(t, "", params)
 	if err := json.Unmarshal([]byte(frame), &resp); err != nil || resp.Result == nil {
@@ -663,10 +663,10 @@ func TestFindStalledRead(t *testing.T) {
 		findReadDir = read
 	})
 	const bound = 300 * time.Millisecond
-	call := func(sub string) (rpc.FindResult, time.Duration) {
+	call := func(sub string) (rpc.FindReply, time.Duration) {
 		t.Helper()
 		start := time.Now()
-		got := make(chan rpc.FindResult, 1)
+		got := make(chan rpc.FindReply, 1)
 		go func() {
 			got <- findRun(&findParams{Roots: []string{root + "/" + sub}, Suffix: "t.txt", TimeoutMs: bound.Milliseconds()})
 		}()
@@ -677,7 +677,7 @@ func TestFindStalledRead(t *testing.T) {
 			free()
 			<-got
 			t.Fatalf("%s: no reply after 3 s", sub)
-			return rpc.FindResult{}, 0
+			return rpc.FindReply{}, 0
 		}
 	}
 	for i := 1; i <= findMaxWalks; i++ {
@@ -765,7 +765,7 @@ func TestFindWalkPanic(t *testing.T) {
 		}
 		return read(f, n)
 	}
-	got := make(chan rpc.FindResult, 1)
+	got := make(chan rpc.FindReply, 1)
 	go func() {
 		got <- findRun(&findParams{Roots: []string{root + "/boom"}, Suffix: "t.txt", TimeoutMs: 5000})
 	}()

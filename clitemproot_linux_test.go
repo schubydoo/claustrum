@@ -645,14 +645,14 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	}
 }
 
-// The gate between the step and the limit: the first of keep and giveUp wins.
+// The gate between the step and the limit: the first of keep and markGaveUp wins.
 func TestCLITempRootLateGate(t *testing.T) {
 	var kept tempRootLate
-	if !kept.keep() || kept.giveUp() {
-		t.Error("keep then giveUp: want the step to keep its folder")
+	if !kept.keep() || kept.markGaveUp() {
+		t.Error("keep then markGaveUp: want the step to keep its folder")
 	}
 	var late tempRootLate
-	if !late.giveUp() || late.keep() {
-		t.Error("giveUp then keep: want the step to keep nothing")
+	if !late.markGaveUp() || late.keep() {
+		t.Error("markGaveUp then keep: want the step to keep nothing")
 	}
 }

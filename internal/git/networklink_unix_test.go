@@ -35,7 +35,7 @@ func TestNetworkLinkFrames(t *testing.T) {
 		{"git.status", map[string]any{"path": f.W, "baseRepo": link}, errFrame(t, text)},
 		{"git.info", map[string]any{"path": link}, errFrame(t, text)},
 		{"git.worktree_create", map[string]any{"baseRepo": link, "branchName": "w1", "worktreePath": worktree},
-			resultFrame(t, rpc.WorktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})},
+			resultFrame(t, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: "worktree_add_failed"})},
 	} {
 		raw, calls := call(c.method, c.params)
 		if raw != c.want {
@@ -89,7 +89,7 @@ func TestNetworkLinkFramesShadowDirOff(t *testing.T) {
 		{"git.status", map[string]any{"path": f.W, "baseRepo": link, "shadowDirOff": true}, errFrame(t, text)},
 		{"git.info", map[string]any{"path": link, "shadowDirOff": true}, errFrame(t, text)},
 		{"git.worktree_create", map[string]any{"baseRepo": link, "branchName": "w1", "worktreePath": worktree, "shadowDirOff": true},
-			resultFrame(t, rpc.WorktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})},
+			resultFrame(t, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: "worktree_add_failed"})},
 	} {
 		raw, calls := call(c.method, c.params)
 		if raw != c.want {
@@ -155,7 +155,7 @@ func TestUnlookablePathFrames(t *testing.T) {
 	slashed := "/" + f.T
 	fakeLstat(t, map[string]error{slashed: errors.New("network name not found")})
 	params := map[string]any{"baseRepo": slashed, "worktreePath": "/" + leaf, "branchName": "w1"}
-	want := resultFrame(t, rpc.WorktreeRemoveResult{Success: false, Error: unlookableShareText(slashed)})
+	want := resultFrame(t, rpc.WorktreeRemoveReply{Success: false, Error: unlookableShareText(slashed)})
 	if raw, _ := call("git.worktree_remove", params); raw != want {
 		t.Errorf("git.worktree_remove of %s = %s\nwant %s", slashed, raw, want)
 	}

@@ -79,7 +79,7 @@ func TestCheckpointCatchesReplacedLeaf(t *testing.T) {
 		if cp.info == nil || len(cp.held) != 2 {
 			t.Fatalf("checkpoint info %v with %d handles, want the leaf and 2 handles", cp.info, len(cp.held))
 		}
-		if msg := verifyCreatedWorktree(leaf, cp); msg != "" {
+		if msg := checkNewLeafIdentity(leaf, cp); msg != "" {
 			t.Fatalf("unchanged leaf: verify = %q, want pass", msg)
 		}
 		if err := os.RemoveAll(leaf); err != nil {
@@ -88,7 +88,7 @@ func TestCheckpointCatchesReplacedLeaf(t *testing.T) {
 		if err := os.Mkdir(leaf, 0o755); err != nil {
 			t.Fatalf("mkdir at the held leaf's path: %v", err)
 		}
-		if msg := verifyCreatedWorktree(leaf, cp); !strings.Contains(msg, "was not populated by git worktree add") {
+		if msg := checkNewLeafIdentity(leaf, cp); !strings.Contains(msg, "was not populated by git worktree add") {
 			t.Fatalf("replaced leaf: verify = %q, want the not-populated refusal", msg)
 		}
 		undoFailedAdd(leaf, cp)

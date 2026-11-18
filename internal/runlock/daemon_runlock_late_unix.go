@@ -88,7 +88,7 @@ func (l *lateRunDirLock) try(rec OwnerRecord) bool {
 		return false
 	}
 	l.held = true
-	writeOwnerRecord(l.fd, rec)
+	storeLockOwner(l.fd, rec)
 	logging.Infof("[daemon] run-dir lock acquired late (previous holder gone); recorded pid %d (instance %q)", rec.Pid, rec.InstanceID)
 	return true
 }

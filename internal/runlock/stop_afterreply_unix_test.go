@@ -31,7 +31,7 @@ func holdLockOf(t *testing.T, dir string, rec *OwnerRecord) func() {
 		t.Fatal(err)
 	}
 	if rec != nil {
-		writeOwnerRecord(fd, *rec)
+		storeLockOwner(fd, *rec)
 	}
 	var once sync.Once
 	letGo := func() { once.Do(func() { _ = syscall.Close(fd) }) }

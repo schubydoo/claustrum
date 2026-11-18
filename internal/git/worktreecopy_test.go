@@ -21,12 +21,12 @@ import (
 //
 // `.claude/` is absent from every expectation here for ONE reason, and it is not
 // "the reference never copies it": this fixture does not git-ignore `.claude/`, so
-// the `--others --ignored` view copyClaudeDir reads cannot see it. The copied case
+// the `--others --ignored` view copyDotClaude reads cannot see it. The copied case
 // is TestPopulateWorktreeCopiesIgnoredClaudeDir below. An earlier version of this
 // comment read the absence as a rule and was wrong for every reference build back
 // to 5db5e4a.
 //
-// The git-config isolation matters. copyClaudeDir's `--exclude-standard` honours
+// The git-config isolation matters. copyDotClaude's `--exclude-standard` honours
 // the USER's global excludes, by design. Without the isolation the fixture's
 // ignore state depends on whose machine runs the test.
 func TestPopulateWorktree(t *testing.T) {
@@ -103,7 +103,7 @@ func TestPopulateWorktree(t *testing.T) {
 //
 // Measured on Linux against 19f30c46 and 90fca6e6 alike. claustrum copied none of
 // this before, which is why the fixture carries no manifest at all: without one,
-// every file below reaches the worktree through copyClaudeDir or not at all.
+// every file below reaches the worktree through copyDotClaude or not at all.
 func TestPopulateWorktreeCopiesIgnoredClaudeDir(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)
@@ -300,7 +300,7 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(wt, 0o700) })
-		if got := safeOverlayDest(wt, "sub/f.txt"); got != "" {
+		if got := overlayTargetInside(wt, "sub/f.txt"); got != "" {
 			t.Errorf("dest = %q, want %q (the intermediate could not be created)", got, "")
 		}
 	})
@@ -320,7 +320,7 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 	})
 }
 
-// safeOverlayDest creates missing intermediate directories for a manifest copy but
+// overlayTargetInside creates missing intermediate directories for a manifest copy but
 // refuses to traverse a ".." or a symlinked component, so a planted link inside the
 // worktree cannot carry a copy outside it.
 func TestSafeOverlayDest(t *testing.T) {
@@ -331,7 +331,7 @@ func TestSafeOverlayDest(t *testing.T) {
 
 	// A nested path with a "." segment: the "." is skipped, intermediate dirs are
 	// created, and the leaf dest returned.
-	dst := safeOverlayDest(wt, "a/./b/file.txt")
+	dst := overlayTargetInside(wt, "a/./b/file.txt")
 	if want := filepath.Join(wt, "a", "b", "file.txt"); dst != want {
 		t.Errorf("nested dest = %q, want %q", dst, want)
 	}
@@ -342,12 +342,12 @@ func TestSafeOverlayDest(t *testing.T) {
 	// A second manifest entry under the same prefix — the common case, since a
 	// manifest usually names several files in one directory — finds the
 	// intermediates already there as real directories and reuses them.
-	if got := safeOverlayDest(wt, "a/./b/file.txt"); got != dst {
+	if got := overlayTargetInside(wt, "a/./b/file.txt"); got != dst {
 		t.Errorf("repeat dest = %q, want %q (existing intermediates are reused)", got, dst)
 	}
 
 	// A ".." component is refused outright.
-	if got := safeOverlayDest(wt, "x/../../etc/passwd"); got != "" {
+	if got := overlayTargetInside(wt, "x/../../etc/passwd"); got != "" {
 		t.Errorf(`".." dest = %q, want "" (refused)`, got)
 	}
 
@@ -356,11 +356,11 @@ func TestSafeOverlayDest(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(wt, "link")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	if got := safeOverlayDest(wt, "link/evil.txt"); got != "" {
+	if got := overlayTargetInside(wt, "link/evil.txt"); got != "" {
 		t.Errorf("symlinked-intermediate dest = %q, want %q (refused)", got, "")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "evil.txt")); err == nil {
-		t.Error("safeOverlayDest wrote through a symlink out of the worktree")
+		t.Error("overlayTargetInside wrote through a symlink out of the worktree")
 	}
 }
 

@@ -39,7 +39,7 @@ func (r *Records) RecordChild(pid int, argv0, program string) {
 		}
 		return
 	}
-	r.writeRecord(childRecord{
+	r.writeRecord(spawnRecord{
 		Pid:         pid,
 		Node:        procinfo.NodeID(),
 		Host:        "machine-id:" + machineID(),

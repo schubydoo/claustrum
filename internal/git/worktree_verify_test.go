@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-// verifyCreatedWorktree is the post-`git worktree add` guard against a directory or
+// checkNewLeafIdentity is the post-`git worktree add` guard against a directory or
 // ancestor swapped during the add. It is exercised at the function seam because no
 // honest RPC input can reach a non-empty return (an unraced add preserves the leaf's
 // identity). Each mutation below stands in for a distinct swap and maps to the
 // reference's wording.
 func TestVerifyCreatedWorktree(t *testing.T) {
 	// An empty checkpoint (capture failed) must never invent a failure.
-	if msg := verifyCreatedWorktree(filepath.Join(t.TempDir(), "gone"), worktreeCheckpoint{}); msg != "" {
+	if msg := checkNewLeafIdentity(filepath.Join(t.TempDir(), "gone"), worktreeCheckpoint{}); msg != "" {
 		t.Errorf("empty checkpoint = %q, want no failure", msg)
 	}
 
@@ -36,7 +36,7 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	}
 
 	// Unchanged: the sound case an honest create always hits — passes.
-	if msg := verifyCreatedWorktree(wt, cp); msg != "" {
+	if msg := checkNewLeafIdentity(wt, cp); msg != "" {
 		t.Errorf("sound worktree = %q, want pass", msg)
 	}
 
@@ -44,7 +44,7 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	if err := os.RemoveAll(wt); err != nil {
 		t.Fatal(err)
 	}
-	if msg := verifyCreatedWorktree(wt, cp); !strings.Contains(msg, "no longer leads to the directory that was created for the worktree") {
+	if msg := checkNewLeafIdentity(wt, cp); !strings.Contains(msg, "no longer leads to the directory that was created for the worktree") {
 		t.Errorf("removed = %q, want the no-longer-leads refusal", msg)
 	}
 
@@ -53,7 +53,7 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	if err := os.WriteFile(wt, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if msg := verifyCreatedWorktree(wt, cp); !strings.Contains(msg, "is no longer the directory that was created for the worktree") {
+	if msg := checkNewLeafIdentity(wt, cp); !strings.Contains(msg, "is no longer the directory that was created for the worktree") {
 		t.Errorf("file-at-path = %q, want the not-a-directory refusal", msg)
 	}
 	if err := os.Remove(wt); err != nil {
@@ -90,7 +90,7 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	if err := os.Rename(swap, orig); err != nil { // orig's path now holds swap's identity
 		t.Fatal(err)
 	}
-	if msg := verifyCreatedWorktree(orig, origCP); !strings.Contains(msg, "was not populated by git worktree add") {
+	if msg := checkNewLeafIdentity(orig, origCP); !strings.Contains(msg, "was not populated by git worktree add") {
 		t.Errorf("swapped dir = %q, want the not-populated refusal", msg)
 	}
 }

@@ -21,9 +21,9 @@ func TestMarkerCloseFailureStopsOnLinuxOnly(t *testing.T) {
 		_ = f.Close()
 		return &fs.PathError{Op: "close", Path: f.Name(), Err: syscall.EIO}
 	}
-	err := ensureManagedWorktreesMarker(dir)
+	err := placeWorktreesMarker(dir)
 	if stops := runtime.GOOS == "linux"; (err != nil) != stops {
-		t.Errorf("ensureManagedWorktreesMarker = %v, want an error: %v", err, stops)
+		t.Errorf("placeWorktreesMarker = %v, want an error: %v", err, stops)
 	}
 	if b, rerr := os.ReadFile(filepath.Join(dir, managedWorktreesMarker)); rerr != nil || string(b) != managedWorktreesMarkerBody {
 		t.Errorf("the marker = %q, %v, want its 285 bytes", b, rerr)
