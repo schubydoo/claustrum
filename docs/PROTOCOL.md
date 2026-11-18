@@ -322,4 +322,4 @@ removed a method.
 
 ## Shared rules of the git methods
 
-The shared rules of the `git.*` methods are on four pages: [trust check](protocol/git-rules-trust.md), [config refusals](protocol/git-rules-config.md), [settings copy](protocol/git-rules-settings-copy.md) and [hardened calls](protocol/git-rules-calls.md).
+Shared `git.*` rules are on six pages: [trust check](protocol/git-rules-trust.md), [Windows paths](protocol/git-rules-windows-paths.md), [config refusals](protocol/git-rules-config.md), [settings copy](protocol/git-rules-settings-copy.md), [hardened calls](protocol/git-rules-calls.md) and [session folders](protocol/git-rules-session-folders.md).
