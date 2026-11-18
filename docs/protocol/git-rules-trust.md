@@ -67,8 +67,8 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
     file. A junction to a bare repository answers as that repository
     (`4c111e86`, measured). Other methods, a daemon `GIT_DIR` and a target with
     no drive letter keep the pin. A junction chain
-    reads its first target: one to a bare repository is refused (both claustrum's
-    own, not measured).
+    reads its first target, so one to a bare repository is refused. Both are
+    claustrum's own, not measured.
 
 ### How the daemon judges the git directory
 
@@ -261,7 +261,7 @@ repository, and it keeps the "no repository" column.
 `git.worktree_remove` keeps that column unless its listing fails.
 For the `.git` file, `git.info` and `git.list_branches` run no listing either.
 The listing of `git.status` still carries `GIT_DIR=<null>`, and
-its failure is the refusal of `git.status`. These four rules are from the code. With an incomplete
+its failure is the refusal of `git.status`. These four are from the code. With an incomplete
 `GIT_CONFIG` pair of the daemon, each method answers "no repository" for the
 `.git` file, and a remove of a gone worktree gets success (`b3081b51`).
 
@@ -499,7 +499,7 @@ The [time limit](git-rules-calls.md#time-limits-of-git-calls) of the add ends th
 usable file. claustrum reads nothing from a FIFO that a writer
 opens during the request. After `git worktree add`, a `commondir`
 of the git directory of `baseRepo` that is not a regular file counts as none, so
-that git directory is its own common directory. These four rules are from the code. A FIFO as the
+that git directory is its own common directory. These four are from the code. A FIFO as the
 config is in
 [Repository config refusals](git-rules-config.md#repository-config-refusals), and one at a folder of the daemon in
 [the folders](git-rules-settings-copy.md#the-folders).
