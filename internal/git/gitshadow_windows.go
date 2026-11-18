@@ -241,3 +241,17 @@ var goneNotARepoKeepsAll = true
 // answer of git as git printed it, also when it is not clean (askGit).
 // b3081b51 does so (measured on Windows).
 const printedPathAsIs = true
+
+// removeOwnFolderFileAt is the remove of removeOwnFolderFile: one plain remove
+// through root. An empty folder that took the place of the file goes too
+// (claustrum's own, not measured).
+func removeOwnFolderFileAt(root *os.Root, name string) error {
+	return root.Remove(name)
+}
+
+// goesAtFolderPath reports whether an entry of mode at the path of the folder
+// of the daemon goes before the folder is made again: a regular file only
+// (claustrum's own, not measured).
+func goesAtFolderPath(mode os.FileMode) bool {
+	return mode.IsRegular()
+}

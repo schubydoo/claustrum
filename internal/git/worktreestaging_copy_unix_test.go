@@ -16,7 +16,7 @@ import (
 // TestStagedAddInAFolderWithSearchOnly: the folder of the daemon has mode 0100
 // after the first request. A create answers privateCopyText with the error of
 // the mkdir of `.s<n>`, as with mode 0500. 4c111e86 answers that text in both
-// states (measured on Linux).
+// states (measured on Linux), and in `shadow` on macOS (measured).
 func TestStagedAddInAFolderWithSearchOnly(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the root user makes an entry in a folder of mode 0100")
