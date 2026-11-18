@@ -434,16 +434,16 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 `git.status` has three more tests (measured on Windows):
 
 - `GIT_ALTERNATE_OBJECT_DIRECTORIES` in the daemon's environment gives `The remote machine's environment sets GIT_ALTERNATE_OBJECT_DIRECTORIES, which Claude can't use on a Windows host, so git wasn't run. Remove it from the environment, then restart the machine.`
-- `GIT_OBJECT_DIRECTORY` in the daemon's environment is no refusal. The log gets `[GitHandler] GIT_OBJECT_DIRECTORY from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`. claustrum logs it once (claustrum's own, not measured).
-- A `baseRepo` that resolves through a chain of 31 links passes. A chain of 32 or more links gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.`` `git.info` runs this test on `path` too. The text names the path cleaned, so `C:/x/L32` reads as `C:\x\L32` (measured on Windows).
+- `GIT_OBJECT_DIRECTORY` there is no refusal. The log gets `[GitHandler] GIT_OBJECT_DIRECTORY from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`. claustrum logs it once (claustrum's own, not measured).
+- A `baseRepo` that resolves through a chain of 31 links passes. One of 32 or more gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.`` `git.info` runs this test on `path` too. The text names the path cleaned, so `C:/x/L32` reads as `C:\x\L32` (measured on Windows).
 
 ### A link to a network or device path
 
-On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository, and the text is:
+On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on it, and the text is:
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer `-32603`, while a create answers `"errorCode":"worktree_add_failed"` and makes no folder or branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). The other rules are claustrum's own, not measured.
+`git.status` and `git.info` answer `-32603`, and a create `"errorCode":"worktree_add_failed"` with no folder or branch. A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). The other rules are claustrum's own, not measured.
 
 ### UNC refusals
 
@@ -454,7 +454,7 @@ On Windows these refuse the repository path of all five methods with no git call
 - Share denying every account: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 
-`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the path without its last name (claustrum's own for a deeper path). A missing folder on a share, missing drive and unresolved host pass. Not measured (claustrum's own): other `\\?\` and `\\.\` forms and a share root pass, and a forward slash separates. Also claustrum's own: refusing any other failed look, `ERROR_NETWORK_ACCESS_DENIED` as denied, and a junction or link above the last name.
+On Windows `b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms and a share root pass, and a forward slash separates. Also claustrum's own, not measured: refusing any other failed look, `ERROR_NETWORK_ACCESS_DENIED` as denied, and a junction or link above the last name.
 
 ## A FIFO where the daemon reads a git file
 
