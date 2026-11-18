@@ -1422,6 +1422,71 @@ func TestRepoConfigListingKeepsNothingAfterRefusal(t *testing.T) {
 	}
 }
 
+// TestBoundedListingJudgesEachRecordOnce pins the records that judge gets from a
+// long listing written in chunks of many sizes. Each whole record goes to judge
+// once, in order, with no NUL, and the unfinished last record never does. A
+// refusal at one record keeps the same count and text for each chunk size.
+// After each write the search has reached the end of buf, so no byte is
+// searched twice. The test is a guard, not a speed test.
+func TestBoundedListingJudgesEachRecordOnce(t *testing.T) {
+	var text []byte
+	var want [][]byte
+	for i := range 3000 {
+		rec := bytes.Repeat([]byte{byte('a' + i%26)}, (i*37)%700)
+		if i%50 == 0 {
+			rec = bytes.Repeat([]byte("l"), 20000+i)
+		}
+		text = append(append(text, rec...), 0)
+		want = append(want, rec)
+	}
+	text = append(text, bytes.Repeat([]byte("u"), 9000)...)
+	for _, size := range []int{1, 3, 7, 64, 4095, 4096, 65536, len(text)} {
+		var got [][]byte
+		b := &boundedListing{max: len(text), judge: func(rec []byte) string {
+			got = append(got, bytes.Clone(rec))
+			return ""
+		}}
+		for p := text; len(p) > 0; {
+			n := min(size, len(p))
+			if _, err := b.Write(p[:n]); err != nil {
+				t.Fatalf("chunks of %d: %v", size, err)
+			}
+			if b.scanned != b.buf.Len() {
+				t.Fatalf("chunks of %d: %d of %d bytes searched after a write, want all", size, b.scanned, b.buf.Len())
+			}
+			p = p[n:]
+		}
+		if len(got) != len(want) {
+			t.Fatalf("chunks of %d: %d records judged, want %d", size, len(got), len(want))
+		}
+		for i := range want {
+			if !bytes.Equal(got[i], want[i]) {
+				t.Fatalf("chunks of %d: record %d is %d bytes, want %d", size, i, len(got[i]), len(want[i]))
+			}
+		}
+		if b.judged != len(text)-9000 || !bytes.Equal(b.buf.Bytes(), text) {
+			t.Errorf("chunks of %d: judged %d of %d kept bytes, want %d of %d", size, b.judged, b.buf.Len(), len(text)-9000, len(text))
+		}
+
+		count := 0
+		r := &boundedListing{max: len(text), judge: func(rec []byte) string {
+			if count++; count == 1777 {
+				return "refused " + strconv.Itoa(len(rec))
+			}
+			return ""
+		}}
+		for p := text; len(p) > 0; {
+			n := min(size, len(p))
+			_, _ = r.Write(p[:n])
+			p = p[n:]
+		}
+		if wantRefusal := "refused " + strconv.Itoa(len(want[1776])); r.refusal != wantRefusal || count != 1777 || r.buf.Len() != 0 {
+			t.Errorf("chunks of %d: refusal %q after %d records, %d bytes kept, want %q after 1777 and 0 bytes",
+				size, r.refusal, count, r.buf.Len(), wantRefusal)
+		}
+	}
+}
+
 // listingConfig is a config of format version 2 with 400 keys in one subsection.
 func listingConfig(section, subsection string) string {
 	var b strings.Builder

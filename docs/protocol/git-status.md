@@ -40,15 +40,16 @@ If the request does not name a linked worktree of the repository of `baseRepo`, 
 
 That holds for:
 
-- a `path` that is the repository itself, a plain folder or a subfolder of the repository
+- a `path` that is the repository itself, a plain folder or a subfolder
 - a nested repository, a missing folder or a regular file
-- a worktree of another repository, or a right worktree named with the wrong `baseRepo`
+- a worktree of another repository, or a right worktree with the wrong `baseRepo`
+- a linked worktree as `path` and `baseRepo` with no git on PATH (`4c111e86`, measured, other repositories claustrum's own). On Windows its failed start test is kept and answers first (measured)
 
 [How the daemon finds the worktree](#how-the-daemon-finds-the-worktree) has the rules.
 
 ## Errors
 
-A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in the repository or the worktree.
+A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in the repository or worktree.
 
 ### Shared refusals
 
@@ -68,11 +69,11 @@ A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in 
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own) (not measured). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | `git status`, `git ls-files` or `git diff-index` failed. The text of git does not show. A relative `path` that matches a registration gets `exit status 128`, because git takes it as sent. |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS). |
-| `-32603` | `<file>: not a regular file` (claustrum's own) | From the copy into the temporary git folder after the gate passed. An `info/sparse-checkout` folder or FIFO gets it. The reference is not measured there. |
-| `-32603` | `<file> is larger than <n> bytes` (claustrum's own) | A copied file is over its bound, also one that grew after the gate (claustrum's own). `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree` (claustrum's own). The reference is not measured there. |
+| `-32603` | `<file>: not a regular file` (claustrum's own) | From the copy into the temporary git folder after the gate passed. An `info/sparse-checkout` folder or FIFO gets it. |
+| `-32603` | `<file> is larger than <n> bytes` (claustrum's own) | A copied file is over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, a `sharedindex.<40 or 64 hex>` file, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. |
 | `-32603` | An error of the file system, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | The raw Go error. The daemon cannot copy a file of the registration or make a file of the temporary git folder. The reference is not measured there. |
 
 Failed listings and temporary folders: [Rare states](#rare-states).
@@ -86,12 +87,12 @@ The daemon does not ask git inside `path`. It reads the registrations of the rep
 Each of these gives `"isRepo": false` before any git call:
 
 - `baseRepo` has the components `.claude/worktrees` in it, or is that folder. `<dir>/.claude` alone passes.
-- A folder above `baseRepo` holds an entry named `.claude-managed-worktrees` and no `.git`. A marker inside `baseRepo` itself does not count. A marker one or two levels above counts (measured on Linux). Further up the test is claustrum's own (not measured).
-- `baseRepo` does not resolve. For example, it does not exist, or a `..` after a symbolic link goes up from the target of the link and finds no folder.
+- A folder above `baseRepo` holds an entry named `.claude-managed-worktrees` and no `.git`. A marker inside `baseRepo` itself does not count. A marker one or two levels above counts (measured on Linux). Further up the test is claustrum's own.
+- `baseRepo` does not resolve. For example, it is missing, or a `..` after a symbolic link goes up from the target of the link and finds no folder.
 
 Then the [git-directory trust check](git-rules-trust.md#git-directory-trust-check) runs on `baseRepo`, not on `path`. A refusal answers `-32603`, also for a good linked worktree as `path`. If the check finds no repository, the answer is `"isRepo": false`, with [exceptions](#rare-states). A config of `baseRepo` that the daemon does not accept answers `-32603`, as in [Repository config refusals](git-rules-config.md#repository-config-refusals).
 
-`baseRepo` can be a symbolic link to the repository, a bare repository, a submodule checkout or a subfolder of a repository. If git prints no git directory, the answer is `"isRepo": false`. So is a repository with no `worktrees` folder.
+`baseRepo` can be a symbolic link to the repository, a bare repository, a submodule checkout or a subfolder. If git prints no git directory, or there is no `worktrees` folder, the answer is `"isRepo": false`.
 
 ### `path`
 
@@ -131,11 +132,11 @@ rev-parse --verify -q HEAD^{commit}
 diff-index --cached --raw -z --ignore-submodules=none HEAD --
 ```
 
-If `HEAD` names no commit, `diff-index` compares the staged changes with the empty tree.
+If `HEAD` names no commit, `diff-index` compares with the empty tree.
 
-- The calls ignore the `.gitattributes` files of the repository, so no clean filter runs. A git older than 2.40 has no option for that, and then the attributes apply.
-- The calls do not read replace objects (`refs/replace`), so the status is that of the real commits.
-- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). The item comes before the other items, and it stays where the user config sets `lfs.storage` (claustrum's own, not measured).
+- The calls ignore the `.gitattributes` files, so no clean filter runs, but before git 2.40 the attributes apply.
+- The calls read no replace objects from `refs/replace`.
+- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). On Windows the item follows `--work-tree` (`4c111e86`). Elsewhere it comes first, also where the user config sets `lfs.storage` (claustrum's own, not measured).
 - `status`, `ls-files` and `diff-index` carry `GIT_OPTIONAL_LOCKS=0`. All calls run as [hardened git calls](git-rules-calls.md#hardened-git-calls).
 - If the user has a global excludes file, the status uses it.
 
@@ -188,6 +189,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
     - The folder compare of the registration match ignores letter case. A `gitdir` value that ends in `.GIT` fails.
+    - A junction `path` outside `baseRepo` gets no `rev-parse --show-toplevel` with that spelling (`4c111e86`). claustrum uses the real path (not measured).
     - A subst drive, a junction, a `\\?\` path and 8.3 short names match `path` too. A `path` with short names inside a `baseRepo` in short names finds no registration.
     - A `commondir` value with forward or back slashes passes. Another letter case, a short name, a `\\?\` prefix and a value with no drive letter fail.
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.
