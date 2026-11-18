@@ -653,7 +653,8 @@ func otherEntryRefusal(worktreePath string) string {
 //     was created for the worktree".
 //
 // Not measured: the order of the three tests, a `.git` that Lstat cannot read
-// (it passes), and the default staged add, which does not run this test.
+// (it passes), a leaf that resolves to another place (it gets the text of a
+// copy), and the default staged add, which does not run this test.
 func offAddRefusal(worktreePath, registry string, cp worktreeCheckpoint) string {
 	gitFile := filepath.Join(worktreePath, ".git")
 	if fi, err := os.Lstat(gitFile); err == nil && !fi.Mode().IsRegular() {
@@ -663,7 +664,7 @@ func offAddRefusal(worktreePath, registry string, cp worktreeCheckpoint) string 
 		return gitFileGoneText(worktreePath)
 	}
 	if checkNewLeafIdentity(worktreePath, cp) != "" {
-		return "refusing to create worktree: " + tickPath(worktreePath) + " is no longer the directory that was created for the worktree"
+		return leafReplacedText(worktreePath)
 	}
 	return ""
 }

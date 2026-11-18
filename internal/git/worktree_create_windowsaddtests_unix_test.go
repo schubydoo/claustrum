@@ -85,7 +85,9 @@ func TestWorktreeCreateOffAddTestsOfWindows(t *testing.T) {
 // Windows: the stub runs the real read-tree and then removes the .git file of
 // the leaf. The create answers the frame of a gone .git file, and nothing is
 // removed: the leaf keeps the files of the checkout, and the registration w1 and
-// branch w1 stay.
+// branch w1 stay. The case "default" runs the staged add of Linux with only the
+// steps of Windows after the add on, so it is no default state of Windows. The
+// measured row of Windows carries that claim, not this test.
 func TestWorktreeCreateGitFileGoneKeepsLeafOnWindows(t *testing.T) {
 	for name, extra := range map[string]map[string]any{"default": nil, "off": {"shadowDirOff": true}} {
 		t.Run(name, func(t *testing.T) {

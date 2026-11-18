@@ -2677,8 +2677,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// one swapped in during the add. A copy of the leaf put in its place at the
 	// read-tree call gets the text of a replaced leaf with unsafe_path (4c111e86,
 	// measured on Linux and macOS, with and without "shadowDirOff":true). On
-	// Windows a leaf copied right after the add reaches this test, and 4c111e86
-	// answers the same frame there (measured with "shadowDirOff":true). A leaf
+	// Windows with "shadowDirOff":true, offAddRefusal answers the same frame
+	// earlier for a leaf copied right after the add (4c111e86, measured). A leaf
 	// that leads elsewhere or is no folder gets the same frame (not measured).
 	if checkNewLeafIdentity(p.WorktreePath, checkpoint) != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
