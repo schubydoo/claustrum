@@ -65,7 +65,7 @@ func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.
 // wall-clock is unreliable. The test therefore MEASURES the per-command spawn cost first
 // and expresses the deadline straddle relative to it: the add + checkout under the caller
 // deadline are exactly four git spawns (two `git config` precursors + the add + the
-// read-tree), i.e. twice a single `hardenedGit` call, so timeoutMs = that estimate + half
+// read-tree), i.e. twice a single `gitUnderLimits` call, so timeoutMs = that estimate + half
 // the drain cap lands the deadline reliably inside the drain window (git exits before it,
 // the drain overruns it) regardless of how fast or slow the host is. The orphan lifetime
 // is far larger than the drain cap so a capped reply and an unbounded one (the pre-fix
@@ -91,18 +91,18 @@ func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 	})
 	worktreeCreateDrainCap = drainCap
 
-	// Measure one hardenedGit call = two spawns (its `git config` precursor + the command).
+	// Measure one gitUnderLimits call = two spawns (its `git config` precursor + the command).
 	// Warm the once-cached excludes probe first so it is not counted, then take the SLOWEST
 	// of several samples: one sample can land in a quiet moment on a loaded host and
 	// underestimate what the four spawns below will cost, which would put the deadline
 	// before the checkout finishes instead of inside the drain.
 	stubLingeringGit(t, true, "0")
 	warm := t.TempDir()
-	hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
+	gitUnderLimits(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
 	var spawn2 time.Duration
 	for i := 0; i < 3; i++ {
 		t0 := time.Now()
-		hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
+		gitUnderLimits(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
 		spawn2 = max(spawn2, time.Since(t0))
 	}
 
@@ -179,17 +179,17 @@ func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 	})
 }
 
-// measureLingeringSpawn gives the cost of one hardenedGit call against the
+// measureLingeringSpawn gives the cost of one gitUnderLimits call against the
 // git-lingering stub, as in TestWorktreeCreateLingeringDescendant.
 func measureLingeringSpawn(t *testing.T) time.Duration {
 	t.Helper()
 	stubLingeringGit(t, true, "0")
 	warm := t.TempDir()
-	hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
+	gitUnderLimits(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
 	var spawn2 time.Duration
 	for i := 0; i < 3; i++ {
 		t0 := time.Now()
-		hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
+		gitUnderLimits(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
 		spawn2 = max(spawn2, time.Since(t0))
 	}
 	return spawn2

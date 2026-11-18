@@ -36,7 +36,7 @@ func fakeGitOnPath(t *testing.T) {
 }
 
 // TestSpawnGitReadStepErrorReason pins the reason of a failed step: other, also
-// for a text that ends like an errno that SpawnFailureReason reads
+// for a text that ends like an errno that ReasonForSpawnError reads
 // (claustrum's own, not measured).
 func TestSpawnGitReadStepErrorReason(t *testing.T) {
 	fakeGitOnPath(t)
@@ -48,7 +48,7 @@ func TestSpawnGitReadStepErrorReason(t *testing.T) {
 	if err == nil || err.Error() != text {
 		t.Fatalf("SpawnGitRead error = %v, want %q", err, text)
 	}
-	if got := SpawnFailureReason(err, ""); got.Reason != "other" {
+	if got := ReasonForSpawnError(err, ""); got.Reason != "other" {
 		t.Errorf("reason of a failed step = %q, want other", got.Reason)
 	}
 }

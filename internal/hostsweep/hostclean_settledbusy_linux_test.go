@@ -11,7 +11,7 @@ import (
 //
 // First, linux must sample at all. claustrum's linux hcSettledBusy was a constant
 // false, so the "idle daemon still shows a live connection" spare in
-// retireAbandoned never fired there. claustrum has a real linux hcBusy to sample
+// endIdleDaemon never fired there. claustrum has a real linux hcBusy to sample
 // with.
 //
 // Second, the sampling rule: sample for a 3-second window, take at least 2
@@ -163,11 +163,11 @@ func TestHcSettledBusyTakesTwoSamples(t *testing.T) {
 	}
 }
 
-// TestRetireAbandonedSparesABusyDaemon drives the spare arm through retireAbandoned
+// TestRetireAbandonedSparesABusyDaemon drives the spare arm through endIdleDaemon
 // itself, not through hcSettledBusy alone.
 //
 // The four tests above call the sampler directly, so none of them reaches the
-// `if hcSettledBusy(pid)` branch in retireAbandoned. On linux that branch was dead
+// `if hcSettledBusy(pid)` branch in endIdleDaemon. On linux that branch was dead
 // before this sampler became real, and a comment in hostclean_tidy_linux_test.go
 // used to list it among the arms no fixture can reach.
 //
@@ -217,7 +217,7 @@ func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
 			t.Errorf("signalled = %v, want nothing: the daemon is still serving someone", signalled)
 		}
 		if retired {
-			t.Error("retireAbandoned reported a retirement it did not make")
+			t.Error("endIdleDaemon reported a retirement it did not make")
 		}
 	})
 }
@@ -243,7 +243,7 @@ func TestRetireAbandonedVerifiesBeforeItSamples(t *testing.T) {
 	hcSleep = func(d time.Duration) { sleeps++; seamedSleep(d) }
 
 	// Busy AND unverifiable: it keeps a connected client, so the sampler would hold it
-	// for the whole window, but it carries no daemon-child marker, so verifyListener
+	// for the whole window, but it carries no daemon-child marker, so listenerRefusal
 	// refuses it. Only the order decides which of those two happens.
 	exe := "/opt/claude/srv/a/server"
 	hcFakeDaemon(t, proot, mk, link, pid, exe,

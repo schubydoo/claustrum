@@ -209,7 +209,7 @@ func TestLateRunDirLockTwoSurvivorsOneWins(t *testing.T) {
 	if len(lateLines(buf, instB)) == 1 {
 		winner = instB
 	}
-	rec, err := readOwnerRecord(lockPath)
+	rec, err := loadLockOwner(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}

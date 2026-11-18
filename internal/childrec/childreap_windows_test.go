@@ -13,7 +13,7 @@ import (
 // daemon reports it is not the run-dir lock holder on windows: it leaves any predecessor's
 // recorded children alone (planted records survived a daemon startup untouched). The planted
 // record — foreign and long expired, so a linux/darwin reap would forget it — must remain
-// after ReapOrphans. A mutant that ported the reap to windows would fail here.
+// after EndLeftoverChildren. A mutant that ported the reap to windows would fail here.
 func TestReapOrphansWindowsNoop(t *testing.T) {
 	runDir := t.TempDir()
 	children := filepath.Join(runDir, "children")
@@ -28,9 +28,9 @@ func TestReapOrphansWindowsNoop(t *testing.T) {
 
 	m := &Records{}
 	m.RunDir, m.InstanceID = runDir, "our-instance"
-	m.ReapOrphans()
+	m.EndLeftoverChildren()
 
 	if _, err := os.Stat(rec); err != nil {
-		t.Errorf("ReapOrphans touched a planted record on windows; it must leave it alone (never the run-dir lock holder): %v", err)
+		t.Errorf("EndLeftoverChildren touched a planted record on windows; it must leave it alone (never the run-dir lock holder): %v", err)
 	}
 }

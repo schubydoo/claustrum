@@ -283,7 +283,7 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	}
 }
 
-// TestJudgeOrphanReadsDescriptorsOnceDarwin: judgeOrphan answers both "could the descriptors
+// TestJudgeOrphanReadsDescriptorsOnceDarwin: decideReap answers both "could the descriptors
 // be read" and "are they pipes" from one lsof run, not two.
 func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
 	old, oldClock := runLsof, hcClock
@@ -301,7 +301,7 @@ func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
 		startWall: now.Add(-time.Hour), exe: "/opt/claude/ccd-cli/2.1.0",
 		argv: []string{"claude", "stream-json"}, env: []string{hcDaemonChildMarker},
 	}
-	if reap, reason := c.judgeOrphan(orphan); !reap {
+	if reap, reason := c.decideReap(orphan); !reap {
 		t.Fatalf("orphan not reaped (reason %q)", reason)
 	}
 	if runs != 1 {
@@ -356,7 +356,7 @@ func TestAbandonedBusyReadEndsTheReadDarwin(t *testing.T) {
 	hcProcArgs2 = func(int) ([]byte, bool) {
 		return hcProcArgsBuf(exe, []string{exe, "-serve", "-socket", socket}, []string{hcDaemonChildMarker}), true
 	}
-	e := runDirEntry{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+	e := staleRunFolder{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
 
 	for _, abandoned := range []bool{false, true} {
 		c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
@@ -388,7 +388,7 @@ func TestAbandonedBusyReadEndsTheReadDarwin(t *testing.T) {
 		if ended {
 			c.busyEnded = map[int]bool{pid: true}
 		}
-		retired, reason := c.retireAbandoned(e, pid, 501)
+		retired, reason := c.endIdleDaemon(e, pid, 501)
 
 		if !abandoned {
 			if !retired || runs != 2 || len(signals) != 1 || signals[0] != syscall.SIGTERM {
@@ -410,7 +410,7 @@ func TestAbandonedBusyReadEndsTheReadDarwin(t *testing.T) {
 		}
 		// The retire alone stops at the first abandoned run too, with no mark.
 		c.busyEnded, runs = nil, 0
-		if retired, _ := c.retireAbandoned(e, pid, 501); retired || runs != 1 {
+		if retired, _ := c.endIdleDaemon(e, pid, 501); retired || runs != 1 {
 			t.Errorf("unmarked retire: retired=%v runs=%d, want a refusal after one run", retired, runs)
 		}
 	}
@@ -546,7 +546,7 @@ func TestTidyKeepsARunDirWhenTheLsofDeadlineEndsDarwin(t *testing.T) {
 }
 
 // TestLsofRunThatDoesNotAnswerDarwin drives the REAL run. A command that cannot start, and
-// a command that writes to stderr, read as no answer. lockProbe then answers
+// a command that writes to stderr, read as no answer. classifyLock then answers
 // hcLockUnexamined for a dir with a lock file (measured). A dir with no lock file reads stale
 // with no run. The busy read is then no reading, and the stdio read neither. The control is
 // this test binary as the command: it starts, writes nothing to stderr, and its output is
@@ -582,11 +582,11 @@ func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 		if out, completed, answered, _ := runLsof("-F", "p", "/x"); out != "" || !completed || answered {
 			t.Errorf("%s: out=%q completed=%v answered=%v, want empty, completed, no answer", tc.name, out, completed, answered)
 		}
-		if state, _, present := lockProbe(locked); state != hcLockUnexamined || !present {
-			t.Errorf("%s: lockProbe(dir with a lock) = %d present=%v, want hcLockUnexamined", tc.name, state, present)
+		if state, _, present := classifyLock(locked); state != hcLockUnexamined || !present {
+			t.Errorf("%s: classifyLock(dir with a lock) = %d present=%v, want hcLockUnexamined", tc.name, state, present)
 		}
-		if state, _, present := lockProbe(bare); state != hcLockStale || present {
-			t.Errorf("%s: lockProbe(dir with no lock) = %d present=%v, want stale", tc.name, state, present)
+		if state, _, present := classifyLock(bare); state != hcLockStale || present {
+			t.Errorf("%s: classifyLock(dir with no lock) = %d present=%v, want stale", tc.name, state, present)
 		}
 		if busy, canRead := hcBusyCheck(1); busy || canRead {
 			t.Errorf("%s: hcBusyCheck = %v %v, want false false: no reading", tc.name, busy, canRead)
@@ -604,8 +604,8 @@ func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 	if out, completed, answered, _ := runLsof("-F", "p", "/x"); out != "p1\n" || !completed || !answered {
 		t.Fatalf("control: out=%q completed=%v answered=%v, want %q, completed, answered", out, completed, answered, "p1\n")
 	}
-	if state, _, _ := lockProbe(locked); state != hcLockHeld {
-		t.Errorf("control: lockProbe = %d, want held", state)
+	if state, _, _ := classifyLock(locked); state != hcLockHeld {
+		t.Errorf("control: classifyLock = %d, want held", state)
 	}
 	if _, canRead := hcBusyCheck(1); !canRead {
 		t.Errorf("control: the busy read is no reading")
@@ -629,8 +629,8 @@ func TestLockProbeUnopenableLockDarwin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, runDirLockName), nil, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	if state, _, _ := lockProbe(dir); state != hcLockUnexamined || runs != 0 {
-		t.Errorf("lockProbe = %d with %d lsof runs, want hcLockUnexamined and no run", state, runs)
+	if state, _, _ := classifyLock(dir); state != hcLockUnexamined || runs != 0 {
+		t.Errorf("classifyLock = %d with %d lsof runs, want hcLockUnexamined and no run", state, runs)
 	}
 }
 
@@ -658,7 +658,7 @@ func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
 		return hcProcArgsBuf(exe, []string{exe, "-serve", "-socket", socket}, []string{hcDaemonChildMarker}), true
 	}
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	e := runDirEntry{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+	e := staleRunFolder{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
 
 	run := func(answered bool) (retired bool, reason string, signals []syscall.Signal) {
 		gone := false
@@ -672,7 +672,7 @@ func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
 			return func(sig syscall.Signal) error { signals = append(signals, sig); gone = true; return nil }, func() {}
 		}
 		runLsof = func(...string) (string, bool, bool, bool) { return "", true, answered, false }
-		retired, reason = c.retireAbandoned(e, pid, 501)
+		retired, reason = c.endIdleDaemon(e, pid, 501)
 		return retired, reason, signals
 	}
 
@@ -714,7 +714,7 @@ func TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin(t *testing.T) {
 		return hcProcArgsBuf(exe, []string{exe, "-serve", "-socket", socket}, []string{hcDaemonChildMarker}), true
 	}
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	e := runDirEntry{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+	e := staleRunFolder{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
 
 	for _, tc := range []struct {
 		name    string
@@ -740,7 +740,7 @@ func TestRetireRefusesADaemonWhenTheBusyDeadlineEndsDarwin(t *testing.T) {
 		}
 		runLsof = func(...string) (string, bool, bool, bool) { runs++; return tc.out, true, true, tc.expired }
 
-		retired, reason := c.retireAbandoned(e, pid, 501)
+		retired, reason := c.endIdleDaemon(e, pid, 501)
 
 		if !tc.expired {
 			if !retired || runs != 1 || len(signals) != 1 || signals[0] != syscall.SIGTERM {
@@ -782,9 +782,9 @@ func TestPeerOfDarwin(t *testing.T) {
 	}
 	defer c.Close()
 	<-done
-	pid, uid, ok := peerOf(c.(*net.UnixConn))
+	pid, uid, ok := socketPeer(c.(*net.UnixConn))
 	if !ok || pid != os.Getpid() {
-		t.Fatalf("peerOf = (%d, %d, %v), want pid=%d ok=true", pid, uid, ok, os.Getpid())
+		t.Fatalf("socketPeer = (%d, %d, %v), want pid=%d ok=true", pid, uid, ok, os.Getpid())
 	}
 	if uid != 4242 {
 		t.Errorf("peer uid = %d, want 4242 (derived from the peer pid's kinfo)", uid)
@@ -853,8 +853,8 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 	if filepath.Base(tr.exe) != filepath.Base(bin) {
 		t.Errorf("exe basename = %q, want %q", filepath.Base(tr.exe), filepath.Base(bin))
 	}
-	if serveArgv(tr.argv, filepath.Base(bin)) == "" {
-		t.Errorf("serveArgv could not extract a socket from real argv %v", tr.argv)
+	if serveSocketOfArgv(tr.argv, filepath.Base(bin)) == "" {
+		t.Errorf("serveSocketOfArgv could not extract a socket from real argv %v", tr.argv)
 	}
 	if !hcHasEnv(tr.env, hcDaemonChildMarker) {
 		t.Errorf("real daemon env missing the daemon-child marker")
@@ -878,12 +878,12 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 		t.Errorf("hcReadIdent start=%q ok=%v, want %q", start, ok, tr.startTicks)
 	}
 
-	// probeSocket sees a live listener whose peer is the daemon.
-	if st, peer, _ := probeSocket(sock); st != hcSockLive || peer != pid {
-		t.Errorf("probeSocket(live) = (state %d, peer %d), want (hcSockLive, %d)", st, peer, pid)
+	// classifySocket sees a live listener whose peer is the daemon.
+	if st, peer, _ := classifySocket(sock); st != hcSockLive || peer != pid {
+		t.Errorf("classifySocket(live) = (state %d, peer %d), want (hcSockLive, %d)", st, peer, pid)
 	}
-	if st, _, _ := probeSocket(filepath.Join(runDir, "nope.sock")); st != hcSockMissing {
-		t.Errorf("probeSocket(missing) = %d, want hcSockMissing", st)
+	if st, _, _ := classifySocket(filepath.Join(runDir, "nope.sock")); st != hcSockMissing {
+		t.Errorf("classifySocket(missing) = %d, want hcSockMissing", st)
 	}
 
 	// the daemon holds its run-dir lock.
@@ -912,7 +912,7 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 //
 // Before this, runLsof used a plain exec.Command with no deadline, so an lsof that
 // stalled on an unresponsive mount held the cleaner pass open for as long as it
-// stalled. retireAbandoned samples hcBusy for up to hcBusyWindow and on darwin every
+// stalled. endIdleDaemon samples hcBusy for up to hcBusyWindow and on darwin every
 // sample is an lsof run, so one stall is enough.
 //
 // The fixture is this test binary, never /usr/sbin/lsof: a real lsof cannot be made

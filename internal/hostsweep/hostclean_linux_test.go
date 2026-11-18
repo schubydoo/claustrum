@@ -247,9 +247,9 @@ func hcFakeDaemonUID(t *testing.T, root string, mk func(int, string, string), li
 // hcTestCleaner builds a cleaner over one root and seams the clock, sleep and uid.
 //
 // The sleep ADVANCES the clock rather than doing nothing. Several of the cleaner's paths end
-// in waitGone, whose poll loop only terminates when the clock passes its deadline: with a
+// in awaitLeaderExit, whose poll loop only terminates when the clock passes its deadline: with a
 // frozen clock and a no-op sleep, a regression that lets control reach one of them makes the
-// test HANG to the go test timeout instead of failing on its assertions (measured: a waitGone
+// test HANG to the go test timeout instead of failing on its assertions (measured: a awaitLeaderExit
 // over one live entry returns immediately with the advancing clock and panics at the 30s
 // timeout with the frozen one). Advancing costs a passing test nothing, because a passing
 // test reaches few sleeps or none.
@@ -277,17 +277,17 @@ func TestVerifyListener(t *testing.T) {
 	_ = proot
 	socket := "/opt/claude/run/x/rpc.sock"
 	hcFakeDaemon(t, proot, mk, link, 42, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "9000")
-	if reason := c.verifyListener(42, socket); reason != "" {
+	if reason := c.listenerRefusal(42, socket); reason != "" {
 		t.Errorf("verified daemon rejected: %q", reason)
 	}
 	// Not our binary.
 	hcFakeDaemon(t, proot, mk, link, 43, "/usr/bin/evil", []string{"/usr/bin/evil", "--serve", "--socket", socket}, true, "9000")
-	if c.verifyListener(43, socket) == "" {
+	if c.listenerRefusal(43, socket) == "" {
 		t.Error("non-daemon binary accepted")
 	}
 	// Missing marker.
 	hcFakeDaemon(t, proot, mk, link, 44, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, false, "9000")
-	if c.verifyListener(44, socket) == "" {
+	if c.listenerRefusal(44, socket) == "" {
 		t.Error("unmarked listener accepted")
 	}
 }
@@ -309,26 +309,26 @@ func TestJudgeOrphan(t *testing.T) {
 	hcFakeDaemon(t, proot, mk, link, 60, "/opt/claude/ccd-cli/2.1.0", []string{"claude", "--output-format=stream-json"}, true, "100")
 	hcPipeStdio(link, 60)
 	tr, _ := inspect(60, true)
-	if reap, _ := c.judgeOrphan(tr); !reap {
+	if reap, _ := c.decideReap(tr); !reap {
 		t.Error("old marked stream-json orphan not reaped")
 	}
 	// No stream-json -> silent skip.
 	hcFakeDaemon(t, proot, mk, link, 61, "/opt/claude/ccd-cli/2.1.0", []string{"claude", "--interactive"}, true, "100")
 	tr, _ = inspect(61, true)
-	if reap, reason := c.judgeOrphan(tr); reap || reason != "" {
+	if reap, reason := c.decideReap(tr); reap || reason != "" {
 		t.Errorf("non-stream process judged orphan: reap=%v reason=%q", reap, reason)
 	}
 	// Missing marker -> silent skip.
 	hcFakeDaemon(t, proot, mk, link, 62, "/opt/claude/ccd-cli/2.1.0", []string{"claude", "--output-format=stream-json"}, false, "100")
 	tr, _ = inspect(62, true)
-	if reap, _ := c.judgeOrphan(tr); reap {
+	if reap, _ := c.decideReap(tr); reap {
 		t.Error("unmarked stream process judged orphan")
 	}
 	// A young stream-json orphan (start-ticks near the fake uptime, so age ~100s) is left alone.
 	hcFakeDaemon(t, proot, mk, link, 63, "/opt/claude/ccd-cli/2.1.0", []string{"claude", "--output-format=stream-json"}, true, "9990000")
 	hcPipeStdio(link, 63)
 	tr, _ = inspect(63, true)
-	if reap, _ := c.judgeOrphan(tr); reap {
+	if reap, _ := c.decideReap(tr); reap {
 		t.Error("young orphan reaped; the age gate must spare it")
 	}
 	// A stream-json process running a binary that is not one of our deployed CLI binaries is
@@ -336,7 +336,7 @@ func TestJudgeOrphan(t *testing.T) {
 	// merely inherited the marker must not be ended).
 	hcFakeDaemon(t, proot, mk, link, 64, "/usr/bin/claude", []string{"claude", "--output-format=stream-json"}, true, "100")
 	hcPipeStdio(link, 64)
-	if reap, _ := c.judgeOrphan(mustInspect(t, 64)); reap {
+	if reap, _ := c.decideReap(mustInspect(t, 64)); reap {
 		t.Error("a non-deployed-binary stream process was judged an orphan")
 	}
 	// A stream-json process in another namespace is skipped.
@@ -346,13 +346,13 @@ func TestJudgeOrphan(t *testing.T) {
 	if err := os.Symlink("pid:[9999999]", filepath.Join(proot, "65", "ns", "pid")); err != nil {
 		t.Fatal(err)
 	}
-	if reap, _ := c.judgeOrphan(mustInspect(t, 65)); reap {
+	if reap, _ := c.decideReap(mustInspect(t, 65)); reap {
 		t.Error("a foreign-namespace stream process was judged an orphan")
 	}
 	// A stream-json process owned by another user is skipped.
 	hcFakeDaemonUID(t, proot, mk, link, 66, "/opt/claude/ccd-cli/2.1.0", []string{"claude", "--output-format=stream-json"}, true, "100", 4242)
 	hcPipeStdio(link, 66)
-	if reap, _ := c.judgeOrphan(mustInspect(t, 66)); reap {
+	if reap, _ := c.decideReap(mustInspect(t, 66)); reap {
 		t.Error("a foreign-uid stream process was judged an orphan")
 	}
 }
@@ -365,7 +365,7 @@ func TestVerifyListenerGates(t *testing.T) {
 
 	// A listener owned by another user is rejected.
 	hcFakeDaemonUID(t, proot, mk, link, 90, "/opt/claude/srv/a/server", argv, true, "1", 4242)
-	if c.verifyListener(90, socket) == "" {
+	if c.listenerRefusal(90, socket) == "" {
 		t.Error("a foreign-uid listener was verified")
 	}
 	// A listener in another namespace is rejected.
@@ -374,13 +374,13 @@ func TestVerifyListenerGates(t *testing.T) {
 	if err := os.Symlink("pid:[9999999]", filepath.Join(proot, "91", "ns", "pid")); err != nil {
 		t.Fatal(err)
 	}
-	if c.verifyListener(91, socket) == "" {
+	if c.listenerRefusal(91, socket) == "" {
 		t.Error("a foreign-namespace listener was verified")
 	}
 	// A listener whose argv0 basename is "server" but whose exe is not a deployed daemon (not
 	// under <root>/srv) is rejected by the binary gate, not merely by the argv gate.
 	hcFakeDaemonUID(t, proot, mk, link, 92, "/tmp/server", argv, true, "1", 1000)
-	if c.verifyListener(92, socket) == "" {
+	if c.listenerRefusal(92, socket) == "" {
 		t.Error("a non-deployed-binary listener was verified")
 	}
 }
@@ -444,7 +444,7 @@ func TestTidyRunDirsRemoveAndUndo(t *testing.T) {
 	var sum hcSummary
 	runRoot, root := hcRunRoot(t)
 	e := hcEntry(t, runRoot, root, "stale", 40*24*time.Hour)
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 	if sum.runDirsRemoved != 1 || len(removed) != 1 {
 		t.Errorf("stale dir not removed: removed=%v sum=%d", removed, sum.runDirsRemoved)
 	}
@@ -452,7 +452,7 @@ func TestTidyRunDirsRemoveAndUndo(t *testing.T) {
 	sum = hcSummary{}
 	removed = nil
 	buf := captureLogBuf(t)
-	c.tidyRunDirs([]runDirEntry{hcEntry(t, runRoot, root, "fresh", time.Hour)}, &sum)
+	c.sweepRunFolders([]staleRunFolder{hcEntry(t, runRoot, root, "fresh", time.Hour)}, &sum)
 	if sum.runDirsRemoved != 0 || len(removed) != 0 {
 		t.Errorf("fresh dir was removed: removed=%v", removed)
 	}
@@ -473,12 +473,12 @@ func TestTidyIdleAgeIsThirtyDays(t *testing.T) {
 	var removed []string
 	hcRemoveAll = func(_ *os.Root, p string) error { removed = append(removed, p); return nil }
 	runRoot, root := hcRunRoot(t)
-	entries := []runDirEntry{
+	entries := []staleRunFolder{
 		hcEntry(t, runRoot, root, "d29", 29*24*time.Hour),
 		hcEntry(t, runRoot, root, "d31", 31*24*time.Hour),
 	}
 	var sum hcSummary
-	c.tidyRunDirs(entries, &sum)
+	c.sweepRunFolders(entries, &sum)
 	if sum.runDirsRemoved != 1 || len(removed) != 1 || !strings.HasPrefix(removed[0], "d31"+hcStagingMarker) {
 		t.Errorf("removed = %v (summary %d), want only the 31-day folder", removed, sum.runDirsRemoved)
 	}
@@ -508,7 +508,7 @@ func TestTidyKeepsADirThatCameBackAfterTheProbes(t *testing.T) {
 	hcRemoveAll = func(_ *os.Root, p string) error { removed = append(removed, p); return nil }
 	buf := captureLogBuf(t)
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 	if sum.runDirsRemoved != 0 || len(renamed) != 0 || len(removed) != 0 {
 		t.Errorf("renamed %v, removed %v (summary %d), want the folder untouched", renamed, removed, sum.runDirsRemoved)
 	}
@@ -518,7 +518,7 @@ func TestTidyKeepsADirThatCameBackAfterTheProbes(t *testing.T) {
 }
 
 // hcSeamSignals records single-pid and group signals and removes a pid's fake-procfs entry
-// on any signal, so waitGone sees the process exit. It also seams the clock/sleep.
+// on any signal, so awaitLeaderExit sees the process exit. It also seams the clock/sleep.
 func hcSeamSignals(t *testing.T, root string) (single, group *[]int) {
 	t.Helper()
 	var s, g []int
@@ -580,7 +580,7 @@ func TestRetireAbandoned(t *testing.T) {
 }
 
 func TestRunDirsAndUndoRename(t *testing.T) {
-	// runDirs enumerates real dirs under a temp root.
+	// listRunFolders enumerates real dirs under a temp root.
 	base := t.TempDir()
 	runRoot := filepath.Join(base, "run")
 	for _, name := range []string{"a", "b"} {
@@ -592,20 +592,20 @@ func TestRunDirsAndUndoRename(t *testing.T) {
 	t.Cleanup(func() { hcClock = oldClock })
 	hcClock = time.Now
 	c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
-	dirs, done := c.runDirs()
+	dirs, done := c.listRunFolders()
 	defer done()
 	if len(dirs) != 2 {
-		t.Errorf("runDirs = %d entries, want 2", len(dirs))
+		t.Errorf("listRunFolders = %d entries, want 2", len(dirs))
 	}
 
-	// undoRename renames the staging dir back, inside the run root.
+	// restoreRunFolder renames the staging dir back, inside the run root.
 	oldRen := hcRename
 	t.Cleanup(func() { hcRename = oldRen })
 	var renamed string
 	hcRename = func(_ *os.Root, from, to string) error { renamed = from + "=>" + to; return nil }
-	c.undoRename(runDirEntry{name: "x", dirPath: "/opt/claude/run/x"}, "x.removing-1-1", "a socket appeared in it during removal")
+	c.restoreRunFolder(staleRunFolder{name: "x", dirPath: "/opt/claude/run/x"}, "x.removing-1-1", "a socket appeared in it during removal")
 	if renamed != "x.removing-1-1=>x" {
-		t.Errorf("undoRename = %q", renamed)
+		t.Errorf("restoreRunFolder = %q", renamed)
 	}
 }
 
@@ -681,7 +681,7 @@ func TestTidyRunDirsKeepBranches(t *testing.T) {
 	// Socket probe inconclusive (a dial error that is not missing/refused/wrong-type) -> keep.
 	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.EIO} }
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{hcNewEntry(t, "u", 40*24*time.Hour)}, &sum)
+	c.sweepRunFolders([]staleRunFolder{hcNewEntry(t, "u", 40*24*time.Hour)}, &sum)
 	if removed != 0 {
 		t.Errorf("dir kept-on-inconclusive-socket was removed (removed=%d)", removed)
 	}
@@ -693,7 +693,7 @@ func TestTidyRunDirsKeepBranches(t *testing.T) {
 	}
 	hcBackdate(t, ev.dirPath, 40*24*time.Hour)
 	sum = hcSummary{}
-	c.tidyRunDirs([]runDirEntry{ev}, &sum)
+	c.sweepRunFolders([]staleRunFolder{ev}, &sum)
 	if removed != 0 || sum.runDirsRemoved != 0 {
 		t.Errorf("dir kept-on-indeterminate-lock was removed (removed=%d)", removed)
 	}
@@ -713,7 +713,7 @@ func TestRemoveRunDirErrors(t *testing.T) {
 	removed := 0
 	hcRemoveAll = func(*os.Root, string) error { removed++; return nil }
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{hcNewEntry(t, "r", 40*24*time.Hour)}, &sum)
+	c.sweepRunFolders([]staleRunFolder{hcNewEntry(t, "r", 40*24*time.Hour)}, &sum)
 	if removed != 0 || sum.runDirsRemoved != 0 {
 		t.Errorf("rename-failed dir was still removed (removed=%d)", removed)
 	}
@@ -721,7 +721,7 @@ func TestRemoveRunDirErrors(t *testing.T) {
 	hcRename = func(*os.Root, string, string) error { return nil }
 	hcRemoveAll = func(*os.Root, string) error { return syscall.EIO }
 	sum = hcSummary{}
-	c.tidyRunDirs([]runDirEntry{hcNewEntry(t, "s", 40*24*time.Hour)}, &sum)
+	c.sweepRunFolders([]staleRunFolder{hcNewEntry(t, "s", 40*24*time.Hour)}, &sum)
 	if sum.runDirsRemoved != 0 {
 		t.Errorf("remove-failed dir counted as removed: %d", sum.runDirsRemoved)
 	}
@@ -791,7 +791,7 @@ func TestTidyRunDirsKeepOnLock(t *testing.T) {
 	removed := 0
 	hcRemoveAll = func(*os.Root, string) error { removed++; return nil }
 	hcBackdate(t, dir, 40*24*time.Hour)
-	c.tidyRunDirs([]runDirEntry{ex}, &sum)
+	c.sweepRunFolders([]staleRunFolder{ex}, &sum)
 	if removed != 0 || sum.runDirsRemoved != 0 {
 		t.Errorf("dir with a held lock was removed (removed=%d)", removed)
 	}
@@ -884,13 +884,13 @@ func TestJudgeOrphanBranches(t *testing.T) {
 	hcFakeDaemon(t, proot, mk, link, 80, "/opt/claude/ccd-cli/2.1.0", []string{"claude", "--output-format=stream-json"}, true, "1")
 	mk(80, "stat", "80 (claude) T 1 80 "+strings.Repeat("0 ", 16)+"1 x") // T = stopped
 	tr, _ := inspect(80, true)
-	if reap, reason := c.judgeOrphan(tr); reap || reason == "" {
+	if reap, reason := c.decideReap(tr); reap || reason == "" {
 		t.Errorf("stopped orphan: reap=%v reason=%q, want a spare reason", reap, reason)
 	}
 	// Unreadable command line -> reason. Build a tracked that passes the identity gates (our uid,
 	// our namespace, a deployed CLI binary) but has no argv, old, marked env.
 	old := hcTracked{pid: 81, sameUID: true, sameNS: true, exe: "/opt/claude/ccd-cli/2.1.0", haveAge: true, startWall: hcClock().Add(-time.Hour), env: []string{hcDaemonChildMarker}}
-	if reap, reason := c.judgeOrphan(old); reap || reason == "" {
+	if reap, reason := c.decideReap(old); reap || reason == "" {
 		t.Errorf("nil-argv orphan: reap=%v reason=%q, want a spare reason", reap, reason)
 	}
 }
@@ -1018,7 +1018,7 @@ func TestProbeSocket(t *testing.T) {
 			c.Close()
 		}
 	}()
-	if state, pid, _ := probeSocket(addr); state != hcSockLive || pid != os.Getpid() {
+	if state, pid, _ := classifySocket(addr); state != hcSockLive || pid != os.Getpid() {
 		t.Errorf("live socket: state=%d pid=%d, want %d and %d", state, pid, hcSockLive, os.Getpid())
 	}
 
@@ -1037,7 +1037,7 @@ func TestProbeSocket(t *testing.T) {
 	}
 	for _, c := range cases {
 		hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: c.err} }
-		if state, _, _ := probeSocket("/x"); state != c.want {
+		if state, _, _ := classifySocket("/x"); state != c.want {
 			t.Errorf("dial err %v: state=%d, want %d", c.err, state, c.want)
 		}
 	}
@@ -1047,7 +1047,7 @@ func TestLockFileHeldAndProbe(t *testing.T) {
 	_, _, _ = fakeProc(t) // points procRoot at a temp tree; we add /proc/locks below
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, runDirLockName)
-	rec := ownerRecord{Pid: 4321, Role: "serve", Node: "n"}
+	rec := lockOwner{Pid: 4321, Role: "serve", Node: "n"}
 	data, _ := json.Marshal(rec)
 	if err := os.WriteFile(lockPath, append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
@@ -1063,30 +1063,30 @@ func TestLockFileHeldAndProbe(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(procRoot(), "locks"), []byte(locks), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if held, read := lockFileHeld(fi); !held || !read {
+	if held, read := heldInProcLocks(fi); !held || !read {
 		t.Error("held lock not detected against /proc/locks")
 	}
-	if state, got, present := lockProbe(dir); state != hcLockHeld || got == nil || got.Pid != 4321 || !present {
-		t.Errorf("lockProbe held: state=%d rec=%v present=%v", state, got, present)
+	if state, got, present := classifyLock(dir); state != hcLockHeld || got == nil || got.Pid != 4321 || !present {
+		t.Errorf("classifyLock held: state=%d rec=%v present=%v", state, got, present)
 	}
 	// No matching lock line -> stale.
 	if err := os.WriteFile(filepath.Join(procRoot(), "locks"), []byte("1: POSIX ADVISORY WRITE 1 fd:00:1 0 EOF\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if state, _, present := lockProbe(dir); state != hcLockStale || !present {
-		t.Errorf("lockProbe stale: state=%d present=%v", state, present)
+	if state, _, present := classifyLock(dir); state != hcLockStale || !present {
+		t.Errorf("classifyLock stale: state=%d present=%v", state, present)
 	}
 	// Absent lock file -> stale, not present.
-	if state, _, present := lockProbe(t.TempDir()); state != hcLockStale || present {
-		t.Errorf("lockProbe absent: state=%d present=%v", state, present)
+	if state, _, present := classifyLock(t.TempDir()); state != hcLockStale || present {
+		t.Errorf("classifyLock absent: state=%d present=%v", state, present)
 	}
 	// Unparseable content -> unknown.
 	bad := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bad, runDirLockName), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, _, _ := lockProbe(bad); state != hcLockUnknown {
-		t.Errorf("lockProbe bad json: state=%d, want unknown", state)
+	if state, _, _ := classifyLock(bad); state != hcLockUnknown {
+		t.Errorf("classifyLock bad json: state=%d, want unknown", state)
 	}
 }
 
@@ -1112,7 +1112,7 @@ func TestWaitGone(t *testing.T) {
 		{tracked: tracked{pid: noSuchPid + 700, pgid: noSuchPid + 700, startTicks: "1"}, kill: true},
 		{tracked: tracked{pid: noSuchPid + 701, pgid: noSuchPid + 701, startTicks: "5"}, kill: true},
 	}
-	surv := waitGone(entries, now.Add(noSuchPid+500*time.Millisecond))
+	surv := awaitLeaderExit(entries, now.Add(noSuchPid+500*time.Millisecond))
 	if len(killed) != 1 || killed[0] != noSuchPid+700 {
 		t.Errorf("killed = %v, want a group SIGKILL to 1073742524", killed)
 	}
@@ -1281,22 +1281,22 @@ func TestRootsMembership(t *testing.T) {
 		t.Error("out-of-root daemon accepted")
 	}
 
-	// isCliBinary: only the flat <root>/ccd-cli/<version> layout. The reference kept groups
+	// isVersionedCLIPath: only the flat <root>/ccd-cli/<version> layout. The reference kept groups
 	// running a nested ccd-cli/<dir>/<bin> when measured (issue 429).
-	if r.isCliBinary("/opt/claude/ccd-cli/2.1.0/claude") {
+	if r.isVersionedCLIPath("/opt/claude/ccd-cli/2.1.0/claude") {
 		t.Error("nested CLI layout recognized; the measured reference spares it")
 	}
-	if !r.isCliBinary("/opt/claude/ccd-cli/2.1.0") {
+	if !r.isVersionedCLIPath("/opt/claude/ccd-cli/2.1.0") {
 		t.Error("flat CLI not recognized")
 	}
-	if r.isCliBinary("/opt/claude/srv/abc/server") {
+	if r.isVersionedCLIPath("/opt/claude/srv/abc/server") {
 		t.Error("a daemon was accepted as a CLI binary")
 	}
 
-	// runRoots
-	rr := r.runRoots()
+	// runFolders
+	rr := r.runFolders()
 	if len(rr) != 1 || rr[0] != "/opt/claude/run" {
-		t.Errorf("runRoots = %v, want [/opt/claude/run]", rr)
+		t.Errorf("runFolders = %v, want [/opt/claude/run]", rr)
 	}
 }
 
@@ -1324,14 +1324,14 @@ func TestUnderDepth(t *testing.T) {
 
 func TestSameSocketPath(t *testing.T) {
 	r := &hostRoots{roots: []string{"/opt/claude", "/home/u/.claude"}}
-	if !r.sameSocketPath("/opt/claude/run/x/rpc.sock", "/opt/claude/run/x/rpc.sock") {
+	if !r.socketPathsEqual("/opt/claude/run/x/rpc.sock", "/opt/claude/run/x/rpc.sock") {
 		t.Error("identical paths not equal")
 	}
 	// Same socket relative to two different roots.
-	if !r.sameSocketPath("/opt/claude/run/x/rpc.sock", "/home/u/.claude/run/x/rpc.sock") {
+	if !r.socketPathsEqual("/opt/claude/run/x/rpc.sock", "/home/u/.claude/run/x/rpc.sock") {
 		t.Error("same socket under different roots not equal")
 	}
-	if r.sameSocketPath("/opt/claude/run/x/rpc.sock", "/opt/claude/run/y/rpc.sock") {
+	if r.socketPathsEqual("/opt/claude/run/x/rpc.sock", "/opt/claude/run/y/rpc.sock") {
 		t.Error("different sockets reported equal")
 	}
 }
@@ -1352,8 +1352,8 @@ func TestServeArgv(t *testing.T) {
 		{"relative socket rejected", []string{"/opt/claude/srv/a/server", "--serve", "--socket", "rel/rpc.sock"}, "server", ""},
 	}
 	for _, c := range cases {
-		if got := serveArgv(c.argv, c.bin); got != c.want {
-			t.Errorf("%s: serveArgv = %q, want %q", c.name, got, c.want)
+		if got := serveSocketOfArgv(c.argv, c.bin); got != c.want {
+			t.Errorf("%s: serveSocketOfArgv = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

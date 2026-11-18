@@ -552,7 +552,7 @@ func TestClaudeDirPassBatchCalls(t *testing.T) {
 	}
 	wt := t.TempDir()
 	calls := logGitArgv(t)
-	copyClaudeDir(gitUse{}, repo, wt)
+	copyDotClaude(gitUse{}, repo, wt)
 	var shape []string
 	for _, c := range calls() {
 		switch {

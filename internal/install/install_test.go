@@ -494,19 +494,19 @@ func TestHTTPGet(t *testing.T) {
 }
 
 func TestDetectLibc(t *testing.T) {
-	got := detectLibc()
+	got := hostLibc()
 	if runtime.GOOS != "linux" {
 		// claustrum reports an empty libc off linux. It used to answer "glibc" on
 		// Windows and macOS. The reference reports an empty libc on a Windows guest
 		// (see libc_other.go). The darwin side is not probe-measured. This assertion
 		// pins that the `libc` key is always present and always empty there.
 		if got != "" {
-			t.Errorf("detectLibc() = %q on %s, want \"\" (the reference reports no libc off linux)", got, runtime.GOOS)
+			t.Errorf("hostLibc() = %q on %s, want \"\" (the reference reports no libc off linux)", got, runtime.GOOS)
 		}
 		return
 	}
 	if got != "glibc" && got != "musl" {
-		t.Errorf("detectLibc() = %q, want glibc or musl", got)
+		t.Errorf("hostLibc() = %q, want glibc or musl", got)
 	}
 }
 
