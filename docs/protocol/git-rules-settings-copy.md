@@ -264,27 +264,26 @@ blocks of rewritten URLs. The file ends with
 
 ### The call about the repository
 
-In the state `shadow` the daemon runs `rev-parse --git-dir` before the method's
-calls, in the root of the work tree. On Linux and macOS a create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). It passes `-c core.hooksPath=<null device>`
-and `-c core.fsmonitor=` (build `c8e2f083`, measured on Windows). The call names
+In `shadow` the daemon runs `rev-parse --git-dir` before the method's
+calls, in the root of the work tree. On Linux and macOS a create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). On Windows only a create of a branch asks, right after the add (`4c111e86`, measured), and any answer goes on (claustrum's own). It passes `-c core.hooksPath=<null device>`
+and `-c core.fsmonitor=` (`c8e2f083`, measured on Windows). The call names
 the folder `.probe` of the daemon. The daemon removes leftovers like
-`shallow` and keeps a planted `keepme` (measured on Linux). Other names and
-entries are claustrum's own (not measured). It rewrites an emptied `config`, keeps an
+`shallow` and keeps a planted `keepme` (measured on Linux), and other names and
+entries are claustrum's own. It rewrites an emptied `config`, keeps an
 unchanged one and replaces a folder at `HEAD` (measured on Linux). If `.probe` cannot be prepared, no git runs. The request gets [the
 `cannot write "<.probe path>"` text](errors.md#error-string-catalogue)
 (Linux). The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
-macOS and Windows). So a pair such as `safe.directory` changes the answers (from the
-code). A good answer is kept 5 seconds from the end of the call. A change of the root
-folder or of its `.git` entry makes the daemon ask again.
+macOS and Windows). A good answer is kept 5 seconds after the call ends. A change of the root
+folder or its `.git` entry makes the daemon ask again.
 
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
 `.probe` (`52d82f0a` on Linux and macOS, `c8e2f083` on Windows). Exit 0 there gives
 the "no repository" answer on Windows (`c8e2f083`). The daemon kills a second run 30
-seconds after its start, and the reply is then the error of the rows below, with the text
+seconds after its start, and the reply is the error of the rows below, with the text
 of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero exit
-gets the same (claustrum's own, not measured).
+gets the same (claustrum's own).
 
 On Linux and macOS a third run follows that exit 0, in the root, with no config of the
 user or the system and no `GIT_DIR` (`52d82f0a`). Its exit 0 gives that error plus `;

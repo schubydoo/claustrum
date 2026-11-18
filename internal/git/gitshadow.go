@@ -316,6 +316,20 @@ func (h *ShadowHost) folderWithNoTest() {
 	}
 }
 
+// keptFailure is the text of a failed test that is still kept, or "". It changes
+// nothing and runs no test.
+func (h *ShadowHost) keptFailure() string {
+	if !h.active() {
+		return ""
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed || h.failure == "" || shadowClock().Sub(h.failed) >= shadowFailureKeep {
+		return ""
+	}
+	return h.failure
+}
+
 // decided reports whether a request needs no test now. kept is then the text of
 // a kept failure, or "". A daemon in its shutdown runs no test.
 func (h *ShadowHost) decided() (kept string, done bool) {
