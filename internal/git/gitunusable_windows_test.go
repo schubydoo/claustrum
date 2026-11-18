@@ -12,8 +12,8 @@ func TestRepoOnShare(t *testing.T) {
 		path string
 		want bool
 	}{
-		{`\\127.0.0.1\clok\repo`, true},
-		{`//127.0.0.1/clok/repo`, true},
+		{`\\127.0.0.1\s\repo`, true},
+		{`//127.0.0.1/s/repo`, true},
 		{`\\host\share`, true},
 		{`C:\x\repo`, false},
 		{`\\?\C:\x\repo`, false},
@@ -24,4 +24,11 @@ func TestRepoOnShare(t *testing.T) {
 			t.Errorf("repoOnShare(%q) = %v, want %v", row.path, got, row.want)
 		}
 	}
+}
+
+// shareTestLink links link to target with a junction (the link row of
+// TestShareGitDirThatGitDoesNotUse).
+func shareTestLink(t *testing.T, link, target string) {
+	t.Helper()
+	makeJunction(t, link, target)
 }

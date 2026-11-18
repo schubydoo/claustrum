@@ -12,56 +12,85 @@ import (
 // baseRepo as a network share. On Windows 4c111e86 answers the create with
 // unusableGitText for `<baseRepo>\.git`, and a remove of a gone worktree with
 // success and a kept branch (measured on a share). Nothing is made or deleted.
-// A lock that names the gone worktree keeps the D22 refusal, and a worktree that
-// exists keeps the lock-check refusal (claustrum's own, not measured). A folder
-// that is not on a share keeps not_a_repo and the lock-check refusal.
+// A lock that names the gone worktree keeps the D22 refusal, also where baseRepo
+// is sent through a link and the registration names the resolved path. On
+// Windows the link is a junction, and only goneWorktreePathSet finds that
+// spelling. On Linux and macOS AsRecorded finds it too. A
+// worktree that exists keeps the lock-check refusal. A `.git` file keeps the
+// answers of a local folder (claustrum's own, not measured). A folder that is
+// not on a share keeps not_a_repo and the lock-check refusal.
 func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 	const dubious = "fatal: detected dubious ownership in repository at '//127.0.0.1/s/repo'\n"
+	notARepo := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
+	refused := func(text string) string {
+		return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonQuoted(t, text) + `}}`
+	}
+	// Each base returns baseRepo for the fixture.
+	repoBase := func(t *testing.T, f shadowFixture) string { return f.repo }
+	// A folder whose `.git` file names the git directory of the fixture.
+	gitFileBase := func(t *testing.T, f shadowFixture) string {
+		g := filepath.Join(resolveTestRoot(t, t.TempDir()), "G")
+		writeFile(t, filepath.Join(g, ".git"), "gitdir: "+f.gitDir+"\n", 0o644)
+		return g
+	}
+	linkedBase := func(t *testing.T, f shadowFixture) string {
+		link := filepath.Join(resolveTestRoot(t, t.TempDir()), "via")
+		shareTestLink(t, link, filepath.Dir(f.repo))
+		return filepath.Join(link, filepath.Base(f.repo))
+	}
 	for _, row := range []struct {
 		name        string
+		base        func(*testing.T, shadowFixture) string
 		share, gone bool
 		locked      bool
 		method      string
-		want        func(f shadowFixture, leaf string) string
+		want        func(base, leaf string) string
 	}{
-		{"create on a share", true, true, false, "git.worktree_create", func(f shadowFixture, _ string) string {
+		{"create on a share", repoBase, true, true, false, "git.worktree_create", func(base, _ string) string {
 			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
-				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(f.repo, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
+				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(base, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
 		}},
-		{"create on a local folder", false, true, false, "git.worktree_create", func(shadowFixture, string) string {
-			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
-		}},
-		{"remove of a gone worktree on a share", true, true, false, "git.worktree_remove", func(shadowFixture, string) string {
+		{"create on a local folder", repoBase, false, true, false, "git.worktree_create", func(string, string) string { return notARepo }},
+		{"create from a .git file on a share", gitFileBase, true, true, false, "git.worktree_create", func(string, string) string { return notARepo }},
+		{"remove of a gone worktree on a share", repoBase, true, true, false, "git.worktree_remove", func(string, string) string {
 			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
 		}},
-		{"remove of a gone locked worktree on a share", true, true, true, "git.worktree_remove", func(_ shadowFixture, leaf string) string {
-			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonQuoted(t, goneLockedWorktreeRefusal(leaf, lockedPlain)) + `}}`
+		{"remove of a gone locked worktree on a share", repoBase, true, true, true, "git.worktree_remove", func(_, leaf string) string {
+			return refused(goneLockedWorktreeRefusal(leaf, lockedPlain))
 		}},
-		{"remove of a worktree that exists on a share", true, false, false, "git.worktree_remove", func(_ shadowFixture, leaf string) string {
-			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonQuoted(t, lockCheckRefusal(leaf)) + `}}`
+		{"remove of a gone locked worktree on a share through a link", linkedBase, true, true, true, "git.worktree_remove", func(_, leaf string) string {
+			return refused(goneLockedWorktreeRefusal(leaf, lockedPlain))
 		}},
-		{"remove of a gone worktree on a local folder", false, true, false, "git.worktree_remove", func(_ shadowFixture, leaf string) string {
-			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonQuoted(t, lockCheckRefusal(leaf)) + `}}`
+		{"remove of a worktree that exists on a share", repoBase, true, false, false, "git.worktree_remove", func(_, leaf string) string {
+			return refused(lockCheckRefusal(leaf))
+		}},
+		{"remove of a gone worktree on a local folder", repoBase, false, true, false, "git.worktree_remove", func(_, leaf string) string {
+			return refused(lockCheckRefusal(leaf))
+		}},
+		{"remove from a .git file on a share", gitFileBase, true, true, false, "git.worktree_remove", func(_, leaf string) string {
+			return refused(lockCheckRefusal(leaf))
 		}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
+			base := row.base(t, f)
 			old := repoOnShare
-			repoOnShare = func(repo string) bool { return row.share && repo == f.repo }
+			repoOnShare = func(repo string) bool { return row.share && repo == base }
 			t.Cleanup(func() { repoOnShare = old })
 			answerProbe(t, 128, "", dubious)
 			answerSecondProbe(t, 0, "")
 			leaf := f.wt
 			if row.gone {
-				leaf = filepath.Join(f.repo, ".claude", "worktrees", "w1")
+				leaf = filepath.Join(base, ".claude", "worktrees", "w1")
 			}
 			entry := filepath.Join(f.gitDir, "worktrees", "w1")
 			if row.locked {
-				writeFile(t, filepath.Join(entry, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+				// The record names the resolved path of the gone worktree.
+				writeFile(t, filepath.Join(entry, "gitdir"), filepath.Join(f.repo, ".claude", "worktrees", "w1", ".git")+"\n", 0o644)
 				writeFile(t, filepath.Join(entry, "locked"), "held\n", 0o644)
 			}
-			raw, _ := f.call(t, row.method, map[string]any{"baseRepo": f.repo, "worktreePath": leaf, "branchName": "w1"})
-			if want := row.want(f, leaf); raw != want {
+			raw, _ := f.call(t, row.method, map[string]any{"baseRepo": base, "worktreePath": leaf, "branchName": "w1"})
+			if want := row.want(base, leaf); raw != want {
 				t.Errorf("%s = %s\nwant %s", row.method, raw, want)
 			}
 			for _, p := range []string{f.wt, filepath.Join(f.gitDir, "worktrees", "wr")} {
