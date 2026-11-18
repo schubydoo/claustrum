@@ -78,7 +78,7 @@ func treeOf(t *testing.T, root string) []string {
 // real file on every OS. An older resolver fell back to the home folder, and there
 // the file was needed.
 //
-// The environment is only half of it. userExcludesFile keeps the configured value
+// The environment is only half of it. globalExcludesPath keeps the configured value
 // for the life of the process, and hardenedProfileArgs injects it as
 // `-c core.excludesFile=`. So whichever test runs FIRST decides the value for
 // every later test, and the environment this one sets arrives too late.

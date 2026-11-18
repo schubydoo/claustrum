@@ -30,10 +30,10 @@ const (
 	FmtProcExited = "[process.Manager] Process %s exited with code %d%s"
 )
 
-// StreamFrame is an id-less notification pushed to attached clients.
+// ChildFrame is an id-less notification pushed to attached clients.
 // ExitCode is a pointer so a legitimate 0 is emitted while stdout/stderr frames
 // omit it entirely; Data is omitted on exit frames.
-type StreamFrame struct {
+type ChildFrame struct {
 	Type      string `json:"type"`
 	ProcessID string `json:"processId"`
 	Stream    string `json:"stream"` // stdout | stderr | exit
@@ -138,14 +138,14 @@ type Proc struct {
 	// derivation, so an equality check would spuriously fail.
 	pid       int
 	startTime float64
-	// sessionKey is the CLI session id this process belongs to (cliSessionKey of its
+	// sessionKey is the CLI session id this process belongs to (resumeKeyOf of its
 	// argv), or "" for a non-session spawn. Set once at spawn and never mutated, so
-	// it is safe to read without p.mu. supersedeSession keys on it to terminate a
+	// it is safe to read without p.mu. endEarlierSpawns keys on it to terminate a
 	// prior process of the same session when a new one spawns (4534d86 parity).
 	sessionKey string
 	mu         sync.Mutex
 	seq        uint64
-	buffer     []StreamFrame
+	buffer     []ChildFrame
 	bufBytes   int64 // sum of f.lineBytes (serialized frame + newline) in buffer
 	bufCap     int64 // per-instance override; 0 means use defaultBufferCap
 	subs       map[*conn.Conn]struct{}
@@ -161,7 +161,7 @@ type Proc struct {
 	reaped bool
 	// exitedAt is stamped alongside running=false, so it dates the exit frame
 	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
-	// the process is alive. Read only by pruneExited, under p.mu like running.
+	// the process is alive. Read only by dropFinished, under p.mu like running.
 	exitedAt time.Time
 	// killedBy records who asked the daemon to kill this process ("client" for
 	// process.kill / process.killAndWait, "shutdown" for the killAll sweep, "limit"
@@ -295,7 +295,7 @@ type Manager struct {
 	// same-key spawn supersedes it). Ref-counted and dropped at zero, so the map does
 	// not grow unbounded. Guarded by spawnMu.
 	spawnMu    sync.Mutex
-	spawnLocks map[string]*sessionSpawnLock
+	spawnLocks map[string]*keyedSpawnMutex
 
 	// startsStopped is set at the start of the shutdown. A spawn reads it with no
 	// lock and gives up before it starts a child. startGate orders the start of a
@@ -318,9 +318,9 @@ type Manager struct {
 	childrec.Records
 }
 
-// sessionSpawnLock is one per-session-key mutex plus a reference count, so the
+// keyedSpawnMutex is one per-session-key mutex plus a reference count, so the
 // entry can be removed from Manager.spawnLocks once no spawn holds or awaits it.
-type sessionSpawnLock struct {
+type keyedSpawnMutex struct {
 	mu  sync.Mutex
 	ref int
 }
@@ -365,7 +365,7 @@ func NewManager() *Manager {
 		pruneAge:       procPruneAge,
 		pruneInterval:  procPruneInterval,
 		supersedeGrace: time.Duration(defaultKillWaitMs) * time.Millisecond,
-		spawnLocks:     make(map[string]*sessionSpawnLock),
+		spawnLocks:     make(map[string]*keyedSpawnMutex),
 		spent:          make(map[string]time.Time),
 		spentAge:       linkSpentAge,
 		givenUp:        make(map[string]time.Time),
@@ -386,7 +386,7 @@ func (m *Manager) pruneLoop() {
 	for {
 		select {
 		case <-t.C:
-			m.pruneExited()
+			m.dropFinished()
 		case <-m.stop:
 			return
 		}
@@ -436,14 +436,14 @@ func (m *Manager) Close() {
 	m.stopOnce.Do(func() { close(m.stop) })
 }
 
-// pruneExited drops every process that has been exited for longer than
+// dropFinished drops every process that has been exited for longer than
 // procPruneAge, freeing its replay buffer with it. A RUNNING process is immune
 // at any age — probe-measured: a sleeper spawned 960s earlier is still
 // found:true,running:true while a process that exited at the same moment is
 // gone. After pruning, the id behaves exactly like one that never existed:
 // reattach reports found:false and kill reports success:true, so no caller sees
 // a new error.
-func (m *Manager) pruneExited() {
+func (m *Manager) dropFinished() {
 	now := time.Now()
 	cutoff := now.Add(-m.pruneAge)
 	m.mu.Lock()
@@ -471,13 +471,13 @@ func (m *Manager) Get(id string) *Proc {
 	return m.procs[id]
 }
 
-// LiveArgv returns the argv of every process the manager still considers running,
+// RunningArgs returns the argv of every process the manager still considers running,
 // as clients see it (running true). plugins.prune scans these for plugin-dir
 // references so a plugin an active session loaded (via a --plugin-dir path) is kept
 // regardless of age — matching the reference, which keeps a plugin whose hash
 // appears in a live child's argv. cmd is write-once so it is safe to read without p.mu; running
 // is read under p.mu like everywhere else.
-func (m *Manager) LiveArgv() [][]string {
+func (m *Manager) RunningArgs() [][]string {
 	m.mu.Lock()
 	procs := make([]*Proc, 0, len(m.procs))
 	for _, p := range m.procs {
@@ -696,7 +696,7 @@ func (p *Proc) killGroupInDrain(skipLivePid bool) {
 // at defaultBufferCap (or the per-instance bufCap): the oldest frames are
 // dropped, and firstSeq advances, when
 // the cap is exceeded, matching the reattach contract on the wire.
-func (p *Proc) emit(f StreamFrame) {
+func (p *Proc) emit(f ChildFrame) {
 	p.mu.Lock()
 	p.seq++
 	f.Seq = p.seq
@@ -741,7 +741,7 @@ func (p *Proc) emit(f StreamFrame) {
 	}
 	p.mu.Unlock()
 	// The frames are identical per conn, so one marshal serves every subscriber.
-	// json.Marshal of a StreamFrame cannot realistically fail (strings + ints);
+	// json.Marshal of a ChildFrame cannot realistically fail (strings + ints);
 	// if it somehow does, every subscriber would have failed the same way, so
 	// mirror the old per-conn behavior: log + detach each.
 	for _, c := range subs {
@@ -850,14 +850,14 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
 	// of that session below. Empty key (the common case) does neither. (4534d86.)
-	sessionKey := cliSessionKey(args)
+	sessionKey := resumeKeyOf(args)
 	if sessionKey != "" {
-		unlock := m.lockSessionSpawn(sessionKey)
+		unlock := m.serializeKeySpawn(sessionKey)
 		defer unlock()
 	}
 	// claustrum prunes inline here as well as on its timer, so a busy daemon sheds
 	// long-dead entries without waiting for the next sweep.
-	m.pruneExited()
+	m.dropFinished()
 	// The command of a spent id does not run (683cc6a9, measured on Linux). The
 	// place of this test after the launcher tests and before the cwd test is
 	// claustrum's own, not measured. So is the Failed to start line. A link-bound
@@ -901,12 +901,12 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		// text after the id is the frame message. Measured on Linux and on Windows.
 		fi, err := os.Stat(cwd)
 		if err != nil {
-			err = &CwdError{Err: fmt.Errorf("chdir %s: %w", cwd, err)}
+			err = &CwdRefusal{Err: fmt.Errorf("chdir %s: %w", cwd, err)}
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
 		if !fi.IsDir() {
-			err = &CwdError{Err: fmt.Errorf("chdir %s: not a directory", cwd)}
+			err = &CwdRefusal{Err: fmt.Errorf("chdir %s: not a directory", cwd)}
 			logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
 			return nil, err
 		}
@@ -1068,7 +1068,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// this. The step comes after the pre-check above and before the start: a command
 	// that does not exist supersedes nothing (measured). A command that exists and
 	// does not start supersedes first, and its error comes after (measured on Linux).
-	m.supersedeSession(sessionKey, id)
+	m.endEarlierSpawns(sessionKey, id)
 	// Once the shutdown began, no new child starts. The read lock is held to the
 	// return, so the teardown waits for a child that starts here and for its record.
 	beforeChildStart(id)
@@ -1441,7 +1441,7 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 		logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
 	}
 	metrics.Met.ProcessExits.Add(1)
-	p.emit(StreamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
+	p.emit(ChildFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	if p.onExit != nil {
 		p.onExit()
 	}
@@ -1491,7 +1491,7 @@ func pumpStream(p *Proc, name string, r io.Reader) {
 		n, err := r.Read(buf)
 		if n > 0 {
 			metrics.Met.StreamBytes.Add(int64(n))
-			p.emit(StreamFrame{
+			p.emit(ChildFrame{
 				Stream: name,
 				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
 			})
@@ -1826,7 +1826,7 @@ func ClampKillWaitMs(ms int) int {
 	return ms
 }
 
-// KillAndWait signals the process (default SIGTERM) and blocks until it is gone,
+// SignalAndAwait signals the process (default SIGTERM) and blocks until it is gone,
 // waiting up to grace for the graceful signal to take effect. If it is still alive
 // after grace and escalate is true, it force-kills with SIGKILL and reports
 // escalated; if escalate is false, it leaves the process running and reports
@@ -1836,8 +1836,8 @@ func ClampKillWaitMs(ms int) int {
 //   - alreadyExited: it had already exited before we signalled (no kill needed)
 //   - escalated:     it ignored the graceful signal and had to be SIGKILL'd
 //
-// The wire result is rpc.KillAndWaitResult; an unknown id is (false,false,false,false).
-func (m *Manager) KillAndWait(id, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+// The wire result is rpc.KillAndWaitReply; an unknown id is (false,false,false,false).
+func (m *Manager) SignalAndAwait(id, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	p := m.Get(id)
 	if p == nil {
 		return false, false, false, false
@@ -1846,7 +1846,7 @@ func (m *Manager) KillAndWait(id, signal string, grace time.Duration, escalate b
 }
 
 // killAndWaitProc is killAndWait targeting a specific process IDENTITY rather than
-// re-resolving a client-visible id. supersedeSession captures the victim
+// re-resolving a client-visible id. endEarlierSpawns captures the victim
 // *Proc under the same lock as its scan and kills THAT process, so a
 // concurrent spawn that reuses the id (which replaces m.procs[id] and sends the
 // original no signal) cannot redirect the kill
@@ -2010,7 +2010,7 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 	// On 90fca6e6 a reattach inside the exit drain answers running:false
 	// (measured). The process was already waited on, so it is not resumable.
 	running = p.running && !p.reaped
-	var replay []StreamFrame
+	var replay []ChildFrame
 	for _, f := range p.buffer {
 		if f.Seq > fromSeq {
 			replay = append(replay, f)
@@ -2084,9 +2084,9 @@ func (m *Manager) DetachConn(c *conn.Conn) {
 	}
 }
 
-// RunningCount reports how many managed processes are still alive — used for the
+// AliveCount reports how many managed processes are still alive — used for the
 // honest -keep-children shutdown log line. Same m→p lock order as killAll.
-func (m *Manager) RunningCount() int {
+func (m *Manager) AliveCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := 0
@@ -2270,7 +2270,7 @@ const placeholderEnvName = "CLAUDE_SSH_TAKES_COMMONDIR_PLACEHOLDER"
 // writeFramesLocked writes the replay frames of a reattach on c, with the write
 // lock of c already held, each as Conn.WriteJSON marshals it. It stops at the first error.
 // It must stay on json.Marshal for the reason in the note on WriteJSON in internal/conn.
-func writeFramesLocked(c *conn.Conn, frames []StreamFrame) error {
+func writeFramesLocked(c *conn.Conn, frames []ChildFrame) error {
 	for _, f := range frames {
 		b, err := json.Marshal(f)
 		if err != nil {

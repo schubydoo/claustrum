@@ -120,7 +120,7 @@ func (f cellFixture) linkRegistrationsTo(t *testing.T, dir string) {
 // TestCreateWithALinkedRegistrationsFolder: a measured case. The registrations
 // folder is a symbolic link to H/wt, which holds MARK. Both requests are refused
 // before `worktree add`. Only R/.claude/worktrees is made, and nothing is made
-// behind the link. Without offWorktreesRefusal, C2 answers success, and git
+// behind the link. Without offWorktreesRefusal, the shadowDirOff request answers success, and git
 // makes the registration in H/wt.
 func TestCreateWithALinkedRegistrationsFolder(t *testing.T) {
 	for _, row := range []struct {
@@ -128,10 +128,10 @@ func TestCreateWithALinkedRegistrationsFolder(t *testing.T) {
 		extra map[string]any
 		error func(f cellFixture) string
 	}{
-		{"C1", nil, func(f cellFixture) string {
+		{"default", nil, func(f cellFixture) string {
 			return `git worktree add failed: cannot prepare the repository's worktrees directory: \"` + f.gitDir + `/worktrees\" is not a directory`
 		}},
-		{"C2 shadowDirOff", map[string]any{"shadowDirOff": true}, func(cellFixture) string {
+		{"shadowDirOff", map[string]any{"shadowDirOff": true}, func(cellFixture) string {
 			return `git worktree add failed: cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place`
 		}},
 	} {

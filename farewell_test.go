@@ -22,7 +22,7 @@ func replyLine(id int, result string) string {
 }
 
 // exitFrameOf returns the exit frame of id from frames, as the wire bytes.
-func exitFrameOf(t *testing.T, frames []supervisor.StreamFrame) string {
+func exitFrameOf(t *testing.T, frames []supervisor.ChildFrame) string {
 	t.Helper()
 	for _, f := range frames {
 		if f.Stream == "exit" {
@@ -152,7 +152,7 @@ func TestFarewellKillInvalidRules(t *testing.T) {
 	}
 }
 
-func exitFrameOfKilledBy(frames []supervisor.StreamFrame) string {
+func exitFrameOfKilledBy(frames []supervisor.ChildFrame) string {
 	for _, f := range frames {
 		if f.Stream == "exit" {
 			return f.KilledBy

@@ -49,36 +49,36 @@ func TestCountFromText(t *testing.T) {
 		want   int
 		ok     bool
 	}{
-		{"round2 A1 zero", "0", 0, true},
-		{"round2 A7 empty", "", 0, true},
-		{"round2 A3 leading zero", "01", 1, true},
-		{"round2 A4 leading space", " 1", 1, true},
-		{"round2 A6 plus sign", "+1", 1, true},
-		{"round2 A14 two", "2", 2, true},
-		{"round2 A2 minus one", "-1", 0, false},
-		{"round2 A5 trailing space", "1 ", 0, false},
-		{"round2 A11 above the int range", "99999999999999999999", 0, false},
-		{"round2 A12 hex", "0x1", 0, false},
-		{"round2 A13 decimal point", "1.0", 0, false},
-		{"round1 B6 letter", "x", 0, false},
-		{"validation V6a two leading spaces", "  1", 1, true},
-		{"validation V6b leading tab", "\t1", 1, true},
-		{"validation V6d space and plus", " +1", 1, true},
-		{"validation V6h two zeros", "00", 0, true},
-		{"validation V6c plus alone", "+", 0, false},
-		{"validation V6e plus and space", "+ 1", 0, false},
-		{"validation V6f two plus signs", "++1", 0, false},
-		{"validation V6g trailing newline", "1\n", 0, false},
-		{"validation V6 (macOS) tabs around", "\t1\t", 0, false},
-		{"round4 R4a tab", "\t1", 1, true},
-		{"round4 R4b newline", "\n1", 1, true},
-		{"round4 R4c vertical tab", "\v1", 1, true},
-		{"round4 R4d form feed", "\f1", 1, true},
-		{"round4 R4e carriage return", "\r1", 1, true},
-		{"round4 R4f space tab space", " \t 1", 1, true},
-		{"round4 R4g no-break space", "\u00a01", 0, false},
-		{"round4 R4h tab alone", "\t", 0, false},
-		{"round4 R4i space alone", " ", 0, false},
+		{"zero", "0", 0, true},
+		{"empty", "", 0, true},
+		{"leading zero", "01", 1, true},
+		{"leading space", " 1", 1, true},
+		{"plus sign", "+1", 1, true},
+		{"two", "2", 2, true},
+		{"minus one", "-1", 0, false},
+		{"trailing space", "1 ", 0, false},
+		{"above the int range", "99999999999999999999", 0, false},
+		{"hex", "0x1", 0, false},
+		{"decimal point", "1.0", 0, false},
+		{"letter", "x", 0, false},
+		{"two leading spaces", "  1", 1, true},
+		{"leading tab", "\t1", 1, true},
+		{"space and plus", " +1", 1, true},
+		{"two zeros", "00", 0, true},
+		{"plus alone", "+", 0, false},
+		{"plus and space", "+ 1", 0, false},
+		{"two plus signs", "++1", 0, false},
+		{"trailing newline", "1\n", 0, false},
+		{"tabs around (macOS)", "\t1\t", 0, false},
+		{"tab", "\t1", 1, true},
+		{"newline", "\n1", 1, true},
+		{"vertical tab", "\v1", 1, true},
+		{"form feed", "\f1", 1, true},
+		{"carriage return", "\r1", 1, true},
+		{"space tab space", " \t 1", 1, true},
+		{"no-break space", "\u00a01", 0, false},
+		{"tab alone", "\t", 0, false},
+		{"space alone", " ", 0, false},
 	} {
 		t.Run(tc.row, func(t *testing.T) {
 			n, ok := countFromText(tc.v)
@@ -97,38 +97,38 @@ func TestDaemonCountRefusalTexts(t *testing.T) {
 		plant []string
 		want  string // "" means no refusal
 	}{
-		{"round1 B6 letter", []string{"GIT_CONFIG_COUNT=x"},
+		{"letter", []string{"GIT_CONFIG_COUNT=x"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`},
-		{"round2 A2 minus one", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=-1"},
+		{"minus one", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=-1"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "-1" is not a count`},
-		{"round2 A5 trailing space", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=1 "},
+		{"trailing space", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=1 "},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "1 " is not a count`},
-		{"round2 A11 above the int range", []string{"GIT_CONFIG_COUNT=99999999999999999999"},
+		{"above the int range", []string{"GIT_CONFIG_COUNT=99999999999999999999"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "99999999999999999999" is not a count`},
-		{"round2 A12 hex", []string{"GIT_CONFIG_COUNT=0x1"},
+		{"hex", []string{"GIT_CONFIG_COUNT=0x1"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "0x1" is not a count`},
-		{"round2 A13 decimal point", []string{"GIT_CONFIG_COUNT=1.0"},
+		{"decimal point", []string{"GIT_CONFIG_COUNT=1.0"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "1.0" is not a count`},
-		{"round4 R4g no-break space", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=\u00a01"},
+		{"no-break space", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=\u00a01"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "\u00a01" is not a count`},
-		{"round4 R4h tab alone", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=\t"},
+		{"tab alone", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=\t"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "\t" is not a count`},
-		{"validation V7 KEY_01 is not pair 1", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
+		{"KEY_01 is not pair 1", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_01=user.s4v7", "GIT_CONFIG_VALUE_01=S4KEEP_01"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair 1 is incomplete`},
-		{"round2 A8 pair 1 missing", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=2"},
+		{"pair 1 missing", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=2"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair 1 is incomplete`},
-		{"round2 A9 value unset", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode"},
+		{"value unset", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair 0 is incomplete`},
-		{"round2 A10 key unset", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_VALUE_0=false"},
+		{"key unset", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_VALUE_0=false"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair 0 is incomplete`},
-		{"round2 A1 zero", []string{"GIT_CONFIG_COUNT=0", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"}, ""},
-		{"round2 A7 empty", []string{"GIT_CONFIG_COUNT=", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"}, ""},
-		{"round2 A14 two pairs", []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
+		{"zero", []string{"GIT_CONFIG_COUNT=0", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"}, ""},
+		{"empty", []string{"GIT_CONFIG_COUNT=", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"}, ""},
+		{"two pairs", []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=core.fileMode", "GIT_CONFIG_VALUE_1=true"}, ""},
-		{"round3 P3 Q15 empty key", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=", "GIT_CONFIG_VALUE_0=x"}, ""},
-		{"round3 P4 Q16 empty value", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0="}, ""},
-		{"round1 C0 unset", nil, ""},
+		{"empty key", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=", "GIT_CONFIG_VALUE_0=x"}, ""},
+		{"empty value", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0="}, ""},
+		{"unset", nil, ""},
 	} {
 		t.Run(tc.row, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
@@ -167,39 +167,39 @@ func TestHardenedGitEnvPairs(t *testing.T) {
 		plant []string
 		want  []string // the pinned call's entries
 	}{
-		{"round1 C0 unset", nil, []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
+		{"unset", nil, []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
-		{"round1 C3 one inherited pair and stale names",
+		{"one inherited pair and stale names",
 			[]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
 				"GIT_CONFIG_KEY_1=S4KEEP_k1", "GIT_CONFIG_KEY_2=S4KEEP_k2", "GIT_CONFIG_VALUE_2=S4KEEP_v2"},
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"round1 C2 KEY_9 and VALUE_9 with no count", []string{"GIT_CONFIG_KEY_9=S4MARK_k", "GIT_CONFIG_VALUE_9=S4MARK_v"},
+		{"KEY_9 and VALUE_9 with no count", []string{"GIT_CONFIG_KEY_9=S4MARK_k", "GIT_CONFIG_VALUE_9=S4MARK_v"},
 			[]string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
-		{"windows C3b pairs above the count",
+		{"windows pairs above the count",
 			[]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
 				"GIT_CONFIG_VALUE_1=S4KEEP_v1", "GIT_CONFIG_KEY_5=S4KEEP_k5", "GIT_CONFIG_VALUE_5=S4KEEP_v5"},
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"windows C3c count 0", []string{"GIT_CONFIG_COUNT=0", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v"},
+		{"windows count 0", []string{"GIT_CONFIG_COUNT=0", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v"},
 			[]string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
-		{"round2 A3 leading zero", []string{"GIT_CONFIG_COUNT=01", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"},
+		{"leading zero", []string{"GIT_CONFIG_COUNT=01", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"},
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"round2 A7 empty count", []string{"GIT_CONFIG_COUNT=", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"},
+		{"empty count", []string{"GIT_CONFIG_COUNT=", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"},
 			[]string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
-		{"round2 A14 two pairs", []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
+		{"two pairs", []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=core.fileMode", "GIT_CONFIG_VALUE_1=true"},
 			[]string{"GIT_CONFIG_COUNT=4", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=core.fileMode", "GIT_CONFIG_VALUE_1=true",
 				"GIT_CONFIG_KEY_2=hook.enabled", "GIT_CONFIG_VALUE_2=false", "GIT_CONFIG_KEY_3=hook.event", "GIT_CONFIG_VALUE_3="}},
-		{"round3 P4 Q16 empty value", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0="},
+		{"empty value", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0="},
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"val2 N4 leading-zero index", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
+		{"leading-zero index", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_01=user.s4", "GIT_CONFIG_VALUE_01=v01"},
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
@@ -220,7 +220,7 @@ func TestHardenedGitEnvPairs(t *testing.T) {
 	}
 }
 
-// Other names that start GIT_CONFIG pass through every call (round1 C2).
+// Other names that start GIT_CONFIG pass through every call.
 func TestHardenedGitEnvKeepsOtherConfigNames(t *testing.T) {
 	clearDaemonConfigEnv(t)
 	keep := []string{"GIT_CONFIGX=S4MARK_a", "GIT_CONFIG_=S4MARK_b", "GIT_CONFIG_S4=S4MARK_c",
@@ -229,7 +229,7 @@ func TestHardenedGitEnvKeepsOtherConfigNames(t *testing.T) {
 	for _, env := range [][]string{hardenedGitEnv(false, nil, nil), hardenedGitEnv(true, nil, nil), precursorEnv(false, nil)} {
 		for _, kv := range keep {
 			if !slices.Contains(env, kv) {
-				t.Errorf("env lacks %s (round1 C2)", kv)
+				t.Errorf("env lacks %s", kv)
 			}
 		}
 	}
@@ -245,10 +245,10 @@ func TestInheritedConfigProblemExactNames(t *testing.T) {
 		count int
 		text  string
 	}{
-		{"windows V8a lower-case count alone", []string{"git_config_count=x"}, 0, ""},
-		{"windows V8b lower-case pair", []string{"GIT_CONFIG_COUNT=1", "git_config_key_0=core.fileMode", "git_config_value_0=false"},
+		{"windows lower-case count alone", []string{"git_config_count=x"}, 0, ""},
+		{"windows lower-case pair", []string{"GIT_CONFIG_COUNT=1", "git_config_key_0=core.fileMode", "git_config_value_0=false"},
 			0, "inherited GIT_CONFIG pair 0 is incomplete"},
-		{"windows V8u upper-case pair", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=1"}, 1, ""},
+		{"windows upper-case pair", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=1"}, 1, ""},
 	} {
 		t.Run(tc.row, func(t *testing.T) {
 			if n, text := inheritedConfigProblem(tc.env); n != tc.count || text != tc.text {
@@ -269,12 +269,12 @@ func TestHardenedGitEnvOrder(t *testing.T) {
 		row          string
 		daemon, tail []string
 	}{
-		{"round4 R3",
+		{"pair above the count",
 			[]string{"HOME=/h", "PATH=/p", "USER=u", "LANG=C", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark",
 				"GIT_CONFIG_VALUE_0=S4KEEP_v", "GIT_CONFIG_KEY_2=S4KEEP_k2", "GIT_CONFIG_VALUE_2=S4KEEP_v2", "CLAUDE_SSH_DAEMON_CHILD=1"},
 			[]string{"GIT_COMMON_DIR=/c", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"val2 N4",
+		{"leading-zero index",
 			[]string{"HOME=/h", "PATH=/p", "USER=u", "LANG=C", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode",
 				"GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_01=user.s4", "GIT_CONFIG_VALUE_01=v01", "CLAUDE_SSH_DAEMON_CHILD=1"},
 			[]string{"GIT_COMMON_DIR=/c", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
@@ -311,26 +311,26 @@ func TestDropConfigOverrides(t *testing.T) {
 func TestLightAllowProtocol(t *testing.T) {
 	const denied = "denied_by_claude_ssh"
 	for _, tc := range []struct{ row, v, want string }{
-		{"round1 C4 https:ssh", "https:ssh", "https:ssh"},
-		{"round1 C4 empty", "", denied},
-		{"round1 C4 file", "file", denied},
-		{"round1 C4 https", "https", "https"},
-		{"round1 C4 file:ssh", "file:ssh", "ssh"},
-		{"round1 C4 ssh:https:git", "ssh:https:git", "ssh:https"},
-		{"round2 B1 ssh:ssh", "ssh:ssh", "ssh"},
-		{"round2 B2 https::ssh", "https::ssh", "https:ssh"},
-		{"round2 B3 :https", ":https", "https"},
-		{"round2 B4 HTTPS:SSH", "HTTPS:SSH", denied},
-		{"round2 B5 leading space", " https", denied},
-		{"round2 B6 trailing space", "https ", denied},
-		{"round2 B7 https:ssh:https", "https:ssh:https", "https:ssh"},
-		{"round2 B8 git:file", "git:file", denied},
-		{"round2 B9 comma", "https,ssh", denied},
+		{"https:ssh", "https:ssh", "https:ssh"},
+		{"empty", "", denied},
+		{"file", "file", denied},
+		{"https", "https", "https"},
+		{"file:ssh", "file:ssh", "ssh"},
+		{"ssh:https:git", "ssh:https:git", "ssh:https"},
+		{"ssh:ssh", "ssh:ssh", "ssh"},
+		{"https::ssh", "https::ssh", "https:ssh"},
+		{":https", ":https", "https"},
+		{"HTTPS:SSH", "HTTPS:SSH", denied},
+		{"leading space", " https", denied},
+		{"trailing space", "https ", denied},
+		{"https:ssh:https", "https:ssh:https", "https:ssh"},
+		{"git:file", "git:file", denied},
+		{"comma", "https,ssh", denied},
 		{"macos Xa ssh:file", "ssh:file", "ssh"},
 		{"macos Xf file:https:ssh:https", "file:https:ssh:https", "https:ssh"},
 		{"macos Xg HTTPS:ssh with a trailing space", "HTTPS:ssh ", denied},
-		{"windows AP5 ssh:https", "ssh:https", "ssh:https"},
-		{"windows AP6 file:https:git:ssh", "file:https:git:ssh", "https:ssh"},
+		{"windows ssh:https", "ssh:https", "ssh:https"},
+		{"windows file:https:git:ssh", "file:https:git:ssh", "https:ssh"},
 	} {
 		t.Run(tc.row, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
@@ -346,7 +346,7 @@ func TestLightAllowProtocol(t *testing.T) {
 			}
 		})
 	}
-	t.Run("round1 C4 unset", func(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
 		clearDaemonConfigEnv(t)
 		if got := lightAllowProtocol(); got != "https:ssh" {
 			t.Errorf("lightAllowProtocol() unset = %q, want https:ssh", got)
@@ -355,7 +355,7 @@ func TestLightAllowProtocol(t *testing.T) {
 	// claustrum reads the name with os.LookupEnv, which ignores case on Windows.
 	// f6010b97 also takes a lower-case git_allow_protocol=ssh there and sends ssh on
 	// its light calls (windows V8c).
-	t.Run("windows V8c lower-case name", func(t *testing.T) {
+	t.Run("windows lower-case name", func(t *testing.T) {
 		if runtime.GOOS != "windows" {
 			t.Skip("names ignore case only on Windows")
 		}
@@ -477,10 +477,10 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 			c.argv[len(c.argv)-1] == "version":
 			kinds["unhardened"]++
 			if want := sorted(planted[:8]...); !slices.Equal(got, want) {
-				t.Errorf("unhardened call %d %q = %q\nwant %q (round1 C1, C3)", i, c.argv, got, want)
+				t.Errorf("unhardened call %d %q = %q\nwant %q", i, c.argv, got, want)
 			}
 			if proto != "ssh:https:git" {
-				t.Errorf("unhardened call %d %q GIT_ALLOW_PROTOCOL = %q, want the daemon's (round1 C4)", i, c.argv, proto)
+				t.Errorf("unhardened call %d %q GIT_ALLOW_PROTOCOL = %q, want the daemon's", i, c.argv, proto)
 			}
 		case slices.Contains(c.argv, "--no-includes"):
 			// The daemon's own read of the config (gitrepoconfig.go). It carries no
@@ -499,22 +499,22 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 		case slices.Contains(c.argv, "config") && slices.Contains(c.argv, "--list"):
 			kinds["listing"]++
 			if !slices.Equal(got, listingSet) {
-				t.Errorf("listing %d %q = %q\nwant %q (round1 C1, C3)", i, c.argv, got, listingSet)
+				t.Errorf("listing %d %q = %q\nwant %q", i, c.argv, got, listingSet)
 			}
 			if proto != lightProto && proto != heavyProto {
-				t.Errorf("listing %d GIT_ALLOW_PROTOCOL = %q, want %s or %s (round1 C4)", i, proto, lightProto, heavyProto)
+				t.Errorf("listing %d GIT_ALLOW_PROTOCOL = %q, want %s or %s", i, proto, lightProto, heavyProto)
 			}
 		default:
 			kinds["hardened"]++
 			if !slices.Equal(got, pinnedSet) {
-				t.Errorf("hardened call %d %q = %q\nwant %q (round1 C1, C3)", i, c.argv, got, pinnedSet)
+				t.Errorf("hardened call %d %q = %q\nwant %q", i, c.argv, got, pinnedSet)
 			}
 			want := lightProto
 			if heavy {
 				want = heavyProto
 			}
 			if proto != want {
-				t.Errorf("hardened call %d %q GIT_ALLOW_PROTOCOL = %q, want %q (round1 C4)", i, c.argv, proto, want)
+				t.Errorf("hardened call %d %q GIT_ALLOW_PROTOCOL = %q, want %q", i, c.argv, proto, want)
 			}
 		}
 	}
@@ -535,37 +535,37 @@ func TestInheritedCountRefusalRunsOnlyTheExcludesRead(t *testing.T) {
 	n := t.TempDir()
 	raw, calls := run("git.info", map[string]any{"path": n})
 	if !strings.Contains(raw, "is not a count") {
-		t.Fatalf("round3 P1 Q1 reply = %s", raw)
+		t.Fatalf("reply = %s", raw)
 	}
 	if len(calls) != 1 || !slices.Equal(calls[0].argv, []string{"config", "--includes", "--path", "core.excludesFile"}) {
-		t.Fatalf("round3 P1 Q1 calls = %v, want only the excludes read", calls)
+		t.Fatalf("calls = %v, want only the excludes read", calls)
 	}
 	if v, _ := calls[0].value(configCountName); v != "x" {
-		t.Errorf("excludes read GIT_CONFIG_COUNT = %q, want x (round2 part C)", v)
+		t.Errorf("excludes read GIT_CONFIG_COUNT = %q, want x", v)
 	}
 	for _, r := range []struct {
-		row, method string
-		params      map[string]any
+		method string
+		params map[string]any
 	}{
-		{"round1 B6", "git.info", map[string]any{"path": f.top}},
-		{"round1 B6", "git.list_branches", map[string]any{"path": f.top}},
-		{"round3 Q7", "git.status", map[string]any{"baseRepo": f.top, "path": f.top}},
-		{"round1 B6", "git.worktree_create", map[string]any{"baseRepo": f.top, "branchName": "w1", "worktreePath": f.leaf()}},
-		{"round3 Q14", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf()}},
+		{"git.info", map[string]any{"path": f.top}},
+		{"git.list_branches", map[string]any{"path": f.top}},
+		{"git.status", map[string]any{"baseRepo": f.top, "path": f.top}},
+		{"git.worktree_create", map[string]any{"baseRepo": f.top, "branchName": "w1", "worktreePath": f.leaf()}},
+		{"git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf()}},
 	} {
 		raw, calls := run(r.method, r.params)
 		if !strings.Contains(raw, "is not a count") {
-			t.Errorf("%s %s = %s, want the count refusal", r.row, r.method, raw)
+			t.Errorf("%s = %s, want the count refusal", r.method, raw)
 		}
 		if len(calls) != 0 {
-			t.Errorf("round2 part C %s ran git: %v", r.method, calls)
+			t.Errorf("%s ran git: %v", r.method, calls)
 		}
 	}
 }
 
 // TestInheritedCountRefusalPlacement runs measured cases through gitDispatch. With a
-// refused count, these rows refuse, except git.list_branches on a missing dir. P0 is
-// the control with nothing planted.
+// refused count, these rows refuse, except git.list_branches on a missing dir. The
+// control has nothing planted.
 func TestInheritedCountRefusalPlacement(t *testing.T) {
 	f := newWTFixture(t, false)
 	resetUserExcludesCache(t)
@@ -593,13 +593,13 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	type row struct {
 		name, method string
 		params       map[string]any
-		p0           string // the P0 frame
+		p0           string // the frame of the control
 		shape        func(msg string) string
 	}
 	nLeaf := filepath.Join(n, ".claude", "worktrees", "w1")
 	missLeaf := filepath.Join(missing, ".claude", "worktrees", "w1")
 	nope := filepath.Join(f.top, ".claude", "worktrees", "nope")
-	// With nothing planted, 89cb6289 on Windows answers Q3 with the start error of its
+	// With nothing planted, 89cb6289 on Windows answers the regular-file row with the start error of its
 	// listing (measured on Windows), and so does claustrum. On Linux and macOS
 	// claustrum answers the normal frame.
 	q3 := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`
@@ -615,7 +615,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrameOf},
 		{"git.info missing", "git.info", map[string]any{"path": missing},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrameOf},
-		{"Q3 git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")}, q3, errFrameOf},
+		{"git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")}, q3, errFrameOf},
 		{"list_branches N", "git.list_branches", map[string]any{"path": n},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, errFrameOf},
 		{"list_branches missing", "git.list_branches", map[string]any{"path": missing},
@@ -646,7 +646,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 		plant []string
 		text  string
 	}{
-		{"P0 control", nil, ""},
+		{"control", nil, ""},
 		{"letter", []string{"GIT_CONFIG_COUNT=x"}, `inherited GIT_CONFIG_COUNT "x" is not a count`},
 		{"pair 1 missing", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=2"},
 			"inherited GIT_CONFIG pair 1 is incomplete"},
@@ -660,7 +660,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 					want = r.shape(pre + phase.text)
 				}
 				if got := gitDispatch(t, h, rpcLine(t, r.method, r.params)); got != want {
-					t.Errorf("round3 %s %s\n got %s\nwant %s", phase.name, r.name, got, want)
+					t.Errorf("%s %s\n got %s\nwant %s", phase.name, r.name, got, want)
 				}
 			}
 		})
@@ -717,7 +717,7 @@ func TestBrokenPairInFolderWithGitFileToRegularFile(t *testing.T) {
 
 // A worktree directory that is still there gets the lock-check frame without the
 // reason (validation V3, a plain dir). With a worktreeRoot the reason follows
-// "cannot determine the repository's work tree" (round1 B6 M8). On Windows the
+// "cannot determine the repository's work tree". On Windows the
 // worktreeRoot refusal comes first (windows B6 M8).
 func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	f := newWTFixture(t, false)
@@ -727,7 +727,7 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 	t.Setenv(configCountName, "x")
 	const refusal = `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`
 
-	t.Run("validation V3 present leaf", func(t *testing.T) {
+	t.Run("present leaf", func(t *testing.T) {
 		if err := os.MkdirAll(f.leaf(), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -739,7 +739,7 @@ func TestInheritedCountRefusalOnRemove(t *testing.T) {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 	})
-	t.Run("round1 B6 M8 worktreeRoot", func(t *testing.T) {
+	t.Run("worktreeRoot", func(t *testing.T) {
 		root := t.TempDir()
 		requireTempOutsideCheckout(t, root)
 		ext := filepath.Join(root, "cp", "w2")
@@ -798,7 +798,7 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 		params       map[string]any
 		p0, p1       string
 		leaf         int
-		goneP0       bool // the P0 request deletes the leaf
+		goneP0       bool // the control request deletes the leaf
 	}
 	success := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 	statusBare := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`
@@ -822,28 +822,28 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 		return map[string]any{"baseRepo": base, "worktreePath": wt, "worktreeRoot": root}
 	}
 	rows := []row{
-		{"round4 R1a relative", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": "rel/w1"},
+		{"relative", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": "rel/w1"},
 			relative, relative, leafAbsent, false},
-		{"round4 R1b dir outside T", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": x},
+		{"dir outside T", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": x},
 			outside(x), outside(x), leafAbsent, false},
-		{"round4 R1c T itself", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.top},
+		{"T itself", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.top},
 			outside(f.top), outside(f.top), leafAbsent, false},
-		{"round4 R1d missing baseRepo", "git.worktree_remove", external(missing, w9), notWorktree, unreadRepo, leafContent, false},
-		{"round4 R1e plain-dir baseRepo", "git.worktree_remove", external(n, w9),
+		{"remove missing baseRepo", "git.worktree_remove", external(missing, w9), notWorktree, unreadRepo, leafContent, false},
+		{"remove plain-dir baseRepo", "git.worktree_remove", external(n, w9),
 			workTree("exit status 128"), workTree(refusal), leafContent, false},
-		{"round4 R1f leaf missing", "git.worktree_remove", external(f.top, w9), success, workTree(refusal), leafAbsent, false},
-		{"round4 R1g outside R", "git.worktree_remove", external(f.top, y), beneath, beneath, leafContent, false},
-		{"round4 R1h dot-dot", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": dotdot},
+		{"leaf missing", "git.worktree_remove", external(f.top, w9), success, workTree(refusal), leafAbsent, false},
+		{"outside R", "git.worktree_remove", external(f.top, y), beneath, beneath, leafContent, false},
+		{"dot-dot", "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": dotdot},
 			dotdotFrame, dotdotFrame, leafAbsent, false},
-		{"val2 N2a missing baseRepo, empty leaf", "git.worktree_remove", external(missing, w9), success, unreadRepo, leafEmpty, true},
-		{"val2 N2b missing baseRepo, leaf absent", "git.worktree_remove", external(missing, w9), success,
+		{"missing baseRepo, empty leaf", "git.worktree_remove", external(missing, w9), success, unreadRepo, leafEmpty, true},
+		{"missing baseRepo, leaf absent", "git.worktree_remove", external(missing, w9), success,
 			removeFrame("failed to remove worktree: could not check whether " + w9 + " is locked (" + refusal + "); retry"),
 			leafAbsent, false},
-		{"round4 R2a plain-dir baseRepo", "git.status", map[string]any{"baseRepo": n, "path": n}, statusBare, statusRefused, leafAbsent, false},
-		{"round4 R2b missing baseRepo", "git.status", map[string]any{"baseRepo": missing, "path": missing}, statusBare, statusBare, leafAbsent, false},
-		{"round4 R2c plain-dir baseRepo, path T", "git.status", map[string]any{"baseRepo": n, "path": f.top},
+		{"status plain-dir baseRepo", "git.status", map[string]any{"baseRepo": n, "path": n}, statusBare, statusRefused, leafAbsent, false},
+		{"status missing baseRepo", "git.status", map[string]any{"baseRepo": missing, "path": missing}, statusBare, statusBare, leafAbsent, false},
+		{"plain-dir baseRepo, path T", "git.status", map[string]any{"baseRepo": n, "path": f.top},
 			statusBare, statusRefused, leafAbsent, false},
-		{"round4 R2d regular-file path", "git.status", map[string]any{"baseRepo": f.top, "path": filepath.Join(f.top, "t.txt")},
+		{"regular-file path", "git.status", map[string]any{"baseRepo": f.top, "path": filepath.Join(f.top, "t.txt")},
 			statusBare, statusRefused, leafAbsent, false},
 	}
 	writeFile(t, filepath.Join(f.top, "x", "x.txt"), "x\n", 0o644)
@@ -854,7 +854,7 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 		name  string
 		plant []string
 	}{
-		{"P0 control", nil},
+		{"control", nil},
 		{"letter", []string{"GIT_CONFIG_COUNT=x"}},
 	} {
 		t.Run(phase.name, func(t *testing.T) {
@@ -954,18 +954,18 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 		t.Cleanup(func() { _ = os.Chmod(na, 0o755) })
 	}
 	rows := []struct{ row, base, path, skip string }{
-		{"val2 N1", filepath.Join(b, "missing"), f.top, ""},
-		{"val2 X1", join(f.top, "missing", ".."), w1, ""},
-		{"val2 X1b", filepath.Join(f.top, "missing"), w1, ""},
-		{"val3 S1a dangling link then ..", join(f.top, "dl", ".."), w1, skipDL},
-		{"val3 S1b", join(b, "D", "..", "T"), w1, skipD},
-		{"val3 S1c live link then ..", join(b, "L", "..", "T"), w1, skipL},
-		{"val3 S1d", join(b, "missing", "..", "T"), w1, ""},
-		{"val3 S1e", join(f.top, "missing", "sub", "..", ".."), w1, ""},
-		{"val3 S1f regular file then ..", join(b, "F", "..", "T"), w1, ""},
-		{"val3 S1g loop", join(b, "loop", "..", "T"), w1, skipLoop},
-		{"val3 S1h mode 000", join(b, "na", "sub", "..", "..", "T"), w1, skipNA},
-		{"val3 windows S1j tracked file then ..", join(f.top, "t.txt", ".."), w1, ""},
+		{"missing baseRepo", filepath.Join(b, "missing"), f.top, ""},
+		{"missing dotdot", join(f.top, "missing", ".."), w1, ""},
+		{"missing folder in the repository", filepath.Join(f.top, "missing"), w1, ""},
+		{"dangling link then ..", join(f.top, "dl", ".."), w1, skipDL},
+		{"D dotdot T", join(b, "D", "..", "T"), w1, skipD},
+		{"live link then ..", join(b, "L", "..", "T"), w1, skipL},
+		{"missing dotdot T", join(b, "missing", "..", "T"), w1, ""},
+		{"missing sub dotdot dotdot", join(f.top, "missing", "sub", "..", ".."), w1, ""},
+		{"regular file then ..", join(b, "F", "..", "T"), w1, ""},
+		{"loop", join(b, "loop", "..", "T"), w1, skipLoop},
+		{"mode 000", join(b, "na", "sub", "..", "..", "T"), w1, skipNA},
+		{"windows tracked file then ..", join(f.top, "t.txt", ".."), w1, ""},
 	}
 	controls := []struct{ row, base string }{
 		{"control T", f.top},
@@ -978,7 +978,7 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 		name, control string
 		plant         []string
 	}{
-		{"P0 control", `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":true}}`, nil},
+		{"control", `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":true}}`, nil},
 		{"letter", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` +
 			jsonString(t, `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`) + `}}`,
 			[]string{"GIT_CONFIG_COUNT=x"}},
@@ -1010,13 +1010,12 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 
 // git.list_branches answers a path inside a managed worktrees directory, and a
 // non-empty path that does not resolve, with the bare shape. No git call runs, with
-// nothing planted and with a refused count. The rows are val3 Z1a (a linked
-// worktree under .claude/worktrees), Z1b (a repository there), Z1c (a repository
-// below a directory holding the marker), Z1c-w9 (a worktreeRoot worktree), val3
-// windows Z2 (a missing component before "..") and val4 L1f (a regular file before
-// ".."). Those two rows came from a build before b3081b51 (PR 441). On Windows ".."
+// nothing planted and with a refused count. The rows are a linked worktree under
+// .claude/worktrees, a repository there, a repository below a directory holding the
+// marker, a worktreeRoot worktree, a missing component before ".." and a regular file
+// before "..". The last two rows came from a build before b3081b51 (PR 441). On Windows ".."
 // drops the name before it untested, so b3081b51 lists <T>\missing\.. and <T>\t.txt\..
-// (measured on Windows). There Z2 and L1f get the answer of <T>.
+// (measured on Windows). There the last two rows get the answer of <T>.
 func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 	f := newWTFixture(t, false)
 	b := filepath.Dir(f.top)
@@ -1038,14 +1037,14 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 		row, path string
 		folds     bool // on Windows the path names f.top
 	}{
-		{"val3 Z1a", lw, false},
-		{"val3 Z1b", inner, false},
-		{"val3 Z1c", held, false},
-		{"val3 windows Z2", f.top + sep + "missing" + sep + "..", true},
-		{"val4 L1f", strings.Join([]string{b, "F", "..", "T"}, sep), true},
+		{"linked worktree", lw, false},
+		{"nested repository", inner, false},
+		{"repository below a marker", held, false},
+		{"windows missing dotdot", f.top + sep + "missing" + sep + "..", true},
+		{"file dotdot T", strings.Join([]string{b, "F", "..", "T"}, sep), true},
 	}
 	branches := `["ex","lw","main"]`
-	// Windows refuses a worktreeRoot, so the Z1c-w9 row runs on Linux and macOS.
+	// Windows refuses a worktreeRoot, so the w9 row runs on Linux and macOS.
 	root := filepath.Join(b, "R")
 	if externalWorktreeUnsupportedRefusal(root, "create") == "" {
 		if err := os.MkdirAll(root, 0o755); err != nil {
@@ -1060,7 +1059,7 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 		rows = append(rows, struct {
 			row, path string
 			folds     bool
-		}{"val3 Z1c-w9", w9, false})
+		}{"worktree below worktreeRoot", w9, false})
 		branches = `["ex","lw","main","w9"]`
 	}
 	const bare = `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`
@@ -1068,7 +1067,7 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 		name, control string
 		plant         []string
 	}{
-		{"P0 control", `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":` + branches + `}}`, nil},
+		{"control", `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":` + branches + `}}`, nil},
 		{"letter", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` +
 			jsonString(t, `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "x" is not a count`) + `}}`,
 			[]string{"GIT_CONFIG_COUNT=x"}},
@@ -1077,7 +1076,7 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 			clearDaemonConfigEnv(t)
 			plantEnv(t, phase.plant...)
 			if raw, _ := run("git.list_branches", map[string]any{"path": f.top}); raw != phase.control {
-				t.Errorf("val3 Z1-T\n got %s\nwant %s", raw, phase.control)
+				t.Errorf("control\n got %s\nwant %s", raw, phase.control)
 			}
 			for _, r := range rows {
 				raw, calls := run("git.list_branches", map[string]any{"path": r.path})
@@ -1099,8 +1098,8 @@ func TestListBranchesManagedOrUnresolvablePath(t *testing.T) {
 }
 
 // git.list_branches with an empty or absent path refuses under a refused count, with
-// the daemon's working directory in a repository (val2 X2) or in a plain dir (val2
-// X2c). No git call runs other than the excludes read.
+// the daemon's working directory in a repository or in a plain dir. No git
+// call runs other than the excludes read.
 func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 	f := newWTFixture(t, false)
 	n := t.TempDir()
@@ -1111,8 +1110,8 @@ func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 	for _, cwd := range []struct {
 		row, dir, p0 string
 	}{
-		{"val2 X2", f.top, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["ex","main"]}}`},
-		{"val2 X2c", n, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`},
+		{"repository", f.top, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["ex","main"]}}`},
+		{"plain folder", n, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`},
 	} {
 		t.Run(cwd.row, func(t *testing.T) {
 			t.Chdir(cwd.dir)
@@ -1121,7 +1120,7 @@ func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 				plant []string
 				want  string
 			}{
-				{"P0 control", nil, cwd.p0},
+				{"control", nil, cwd.p0},
 				{"letter", []string{"GIT_CONFIG_COUNT=x"}, refused},
 			} {
 				clearDaemonConfigEnv(t)
@@ -1145,12 +1144,12 @@ func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 	}
 }
 
-// A trust refusal wins over the count refusal. The rows are val2 Y1 with a stray
-// commondir in T and val2 N3c with an entry whose commondir names another repository
-// (M2). The measured rows remove R/cp/w9 with worktreeRoot R and baseRepo the Y1
-// repository: Z3a with the leaf absent, Z3a2 with R/cp present, Z3b with an empty
-// leaf and Z3c with a file in the leaf. Nothing is deleted. On Windows the
-// worktreeRoot refusal comes first. P0 is the control with nothing planted.
+// A trust refusal wins over the count refusal. The rows are a stray commondir in T
+// and an entry whose commondir names another repository. The measured rows remove
+// R/cp/w9 with worktreeRoot R and baseRepo the repository with the stray commondir:
+// with the leaf absent, with R/cp present, with an empty leaf and with a file in the
+// leaf. Nothing is deleted. On Windows the
+// worktreeRoot refusal comes first. The control has nothing planted.
 func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 	stray := newTrustRepo(t)
 	requireTempOutsideCheckout(t, stray.base)
@@ -1180,24 +1179,24 @@ func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 		name  string
 		plant []string
 	}{
-		{"P0 control", nil},
+		{"control", nil},
 		{"letter", []string{"GIT_CONFIG_COUNT=x"}},
 	} {
 		t.Run(phase.name, func(t *testing.T) {
 			clearDaemonConfigEnv(t)
 			plantEnv(t, phase.plant...)
-			wantRPCError(t, "val2 Y1 git.info", info(t, stray.T), m1)
-			wantRPCError(t, "val2 Y1 git.status", status(t, stray.SW, stray.T), m1)
-			wantResult(t, "val2 Y1 git.worktree_remove", remove(t, stray.T, strayGone, ""), lockCheck(strayGone, m1))
-			wantRPCError(t, "val2 N3c git.info", info(t, foreign.TW), m2)
-			wantRPCError(t, "val2 N3c git.list_branches", listBranches(t, foreign.TW), m2)
-			wantRPCError(t, "val2 N3c git.status", status(t, foreign.TW, foreign.TW), m2)
+			wantRPCError(t, "stray git.info", info(t, stray.T), m1)
+			wantRPCError(t, "stray git.status", status(t, stray.SW, stray.T), m1)
+			wantResult(t, "stray git.worktree_remove", remove(t, stray.T, strayGone, ""), lockCheck(strayGone, m1))
+			wantRPCError(t, "foreign git.info", info(t, foreign.TW), m2)
+			wantRPCError(t, "foreign git.list_branches", listBranches(t, foreign.TW), m2)
+			wantRPCError(t, "foreign git.status", status(t, foreign.TW, foreign.TW), m2)
 			wantCreateRefused(t, foreign.TW, foreign.T, m2)
-			wantResult(t, "val2 N3c git.worktree_remove", remove(t, foreign.TW, foreignGone, ""), lockCheck(foreignGone, m2))
+			wantResult(t, "foreign git.worktree_remove", remove(t, foreign.TW, foreignGone, ""), lockCheck(foreignGone, m2))
 			for _, r := range []struct {
 				row  string
 				make string // what exists below R before the request
-			}{{"val3 Z3a", ""}, {"val3 Z3a2", "cp"}, {"val3 Z3b", "leaf"}, {"val3 Z3c", "file"}} {
+			}{{"leaf absent", ""}, {"level present", "cp"}, {"empty leaf", "leaf"}, {"file in the leaf", "file"}} {
 				if err := os.RemoveAll(root); err != nil {
 					t.Fatal(err)
 				}
@@ -1230,8 +1229,8 @@ func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 }
 
 // git.worktree_create checks a baseRepo inside a managed worktrees directory before
-// the count (val2 Y3d an independent repository, val2 Y3e a linked worktree). The
-// "..", outside and already-exists refusals come after the count (val2 Y3a to Y3c).
+// the count (an independent repository or a linked worktree). The "..", outside and
+// already-exists refusals come after the count.
 func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 	f := newWTFixture(t, false)
 	worktrees := filepath.Join(f.top, ".claude", "worktrees")
@@ -1260,23 +1259,23 @@ func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 		base, wt string
 		p0, p1   string
 	}{
-		{"val2 Y3a", f.top, dotdot, frame("refusing to create worktree: "+dotdot+
+		{"worktreePath with dotdot", f.top, dotdot, frame("refusing to create worktree: "+dotdot+
 			` contains a ".." component; choose the session folder by its absolute path, without ".."`, "unsafe_path"), counted},
-		{"val2 Y3b", f.top, outside, frame("refusing to create worktree: "+tickPath(outside)+" is not inside the repository "+f.top+
+		{"worktreePath outside", f.top, outside, frame("refusing to create worktree: "+tickPath(outside)+" is not inside the repository "+f.top+
 			"; session worktrees are only created and removed under <repository>/.claude/worktrees", "unsafe_path"), counted},
 		// The text names the leaf with the symlinks of its parent folder resolved, its last
 		// name kept and the path cleaned on Linux and macOS, and
 		// with the on-disk letter case on Windows (existingPathSpelling).
-		{"val2 Y3c", f.top, f.leaf(), frame("refusing to create worktree: `"+existingPathSpelling(f.leaf())+
+		{"existing leaf", f.top, f.leaf(), frame("refusing to create worktree: `"+existingPathSpelling(f.leaf())+
 			"` already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path"), counted},
-		{"val2 Y3d", inner, filepath.Join(inner, ".claude", "worktrees", "w1"), nested, nested},
-		{"val2 Y3e", lw, filepath.Join(lw, ".claude", "worktrees", "w1"), nested, nested},
+		{"nested repository", inner, filepath.Join(inner, ".claude", "worktrees", "w1"), nested, nested},
+		{"linked worktree", lw, filepath.Join(lw, ".claude", "worktrees", "w1"), nested, nested},
 	}
 	for _, phase := range []struct {
 		name  string
 		plant []string
 	}{
-		{"P0 control", nil},
+		{"control", nil},
 		{"letter", []string{"GIT_CONFIG_COUNT=x"}},
 	} {
 		t.Run(phase.name, func(t *testing.T) {

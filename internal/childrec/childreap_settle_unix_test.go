@@ -38,7 +38,7 @@ func TestReapTargetsUnknownAfterSettlePause(t *testing.T) {
 		return inner(pid, wantEnv)
 	}
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if step != 2 {
 		t.Fatalf("step = %d, want the reads to reach the test after the settle pause", step)

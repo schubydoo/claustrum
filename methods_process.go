@@ -72,8 +72,12 @@ type spawnParams struct {
 	Pty json.RawMessage `json:"pty"`
 	// CLITempRoot asks for the private temp folder step (clitemproot_unix.go) on Linux
 	// and macOS. On Windows it changes nothing (b3081b51, measured with true, false and
-	// absent). Any other value counts as absent (claustrum's own, not measured).
-	CLITempRoot rpc.JSONTrueSwitch `json:"cliTempRoot"`
+	// absent). It is a bool. A text or an object fails the decode, with or without
+	// gitRead (4c111e86 and c9125eb8, measured on Linux). Other types, null and the
+	// other systems are claustrum's own, not measured. The decode failure comes before
+	// every other test of the spawn, so it wins over the id, launcher, command and
+	// gitRead refusals (claustrum's own, not measured).
+	CLITempRoot bool `json:"cliTempRoot"`
 	// CLITempRootEnd asks the daemon to end the child when its private temp folder is
 	// lost (4c111e86, measured on Linux and macOS with true). Any other value counts
 	// as absent (claustrum's own, not measured).
@@ -129,24 +133,19 @@ const gitReadCombineText = `gitRead needs the command "git" and a cwd, and canno
 // command other than the bare name git, "sessionFoldersOff":true, a linkBound
 // object, "cliTempRoot":true and a pty object with a key. An empty env object
 // passes. With gitRead, "pty":true gets Invalid params (measured on Linux and
-// Windows), and so does a cliTempRoot text or object (measured on Linux). A
-// launcher array gets the combine text here (claustrum's own, not measured). A pty
-// object with no valid key gets its own text (measured on Linux and macOS).
+// Windows), and so does a cliTempRoot text or object, from the decode (measured on
+// Linux). A launcher array gets the combine text here (claustrum's own, not
+// measured). A pty object with no valid key gets its own text (measured on Linux
+// and macOS). The combine refusal logs its failed-start line (4c111e86, measured on
+// Linux, macOS and Windows).
 func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
-	var raw struct {
-		CLITempRoot json.RawMessage `json:"cliTempRoot"`
-	}
-	_ = json.Unmarshal(req.Params, &raw)
-	temp, tempBad := gitReadTempRoot(raw.CLITempRoot)
-	if tempBad {
-		return rpc.Ptr(rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params"))
-	}
 	if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
 		return bad
 	}
 	pty := ptyObject(p.Pty)
 	if p.Command != "git" || p.Cwd == "" || len(p.Env) > 0 || p.Launcher != nil || p.LinkBound != nil ||
-		pty || temp || sessiondirs.OffSwitchSet(req.Params) {
+		pty || p.CLITempRoot || sessiondirs.OffSwitchSet(req.Params) {
+		logging.Errorf("[process.Manager] Failed to start process %s: %s", supervisor.LogID(p.ID), gitReadCombineText)
 		return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, gitReadCombineText, supervisor.SpawnReason{Reason: "other"}))
 	}
 	return nil
@@ -199,22 +198,6 @@ func ptyKeyOK(v json.RawMessage) bool {
 	}
 	_, err := hex.DecodeString(o.Key)
 	return err == nil
-}
-
-// gitReadTempRoot reads the cliTempRoot member of a gitRead spawn. set is true for
-// true, which the combine test counts. bad is true for a value that gets Invalid
-// params. An absent member, null and false count as absent, and every other value
-// is bad. Only the values that gitReadRefusal names are measured: the rest is
-// claustrum's own, not measured.
-func gitReadTempRoot(v json.RawMessage) (set, bad bool) {
-	s := string(bytes.TrimSpace(v))
-	switch s {
-	case "", "null", "false":
-		return false, false
-	case "true":
-		return true, false
-	}
-	return false, true
 }
 
 // gitReadStep is the step of the start of a gitRead spawn in cwd with args
@@ -293,7 +276,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			}
 			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: bool(p.CLITempRoot), End: bool(p.CLITempRootEnd)}, folders)
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd)}, folders)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {
@@ -303,7 +286,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if err != nil {
 		return spawnErrorReply(req.ID, err, p.Cwd)
 	}
-	res := rpc.SpawnResult{Success: true, CLITempRoot: mp.CLITempRoot()}
+	res := rpc.SpawnReply{Success: true, CLITempRoot: mp.CLITempRoot()}
 	if p.WantPid {
 		res.Pid = mp.Pid()
 		res.StartTime = mp.StartTime()
@@ -314,7 +297,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 // spawnErrorReply is the reply of a process.spawn whose start failed with err in
 // cwd: the code and text of a SpawnRefusal, or -32603 and the text of err.
 func spawnErrorReply(id interface{}, err error, cwd string) rpc.Response {
-	reason := supervisor.SpawnFailureReason(err, cwd)
+	reason := supervisor.ReasonForSpawnError(err, cwd)
 	var sr *supervisor.SpawnRefusal
 	if errors.As(err, &sr) {
 		return rpc.ErrResultData(id, sr.Code, sr.Msg, reason)
@@ -379,7 +362,7 @@ func (s *server) processStdin(c *conn.Conn, req *request) rpc.Response {
 	if full {
 		return rpc.ErrResult(req.ID, rpc.CodeStdinBackpressure, "stdin backpressure: queue full")
 	}
-	return rpc.OKResult(req.ID, rpc.StdinResult{Success: true, Applied: applied, Duplicate: duplicate})
+	return rpc.OKResult(req.ID, rpc.StdinReply{Success: true, Applied: applied, Duplicate: duplicate})
 }
 
 type killParams struct {
@@ -406,9 +389,9 @@ func (s *server) processKill(req *request) rpc.Response {
 		// farewell gets "invalid" (claustrum's own, not measured).
 		supervisor.LogFarewellNotSaid(p.ID, rule)
 		_ = s.procs.Kill(p.ID, p.Signal)
-		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: supervisor.FarewellInvalid})
+		return rpc.OKResult(req.ID, rpc.KillReply{Success: true, FarewellEnd: supervisor.FarewellInvalid})
 	case ask != nil:
-		return rpc.OKResult(req.ID, rpc.KillResult{Success: true, FarewellEnd: s.procs.KillWithFarewell(p.ID, p.Signal, *ask)})
+		return rpc.OKResult(req.ID, rpc.KillReply{Success: true, FarewellEnd: s.procs.KillWithFarewell(p.ID, p.Signal, *ask)})
 	}
 	// A signal that the system refused answers its text (52d82f0a, measured on Linux
 	// and macOS). The case of a bad farewell above keeps its success (claustrum's
@@ -416,7 +399,7 @@ func (s *server) processKill(req *request) rpc.Response {
 	if err := s.procs.Kill(p.ID, p.Signal); err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
-	return rpc.OKResult(req.ID, rpc.KillResult{Success: true})
+	return rpc.OKResult(req.ID, rpc.KillReply{Success: true})
 }
 
 // killAndWaitParams is distinct from killParams: process.killAndWait accepts a
@@ -469,12 +452,12 @@ func (s *server) processKillAndWait(req *request) rpc.Response {
 		// measured for process.killAndWait).
 		supervisor.LogFarewellNotSaid(p.ID, rule)
 	}
-	found, died, alreadyExited, escalated := s.procs.KillAndWait(p.ID, p.Signal, grace, escalate)
+	found, died, alreadyExited, escalated := s.procs.SignalAndAwait(p.ID, p.Signal, grace, escalate)
 	end := ""
 	if rule != "" {
 		end = supervisor.FarewellInvalid
 	}
-	return rpc.OKResult(req.ID, rpc.KillAndWaitResult{
+	return rpc.OKResult(req.ID, rpc.KillAndWaitReply{
 		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated, FarewellEnd: end,
 	})
 }
@@ -512,10 +495,10 @@ func (s *server) processReattach(c *conn.Conn, req *request) rpc.Response {
 	// (c8e2f083, measured on Linux). The order against the id test is not
 	// measured: the empty id keeps its error. Claustrum has no terminal process.
 	if p.Proof != "" {
-		return rpc.OKResult(req.ID, rpc.ReattachResult{})
+		return rpc.OKResult(req.ID, rpc.ReattachReply{})
 	}
 	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.Reattach(c, p.ID, p.FromSeq)
-	res := rpc.ReattachResult{
+	res := rpc.ReattachReply{
 		Found: found, Running: running, FirstSeq: firstSeq, LastSeq: lastSeq,
 		StdinApplied: stdinApplied,
 	}

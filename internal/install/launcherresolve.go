@@ -18,8 +18,8 @@ import (
 // gets not_absolute (measured on Linux). On Windows a request with no p does not come
 // here: it answers as a request with no launcherCheck. On Windows p gets the Windows
 // refusal. Both Windows rules are claustrum's own, not measured.
-func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckResult {
-	res := rpc.LauncherCheckResult{HostPolicySeen: policyHoldsOtherKey()}
+func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckReply {
+	res := rpc.LauncherCheckReply{HostPolicySeen: policyHoldsOtherKey()}
 	fault, reason := LauncherCheckHostRefusal()
 	if fault == "" {
 		fault, reason = CheckLauncherFile(p, chk)

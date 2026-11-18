@@ -12,7 +12,7 @@ import (
 // A caller-supplied timeoutMs (4534d86) that fires while the read-tree checkout is
 // still running yields the "during the checkout" timeout message, with git's own
 // kill error appended and errorCode "timeout". The stub lets the pre-checks and the
-// `worktree add` succeed fast (writing the linked `.git` so worktreeAdminDir resolves
+// `worktree add` succeed fast (writing the linked `.git` so linkedGitDirOf resolves
 // the admin dir), then sleeps on the read-tree so the per-request deadline kills it —
 // exercising the second, post-add timeout arm the "before the checkout started" test
 // never reaches. The measured "after the checkout finished" path (a descendant holds the pipe past
@@ -21,7 +21,7 @@ import (
 func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 	bin := t.TempDir()
 	// The `worktree add` case writes the worktree's `.git` back-pointer into its
-	// (already-created) leaf dir — the last positional arg — so worktreeAdminDir
+	// (already-created) leaf dir — the last positional arg — so linkedGitDirOf
 	// returns non-empty and the read-tree runs. It makes the registration in the
 	// repository too, which the create tests. read-tree then sleeps past the bound.
 	script := "#!/bin/sh\n" +

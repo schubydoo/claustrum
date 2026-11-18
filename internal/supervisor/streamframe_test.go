@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// StreamFrame uses a pointer ExitCode so a stdout/stderr frame omits the key
+// ChildFrame uses a pointer ExitCode so a stdout/stderr frame omits the key
 // entirely while an exit frame emits exitCode:0 for a clean exit. Data is the
 // mirror image (present on data frames, omitted on exit).
 func TestStreamFrameMarshaling(t *testing.T) {
@@ -13,19 +13,19 @@ func TestStreamFrameMarshaling(t *testing.T) {
 	negOne := -1
 	cases := []struct {
 		name string
-		f    StreamFrame
+		f    ChildFrame
 		want string
 	}{
-		{"stdout", StreamFrame{Type: "stream", ProcessID: "p1", Stream: "stdout", Seq: 1, Data: "AAA"},
+		{"stdout", ChildFrame{Type: "stream", ProcessID: "p1", Stream: "stdout", Seq: 1, Data: "AAA"},
 			`{"type":"stream","processId":"p1","stream":"stdout","seq":1,"data":"AAA"}`},
-		{"exit zero", StreamFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &zero},
+		{"exit zero", ChildFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &zero},
 			`{"type":"stream","processId":"p1","stream":"exit","seq":2,"exitCode":0}`},
 		// 4534d86: a killed exit adds signal + killedBy after exitCode. Both are
 		// omitempty, so the "exit zero" case above stays byte-identical. Windows emits
 		// killedBy without signal (no signal on the wait path).
-		{"exit killed", StreamFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &negOne, Signal: "SIGTERM", KilledBy: "client"},
+		{"exit killed", ChildFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &negOne, Signal: "SIGTERM", KilledBy: "client"},
 			`{"type":"stream","processId":"p1","stream":"exit","seq":2,"exitCode":-1,"signal":"SIGTERM","killedBy":"client"}`},
-		{"exit killed no signal", StreamFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &negOne, KilledBy: "shutdown"},
+		{"exit killed no signal", ChildFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &negOne, KilledBy: "shutdown"},
 			`{"type":"stream","processId":"p1","stream":"exit","seq":2,"exitCode":-1,"killedBy":"shutdown"}`},
 		// lineBytes is the replay buffer's accounting unit and must never reach
 		// the wire. It is unexported today, so encoding/json drops it — but every
@@ -34,7 +34,7 @@ func TestStreamFrameMarshaling(t *testing.T) {
 		// frames, and those DO carry a non-zero value, so that edit would silently
 		// add a key to every replayed frame while this test stayed green.
 		{"lineBytes never serialized",
-			StreamFrame{Type: "stream", ProcessID: "p1", Stream: "stdout", Seq: 3, Data: "AAA", lineBytes: 81},
+			ChildFrame{Type: "stream", ProcessID: "p1", Stream: "stdout", Seq: 3, Data: "AAA", lineBytes: 81},
 			`{"type":"stream","processId":"p1","stream":"stdout","seq":3,"data":"AAA"}`},
 	}
 	for _, tc := range cases {
