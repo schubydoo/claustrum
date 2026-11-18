@@ -33,7 +33,7 @@ func fsRootLeaf(t *testing.T) string {
 func TestWorktreeRootIsFileSystemRootText(t *testing.T) {
 	leaf := fsRootLeaf(t)
 	for _, c := range []struct{ name, root string }{
-		{"R1", "/"},
+		{"slash", "/"},
 		{"double_slash", "//"},
 		{"slash_dot", "/."},
 	} {

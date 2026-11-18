@@ -37,7 +37,7 @@ func TestPluginsPruneSkipFrames(t *testing.T) {
 	}
 	cases := []skipCase{
 		{
-			name: "C91 sibling text", own: "a1b2c3d4", siblings: []string{"e5f6a7b8"},
+			name: "sibling text", own: "a1b2c3d4", siblings: []string{"e5f6a7b8"},
 			perInstall: linuxPerInstall, legacy: linuxLegacy, young: linuxYoung,
 			frame: `{"jsonrpc":"2.0","id":1,"result":{"root":<root>,"pruned":["0123456789abcdef","aaaaaaaaaaaaaaaa","fedcba9876543210"],"prunedLegacy":[],"staleArchives":0,"kept":0,"live":0,"young":1,"legacy":"skipped: another daemon is running (run/e5f6a7b8/rpc.sock answers); its sessions may use the shared legacy dirs","minAgeDays":7}}`,
 			gone:  []string{"0123456789abcdef", "aaaaaaaaaaaaaaaa", "fedcba9876543210"},
