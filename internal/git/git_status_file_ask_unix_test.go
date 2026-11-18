@@ -45,3 +45,27 @@ func TestGitStatusFileBaseRepoAsksGit(t *testing.T) {
 		t.Errorf("failing ask frame = %s\nwant %s", raw, wantErr)
 	}
 }
+
+// git.status on a file link from a repository into another repository answers
+// "no repository", not the "disagree" text of askGit.
+func TestGitStatusFileLinkIntoOtherRepoNotRepo(t *testing.T) {
+	f := newShadowFixture(t)
+	setProbeClock(t)
+	other := filepath.Join(filepath.Dir(f.repo), "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	buildGit(t, other, "init", "-q")
+	target := filepath.Join(other, "file")
+	if err := os.WriteFile(target, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(f.repo, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := f.call(t, "git.status", map[string]any{"path": link, "baseRepo": link})
+	if raw != statusNotRepo {
+		t.Errorf("frame = %s\nwant %s", raw, statusNotRepo)
+	}
+}

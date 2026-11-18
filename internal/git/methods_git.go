@@ -794,11 +794,15 @@ func gitStatus(req *gitCall) rpc.Response {
 	// folder to syncRepo and keepLiveForm. So the gate makes the git-shadow copy
 	// of that repository and `.probe` for a file baseRepo, as 4c111e86 does
 	// (measured on Linux).
-	gateTrust, noGate := t, false
+	//
+	// A file link from that folder into another repository makes git find the other
+	// repository. 4c111e86 answers "no repository" there, not the "disagree" text
+	// (measured on Linux). macOS is claustrum's own.
+	gateTrust, noGate, folderGate := t, false, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
 		t.verdict == gitDirTrusted && t.pinCommonDir == "" {
 		if folder := readGitDirTrust(filepath.Dir(p.BaseRepo), false); folder.verdict == gitDirTrusted && folder.pinCommonDir != "" {
-			gateTrust = folder
+			gateTrust, folderGate = folder, true
 		} else {
 			noGate = true
 		}
@@ -806,6 +810,9 @@ func gitStatus(req *gitCall) rpc.Response {
 	if noGate {
 		req.use = gitUse{stop: req.stop}
 	} else if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, p.BaseRepo); msg != "" {
+		if folderGate && req.gitDisagreed {
+			return notRepo
+		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	} else if noRepo {
 		return notRepo
