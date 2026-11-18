@@ -215,7 +215,7 @@ In the state `shadow` git adds the worktree in a short-lived folder of the daemo
 
 Git calls of the daemon read its copy of the repository's git settings. [The settings copy](git-rules-settings-copy.md#the-settings-copy) has the states, the texts and the folder. For this method:
 
-- A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask, and stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode (`b3081b51`, measured on macOS), with no set-group-ID bit for a `.git` group not the user's (`4c111e86`, measured on macOS, and Linux is claustrum's own).
+- A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask, and stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode (`b3081b51`, measured on macOS). A `.git` group not the user's gives the folder no set-group-ID bit (`4c111e86`, measured on macOS, claustrum's own on Linux).
 - With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
 - While a `"shadowDirOff": true` request runs, the checkout has its index in `claude-ssh-checkout-<n>` of the temporary folder (`4c111e86`, measured on Linux and macOS). The folder has mode 0700. `c9125eb8` names it `claude-ssh-index-<n>`. Windows is not measured.
 - In the state `shadow` on Linux and macOS, the checkout has its index in [`.checkout-<n>`](git-rules-settings-copy.md#the-folders) (`4c111e86`, measured on Linux and macOS). Two creates at once get two such folders.
