@@ -162,7 +162,9 @@ func mkdirAll(t *testing.T, p string) {
 // repository, keeps a.bin out, and the reply is worktree_lfs_not_kept. With
 // room and no link a.bin is kept, and the reply is timeout (4c111e86, measured
 // on Linux). A download of b.bin that makes no `incomplete` entry keeps
-// timeout, also when a.bin stays out (measured on Linux and macOS).
+// timeout, also when a.bin stays out (measured on Linux and macOS). The
+// deadline fires once the download of b.bin hangs, and the timer of timeoutMs
+// stays armed behind it.
 func TestLFSNotKeptAfterDownloadsBegan(t *testing.T) {
 	const mib = uint64(1) << 20
 	for _, row := range []struct {
@@ -216,6 +218,7 @@ func TestLFSNotKeptAfterDownloadsBegan(t *testing.T) {
 				return 1 << 40, true
 			}
 			t.Cleanup(func() { storeFreeBytes = prev })
+			deadlineAt(t, f.smudgeBegan("b.bin", row.incomplete), nil)
 			raw, _ := f.create(t, map[string]any{"timeoutMs": 5000})
 			if !strings.Contains(raw, `"errorCode":"`+row.code+`"`) {
 				t.Errorf("git.worktree_create = %s\nwant errorCode %s", raw, row.code)
@@ -230,6 +233,25 @@ func TestLFSNotKeptAfterDownloadsBegan(t *testing.T) {
 			}
 			f.wantGone(t)
 		})
+	}
+}
+
+// smudgeBegan reports true once the stand-in filter logged the smudge of name.
+// With incomplete it also waits for the `incomplete` folder that this smudge
+// makes in its store. The download then hangs (remote/hang), so a deadline
+// that deadlineAt fires there lands where the timer of timeoutMs lands.
+func (f lfsFixture) smudgeBegan(name string, incomplete bool) func() bool {
+	return func() bool {
+		b, _ := os.ReadFile(f.log)
+		for line := range strings.SplitSeq(string(b), "\n") {
+			short, rest, _ := strings.Cut(line, " ")
+			_, store, found := strings.Cut(rest, " store=")
+			if short == "" || !found || !strings.HasPrefix(f.oids[name], short) {
+				continue
+			}
+			return !incomplete || exists(filepath.Join(store, "incomplete"))
+		}
+		return false
 	}
 }
 
