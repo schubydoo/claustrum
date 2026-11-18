@@ -73,14 +73,14 @@ func checkShutdownReplyWaitEndsAtItsBound(t *testing.T) {
 	s.dropConns()
 }
 
-// The start of dropConns releases a reply that waits in awaitDropStart, long before
+// The start of dropConns releases a reply that waits in awaitShutdownReplyTurn, long before
 // the bound. A second dropConns does not close the channel again.
 func TestDropConnsReleasesTheShutdownReplyWait(t *testing.T) {
 	s := newTestServer(t)
 	s.replyRule = &shutdownReplyRule{awaitsDrop: true, wait: time.Minute}
 	released := make(chan struct{})
 	go func() {
-		s.awaitDropStart()
+		s.awaitShutdownReplyTurn()
 		close(released)
 	}()
 	s.dropConns()
@@ -88,6 +88,6 @@ func TestDropConnsReleasesTheShutdownReplyWait(t *testing.T) {
 	select {
 	case <-released:
 	case <-time.After(5 * time.Second):
-		t.Fatal("dropConns did not release awaitDropStart")
+		t.Fatal("dropConns did not release awaitShutdownReplyTurn")
 	}
 }

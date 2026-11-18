@@ -475,8 +475,11 @@ func stageDownload(url, checksum, dir string) (string, error) {
 	}
 	// The final progress line comes only after the checksum passes. Measured
 	// on Linux against f6010b97, 5 of 5 runs per row: a good download prints
-	// bytes:0 then bytes:57, and a mismatch prints bytes:0 only.
-	emitFinalProgress()
+	// bytes:0 then bytes:57, and a mismatch prints bytes:0 only. On Windows the
+	// line waits for the rename (finalProgressAfterRename).
+	if !finalProgressAfterRename {
+		emitFinalProgress()
+	}
 	return tmp, nil
 }
 
@@ -637,6 +640,11 @@ func stageAndInstall(cliPath string, stage func(dir string) (string, error), blo
 	}
 	if err := placeStagedCLI(tmp, cliPath); err != nil {
 		return err
+	}
+	// Not measured: a denied rename onto a CLI with the same bytes. claustrum
+	// prints the line there too, as placeStagedCLI counts it as done.
+	if finalProgressAfterRename {
+		emitFinalProgress()
 	}
 	if blob != "" {
 		_ = os.Remove(blob)

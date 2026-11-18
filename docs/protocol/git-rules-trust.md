@@ -167,8 +167,9 @@ The daemon's own environment changes the check as follows:
 M2 to M5 are texts of `f6010b97`, S1 of `4c111e86`, S2 of `683cc6a9`, M6 and S3 of `52d82f0a`.
 M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
-quoting of the path cut to its first 300 runes. A non-ASCII path is cut by runes, not bytes. An invalid
-UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
+quoting of the path cut to its first 300 runes. An invalid UTF-8 byte prints as `\xff`.
+Nothing else in the refusal text is cut. A create's first request runs the excludes read before the refusal
+(`4c111e86`, measured for S2 on macOS and Windows, claustrum's own elsewhere).
 
 | id | text after the prefix | operands |
 |---|---|---|
@@ -180,13 +181,12 @@ UTF-8 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 | S2 | `%q is not a small plain file (<reason>); git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
 | S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing, invalid, or not open to your account on the remote machine), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 
-`<name>` in S1 and S2 is literal text, and the JSON encoder writes it as
-`\u003cname\u003e`.
+`<name>` in S1 and S2 is literal text, written as `\u003cname\u003e` in JSON.
 
 The M4 and S2 reasons are `commondir is not a regular file`,
-`"commondir" is larger than 1 MiB` (build `be1c1ca5`, measured on Linux) or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). M4 drops its operation and path (`b3081b51`, measured for `permission denied` on Linux, a missing target on Windows, `path escapes from parent` on Linux and macOS). Other OS errors of S2 and M4 are claustrum's own, not measured.
+`"commondir" is larger than 1 MiB` (`be1c1ca5`, measured on Linux) or an OS error. S2 drops its operation and path: `path escapes from parent` (`683cc6a9`, measured on Linux). M4 drops its operation and path (`b3081b51`, measured for `permission denied` on Linux, a missing target on Windows, `path escapes from parent` on Linux and macOS). Other OS errors of S2 and M4 are claustrum's own.
 
-M5 has no common prefix. It is `config-defined hooks could not be pinned off; git
+M5 has no common prefix: `config-defined hooks could not be pinned off; git
 not run: the worktree entry this folder's .git names no longer exists`.
 
 On Linux, for a G of 4086 or 4087 bytes, the Lstat of `<G>/commondir` fails with `file name too long`.
@@ -194,7 +194,7 @@ The answer is `config-defined hooks could not be pinned off; git not run: this r
 directory could not be examined (file name too long); if .git is a file, check the path
 written in it` (`683cc6a9`, measured on Linux). In a git directory that the walk accepted, each
 other failed Lstat of `<G>/commondir` but "does not exist" gets that text with the OS error and no
-path, as does a failed Stat of an entry G with no `commondir` (claustrum's own, not measured, as
+path, as does a failed Stat of an entry G with no `commondir` (claustrum's own, as
 are macOS and Windows).
 
 ### A git directory that the daemon cannot search

@@ -10,7 +10,7 @@ and the variables follow `5fd08069`. The hook pins were measured against `f6010b
 and their limits against `89cb6289`. A rule that names no system was measured on
 Linux, macOS and Windows. `internal/git/githarden.go` holds the lists, and
 `internal/git/githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
-with an empty value (claustrum's own, not measured).
+with an empty value (claustrum's own).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
@@ -243,10 +243,10 @@ On Windows it is `SystemRoot` if that is absolute. Else the folder of the daemon
   that call and nothing is kept.
 - The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
-  (`683cc6a9`, measured with `git.status` on Linux and macOS). Claustrum's own,
-  not measured: the base is `XDG_CONFIG_HOME`.
-  Unset, empty or relative, it counts as unset, and the base is the home folder plus
-  `.config`. An empty or relative base gives the null device. A regular file
+  (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git did
+  not start keeps nothing (claustrum's own).
+  Claustrum's own: the base is `XDG_CONFIG_HOME`, or the home folder plus `.config` if
+  that is unset, empty or relative. A regular file
   `git/ignore` in the base, after symlinks, is the result. Every other case gives the null
   device, also when `XDG_CONFIG_HOME` is set and the file is under the home folder.
 - The read of config text keeps `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` and adds
@@ -319,7 +319,7 @@ git cannot parse it is from the code. "The count" below is the check of
 | `git.info` | `{"error":{"code":-32603,"message":<text>}}` | Also a plain folder. The listing also refuses a folder with an empty `.git` folder, and from the code the count does too. The count also refuses a missing folder and a file |
 | `git.list_branches` | the same | Also a plain folder. The count also refuses a file and an empty or absent `path`, with a repository or a plain folder as the daemon's working directory. A `path` that is not empty and does not resolve, or that is inside a managed worktrees directory, gets `{"isRepo":false,"branches":[]}` before the count, with no git call |
 | `git.status` | the same | Also a plain-folder `baseRepo`. The count also refuses a `path` that is a plain folder, the repository, missing or a file. A `baseRepo` that does not resolve gets `{"isRepo":false,"clean":false}` before the count, with no git call. See [git.status](git-status.md#baserepo). From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
-| `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, and no folder is made | Also a plain-folder `baseRepo`. The listing refuses it without and with `worktreeRoot`, and from the code the count does too. Without the refusal, a create with `worktreeRoot` there on Windows answers `not_a_repo`. The count also refuses a missing `baseRepo`, also below a marker (from the code, not measured). It comes before the refusals of a relative `worktreePath`, a `..` component, a path outside the repository and a path that exists. Three frames come before it: the `-32602` frame of a missing `branchName`, the `nested_base_repo` frame of a `baseRepo` that exists inside a managed worktrees directory, and on Windows the frame of claustrum's own trust-root test. On Windows the count also comes before the `worktreeRoot` refusal |
+| `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, and no folder is made | Also a plain-folder `baseRepo`. The listing refuses it without and with `worktreeRoot`, and from the code the count does too. Without the refusal, a create with `worktreeRoot` there on Windows answers `not_a_repo`. The count also refuses a missing `baseRepo`, also below a marker (`4c111e86`). It comes before the refusals of a relative `worktreePath`, a `..` component, a path outside the repository and a path that exists. Four frames come before it: the `-32602` frame of a missing `branchName`, the `nested_base_repo` frame of a `baseRepo` that exists inside a managed worktrees directory, `not_a_repo` without git (`4c111e86`, Linux and macOS, and Windows for a missing `baseRepo`), and on Windows the frame of claustrum's own trust-root test. On Windows the count also comes before the `worktreeRoot` refusal |
 | `git.worktree_remove` | Without `worktreeRoot`, for a gone worktree: `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked: <text>"}`. With `worktreeRoot`: `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}` (measured on Linux and macOS) | A plain-folder `baseRepo`. The list below has the other cases |
 
 #### The other cases of `git.worktree_remove`
@@ -328,8 +328,7 @@ git cannot parse it is from the code. "The count" below is the check of
   outside the repository, the repository itself and a `..` component. With
   `worktreeRoot` they are also a path outside the root, a `..` `baseRepo` and a
   root in `baseRepo` (measured on Linux and macOS). On Windows the `worktreeRoot`
-  refusal comes first. For a listing that git cannot parse, that is from the
-  code.
+  refusal comes first. For the listing, that is from the code.
 - On Windows a `baseRepo` that fails claustrum's own trust-root test gets the
   managed-worktrees refusal first.
 - Without `worktreeRoot`, `statat .claude: permission denied` comes first for a
