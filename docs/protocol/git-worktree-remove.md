@@ -118,7 +118,7 @@ On both:
 
 ## The repository checks
 
-Before any delete, the daemon checks the repository. Each refusal deletes nothing.
+Before any delete, the daemon checks the repository, and each refusal deletes nothing.
 
 - The [git-directory trust check](git-rules-trust.md#git-directory-trust-check) runs on `baseRepo`. Without `worktreeRoot`, if it refuses the git directory, a worktree directory that exists gets the lock-check refusal, and a gone one gets `… is locked: <trust refusal text>` (row 78). An existing one gets that text too for these kinds of stray `commondir`. Its git directory fails the git-directory test (`b3081b51`, measured on Linux and macOS, claustrum's own on Windows). Its content is not `.` or `./`, with any `HEAD` (measured on Linux, macOS and Windows). On Windows it is not a small plain file (`4c111e86` and `c9125eb8`, measured for a dangling junction). With a daemon `GIT_DIR` or `GIT_COMMON_DIR` this is not measured.
 - Without `worktreeRoot`, a git config of `baseRepo` that the daemon does not accept gives `… is locked: <text>`. See [Repository config refusals](git-rules-config.md#repository-config-refusals). `"shadowDirOff":true` turns this check off. A remove that starts while a `"shadowDirOff":true` request runs gets no such refusal either. It then deletes on a config that only the daemon refuses.
