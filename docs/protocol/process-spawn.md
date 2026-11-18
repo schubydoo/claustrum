@@ -430,7 +430,7 @@ claustrum's own, not measured: macOS and Windows, and the end time of the child 
 
 ### A spawn during a shutdown
 
-A start that returns after the shutdown began gets no reply, and Windows ends its child, also with `-keep-children`. Linux and macOS send no signal, so silent ones outlive the daemon (`4c111e86`, measured on Linux). macOS and Windows are claustrum's own, and writes fail after the exit (from the code).
+A start that returns after the shutdown began gets no reply. Windows ends its child, also with `-keep-children`. Linux and macOS send none (claustrum's own). On `4c111e86` ended groups equal start lines, and children with no start line outlive it (measured on Linux). Later writes fail (from the code).
 
 ## Differences from the reference
 
