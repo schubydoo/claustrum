@@ -1207,6 +1207,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
+	// A baseRepo that does not exist answers not_a_repo here, with no start test
+	// and no state line. 4c111e86 does so on Linux, macOS and Windows, and on Linux
+	// it deletes nothing (measured). On Windows the first such request of a daemon
+	// makes one git call and a later one none (measured). The lack of a `git version`
+	// on Linux and macOS, and a request with "shadowDirOff":true, are claustrum's own.
+	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
+		return notARepoResult(req.ID, repo)
+	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate). Nothing is created (measured on Linux).
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
