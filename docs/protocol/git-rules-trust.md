@@ -168,7 +168,7 @@ M2 to M5 are texts of `f6010b97`, S1 of `4c111e86`, S2 of `683cc6a9`, M6 and S3 
 M2 to M4, M6 and S1 to S3 start with `the repository's git directory could not be
 trusted; git not run: `, all but M6 then `commondir not as git writes it: `. Each `%q` of a path is Go
 quoting of the path cut to its first 300 runes. An invalid UTF-8 byte prints as `\xff`.
-Nothing else in the text is cut. The first request of a create runs the excludes read before the refusal
+Nothing else in the refusal text is cut. A create's first request runs the excludes read before the refusal
 (`4c111e86`, measured for S2 on macOS and Windows, claustrum's own elsewhere).
 
 | id | text after the prefix | operands |
