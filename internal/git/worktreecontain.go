@@ -156,6 +156,8 @@ func repoInsideMarkedTree(repo string) bool {
 // with an unreachable target (EACCES), which Lstat passes too.
 // A `.git` file and a `.git` link with an existing target do the same, and a marker link
 // with an existing target counts, as with Stat before (claustrum's own, not measured).
+// A marker link loop (ELOOP) or a marker link with an unreachable target (EACCES) now counts
+// too, because Lstat passes it (claustrum's own, not measured).
 func holdsMarkerEntry(dir string) bool {
 	if _, err := os.Lstat(filepath.Join(dir, managedWorktreesMarker)); err != nil {
 		return false
