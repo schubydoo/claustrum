@@ -51,10 +51,10 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. [The rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
+| `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member that it reads has the wrong type. [`params` rules](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `the repository's git directory could not be trusted; git not run: …` | The daemon does not trust the git directory. [Git-directory trust check](git-rules-trust.md#git-directory-trust-check). |
-| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](git-rules-calls.md#refusal-texts) and [The daemon's own git environment](git-rules-calls.md#the-daemons-own-git-environment). |
-| `-32603` | `git cannot run on this host; git not run: …` | A config listing, a call of the start test or the call about the repository failed, and then `git version` failed too. [A failed configuration listing](git-rules-trust.md#a-failed-configuration-listing), [The start test](git-rules-settings-copy.md#the-start-test) and [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
+| `-32603` | `config-defined hooks could not be pinned off; git not run: …` | A config listing failed or passed a limit of the hook pins, the daemon refuses its own git environment, or a daemon `GIT_DIR` names a gone worktree entry. A listing stopped at 30 seconds goes on with `listing the configuration in force: git took too long: Claude stopped git config after 30 seconds; try again`. [Refusal texts](git-rules-calls.md#refusal-texts) and [Git environment](git-rules-calls.md#the-daemons-own-git-environment). |
+| `-32603` | `git cannot run on this host; git not run: …` | A config listing, a call of the start test or the call about the repository failed, and then `git version` failed too. [Failed listing](git-rules-trust.md#a-failed-configuration-listing), [The start test](git-rules-settings-copy.md#the-start-test) and [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git config of the repository, or a file of its git directory, and does not accept it. [Repository config refusals](git-rules-config.md#repository-config-refusals). |
 | `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The start test of the settings copy failed. The daemon keeps the failure for 10 seconds. [The start test](git-rules-settings-copy.md#the-start-test). |
 | `-32603` | `git could not check this repository on the remote machine: …` or `git and Claude disagree about which repository holds this folder: …` | The call that asks git about the repository failed, did not end in 30 seconds, or named another repository. [The call about the repository](git-rules-settings-copy.md#the-call-about-the-repository). |
@@ -64,7 +64,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits](git-rules-calls.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | git cannot list the branches. For example, the file `packed-refs` is corrupt. |
 
 A daemon `GIT_COMMON_DIR` skips the trust check.
@@ -73,7 +73,7 @@ A warning of git does not become a branch name. If git warns about a broken ref 
 
 ## Differences by system
 
-On Windows a junction before the last component of `path` passes, and git lists the branches (`b3081b51`, measured on Windows). On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path` or a refused share gets a `-32603` refusal. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
+On Windows a junction before the last component of `path` passes, and git lists the branches (`b3081b51`, measured on Windows). On Windows `..` drops the name before it untested, so `<T>\missing\..` and `<T>\t.txt\..` list the branches of `<T>` (`b3081b51`, measured on Windows). On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`. On Windows a `\\?\UNC\` `path` or a refused share gets a `-32603` refusal. [UNC refusals](git-rules-windows-paths.md#unc-refusals). A `path` below an `IO_REPARSE_TAG_WIM` folder gets one too (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
 
 ## Differences from the reference
 

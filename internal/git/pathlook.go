@@ -38,6 +38,8 @@ func pathLookRefusal(path string) string {
 			return lookFailure(path, err)
 		}
 	}
+	// A failed look at <path>\.git, also with ERROR_CANT_ACCESS_FILE, gives no
+	// refusal here (claustrum's own, not measured: no row has that shape).
 	if fi, err := lstatPath(filepath.Join(p, ".git")); err != nil || !fi.IsDir() {
 		return ""
 	}

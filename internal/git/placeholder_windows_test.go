@@ -39,22 +39,32 @@ func reparseTagIoctl(dir string, ioctl, tag uint32) error {
 }
 
 // tagFolder makes an empty folder at dir with the reparse tag tag. The tag goes
-// again at the end of the test, so the temp folder can be removed. The test is
-// skipped where the system does not set the tag or does not read it as a folder
-// that is irregular.
+// again at the end of the test, so the temp folder can be removed. Where the
+// system does not set the tag or does not read it as a folder that is irregular,
+// the test fails when CI is set, as in makeJunction, and is skipped elsewhere.
 func tagFolder(t *testing.T, dir string, tag uint32) {
 	t.Helper()
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := reparseTagIoctl(dir, windows.FSCTL_SET_REPARSE_POINT, tag); err != nil {
-		t.Skipf("set the tag %#x: %v", tag, err)
+		skipOutsideCI(t, "set the tag %#x: %v", tag, err)
 	}
 	t.Cleanup(func() { _ = reparseTagIoctl(dir, windows.FSCTL_DELETE_REPARSE_POINT, tag) })
 	fi, err := os.Lstat(dir)
 	if err != nil || fi.Mode()&(fs.ModeDir|fs.ModeIrregular) != fs.ModeDir|fs.ModeIrregular {
-		t.Skipf("the folder with the tag %#x reads as %v, %v", tag, fi, err)
+		skipOutsideCI(t, "the folder with the tag %#x reads as %v, %v", tag, fi, err)
 	}
+}
+
+// skipOutsideCI fails the test when CI is set and skips it elsewhere, so that a
+// CI leg cannot pass these tests as a silent skip.
+func skipOutsideCI(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
 }
 
 // A folder with the reparse tag IO_REPARSE_TAG_PROJFS is no link: a .git folder with it

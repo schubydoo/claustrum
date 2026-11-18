@@ -387,6 +387,7 @@ After a good add in the state `shadow`, a create removes old staging entries of 
     - An alternates file with Windows line endings or too many object directories gives `worktree_add_failed`, and nothing is made (from the code). [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
     - A `baseRepo` through a link to a network or device path gives `worktree_add_failed`, and no git call runs. [A link to a network or device path](git-rules-windows-paths.md#a-link-to-a-network-or-device-path).
     - A `\\?\UNC\` `baseRepo` or a refused share gives `worktree_add_failed`. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
+    - A `.git` with `IO_REPARSE_TAG_WIM` gives `worktree_add_failed`, and no git call runs (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
 
 ## Rare states
 

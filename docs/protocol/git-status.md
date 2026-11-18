@@ -69,7 +69,7 @@ A failure is a JSON-RPC error with no `errorCode` member. It changes nothing in 
 
 | Code | Text | Cause |
 |---|---|---|
-| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own). [Time limits of git calls](git-rules-calls.md#time-limits-of-git-calls). |
+| `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own). [Time limits](git-rules-calls.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | `git status`, `git ls-files` or `git diff-index` failed. The text of git does not show. A relative `path` that matches a registration gets `exit status 128`, because git takes it as sent. |
 | `-32603` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: ` and the start error, for example `chdir <path>: no such file or directory` | `path` passed the test as a cleaned path, but git cannot start in the path as sent. An example is `<dir>/missing/..` outside `baseRepo` (measured on Linux and macOS). |
 | `-32603` | `<file>: not a regular file` (claustrum's own) | From the copy into the temporary git folder after the gate passed. An `info/sparse-checkout` folder or FIFO gets it. |
@@ -185,7 +185,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 === "Windows"
 
     - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8`, measured on Windows).
-    - A `baseRepo` with a junction before its last component, or a dangling junction, does not resolve: `"isRepo": false`. A link to a network or device path is refused first ([A link to a network or device path](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
+    - A `baseRepo` with a junction before its last component, or a dangling junction, does not resolve: `"isRepo": false`. A link to a network or device path is refused first ([network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
@@ -195,9 +195,10 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A `commondir` value with forward or back slashes passes. Another letter case, a short name, a `\\?\` prefix and a value with no drive letter fail.
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.
     - A gitlink path that is a regular file gives no entry. A junction there gives ` (submodule; could not be inspected)`.
-    - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. [The object sources on Windows](git-rules-trust.md#the-object-sources-on-windows).
-    - A `baseRepo` through a link to a network or device path gives `-32603`, and no git call runs on it. [A link to a network or device path](git-rules-windows-paths.md#a-link-to-a-network-or-device-path).
+    - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows).
+    - A `baseRepo` through a link to a network or device path gives `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path).
     - A `\\?\UNC\` `baseRepo` or a refused share gives `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
+    - A `.git` with `IO_REPARSE_TAG_PROJFS` is no link, and a `baseRepo` below an `IO_REPARSE_TAG_WIM` folder gives `-32603` (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
 
 ## Rare states
 
