@@ -1173,6 +1173,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		gitDirBefore = gitDirIdentity(t.pinCommonDir)
 	}
 	if t.verdict == gitDirRefused {
+		// The excludes read of a first request runs before the refusal. 4c111e86 makes
+		// that one call before a commondir that is no small plain file (measured on
+		// macOS and Windows). Linux and the other trust refusals are claustrum's own.
+		globalExcludesPath()
 		msg := t.refusal
 		if daemonCommonDirSet() {
 			msg = gitDirAddWrap + msg
