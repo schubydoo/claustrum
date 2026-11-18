@@ -24,7 +24,7 @@ the daemon walks up from the request folder:
   the pin of `<P>` too. A junction outside any repository gives "no repository",
   and each git call carries `GIT_DIR=NUL`.
 - On Windows any folder path that does not resolve, like `<P>\gone\..`, starts the walk as spelled.
-  `git.status` resolves it first and answers there if that fails (all
+  `git.status` resolves it first and answers there on failure (all
   from the code).
 - On Windows a config refusal of `git.info` follows the spelled start too,
   except a junction `path`. In `shadow` without
@@ -63,10 +63,11 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
 
 ??? note "Junction paths"
     On Windows `git.info` and `git.list_branches` read the config of a junction
-    `path` that holds its git directory through its target. A refusal names that
-    file. A junction to a bare repository answers as that repository
-    (`4c111e86`, measured). Other methods, a daemon `GIT_DIR` and a target with
-    no drive letter keep the pin. A junction chain
+    `path` that holds its git directory through its target, so a refusal names that
+    file, and one to a bare repository answers as that repository (`4c111e86`,
+    measured).
+    Other methods, a daemon `GIT_DIR` and a target with no drive letter keep the
+    pin. A junction chain
     reads its first target, so one to a bare repository is refused. Both are
     claustrum's own, not measured.
 
