@@ -97,7 +97,7 @@ func TestDaemonGitDirToMissingPathRemoveKeepsGuards(t *testing.T) {
 			if err := os.Symlink(other, live); err != nil {
 				t.Fatal(err)
 			}
-			return other, "refusing to remove worktree: " + live + " is a symbolic link, not a worktree directory"
+			return other, "refusing to remove worktree: `" + live + "` is a symbolic link, not a worktree directory"
 		}},
 		{"claude link", func(t *testing.T, dir, live string) (string, string) {
 			other := filepath.Join(filepath.Dir(dir), "other")

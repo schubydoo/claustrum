@@ -295,10 +295,12 @@ func TestShadowCreateFollowsAHoldThatEndsAtTheAdd(t *testing.T) {
 	if n := leafListings(calls, leaf, test, rt); n != 2 {
 		t.Errorf("C3: %d listings before the read-tree, want 2", n)
 	}
-	// On Linux and macOS the call after the add runs there (askAfterAdd). After a hold
-	// that ends at the add that is claustrum's own, not measured.
-	if got := probeAfter(calls, test, rt); got != createAsksAfterAdd {
-		t.Errorf("C3: a call asks git about the repository after the start test: %v, want %v", got, createAsksAfterAdd)
+	// On Linux and macOS the call after the add runs there (askAfterAdd). On
+	// Windows the recheck makes it (createRechecksAfterAdd). After a hold that
+	// ends at the add that is claustrum's own, not measured.
+	want := createAsksAfterAdd || createRechecksAfterAdd
+	if got := probeAfter(calls, test, rt); got != want {
+		t.Errorf("C3: a call asks git about the repository after the start test: %v, want %v", got, want)
 	}
 	h.wantCopyLink(t)
 }

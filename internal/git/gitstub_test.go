@@ -794,7 +794,9 @@ func applyGitStubStep(w []string) error {
 }
 
 // runGitSlowTimed runs runGitSlow. With CLAUSTRUM_GITSTUB_TIMELOG set, it logs
-// the start and the end of the call there. See runGitSlow.
+// the start and the end of the call there. See runGitSlow. With
+// CLAUSTRUM_GITSTUB_EXITLOG set, it appends one line to that file at the end:
+// the exit code and the argv, joined by a unit separator.
 func runGitSlowTimed(args []string) int {
 	log := os.Getenv("CLAUSTRUM_GITSTUB_TIMELOG")
 	pid := strconv.Itoa(os.Getpid())
@@ -804,6 +806,9 @@ func runGitSlowTimed(args []string) int {
 	code := runGitSlow(args)
 	if log != "" {
 		appendLine(log, "end\x1f"+strconv.FormatInt(time.Now().UnixNano(), 10)+"\x1f"+pid)
+	}
+	if exitLog := os.Getenv("CLAUSTRUM_GITSTUB_EXITLOG"); exitLog != "" {
+		appendLine(exitLog, strconv.Itoa(code)+"\x1f"+strings.Join(args, "\x1f"))
 	}
 	return code
 }

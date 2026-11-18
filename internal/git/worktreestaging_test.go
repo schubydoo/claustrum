@@ -922,3 +922,49 @@ func TestWorktreeAddStagedFailedMove(t *testing.T) {
 		t.Errorf("the failed move logged %q, want no line about it", got)
 	}
 }
+
+// TestStagedAddText: the text of git is cut at stderrHeadCap first. Then each
+// staged path in it becomes "the new folder", and the text ends with the
+// worktreePath of the request. A text with no staged path and another error keep
+// the text of git. 4c111e86 answers so (measured on Linux and Windows). Mutation:
+// replace before the cut, or add no end.
+func TestStagedAddText(t *testing.T) {
+	staged := filepath.Join(t.TempDir(), ".s7", "leaf", "w2")
+	failed := &stagedAddFailure{err: errors.New("exit status 128"), path: staged}
+	hint := "hint:     git worktree add --orphan -b w2 " + filepath.ToSlash(staged) + "\nhint: "
+	pad := strings.Repeat("x", stderrHeadCap-len(hint))
+	stderr := hint + pad + "cut here\n"
+	want := "hint:     git worktree add --orphan -b w2 the new folder hint: " + pad +
+		" (the new folder is `/home/u/r/.claude/worktrees/w2`)"
+	if got := stagedAddText(stderr, failed, "/home/u/r/.claude/worktrees/w2"); got != want {
+		t.Errorf("stagedAddText = %q, want %q", got, want)
+	}
+	plain := "fatal: a branch named 'w2' already exists\n"
+	if got := stagedAddText(plain, failed, "/r/w2"); got != strings.TrimSpace(plain) {
+		t.Errorf("stagedAddText with no staged path = %q, want the text of git", got)
+	}
+	if got := stagedAddText(stderr, errors.New("exit status 128"), "/r/w2"); got != worktreeGitText(stderr, nil) {
+		t.Errorf("stagedAddText of another error = %q, want the text of git", got)
+	}
+}
+
+// TestStagedAddFailureNamesItsPath: a staged add that git refuses returns a
+// stagedAddFailure with the staged path that git got. With a HEAD that names no
+// commit, git names that path in its hint (stagedAddText). Mutation: return the
+// error of git with no stagedAddFailure.
+func TestStagedAddFailureNamesItsPath(t *testing.T) {
+	f := newRepoFolderFixture(t)
+	clearFolderEnv(t)
+	writeFile(t, filepath.Join(f.gitDir, "HEAD"), "ref: refs/heads/nosuch\n", 0o644)
+	_, stderr, err := stagedAdd(t, f, f.useOf(t, f.repo))
+	var failed *stagedAddFailure
+	if !errors.As(err, &failed) {
+		t.Fatalf("the add = %v (%q), want a stagedAddFailure", err, stderr)
+	}
+	if want := filepath.Join(stagedLeafFolder, "w1"); !strings.HasSuffix(failed.path, string(filepath.Separator)+want) {
+		t.Errorf("the staged path is %q, want it to end with %q", failed.path, want)
+	}
+	if !strings.Contains(stderr, filepath.ToSlash(failed.path)) {
+		t.Skipf("this git names no path in its text: %q", stderr)
+	}
+}

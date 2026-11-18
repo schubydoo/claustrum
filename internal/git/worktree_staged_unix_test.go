@@ -379,3 +379,27 @@ func TestStagedCreateWithAnEmptyCommonDirInAnotherEntry(t *testing.T) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
 }
+
+// TestStagedNewFolder: a staged create with a HEAD that names no commit fails
+// in git, and git names the staged path in its --orphan hint. The reply says
+// "the new folder" there and ends with the worktreePath (4c111e86, measured on
+// Linux and Windows, stagedAddText). The name of the test is short, so that the
+// cut of 512 bytes comes after the staged path. A git with no such hint, and a
+// cut inside the staged path (claustrum's own), skip. Mutation: answer
+// worktreeGitText at the reply of the failed add.
+func TestStagedNewFolder(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	writeFile(t, filepath.Join(f.gitDir, "HEAD"), "ref: refs/heads/nosuch\n", 0o644)
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	got := createError(t, raw)
+	if !strings.Contains(got, "--orphan") {
+		t.Skipf("this git gives no --orphan hint: %s", got)
+	}
+	if strings.Contains(got, "git-shadow/") && !strings.Contains(got, "/"+stagedLeafFolder+"/w1 ") {
+		t.Skipf("the cut lands inside the staged path: %s", got)
+	}
+	if !strings.Contains(got, "-b w1 the new folder") || !strings.HasSuffix(got, " (the new folder is `"+leaf+"`)") {
+		t.Errorf("the error = %s\nwant \"-b w1 the new folder\" and the end (the new folder is `%s`)", got, leaf)
+	}
+}
