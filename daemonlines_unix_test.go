@@ -84,7 +84,7 @@ func TestLockInstanceIsTheDaemonInstance(t *testing.T) {
 		t.Fatalf("newServerOnSocket: %v", err)
 	}
 	t.Cleanup(func() { s.signalShutdown(); s.closeAll(sock) })
-	rec, err := readOwnerRecord(filepath.Join(dir, runlock.LockName))
+	rec, err := loadLockOwner(filepath.Join(dir, runlock.LockName))
 	if err != nil {
 		t.Fatalf("read owner record: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestOrphanExitLines(t *testing.T) {
 	}
 	buf := captureLogBuf(t)
 	done := make(chan struct{})
-	go func() { s.exitWhenOrphaned(sock); close(done) }()
+	go func() { s.watchSocketOwnership(sock); close(done) }()
 	select {
 	case <-s.shutdown:
 	case <-time.After(5 * time.Second):

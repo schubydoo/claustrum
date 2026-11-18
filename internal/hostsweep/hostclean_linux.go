@@ -289,9 +289,9 @@ func hcSnapshot() (pids []int, overflow bool, ok bool) {
 	return pids, false, true
 }
 
-// peerOf returns the pid and uid of the process on the other end of a unix connection, via
+// socketPeer returns the pid and uid of the process on the other end of a unix connection, via
 // SO_PEERCRED.
-func peerOf(conn *net.UnixConn) (pid int, uid uint32, ok bool) {
+func socketPeer(conn *net.UnixConn) (pid int, uid uint32, ok bool) {
 	raw, err := conn.SyscallConn()
 	if err != nil {
 		return 0, 0, false
@@ -313,11 +313,11 @@ func hcDevMajorMinor(dev uint64) (major, minor uint64) {
 	return major, minor
 }
 
-// lockFileHeld reports whether the file described by fi is currently locked by a live
+// heldInProcLocks reports whether the file described by fi is currently locked by a live
 // process, by matching its device and inode against /proc/locks. read is false when
 // /proc/locks cannot be read: the holder is then not known. A fi with no stat reads as not
 // held, as before (not measured).
-func lockFileHeld(fi os.FileInfo) (held, read bool) {
+func heldInProcLocks(fi os.FileInfo) (held, read bool) {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
 		return false, true
@@ -380,7 +380,7 @@ var hcStoppedIsUninspected = true
 // second result is false when /proc/locks cannot be read. The tidy then keeps the run dir,
 // also while a process holds the lock (`5fd08069`, measured on Linux).
 func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
-	return lockFileHeld(fi)
+	return heldInProcLocks(fi)
 }
 
 // hcSelfExe resolves this process's own executable path, dropping a trailing " (deleted)".

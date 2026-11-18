@@ -45,7 +45,7 @@ var claudeRuntimeStateNames = []string{
 	"worktrees",
 }
 
-// isClaudeRuntimeState reports whether rel names one of the runtime-state entries
+// isSessionStateFile reports whether rel names one of the runtime-state entries
 // directly under a `.claude/` directory, or anything inside one.
 //
 // The behaviour, all four parts measured against 90fca6e6:
@@ -56,14 +56,14 @@ var claudeRuntimeStateNames = []string{
 //     is DROPPED (measured)
 //   - case-insensitive, so a `Checkpoints` directory is DROPPED
 //
-// Only the manifest pass can reach a nested `.claude/`. copyClaudeDir's listing is
+// Only the manifest pass can reach a nested `.claude/`. copyDotClaude's listing is
 // pathspec-limited to the repo-root `.claude/`, so it never names one.
 //
 // claustrum implements that by lowercasing, wrapping the path in slashes and
 // substring-matching.
 //
 // rel is repo-relative with forward slashes, the form `git ls-files` prints.
-func isClaudeRuntimeState(rel string) bool {
+func isSessionStateFile(rel string) bool {
 	s := "/" + strings.ToLower(filepath.ToSlash(rel)) + "/"
 	for _, name := range claudeRuntimeStateNames {
 		if strings.Contains(s, "/"+claudeDirName+"/"+name+"/") {
@@ -73,7 +73,7 @@ func isClaudeRuntimeState(rel string) bool {
 	return false
 }
 
-// copyClaudeDir seeds a new worktree with the repo's git-ignored `.claude/` files.
+// copyDotClaude seeds a new worktree with the repo's git-ignored `.claude/` files.
 //
 // `git worktree add` checks out tracked files only, so an ignored `.claude/`
 // arrives empty. The reference fills it from the base repo, which is what carries
@@ -83,7 +83,7 @@ func isClaudeRuntimeState(rel string) bool {
 //
 //   - `.claude/worktrees/` is skipped. That is where session worktrees live, so
 //     copying it would copy the worktree into itself.
-//   - a runtime-state path is skipped (90fca6e6 only; see isClaudeRuntimeState).
+//   - a runtime-state path is skipped (90fca6e6 only; see isSessionStateFile).
 //
 // `-z` here is not optional. git C-quotes any path with a tab, a quote, a
 // backslash or a non-ASCII byte, and the quoted form names no real file.
@@ -104,7 +104,7 @@ func isClaudeRuntimeState(rel string) bool {
 // failure does not fail the request. A failed batch is skipped, and the other
 // batches still copy. The directory batches of the `.worktreeinclude` scan do
 // the same.
-func copyClaudeDir(u gitUse, repo, worktree string) {
+func copyDotClaude(u gitUse, repo, worktree string) {
 	copyClaudeDirCalls(u, repo, worktree, claudeDirPassCalls(repo, gitArgvBudget))
 }
 
@@ -117,10 +117,10 @@ func copyClaudeDirCalls(u gitUse, repo, worktree string, calls [][]string) {
 			continue
 		}
 		for _, rel := range strings.Split(out, "\x00") {
-			if rel == "" || strings.HasPrefix(rel, skipPrefix) || isClaudeRuntimeState(rel) {
+			if rel == "" || strings.HasPrefix(rel, skipPrefix) || isSessionStateFile(rel) {
 				continue
 			}
-			if dst := safeOverlayDest(worktree, rel); dst != "" {
+			if dst := overlayTargetInside(worktree, rel); dst != "" {
 				copyFile(filepath.Join(repo, rel), dst)
 			}
 		}

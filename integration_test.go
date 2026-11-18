@@ -255,7 +255,7 @@ func TestSocketProcessReattachReplay(t *testing.T) {
 	raw := b.waitResponses(1)
 
 	var env struct {
-		Result rpc.ReattachResult `json:"result"`
+		Result rpc.ReattachReply `json:"result"`
 	}
 	if err := json.Unmarshal(raw[0], &env); err != nil {
 		t.Fatalf("unmarshal reattach: %v", err)
@@ -324,7 +324,7 @@ func TestSocketProcessWantPid(t *testing.T) {
 
 	// (2) Opt-in spawn — wantPid:true adds pid + startTime, in that order.
 	wpResp := cl.call(procSpawnReq(t, 2, "WP", true))
-	var wp rpc.SpawnResult
+	var wp rpc.SpawnReply
 	if err := json.Unmarshal([]byte(rawResult(t, wpResp)), &wp); err != nil {
 		t.Fatalf("unmarshal wantPid spawn result: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestSocketProcessWantPid(t *testing.T) {
 	// (3) Reattach (default) on the exited process: no pid/startTime fields.
 	cl.waitExit("WP")
 	raDefReq := authed(`{"jsonrpc":"2.0","id":3,"method":"process.reattach","params":{"id":"WP","fromSeq":0}}`)
-	var raDef rpc.ReattachResult
+	var raDef rpc.ReattachReply
 	raDefRaw := rawResult(t, cl.call(raDefReq))
 	if err := json.Unmarshal([]byte(raDefRaw), &raDef); err != nil {
 		t.Fatalf("unmarshal default reattach: %v", err)
@@ -353,7 +353,7 @@ func TestSocketProcessWantPid(t *testing.T) {
 	// (4) Reattach with wantPid:true reports the SAME pid/startTime the spawn did —
 	// the cross-call consistency a client relies on for PID-reuse detection.
 	raWPReq := authed(`{"jsonrpc":"2.0","id":4,"method":"process.reattach","params":{"id":"WP","fromSeq":0,"wantPid":true}}`)
-	var raWP rpc.ReattachResult
+	var raWP rpc.ReattachReply
 	if err := json.Unmarshal([]byte(rawResult(t, cl.call(raWPReq))), &raWP); err != nil {
 		t.Fatalf("unmarshal wantPid reattach: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestSocketProcessWantPid(t *testing.T) {
 	assertGolden(t, "socket_process_wantpid.golden.json", encodeGolden(t, golden))
 }
 
-func lastExit(t *testing.T, frames []supervisor.StreamFrame) supervisor.StreamFrame {
+func lastExit(t *testing.T, frames []supervisor.ChildFrame) supervisor.ChildFrame {
 	t.Helper()
 	for i := len(frames) - 1; i >= 0; i-- {
 		if frames[i].Stream == "exit" {
@@ -381,10 +381,10 @@ func lastExit(t *testing.T, frames []supervisor.StreamFrame) supervisor.StreamFr
 		}
 	}
 	t.Fatal("no exit frame")
-	return supervisor.StreamFrame{}
+	return supervisor.ChildFrame{}
 }
 
-func assertSeqMonotonic(t *testing.T, frames []supervisor.StreamFrame) {
+func assertSeqMonotonic(t *testing.T, frames []supervisor.ChildFrame) {
 	t.Helper()
 	for i, f := range frames {
 		if f.Seq != uint64(i+1) {

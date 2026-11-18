@@ -51,7 +51,7 @@ type managedLauncherLog struct {
 // (4c111e86, measured on macOS). claustrum's
 // own, not measured: the key lives for one daemon, apart from the key of note. With
 // logsRepeats each refusal logs, a repeat too (Windows, claustrum's own).
-func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckResult, logsRepeats bool) {
+func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckReply, logsRepeats bool) {
 	reason := ""
 	if res.Status == install.StatusUnusable {
 		reason = res.Reason
@@ -89,7 +89,7 @@ func (l *managedLauncherLog) firstIgnoredVar() bool {
 	return first
 }
 
-func (l *managedLauncherLog) note(res rpc.ManagedLauncherResult) {
+func (l *managedLauncherLog) note(res rpc.ManagedLauncherReply) {
 	line := ""
 	switch res.Status {
 	case install.StatusUnusable:

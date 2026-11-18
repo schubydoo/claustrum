@@ -46,7 +46,7 @@ func OwnReapIdentityForTest() (node, host string) { return ownReapIdentity() }
 // node. It returns the name of the record in the children folder.
 func WriteOrphanRecordForTest(runDir string, pid int, argv0 string) (string, error) {
 	node, host := ownReapIdentity()
-	rec := childRecord{
+	rec := spawnRecord{
 		Pid: pid, Node: node, Host: host, Instance: "inst-old",
 		DaemonPid: 999999999, DaemonStart: "1", Argv0: argv0,
 		Start: "9000", At: time.Now().UnixMilli(),

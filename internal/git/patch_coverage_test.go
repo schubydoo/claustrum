@@ -87,11 +87,11 @@ func TestWorktreeHelperEdges(t *testing.T) {
 	if got := symlinkedComponent(base, "relative"+sep+"wt"); got != "" {
 		t.Errorf("symlinkedComponent on unrelatable paths = %q, want \"\"", got)
 	}
-	// worktreeAdminDir returns "" for a .git file that is not a "gitdir:" pointer.
+	// linkedGitDirOf returns "" for a .git file that is not a "gitdir:" pointer.
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".git"), "not a gitdir pointer\n", 0o644)
-	if got := worktreeAdminDir(dir); got != "" {
-		t.Errorf("worktreeAdminDir on a non-pointer .git = %q, want \"\"", got)
+	if got := linkedGitDirOf(dir); got != "" {
+		t.Errorf("linkedGitDirOf on a non-pointer .git = %q, want \"\"", got)
 	}
 }
 

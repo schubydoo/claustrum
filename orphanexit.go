@@ -81,11 +81,11 @@ type selfExitWatch struct {
 	failedProbes int
 }
 
-// exitWhenOrphaned runs as a goroutine for the daemon's life. It is a no-op (returns at
+// watchSocketOwnership runs as a goroutine for the daemon's life. It is a no-op (returns at
 // once) on Windows (selfExitRuns), and unless both durations are positive, the bound
 // socket's identity was captured (sockInfo), and this daemon has an instanceId to
 // recognise itself by.
-func (s *server) exitWhenOrphaned(socket string) {
+func (s *server) watchSocketOwnership(socket string) {
 	if !selfExitRuns || orphanCheckInterval <= 0 || orphanGrace <= 0 || s.sockInfo == nil || s.instanceID == "" {
 		return
 	}
@@ -137,7 +137,7 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 		return false
 	}
 	// Grace elapsed with no client connected: probe whether the path still reaches us.
-	reached, cannotDial := s.pathReachesUs(socket)
+	reached, cannotDial := s.socketStillOurs(socket)
 	if reached {
 		logging.Infof("[Server] socket %s still reaches this daemon despite a changed file identity; not orphaned", socket)
 		*w = selfExitWatch{}
@@ -159,7 +159,7 @@ func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duratio
 		return false
 	}
 	logging.Warnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
-		(now - w.orphanedAt).Round(time.Second), w.failedProbes, s.procs.RunningCount())
+		(now - w.orphanedAt).Round(time.Second), w.failedProbes, s.procs.AliveCount())
 	logging.Infof("[Server] shutdown requested")
 	s.signalShutdown()
 	return true
@@ -192,14 +192,14 @@ func (s *server) socketFileUnmodified(socket string) bool {
 	return err == nil && cur.ModTime().Equal(s.sockInfo.ModTime())
 }
 
-// pathReachesUs dials the socket path and asks server.capabilities. reached is true only
+// socketStillOurs dials the socket path and asks server.capabilities. reached is true only
 // when the reply's instanceId is our own — the path still leads back to THIS daemon. Any
 // dial, write, read, or parse failure, or a different instanceId, gives false.
 // cannotDial is true when the path is too long to dial without a change of folder
 // (sockroute.DialSocketInDaemon). On Linux `be1c1ca5` ends the daemon at a long path when a
 // plain file with the bound mtime is there (measured on Linux). This probe dials
 // through /proc there.
-func (s *server) pathReachesUs(socket string) (reached, cannotDial bool) {
+func (s *server) socketStillOurs(socket string) (reached, cannotDial bool) {
 	c, err := sockroute.DialSocketInDaemon(socket, orphanProbeTimeout)
 	if err != nil {
 		var tooLong *sockroute.TooLongError

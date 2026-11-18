@@ -1363,6 +1363,11 @@ func TestLFSNotKeptAfterDeadline(t *testing.T) {
 				regularLstatDone = func(string) { wait() }
 				t.Cleanup(func() { regularLstatDone = prevLstat })
 			}
+			if row.hang {
+				// The deadline fires once the download of b.bin hangs. The
+				// timer of timeoutMs stays armed behind it.
+				deadlineAt(t, f.smudgeBegan("b.bin", row.inc), nil)
+			}
 			raw, _ := f.create(t, map[string]any{"timeoutMs": 10000})
 			if !strings.Contains(raw, `"errorCode":"`+row.code+`"`) || !strings.Contains(raw, row.text) {
 				t.Errorf("git.worktree_create = %s\nwant errorCode %s and %q", raw, row.code, row.text)

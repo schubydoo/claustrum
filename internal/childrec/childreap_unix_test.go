@@ -42,7 +42,7 @@ func TestRecordMatchesLive(t *testing.T) {
 		{"no program key, another program", "/nonexistent/other", "", stub, stubArgs, false},
 	} {
 		t.Run(tc.row, func(t *testing.T) {
-			rec := childRecord{Argv0: tc.argv0, Program: tc.program}
+			rec := spawnRecord{Argv0: tc.argv0, Program: tc.program}
 			lp := liveProc{state: procAlive, program: tc.live, args: tc.args}
 			if got := recordMatchesLive(rec, lp); got != tc.want {
 				t.Errorf("recordMatchesLive(argv0 %q, program %q; live %q %q) = %v, want %v",
@@ -104,7 +104,7 @@ func TestRecordMatchesCommandText(t *testing.T) {
 		{"a blank in the folder of the live program, same path in the record", "/tmp/my dir/sigstub", "", "/tmp/my dir/sigstub --log x", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := childRecord{Argv0: tc.argv0, Program: tc.program}
+			rec := spawnRecord{Argv0: tc.argv0, Program: tc.program}
 			if got := recordMatchesLive(rec, psLive(tc.text)); got != tc.want {
 				t.Errorf("recordMatchesLive(argv0 %q, program %q; text %q) = %v, want %v", tc.argv0, tc.program, tc.text, got, tc.want)
 			}
@@ -114,10 +114,10 @@ func TestRecordMatchesCommandText(t *testing.T) {
 	// whole argument and is handed (measured on Linux), and a prefix of argv[0] is no
 	// match.
 	linux := liveProc{state: procAlive, program: "/tmp/e/bin/sigstub", args: []string{"--log", "x", "/tmp/e/bin/my target"}}
-	if !recordMatchesLive(childRecord{Argv0: "/nonexistent/other", Program: "/tmp/e/bin/my target"}, linux) {
+	if !recordMatchesLive(spawnRecord{Argv0: "/nonexistent/other", Program: "/tmp/e/bin/my target"}, linux) {
 		t.Error("linux: a whole argument with a blank was not handed")
 	}
-	if recordMatchesLive(childRecord{Argv0: "/tmp/e/bin/my"}, liveProc{state: procAlive, program: "/tmp/e/bin/my stub"}) {
+	if recordMatchesLive(spawnRecord{Argv0: "/tmp/e/bin/my"}, liveProc{state: procAlive, program: "/tmp/e/bin/my stub"}) {
 		t.Error("linux: a prefix of argv[0] matched")
 	}
 }
@@ -154,8 +154,8 @@ func TestVerifyOrphanEmptyArgv0BeforeProgram(t *testing.T) {
 		state: procAlive, startTicks: "9", pgid: pid, program: "/f/bin/sigstub",
 		runDir: runDir, childMark: strconv.Itoa(pid) + ":9",
 	}})
-	rec := childRecord{Pid: pid, Start: "9", Argv0: "", Program: "/f/bin/sigstub"}
-	v, reason := verifyOrphan(rec, runDir, simOwnDaemon, simOwnParent, simOwnPgid)
+	rec := spawnRecord{Pid: pid, Start: "9", Argv0: "", Program: "/f/bin/sigstub"}
+	v, reason := checkRecordOwnWords(rec, runDir, simOwnDaemon, simOwnParent, simOwnPgid)
 	if v != verdictSkip || reason != "record names no program to verify against" {
 		t.Errorf("verdict/reason = %d/%q, want a skip for no program", v, reason)
 	}
@@ -163,9 +163,9 @@ func TestVerifyOrphanEmptyArgv0BeforeProgram(t *testing.T) {
 
 // orphanRecord is a record of a dead predecessor daemon on this machine and boot, for
 // a sweep test. The pids are far above any real pid, and every signal is seamed.
-func orphanRecord(pid int, argv0, program string) childRecord {
+func orphanRecord(pid int, argv0, program string) spawnRecord {
 	node, host := ownReapIdentity()
-	return childRecord{
+	return spawnRecord{
 		Pid: pid, Node: node, Host: host, Instance: "inst-old",
 		DaemonPid: 999999999, DaemonStart: "1", Argv0: argv0, Program: program,
 		Start: "9000", At: time.Now().UnixMilli(),
@@ -362,7 +362,7 @@ func TestReadChildRecordRefusesNonRegular(t *testing.T) {
 
 // simTarget makes the children folder of a new run dir, a live process that passes the
 // whole record test, and its record file. It returns the fake, the run dir and the target.
-func simTarget(t *testing.T) (*procSim, string, reapTarget) {
+func simTarget(t *testing.T) (*procSim, string, doomedChild) {
 	t.Helper()
 	runDir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(runDir, "children"), 0o700); err != nil {
@@ -427,7 +427,7 @@ func TestReapWaitDropsGroupThatNoLongerVerifies(t *testing.T) {
 			}
 			start := sim.now
 			var counts reapCounts
-			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 			if sim.sigCount(syscall.SIGTERM) != 1 {
 				t.Errorf("kills = %v, want exactly one SIGTERM", sim.kills)
@@ -488,7 +488,7 @@ func TestReapWaitLiveLeaderIsNotReaped(t *testing.T) {
 		return nil
 	}
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if counts.reapedGrace != 0 || counts.reapedEscalate != 0 || counts.forgotten != 1 {
 		t.Errorf("counts = %+v, want the live group counted in forgotten, not as reaped", counts)
@@ -521,7 +521,7 @@ func TestReapWaitEndedLeaderIsNotDropped(t *testing.T) {
 	}
 	sim.onKill[tg.pid] = func(syscall.Signal) error { termed = true; return nil }
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if counts.reapedGrace != 1 || counts.forgotten != 0 || len(sim.kills) != 1 {
 		t.Errorf("counts = %+v, kills = %v, want one SIGTERM and the group counted as ended", counts, sim.kills)
@@ -547,7 +547,7 @@ func TestReapTargetsLeaderGoneMembersLinger(t *testing.T) {
 	}
 	start := sim.now
 	var counts reapCounts
-	reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts)
+	reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts)
 
 	want := []killRec{{tg.pid, syscall.SIGTERM}, {tg.pid, syscall.SIGKILL}}
 	if len(sim.kills) != 2 || sim.kills[0] != want[0] || sim.kills[1] != want[1] {
@@ -597,7 +597,7 @@ func TestReapTargetsLeaderReadsGoneOnceBeforeSIGKILL(t *testing.T) {
 				return inner(pid, wantEnv)
 			}
 			var counts reapCounts
-			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 			if changed {
 				if sim.sigCount(syscall.SIGKILL) != 0 || counts.forgotten != 1 || !strings.Contains(out, `no longer verifies (it does not run the recorded program "/n")`) {
@@ -627,7 +627,7 @@ func TestReapWaitReadsThatDisagree(t *testing.T) {
 	}
 	sim.onKill[tg.pid] = func(syscall.Signal) error { termed = true; return nil }
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if counts.forgotten != 1 || counts.reapedGrace != 0 || len(sim.kills) != 1 {
 		t.Errorf("counts = %+v, kills = %v, want one SIGTERM and the group in forgotten only", counts, sim.kills)
@@ -652,7 +652,7 @@ func TestReapTargetsLeaderGoneBeforeSIGKILL(t *testing.T) {
 		return sim.now
 	}
 	var counts reapCounts
-	reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts)
+	reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts)
 
 	if counts.reapedGrace != 1 || counts.reapedEscalate != 0 || counts.forgotten != 0 || counts.survived != 0 {
 		t.Errorf("counts = %+v, want the group in the grace bucket only", counts)
@@ -678,7 +678,7 @@ func TestReapTargetsChangedBeforeSIGKILL(t *testing.T) {
 		return sim.now
 	}
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if sim.sigCount(syscall.SIGKILL) != 0 || counts.forgotten != 1 || counts.reapedEscalate != 0 {
 		t.Errorf("kills = %v, counts = %+v, want no SIGKILL and the group in forgotten", sim.kills, counts)
@@ -718,7 +718,7 @@ func TestReapOrphansUnreadableRecordAndRunDir(t *testing.T) {
 // children entry is a symlink to a folder that holds a valid record of a live process,
 // which passes every test of the sweep. The sweep sends no signal, removes nothing and
 // logs the reaping-nothing line, for a folder outside the run dir and for one inside
-// it (f6010b97 and 89cb6289, Linux rows SYa and SYb). Before, the sweep listed the
+// it (f6010b97 and 89cb6289, two Linux rows). Before, the sweep listed the
 // folder by its path, followed the symlink and sent SIGTERM.
 func TestReapOrphansChildrenSymlink(t *testing.T) {
 	if node, _ := ownReapIdentity(); node == "" {
@@ -831,13 +831,13 @@ func TestVerifyOrphan(t *testing.T) {
 		runDir:     runDir,
 		childMark:  strconv.Itoa(pid) + ":9000",
 	}
-	rec := childRecord{Pid: pid, Start: "9000", Argv0: "/usr/bin/node"}
+	rec := spawnRecord{Pid: pid, Start: "9000", Argv0: "/usr/bin/node"}
 	// Pick owner/parent/pgid values distinct from pid for the all-pass rows.
 	const ownDaemon, ownParent, ownPgid = 10, 11, 12
 
 	cases := []struct {
 		name        string
-		rec         childRecord
+		rec         spawnRecord
 		live        liveProc
 		ownDaemon   int
 		ownParent   int
@@ -845,12 +845,12 @@ func TestVerifyOrphan(t *testing.T) {
 		wantVerdict int
 		wantReason  string
 	}{
-		{"pid below 2", childRecord{Pid: 1, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is out of range"},
-		{"pid is this daemon", childRecord{Pid: ownDaemon, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon"},
-		{"pid is parent", childRecord{Pid: ownParent, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon's parent or process group"},
-		{"pid is pgroup", childRecord{Pid: ownPgid, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon's parent or process group"},
-		{"no start", childRecord{Pid: pid, Start: "", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "record has no start time to verify against"},
-		{"no program", childRecord{Pid: pid, Start: "1", Argv0: ""}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "record names no program to verify against"},
+		{"pid below 2", spawnRecord{Pid: 1, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is out of range"},
+		{"pid is this daemon", spawnRecord{Pid: ownDaemon, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon"},
+		{"pid is parent", spawnRecord{Pid: ownParent, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon's parent or process group"},
+		{"pid is pgroup", spawnRecord{Pid: ownPgid, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon's parent or process group"},
+		{"no start", spawnRecord{Pid: pid, Start: "", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "record has no start time to verify against"},
+		{"no program", spawnRecord{Pid: pid, Start: "1", Argv0: ""}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "record names no program to verify against"},
 		{"live gone", rec, liveProc{state: procGone}, ownDaemon, ownParent, ownPgid, verdictGone, ""},
 		{"live not ours", rec, liveProc{state: procNotOurs}, ownDaemon, ownParent, ownPgid, verdictPassthrough, "process is not in this daemon's namespace"},
 		{"pid reused", rec, liveProc{state: procAlive, startTicks: "8888", pgid: pid, program: "/usr/bin/node", runDir: runDir, childMark: strconv.Itoa(pid) + ":8888"}, ownDaemon, ownParent, ownPgid, verdictSkip, "the pid was reused"},
@@ -861,12 +861,12 @@ func TestVerifyOrphan(t *testing.T) {
 		{"child mark mismatch", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "/usr/bin/node", runDir: runDir, childMark: "999:9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process was not started directly by a daemon"},
 		{"empty live program", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "", runDir: runDir, childMark: strconv.Itoa(pid) + ":9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process is not running the recorded program"},
 		{"reap when all pass", rec, pass, ownDaemon, ownParent, ownPgid, verdictReap, ""},
-		{"reap by basename match", childRecord{Pid: pid, Start: "9000", Argv0: "node"}, pass, ownDaemon, ownParent, ownPgid, verdictReap, ""},
+		{"reap by basename match", spawnRecord{Pid: pid, Start: "9000", Argv0: "node"}, pass, ownDaemon, ownParent, ownPgid, verdictReap, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeLiveProcs(t, map[int]liveProc{tc.rec.Pid: tc.live})
-			v, reason := verifyOrphan(tc.rec, runDir, tc.ownDaemon, tc.ownParent, tc.ownPgid)
+			v, reason := checkRecordOwnWords(tc.rec, runDir, tc.ownDaemon, tc.ownParent, tc.ownPgid)
 			if v != tc.wantVerdict || reason != tc.wantReason {
 				t.Errorf("verdict/reason = %d/%q, want %d/%q", v, reason, tc.wantVerdict, tc.wantReason)
 			}
@@ -890,8 +890,8 @@ func TestSettleThenVerdictReportsGone(t *testing.T) {
 		}
 		return liveProc{state: procGone} // the settle re-read: now gone
 	}
-	rec := childRecord{Pid: pid, Start: "1", Argv0: "x"}
-	v, _ := verifyOrphan(rec, "/run/x", 1, 2, 3)
+	rec := spawnRecord{Pid: pid, Start: "1", Argv0: "x"}
+	v, _ := checkRecordOwnWords(rec, "/run/x", 1, 2, 3)
 	if v != verdictGone {
 		t.Errorf("verdict = %d, want verdictGone after the settle re-read", v)
 	}
@@ -915,8 +915,8 @@ func TestSameLeader(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeLiveProcs(t, map[int]liveProc{pid: tc.live})
-			if got, _ := sameLeader(pid, tc.recStrt); got != tc.want {
-				t.Errorf("sameLeader = %d, want %d", got, tc.want)
+			if got, _ := leaderStillMatches(pid, tc.recStrt); got != tc.want {
+				t.Errorf("leaderStillMatches = %d, want %d", got, tc.want)
 			}
 		})
 	}
@@ -943,8 +943,8 @@ func TestDaemonAlive(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeLiveProcs(t, map[int]liveProc{tc.pid: tc.live})
-			if got := daemonAlive(tc.pid, tc.start, ownPid); got != tc.want {
-				t.Errorf("daemonAlive = %v, want %v", got, tc.want)
+			if got := recordedDaemonLives(tc.pid, tc.start, ownPid); got != tc.want {
+				t.Errorf("recordedDaemonLives = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -1004,7 +1004,7 @@ func TestReapTargetsTwoPhase(t *testing.T) {
 	// one gets the SIGKILL.
 	t1 := sim.addVerified(noSuchPid+1001, "10", runDir)
 	t2 := sim.addVerified(noSuchPid+1002, "20", runDir)
-	for _, tt := range []reapTarget{t1, t2} {
+	for _, tt := range []doomedChild{t1, t2} {
 		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -1012,7 +1012,7 @@ func TestReapTargetsTwoPhase(t *testing.T) {
 	sim.diesOn(t1.pid, syscall.SIGKILL) // survives SIGTERM + the grace, dies to the escalation
 	// t2 has no death policy: it outlives SIGKILL (a zombie or an uninterruptible sleep).
 	var counts reapCounts
-	reapTargets(simCtx(t, runDir), []reapTarget{t1, t2}, &counts)
+	reapTargets(simCtx(t, runDir), []doomedChild{t1, t2}, &counts)
 
 	if sim.sigCount(syscall.SIGTERM) != 2 || sim.sigCount(syscall.SIGKILL) != 2 {
 		t.Errorf("signals: %d SIGTERM, %d SIGKILL; want 2 and 2", sim.sigCount(syscall.SIGTERM), sim.sigCount(syscall.SIGKILL))
@@ -1057,7 +1057,7 @@ func TestReapOrphansForgetOnlyIsSilent(t *testing.T) {
 	}
 }
 
-// TestReapTargetsPreKillReuse proves the sameLeader re-check stops a signal to a pid that
+// TestReapTargetsPreKillReuse proves the leaderStillMatches re-check stops a signal to a pid that
 // was reused or exited between the sweep and the kill.
 func TestReapTargetsPreKillReuse(t *testing.T) {
 	runDir := t.TempDir()
@@ -1065,10 +1065,10 @@ func TestReapTargetsPreKillReuse(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	reused := reapTarget{pid: noSuchPid + 2001, start: "10", name: "1073743825.json"}
-	gone := reapTarget{pid: noSuchPid + 2002, start: "20", name: "1073743826.json"}
-	sigfail := reapTarget{pid: noSuchPid + 2003, start: "30", name: "1073743827.json"}
-	for _, tt := range []reapTarget{reused, gone, sigfail} {
+	reused := doomedChild{pid: noSuchPid + 2001, start: "10", name: "1073743825.json"}
+	gone := doomedChild{pid: noSuchPid + 2002, start: "20", name: "1073743826.json"}
+	sigfail := doomedChild{pid: noSuchPid + 2003, start: "30", name: "1073743827.json"}
+	for _, tt := range []doomedChild{reused, gone, sigfail} {
 		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -1079,7 +1079,7 @@ func TestReapTargetsPreKillReuse(t *testing.T) {
 	sim.add(sigfail.pid, "30")
 	sim.onKill[sigfail.pid] = func(syscall.Signal) error { return syscall.ESRCH } // the signal fails
 	var counts reapCounts
-	reapTargets(simCtx(t, runDir), []reapTarget{reused, gone, sigfail}, &counts)
+	reapTargets(simCtx(t, runDir), []doomedChild{reused, gone, sigfail}, &counts)
 
 	// A reused pid and a gone pid are never signaled; sigfail is signaled once and its
 	// error stops it there.
@@ -1134,9 +1134,9 @@ func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
 	}
 	sim := newProcSim(t)
 	staysAlive := sim.addVerified(noSuchPid+3001, "10", runDir) // the recorded child throughout
-	reused := reapTarget{pid: noSuchPid + 3002, start: "20", name: "1073744826.json", rec: childRecord{Pid: noSuchPid + 3002, Start: "20", Argv0: "/n"}}
-	groupSurvivor := reapTarget{pid: noSuchPid + 3003, start: "30", name: "1073744827.json", rec: childRecord{Pid: noSuchPid + 3003, Start: "30", Argv0: "/n"}}
-	for _, tt := range []reapTarget{staysAlive, reused, groupSurvivor} {
+	reused := doomedChild{pid: noSuchPid + 3002, start: "20", name: "1073744826.json", rec: spawnRecord{Pid: noSuchPid + 3002, Start: "20", Argv0: "/n"}}
+	groupSurvivor := doomedChild{pid: noSuchPid + 3003, start: "30", name: "1073744827.json", rec: spawnRecord{Pid: noSuchPid + 3003, Start: "30", Argv0: "/n"}}
+	for _, tt := range []doomedChild{staysAlive, reused, groupSurvivor} {
 		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -1147,7 +1147,7 @@ func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
 
 	var counts reapCounts
 	c := simCtx(t, runDir)
-	pending := reapWait(c, []reapTarget{staysAlive, reused, groupSurvivor}, reapGrace, &counts.reapedGrace, &counts, true)
+	pending := reapWait(c, []doomedChild{staysAlive, reused, groupSurvivor}, reapGrace, &counts.reapedGrace, &counts, true)
 
 	if len(pending) != 1 || pending[0].pid != staysAlive.pid {
 		t.Errorf("pending = %v, want only the live leader %d", pending, staysAlive.pid)
@@ -1185,7 +1185,7 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	tg := reapTarget{pid: noSuchPid + 5001, start: "10", name: "1073746825.json", rec: childRecord{Pid: noSuchPid + 5001, Start: "10", Argv0: "/n"}}
+	tg := doomedChild{pid: noSuchPid + 5001, start: "10", name: "1073746825.json", rec: spawnRecord{Pid: noSuchPid + 5001, Start: "10", Argv0: "/n"}}
 	if err := os.WriteFile(filepath.Join(dir, tg.name), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1209,10 +1209,10 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 	reapSleep = func(time.Duration) {}
 
 	var counts reapCounts
-	var pending []reapTarget
+	var pending []doomedChild
 	c := simCtx(t, runDir)
 	out := captureLog(t, func() {
-		pending = reapWait(c, []reapTarget{tg}, reapGrace, &counts.reapedGrace, &counts, true)
+		pending = reapWait(c, []doomedChild{tg}, reapGrace, &counts.reapedGrace, &counts, true)
 	})
 	c.forgetLate()
 	if killed != 0 {

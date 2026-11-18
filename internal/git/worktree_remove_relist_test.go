@@ -71,11 +71,11 @@ func TestRemoveListsAgainAfterFailedListing(t *testing.T) {
 		name, code, stderr string
 		want               []string
 	}{
-		{"F1", "1", "WRAP-ERR-EARLY", []string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
+		{"exit 1", "1", "WRAP-ERR-EARLY", []string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
 		// This is a repository, so the text takes the path of any other exit 128.
 		{"no-repository text, repository", "128", "fatal: not a git repository (or any of the parent directories): .git",
 			[]string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
-		{"G08b", "128", "fatal: bad config line 8 in file .git/config",
+		{"bad config line", "128", "fatal: bad config line 8 in file .git/config",
 			[]string{"list", "version", "list", "absolute-git-dir", "gitdir-list", "show-toplevel"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestRemoveSecondFailedListingRefuses(t *testing.T) {
 		name string
 		stub func(t *testing.T)
 	}{
-		{"F2", func(t *testing.T) { failPlainListings(t, "1", "WRAP-ERR-EARLY", false) }},
+		{"exit 1", func(t *testing.T) { failPlainListings(t, "1", "WRAP-ERR-EARLY", false) }},
 		{"second-text", func(t *testing.T) {
 			on := filepath.Join(t.TempDir(), "second")
 			failPlainListings(t, "2", "FIRST", true)
