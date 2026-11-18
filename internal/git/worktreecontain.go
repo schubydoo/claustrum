@@ -152,6 +152,8 @@ func repoInsideMarkedTree(repo string) bool {
 // Linux, macOS and Windows). A `.git` file or dangling link does the same. A dangling marker link counts.
 // Both are 4c111e86, measured by a create on Linux, the `.git` link also on macOS with worktreeRoot.
 // Windows, list_branches and a remove with no worktreeRoot are claustrum's own, not measured.
+// So are a Linux remove with worktreeRoot, and a `.git` link loop (ELOOP) or a `.git` link
+// with an unreachable target (EACCES), which Lstat passes too.
 func holdsMarkerEntry(dir string) bool {
 	if _, err := os.Lstat(filepath.Join(dir, managedWorktreesMarker)); err != nil {
 		return false
