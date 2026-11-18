@@ -29,12 +29,12 @@ func TestSpawnLauncherRefusedOnWindows(t *testing.T) {
 	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"the managed launcher cannot be used: a launcher cannot be applied on a Windows host","data":{"launcherFault":"windows_host","reason":"launcher"}}}`
 	supplies := `{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"the launcher cannot be used: a launcher cannot be applied on a Windows host","data":{"launcherFault":"windows_host","reason":"launcher"}}}`
 	for row, params := range map[string]map[string]any{
-		"SW1":      {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`}},
-		"SW1x":     {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`, "/c"}},
-		"SW2":      {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}},
-		"SW4":      {"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{exe}},
-		"check":    {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}, "launcherCheck": map[string]any{"sha256": []string{}}},
-		"supplies": {"id": "p1", "command": "", "launcher": []string{exe}, "launcherSuppliesCli": true, "launcherCheck": map[string]any{"path": exe}},
+		"cmd.exe":    {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`}},
+		"cmd.exe /c": {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{`C:\Windows\System32\cmd.exe`, "/c"}},
+		"empty":      {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}},
+		"no cwd":     {"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{exe}},
+		"check":      {"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}, "launcherCheck": map[string]any{"sha256": []string{}}},
+		"supplies":   {"id": "p1", "command": "", "launcher": []string{exe}, "launcherSuppliesCli": true, "launcherCheck": map[string]any{"path": exe}},
 	} {
 		want := want
 		if row == "supplies" {

@@ -29,6 +29,6 @@ func TestStartErrorInLongFolderWindows(t *testing.T) {
 		t.Skip("this host starts a process in a folder with a long path")
 	}
 	if got, want := f.frame(t, "git.info", map[string]any{"path": long}), errFrame(t, hooksRefusalPrefix+start); got != want {
-		t.Errorf("A-13 = %s\nwant %s", got, want)
+		t.Errorf("git.info of the long folder = %s\nwant %s", got, want)
 	}
 }

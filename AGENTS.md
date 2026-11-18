@@ -314,7 +314,7 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D19 | Remove refuses a junction between `baseRepo` and the leaf | always-on | Windows |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
-| D22 | Remove refuses a worktree locked in the `.git` folder of `baseRepo` | always-on | all |
+| D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |
 | D23 | The environment of a child is in name order | always-on | Windows |
 | D24 | Create rollback keeps a folder that replaced the registration | always-on | all |
 | D27 | The stale step keeps an entry with a live record | always-on | Windows |
