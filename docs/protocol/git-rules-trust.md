@@ -439,18 +439,18 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 
 ### A link to a network or device path
 
-On Windows `b3081b51` refuses a repository path through a symbolic link or a junction to a network or device path. The targets of the rows are a UNC path, `\\.\NUL`, and `\\?\Volume{guid}` and `\\?\GLOBALROOT` paths, also to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository. The text is:
+On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path. The targets are a UNC path, `\\.\NUL`, and `\\?\Volume{guid}` and `\\?\GLOBALROOT` paths, also to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on the repository, and the text is:
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer `-32603`, and a create `worktree_add_failed` with no folder and no branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum's own (`networklink.go`): a link to a drive letter is not followed, and `"shadowDirOff":true` is refused too.
+`git.status` and `git.info` answer `-32603`, and a create `worktree_add_failed` with no folder or branch. A SUBST drive, a mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). claustrum's own (`networklink.go`): a link to a drive letter is not followed, and `"shadowDirOff":true` is refused too.
 
 ### A folder with a reparse tag that is no link
 
-`4c111e86`, measured on Windows:
+These rows are measured on Windows on `4c111e86`:
 
 - A `.git` or worktree folder with `IO_REPARSE_TAG_PROJFS` is plain for `git.info`, `git.status`, `git.list_branches` and a remove. A create in `shadow` makes a worktree there, where claustrum refuses.
-- A repository below an `IO_REPARSE_TAG_WIM` folder gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`, with no git call on the repository. A `.git` with that tag gets it on all five methods, naming its `objects` folder. A remove adds the lock-check words. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`
+- A repository below an `IO_REPARSE_TAG_WIM` folder gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`, with no git call on the repository. A `.git` with that tag gets it on all five methods, naming its `objects` folder. A remove adds the lock-check words, and the log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`
 
 ### UNC refusals
 
