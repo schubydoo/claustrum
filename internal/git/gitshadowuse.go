@@ -910,7 +910,7 @@ var requestDirMkdir = os.Mkdir
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
 // On Linux and macOS a folder of the daemon of mode 0100 gets that mkdir
-// error too (measured on Linux and macOS, see below). Any other failed
+// error too (measured on Linux, and in `shadow` on macOS, see below). Any other failed
 // open gives its own error (not measured).
 //
 // On Windows each such folder is made by its full path with a plain mkdir,
@@ -933,7 +933,7 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 	if err != nil {
 		// On Linux and macOS a folder of the daemon with mode 0100 cannot be
 		// opened. 4c111e86 answers `mkdir <S>/.s<n>: permission denied` there
-		// (measured on Linux and macOS). claustrum runs no mkdir and gives that error with
+		// (measured on Linux, and in `shadow` on macOS). claustrum runs no mkdir and gives that error with
 		// a new name. Only a folder whose owner bits allow search and no write
 		// gets it. With mode 0300 4c111e86 makes `.s<n>` by its path, and the
 		// create succeeds (measured on Linux). claustrum makes it by its path

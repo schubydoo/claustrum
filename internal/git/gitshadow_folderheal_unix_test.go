@@ -54,7 +54,7 @@ func requestsWithLimit(t *testing.T, f shadowFixture) {
 
 // TestShadowFolderFIFOIsMadeAFolderAgain: a FIFO at the folder of the daemon
 // goes, and each request succeeds with no wait, as on 4c111e86 (measured on
-// Linux).
+// Linux and macOS).
 func TestShadowFolderFIFOIsMadeAFolderAgain(t *testing.T) {
 	f := newShadowFixture(t)
 	first := replaceDaemonFolder(t, f, func(p string) error { return syscall.Mkfifo(p, 0o600) })

@@ -13,7 +13,7 @@ import (
 // TestShadowFolderFileIsMadeAFolderAgain: an empty file at the folder of the
 // daemon goes, and a folder of the daemon is there again. git.info, git.status,
 // git.list_branches and git.worktree_create succeed, as on 4c111e86 (measured on
-// Linux).
+// Linux and macOS).
 func TestShadowFolderFileIsMadeAFolderAgain(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)

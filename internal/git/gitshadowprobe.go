@@ -248,7 +248,7 @@ func (h *ShadowHost) prepareProbeFolder(dir string) error {
 // be the folder of its Lstat. Else the result is the error of the open of dir.
 // A failed mkdir gives its own error. With mode 0000 4c111e86 answers `mkdir
 // <S>/.probe: permission denied`. With mode 0100 it uses the `.probe` that is
-// there, and the request succeeds (measured on Linux and macOS).
+// there, and the request succeeds (measured on Linux, and in `shadow` on macOS).
 func probeFolderBySearch(dir string, openErr error) (*os.Root, error) {
 	if stagedAddWindowsSteps || !errors.Is(openErr, fs.ErrPermission) {
 		return nil, openErr

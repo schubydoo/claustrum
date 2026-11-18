@@ -128,7 +128,7 @@ folder and each folder of a copy have mode `0700`, and their files
 an exclusive lock on its file `lock` for life. On Windows the hold is
 an unshared open handle. On a mount whose `flock` answers `ENOLCK`, `c9125eb8`
 goes on with no lock, and each git request succeeds (measured on Linux). claustrum
-follows. Any other `flock` error still fails the request (claustrum's own, not measured).
+follows. Any other `flock` error fails the request (claustrum's own, not measured).
 
 - At `-stop` and `server.shutdown` the daemon removes its folder. The empty
   `git-shadow` stays (Linux, macOS and Windows).
@@ -174,7 +174,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
-  that remove leaves it (claustrum's own). The next daemon removes it at its first request that uses the
+  that remove leaves it (claustrum's own). The next daemon removes it at its first request using the
   copy (measured on Linux and macOS).
   claustrum removes it with the old daemon's folder in [the
   sweep](#the-sweep-of-git-shadow) (from the code). On Windows `4c111e86` makes no
@@ -185,7 +185,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   with the backup and restore privileges on, and with both off fails at `.s<n>`.
 - On Linux and macOS a daemon folder with mode `0300` still takes a create. An empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
   `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
-  not measured). Modes `0100` and `0000` (`4c111e86`, measured on Linux and
+  not measured). Modes `0100` and `0000` (`4c111e86`, measured on Linux and, in `shadow`,
   macOS): `0100` uses its entries and a create fails at `.s<n>`, `0000` gives the
   `mkdir` error of the folder or `.probe`.
 
