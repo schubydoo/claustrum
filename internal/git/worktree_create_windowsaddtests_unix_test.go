@@ -25,7 +25,10 @@ func setWindowsAddTests(t *testing.T) {
 // TestWorktreeCreateOffAddTestsOfWindows pins the rows of a create with
 // "shadowDirOff":true where the stub changes the disk right after the add. Each
 // create is refused with unsafe_path and runs no checkout. The leaf, the
-// registration w1 and branch w1 stay.
+// registration w1 and branch w1 stay. The cases "worktrees moved" and "leaf
+// copied" send baseRepo through a symbolic link: the Windows text names the
+// leaf as sent, and the text of Linux and macOS resolves its parent, so the two
+// differ.
 func TestWorktreeCreateOffAddTestsOfWindows(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -33,34 +36,42 @@ func TestWorktreeCreateOffAddTestsOfWindows(t *testing.T) {
 		text  func(f wtFixture) string
 		leaf  []string
 		reg   func(f wtFixture) string
+		link  bool
 	}{
 		{"link at .git", func(f wtFixture) [][]string {
 			g := filepath.Join(f.leaf(), ".git")
 			return [][]string{{"rename", g, g + ".real"}, {"symlink", ".git.real", g}}
 		}, func(f wtFixture) string {
 			return "refusing to create worktree: `" + filepath.Join(f.leaf(), ".git") + "` is not a regular file"
-		}, []string{".git", ".git.real"}, func(f wtFixture) string { return f.regDir }},
+		}, []string{".git", ".git.real"}, func(f wtFixture) string { return f.regDir }, false},
 		{"folder at .git", func(f wtFixture) [][]string {
 			g := filepath.Join(f.leaf(), ".git")
 			return [][]string{{"rename", g, g + ".real"}, {"mkdir", g}}
 		}, func(f wtFixture) string {
 			return "refusing to create worktree: `" + filepath.Join(f.leaf(), ".git") + "` is not a regular file"
-		}, []string{".git", ".git.real"}, func(f wtFixture) string { return f.regDir }},
+		}, []string{".git", ".git.real"}, func(f wtFixture) string { return f.regDir }, false},
 		{"worktrees moved", func(f wtFixture) [][]string {
 			return [][]string{{"rename", f.regDir, f.regDir + ".gone"}}
 		}, func(f wtFixture) string {
 			return "refusing to create worktree: `" + f.leaf() + "` does not hold the .git file made for it"
-		}, []string{".git"}, func(f wtFixture) string { return f.regDir + ".gone" }},
+		}, []string{".git"}, func(f wtFixture) string { return f.regDir + ".gone" }, true},
 		{"leaf copied", func(f wtFixture) [][]string {
 			l := f.leaf()
 			return [][]string{{"rename", l, l + ".old"}, {"mkdir", l}, {"snap", filepath.Join(l+".old", ".git"), filepath.Join(l, ".git")}}
 		}, func(f wtFixture) string {
 			return "refusing to create worktree: `" + f.leaf() + "` is no longer the directory that was created for the worktree"
-		}, []string{".git"}, func(f wtFixture) string { return f.regDir }},
+		}, []string{".git"}, func(f wtFixture) string { return f.regDir }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setWindowsAddTests(t)
 			f, h := postAddFixture(t)
+			if tc.link {
+				link := filepath.Join(t.TempDir(), "base")
+				if err := os.Symlink(f.base, link); err != nil {
+					t.Fatal(err)
+				}
+				f.base = link
+			}
 			afterAddSteps(t, tc.steps(f)...)
 			raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"shadowDirOff": true})
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, tc.text(f)) +
