@@ -47,7 +47,7 @@ func TestOpenRootNoWaitRefusesFIFO(t *testing.T) {
 			}
 		case <-time.After(10 * time.Second):
 			// Free the blocked open with a writer, so the test ends.
-			if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+			if w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
 				_ = w.Close()
 			}
 			t.Logf("the open after the writer: %v", <-done)
@@ -102,7 +102,7 @@ func TestRequestDirAtFIFOAnswersAtOnce(t *testing.T) {
 			t.Error("requestDir at a FIFO: no error")
 		}
 	case <-time.After(10 * time.Second):
-		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+		if w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
 			_ = w.Close()
 		}
 		t.Logf("the open after the writer: %v", <-done)
@@ -126,7 +126,7 @@ func TestProbeFolderAtFIFOAnswersAtOnce(t *testing.T) {
 			t.Error("prepareProbeFolder at a FIFO: no error")
 		}
 	case <-time.After(10 * time.Second):
-		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+		if w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
 			_ = w.Close()
 		}
 		t.Logf("the open after the writer: %v", <-done)
@@ -150,7 +150,7 @@ func TestStagingFillAtFIFOAnswersAtOnce(t *testing.T) {
 			t.Errorf("fill at a FIFO: %v, want an error that ends with not a directory", err)
 		}
 	case <-time.After(10 * time.Second):
-		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+		if w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
 			_ = w.Close()
 		}
 		t.Logf("the open after the writer: %v", <-done)
