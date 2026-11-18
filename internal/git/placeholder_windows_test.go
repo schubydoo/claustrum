@@ -15,8 +15,8 @@ import (
 // The Windows SDK names of the two tags of the rows. golang.org/x/sys
 // does not define them.
 const (
-	ioReparseTagProjFS = 0x9000001C // IO_REPARSE_TAG_PROJFS
-	ioReparseTagWIM    = 0x80000008 // IO_REPARSE_TAG_WIM
+	ioReparseTagProjFS = 0x9000001C // IO_REPARSE_TAG_PROJFS, public Windows SDK value
+	ioReparseTagWIM    = 0x80000008 // IO_REPARSE_TAG_WIM, public Windows SDK value
 )
 
 // reparseTagIoctl sends ioctl with the reparse header of tag and no data to the
