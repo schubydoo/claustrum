@@ -135,8 +135,10 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file, FIFO or link there goes, never its target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). Other non-folder
-  kinds, a file with content and Windows (a regular file only) are claustrum's own.
+  succeed in a new folder (`4c111e86` on Linux and macOS). One file `unlinkat`
+  after the home guard removes it, never a folder or tree (from the code). Other
+  non-folder kinds, a file with content and Windows (a regular file only, by one
+  `os.Root.Remove`) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the git directory's path. A linked
   worktree uses the folder of its main repository.
