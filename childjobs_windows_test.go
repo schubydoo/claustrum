@@ -98,10 +98,27 @@ func TestKilledDaemonByMode(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "pid")
 			daemon := exec.Command(exe, pidFile, tc.mode)
 			daemon.Env = supervisor.BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "spawn-hold"})
-			if err := daemon.Start(); err != nil {
+			// The stderr of the owner goes to a file, so a failed run shows why the
+			// owner wrote no pid file.
+			errPath := pidFile + ".stderr"
+			errFile, err := os.Create(errPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			daemon.Stderr = errFile
+			err = daemon.Start()
+			_ = errFile.Close()
+			if err != nil {
 				t.Fatalf("start: %v", err)
 			}
-			t.Cleanup(func() { _ = daemon.Process.Kill(); _, _ = daemon.Process.Wait() })
+			t.Cleanup(func() {
+				_ = daemon.Process.Kill()
+				_, _ = daemon.Process.Wait()
+				if t.Failed() {
+					b, _ := os.ReadFile(errPath)
+					t.Logf("stderr of the owner: %q", b)
+				}
+			})
 			pid := readPIDFile(t, pidFile)
 			holdOwnPid(t, pid)
 			if !processAlive(t, pid) {
