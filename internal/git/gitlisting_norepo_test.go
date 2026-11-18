@@ -14,15 +14,15 @@ import (
 )
 
 // A broken GIT_CONFIG_KEY_<n> in the daemon's environment, in a folder that holds no
-// repository. 89cb6289 was measured on Linux, macOS and Windows. The phases P3, P5, P6
-// and P7 are those of the rows. A row names its Windows cell in win. A row with no
-// Windows cell does not run on Windows. These tests set the daemon's environment, so
-// none of them runs in parallel.
+// repository. 89cb6289 was measured on Linux, macOS and Windows. Each phase is one
+// state of the GIT_CONFIG_* entries. A row with windows set was measured on Windows
+// too. A row without it does not run on Windows. These tests set the daemon's
+// environment, so none of them runs in parallel.
 
 // notMeasuredHere reports whether a row stays out on this system: the system is
-// Windows, and the row has no Windows cell.
-func notMeasuredHere(win string) bool {
-	return runtime.GOOS == "windows" && win == ""
+// Windows, and the row was not measured on Windows.
+func notMeasuredHere(windows bool) bool {
+	return runtime.GOOS == "windows" && !windows
 }
 
 // brokenPairPhases are the phases whose listing git fails.
@@ -30,10 +30,10 @@ var brokenPairPhases = []struct {
 	name string
 	env  []string
 }{
-	{"P3 empty key", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=", "GIT_CONFIG_VALUE_0=x"}},
-	{"P5 key with no section", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=nodot", "GIT_CONFIG_VALUE_0=x"}},
-	{"P6 invalid key", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=a.b c", "GIT_CONFIG_VALUE_0=x"}},
-	{"P7 good pair then broken pair", []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=user.s11", "GIT_CONFIG_VALUE_0=v",
+	{"empty key", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=", "GIT_CONFIG_VALUE_0=x"}},
+	{"key with no section", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=nodot", "GIT_CONFIG_VALUE_0=x"}},
+	{"invalid key", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=a.b c", "GIT_CONFIG_VALUE_0=x"}},
+	{"good pair then broken pair", []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=user.s11", "GIT_CONFIG_VALUE_0=v",
 		"GIT_CONFIG_KEY_1=", "GIT_CONFIG_VALUE_1=x"}},
 }
 
@@ -130,39 +130,40 @@ func dirNames(t *testing.T, dir string) []string {
 }
 
 // noRepoRows runs the rows of a failed listing and compares each whole frame. text is
-// the refusal text that each frame carries. rootCell is the Windows cell in the phase
-// of the caller, or "".
-func (f noRepoFixture) noRepoRows(t *testing.T, text, rootCell string) {
+// the refusal text that each frame carries. rootOnWindows tells whether the create
+// with the empty worktreeRoot was measured on Windows in the phase of the caller.
+func (f noRepoFixture) noRepoRows(t *testing.T, text string, rootOnWindows bool) {
 	t.Helper()
 	keep := filepath.Join(f.external(), "keep.txt")
 	writeFile(t, keep, "k\n", 0o644)
 	create := resultFrame(t, worktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})
 	for _, row := range []struct {
-		name, win, method string
-		params            map[string]any
-		want              string
+		name, method string
+		windows      bool
+		params       map[string]any
+		want         string
 	}{
-		{"A-N1", "P3-infoN", "git.info", map[string]any{"path": f.n}, errFrame(t, text)},
-		{"A-N2", "P3-lbN", "git.list_branches", map[string]any{"path": f.n}, errFrame(t, text)},
-		{"A-S1", "P3-statN", "git.status", map[string]any{"baseRepo": f.n, "path": f.n}, errFrame(t, text)},
-		{"A-X2", "P3-infoX", "git.info", map[string]any{"path": f.ng}, errFrame(t, text)},
-		{"A-N3", "P3-crN", "git.worktree_create", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()}, create},
-		{"A-N6", rootCell, "git.worktree_create", f.rootCreate(), create},
-		{"A-N4", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
+		{"plain folder", "git.info", true, map[string]any{"path": f.n}, errFrame(t, text)},
+		{"plain folder", "git.list_branches", true, map[string]any{"path": f.n}, errFrame(t, text)},
+		{"plain folder", "git.status", true, map[string]any{"baseRepo": f.n, "path": f.n}, errFrame(t, text)},
+		{"empty .git folder", "git.info", true, map[string]any{"path": f.ng}, errFrame(t, text)},
+		{"plain folder", "git.worktree_create", true, map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()}, create},
+		{"empty worktreeRoot", "git.worktree_create", rootOnWindows, f.rootCreate(), create},
+		{"plain folder", "git.worktree_remove", false, map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
 			resultFrame(t, worktreeRemoveResult{Success: false,
 				Error: "failed to remove worktree: could not check whether " + f.leaf() + " is locked (" + text + "); retry"})},
-		{"A-N4 no branchName", "P3-rmN", "git.worktree_remove", map[string]any{"baseRepo": f.n, "worktreePath": f.leaf()},
+		{"plain folder with no branchName", "git.worktree_remove", true, map[string]any{"baseRepo": f.n, "worktreePath": f.leaf()},
 			resultFrame(t, worktreeRemoveResult{Success: false,
 				Error: "failed to remove worktree: could not check whether " + f.leaf() + " is locked (" + text + "); retry"})},
-		{"A-N5b", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "worktreePath": f.external(), "worktreeRoot": f.r},
+		{"worktreeRoot with no branchName", "git.worktree_remove", false, map[string]any{"baseRepo": f.n, "worktreePath": f.external(), "worktreeRoot": f.r},
 			resultFrame(t, worktreeRemoveResult{Success: false,
 				Error: "failed to remove worktree: cannot determine the repository's work tree: " + text})},
-		{"A-N5c", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "branchName": "w1",
+		{"worktreeRoot", "git.worktree_remove", false, map[string]any{"baseRepo": f.n, "branchName": "w1",
 			"worktreePath": f.external(), "worktreeRoot": f.r},
 			resultFrame(t, worktreeRemoveResult{Success: false,
 				Error: "failed to remove worktree: cannot determine the repository's work tree: " + text})},
 	} {
-		if notMeasuredHere(row.win) {
+		if notMeasuredHere(row.windows) {
 			continue
 		}
 		if got := f.frame(t, row.method, row.params); got != row.want {
@@ -192,11 +193,7 @@ func TestBrokenConfigPairRefusesInPlainFolder(t *testing.T) {
 		t.Run(ph.name, func(t *testing.T) {
 			f := newNoRepoFixture(t)
 			plantEnv(t, ph.env...)
-			rootCell := ""
-			if i == 0 {
-				rootCell = "Wf-P3-crNroot"
-			}
-			f.noRepoRows(t, hooksRefusalPrefix+f.listingText(t, f.n), rootCell)
+			f.noRepoRows(t, hooksRefusalPrefix+f.listingText(t, f.n), i == 0)
 		})
 	}
 }
@@ -208,10 +205,10 @@ func TestBrokenConfigPairMeasuredFrames(t *testing.T) {
 	stubListing(t, 128, `error: empty config key\nfatal: unable to parse command-line config\n`)
 	const text = "config-defined hooks could not be pinned off; git not run: listing the configuration in force: " +
 		"exit status 128: error: empty config key fatal: unable to parse command-line config"
-	f.noRepoRows(t, text, "Wf-P3-crNroot")
+	f.noRepoRows(t, text, true)
 	if got, want := f.frame(t, "git.info", map[string]any{"path": f.n}),
 		`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"`+text+`"}}`; got != want {
-		t.Errorf("A-N1 = %s\nwant %s", got, want)
+		t.Errorf("git.info of the plain folder = %s\nwant %s", got, want)
 	}
 }
 
@@ -222,18 +219,19 @@ func TestBrokenConfigPairMissingPathKeepsFrames(t *testing.T) {
 	plantEnv(t, brokenPairPhases[0].env...)
 	leaf := filepath.Join(f.m, ".claude", "worktrees", "w1")
 	for _, row := range []struct {
-		name, win, method string
-		params            map[string]any
-		want              string
+		name, method string
+		windows      bool
+		params       map[string]any
+		want         string
 	}{
-		{"A-M1", "P3-infoM", "git.info", map[string]any{"path": f.m}, notRepoInfo},
-		{"A-M3", "", "git.list_branches", map[string]any{"path": f.m}, notRepoList},
-		{"A-M4", "", "git.worktree_create", map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": leaf}, notRepoCreate},
-		{"A-M5", "", "git.worktree_remove", map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": leaf},
+		{"missing path", "git.info", true, map[string]any{"path": f.m}, notRepoInfo},
+		{"missing path", "git.list_branches", false, map[string]any{"path": f.m}, notRepoList},
+		{"missing path", "git.worktree_create", false, map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": leaf}, notRepoCreate},
+		{"missing path", "git.worktree_remove", false, map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": leaf},
 			`{"success":true,"branchKept":true}`},
-		{"A-M5 no branchName", "", "git.worktree_remove", map[string]any{"baseRepo": f.m, "worktreePath": leaf}, `{"success":true}`},
+		{"missing path with no branchName", "git.worktree_remove", false, map[string]any{"baseRepo": f.m, "worktreePath": leaf}, `{"success":true}`},
 	} {
-		if notMeasuredHere(row.win) {
+		if notMeasuredHere(row.windows) {
 			continue
 		}
 		want := `{"jsonrpc":"2.0","id":1,"result":` + row.want + `}`
@@ -246,42 +244,44 @@ func TestBrokenConfigPairMissingPathKeepsFrames(t *testing.T) {
 	}
 }
 
-// With no GIT_CONFIG_* entry (measured), and in the phases P8 to P10, every frame of a
+// With no GIT_CONFIG_* entry (measured), and in the three other phases below, every frame of a
 // plain folder stays as it was. The listing of git.info runs with the plain folder as
 // its working directory and GIT_DIR set to the null device, as in the call log of
 // 89cb6289. It is measured on Windows too. The Windows remove ran with no branchName.
 func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 	for _, ph := range []struct {
-		name, rootCell string
-		env            []string
+		name          string
+		rootOnWindows bool
+		env           []string
 	}{
-		{"nothing set", "Wf-P0-crNroot", nil},
-		{"P8 count 0", "", []string{"GIT_CONFIG_COUNT=0"}},
-		{"empty value", "", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s11", "GIT_CONFIG_VALUE_0="}},
-		{"P10 open quote in GIT_CONFIG_PARAMETERS", "", []string{"GIT_CONFIG_PARAMETERS='x"}},
+		{"nothing set", true, nil},
+		{"count 0", false, []string{"GIT_CONFIG_COUNT=0"}},
+		{"empty value", false, []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s11", "GIT_CONFIG_VALUE_0="}},
+		{"open quote in GIT_CONFIG_PARAMETERS", false, []string{"GIT_CONFIG_PARAMETERS='x"}},
 	} {
 		t.Run(ph.name, func(t *testing.T) {
 			f := newNoRepoFixture(t)
 			plantEnv(t, ph.env...)
 			for _, row := range []struct {
-				name, win, method string
-				params            map[string]any
-				want              string
+				name, method string
+				windows      bool
+				params       map[string]any
+				want         string
 			}{
-				{"A-N1", "P0-infoN", "git.info", map[string]any{"path": f.n}, notRepoInfo},
-				{"A-N2", "P0-lbN", "git.list_branches", map[string]any{"path": f.n}, notRepoList},
-				{"A-S1", "P0-statN", "git.status", map[string]any{"baseRepo": f.n, "path": f.n}, notRepoStatus},
-				{"A-X2", "P0-infoX", "git.info", map[string]any{"path": f.ng}, notRepoInfo},
-				{"A-N3", "P0-crN", "git.worktree_create", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()}, notRepoCreate},
-				{"A-N6", ph.rootCell, "git.worktree_create", f.rootCreate(), notRepoCreate},
-				{"A-N4", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
+				{"plain folder", "git.info", true, map[string]any{"path": f.n}, notRepoInfo},
+				{"plain folder", "git.list_branches", true, map[string]any{"path": f.n}, notRepoList},
+				{"plain folder", "git.status", true, map[string]any{"baseRepo": f.n, "path": f.n}, notRepoStatus},
+				{"empty .git folder", "git.info", true, map[string]any{"path": f.ng}, notRepoInfo},
+				{"plain folder", "git.worktree_create", true, map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()}, notRepoCreate},
+				{"empty worktreeRoot", "git.worktree_create", ph.rootOnWindows, f.rootCreate(), notRepoCreate},
+				{"plain folder", "git.worktree_remove", false, map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
 					`{"success":true,"branchKept":true}`},
-				{"A-N4 no branchName", "P0-rmN", "git.worktree_remove", map[string]any{"baseRepo": f.n, "worktreePath": f.leaf()},
+				{"plain folder with no branchName", "git.worktree_remove", true, map[string]any{"baseRepo": f.n, "worktreePath": f.leaf()},
 					`{"success":true}`},
-				{"A-N5b", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "worktreePath": f.external(), "worktreeRoot": f.r},
+				{"worktreeRoot with no branchName", "git.worktree_remove", false, map[string]any{"baseRepo": f.n, "worktreePath": f.external(), "worktreeRoot": f.r},
 					`{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: exit status 128"}`},
 			} {
-				if notMeasuredHere(row.win) {
+				if notMeasuredHere(row.windows) {
 					continue
 				}
 				want := `{"jsonrpc":"2.0","id":1,"result":` + row.want + `}`
@@ -372,8 +372,8 @@ const versionFailsText = "git cannot run on this host; git not run: exit status 
 
 // Measured. In a repository, with a broken pair and a `git version` that fails, the
 // frame carries the exec error and the stderr of the version call, not those of the
-// listing. The version child gets no GIT_CONFIG_COUNT set. On Windows the cell is
-// P11-infoT. Mutations: quote the listing's detail, pass the daemon's set on.
+// listing. The version child gets no GIT_CONFIG_COUNT set. Windows was measured too.
+// Mutations: quote the listing's detail, pass the daemon's set on.
 func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 	f := newNoRepoFixture(t)
 	versionFails(t)
@@ -381,7 +381,7 @@ func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 	raw, calls := f.call(t, "git.info", map[string]any{"path": f.top})
 	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"` + versionFailsText + `"}}`
 	if raw != want {
-		t.Errorf("in P11 = %s\nwant %s", raw, want)
+		t.Errorf("git.info with a failed version call = %s\nwant %s", raw, want)
 	}
 	i := slices.IndexFunc(calls, envCall.version)
 	if i < 1 || !calls[i-1].listing() {
@@ -397,31 +397,32 @@ func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 	}
 }
 
-// The plain-folder rows of phase P11 answer the "cannot run" text of the version call
-// too (measured on Linux and macOS). On Windows the cells are P11-infoN, Wa-lbN,
-// Wa-statN and Wa-crN. git.worktree_remove has no Windows cell there. Mutation: quote
+// With a failed version call the plain-folder rows answer the "cannot run" text of
+// the version call too (measured on Linux and macOS). Windows measured the first four
+// rows. git.worktree_remove has no Windows row there. Mutation: quote
 // the detail of the listing in the "cannot run" text.
 func TestGitVersionFailsInPlainFolder(t *testing.T) {
 	f := newNoRepoFixture(t)
 	versionFails(t)
 	plantEnv(t, brokenPairPhases[0].env...)
 	for _, row := range []struct {
-		name, win, method string
-		params            map[string]any
-		want              string
+		name, method string
+		windows      bool
+		params       map[string]any
+		want         string
 	}{
-		{"A-N1", "P11-infoN", "git.info", map[string]any{"path": f.n}, errFrame(t, versionFailsText)},
-		{"A-N2", "Wa-lbN", "git.list_branches", map[string]any{"path": f.n}, errFrame(t, versionFailsText)},
-		{"A-S1", "Wa-statN", "git.status", map[string]any{"baseRepo": f.n, "path": f.n}, errFrame(t, versionFailsText)},
-		{"A-N3", "Wa-crN", "git.worktree_create", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
+		{"plain folder", "git.info", true, map[string]any{"path": f.n}, errFrame(t, versionFailsText)},
+		{"plain folder", "git.list_branches", true, map[string]any{"path": f.n}, errFrame(t, versionFailsText)},
+		{"plain folder", "git.status", true, map[string]any{"baseRepo": f.n, "path": f.n}, errFrame(t, versionFailsText)},
+		{"plain folder", "git.worktree_create", true, map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
 			resultFrame(t, worktreeResult{Success: false, Error: versionFailsText, ErrorCode: "worktree_add_failed"})},
-		{"A-N4", "", "git.worktree_remove", map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
+		{"plain folder", "git.worktree_remove", false, map[string]any{"baseRepo": f.n, "branchName": "w1", "worktreePath": f.leaf()},
 			// The colon form of b3081b51 (measured on Linux, claustrum's own on macOS
 			// and Windows) replaces the older form with parentheses (goneLockCheckText).
 			resultFrame(t, worktreeRemoveResult{Success: false, Error: "failed to remove worktree: could not check whether " +
 				f.leaf() + " is locked: " + versionFailsText})},
 	} {
-		if notMeasuredHere(row.win) {
+		if notMeasuredHere(row.windows) {
 			continue
 		}
 		if got := f.frame(t, row.method, row.params); got != row.want {

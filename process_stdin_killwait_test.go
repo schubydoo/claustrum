@@ -386,17 +386,17 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 			`,"method":"process.stdin","params":{"id":"` + proc + `","data":"` + data + `"` + off + `}}`))
 		return decodeReply(t, raw, nil)
 	}
-	wantResult := func(cell string, env *rpcEnvelope, want string) {
+	wantResult := func(what string, env *rpcEnvelope, want string) {
 		t.Helper()
 		if env.Error != nil || string(env.Result) != want {
-			t.Errorf("%s: result %s, error %+v, want %s", cell, env.Result, env.Error, want)
+			t.Errorf("%s: result %s, error %+v, want %s", what, env.Result, env.Error, want)
 		}
 	}
 	four := base64.StdEncoding.EncodeToString([]byte("AAAA"))
 
-	wantResult("S2e", stdin("E1", "", ""), `{"success":true,"applied":0}`)
+	wantResult("empty data, no offset", stdin("E1", "", ""), `{"success":true,"applied":0}`)
 	wantResult("write", stdin("E1", four, ""), `{"success":true,"applied":4}`)
-	wantResult("S2d", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
+	wantResult("offset 4 while live", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
 
 	for i, id := range []string{"E1", "E0"} {
 		var kw rpc.KillAndWaitReply
@@ -406,10 +406,10 @@ func TestSocketStdinEmptyAtAppliedIsDuplicate(t *testing.T) {
 			t.Fatalf("killAndWait %s did not confirm the exit: %+v", id, kw)
 		}
 	}
-	wantResult("S2c", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
-	wantResult("S2b", stdin("E0", "", "0"), `{"success":true,"applied":0,"duplicate":true}`)
+	wantResult("offset 4 after the exit", stdin("E1", "", "4"), `{"success":true,"applied":4,"duplicate":true}`)
+	wantResult("offset 0 after the exit", stdin("E0", "", "0"), `{"success":true,"applied":0,"duplicate":true}`)
 	if env := stdin("E0", "", ""); env.Error == nil || env.Error.Code != rpc.CodeInvalidParam || env.Error.Message != "Process not running" {
-		t.Errorf("S2a: result %s, error %+v, want -32602 Process not running", env.Result, env.Error)
+		t.Errorf("no offset after the exit: result %s, error %+v, want -32602 Process not running", env.Result, env.Error)
 	}
 }
 
