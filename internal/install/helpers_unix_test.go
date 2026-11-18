@@ -135,3 +135,19 @@ func useLddStub(t *testing.T, dir, script string) {
 	t.Cleanup(func() { lddPath = old })
 	lddPath = stub
 }
+
+// blockCLIRename makes the rename of a staging file onto cliPath fail. cliPath
+// gets a file, and the returned func puts a folder in place of the staging file.
+// rename(2) of a folder onto a file fails with ENOTDIR.
+func blockCLIRename(t *testing.T, cliPath string) func(tmp string) error {
+	t.Helper()
+	if err := os.WriteFile(cliPath, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return func(tmp string) error {
+		if err := os.Remove(tmp); err != nil {
+			return err
+		}
+		return os.Mkdir(tmp, 0o755)
+	}
+}
