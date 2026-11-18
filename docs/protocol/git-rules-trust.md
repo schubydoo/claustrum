@@ -26,10 +26,10 @@ the daemon walks up from the request folder:
 - On Windows any folder path that does not resolve starts the walk as spelled.
   `git.status` resolves the path first and answers there if that fails (all
   from the code).
-- On Windows a refusal of a config on `git.info` follows the spelled start too,
-  except a junction `path` (below). In the state `shadow` without
-  `"shadowDirOff":true`, it is the class 1 text of
-  [Repository config refusals](git-rules-config.md#repository-config-refusals). A
+- On Windows a config refusal of `git.info` follows the spelled start too,
+  except a junction `path` (below). In `shadow` without
+  `"shadowDirOff":true`, it is the
+  [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
   state (all from the code).
@@ -65,7 +65,8 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
     On Windows `git.info` and `git.list_branches` read the config of a junction
     `path` that holds its git directory through its target. A refusal names that
     file. A junction to a bare repository answers as that repository
-    (`4c111e86`, measured).
+    (`4c111e86`, measured). The other methods, a daemon `GIT_DIR` and a target
+    with no drive letter keep the pin (claustrum's own, not measured).
 
 ### How the daemon judges the git directory
 
@@ -141,8 +142,6 @@ these steps:
 5. Else G is trusted.
 
 ### The daemon's `GIT_DIR` and `GIT_COMMON_DIR`
-
-The daemon's own environment changes the check as follows:
 
 - A `GIT_DIR` names the git directory to judge, for every request folder, even a
   plain one. A relative value is taken relative to the request folder. A
@@ -253,7 +252,7 @@ config on the five methods: `this repository's git config cannot be used: open
 (measured on Linux and macOS).
 
 Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
-listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
+listing gets no `GIT_DIR=<null>`, and a `.git` file that names
 a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
 repository, and it keeps the "no repository" column (from the code).
