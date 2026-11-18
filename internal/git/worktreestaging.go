@@ -826,11 +826,42 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	err = gitRun(ctx, cmd)
-	if err == nil {
-		err = st.finish(leaf, cp)
+	if err = gitRun(ctx, cmd); err != nil {
+		return errBuf.String(), &stagedAddFailure{err: err, path: staged}
 	}
-	return errBuf.String(), err
+	return errBuf.String(), st.finish(leaf, cp)
+}
+
+// stagedAddFailure is the error of a failed git call of runAddStaged. path is
+// the staged path that the call got in the place of the leaf (stagedAddText).
+type stagedAddFailure struct {
+	err  error
+	path string
+}
+
+func (e *stagedAddFailure) Error() string { return e.err.Error() }
+
+func (e *stagedAddFailure) Unwrap() error { return e.err }
+
+// stagedAddText is the text of git after a failed add (worktreeGitText). If
+// a staged add names its staged path there, each such path becomes "the new
+// folder", and the text ends with that folder: the worktreePath of the request.
+// The cut of worktreeGitText comes first. 4c111e86 answers so for the --orphan
+// hint of git (measured on Linux and Windows). On Windows git writes the path
+// with forward slashes (measured). The form with backslashes and other texts of
+// git are claustrum's own. macOS is claustrum's own.
+func stagedAddText(stderr string, err error, worktreePath string) string {
+	s := worktreeGitText(stderr, err)
+	var f *stagedAddFailure
+	if !errors.As(err, &f) {
+		return s
+	}
+	named := strings.ReplaceAll(s, filepath.ToSlash(f.path), "the new folder")
+	named = strings.ReplaceAll(named, f.path, "the new folder")
+	if named == s {
+		return s
+	}
+	return named + " (the new folder is `" + worktreePath + "`)"
 }
 
 // finish runs the steps after a good call: the cleanup of old staging entries,

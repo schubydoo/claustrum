@@ -14,9 +14,9 @@ import (
 // create, as on Linux and macOS, for the length of the test.
 func switchAskAfterAddOn(t *testing.T) {
 	t.Helper()
-	old := createAsksAfterAdd
-	createAsksAfterAdd = true
-	t.Cleanup(func() { createAsksAfterAdd = old })
+	old, oldRecheck := createAsksAfterAdd, createRechecksAfterAdd
+	createAsksAfterAdd, createRechecksAfterAdd = true, false
+	t.Cleanup(func() { createAsksAfterAdd, createRechecksAfterAdd = old, oldRecheck })
 }
 
 // TestCreateAsksAboutTheRepositoryAfterTheAdd: on macOS a create asks git about
@@ -101,18 +101,28 @@ func TestCreateAsksAboutTheRepositoryAfterTheAdd(t *testing.T) {
 	}
 }
 
-// TestCreateAsksAfterAddOnLinuxAndMacOS: on Linux and macOS the call about the
-// repository is right after the `worktree add` of a create, in a first and in a
-// second create, and no such call comes after the read-tree (b3081b51 and
-// c9125eb8, measured on Linux and macOS). Windows makes no such call
-// (claustrum's own, not measured).
-func TestCreateAsksAfterAddOnLinuxAndMacOS(t *testing.T) {
+// TestCreateAsksRightAfterTheAdd: the call about the repository is right after
+// the `worktree add` of a create, in a first and in a second create, and no
+// such call comes after the read-tree (b3081b51 and c9125eb8, measured on Linux
+// and macOS, 4c111e86 measured on Windows). On Windows recheck makes the call.
+// The row "the Windows form" runs the switches of Windows on each system.
+func TestCreateAsksRightAfterTheAdd(t *testing.T) {
 	if got, want := createAsksAfterAdd, runtime.GOOS != "windows"; got != want {
 		t.Fatalf("createAsksAfterAdd = %v, want %v", got, want)
 	}
-	if !createAsksAfterAdd {
-		t.Skip("Windows makes no call about the repository after the add")
+	if got, want := createRechecksAfterAdd, runtime.GOOS == "windows"; got != want {
+		t.Fatalf("createRechecksAfterAdd = %v, want %v", got, want)
 	}
+	t.Run("this system", createAsksRightAfterTheAdd)
+	t.Run("the Windows form", func(t *testing.T) {
+		old, oldRecheck := createAsksAfterAdd, createRechecksAfterAdd
+		createAsksAfterAdd, createRechecksAfterAdd = false, true
+		t.Cleanup(func() { createAsksAfterAdd, createRechecksAfterAdd = old, oldRecheck })
+		createAsksRightAfterTheAdd(t)
+	})
+}
+
+func createAsksRightAfterTheAdd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	setProbeClock(t)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {

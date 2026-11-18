@@ -204,9 +204,10 @@ func resolvedDir(p string) string {
 //     Linux).
 //
 // The --work-tree value of the next call is `path` with its symlinks resolved
-// (measured). When `path` lies inside baseRepo, it is baseRepo, resolved the same
-// way (measured). A `path` that is baseRepo gives the same value both ways
-// (measured).
+// (measured). On Windows its junctions are resolved too (statusProbeDir,
+// claustrum's own, not measured). When `path` lies
+// inside baseRepo, it is baseRepo, resolved the same way (measured). A `path`
+// that is baseRepo gives the same value both ways (measured).
 //
 // The `gitdir` file of an entry matches `path` as text in these spellings: as sent,
 // with its symlinks resolved (measured), and on Windows as the file system reports
@@ -247,8 +248,8 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 		}
 		return sp, true
 	}
-	sp.probeTree = resolvedDir(clean)
-	for _, s := range []string{sp.probeTree, pathcanon.FinalDir(clean)} {
+	sp.probeTree = statusProbeDir(clean)
+	for _, s := range []string{resolvedDir(clean), pathcanon.FinalDir(clean)} {
 		if abs, err := filepath.Abs(s); err == nil {
 			sp.spellings = append(sp.spellings, abs)
 		}
@@ -999,17 +1000,21 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	// either. The measured cases do not reach that state: a worktree with a
 	// `config.worktree` file answers isRepo:false before its status call
 	// (measured on Linux).
-	var front []string
+	var front, lfs []string
 	if r.form.shadow() {
 		front = r.entryItems()
 		// The `status` call names the lfs folder of the temporary git folder.
 		// b3081b51 does so where be1c1ca5 names none (measured on Linux, macOS
 		// and Windows). The other calls get no such item (measured on Linux
-		// and macOS). Its place before the other items, and the same item
-		// where the user config sets lfs.storage, are claustrum's own (not
-		// measured).
+		// and macOS). On Windows 4c111e86 puts it right after --work-tree
+		// (statusLFSAfterWorkTree, measured). Its place before the other items
+		// on Linux and macOS, and the same item where the user config sets
+		// lfs.storage, are claustrum's own (not measured).
 		if args[0] == "status" {
-			front = append([]string{"-c", "lfs.storage=" + filepath.Join(r.tmp, "lfs")}, front...)
+			lfs = []string{"-c", "lfs.storage=" + filepath.Join(r.tmp, "lfs")}
+			if !statusLFSAfterWorkTree {
+				front, lfs = append(lfs, front...), nil
+			}
 		}
 	}
 	var attr []string
@@ -1033,7 +1038,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 		return nil, statusRefusal(hooksRefusalPrefix + l.detail())
 	}
 	full := withFront(front, append(attr, profileArgsWithExcludes(true, excludes,
-		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...))
+		slices.Concat([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, lfs, args)...)...))
 	cmd := gitCommand(full...)
 	cmd.Dir = r.path
 	cmd.Env = hardenedGitEnv(true, r.pin, l.hooks())

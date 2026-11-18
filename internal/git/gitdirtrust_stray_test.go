@@ -121,6 +121,35 @@ func TestStrayCommondirNotAPlainFile(t *testing.T) {
 	})
 }
 
+// A remove of a worktree folder that exists, with a stray commondir that is not a
+// small plain file, answers S2 after `is locked: ` on Windows (4c111e86 and
+// c9125eb8, measured on Windows for a dangling junction). Linux and macOS keep the
+// lock-check text (not measured). Nothing is deleted. Mutation: drop the
+// strayFileTail test of the remove.
+func TestStrayCommondirNotAPlainFileRemove(t *testing.T) {
+	old := removeNamesStrayFile
+	t.Cleanup(func() { removeNamesStrayFile = old })
+	for _, named := range []bool{true, false} {
+		if !named && runtime.GOOS == "windows" {
+			continue
+		}
+		t.Run(fmt.Sprint(named), func(t *testing.T) {
+			removeNamesStrayFile = named
+			r := newTrustRepo(t)
+			cd := filepath.Join(r.T, ".git", "commondir")
+			if err := os.Mkdir(cd, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			want := wantLockCheck(r.SW)
+			if named {
+				want = "failed to remove worktree: could not check whether " + r.SW + " is locked: " +
+					wantTP(cd, "commondir is not a regular file")
+			}
+			checkRemoveRefusedWith(t, remove(t, r.T, r.SW, "s0"), want, r.SW, "s0", r.T)
+		})
+	}
+}
+
 // With a bad HEAD, "." gets S3, and "x" is still refused for its content: the content
 // test comes first (measured). Mutation: test the shape before the content.
 func TestStrayCommondirBadHead(t *testing.T) {
