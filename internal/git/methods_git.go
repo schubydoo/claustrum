@@ -3415,10 +3415,13 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		} else if noRepo && shareGitDir(repo) != "" {
 			// A `.git` folder on a network share that git does not use gets success,
 			// and nothing is deleted (shareGitDir). This noRepo is the answer of
-			// askGit, since a daemon GIT_DIR to a missing path answered above. A lock in `<baseRepo>\.git` that
-			// names the worktree keeps the D22 refusal. A registrations folder that
-			// cannot be read keeps the lock-check refusal (claustrum's own, not
-			// measured).
+			// askGit, since a daemon GIT_DIR to a missing path answered above. A lock
+			// in `<baseRepo>\.git` whose record names the worktree in the share
+			// spelling keeps the D22 refusal. A registrations folder that cannot be
+			// read keeps the lock-check refusal (claustrum's own, not measured). A
+			// lock whose record has the local drive spelling matches no spelling of
+			// the share. 4c111e86 and claustrum then answer success and keep the
+			// lock, for baseRepo in its long and its 8.3 form (measured on Windows).
 			if msg := baseRepoLockRefusal(repo, "", "", path, p.WorktreePath,
 				goneWorktreePathSet(p, repo, path), goneLockedWorktreeRefusal); msg != "" {
 				return refuse(msg)
