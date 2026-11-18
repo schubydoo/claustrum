@@ -422,8 +422,8 @@ func TestWorktreeCreateLeafReplaced(t *testing.T) {
 	afterAddSteps(t, []string{"rename", f.leaf(), old}, []string{"mkdir", f.leaf()},
 		[]string{"write", filepath.Join(f.leaf(), ".git"), gitFile})
 	raw, _ := f.create(t, h, "w1", "", 0)
-	wantError(t, raw, "refusing to create worktree: "+namedLeaf(f.leaf())+
-		" is no longer the directory that was created for the worktree", "unsafe_path")
+	wantError(t, raw, "refusing to create worktree: `"+namedLeaf(f.leaf())+
+		"` is no longer the directory that was created for the worktree", "unsafe_path")
 	f.wantNothingRolledBack(t, gitFile, filepath.Join(f.regDir, "w1"))
 	if b, err := os.ReadFile(filepath.Join(old, ".git")); err != nil || string(b) != gitFile {
 		t.Errorf("the .git file of the folder that was renamed away = %q (err %v), want %q: this fixture does not stage the cell", b, err, gitFile)
@@ -693,7 +693,8 @@ func TestWorktreeCreateListingsOfTwoFolders(t *testing.T) {
 // that it had before that measured rule.
 //
 //   - The leaf is replaced after the add: the checkout runs, and the answer is the
-//     "was not populated" frame of the test after the checkout.
+//     frame of the test after the checkout, the text of a replaced leaf with
+//     unsafe_path.
 //   - The record has a slash at its end: the "different worktree" refusal.
 func TestWorktreeCreateNoAnswerKeepsOldTests(t *testing.T) {
 	t.Run("the leaf is replaced", func(t *testing.T) {
@@ -703,7 +704,7 @@ func TestWorktreeCreateNoAnswerKeepsOldTests(t *testing.T) {
 			[]string{"write", filepath.Join(f.leaf(), ".git"), gitFile})
 		stubRule2(t, "rev-parse,--absolute-git-dir", "", 0, "0", "", "")
 		raw, _ := f.create(t, h, "w1", "", 0)
-		wantError(t, raw, f.leaf()+" was not populated by git worktree add", "worktree_add_failed")
+		wantError(t, raw, "refusing to create worktree: `"+f.leaf()+"` is no longer the directory that was created for the worktree", "unsafe_path")
 		if _, err := os.Stat(filepath.Join(f.leaf(), "t.txt")); err != nil {
 			t.Errorf("the new folder holds no checkout: %v, want the checkout before the test", err)
 		}
