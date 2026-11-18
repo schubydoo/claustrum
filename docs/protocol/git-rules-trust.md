@@ -247,11 +247,12 @@ Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
 listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
 a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
-repository, and it keeps the "no repository" column.
-`git.worktree_remove` keeps that column unless its listing fails.
-For the `.git` file, `git.info` and `git.list_branches` run no listing either.
+repository, and it keeps the "no repository" column (from the code).
+`git.worktree_remove` keeps that column unless its listing fails (from the code).
+For the `.git` file, `git.info` and `git.list_branches` run no listing either
+(from the code).
 The listing of `git.status` still carries `GIT_DIR=<null>`, and
-its failure is the refusal of `git.status` (all from the code). With an incomplete
+its failure is the refusal of `git.status` (both from the code). With an incomplete
 `GIT_CONFIG` pair of the daemon, each method answers "no repository" for the
 `.git` file, and a remove of a gone worktree gets success (`b3081b51`).
 
@@ -304,7 +305,7 @@ The classes come in this order:
    success in both modes (`b3081b51`, measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
    runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
-   If that call fails too, the text is the ["cannot run" text](#the-cannot-run-and-hooks-refusal-texts). Else it is the hooks refusal.
+   If that call fails too, it is the ["cannot run" text](#the-cannot-run-and-hooks-refusal-texts). Else it is the hooks refusal.
 
 The `git version` call of class 3 has the [profile](git-rules-calls.md#hardened-git-calls) of the failed listing. It gets no `-c` option and no `GIT_CONFIG_COUNT`,
 `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon.
@@ -405,7 +406,7 @@ repository gets the
 
 ## The object sources on Windows
 
-On Windows `b3081b51` checks the object sources of a trusted repository before its git calls on the repository (measured on Windows). On Linux and macOS the same shapes are no refusal, and git runs (measured on Linux and macOS). `git.status` and `git.info` answer `-32603`, a create `"errorCode":"worktree_add_failed"`. A remove answers `failed to remove worktree: could not check whether <worktreePath> is locked: ` and the text. A create and a remove run no git call. A remove deletes nothing, also for a worktree folder that is gone (measured on Windows). A create makes nothing (from the code).
+On Windows `b3081b51` checks the object sources of a trusted repository before its git calls (measured on Windows). On Linux and macOS the same shapes are no refusal, and git runs (measured on Linux and macOS). `git.status` and `git.info` answer `-32603`, a create `"errorCode":"worktree_add_failed"`. A remove answers `failed to remove worktree: could not check whether <worktreePath> is locked: ` and the text. A create and a remove run no git call. A remove deletes nothing, also for a worktree folder that is gone (measured on Windows). A create makes nothing (from the code).
 
 The daemon reads `<git dir>\objects\info\alternates` and the same file of each folder that it lists. `<file>` is the file with the fault. For a chain of folders it is the file 6 levels below the repository's own file.
 
@@ -430,11 +431,11 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 
 ### A link to a network or device path
 
-On Windows `b3081b51` refuses a repository path through a symbolic link or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on it, and the text is:
+On Windows `b3081b51` refuses a repository path through a symlink or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on it, and the text is:
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer `-32603`, and a create `"errorCode":"worktree_add_failed"` with no folder or branch. A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). Claustrum's own, not measured: each name of the path is tested, a local link's target is not followed, and `git.status` tests `baseRepo` alone. Also claustrum's own, not measured: the `\\?\`, two-separator and relative targets, a refused `"shadowDirOff":true` request, the place after the chain test and the cleaned path.
+`git.status` and `git.info` answer `-32603`, and a create `"errorCode":"worktree_add_failed"` with no folder or branch. A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). Claustrum's own, not measured: each path name is tested, a local link's target is not followed, and `git.status` tests `baseRepo` alone. Also claustrum's own, not measured: the `\\?\`, two-separator and relative targets, a refused `"shadowDirOff":true` request, the place after the chain test and the cleaned path.
 
 ### UNC refusals
 
@@ -445,7 +446,7 @@ On Windows these refuse the repository path of all five methods with no git call
 - Share denying every account: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 
-`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root, an unreachable host and a path missing below a link pass. Also claustrum's own, not measured: a forward slash separates, `UNC` ignores letter case and `ERROR_NETWORK_ACCESS_DENIED` counts as denied. A junction or link above the last name counts, but not one below a name that fails its look (claustrum's own, not measured). A refused `"shadowDirOff":true` request and the place of the test first are claustrum's own, not measured.
+`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root, an unreachable host and a path missing below a link pass. A junction or link above the last name counts, but not one below a name that fails its look (claustrum's own, not measured). Also claustrum's own, not measured: a refused `"shadowDirOff":true` request, the place of the test first, a forward slash as a separator, `UNC` in any letter case and `ERROR_NETWORK_ACCESS_DENIED` as denied.
 
 ## A FIFO where the daemon reads a git file
 
@@ -486,7 +487,7 @@ The [time limit](git-rules-calls.md#time-limits-of-git-calls) of the add ends th
 usable file. claustrum reads nothing from a FIFO that a writer
 opens during the request. After `git worktree add`, a `commondir`
 of the git directory of `baseRepo` that is not a regular file counts as none, so
-that git directory is its own common directory (all from the code). A FIFO as the
+that git directory is its own common directory (all four sentences from the code). A FIFO as the
 config is in
 [config refusals](git-rules-config.md#repository-config-refusals), and one at a folder of the daemon in
 [the folders](git-rules-settings-copy.md#the-folders).
