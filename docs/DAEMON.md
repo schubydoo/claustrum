@@ -609,7 +609,7 @@ same refusal with its own prefix. No daemon, socket, `daemon.lock` or
 claustrum: open log: open <path>: is a directory
 ```
 
-On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket there. The first daemon holds the log open, so the rename fails, and the launcher truncates it, where the second daemon logs. Each daemon writes at its own offset, so the first daemon's earlier lines are lost and its later lines sit behind NUL bytes. A log that another process holds with no delete share is truncated too,
+On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket. The first daemon holds the log open, so the rename fails and the launcher truncates the log for the second daemon. Each daemon writes at the offset of its own handle, so the first daemon's earlier lines are lost and later ones follow NUL bytes. A log that another process holds with no delete share is truncated too,
 and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 ### Lines of connections
@@ -625,7 +625,8 @@ These line rules are claustrum's own unless an item names a build. `89cb6289` an
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
 - The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
 - A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later each time (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
-- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error, and the shutdown logs none. A connection with no mark logs no `writeResponse` or `scanner error` line. It logs no `Failed to write response` line after a bad last line and a close (`4c111e86`, measured on Linux), and macOS and Windows are claustrum's own.
+- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error, and the shutdown logs none. An unmarked connection logs no `writeResponse` or `scanner error` line.
+- After a bad last line and a close, an unmarked connection logs no `Failed to write response` line (`4c111e86`, measured on Linux). macOS and Windows are claustrum's own.
 
 ### Lines of child processes
 
