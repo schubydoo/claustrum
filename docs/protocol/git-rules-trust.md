@@ -1,11 +1,11 @@
 # Trust check of the git directory
 
-An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
+An untagged rule on this page matches build `5fd08069` or earlier. A section that names its systems or its build keeps that scope.
 
 ## Git-directory trust check
 
 The folder of the check is `path` for `git.info` and `git.list_branches`, and
-`baseRepo` for `git.status`, `git.worktree_create` and `git.worktree_remove`. The check has three outcomes. "Trusted" lets git run. "No
+`baseRepo` for `git.status`, `git.worktree_create` and `git.worktree_remove`. "Trusted" lets git run. "No
 repository" answers as if the folder held no repository. "Refused" answers with
 one of the texts M2 to M6 and S1 to S3, and git does not run.
 
@@ -15,7 +15,7 @@ When the daemon's own environment sets neither `GIT_DIR` nor `GIT_COMMON_DIR`,
 the daemon walks up from the request folder:
 
 - The walk starts at the request folder with symlinks resolved. A refusal names
-  the resolved path, never the alias.
+  the resolved path.
 - On Windows the walk resolves no junction before the last component of the
   path. It starts at the path as spelled, and it takes a `..` by text. Take a
   repository `<P>` with a junction `<P>\J` into a repository `<R>`. For
@@ -247,12 +247,11 @@ Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
 listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
 a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
-repository, and it keeps the "no repository" column (from the code).
-`git.worktree_remove` keeps that column unless its listing fails (from the code).
-For the `.git` file, `git.info` and `git.list_branches` run no listing either
-(from the code).
+repository, and it keeps the "no repository" column.
+`git.worktree_remove` keeps that column unless its listing fails.
+For the `.git` file, `git.info` and `git.list_branches` run no listing either.
 The listing of `git.status` still carries `GIT_DIR=<null>`, and
-its failure is the refusal of `git.status` (from the code). With an incomplete
+its failure is the refusal of `git.status` (all from the code). With an incomplete
 `GIT_CONFIG` pair of the daemon, each method answers "no repository" for the
 `.git` file, and a remove of a gone worktree gets success (`b3081b51`).
 
@@ -446,7 +445,7 @@ On Windows these refuse the repository path of all five methods with no git call
 - Share denying every account: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 
-`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root and an unreachable host pass, and a forward slash separates. Also claustrum's own, not measured: `UNC` in any letter case, `ERROR_NETWORK_ACCESS_DENIED` as denied, and a junction or link above the last name. A refused `"shadowDirOff":true` request and the place of the test first are claustrum's own, not measured, too.
+`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root, an unreachable host and a path missing below a link pass. Also claustrum's own, not measured: a forward slash separates, `UNC` ignores letter case and `ERROR_NETWORK_ACCESS_DENIED` counts as denied. A junction or link above the last name counts, but not one below a name that fails its look (claustrum's own, not measured). A refused `"shadowDirOff":true` request and the place of the test first are claustrum's own, not measured.
 
 ## A FIFO where the daemon reads a git file
 
