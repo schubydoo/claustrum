@@ -38,8 +38,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   Outside any repository it starts no test. As the first git request of a daemon its
   reply then has no member on Linux and macOS. On Windows it is the hooks refusal,
   with `fork/exec <git.exe>: The directory name is invalid.` On a FIFO or
-  `/dev/null` outside any repository the first `git.info` or `git.status` starts no
-  test (`b3081b51`, measured on Linux). The `git.info` reply has no member, also after
+  `/dev/null` outside any repository the first `git.info` or `git.status` starts no test, and the `git.info` reply has no member, also after
   such a `git.status` (`b3081b51`, measured on Linux). macOS is not measured. For
   `git.status` a regular file there is claustrum's own, not measured.
   On Linux and macOS every file that is not a folder takes the steps of a regular file.
@@ -61,10 +60,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   the remove deletes nothing. On a config that only the daemon refuses, the remove
   deletes. macOS and Windows are not measured for these replies and removes.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes during the hold. It is not stopped at 2
-  minutes also after the holder answers (claustrum's own, not measured). A held call
-  that starts after that answer has the 2 minute limit (claustrum's own, not
-  measured).
+  the hold is not stopped at 2 minutes during the hold. Nor is it after the holder answers, and a held call that starts
+  after that answer has the 2 minute limit (claustrum's own, not measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` no second test ran up to 720 s.
 - The daemon logs one `[GitHandler]` line at the first decision of the state and one
@@ -118,9 +115,10 @@ end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
 does not fail the test. The test goes on (`b3081b51`, measured on Linux).
 
-The daemon keeps a failure for 10 seconds from the end of the failed test, also
-after its cause is gone. A request in that time gets the kept text with no git call.
-A request with `"shadowDirOff":true` works in that time.
+The daemon keeps a failure 10 seconds after the test, also with its cause
+gone. In that time a request gets the failure with no git call, but works with
+`"shadowDirOff":true`. A failure under `"sessionFoldersOff":true` is not kept
+(`4c111e86`, measured on Linux).
 
 ### The folders
 
@@ -231,7 +229,7 @@ request gets this text and nothing goes:
 A folder goes between the git calls of a request, never during one. The next call
 makes it again with no new config read, except a call right after its own config
 listing (claustrum's own, not measured). A failed remake gets the `cannot write its
-copy` text above, or the 128 text when all 128 folders are held (from the code). A call whose folder went and is not made
+copy` text above, or the 128 text when all 128 folders are held, and a call whose folder went and is not made
 again, or whose daemon shut down or replaced it, fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in force: ` before it (Linux
 and Windows):
@@ -263,27 +261,26 @@ blocks of rewritten URLs. The file ends with
 
 ### The call about the repository
 
-In the state `shadow` the daemon runs `rev-parse --git-dir` before the method's
-calls, in the root of the work tree. On Linux and macOS a create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). It passes `-c core.hooksPath=<null device>`
-and `-c core.fsmonitor=` (build `c8e2f083`, measured on Windows). The call names
+In `shadow` the daemon runs `rev-parse --git-dir` before the method's
+calls, in the root of the work tree. On Linux and macOS a create asks again after a good add ([git.worktree_create](git-worktree-create.md#add-and-checkout-failures)). After the add of a commit from `sourceBranch` it asks before its [content check](git-worktree-create.md#the-content-check). On Windows only a create of a branch asks, right after the add (`4c111e86`, measured), and any answer goes on (claustrum's own). It passes `-c core.hooksPath=<null device>`
+and `-c core.fsmonitor=` (`c8e2f083`, measured on Windows). The call names
 the folder `.probe` of the daemon. The daemon removes leftovers like
-`shallow` and keeps a planted `keepme` (measured on Linux). Other names and
-entries are claustrum's own (not measured). It rewrites an emptied `config`, keeps an
+`shallow` and keeps a planted `keepme` (measured on Linux), and other names and
+entries are claustrum's own. It rewrites an emptied `config`, keeps an
 unchanged one and replaces a folder at `HEAD` (measured on Linux). If `.probe` cannot be prepared, no git runs. The request gets [the
 `cannot write "<.probe path>"` text](errors.md#error-string-catalogue)
 (Linux). The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
-macOS and Windows). So a pair such as `safe.directory` changes the answers (from the
-code). A good answer is kept 5 seconds from the end of the call. A change of the root
-folder or of its `.git` entry makes the daemon ask again.
+macOS and Windows). A good answer is kept 5 seconds after the call ends. A change of the root
+folder or its `.git` entry makes the daemon ask again.
 
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
 `.probe` (`52d82f0a` on Linux and macOS, `c8e2f083` on Windows). Exit 0 there gives
 the "no repository" answer on Windows (`c8e2f083`). The daemon kills a second run 30
-seconds after its start, and the reply is then the error of the rows below, with the text
+seconds after its start, and the reply is the error of the rows below, with the text
 of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero exit
-gets the same (claustrum's own, not measured).
+gets the same (claustrum's own).
 
 On Linux and macOS a third run follows that exit 0, in the root, with no config of the
 user or the system and no `GIT_DIR` (`52d82f0a`). Its exit 0 gives that error plus `;
@@ -297,8 +294,8 @@ answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 | Answer of git | Reply |
 |---|---|
 | exit 1, a signal (`signal: terminated`) or a git that cannot start (Windows) | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
-| exit 1 or exit 2 with a text | The same text with git's text in place of `exit status 1`. Two lines stand there with one space between them. This row holds on all five methods |
-| either of the two rows above | One `git version` call follows. If it fails, the reply is `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method. A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after a signal, a remove with `worktreeRoot` |
+| exit 1 or exit 2 with a text | The same text with git's text in place of `exit status 1`. Two lines stand there, one space apart. It holds on all five methods |
+| either of the two rows above | One `git version` call follows. A failed one gives `git cannot run on this host; git not run: <exec error>: <git text>` in the frame of each method (not a create without git: `4c111e86`, Linux and macOS, and Windows for a missing `baseRepo`). A remove makes two such calls and deletes nothing. Not measured: a git that cannot start, `git.info` and `git.worktree_create` after a signal, a remove with `worktreeRoot` |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again`. `<path>` is the path as git printed it: with forward slashes on Windows. On Windows the answers `<R>/../OTHER/.git` and `<R>/.git/..` keep their `..` (`b3081b51`, measured on Windows). On Linux and macOS a path that is not clean is shown cleaned, and on every system a path that is not absolute is shown cleaned from `<root>` (claustrum's own, not measured). No output gives `<root>` |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` (Linux, macOS and Windows) |
 

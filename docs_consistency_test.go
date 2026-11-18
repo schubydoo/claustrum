@@ -682,7 +682,7 @@ var docWordLimits = map[string]int{
 	"docs/IMPROVEMENTS.md":                       1599, // the KILL exception of item 21, b3081b51
 	"docs/INSTALL.md":                            5727, // the outlive claim of the probe cut and the group kill of the launcher stop only while the run runs, exact count. 5733: the blob remove with no guard, moved from AGENTS.md (TASK-451). 5727: the download texts and progress lines of b3081b51, the no-length row and the scope of the final line rule and the two values of the final-chunk wait. 5712: before them. 5659: first count. 5585: the measured no-fallback rule for an ldd that cannot run. 5573: the measured /bin/ldd fallback of b3081b51. 5568: the not-measured /bin/ldd mark of b3081b51. 5560: the fixed ldd path and environment of b3081b51. 5539: the blob guard of the new prunes. 5531: the measured rows of the prune. 5508: the prune before the fetch of -install. 5307: page rewrite
 	"docs/PROTOCOL.md":                           2904, // the files.find row, exact count. 2890: the claim fix of the -32008 row, its link to the state fallback-git (decision-080). 2886: the -32008 row of gitRead in fallback-git, c9125eb8 (decision-080). 2863: the merge of the server.adoptEnv row with the files.mkdir row, exact count. 2855: the parent of files.mkdir in the tilde rule, claim fix of a review (decision-080). 2847: the merge of the files.mkdir row with the launcher rows of main. 2833: the files.mkdir row, exact count. 2835: the files.realpath row and count. 2826: one sentence on the close line. one sentence on a failed write. the error texts, stream frames and flags moved to their own pages
-	"docs/STYLE.md":                              1293, // the page rewrite
+	"docs/STYLE.md":                              1291, // the exception of REFERENCE-BUILDS.md cut, exact count (TASK-673). 1293: the page rewrite
 	"docs/TOUR.md":                               850,  // a new page: its word count plus about 200
 	"docs/UPSTREAM-TRACKING.md":                  6359, // the pin of 4c111e86: the launcher and files.find items name the pin, and the builds of supplies_cli and the ssh door entries, a claims fix, exact count (decision-062). 6359: the seed calls of 4c111e86, exact count (decision-062). 6360: the stale bullet of the shutdown exit line cut, a review fix (decision-062). 6415: the out_of_resources line of the peer check, 4c111e86, a review fix (decision-062). 6410: the private LFS store of 4c111e86 and its seed calls (decision-062). 6370: the files.find line of 4c111e86 (decision-062). 6354: the .checkout-<n> folder and the lfs.storage item of 4c111e86 (decision-062). 6333: the macos_host text of 4c111e86, a triage claim fix. 6330: the triage claim fix of the launcher texts of 4c111e86 (decision-090). 6323: the pin of c9125eb8: the launcher sentence tagged as the pin, the build of cliRemoved, the run-dir test of a stamped orphan. 6342: the launcher sentence of c9125eb8 (decision-080). 6333: the stamped orphan and 3 s wait item, c9125eb8 (decision-080). 6291: the missing daemon GIT_DIR in the D22 row. 6284: the junction trust-root item cut, b3081b51. 6313: the download texts of b3081b51. 6386: the pin of b3081b51: the content check item cut, two pin words added. 6411: the network link exception of b3081b51. 6401: the claims fixes of m-19. 6404: the content check of b3081b51 and its commit-id call. 6335: the junction item of b3081b51. 6312: the D28 row. 6285: the pin of be1c1ca5: six triage items cut, three pin sentences added. 6480: the staged add of be1c1ca5. 6418: the ssh door of be1c1ca5. 6400: the links of the long-path dials. 6392: the long-path dials of the host cleaner and plugins.prune. 6379: the long socket path. 6356: the sweep on Linux and macOS of be1c1ca5. 6329: the git env bullet. 6300: the worktree texts of be1c1ca5. 6250: the build of the new prunes. 6234: the pin of 683cc6a9. 6232: the terminal of 683cc6a9. 6230: the build of the open destDir refusal. 6228: the could-not-be-examined text. 6224: words moved from PROTOCOL.md, net down in the same PR
 	"docs/index.md":                              325,  // the Go pin item (decision-076). 316: the reader router
@@ -692,6 +692,9 @@ var docWordLimits = map[string]int{
 	"docs/protocol/files-mkdir.md":               536,  // the no-/proc and exact-compare rules, claim fix of a review (decision-080). 508: the name test, the parent codes, the real-path check, the umask mode and the errno codes of c9125eb8, exact count (decision-080). 402: the failed line and the errno 36 scope, claim fix of a review (decision-080). 380: claim fixes of the files.mkdir page, exact count (decision-080). 538: a new page: its word count plus about 200, c9125eb8
 	"docs/protocol/files-list.md":                550,  // the ELOOP tries of b3081b51. 468: the network links of 683cc6a9
 	"docs/protocol/files-read.md":                825,
+	"docs/protocol/files-realpath.md":            587,   // its own row, exact count (TASK-673, maintainer decision 2026-11-17)
+	"docs/protocol/line-end.md":                  239,   // its own row, exact count (TASK-673, maintainer decision 2026-11-17)
+	"docs/protocol/process-farewell.md":          526,   // its own row, exact count (TASK-673, maintainer decision 2026-11-17)
 	"docs/protocol/files-stat.md":                514,   // the ELOOP tries of b3081b51. 434: the page rewrite
 	"docs/protocol/files-validate.md":            445,   // the ELOOP tries of b3081b51
 	"docs/protocol/flags.md":                     2738,  // the token pipe before the markers, a review fix (decision-062). 2730: the daemon environment drops the launcher marks, c9125eb8 and 4c111e86, exact count with a review fix (decision-062). 2653: the =1 gate and the relayed-line auth, claim fix (decision-080). 2649: the pointer to the adoptEnv frame of the bridge, c9125eb8 (decision-080). 2639: the prune after a good install. 2633: moved from PROTOCOL.md
@@ -717,6 +720,8 @@ var docWordLimits = map[string]int{
 	"docs/protocol/server.md":                    2176,  // the pin of 4c111e86, exact count (decision-062). 2174: the failed poll and the EINTR retry of the peer check, 4c111e86, with the blocked accept, exact count (decision-062). 2106: the number of an exited caller that got no line, c9125eb8 and 4c111e86, exact count (decision-062). 2089: the name git.worktree_create.lfs_error_codes of 4c111e86, exact count (decision-062). 2093: out_of_resources of the peer check, its two features and the failed own naming, 4c111e86, exact count with review fixes (decision-062). 1935: one word cut from a long sentence, a review fix (decision-080). 1936: the caller pid of a lookup_failed line (decision-062). 1910: process.spawn.cli_temp_root_end of 4c111e86 (decision-062). 1899: git.worktree_create.own_lfs_store of 4c111e86 on Linux and macOS (decision-062). 1873: process.spawn.refuses_given_up_id of 4c111e86 (decision-062). 1868: git.worktree_create.unusable_git_refused of 4c111e86 (decision-062). 1856: the files.find words of the methods row, exact count. 1851: the two Linux launcher features of 4c111e86 (decision-062). 1836: the pin of c9125eb8. 1834: the pointer to server.adoptEnv, claim fix of a review (decision-080). 1829: the merge of the files.mkdir words with launcher.supplies_cli (decision-080). 1798: launcher.supplies_cli of c9125eb8 (decision-080). 1793: process.spawn.git_read of c9125eb8. 1780: the Windows shutdown reply of b3081b51. 1747: the pin of b3081b51. 1745: the six feature names of b3081b51. 1721: the third stream-json form and the launcher rule of b3081b51. 1702: the shutdown signals of b3081b51. 1548: the pin of be1c1ca5. 1546: git.hooks_null_device. 1535: the lists of 683cc6a9. 1496: four feature names in the example and the job name. the page rewrite
 	"docs/protocol/streams.md":                   606,   // temp_root after a client kill, merged with main, exact count (decision-062). 598: the killedBy temp_root and a heading, 4c111e86, exact count (decision-062). 584: moved from PROTOCOL.md
 	"docs/protocol/git-rules-session-folders.md": 2078,  // a gone record written again by a later create, 4c111e86, exact count (decision-062). 2053: the not-a-folder cause of a file at the record folder, 4c111e86, exact count (decision-062). 2030: the systems of the mkdir through a handle, a claim fix, exact count (decision-062). 2028: the mkdir through a handle of <root>, 4c111e86, and a heading (decision-062). 2000: the record of a create before the add, c9125eb8 and 4c111e86 (decision-062). 1960: the marks of a missing folder on Linux, a claim fix of a review (decision-080). 1959: the resolved record of a folder that does not exist yet, c9125eb8 on macOS (decision-080). 1926: the record of the resolved folder of a spawn, b3081b51 and c9125eb8 (decision-080). 1860: the rename and the remove of a record name, moved from AGENTS.md (TASK-451). 1830: the place, spelling and no-pin folder of a create record. 1788: the stack merge. 1760: the record of a create, b3081b51. 1687: the launcher add-dir and letter-case rules, 3 words of a heading. 1666: the retry after a failed rename. 1659: a heading for the create rule. 1656: the spawn shapes that record, b3081b51. 1582: the record that cannot be saved, b3081b51. 1361: the claims fixes of m-19. 1335: the battery rows of b3081b51. 1234: the claims fixes. 1181: cut after the claims check. 1259: the follow-up rows of b3081b51. 1029: the new page
+
+	"docs/REFERENCE-BUILDS.md": 11930, // the words that the merge of main cut, exact count. 11946: its first limit, exact count after the private names went (TASK-671, TASK-673, maintainer decision 2026-11-17)
 }
 
 // The limits of a document that docWordLimits does not name.
@@ -725,8 +730,10 @@ const (
 	docNewPageWords         = 1500
 )
 
-// docNoWordLimit has no word limit: the ledger is append-only by the maintainer's decision of 2026-10-21.
-const docNoWordLimit = "docs/REFERENCE-BUILDS.md"
+// docNoSectionRunLimit has no section-run limit: the ledger is append-only by the maintainer's
+// decision of 2026-10-21. Its word limit is a row of docWordLimits. A new build entry raises
+// that row by the words of the entry. Nothing else raises a limit.
+const docNoSectionRunLimit = "docs/REFERENCE-BUILDS.md"
 
 // docLimitedFiles lists the files that carry word limits: AGENTS.md, CONTRIBUTING.md,
 // README.md, SECURITY.md and each Markdown file under docs/.
@@ -746,16 +753,13 @@ func docLimitedFiles(t *testing.T) []string {
 }
 
 // TestDocsWordLimits: each Markdown file under docs/, AGENTS.md, CONTRIBUTING.md, README.md
-// and SECURITY.md, except docNoWordLimit, has at most the words of its limit. A word is a run
+// and SECURITY.md has at most the words of its limit. A word is a run
 // of characters between white space.
 func TestDocsWordLimits(t *testing.T) {
 	files := docLimitedFiles(t)
 	seen := map[string]bool{}
 	for _, f := range files {
 		seen[f] = true
-		if f == docNoWordLimit {
-			continue
-		}
 		limit, ok := docWordLimits[f]
 		if !ok {
 			limit = docNewPageWords
@@ -850,13 +854,13 @@ func docSectionRunProblem(page, text string, limits map[string]int) string {
 	return ""
 }
 
-// TestDocsSectionRuns: no file that TestDocsWordLimits covers has more words between two
+// TestDocsSectionRuns: no file that TestDocsWordLimits covers, except docNoSectionRunLimit, has more words between two
 // headings than its row in docSectionRunLimits, or docSectionRunTarget without a row.
 func TestDocsSectionRuns(t *testing.T) {
 	seen := map[string]bool{}
 	for _, f := range docLimitedFiles(t) {
 		seen[f] = true
-		if f == docNoWordLimit {
+		if f == docNoSectionRunLimit {
 			continue
 		}
 		if msg := docSectionRunProblem(f, docRead(t, docRel(f)), docSectionRunLimits); msg != "" {

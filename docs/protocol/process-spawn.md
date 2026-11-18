@@ -4,7 +4,7 @@
 
 Treat the socket and the token as shell access. See [`SECURITY.md`](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
-An untagged rule on this page is measured against build `89cb6289`. The removal of `CLAUDE_SSH_PEER_CHECK` is measured against `5fd08069`, the spawn during a shutdown against `be1c1ca5`.
+An untagged rule on this page is measured against build `89cb6289`. The removal of `CLAUDE_SSH_PEER_CHECK` is measured against `5fd08069`.
 
 ## Request
 
@@ -33,7 +33,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `linkBound` | no | See [its page](process-link-bound.md). |
 | `gitRead` | no | See [its page](process-git-read.md). |
 | `sessionFoldersOff` | no | `true` turns off the check of [session folders](git-rules-session-folders.md) while the request runs. |
-| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51) on Linux and macOS. Without `gitRead`, any other value counts as absent (claustrum's own). |
+| `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51). A text or an object gets `Invalid params` (Linux). Other cases are claustrum's own. |
 | `cliTempRootEnd` | no | `true` asks the daemon to end the child on Linux and macOS when [its private temp folder is lost](#a-lost-folder-build-4c111e86) (`4c111e86`). Any other value counts as absent (claustrum's own). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
 
@@ -424,13 +424,13 @@ claustrum's own, not measured: the `id` stays given up for 15 minutes, and a new
 
 #### A give-up during the start
 
-Build `4c111e86`, measured on Linux. A `process.kill` of the `id` can come while the command starts, before the spawn replies. The spawn then gets the same `-32602` reply after the start. The log gets no `Process <id> started` line for it. The daemon sends `SIGKILL` to the group of the new child, with no `SIGTERM` before it, and waits 3 seconds for its end. If the child has not ended by then, the log gets `[process.Manager] Process <id> was started and not registered, and has not ended 3s after its kill (<nil>)`. Then the log gets `[process.Manager] Failed to start process <id>: <text>`. The reply comes after that wait.
+Build `4c111e86`, measured on Linux: a `process.kill` of the `id` can come while the command starts, before the reply. The spawn gets the same `-32602` reply after the start. The log gets no `Process <id> started` line for it. The daemon sends `SIGKILL` to the group of the new child, with no `SIGTERM`, and waits 3 seconds for its end. If the child still runs then, the log gets `[process.Manager] Process <id> was started and not registered, and has not ended 3s after its kill (<nil>)`. Then the log gets `[process.Manager] Failed to start process <id>: <text>`, and the reply comes after that wait.
 
 claustrum's own, not measured: macOS and Windows, and the end time of the child after the kill.
 
 ### A spawn during a shutdown
 
-A spawn whose child starts after the shutdown began gets no reply. The daemon ends that child, also with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). If the reference exits during that start, the child can stay running (measured on Linux and macOS).
+A start that returns after the shutdown began gets no reply. Windows ends its child, also with `-keep-children`. Linux and macOS send none (claustrum's own). On `4c111e86` ended groups equal start lines, and children with no start line outlive it (measured on Linux). Later writes fail (from the code).
 
 ## Differences from the reference
 

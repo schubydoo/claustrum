@@ -71,7 +71,7 @@ func TestInstallDirectRunStopsTheWholeGroup(t *testing.T) {
 	start := time.Now()
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
 	if d := time.Since(start); d > 15*time.Second {
-		t.Errorf("B07: the run took %v. A CLI that ignores SIGTERM must be stopped at the bound", d)
+		t.Errorf("the run took %v. A CLI that ignores SIGTERM must be stopped at the bound", d)
 	}
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
@@ -79,17 +79,17 @@ func TestInstallDirectRunStopsTheWholeGroup(t *testing.T) {
 	line := mustLogLine(t, f, "START ")
 	pid, pgid := stubField(t, line, "pid"), stubField(t, line, "pgid")
 	if pgid != pid {
-		t.Errorf("B04: the stub ran with pgid %d and pid %d, want a process group of its own", pgid, pid)
+		t.Errorf("the stub ran with pgid %d and pid %d, want a process group of its own", pgid, pid)
 	}
 	if got, want := stubField(t, line, "ppid"), os.Getpid(); got != want {
-		t.Errorf("B04: the parent of the stub is %d, want the -install process %d", got, want)
+		t.Errorf("the parent of the stub is %d, want the -install process %d", got, want)
 	}
 	if got, mySid := stubField(t, line, "sid"), ownSessionID(); got != mySid {
-		t.Errorf("B04: the stub ran in session %d, want the session of the -install process %d", got, mySid)
+		t.Errorf("the stub ran in session %d, want the session of the -install process %d", got, mySid)
 	}
 	child := waitStubChild(t, f)
 	if !goneWithin(child, 2*time.Second) {
-		t.Errorf("B08: the child %d in the group of the CLI is still alive after the stop", child)
+		t.Errorf("the child %d in the group of the CLI is still alive after the stop", child)
 	}
 	if !goneWithin(pid, 2*time.Second) {
 		t.Errorf("the stub %d is still alive after the stop", pid)
@@ -180,12 +180,12 @@ func TestInstallDirectRunStopLeavesANewSessionChild(t *testing.T) {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if !ready.Load() {
-		t.Fatal("B09: the stub never became ready: it recorded no child pid before the stop step, or no stop step ran")
+		t.Fatal("the stub never became ready: it recorded no child pid before the stop step, or no stop step ran")
 	}
 	child := waitStubChild(t, f)
 	time.Sleep(500 * time.Millisecond)
 	if err := syscall.Kill(child, 0); err != nil {
-		t.Errorf("B09: the child %d in a new session is gone after the stop (%v), want it alive", child, err)
+		t.Errorf("the child %d in a new session is gone after the stop (%v), want it alive", child, err)
 	}
 }
 
@@ -231,7 +231,7 @@ func TestInstallGatePrintsNoLauncherFieldBesideAnEmptyCliPath(t *testing.T) {
 	out := captureInstallOutput(t, installOpts{cliDir: filepath.Join(p, "cli"), cliVersion: "9.9.9", cliZst: g.stubBlob(t)})
 	want := factsHead(t, "") + `false,"cliError":"mkdir cli dir: mkdir ` + p + `: not a directory"}` + "\n"
 	if out != want {
-		t.Errorf("G1: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 }
 
@@ -249,7 +249,7 @@ func TestInstallLauncherRunIgnoresTheDirectBounds(t *testing.T) {
 
 	out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9"})
 	if want := factsHead(t, g.cli) + "true" + usable; out != want {
-		t.Errorf("L01: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 
 	if err := os.Remove(g.cli); err != nil {
@@ -257,7 +257,7 @@ func TestInstallLauncherRunIgnoresTheDirectBounds(t *testing.T) {
 	}
 	out = captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliZst: g.stubBlob(t)})
 	if want := factsHead(t, g.cli) + "false" + usable; out != want {
-		t.Errorf("L06: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if got, want := readLog(t, g.wrapLog), strings.Repeat("LAUNCH "+g.cli+" --version\n", 2); got != want {
 		t.Errorf("launcher log %q, want two runs on the final path %q", got, want)
@@ -277,9 +277,9 @@ func TestInstallStoppedLauncherRunOnACacheHitSweeps(t *testing.T) {
 
 	out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliKeep: 2})
 	if !strings.Contains(out, `"cliUnresponsive":true,"launcherStatus":"unresponsive",`) {
-		t.Fatalf("L03: stdout %q, want a stopped launcher run", out)
+		t.Fatalf("stdout %q, want a stopped launcher run", out)
 	}
-	g.wantNames(t, "L03", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", "9.9.9")...)
+	g.wantNames(t, "stopped launcher run", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", "9.9.9")...)
 }
 
 // Measured, for the order of the keys and for the none status. With the
@@ -333,17 +333,17 @@ func TestInstallDefaultCLIDirModes(t *testing.T) {
 	}
 
 	_ = captureInstallOutput(t, installOpts{home: home, cliVersion: "9.9.9"})
-	modes(t, "H01/H09 (new levels, umask 000)", 0o700)
+	modes(t, "new levels, umask 000", 0o700)
 
 	out := captureInstallOutput(t, installOpts{home: home, cliVersion: "9.9.9", cliZst: f.stubBlob(t)})
 	if strings.Contains(out, "cliError") {
-		t.Fatalf("H03: stdout %q, want a good install", out)
+		t.Fatalf("stdout %q, want a good install", out)
 	}
 	if fi, err := os.Stat(filepath.Join(levels[2], "9.9.9")); err != nil || fi.Mode().Perm() != 0o755 {
-		t.Errorf("H03: the installed CLI: err %v, mode %v, want 0755", err, fi)
+		t.Errorf("the installed CLI: err %v, mode %v, want 0755", err, fi)
 	}
 
-	// H08: levels that exist with 0755 keep 0755.
+	// Levels that exist with 0755 keep 0755.
 	home2 := filepath.Join(f.root, "home2")
 	levels = []string{filepath.Join(home2, ".claude"), filepath.Join(home2, ".claude", "remote"),
 		filepath.Join(home2, ".claude", "remote", "ccd-cli")}
@@ -351,5 +351,5 @@ func TestInstallDefaultCLIDirModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = captureInstallOutput(t, installOpts{home: home2, cliVersion: "9.9.9"})
-	modes(t, "H08 (existing levels)", 0o755)
+	modes(t, "existing levels", 0o755)
 }
