@@ -69,7 +69,7 @@ var treeDeleteSites = []treeDeleteSite{
 	{
 		file: "internal/git/worktreeremove.go", fn: "deleteWorktreeDir", count: 3,
 		why:    "Path 2: git.worktree_remove deletes worktreePath",
-		guards: []homeGuardCall{{"internal/git/methods_git.go", "worktreeRemoveHomeRefusal", wipesHome}},
+		guards: []homeGuardCall{{"internal/git/methods_git.go", "worktreeRemoveHomeRefusal", wipesHome}, {"internal/git/methods_git.go", "worktreeLeafHomeRefusal", folderHolds}},
 	},
 	{
 		file: "internal/git/worktreeremove.go", fn: "dropWorktreeEntry", count: 1,
@@ -84,7 +84,7 @@ var treeDeleteSites = []treeDeleteSite{
 	{
 		file: "internal/git/worktreeverify.go", fn: "clearWorktreeLeaf", count: 1,
 		why:    "Path 3: the git.worktree_create rollback deletes the leaf",
-		guards: []homeGuardCall{{"internal/git/worktreeverify.go", "leafHoldsHome", wipesHome}},
+		guards: []homeGuardCall{{"internal/git/worktreeverify.go", "leafHoldsHome", wipesHome}, {"internal/git/worktreeverify.go", "leafHoldsHome", folderHolds}},
 	},
 	{
 		file: "internal/git/gitdirheld.go", fn: "removeHeldEntry", count: 1,
@@ -201,8 +201,8 @@ func funcDeclName(d *ast.FuncDecl) string {
 }
 
 // scanTreeDeletes returns every RemoveAll selector of files, with its
-// enclosing declaration, and for each declaration whether it calls each
-// homeguard function.
+// enclosing declaration, and for each declaration the homeguard functions
+// that it calls.
 func scanTreeDeletes(t *testing.T, files []string) ([]treeDeleteFound, map[string]map[string]bool) {
 	t.Helper()
 	var found []treeDeleteFound
@@ -233,12 +233,18 @@ func scanTreeDeletes(t *testing.T, files []string) ([]treeDeleteFound, map[strin
 			for _, p := range parts {
 				key := file + " " + p.name
 				ast.Inspect(p.node, func(n ast.Node) bool {
-					sel, ok := n.(*ast.SelectorExpr)
+					if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "RemoveAll" {
+						found = append(found, treeDeleteFound{file, p.name, fset.Position(sel.Pos()).Line})
+					}
+					// A guard counts only as a call. A bare reference such as
+					// "_ = homeguard.WipesHomeDir" guards nothing.
+					call, ok := n.(*ast.CallExpr)
 					if !ok {
 						return true
 					}
-					if sel.Sel.Name == "RemoveAll" {
-						found = append(found, treeDeleteFound{file, p.name, fset.Position(sel.Pos()).Line})
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok {
+						return true
 					}
 					if x, ok := sel.X.(*ast.Ident); ok && x.Name == "homeguard" {
 						if guards[key] == nil {
@@ -317,5 +323,27 @@ func checkTreeDeleteGuards(t *testing.T, guards map[string]map[string]bool, site
 				t.Errorf("%s in %s no longer calls %s, the home guard of the tree delete in %s (%s)", g.fn, g.file, g.call, s.fn, s.why)
 			}
 		}
+	}
+}
+
+// TestRemoveAllGuardNeedsACall checks that a bare reference to a homeguard
+// function counts as no guard, and that a call counts.
+func TestRemoveAllGuardNeedsACall(t *testing.T) {
+	file := filepath.ToSlash(filepath.Join(t.TempDir(), "guard.go"))
+	src := `package p
+
+func unused(p string) { _ = homeguard.WipesHomeDir }
+
+func called(p string) bool { return homeguard.WipesHomeDir(p) }
+`
+	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, guards := scanTreeDeletes(t, []string{file})
+	if guards[file+" unused"][wipesHome] {
+		t.Errorf("a bare reference to %s counts as a guard call", wipesHome)
+	}
+	if !guards[file+" called"][wipesHome] {
+		t.Errorf("a call of %s does not count as a guard call", wipesHome)
 	}
 }

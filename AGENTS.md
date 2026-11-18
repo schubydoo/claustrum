@@ -132,8 +132,8 @@ delete. The daemon `~`-expands the RPC paths first, so `"~"` once meant
 `os.RemoveAll($HOME)`. That destroyed a home directory. The
 deletes inside the folder `git-shadow` are not among the five: their root comes
 from the socket, as in `plugins.prune`. `removeall_allowlist_test.go` lists each
-tree delete. It fails on an unlisted site or a lost home guard. A new site needs
-its entry.
+tree delete. It fails on an unlisted site, or on a listed guard function that
+calls no homeguard check.
 
 | Path | What is deleted | Who names it | Guard | Method page |
 |------|-----------------|--------------|-------|-------------|
