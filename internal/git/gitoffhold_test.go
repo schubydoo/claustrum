@@ -109,7 +109,7 @@ func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 	h.held(t)
 	h.send(t, 2, "git.info", map[string]any{"path": h.repoB})
 	if got := settingsControlOf(t, h.reply(t, 2)); got != controlOff {
-		t.Errorf("H1: settingsControl of B = %q, want %q", got, controlOff)
+		t.Errorf("settingsControl of B = %q, want %q", got, controlOff)
 	}
 	if n := h.replies(); n != 1 {
 		t.Fatalf("%d replies before the release, want 1: the request on A did not hold", n)
@@ -120,7 +120,7 @@ func TestOffSwitchHoldsTheDaemonWhileARequestRuns(t *testing.T) {
 	}
 	h.send(t, 3, "git.info", map[string]any{"path": h.repoB})
 	if got := settingsControlOf(t, h.reply(t, 3)); got != controlShadow {
-		t.Errorf("H2: settingsControl of B after the reply of A = %q, want %q", got, controlShadow)
+		t.Errorf("settingsControl of B after the reply of A = %q, want %q", got, controlShadow)
 	}
 	if n := h.d.OffRequests.Load(); n != 0 {
 		t.Errorf("%d requests with the member after the replies, want 0", n)
@@ -141,14 +141,14 @@ func TestOffSwitchHoldCoversACreate(t *testing.T) {
 	h.send(t, 2, "git.worktree_create", map[string]any{"baseRepo": h.repoB, "branchName": "w1", "worktreePath": leaf})
 	want := `{"success":true,"path":` + jsonQuoted(t, leaf) + `,"sourceBranch":"main","branch":"w1"}`
 	if got := string(h.reply(t, 2)); got != want {
-		t.Errorf("H4: create = %s\n  want %s", got, want)
+		t.Errorf("create = %s\n  want %s", got, want)
 	}
 	if n := h.replies(); n != 1 {
 		t.Fatalf("%d replies before the release, want 1: the status did not hold", n)
 	}
 	for _, c := range readEnvCalls(t, h.log) {
 		if v, _ := lookupExact(c.env, "GIT_COMMON_DIR"); strings.Contains(v, shadowRootName) {
-			t.Errorf("H4: the call %q names the copy %s, want no copy", strings.Join(c.argv, " "), v)
+			t.Errorf("the call %q names the copy %s, want no copy", strings.Join(c.argv, " "), v)
 		}
 	}
 	h.release()

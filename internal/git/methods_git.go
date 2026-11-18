@@ -697,6 +697,16 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
+// statusNoGitKeepsTest is true where git.status with no git on PATH also keeps the
+// failure of a start test. Each system answers isRepo:false there (4c111e86,
+// measured on Linux, macOS and Windows). On Windows 4c111e86 then answers the
+// later requests with the kept refusal "exec: \"git\": executable file not found
+// in %PATH%" after a git appears, and runs no test (measured). Only the no-git
+// request can fail so. So claustrum keeps the failed test of that request (from
+// the rows, not measured directly). On Linux and macOS a later request runs its own
+// test (measured).
+var statusNoGitKeepsTest = runtime.GOOS == "windows"
+
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
@@ -736,6 +746,17 @@ func gitStatus(req *gitCall) rpc.Response {
 		globalExcludesPath()
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// On Windows a failed start test that is still kept answers first, also for a
+	// baseRepo through a junction that does not resolve. 4c111e86 answers the kept
+	// refusal there after the no-git request, after the excludes read of the first
+	// request with git (measured on Windows). Its place after the link refusals and
+	// a kept failure of another cause are claustrum's own.
+	if statusNoGitKeepsTest && !bool(p.ShadowDirOff) {
+		if kept := req.shadow.keptFailure(); kept != "" {
+			globalExcludesPath()
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, kept)
+		}
+	}
 	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -774,6 +795,18 @@ func gitStatus(req *gitCall) rpc.Response {
 	// (statusSourceRefusal).
 	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
+	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
+	// (statusNoGitKeepsTest). Elsewhere than Windows no start test runs, so no failure
+	// is kept, and as in git.info the folder of the daemon is made (not measured). A
+	// baseRepo that is no folder and the off switch are not measured: they keep the gate.
+	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		if statusNoGitKeepsTest {
+			_ = req.shadow.gate(false)
+		} else {
+			req.shadow.folderWithNoTest()
+		}
+		return notRepo
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate).
@@ -3497,7 +3530,8 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (measured
-		// on Linux, macOS and Windows, and with worktreeRoot on Linux).
+		// on Linux, macOS and Windows, and with worktreeRoot on Linux). On Windows c9125eb8
+		// and 4c111e86 refuse too (measured).
 		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLockedWorktreeRefusal); msg != "" {
 			return refuse(msg)
 		}

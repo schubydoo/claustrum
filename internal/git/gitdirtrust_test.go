@@ -359,6 +359,7 @@ func TestGitDirTrustStrayCommondirAnyType(t *testing.T) {
 // is refused with M2 on the methods that run in the worktree, and remove from that
 // worktree deletes nothing.
 func TestGitDirTrustEntryCommondirMustNameItsRepository(t *testing.T) {
+	t.Parallel()
 	pass := map[string]func(r trustRepo) string{
 		"../.. with newline":  func(trustRepo) string { return "../..\n" },
 		"trailing slash":      func(trustRepo) string { return "../../\n" },

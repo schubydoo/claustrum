@@ -28,7 +28,7 @@ func TestInstallBlobIsGoneWhenTheNewCLIRuns(t *testing.T) {
 	if dir := mustLogLine(t, f, "DIR "); dir != "DIR "+filepath.Base(f.cli) {
 		t.Errorf("the folder at the --version run: %q, want the new CLI only", dir)
 	}
-	f.wantNames(t, "L11", filepath.Base(f.cli))
+	f.wantNames(t, "good install", filepath.Base(f.cli))
 }
 
 // A -cli-zst blob in the cli folder with a name of the sweep stays after a
@@ -48,7 +48,7 @@ func TestInstallKeepsABadBlobWithASweepName(t *testing.T) {
 	if want := "decompressing: invalid input: magic number mismatch"; got.CliError != want {
 		t.Errorf("cliError = %q, want %q", got.CliError, want)
 	}
-	f.wantNames(t, "L3", "1.0.0.zst")
+	f.wantNames(t, "failed install", "1.0.0.zst")
 }
 
 // A -cli-url body that is no zstd archive answers the decoder text, with the
