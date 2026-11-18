@@ -104,11 +104,11 @@ func pipePath(instanceID string) string {
 	return `\\.\pipe\claustrum-` + instanceID
 }
 
-// newInstanceID returns a random hex token that makes the pipe name unique per
+// randomPipeID returns a random hex token that makes the pipe name unique per
 // daemon boot, so a stale pipe from a crashed predecessor can never be reused or
 // collided with. The client learns the resulting name from rpc.pipe, so it need
 // not be predictable.
-func newInstanceID() (string, error) {
+func randomPipeID() (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generate pipe instance id: %w", err)
@@ -119,7 +119,7 @@ func newInstanceID() (string, error) {
 // newDaemonInstanceID returns 16 random bytes hex-encoded (32 chars), the
 // per-daemon identity the reference daemon emits on server.capabilities.instanceId
 // (a client learns it from the capabilities reply). It is
-// distinct from newInstanceID above, which the Windows pipe transport uses and
+// distinct from randomPipeID above, which the Windows pipe transport uses and
 // which is only 8 bytes. The crypto/rand error is discarded on purpose: it does
 // not fail on any supported platform, and the reference always populates the
 // field, so a daemon must never omit it. A zero id is still emitted rather than

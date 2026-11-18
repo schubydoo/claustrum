@@ -29,10 +29,10 @@ func linkSpawnReq(t *testing.T, id int, procID, mode string, args []string, extr
 }
 
 // framesOf returns the frames of processID that cl got so far.
-func (cl *testClient) framesOf(processID string) []supervisor.StreamFrame {
+func (cl *testClient) framesOf(processID string) []supervisor.ChildFrame {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
-	var out []supervisor.StreamFrame
+	var out []supervisor.ChildFrame
 	for _, f := range cl.fr {
 		if f.ProcessID == processID {
 			out = append(out, f)

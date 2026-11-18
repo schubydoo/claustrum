@@ -88,9 +88,9 @@ func TestPipePath(t *testing.T) {
 }
 
 func TestNewInstanceID(t *testing.T) {
-	a, err := newInstanceID()
+	a, err := randomPipeID()
 	if err != nil {
-		t.Fatalf("newInstanceID: %v", err)
+		t.Fatalf("randomPipeID: %v", err)
 	}
 	if len(a) != 16 { // 8 random bytes → 16 hex chars
 		t.Fatalf("instance id %q has len %d, want 16", a, len(a))
@@ -98,9 +98,9 @@ func TestNewInstanceID(t *testing.T) {
 	if _, err := hex.DecodeString(a); err != nil {
 		t.Fatalf("instance id %q is not hex: %v", a, err)
 	}
-	b, err := newInstanceID()
+	b, err := randomPipeID()
 	if err != nil {
-		t.Fatalf("newInstanceID (2nd): %v", err)
+		t.Fatalf("randomPipeID (2nd): %v", err)
 	}
 	if a == b {
 		t.Fatalf("two instance ids collided: %q", a)

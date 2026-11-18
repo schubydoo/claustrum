@@ -117,7 +117,7 @@ func managedShown(s string) string {
 // answer unreadable. Two of claustrum's choices (not measured) follow. The first
 // unreadable file in that order is the one reported. The drop-ins sort by byte order
 // (only 10.json before 20.json and s.json before z.json are measured).
-func resolveManagedLauncher(cliPath string) rpc.ManagedLauncherResult {
+func resolveManagedLauncher(cliPath string) rpc.ManagedLauncherReply {
 	res, _ := Resolve(cliPath)
 	return res
 }
@@ -127,14 +127,14 @@ func resolveManagedLauncher(cliPath string) rpc.ManagedLauncherResult {
 // once per daemon (measured on Linux: two resolves, the line only on the first). More
 // than two resolves are not measured. -install and -probe-cli log nothing (not
 // measured there).
-func Resolve(cliPath string) (rpc.ManagedLauncherResult, string) {
+func Resolve(cliPath string) (rpc.ManagedLauncherReply, string) {
 	dir, ignoredVar := managedSettingsDir()
 	note := ""
 	if ignoredVar {
 		note = managedIgnoredVarLine()
 	}
 	if dir == "" {
-		return rpc.ManagedLauncherResult{Status: managedStatusNone}, note
+		return rpc.ManagedLauncherReply{Status: managedStatusNone}, note
 	}
 	res := resolveManagedLauncherIn(dir, cliPath)
 	return res, note
@@ -144,15 +144,15 @@ func Resolve(cliPath string) (rpc.ManagedLauncherResult, string) {
 // stands only if no earlier file gave a value. A later value replaces an earlier
 // refusal, and a later refusal replaces an earlier one. Measured on Linux against
 // b3081b51 with a base file and one drop-in.
-func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherResult {
+func resolveManagedLauncherIn(dir, cliPath string) rpc.ManagedLauncherReply {
 	return resolveManagedLauncherShown(dir, cliPath, managedResolveFaultShown)
 }
 
 // resolveManagedLauncherShown is resolveManagedLauncherIn with shown, the switch of
 // shownResolveFault, as a parameter.
-func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLauncherResult {
+func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLauncherReply {
 	var value, refused, source string
-	take := func(path string) *rpc.ManagedLauncherResult {
+	take := func(path string) *rpc.ManagedLauncherReply {
 		v, r, bad := readManagedSettingsValue(path)
 		if bad != nil {
 			return bad
@@ -178,10 +178,10 @@ func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLau
 		}
 	}
 	if source == "" {
-		return rpc.ManagedLauncherResult{Status: managedStatusNone}
+		return rpc.ManagedLauncherReply{Status: managedStatusNone}
 	}
 	if refused != "" {
-		return rpc.ManagedLauncherResult{Status: StatusUnusable, Source: source, Reason: refused, Fault: shownResolveFault(FaultOther, shown)}
+		return rpc.ManagedLauncherReply{Status: StatusUnusable, Source: source, Reason: refused, Fault: shownResolveFault(FaultOther, shown)}
 	}
 	argv, reason := parseManagedLauncherValue(value)
 	fault := ""
@@ -189,9 +189,9 @@ func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLau
 		fault, reason = checkFault(argv, cliPath)
 	}
 	if reason != "" {
-		return rpc.ManagedLauncherResult{Status: StatusUnusable, Source: source, Reason: reason, Fault: shownResolveFault(fault, shown)}
+		return rpc.ManagedLauncherReply{Status: StatusUnusable, Source: source, Reason: reason, Fault: shownResolveFault(fault, shown)}
 	}
-	return rpc.ManagedLauncherResult{Status: managedStatusUsable, Argv: argv, Source: source}
+	return rpc.ManagedLauncherReply{Status: managedStatusUsable, Argv: argv, Source: source}
 }
 
 // FaultOther is the fault of a launcher value that is not a string.
@@ -210,8 +210,8 @@ func shownResolveFault(fault string, shown bool) string {
 	return ""
 }
 
-func managedUnreadable(path, reason string) *rpc.ManagedLauncherResult {
-	return &rpc.ManagedLauncherResult{Status: StatusUnreadable, Reason: reason, Path: path}
+func managedUnreadable(path, reason string) *rpc.ManagedLauncherReply {
+	return &rpc.ManagedLauncherReply{Status: StatusUnreadable, Reason: reason, Path: path}
 }
 
 // managedErrText is the errno text of err, for example "permission denied".
@@ -233,7 +233,7 @@ var readManagedDropInDir = os.ReadDir
 // readManagedSettingsValue follows it. A missing dir, or a regular file in its
 // place, gives no drop-ins. A dir whose listing fails makes the answer unreadable,
 // with the dir as its path.
-func listManagedDropIns(dir string) ([]string, *rpc.ManagedLauncherResult) {
+func listManagedDropIns(dir string) ([]string, *rpc.ManagedLauncherReply) {
 	fi, err := os.Stat(dir)
 	if err != nil || !fi.IsDir() {
 		return nil, nil
@@ -277,7 +277,7 @@ var readManagedSettingsFile = func(path string) ([]byte, error) {
 // A UTF-16LE BOM decodes the rest as UTF-16LE. A UTF-16BE BOM or a raw U+00A0 before
 // the JSON is "not valid JSON" (measured). claustrum's choice (not measured): a
 // trailing odd byte of UTF-16LE text is dropped.
-func readManagedSettingsValue(path string) (string, string, *rpc.ManagedLauncherResult) {
+func readManagedSettingsValue(path string) (string, string, *rpc.ManagedLauncherReply) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

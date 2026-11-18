@@ -17,13 +17,13 @@ import (
 // live process and every signal, so no test here signals a real process.
 
 // simOwnDaemon, simOwnParent and simOwnPgid stand for this daemon's own pid, parent pid
-// and group in a test that calls reapTargets or verifyOrphan directly. No fake process
+// and group in a test that calls reapTargets or checkRecordOwnWords directly. No fake process
 // uses one of them.
 const simOwnDaemon, simOwnParent, simOwnPgid = 10, 11, 12
 
 // reapOrphans runs the startup reap of a manager on runDir, as the daemon does.
 func reapOrphans(runDir, ownInstance string) {
-	(&Records{RunDir: runDir, InstanceID: ownInstance}).ReapOrphans()
+	(&Records{RunDir: runDir, InstanceID: ownInstance}).EndLeftoverChildren()
 }
 
 // simCtx is the sweep context of a test that calls reapTargets or reapWait directly.
@@ -139,20 +139,20 @@ func (s *procSim) signaled(pid int) bool {
 }
 
 // addVerified registers a live process that passes the whole record test of
-// verifyOrphan for runDir, and returns the target that the sweep makes for it.
-func (s *procSim) addVerified(pid int, start, runDir string) reapTarget {
+// checkRecordOwnWords for runDir, and returns the target that the sweep makes for it.
+func (s *procSim) addVerified(pid int, start, runDir string) doomedChild {
 	s.live[pid] = &liveProc{
 		state: procAlive, startTicks: start, pgid: pid, program: "/n",
 		runDir: runDir, childMark: strconv.Itoa(pid) + ":" + start,
 	}
-	return reapTarget{
+	return doomedChild{
 		pid: pid, start: start, name: strconv.Itoa(pid) + ".json",
-		rec: childRecord{Pid: pid, Start: start, Argv0: "/n"},
+		rec: spawnRecord{Pid: pid, Start: start, Argv0: "/n"},
 	}
 }
 
 // writeRec writes one <runDir>/children/<pid>.json record and returns its file name.
-func writeRec(t *testing.T, runDir string, rec childRecord) string {
+func writeRec(t *testing.T, runDir string, rec spawnRecord) string {
 	t.Helper()
 	if err := writeChildRecord(runDir, rec); err != nil {
 		t.Fatalf("writeChildRecord: %v", err)

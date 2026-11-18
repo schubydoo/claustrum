@@ -43,7 +43,7 @@ func startPipeTransport(socket string) (net.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve current user SID: %w", err)
 	}
-	id, err := newInstanceID()
+	id, err := randomPipeID()
 	if err != nil {
 		return nil, err
 	}
