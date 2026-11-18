@@ -276,7 +276,10 @@ func statusSpellingRefused(sent string) bool {
 }
 
 // linkBelow reports whether a component of p below base is a symbolic link or a
-// junction. Go reports a junction as an irregular file. p lies strictly under base.
+// junction (folderIsLink). p lies strictly under base. A worktree folder with
+// the reparse tag IO_REPARSE_TAG_PROJFS is no link. 4c111e86 answers isRepo
+// true for it (measured on Windows). Every other tag that is no name surrogate
+// is no link here too (claustrum's own, not measured).
 func linkBelow(base, p string) bool {
 	rel, err := filepath.Rel(base, p)
 	if err != nil {
@@ -285,7 +288,7 @@ func linkBelow(base, p string) bool {
 	cur := base
 	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
 		cur = filepath.Join(cur, part)
-		if fi, err := os.Lstat(cur); err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		if fi, err := os.Lstat(cur); err == nil && folderIsLink(fi.Mode()) {
 			return true
 		}
 	}

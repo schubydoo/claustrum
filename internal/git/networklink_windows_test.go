@@ -111,3 +111,15 @@ func TestUnlookablePathFramesWindows(t *testing.T) {
 		}
 	}
 }
+
+// A share look that fails with ERROR_NETWORK_ACCESS_DENIED gets the denied text,
+// as one with fs.ErrPermission does (claustrum's own, not measured). Go does not
+// read that code as fs.ErrPermission. Mutation: drop networkAccessDenied from
+// the denied arm of unlookablePathRefusal.
+func TestUnlookableShareNetworkAccessDenied(t *testing.T) {
+	path := `\\127.0.0.1\cldeny\sub\repo`
+	fakeLstat(t, map[string]error{path: windows.ERROR_NETWORK_ACCESS_DENIED})
+	if got, want := unlookablePathRefusal(path), deniedShareText(path); got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
