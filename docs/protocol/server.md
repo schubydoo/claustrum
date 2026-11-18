@@ -122,13 +122,13 @@ At each connection the daemon reads its own user link again (`4c111e86`). If tha
 
 ### The reply races the close
 
-Once the handler starts the stop, the reply waits until teardown starts, on Windows until the connections close, at most 500 ms (claustrum's own, not measured). So the reply write races the close.
+The reply waits until teardown starts, on Windows until the stop starts to close the connections, at most 500 ms (claustrum's own, not measured). So the reply write races the close.
 
 - If the reply wins, the client reads `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`, then EOF.
 - If the close wins, the client reads EOF with no bytes.
 - Another idle connection gets a clean EOF with no bytes.
 
-A client must treat EOF after a shutdown request as success. On Linux claustrum still replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured). In one round on Windows `b3081b51` replied in 0 of 60 plain runs, 17 of 60 after a ping and 2 of 60 with a second idle connection (measured on Windows). Both daemons send the same reply bytes.
+A client must treat EOF after a shutdown request as success. On Linux claustrum still replies first far more often than `4c111e86`. On macOS both reply first in most runs (measured on macOS). In one round on Windows `b3081b51` replied in 0 of 60 plain runs, 17 of 60 after a ping and 2 of 60 with a second idle connection (measured on Windows). Both daemons send the same reply bytes.
 
 ### What the stop does
 

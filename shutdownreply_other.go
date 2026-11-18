@@ -6,5 +6,5 @@ package main
 // waits only for the start of the teardown (startTeardown), and its write races the
 // close of the listener and the connections. The rate depends on timing. On Linux
 // this build still replies first far more often than 4c111e86. On macOS both reply
-// first in most runs (measured).
+// first in most runs (measured on macOS).
 const shutdownReplyAwaitsDrop = false
