@@ -815,7 +815,7 @@ func copySeed(ctx context.Context, src, dst string) error {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	dir, err := os.OpenRoot(filepath.Dir(dst))
+	dir, err := openRootNoWait(filepath.Dir(dst))
 	if err != nil {
 		return err
 	}
@@ -1190,7 +1190,7 @@ func swapInKept(shard *os.Root, private, oid, temp string) {
 	if homeguard.WipesHomeDir(src) {
 		return
 	}
-	store, err := os.OpenRoot(private)
+	store, err := openRootNoWait(private)
 	if err != nil {
 		return
 	}

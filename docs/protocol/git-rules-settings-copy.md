@@ -6,9 +6,8 @@ An untagged rule on this page was measured against build `5fd08069` on Linux. A 
 
 ## The settings copy
 
-The daemon keeps its own copy of the git settings of a repository. The copy is in a
-folder `git-shadow` beside the socket. The git calls of the five git methods name
-that copy, so git reads the copy and not the config of the repository.
+The copy is in a folder `git-shadow` beside the socket. The calls of the five git
+methods name it, so git reads it and not the config of the repository.
 
 ### The states and `settingsControl`
 
@@ -69,14 +68,13 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 ### The start test
 
-The first request without the member that reaches a repository, or a `git.info` on a
-`.git` file to a missing repository, runs the test. On a `.git` file that names a
+The first request without the member that reaches a repository runs the test. On a `.git` file that names a
 missing path the steps after the test differ from `5fd08069` (measured on macOS and
-Windows), with equal frames (see
-[UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
+Windows), with equal frames
+([UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
 test makes a small repository and a copy of it in a folder `.check-<n>` of the
 daemon, and runs git calls there. One of them is the read of the test repository's
-config. It runs in the folder of [the calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
+config. It runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
 The test folder is gone at the reply. If the test fails, the request gets this
 text:
 
@@ -113,7 +111,7 @@ If git refuses the copy and the same call works without it, the state is
 it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
-does not fail the test. The test goes on (`b3081b51`, measured on Linux).
+does not fail the test (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure 10 seconds after the test, also with its cause
 gone. In that time a request gets the failure with no git call, but works with
@@ -154,8 +152,8 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   removes it by one rmdir (`removeEmptyHeadFolder`). On Windows it stays, and the
   create fails (claustrum's own). A folder with content stays, and the create fails
   (not measured). The other methods get the same rule (claustrum's own).
-- [The call about the repository](#the-call-about-the-repository) names a folder
-  `.probe` of the daemon.
+- `.probe` is the folder of [the call about the
+  repository](#the-call-about-the-repository).
 - One request also keeps short-lived entries in the folder of the daemon:
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` (`.checkout-<n>` on Linux and
   macOS, below) and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
@@ -185,6 +183,9 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux). The other methods get the same steps (claustrum's own,
   not measured). macOS is claustrum's own.
 
+??? note "A FIFO at a folder (Linux and macOS)"
+    A FIFO at `.probe`, `.s<n>` or the daemon's folder or a repository folder gives `open <path>: not a directory` at once. One put there during the open, and the remove steps, still wait (claustrum's own, not measured).
+
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:
 
@@ -205,8 +206,8 @@ held lock keeps the folder of a live daemon.
 - On Linux and macOS the age is read after the lock step, so a folder with no lock
   file gets one and stays. On Windows the age is read before, and such a folder of 8
   days goes.
-- On Windows the held lock keeps the folder of a live daemon from a remove by hand,
-  so no later request sweeps again.
+- On Windows that lock also keeps it from a remove by hand, so no later request
+  sweeps again.
 - `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
   follows. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
@@ -229,7 +230,7 @@ request gets this text and nothing goes:
 A folder goes between the git calls of a request, never during one. The next call
 makes it again with no new config read, except a call right after its own config
 listing (claustrum's own, not measured). A failed remake gets the `cannot write its
-copy` text above, or the 128 text when all 128 folders are held, and a call whose folder went and is not made
+copy` text, or the 128 text when all 128 folders are held, and a call whose folder went and is not made
 again, or whose daemon shut down or replaced it, fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in force: ` before it (Linux
 and Windows):
@@ -314,7 +315,7 @@ In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
 arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows). The
 four come right after the profile values, in that order (order measured on Linux and
-macOS). The staged `worktree add` moves its `GIT_COMMON_DIR` to the end ([The staged
+macOS). The staged `worktree add` moves its `GIT_COMMON_DIR` to the end ([staged
 add](git-worktree-create.md#the-staged-add)).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
 
@@ -329,5 +330,5 @@ place, in a repository with that extension and a `config.worktree` file. The
   `core.bare` goes before the option list of the git calls as one `-c` item, with the value of the copy,
   sorted by key. Six keys are measured. Other keys and a repeated key are not
   measured. A call on a linked worktree gets the items of its own file.
-- A new worktree of `git.worktree_create` gets its own `config.worktree` file. See
-  [git.worktree_create](git-worktree-create.md).
+- A new worktree of [git.worktree_create](git-worktree-create.md) gets its own
+  `config.worktree` file.
