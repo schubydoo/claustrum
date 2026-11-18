@@ -74,14 +74,13 @@ The daemon writes its reason to its own stderr, which is the
 - The daemon reads the token as a line. It strips every trailing `\r` and `\n` (a single
   `\n` or `\r\n` is measured). It keeps other whitespace verbatim (from the code). It then removes the
   `-token-file`, as under [Authentication](../PROTOCOL.md#authentication).
-- `-token-fd <n>` is claustrum-only. On Windows the start fails (from the code, not
-  measured). On Linux and macOS the launcher reads the token from an
-  already-open fd, where `0` is stdin, and forwards it to the daemon over an
-  inherited pipe. So this handoff never touches disk. A failed read there gives
-  `claustrum: read --token-fd: <err>` on the stderr of the launcher, with exit `1`
-  (from the code). An empty token there is no read failure. The daemon then logs
-  `claustrum: read --token-file: open : <err>`, and the launcher gives up at 12 s
-  (from the code).
+- `-token-fd <n>` is claustrum-only, and on Windows it starts no daemon: `-token-fd 0` gives
+  exit `1` and `claustrum: read --token-fd: read token-fd: The handle is invalid.`
+  (measured on Windows). On Linux and macOS the launcher reads the token from an open fd
+  (`0` is stdin). It passes it to the daemon, never on disk. A failed read there
+  gives `claustrum: read --token-fd: <err>` on the launcher's stderr and exit `1` (from the code). With an empty token the
+  daemon logs `claustrum: read --token-file: open : <err>`, and the launcher gives up at
+  12 s (from the code).
 
 #### The re-exec marker
 

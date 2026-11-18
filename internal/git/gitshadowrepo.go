@@ -345,7 +345,7 @@ func (h *ShadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	var root *os.Root
 	if err != nil {
 		if root = repoFolderBySearch(path, err); root == nil {
-			return err
+			return unsearchedRepoError(path, err)
 		}
 	} else {
 		defer func() { _ = base.Close() }()
@@ -507,10 +507,10 @@ func removeEmptyHeadFolder(root *os.Root, dir string) error {
 // repoFolderBySearch opens the folder path of a repository when the folder of
 // the daemon cannot be opened (openErr). A folder of the daemon with mode 0100
 // can be searched but not read. 4c111e86 then answers a create with the mkdir
-// error of `.s<n>`, as with mode 0500 (measured on Linux). The folder must
-// already be there as a real folder, and the opened folder must be the folder
-// of its Lstat. Else the result is nil, and the request gets openErr
-// (claustrum's own, not measured).
+// error of `.s<n>` (measured on Linux, and in `shadow` on macOS), as with mode 0500 (measured
+// on Linux). The folder must already be there as a real folder, and the
+// opened folder must be the folder of its Lstat. Else the result is nil, and
+// the request gets openErr (claustrum's own, not measured).
 func repoFolderBySearch(path string, openErr error) *os.Root {
 	if !errors.Is(openErr, fs.ErrPermission) {
 		return nil
@@ -528,6 +528,24 @@ func repoFolderBySearch(path string, openErr error) *os.Root {
 		return nil
 	}
 	return root
+}
+
+// unsearchedRepoError is the error of a request whose folder of the daemon
+// cannot be opened (openErr), and repoFolderBySearch found no folder at path.
+// When the Lstat of path fails with a permission error too, the folder of the
+// daemon cannot be searched. The error is then the one of a mkdir at path,
+// with no call: `mkdir <S>/<32 hex>: permission denied`, as on 4c111e86 with
+// mode 0000 (measured on Linux, and in `shadow` on macOS). Every other case
+// gets openErr (claustrum's own, not measured).
+func unsearchedRepoError(path string, openErr error) error {
+	if !errors.Is(openErr, fs.ErrPermission) {
+		return openErr
+	}
+	var pe *os.PathError
+	if _, err := os.Lstat(path); errors.As(err, &pe) && errors.Is(err, fs.ErrPermission) {
+		return &os.PathError{Op: "mkdir", Path: path, Err: pe.Err}
+	}
+	return openErr
 }
 
 // shadowRepoBeforeMkdir is a seam for the tests. It runs right before the mkdir

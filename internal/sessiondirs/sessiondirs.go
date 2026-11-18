@@ -95,10 +95,12 @@ var current atomic.Pointer[store]
 
 func init() { current.Store(newStore("")) }
 
-// offMu guards offHolds, the count of running requests that carry the off switch.
+// offMu guards offHolds, the count of running requests that carry the off switch,
+// and offRuns, the count of the times that offHolds went up from 0.
 var (
 	offMu    sync.Mutex
 	offHolds int
+	offRuns  uint64
 )
 
 func newStore(dir string) *store {
@@ -810,6 +812,9 @@ var offLogged bool
 // (measured on Linux).
 func PauseCheck() (release func()) {
 	offMu.Lock()
+	if offHolds == 0 {
+		offRuns++
+	}
 	offHolds++
 	if !offLogged {
 		offLogged = true
@@ -824,4 +829,13 @@ func PauseCheck() (release func()) {
 			offMu.Unlock()
 		})
 	}
+}
+
+// OffRun reports whether a request that carries the off switch runs now, and the
+// number of that time off. The number grows each time the check goes off from on.
+// It logs no line, unlike on.
+func OffRun() (run uint64, off bool) {
+	offMu.Lock()
+	defer offMu.Unlock()
+	return offRuns, offHolds > 0
 }

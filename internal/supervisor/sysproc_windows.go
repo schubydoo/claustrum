@@ -40,7 +40,7 @@ func StatSpawnCommand(path string) error {
 }
 
 // quietShutdownExit is false on Windows: a child that the shutdown sweep ended keeps
-// its exited line (claustrum's own, not measured).
+// its exited line, also while its temp-root end ran (claustrum's own, not measured).
 const quietShutdownExit = false
 
 // ProcGroup is the kill handle of one spawned child on Windows: a process handle with

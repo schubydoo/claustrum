@@ -213,3 +213,15 @@ var goneNotARepoKeepsAll = false
 // printedPathAsIs is false on Linux and macOS: the "disagree" text shows an
 // answer that is not clean as the cleaned path (askGit, not measured).
 const printedPathAsIs = false
+
+// removeOwnFolderFileAt is the remove of removeOwnFolderFile: one unlinkat with
+// no AT_REMOVEDIR through a handle of root (removeFileAt). A folder never goes.
+func removeOwnFolderFileAt(root *os.Root, name string) error {
+	return removeFileAt(root, name)
+}
+
+// goesAtFolderPath reports whether an entry of mode at the path of the folder
+// of the daemon goes before the folder is made again: every kind but a folder.
+func goesAtFolderPath(mode os.FileMode) bool {
+	return !mode.IsDir()
+}
