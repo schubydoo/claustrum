@@ -229,6 +229,7 @@ func wholeBatchPointers(out []byte) []pointerRef {
 // TestLargeScanOutputs: a large `ls-tree` output with long paths and a large
 // `cat-file --batch` output, read in pieces, give the result of a whole read.
 func TestLargeScanOutputs(t *testing.T) {
+	t.Parallel()
 	var lsTree, batch bytes.Buffer
 	long := strings.Repeat("p/", 3000)
 	for i := range 60000 {

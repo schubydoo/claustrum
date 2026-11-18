@@ -697,6 +697,16 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
+// statusNoGitKeepsTest is true where git.status with no git on PATH also keeps the
+// failure of a start test. Each system answers isRepo:false there (4c111e86,
+// measured on Linux, macOS and Windows). On Windows 4c111e86 then answers the
+// later requests with the kept refusal "exec: \"git\": executable file not found
+// in %PATH%" after a git appears, and runs no test (measured). Only the no-git
+// request can fail so. So claustrum keeps the failed test of that request (from
+// the rows, not measured directly). On Linux and macOS a later request runs its own
+// test (measured).
+var statusNoGitKeepsTest = runtime.GOOS == "windows"
+
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
@@ -736,6 +746,17 @@ func gitStatus(req *gitCall) rpc.Response {
 		globalExcludesPath()
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// On Windows a failed start test that is still kept answers first, also for a
+	// baseRepo through a junction that does not resolve. 4c111e86 answers the kept
+	// refusal there after the no-git request, after the excludes read of the first
+	// request with git (measured on Windows). Its place after the link refusals and
+	// a kept failure of another cause are claustrum's own.
+	if statusNoGitKeepsTest && !bool(p.ShadowDirOff) {
+		if kept := req.shadow.keptFailure(); kept != "" {
+			globalExcludesPath()
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, kept)
+		}
+	}
 	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -774,6 +795,18 @@ func gitStatus(req *gitCall) rpc.Response {
 	// (statusSourceRefusal).
 	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
+	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
+	// (statusNoGitKeepsTest). Elsewhere than Windows no start test runs, so no failure
+	// is kept, and as in git.info the folder of the daemon is made (not measured). A
+	// baseRepo that is no folder and the off switch are not measured: they keep the gate.
+	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		if statusNoGitKeepsTest {
+			_ = req.shadow.gate(false)
+		} else {
+			req.shadow.folderWithNoTest()
+		}
+		return notRepo
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate).
@@ -1140,6 +1173,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		gitDirBefore = gitDirIdentity(t.pinCommonDir)
 	}
 	if t.verdict == gitDirRefused {
+		// The excludes read of a first request runs before the refusal. 4c111e86 makes
+		// that one call before a commondir that is no small plain file (measured on
+		// macOS and Windows). Linux and the other trust refusals are claustrum's own.
+		globalExcludesPath()
 		msg := t.refusal
 		if daemonCommonDirSet() {
 			msg = gitDirAddWrap + msg
@@ -1936,11 +1973,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// An add that its time limit stopped gets this rollback too, with the stop
 		// text. On 5fd08069 the leaf is gone, and no git call follows (measured. One
 		// case ran on Linux, macOS and Windows, one on Linux and macOS, and one on
-		// Linux).
+		// Linux). A staged path in the text of git becomes "the new folder"
+		// (stagedAddText). The two texts of an attach add above keep the path (not measured).
 		undoFailedAdd(p.WorktreePath, checkpoint)
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
-			Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
+			Error:     "git worktree add failed: " + stagedAddText(addStderr, addErr, p.WorktreePath),
 			ErrorCode: "worktree_add_failed",
 		})
 	}
@@ -2325,7 +2363,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// `git worktree add failed: branch "<b>" could not be resolved to a
 			// commit (<text>)`, and it keeps the branch with that text as the
 			// cause (measured on macOS). The branch of an attach add is
-			// claustrum's own, not measured.
+			// claustrum's own, not measured. On Windows git is asked at the
+			// same place, and the request goes on (createRechecksAfterAdd).
+			if createRechecksAfterAdd {
+				cu.recheck(repo)
+			}
 			if text := cu.askAfterAdd(repo); text != "" {
 				u := req.use
 				u.branchGate = func() string { return cu.askAfterAdd(repo) }
@@ -2940,7 +2982,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	case err != nil:
 		return refuse(worktreeRemoveText(err))
 	case fi.Mode()&fs.ModeSymlink != 0:
-		return refuse(worktreeRemoveText(refuseWorktree("%s is a symbolic link, not a worktree directory", target.path)))
+		return refuse(worktreeRemoveText(refuseWorktree("`%s` is a symbolic link, not a worktree directory", target.path)))
 	case !fi.IsDir():
 		return refuse(worktreeRemoveText(refuseWorktree("%s is not a directory", target.path)))
 	}
@@ -2996,9 +3038,11 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// lock-check text there on Linux. Windows is claustrum's own, not
 			// measured. A stray commondir whose content is not ".", "./" or "./." answers
 			// so too, with a bad HEAD and a good one (`b3081b51`, measured on Linux,
-			// macOS and Windows). Every other refusal keeps the lock-check text (not
-			// measured on b3081b51).
-			if strings.HasSuffix(t.refusal, strayShapeTail) || strings.HasSuffix(t.refusal, strayContentTail) {
+			// macOS and Windows). On Windows a stray commondir that is not a small plain
+			// file answers so too (removeNamesStrayFile). Every other refusal keeps the
+			// lock-check text (not measured on b3081b51).
+			if strings.HasSuffix(t.refusal, strayShapeTail) || strings.HasSuffix(t.refusal, strayContentTail) ||
+				(removeNamesStrayFile && strings.HasSuffix(t.refusal, strayFileTail)) {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + t.refusal)
 			}
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -3493,7 +3537,8 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (measured
-		// on Linux, macOS and Windows, and with worktreeRoot on Linux).
+		// on Linux, macOS and Windows, and with worktreeRoot on Linux). On Windows c9125eb8
+		// and 4c111e86 refuse too (measured).
 		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLockedWorktreeRefusal); msg != "" {
 			return refuse(msg)
 		}
