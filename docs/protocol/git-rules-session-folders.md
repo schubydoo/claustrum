@@ -74,7 +74,7 @@ write that makes the folder again are claustrum's own).
   follows the link before a `..`. So `<home>/lnk2/../x`, with `lnk2` a link to
   `/data/w/sub`, gives `<home>/x` and `/data/w/x` (`b3081b51` and `c9125eb8`, measured
   on Linux). On macOS `c9125eb8` writes both files also while `x` does not exist yet,
-  each with `0 0`, and then passes over a git in `/data/w/x` (measured on macOS). A
+  each with `0 0`, then passes over a git in `/data/w/x` (measured on macOS). A
   missing folder on Linux, more than one missing name or a `..` after one, Windows and
   a create are claustrum's own: the last two get no second file (not measured).
 
@@ -107,11 +107,11 @@ and Windows). It logs the second line (measured on Linux and macOS).
   `-32603` with the reason `other`, and no child starts (measured on Linux, macOS and
   Windows). That holds for a file at the folder name and a folder that denies the
   write. Linux and macOS also measured a full disk. The daemon logs the line of the
-  failure and then the failed-start line.
+  failure, then the failed-start line.
 - The first entry holds a git or is empty (measured on Linux). With no entry in the
   folder the spawn starts, also with a git or a repository in the folder (measured on
   Linux, and on macOS for an empty folder). claustrum's own, not measured: a later
-  entry counts too, and an entry that is a link into the folder or names it in other
+  entry counts too, and an entry that links into the folder or names it in other
   letter case on macOS does not count.
 - The folder stays in memory, so `git.status` and `git.info` still pass over a git in
   it (measured on Linux and macOS). The next spawn tries the write again. After the
@@ -120,7 +120,7 @@ and Windows). It logs the second line (measured on Linux and macOS).
 
 ## A git in a session folder
 
-The git methods and a `process.spawn` of the bare command `git` pass over a git
+The git methods and a bare `git` spawn pass over a git
 in a session folder. Only that exact name counts: on Windows
 `git.exe`, `GIT` and `Git.EXE` run the git in the session folder and keep their env
 (measured on Windows). A PATH entry with a link to such a folder
@@ -188,10 +188,10 @@ stay in the git child's variables (measured on macOS and Windows for `git.status
 and `process.spawn`, on Linux for `process.spawn`). The eight names still go
 (claustrum's own, not measured). The hold is global: a request
 without the switch gets no check meanwhile (measured on Linux). Only the first such
-request logs the OFF line below, and the first check after the hold the on-again line.
+request logs the OFF line, and the first check after the hold the on-again line.
 A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
 Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
-A hold keeps that read for later requests, and none it interrupts (claustrum's own, not measured).
+A hold keeps that read for later requests, and none it interrupts. Requests sent together each read, and the later wins (claustrum's own, not measured).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
