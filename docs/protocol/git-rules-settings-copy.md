@@ -6,8 +6,7 @@ An untagged rule on this page was measured against build `5fd08069` on Linux. A 
 
 ## The settings copy
 
-The daemon keeps its own copy of the git settings of a repository. The copy is in a
-folder `git-shadow` beside the socket. The git calls of the five git methods name
+The copy is in a folder `git-shadow` beside the socket. The git calls of the five git methods name
 that copy, so git reads the copy and not the config of the repository.
 
 ### The states and `settingsControl`
@@ -39,7 +38,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   reply then has no member on Linux and macOS. On Windows it is the hooks refusal,
   with `fork/exec <git.exe>: The directory name is invalid.` On a FIFO or
   `/dev/null` outside any repository the first `git.info` or `git.status` starts no
-  test (`b3081b51`, measured on Linux). The `git.info` reply has no member, also after
+  test, and the `git.info` reply has no member, also after
   such a `git.status` (`b3081b51`, measured on Linux). macOS is not measured. For
   `git.status` a regular file there is claustrum's own, not measured.
   On Linux and macOS every file that is not a folder takes the steps of a regular file.
@@ -61,8 +60,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   the remove deletes nothing. On a config that only the daemon refuses, the remove
   deletes. macOS and Windows are not measured for these replies and removes.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes during the hold. It is not stopped at 2
-  minutes also after the holder answers (claustrum's own, not measured). A held call
+  the hold is not stopped at 2 minutes during the hold, nor after the holder answers
+  (claustrum's own, not measured). A held call
   that starts after that answer has the 2 minute limit (claustrum's own, not
   measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
@@ -137,10 +136,10 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   `git-shadow` stays (Linux, macOS and Windows).
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
-- A file, a FIFO or a link there goes by one file `unlinkat`, never the link
-  target, and a folder with another hex part is made. Requests
-  succeed (`4c111e86` on Linux, the link also on macOS). Other kinds but
-  a folder, a file or FIFO on macOS, and Windows (a file only) are claustrum's own.
+- An empty file, a FIFO or a link there goes, never the link target, and a folder
+  with another hex part is made. Requests succeed (`4c111e86` on Linux, the link also
+  on macOS). Other kinds but a folder, a file with content, the rest of macOS and
+  Windows (a regular file only) are claustrum's own.
 - The folder of one repository is `<folder of the daemon>/<32 hex>`. The name is the
   first 32 hex digits of the sha256 of the path of the git directory. A linked
   worktree uses the folder of its main repository.
@@ -158,8 +157,6 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   removes it by one rmdir (`removeEmptyHeadFolder`). On Windows it stays, and the
   create fails (claustrum's own). A folder with content stays, and the create fails
   (not measured). The other methods get the same rule (claustrum's own).
-- [The call about the repository](#the-call-about-the-repository) names the daemon's
-  folder `.probe`.
 - A request also keeps short-lived entries in the daemon's folder:
   `.gitdir-<n>` for a `git.status`, and `.index-<n>` (`.checkout-<n>`, below) and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In the state `fallback-git` the first three are there
@@ -212,7 +209,8 @@ held lock keeps the folder of a live daemon.
 - `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
   follows. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
-- The rows show 8 days removed and 1 hour kept.
+- The rows show 8 days removed and 1 hour kept: another host's name form on Linux,
+  this host's on macOS.
 - Another lock error keeps the entry, and so does a FIFO lock on Linux. A link whose
   target lock gives an error stays. All three are claustrum's own, not measured.
 - A folder with no lock file that is less than 1 minute old stays and gets none
@@ -229,7 +227,8 @@ request gets this text and nothing goes:
 
 A folder goes between the git calls of a request, never during one. The next call
 makes it again with no new config read, except a call right after its own config
-listing (claustrum's own, not measured). A call whose folder went and is not made
+listing (claustrum's own, not measured). A failed remake gets the `cannot write its
+copy` text above, or the 128 text when all 128 folders are held (from the code). A call whose folder went and is not made
 again, or whose daemon shut down or replaced it, fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in force: ` before it (Linux
 and Windows):

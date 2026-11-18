@@ -44,9 +44,9 @@ func TestShadowFolderFileIsMadeAFolderAgain(t *testing.T) {
 	}
 }
 
-// TestRemoveOwnFolderFile: the remove takes only a regular file
-// at a name in git-shadow. A folder, a path outside git-shadow
-// and a path below a folder of git-shadow stay.
+// TestRemoveOwnFolderFile: the remove takes a file at a name in git-shadow.
+// A folder, a path outside git-shadow and a path below a folder of
+// git-shadow stay.
 func TestRemoveOwnFolderFile(t *testing.T) {
 	run := resolveTestRoot(t, t.TempDir())
 	h := NewShadowHost(run)

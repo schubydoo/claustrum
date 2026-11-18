@@ -207,25 +207,25 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   (below). Do not build a name below it from a request value ([The
   folders](docs/protocol/git-rules-settings-copy.md#the-folders)). A link goes as a link
   ([D8](docs/DIVERGENCES.md#d8)). Outside it,
-  `removeTempRequestDir` removes a request's temp folder after `homeguard.WipesHomeDir`. Never widen: `removeOwnFolderFile` removes a non-folder entry at the daemon's folder path by one file `unlinkat`, never a tree or link target.
+  `removeTempRequestDir` removes a request's temp folder after `homeguard.WipesHomeDir`. Never widen: `removeOwnFolderFile` removes a non-folder entry at the daemon's folder path by one file `unlinkat` (Linux, macOS; Windows: `os.Root.Remove`, which can take an empty folder, claustrum's own), never a tree or link target.
 - **The HEAD copy folder.** On Linux and macOS one rmdir after `homeguard.WipesHomeDir` removes an empty `HEAD` folder of a copy (`removeEmptyHeadFolder`). Never widen: no tree.
-- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` then removes an empty request folder (`removeEmptyRequestDir`), while the daemon folder keeps its mkdir identity. Linux uses an `O_PATH` handle. macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the folder of the daemon has the identity of the mkdir.
+- **A request folder in a `0300` folder.** On Linux and macOS, `removeEntry` fails with a permission error in a daemon folder of mode `0300`. One rmdir after `homeguard.WipesHomeDir` removes an empty request folder (`removeEmptyRequestDir`), while the daemon folder keeps its mkdir identity. Linux uses an `O_PATH` handle. macOS tests the identity and then runs it by path, with a short window between the two. Never widen: in a folder of the daemon of mode 0300, remove only an empty request folder that the request made, by one rmdir, never a tree, and only while the folder of the daemon has the identity of the mkdir.
 - **The LFS store.** On Linux and macOS a create in `shadow` removes `.claude-<8 hex>-<oid>` temp files from one shard
   of `<git dir>/lfs/objects`, each by one file `unlinkat` after `homeguard.WipesHomeDir` (`removeLFSStoreEntry`,
   [the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)). Never widen: Remove no other
   name and never a tree. The sweep removes only a regular file named by the directory read. A failed or stopped
   copy of the seed removes its own object file (`copySeed`). Never widen: remove only the object file that the
-  seed just made, by one plain unlinkat, never a tree. The keep (macOS: claustrum's own) renames its `.kept-<oid>` link over the downloaded copy
-  in the private store, after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only the `.kept-<oid>` link of the file that the keep just wrote, and only onto that copy.
+  seed just made, by one plain unlinkat, never a tree. The keep (macOS: claustrum's own) renames its `.kept-<oid>` link over the downloaded copy,
+  after `homeguard.WipesHomeDir` (`swapInKept`). Never widen: rename only the `.kept-<oid>` link of the file that the keep just wrote, and only onto that copy.
 - **The LFS space stop.** On Linux and macOS a Git LFS download can leave under a tenth of the free space at the start. Then the
   group of the read-tree call gets one `SIGKILL` (`lfsRoomWatch`). It goes through `reapCheckoutGroup` after `gitStillRuns`, and the private folder goes
-  by its usual remove before the reply ([the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)).
+  before the reply ([the private LFS store](docs/protocol/git-worktree-create.md#the-private-lfs-store)).
   Never widen: send it only to the group of the checkout git that this create started, and none after its reap.
 - **`session-folders`.** One plain `os.Root.Remove` by name, of the temp file of a failed write and in the prune ([session
   folders](docs/protocol/git-rules-session-folders.md)). Never widen: Never make either
   remove a tree delete. Never build the name of a remove there from a request value, a
   path or a link target.
-- **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM` first, then its group gets `SIGKILL` (`argsAskEnd`,
+- **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM`, then its group `SIGKILL` (`argsAskEnd`,
   `endAsked`, [D28](docs/DIVERGENCES.md#d28)). Never widen: In the shutdown sweep, send a group
   `SIGKILL` after the exit of a child only while its exit drain is open.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
