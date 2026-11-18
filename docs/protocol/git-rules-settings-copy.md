@@ -155,7 +155,8 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
 - `.probe` is the folder of [the call about the
   repository](#the-call-about-the-repository).
 - One request also keeps short-lived entries in the folder of the daemon:
-  `.gitdir-<n>` for a `git.status`, and `.index-<n>` and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
+  `.gitdir-<n>` for a `git.status`, and `.index-<n>` (`.checkout-<n>` on Linux and
+  macOS, below) and `.worktreeinclude-<n>` for a create. Also `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In the state `fallback-git` the first three are there
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
@@ -164,7 +165,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   Linux and macOS). On Windows it is not measured.
 - On Linux and macOS `4c111e86` names the index folder of a create
   `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
-  soon after it, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
+  soon after it, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request that uses the
@@ -183,7 +184,7 @@ follows. Any other `flock` error still fails the request (claustrum's own, not m
   not measured). macOS is claustrum's own.
 
 ??? note "A FIFO at a folder (Linux and macOS)"
-    A FIFO at the folder of the daemon or a repository, `.probe`, `.s<n>` or the private LFS store ends the request at once. It gets `open <path>: not a directory`. A FIFO put there during the open still waits, as do the remove steps (claustrum's own, not measured). Windows is unchanged (from the code).
+    A FIFO at `.probe`, `.s<n>` or the folder of the daemon or a repository gives `open <path>: not a directory` at once. One put there during the open, and the remove steps, still wait (claustrum's own, not measured).
 
 If the folder of a repository cannot be made, the request gets this text in the
 three shapes of the start test:
@@ -229,7 +230,7 @@ request gets this text and nothing goes:
 A folder goes between the git calls of a request, never during one. The next call
 makes it again with no new config read, except a call right after its own config
 listing (claustrum's own, not measured). A failed remake gets the `cannot write its
-copy` text, or the 128 text, and a call whose folder went and is not made
+copy` text, or the 128 text when all 128 folders are held, and a call whose folder went and is not made
 again, or whose daemon shut down or replaced it, fails alone (from the code). It gets
 this text, and a listing puts `listing the configuration in force: ` before it (Linux
 and Windows):
@@ -245,7 +246,7 @@ blocks of rewritten URLs. The file ends with
 `[lfs]\n\trepositoryformatversion = 0\n`.
 
 - 41 keys are carried, each with one rule of accepted values (`internal/git/gitshadowconfig.go`).
-  Only some rules are measured.
+  Only some of those rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
   `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
   rewritten URL is not measured.
