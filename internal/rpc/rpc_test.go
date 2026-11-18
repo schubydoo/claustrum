@@ -9,7 +9,7 @@ import (
 // can set it, and its tag keeps it out of the frame. A set NoFrame leaves the
 // encoding as it is without the field.
 func TestResponseNoFrameIsNeverEncoded(t *testing.T) {
-	r := OKResult(json.RawMessage(`7`), PongResult{Pong: true})
+	r := OKResult(json.RawMessage(`7`), PongReply{Pong: true})
 	r.NoFrame = true
 	b, err := json.Marshal(r)
 	if err != nil {

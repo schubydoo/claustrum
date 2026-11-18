@@ -41,7 +41,7 @@ func TestCheckpointCreatedWorktreeYieldsEmptyCheckpointWhenResolveFails(t *testi
 		t.Fatalf("seam called with %q, want the leaf %q", gotPath, leaf)
 	}
 	// The documented outcome of the arm is the EMPTY checkpoint — the zero value
-	// verifyCreatedWorktree reads as "nothing to compare against" and passes.
+	// checkNewLeafIdentity reads as "nothing to compare against" and passes.
 	if cp.info != nil {
 		t.Errorf("checkpoint info = %v, want nil (empty checkpoint)", cp.info)
 	}
@@ -50,8 +50,8 @@ func TestCheckpointCreatedWorktreeYieldsEmptyCheckpointWhenResolveFails(t *testi
 	}
 	// And the empty checkpoint must still make the verifier pass, since a capture
 	// failure is never a new way to fail an honest create.
-	if msg := verifyCreatedWorktree(leaf, cp); msg != "" {
-		t.Errorf("verifyCreatedWorktree on an empty checkpoint = %q, want %q", msg, "")
+	if msg := checkNewLeafIdentity(leaf, cp); msg != "" {
+		t.Errorf("checkNewLeafIdentity on an empty checkpoint = %q, want %q", msg, "")
 	}
 }
 

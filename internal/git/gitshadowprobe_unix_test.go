@@ -34,12 +34,17 @@ func holdProbe(t *testing.T, d time.Duration) {
 // Linux and macOS). The answer is not kept: the next request asks again, and
 // it is normal when the call is quick then (measured). No worktree is made or
 // removed (measured).
+//
+// The stub logs a call only once it runs. A bound that ends the stub before
+// that hides the call from the count. So the lowered bound leaves the stub 2 s
+// to start, also on a loaded runner.
 func TestProbeBound(t *testing.T) {
+	const bound = 2 * time.Second
 	for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
 		t.Run(method, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
-			lowerProbeBound(t, 300*time.Millisecond, 100*time.Millisecond)
-			holdProbe(t, 5*time.Second)
+			lowerProbeBound(t, bound, 100*time.Millisecond)
+			holdProbe(t, 30*time.Second)
 			m := f.fiveRequests(nil)[i]
 			start := time.Now()
 			raw, calls := f.call(t, m.method, m.params)
@@ -55,7 +60,7 @@ func TestProbeBound(t *testing.T) {
 			if got := len(probeCalls(calls)); got != wantCalls || len(calls) != wantCalls+1 {
 				t.Errorf("%d calls about the repository of %d calls, want %d and the excludes read", got, len(calls), wantCalls)
 			}
-			if took < time.Duration(wantCalls)*300*time.Millisecond || took > 4*time.Second {
+			if took < time.Duration(wantCalls)*bound || took > 15*time.Second {
 				t.Errorf("the reply came after %v, want the bound of %d calls and not the hold", took, wantCalls)
 			}
 			if _, err := os.Stat(f.wt); err != nil {

@@ -44,7 +44,7 @@ func TestWatchedBodyEmitsProgressLine(t *testing.T) {
 	// An io.Pipe body: Read blocks until the writer runs, so the download streams
 	// through the watched body and at least one progress line is emitted.
 	pr, pw := io.Pipe()
-	wb := newWatchedBody(pr, 5, time.Now())
+	wb := newMeteredBody(pr, 5, time.Now())
 	go func() { _, _ = pw.Write([]byte("hello")); _ = pw.Close() }()
 	_, _ = io.ReadAll(wb)
 	_ = wb.Close() // joins the ticker; no os.Stdout write can follow
@@ -78,9 +78,9 @@ func TestInstallFetchMarshaling(t *testing.T) {
 			`{"serverVersion":"v","os":"linux","arch":"amd64","libc":"glibc","cliPath":"/p","cliWasPresent":false}`},
 		{"fetch object field order", fetchStats{Bytes: 30, Ms: 4, LongestPauseMs: 0},
 			`{"bytes":30,"ms":4,"longestPauseMs":0}`},
-		{"progress with total", progressLine{Phase: "download", Bytes: 5, Total: 10},
+		{"progress with total", progressFrame{Phase: "download", Bytes: 5, Total: 10},
 			`{"phase":"download","bytes":5,"total":10}`},
-		{"progress without total (chunked) drops total", progressLine{Phase: "download", Bytes: 5},
+		{"progress without total (chunked) drops total", progressFrame{Phase: "download", Bytes: 5},
 			`{"phase":"download","bytes":5}`},
 	}
 	for _, tc := range cases {
@@ -256,7 +256,7 @@ func TestWatchedBodyTickPrintsNothingWithoutNewBytes(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		pr, _ := io.Pipe()
-		wb := newWatchedBody(pr, 0, time.Now())
+		wb := newMeteredBody(pr, 0, time.Now())
 		time.Sleep(60 * time.Millisecond)
 		_ = wb.Close() // joins the ticker, so no os.Stdout write follows
 	})
@@ -375,10 +375,10 @@ func TestInstallGivesUpWaitingForResponseHeaders(t *testing.T) {
 	b, _ := json.Marshal(wantText)
 	head := factsHead(t, installCLIPath(cliDir, "9.9.9")) + `false,"cliError":` + string(b) + `,"fetch":{"bytes":0,"ms":`
 	if !strings.HasPrefix(out, head) || !strings.HasSuffix(out, `,"longestPauseMs":0}}`+"\n") {
-		t.Errorf("G12: stdout\n got %q\nwant the start %q and longestPauseMs 0", out, head)
+		t.Errorf("stdout\n got %q\nwant the start %q and longestPauseMs 0", out, head)
 	}
 	if strings.Contains(out, "__INSTALL_PROGRESS__") {
-		t.Errorf("G12: stdout %q holds a progress line, want none before the headers", out)
+		t.Errorf("stdout %q holds a progress line, want none before the headers", out)
 	}
 }
 
@@ -421,27 +421,27 @@ func TestInstallReportsAnInterruptedDownload(t *testing.T) {
 	}
 	prefix := "download interrupted after " + strconv.Itoa(half) + "/" + strconv.Itoa(len(body)) + " bytes: read tcp "
 	if !strings.HasPrefix(f.CliError, prefix) {
-		t.Errorf("E07: cliError %q, want the start %q", f.CliError, prefix)
+		t.Errorf("cliError %q, want the start %q", f.CliError, prefix)
 	}
 	if runtime.GOOS == "linux" && !strings.HasSuffix(f.CliError, ": read: connection reset by peer") {
-		t.Errorf("E07: cliError %q, want a connection reset", f.CliError)
+		t.Errorf("cliError %q, want a connection reset", f.CliError)
 	}
 	if f.Fetch == nil || f.Fetch.Bytes != int64(half) {
-		t.Fatalf("E07: fetch = %+v, want bytes %d", f.Fetch, half)
+		t.Fatalf("fetch = %+v, want bytes %d", f.Fetch, half)
 	}
 	// A failed read ends the fetch at the error, so ms holds the wait. Only a
 	// good archive stops ms at the last byte.
 	if got := f.Fetch.Ms; got < (pause / 2).Milliseconds() {
-		t.Errorf("E07: ms = %d, want at least %d: the wait before the reset counts on a failure", got, (pause / 2).Milliseconds())
+		t.Errorf("ms = %d, want at least %d: the wait before the reset counts on a failure", got, (pause / 2).Milliseconds())
 	}
 	if got := f.Fetch.LongestPauseMs; got < (pause / 2).Milliseconds() {
-		t.Errorf("E07: longestPauseMs = %d, want about %d: the wait for the error counts as a pause", got, pause.Milliseconds())
+		t.Errorf("longestPauseMs = %d, want about %d: the wait for the error counts as a pause", got, pause.Milliseconds())
 	}
 	if counts, _ := progressCounts(t, out); !slices.Equal(counts, []int64{0}) {
-		t.Errorf("E07: progress byte counts = %v, want the leading line only", counts)
+		t.Errorf("progress byte counts = %v, want the leading line only", counts)
 	}
 	if ents, err := os.ReadDir(cliDir); err != nil || len(ents) != 0 {
-		t.Errorf("E07: cli folder entries %v, err %v, want it empty", ents, err)
+		t.Errorf("cli folder entries %v, err %v, want it empty", ents, err)
 	}
 }
 

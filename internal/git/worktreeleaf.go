@@ -50,12 +50,12 @@ func leafByHandle(p string) (string, bool) {
 
 // leafRecordPath is the leaf as the gitdir record of the staging step names it,
 // before its slashes change (stagedRecordText, stagedRecordRefusal). It is
-// resolveAsFarAsExists, or leafByHandle on Windows. b3081b51 writes the record of the
+// canonicalExistingPrefix, or leafByHandle on Windows. b3081b51 writes the record of the
 // leaf with the junction resolved (measured on Windows).
 func leafRecordPath(leaf string) string {
 	leaf = filepath.Clean(leaf)
 	if h, ok := leafByHandle(leaf); ok {
 		return h
 	}
-	return resolveAsFarAsExists(leaf)
+	return canonicalExistingPrefix(leaf)
 }

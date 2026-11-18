@@ -1076,7 +1076,7 @@ var errStatusNoFolder = errors.New("the temporary git folder cannot be made in t
 // `diff-index` (measured).
 //
 // The status runs in a temporary git folder, so it never writes the index of the
-// worktree. Each command gets userExcludesFile as its core.excludesFile value. On Windows
+// worktree. Each command gets globalExcludesPath as its core.excludesFile value. On Windows
 // with no user excludes file that value is NUL. Git for Windows 2.55 stops the
 // `status` call with exit 128, and the reply is -32603 "exit status 128", as on c9125eb8
 // (measured on Windows).
@@ -1100,7 +1100,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	if u.shadow() && !daemonCommonDirStays() {
 		r.entryConfig = e.config
 	}
-	excludes := userExcludesFile()
+	excludes := globalExcludesPath()
 
 	porcelain, err := r.git(true, excludes, "status", "--porcelain",
 		"--untracked-files=all", "--ignore-submodules=all")
@@ -1112,7 +1112,7 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 		return nil, err
 	}
 	base := "HEAD"
-	if _, err := r.git(false, userExcludesFile(), "rev-parse", "--verify", "-q", "HEAD^{commit}"); err != nil {
+	if _, err := r.git(false, globalExcludesPath(), "rev-parse", "--verify", "-q", "HEAD^{commit}"); err != nil {
 		// A call whose repository folder went answers its text, and no call
 		// follows (from the code, not measured).
 		var refusal statusRefusal

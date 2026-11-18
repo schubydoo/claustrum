@@ -25,7 +25,7 @@ type Records struct {
 
 	// InstanceID is the daemon's per-boot instance id (== server.capabilities
 	// instance_id), threaded in at startup alongside RunDir. It is stamped into each
-	// child's orphan-registry record (childRecord.Instance) so a later daemon can tell
+	// child's orphan-registry record (spawnRecord.Instance) so a later daemon can tell
 	// this daemon's children apart from its own.
 	InstanceID string
 	// NoRecords is set for a daemon that does not hold the run-dir lock: it writes
@@ -43,5 +43,5 @@ type Records struct {
 	// removed yet. The removal compares the file with it. writtenMu guards the map and
 	// keeps the write and the removal of a record apart. Unused on windows.
 	writtenMu sync.Mutex          //nolint:unused // used in childrecord_unix.go only
-	written   map[int]childRecord //nolint:unused // used in childrecord_unix.go only
+	written   map[int]spawnRecord //nolint:unused // used in childrecord_unix.go only
 }

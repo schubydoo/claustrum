@@ -26,7 +26,7 @@ import (
 // on Linux). Not measured: a commondir file in a git directory that is not an
 // entry of a folder `worktrees`.
 func staleRegistryDir(repo string) string {
-	admin := worktreeAdminDir(repo)
+	admin := linkedGitDirOf(repo)
 	if admin == "" {
 		return filepath.Join(repo, ".git", worktreesSubdir)
 	}
@@ -46,7 +46,7 @@ func windowsStaleEntries(root *os.Root, dir, worktreePath string) (names []strin
 	if err != nil {
 		return nil, nil
 	}
-	target := resolveAsFarAsExists(worktreePath)
+	target := canonicalExistingPrefix(worktreePath)
 	for _, name := range list {
 		rel := filepath.Join(dir, name)
 		if fi, err := root.Lstat(rel); err != nil || !goesAsTree(fi.Mode()) {
@@ -57,7 +57,7 @@ func windowsStaleEntries(root *os.Root, dir, worktreePath string) (names []strin
 			continue
 		}
 		// The record names the `.git` file of the worktree. Its parent is the worktree.
-		if sameGitDirPath(resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(record)))), target) {
+		if sameGitDirPath(canonicalExistingPrefix(filepath.Dir(strings.TrimSpace(string(record)))), target) {
 			names, records = append(names, name), append(records, record)
 		}
 	}
@@ -92,11 +92,11 @@ func staleRecordLive(record []byte) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// resolveAsFarAsExists canonicalises p by resolving the symlinks of its deepest
+// canonicalExistingPrefix canonicalises p by resolving the symlinks of its deepest
 // existing ancestor and re-attaching the non-existent tail — so a path whose leaf is
 // gone (a deleted worktree) still resolves a symlinked ancestor such as macOS
 // /var -> /private/var, where pathcanon.Canonical alone falls back to the raw path.
-func resolveAsFarAsExists(p string) string {
+func canonicalExistingPrefix(p string) string {
 	p = filepath.Clean(p)
 	if r := pathcanon.Canonical(p); r != p {
 		return r // p itself exists and had symlinks to resolve

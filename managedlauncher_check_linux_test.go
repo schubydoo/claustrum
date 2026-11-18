@@ -89,19 +89,19 @@ func TestSpawnSuppliesLauncher(t *testing.T) {
 // is the success of a list (c9125eb8, Linux).
 func TestSpawnEnvOnlyIfSent(t *testing.T) {
 	fakeFacts(t, nil)
-	t.Setenv("T464_ONLY_SENT", "daemon")
+	t.Setenv("ONLY_SENT_PROBE", "daemon")
 	wrap, _ := wrapLauncherFixture(t)
 	_, sock := newRunningServer(t)
 	cl := dial(t, sock)
 	check := map[string]any{}
 	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "lookupenv"}
-	cl.call(launchedSpawnReq(t, map[string]any{"id": "e1", "command": "", "args": []string{"T464_ONLY_SENT"}, "launcher": []string{wrap}, "launcherSuppliesCli": true, "launcherCheck": check, "envOnlyIfSent": []string{"T464_ONLY_SENT"}, "env": env}))
-	if got := streamBytes(t, cl.waitExit("e1"), "stdout"); got != "T464_ONLY_SENT absent\n" {
+	cl.call(launchedSpawnReq(t, map[string]any{"id": "e1", "command": "", "args": []string{"ONLY_SENT_PROBE"}, "launcher": []string{wrap}, "launcherSuppliesCli": true, "launcherCheck": check, "envOnlyIfSent": []string{"ONLY_SENT_PROBE"}, "env": env}))
+	if got := streamBytes(t, cl.waitExit("e1"), "stdout"); got != "ONLY_SENT_PROBE absent\n" {
 		t.Errorf("not sent: %q, want the name absent", got)
 	}
-	env["T464_ONLY_SENT"] = "sent"
-	cl.call(launchedSpawnReq(t, map[string]any{"id": "e2", "command": "", "args": []string{"T464_ONLY_SENT"}, "launcher": []string{wrap}, "launcherSuppliesCli": true, "launcherCheck": check, "envOnlyIfSent": []string{"T464_ONLY_SENT"}, "env": env}))
-	if got := streamBytes(t, cl.waitExit("e2"), "stdout"); got != "T464_ONLY_SENT set sent\n" {
+	env["ONLY_SENT_PROBE"] = "sent"
+	cl.call(launchedSpawnReq(t, map[string]any{"id": "e2", "command": "", "args": []string{"ONLY_SENT_PROBE"}, "launcher": []string{wrap}, "launcherSuppliesCli": true, "launcherCheck": check, "envOnlyIfSent": []string{"ONLY_SENT_PROBE"}, "env": env}))
+	if got := streamBytes(t, cl.waitExit("e2"), "stdout"); got != "ONLY_SENT_PROBE set sent\n" {
 		t.Errorf("sent: %q, want the sent value", got)
 	}
 }
@@ -120,7 +120,7 @@ func TestSpawnLauncherCheckRefusals(t *testing.T) {
 	L := mkExec(t, filepath.Join(d, "bin", "launcher.sh"))
 	bin := filepath.Join(d, "bin")
 	cli := mkExec(t, filepath.Join(d, "cli"))
-	writable := "`" + bin + "` can be changed by accounts other than its owner (mode 1777), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none."
+	writable := "`" + bin + "` can be changed by accounts other than its owner (mode 1777). Remove that write access."
 	fakeFacts(t, map[string][2]uint32{bin: {0, 0o1777}})
 	cases := []struct {
 		row    string

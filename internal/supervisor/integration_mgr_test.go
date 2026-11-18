@@ -21,7 +21,7 @@ func TestPruneExitedSkipsRunning(t *testing.T) {
 	m.procs["exited-just-now"] = &Proc{running: false, exitedAt: time.Now()}
 	m.procs["never-stamped"] = &Proc{running: false}
 
-	m.pruneExited()
+	m.dropFinished()
 
 	for _, id := range []string{"running-but-ancient", "exited-just-now", "never-stamped"} {
 		if m.procs[id] == nil {
@@ -29,6 +29,6 @@ func TestPruneExitedSkipsRunning(t *testing.T) {
 		}
 	}
 	if m.procs["exited-long-ago"] != nil {
-		t.Errorf("exited-long-ago survived pruneExited")
+		t.Errorf("exited-long-ago survived dropFinished")
 	}
 }

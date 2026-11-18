@@ -26,7 +26,7 @@ func TestReapOrphansOnAnotherSocketShape(t *testing.T) {
 	writeOrphanRec(t, runDir, pid, "/f/bin/sigstub")
 	sim := newOrphanSim(t, pid, "/f/bin/sigstub", runDir, syscall.SIGTERM)
 
-	(&childrec.Records{RunDir: runDir, InstanceID: "inst-self"}).ReapOrphans()
+	(&childrec.Records{RunDir: runDir, InstanceID: "inst-self"}).EndLeftoverChildren()
 
 	if sim.sigCount(syscall.SIGTERM) != 1 || !sim.signaled(pid) {
 		t.Errorf("kills = %v, want one SIGTERM to group %d", sim.kills(), pid)

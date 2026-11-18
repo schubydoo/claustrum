@@ -48,7 +48,7 @@ func missingCommandError(cmd *exec.Cmd) error {
 	return nil
 }
 
-// cliSessionKey returns the CLI session id a spawn's argv belongs to, or "" when
+// resumeKeyOf returns the CLI session id a spawn's argv belongs to, or "" when
 // the spawn is not a supersedable session. A non-empty key requires ALL of —
 //   - stream-json mode: an arg exactly "--input-format=stream-json",
 //     "--output-format=stream-json", or bare "stream-json";
@@ -62,7 +62,7 @@ func missingCommandError(cmd *exec.Cmd) error {
 //
 // The key IS the session-id / resume value. A non-stream-json spawn, or an
 // invalid/absent token, yields "" and never supersedes.
-func cliSessionKey(args []string) string {
+func resumeKeyOf(args []string) string {
 	streamJSON := false
 	forkSession := false
 	sessionID := ""
@@ -122,14 +122,14 @@ func validSessionToken(t string) bool {
 	return true
 }
 
-// lockSessionSpawn serializes concurrent spawns of the same session key and returns
+// serializeKeySpawn serializes concurrent spawns of the same session key and returns
 // the unlock func. A per-key mutex is ref-counted so its map entry is dropped once
 // no spawn holds or awaits it. key must be non-empty.
-func (m *Manager) lockSessionSpawn(key string) func() {
+func (m *Manager) serializeKeySpawn(key string) func() {
 	m.spawnMu.Lock()
 	sl := m.spawnLocks[key]
 	if sl == nil {
-		sl = &sessionSpawnLock{}
+		sl = &keyedSpawnMutex{}
 		m.spawnLocks[key] = sl
 	}
 	sl.ref++
@@ -147,7 +147,7 @@ func (m *Manager) lockSessionSpawn(key string) func() {
 	}
 }
 
-// supersedeSession ends every OTHER running managed process that shares the session
+// endEarlierSpawns ends every OTHER running managed process that shares the session
 // key of the spawn newID, and waits for each one: a new stream-json session process
 // takes the place of the prior one (4534d86). spawn calls it before it starts the new
 // process, so the reply of the spawn comes after the end of the victim.
@@ -175,7 +175,7 @@ func (m *Manager) lockSessionSpawn(key string) func() {
 //
 // Not measured: two or more victims of one spawn. claustrum ends them one after the
 // other.
-func (m *Manager) supersedeSession(key, newID string) {
+func (m *Manager) endEarlierSpawns(key, newID string) {
 	if key == "" {
 		return
 	}

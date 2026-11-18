@@ -51,7 +51,7 @@ func newStubFixture(t *testing.T) *stubFixture {
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "cli-stub")
 	t.Setenv("CLAUSTRUM_TEST_STUB_LOG", f.log)
 	t.Setenv("CLAUSTRUM_TEST_STUB_CHILDPID", f.childPID)
-	for _, k := range []string{"MS", "EXIT", "CHILD", "IGNORETERM"} {
+	for _, k := range []string{"MS", "EXIT", "CHILD", "IGNORETERM", "GATE"} {
 		t.Setenv("CLAUSTRUM_TEST_STUB_"+k, "")
 	}
 	// No launcher gate from the environment of the test run.
@@ -337,7 +337,7 @@ func (f *stubFixture) stubChildRecorded() bool {
 func factsHead(t *testing.T, cliPath string) string {
 	t.Helper()
 	return `__INSTALL_RESULT__{"serverVersion":` + jsonString(t, Version) + `,"os":"` + runtime.GOOS +
-		`","arch":"` + runtime.GOARCH + `","libc":"` + detectLibc() + `","cliPath":` + jsonString(t, cliPath) +
+		`","arch":"` + runtime.GOARCH + `","libc":"` + hostLibc() + `","cliPath":` + jsonString(t, cliPath) +
 		`,"cliWasPresent":`
 }
 

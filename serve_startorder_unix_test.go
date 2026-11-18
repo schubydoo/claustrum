@@ -113,7 +113,7 @@ func TestStartReapsBeforeItBinds(t *testing.T) {
 				t.Errorf("kills = %v, want SIGTERM and then SIGKILL to the group", sim.kills())
 			}
 
-			rec, err := readOwnerRecord(lock)
+			rec, err := loadLockOwner(lock)
 			if err != nil {
 				t.Fatalf("read owner record: %v", err)
 			}

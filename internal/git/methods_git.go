@@ -193,7 +193,7 @@ func isRepo(u gitUse, dir string, l configListing) (bool, error) {
 // `repoLimitError` (from the code, not measured for `repoCopyGoneText` and its
 // listing form).
 func copyGoneResult(req *gitCall, err error) rpc.Response {
-	return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
+	return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
 }
 
 func gitInfo(req *gitCall) rpc.Response {
@@ -202,10 +202,10 @@ func gitInfo(req *gitCall) rpc.Response {
 		return *bad
 	}
 	// The excludesFile the reference reads at git.info is now cached
-	// and applied to every git op via hardenedProfileArgs/userExcludesFile, rather than
+	// and applied to every git op via hardenedProfileArgs/globalExcludesPath, rather than
 	// probed here and discarded. The read comes first, so it also runs before a trust
 	// refusal, as on f6010b97 and 89cb6289 (every trust refusal row).
-	userExcludesFile()
+	globalExcludesPath()
 	// On Windows a path behind a chain of 32 or more links is refused next, as in
 	// git.status (measured on Windows, statusLinkChainRefusal).
 	if p.Path != "" {
@@ -224,7 +224,7 @@ func gitInfo(req *gitCall) rpc.Response {
 	// that has not passed its start test, as for a HEAD that is no ref as the first
 	// request (measured on Linux).
 	notRepo := func() rpc.Response {
-		return rpc.OKResult(req.ID, rpc.NotRepoResult{SettingsControl: req.shadow.replyControl(req.offLive)})
+		return rpc.OKResult(req.ID, rpc.NotRepoReply{SettingsControl: req.shadow.replyControl(req.offLive)})
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
@@ -403,7 +403,7 @@ func gitInfo(req *gitCall) rpc.Response {
 	// never git's error text. Measured side by side against 90fca6e6 and f6010b97 on
 	// Linux: a HEAD git fails to resolve ("ref: refs/heads/main" or 40 hex digits,
 	// each followed by junk) answers without `branch` on both.
-	branch, ok := hardenedGit(req.use, p.Path, true, "branch", "--show-current")
+	branch, ok := gitUnderLimits(req.use, p.Path, true, "branch", "--show-current")
 	switch {
 	case !ok:
 		branch = ""
@@ -412,7 +412,7 @@ func gitInfo(req *gitCall) rpc.Response {
 		// On Windows that call exits 128 in a files repository with
 		// `extensions.refStorage = reftable` and format version 1, and the reply
 		// of 5fd08069 has no `branch` (measured).
-		if sha, ok := hardenedGit(req.use, p.Path, true, "rev-parse", "--short", "HEAD"); ok {
+		if sha, ok := gitUnderLimits(req.use, p.Path, true, "rev-parse", "--short", "HEAD"); ok {
 			branch = "detached:" + sha
 		}
 	}
@@ -424,7 +424,7 @@ func gitInfo(req *gitCall) rpc.Response {
 	if sessionOffDropsControl && !req.offOwn && sessiondirs.OffSwitchSet(req.Params) {
 		control = ""
 	}
-	return rpc.OKResult(req.ID, rpc.GitInfoResult{
+	return rpc.OKResult(req.ID, rpc.GitInfoReply{
 		IsRepo:        true,
 		Repo:          infoRepoName(top),
 		Branch:        branch,
@@ -559,7 +559,7 @@ func gitRepoSlug(u gitUse, dir string) string {
 	// github.com host, so reading it would drop the slug for every developer who
 	// uses an insteadOf rewrite. Without the gate the old call happened to give
 	// the right answer, which is why this looked like a no-op before.
-	url, ok := hardenedGit(u, dir, true, "remote", "get-url", "origin")
+	url, ok := gitUnderLimits(u, dir, true, "remote", "get-url", "origin")
 	if !ok || url == "" {
 		return ""
 	}
@@ -683,7 +683,7 @@ func validSlugRepo(s string) bool {
 // Windows). Not measured: other invalid names, and a symbolic-ref answer that does
 // not start with refs/remotes/origin/. claustrum verifies that answer the same way.
 func gitDefaultBranch(u gitUse, dir string) string {
-	ref, ok := hardenedGit(u, dir, true, "symbolic-ref", "refs/remotes/origin/HEAD")
+	ref, ok := gitUnderLimits(u, dir, true, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if !ok {
 		return ""
 	}
@@ -691,7 +691,7 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	if strings.HasPrefix(name, "-") {
 		return ""
 	}
-	if _, ok := hardenedGit(u, dir, true, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name+"^{commit}"); !ok {
+	if _, ok := gitUnderLimits(u, dir, true, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name+"^{commit}"); !ok {
 		return ""
 	}
 	return name
@@ -712,9 +712,9 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "baseRepo is required")
 	}
 	// The gate of 89cb6289 (gitstatus.go, docs/protocol/git-status.md). Every failure of it
-	// answers the full status shape with isRepo:false, not the bare rpc.NotRepoResult of
+	// answers the full status shape with isRepo:false, not the bare rpc.NotRepoReply of
 	// git.info.
-	notRepo := rpc.OKResult(req.ID, rpc.GitStatusResult{})
+	notRepo := rpc.OKResult(req.ID, rpc.GitStatusReply{})
 	// A baseRepo that does not resolve, or that lies in a managed worktrees tree,
 	// answers before any git call and before the check of the daemon's own
 	// GIT_CONFIG_COUNT (measured).
@@ -724,7 +724,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	// not resolve them (measured on Windows). Its place first is claustrum's own, not
 	// measured (statusLinkChainRefusal).
 	if msg := statusLinkChainRefusal(p.BaseRepo); msg != "" {
-		userExcludesFile()
+		globalExcludesPath()
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// On Windows a baseRepo through a link to a network or device path is refused
@@ -733,7 +733,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	// sends both through the link, so the test of baseRepo alone and its place after
 	// the link chain test are claustrum's own, not measured.
 	if msg := networkLinkRefusal(p.BaseRepo); msg != "" {
-		userExcludesFile()
+		globalExcludesPath()
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
@@ -741,7 +741,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// The read of the user's excludes comes next, so it also runs before a trust
 	// refusal (measured on Linux).
-	userExcludesFile()
+	globalExcludesPath()
 	// The git-directory trust check runs on baseRepo, not on path (gitdirtrust.go).
 	// The count check comes after a trust refusal and before the "no repository"
 	// answer.
@@ -864,7 +864,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	if err != nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
-	return rpc.OKResult(req.ID, rpc.GitStatusResult{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
+	return rpc.OKResult(req.ID, rpc.GitStatusReply{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
 }
 
 // inRepoFolder reports whether the trust check accepts a repository for dir.
@@ -911,9 +911,9 @@ func gitListBranches(req *gitCall) rpc.Response {
 	// git.list_branches ignores a baseRepo member, as 5fd08069 does (measured on
 	// Linux). The managed-worktrees test also runs on the daemon's working
 	// directory.
-	if baseRepoUnderManagedWorktrees(p.Path) || baseRepoUnderManagedWorktrees(p.repoDir()) ||
+	if repoInsideMarkedTree(p.Path) || repoInsideMarkedTree(p.repoDir()) ||
 		(p.Path != "" && linkWalkFails(p.Path, true)) {
-		return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
@@ -926,7 +926,7 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
-			return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+			return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -936,14 +936,14 @@ func gitListBranches(req *gitCall) rpc.Response {
 		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
-		return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate). The answer has the error object of git.info (measured).
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	} else if noRepo {
-		return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	req.keepLive(bool(p.ShadowDirOff), t, p.Path)
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
@@ -953,17 +953,17 @@ func gitListBranches(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, c.refusal)
 	}
 	if c.noRepo {
-		return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// 5fd08069 runs this under the heavy profile with the config precursor
 	// (measured on Linux). The repo gate is `rev-parse --git-dir` (true for a bare repo and from inside a
 	// `.git` directory, unlike git.info's --is-inside-work-tree). The reference returns the full branches
-	// shape (branches:[]) on a non-repo, not git.info's bare rpc.NotRepoResult. The refusal check above was its
+	// shape (branches:[]) on a non-repo, not git.info's bare rpc.NotRepoReply. The refusal check above was its
 	// precursor.
 	if _, err := hardenedGitRunPre(req.use, p.Path, true, &c.listing, nil, "rev-parse", "--git-dir"); copyGone(err) {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	} else if err != nil {
-		return rpc.OKResult(req.ID, rpc.BranchesResult{Branches: []string{}})
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// stdout only, AND propagate a failure — the same two rules git.status
 	// follows, for the same reason. Two distinct frames were wrong here:
@@ -991,7 +991,7 @@ func gitListBranches(req *gitCall) rpc.Response {
 			branches = append(branches, t)
 		}
 	}
-	return rpc.OKResult(req.ID, rpc.BranchesResult{IsRepo: true, Branches: branches})
+	return rpc.OKResult(req.ID, rpc.BranchesReply{IsRepo: true, Branches: branches})
 }
 
 // pairBeforeAdd runs the two calls of 5fd08069 before the add of a create in
@@ -1113,7 +1113,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// on Windows, networkLinkRefusal). No folder and no branch is made (measured on
 	// Windows).
 	if msg := networkLinkRefusal(repo); msg != "" {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
 	// invalid trust root, before the repo check. Measured against 7d193f89. A
@@ -1124,8 +1124,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// exist skips the marker test, answers not_a_repo and makes nothing. That is
 	// b3081b51, measured on Linux and macOS, and on Windows for a missing path below
 	// a marker. Another ErrNotExist, such as <T>/missing/.., is claustrum's own, not measured.
-	if _, err := os.Stat(repo); (!errors.Is(err, fs.ErrNotExist) && baseRepoUnderManagedWorktrees(repo)) || baseRepoWalkFails(repo) {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+	if _, err := os.Stat(repo); (!errors.Is(err, fs.ErrNotExist) && repoInsideMarkedTree(repo)) || baseRepoWalkFails(repo) {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     managedWorktreesRefusal,
 			ErrorCode: "nested_base_repo",
@@ -1152,33 +1152,33 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			msg = gitDirAddWrap + msg
 			makeRefusedLeafParents(p, repo)
 		}
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 		}
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses, with and without worktreeRoot, and nothing
 		// is created (measured on Linux, macOS and Windows). One more call follows a
 		// listing that passed (noRepoCreateCalls).
 		if msg := noRepoCreateCalls(t, req.stop, !bool(p.ShadowDirOff) && req.shadow.active(), bool(p.ShadowDirOff), repo); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return notARepoResult(req.ID, repo)
 	}
 	// On Windows the alternates file is checked before any git call, and
 	// nothing is created (alternatesRefusal).
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate). Nothing is created (measured on Linux).
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
 		return notARepoResult(req.ID, repo)
 	}
@@ -1189,7 +1189,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if gitDirMustBeReal && req.use.shadow() {
 		held := acceptGitDir(req.use.gitDir, gitDirBefore)
 		if held == nil {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false,
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false,
 				Error: repoConfigPrefix + gitDirLinkText(req.use.gitDir), ErrorCode: "worktree_add_failed"})
 		}
 		defer held.release()
@@ -1211,7 +1211,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// detail under errorCode worktree_add_failed. Measured.
 	c := hostileConfigRefusal(req.use, repo, false)
 	if c.refusal != "" {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     c.refusal,
 			ErrorCode: "worktree_add_failed",
@@ -1235,7 +1235,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	}
 	if !inRepo || req.use.noWorkTree(repo) {
 		if err := req.stop.halted(); err != nil {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: err.Error(), ErrorCode: "worktree_add_failed"})
 		}
 		return notARepoResult(req.ID, repo)
 	}
@@ -1249,10 +1249,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if p.WorktreeRoot != "" {
 		root := filepath.Clean(p.WorktreeRoot)
 		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeExternalSpellingRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// f6010b97 refuses a relative baseRepo, an absent one included, or one with a
 		// ".." component, with the texts of the worktreePath check. The text names
@@ -1260,13 +1260,13 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// (measured on Linux and macOS). Its order against the other checks of this
 		// branch is not measured. It sits where git.worktree_remove has it.
 		if msg := sessionFolderSpellingRefusal(p.BaseRepo, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := repoFolderHoldsRepoRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, repo, "create", false); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// A root in the repository is refused before the root-chain step. The first
 		// test compares the cleaned paths and resolves no symlink (measured). Then
@@ -1277,7 +1277,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// Linux and macOS). claustrum does not use the answer of the absolute-git-dir
 		// call.
 		if msg := worktreeRootInRepoRefusal(p.WorktreeRoot, p.BaseRepo, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// A failed show-toplevel stops the create, and so does a `worktree list` that
 		// fails with -z and then without it. Nothing is made (`5fd08069`, measured on
@@ -1288,7 +1288,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return copyGoneResult(req, err)
 		}
 		if err != nil {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, ErrorCode: "mkdir_failed",
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, ErrorCode: "mkdir_failed",
 				Error: parentStepPrefix + "cannot determine the repository's work tree: " + err.Error()})
 		}
 		_ = repositoryCheckError(req.use, repo, nil)
@@ -1297,16 +1297,16 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return copyGoneResult(req, err)
 		}
 		if err != nil {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, ErrorCode: "mkdir_failed",
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, ErrorCode: "mkdir_failed",
 				Error: parentStepPrefix + "cannot list the repository's worktrees: " + err.Error()})
 		}
 		// Not measured: this test before the ancestor walk. A failing folder above a
 		// loop gets the loop text.
 		if msg := locationLinkRefusal(p.WorktreeRoot, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := repoFolderHoldsRepoRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, repo, "create", true); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		checkouts := newRepoCheckouts(repo, p.BaseRepo, topLevel, listed)
 		// A worktreeRoot is refused below a directory owned by a user other than you
@@ -1318,14 +1318,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// walk also runs the checkout tests and the .git test on each directory, so
 		// the first failing directory from the top decides.
 		if msg, code := worktreeRootAncestorRefusal(p.WorktreeRoot, checkouts); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: code})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: code})
 		}
 		// A listed worktree whose folder is gone gets that folder, empty, before the
 		// refusal (`5fd08069`, measured on Linux). Only the folder itself is made,
 		// and only below a folder that exists (not measured).
 		if msg, gone := worktreeRootCheckoutRefusal(p.WorktreeRoot, checkouts, "create", true); msg != "" {
 			makeGoneWorktreeFolder(gone)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// The root-chain step comes before the owner and write refusals of the root.
 		// The <directory> symlink refusal comes after them, then the <directory> step.
@@ -1334,33 +1334,33 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// level before its .git test.
 		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
 		if msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: code})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: code})
 		}
 		externalDir = dir
 		if msg := sessionLocationRefusal(p.WorktreeRoot); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeRootShareRefusal(root); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// The <directory> level gets the owner and write tests of the root. The refusal
 		// comes before the step that drops an old registration of the leaf, so that
 		// registration stays (`5fd08069`, measured on Linux). Its owner test is not
 		// measured.
 		if msg := worktreeRootShareRefusal(filepath.Dir(filepath.Clean(p.WorktreePath))); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := repoFolderInWorktreeRefusal(p.WorktreeRoot, p.WorktreePath, p.BaseRepo, listed, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg, code := externalDirLevelCheck(externalDir); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: code})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: code})
 		}
 		if msg := externalWorktreeDirNotEmptyRefusal(p.WorktreePath); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 	} else {
 		// worktree-location containment, added by the reference in 7d193f89: the
@@ -1368,7 +1368,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// not a relative-path refusal — the reference fails it as a non-directory at
 		// the parent-creation step, with its own worktreePath echoed (measured).
 		if p.WorktreePath == "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:   false,
 				Error:     fmt.Sprintf("failed to create parent directory: %q does not name a directory", p.WorktreePath),
 				ErrorCode: "mkdir_failed",
@@ -1378,10 +1378,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// measured on Linux and macOS). filepath.Rel reads "" as ".", so the test is
 		// the same as on repo.
 		if msg := worktreePathRefusal(p.BaseRepo, p.WorktreePath, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "symlinked_component"})
 		}
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
@@ -1399,7 +1399,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if p.WorktreeRoot == "" {
 			existing = existingPathSpelling(p.WorktreePath)
 		}
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", tickPath(existing)),
 			ErrorCode: "unsafe_path",
@@ -1410,7 +1410,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// registration drop below, so nothing is touched either.
 	if p.WorktreeRoot == "" {
 		if msg := junctionParentRefusal(repo, p.WorktreePath); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: msg, ErrorCode: "mkdir_failed"})
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "mkdir_failed"})
 		}
 	}
 	// The target is confirmed missing above, so a worktree registration still
@@ -1447,14 +1447,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	}
 	// For an external worktreeRoot, tag the <directory> level as holding managed
 	// session worktrees before git runs. This is the same marker
-	// baseRepoUnderManagedWorktrees looks for, so a later create whose baseRepo sits
+	// repoInsideMarkedTree looks for, so a later create whose baseRepo sits
 	// under here is refused as a nested repo. A marker that cannot be made stops
 	// the create before the leaf is made.
 	if parentErr == nil && p.WorktreeRoot != "" {
-		parentErr = ensureManagedWorktreesMarker(externalDir)
+		parentErr = placeWorktreesMarker(externalDir)
 	}
 	if parentErr != nil {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     fmt.Sprintf("failed to create parent directory: %v", parentErr),
 			ErrorCode: "mkdir_failed",
@@ -1467,7 +1467,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// mkdirWorktreeLeaf reproduces the `mkdirat <leaf>` wording byte-for-byte (unix;
 	// os.MkdirAll on Windows). Measured against 7d193f89.
 	if err := mkdirWorktreeLeaf(p.WorktreePath); err != nil {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     fmt.Sprintf("failed to create worktree directory: %v", err),
 			ErrorCode: "mkdir_failed",
@@ -1484,7 +1484,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// the empty leaf: the rows have no folder of the new worktree at the reply.
 	refuseAdd := func(text string) rpc.Response {
 		undoFailedAdd(p.WorktreePath, checkpoint)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: "worktree_add_failed"})
 	}
 	// A junction that was put there after the first or the second git call of
 	// the create: the refusal of the config, with no words before it
@@ -1514,7 +1514,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// existingBranch names no branch). branchName stays required in both modes.
 	attachBranch := ""
 	if p.ExistingBranch != "" {
-		if _, ok := hardenedGit(req.use, repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+p.ExistingBranch); ok {
+		if _, ok := gitUnderLimits(req.use, repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+p.ExistingBranch); ok {
 			attachBranch = p.ExistingBranch
 		}
 	}
@@ -1524,7 +1524,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// 90fca6e6). On an unborn HEAD abbrev-ref fails, the member is omitted, and
 		// the add below fails (see TestGitWorktreeCreateEmptyRepo).
 		source = ""
-		if s, ok := hardenedGit(req.use, repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok && s != "HEAD" {
+		if s, ok := gitUnderLimits(req.use, repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok && s != "HEAD" {
 			source = s
 		}
 	}
@@ -1797,7 +1797,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			reg.noRegistration = true
 		}
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, branch, checkpoint, reg)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
 			Error:      text + undo,
 			ErrorCode:  code,
@@ -1879,7 +1879,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// folder could not be prepared gets no fallback either (addNotPrepared): the
 		// frame has its text one time (measured on Linux, for a link at `worktrees`).
 		var notPrepared *addNotPrepared
-		if errors.As(addErr, &notPrepared) || verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+		if errors.As(addErr, &notPrepared) || checkNewLeafIdentity(p.WorktreePath, checkpoint) != "" {
 			// In attach mode 5fd08069 runs two listings after `rev-parse
 			// --absolute-git-dir` and answers the text one time (measured on
 			// Linux and macOS). claustrum runs the second one here. Under a
@@ -1888,7 +1888,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				offLinkListing(baseCtx, req.use, repo)
 			}
 			undoFailedAdd(p.WorktreePath, checkpoint)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:   false,
 				Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
 				ErrorCode: "worktree_add_failed",
@@ -1918,7 +1918,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// name with no quotes (measured on Linux, macOS and Windows). The Go
 			// quotes are claustrum's own for a name with a quote or a byte that
 			// prints no letter (not measured).
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success: false,
 				Error: fmt.Sprintf("git worktree add failed: %s (attaching to the existing branch %q was refused first: %s)",
 					worktreeGitText(addStderr, addErr), branchNoteName(attachBranch), worktreeGitText(attachStderr, attachErr)),
@@ -1943,7 +1943,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// case ran on Linux, macOS and Windows, one on Linux and macOS, and one on
 		// Linux).
 		undoFailedAdd(p.WorktreePath, checkpoint)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
 			ErrorCode: "worktree_add_failed",
@@ -1967,7 +1967,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if !stagedAddWindowsSteps && req.use.swapped("added") {
 		next := req.use.accepted.replacedAtPath(repo)
 		if next == nil {
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:   false,
 				Error:     fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", parentResolvedPath(p.WorktreePath)),
 				ErrorCode: "unsafe_path",
@@ -2011,7 +2011,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// is removed when it is empty, as after a failed add (measured). Without an
 	// answer of git those tests do not run (claustrum's own, not measured).
 	refuseUnsafe := func(text string) rpc.Response {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: text, ErrorCode: "unsafe_path"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: "unsafe_path"})
 	}
 	var adminDir string
 	if registrationTests {
@@ -2024,7 +2024,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return refuseUnsafe(text)
 		}
 	} else {
-		adminDir = worktreeAdminDir(p.WorktreePath)
+		adminDir = linkedGitDirOf(p.WorktreePath)
 	}
 	indexDir := ""
 	if adminDir != "" {
@@ -2122,12 +2122,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			if newEntry != "" {
 				undo, kept = undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, created)
 			}
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: false, Error: err.Error() + undo,
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: err.Error() + undo,
 				ErrorCode: "worktree_add_failed", BranchKept: kept})
 		}
 		if err != nil && !isGitStop(err) && newEntry != "" {
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, created)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      spellingRetryText(indexDir) + undo,
 				ErrorCode:  "worktree_add_failed",
@@ -2158,7 +2158,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// claustrum reads the .git entry through the held leaf (heldLeafLacksGitFile).
 	// How the references read it is not measured, and neither is macOS.
 	if registrationTests {
-		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+		if checkNewLeafIdentity(p.WorktreePath, checkpoint) != "" {
 			if heldLeafLacksGitFile(checkpoint) {
 				undoFailedAdd(p.WorktreePath, checkpoint)
 				return refuseUnsafe("refusing to create worktree: " + tickPath(parentResolvedPath(p.WorktreePath)) + " has no .git file")
@@ -2186,7 +2186,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return msg
 		}
 		undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
 			Error:      completingAddPrefix + cause + undo,
 			ErrorCode:  "worktree_add_failed",
@@ -2214,7 +2214,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	goneCheckout := func(detail string) rpc.Response {
 		retake()
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
 			Error:      "git worktree add failed (checkout): " + detail + undo,
 			ErrorCode:  "worktree_add_failed",
@@ -2243,7 +2243,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs)
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
 			Error:      msg + undo,
 			ErrorCode:  "timeout",
@@ -2335,7 +2335,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				u := req.use
 				u.branchGate = func() string { return cu.askAfterAdd(repo) }
 				undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-				return rpc.OKResult(req.ID, rpc.WorktreeResult{
+				return rpc.OKResult(req.ID, rpc.WorktreeReply{
 					Success:    false,
 					Error:      fmt.Sprintf("git worktree add failed: branch %q could not be resolved to a commit (%s)", worktreeBranch, text) + undo,
 					ErrorCode:  "worktree_add_failed",
@@ -2412,7 +2412,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			msg := "git worktree add failed (checkout): " + indexInstallText(rtStderr, installErr)
 			retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      msg + undo,
 				ErrorCode:  "worktree_add_failed",
@@ -2435,7 +2435,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			room.removeStore()
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      lfsRoomText(room) + undo,
 				ErrorCode:  "worktree_lfs_no_space",
@@ -2458,7 +2458,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			if text, ok := notKeptText(p.TimeoutMs, rule, cu.gitDir); ok {
 				retake()
 				undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-				return rpc.OKResult(req.ID, rpc.WorktreeResult{
+				return rpc.OKResult(req.ID, rpc.WorktreeReply{
 					Success:    false,
 					Error:      text + undo,
 					ErrorCode:  "worktree_lfs_not_kept",
@@ -2469,7 +2469,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
 			retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      msg + undo,
 				ErrorCode:  "timeout",
@@ -2482,7 +2482,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// claustrum's own.
 			retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      "git worktree add failed (checkout): " + sshDoorRefusedText + undo,
 				ErrorCode:  "worktree_add_failed",
@@ -2499,14 +2499,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			if refusedName == lfsFilterName && filters.lfsKey != "" {
-				return rpc.OKResult(req.ID, rpc.WorktreeResult{
+				return rpc.OKResult(req.ID, rpc.WorktreeReply{
 					Success:    false,
 					Error:      "git worktree add failed (checkout): " + lfsProgramText(filters.lfsKey) + undo,
 					ErrorCode:  "worktree_add_failed",
 					BranchKept: kept,
 				})
 			}
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      repositoryOnlyFilterText(refusedName) + undo,
 				ErrorCode:  "repository_only_filter",
@@ -2538,7 +2538,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			}
 			retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      msg + undo,
 				ErrorCode:  code,
@@ -2564,8 +2564,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	}
 	// Post-condition: the add must have populated the directory claustrum created, not
 	// one swapped in during the add. claustrum's own guard; empty on an unraced create.
-	if msg := verifyCreatedWorktree(p.WorktreePath, checkpoint); msg != "" {
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+	if msg := checkNewLeafIdentity(p.WorktreePath, checkpoint); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     msg,
 			ErrorCode: "worktree_add_failed",
@@ -2590,7 +2590,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			}
 			retake()
 			undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-			return rpc.OKResult(req.ID, rpc.WorktreeResult{
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      contentRefusalStart + r.hint + contentUndoText(undo),
 				ErrorCode:  r.ErrorCode,
@@ -2601,7 +2601,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// `git worktree add` checks out tracked files only, so the reference seeds the new
 	// worktree in two passes: the untracked files that .worktreeinclude names AND git
 	// also ignores (copyWorktreeIncludes), and the git-ignored files under .claude/,
-	// which need no manifest entry at all (copyClaudeDir in worktreeclaude.go).
+	// which need no manifest entry at all (copyDotClaude in worktreeclaude.go).
 	//
 	// An earlier version of this comment said 7d193f89 had dropped the .claude/ pass.
 	// It had not. Measured against 19f30c46 and 90fca6e6 on Linux; the old reading
@@ -2619,14 +2619,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
 		retake()
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
-		return rpc.OKResult(req.ID, rpc.WorktreeResult{
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
 			Error:      msg + undo,
 			ErrorCode:  "timeout",
 			BranchKept: kept,
 		})
 	}
-	return rpc.OKResult(req.ID, rpc.WorktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
+	return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
 
 // keepWithinDeadline reports whether the deadline of ctx passed at now only
@@ -2745,7 +2745,7 @@ func gitWorktreeRemove(req *gitCall) rpc.Response {
 	}
 	repo := p.repoDir()
 	req.use.sshKept = req.offLive
-	return withWorktreeRepoLock(repo, func() rpc.Response {
+	return underRepoMutex(repo, func() rpc.Response {
 		return gitWorktreeRemoveLocked(req, &p, repo)
 	})
 }
@@ -2754,7 +2754,7 @@ func gitWorktreeRemove(req *gitCall) rpc.Response {
 // false, with msg as its error.
 func removeRefusal(req *gitCall) func(msg string) rpc.Response {
 	return func(msg string) rpc.Response {
-		return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: false, Error: msg})
+		return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: false, Error: msg})
 	}
 }
 
@@ -2777,7 +2777,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
 	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
 	// The reference was measured on macOS (`f6010b97`, measured).
-	if _, err := os.Stat(repo); !errors.Is(err, fs.ErrNotExist) && baseRepoUnderManagedWorktrees(repo) {
+	if _, err := os.Stat(repo); !errors.Is(err, fs.ErrNotExist) && repoInsideMarkedTree(repo) {
 		return refuse(managedWorktreesRefusal)
 	}
 	// A baseRepo that fails claustrum's own trust-root test gets the same refusal
@@ -3001,7 +3001,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if verdict == gitDirRefused {
 			// The one git call of 89cb6289 is the read of the user excludes (measured
 			// on Linux).
-			userExcludesFile()
+			globalExcludesPath()
 			// A stray commondir in a git directory that fails the git-directory test
 			// answers its text after a colon (`b3081b51`, measured on Linux and macOS
 			// with a bad HEAD and a dangling commondir link). `89cb6289` answered the
@@ -3050,13 +3050,13 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 					named = gitDir
 				}
 				if msg := baseRepoLockRefusal(repo, "", named, target.path, p.WorktreePath,
-					newWorktreePathSet(target.path, p.WorktreePath), lockedWorktreeRefusal); msg != "" {
+					newWorktreePathSet(target.path, p.WorktreePath), lockRefusalText); msg != "" {
 					return refuse(msg)
 				}
 				if err := deleteWorktreeDir(target.parent, target.leaf, target.path); err != nil {
 					return refuse(worktreeRemoveText(err))
 				}
-				return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+				return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
 			}
 			// A `.git` in baseRepo that is a link, a file or an entry that the lstat
 			// cannot read keeps the refusal of the failed copy (claustrum's own, not
@@ -3086,7 +3086,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			}
 			dropEntry = false
 		} else {
-			var c configCheck
+			var c configVerdict
 			var final bool
 			c, relisted, final = removeListingCheck(req.use, repo, verdict == gitDirNoRepo)
 			var checkErr error
@@ -3177,7 +3177,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		named = gitDir
 	}
 	if msg := baseRepoLockRefusal(repo, commonDir, named, target.path, p.WorktreePath, sp,
-		lockedWorktreeRefusal); msg != "" {
+		lockRefusalText); msg != "" {
 		return refuse(msg)
 	}
 	entry := ""
@@ -3243,7 +3243,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		if lock != notLocked {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath, lock))
+			return refuse(lockRefusalText(p.WorktreePath, lock))
 		}
 		lockChecked = true
 		if target.parent.Remove(target.leaf) == nil {
@@ -3281,7 +3281,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	// entry every registration that names the worktree is checked (measured).
 	if entry != "" {
 		if lock := verifiedEntryLocked(commonDir, entry); lock != notLocked {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath, lock))
+			return refuse(lockRefusalText(p.WorktreePath, lock))
 		}
 	} else if !lockChecked {
 		probe.pairIfWorktreesDir(commonDir)
@@ -3290,7 +3290,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		if lock != notLocked {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath, lock))
+			return refuse(lockRefusalText(p.WorktreePath, lock))
 		}
 		matches = n
 	}
@@ -3324,7 +3324,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	}
 	// The branch step adds no text to the reply. A kept branch adds the member only.
 	kept := runBranchStep(req.use, repo, p.BranchName).kept()
-	return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: pending == "", Error: pending, BranchKept: kept})
+	return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: pending == "", Error: pending, BranchKept: kept})
 }
 
 // removeGoneWorktree answers a remove whose worktree directory is not there. The
@@ -3349,7 +3349,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 	// The success of a remove that keeps the registration and the branch, with no
 	// step after it.
 	keptAll := func() rpc.Response {
-		return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+		return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
 	}
 	if p.WorktreeRoot == "" {
 		// On Linux and macOS a baseRepo that is a regular file gets success. If `git
@@ -3505,7 +3505,8 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (measured
-		// on Linux, macOS and Windows, and with worktreeRoot on Linux).
+		// on Linux, macOS and Windows, and with worktreeRoot on Linux). On Windows c9125eb8
+		// and 4c111e86 refuse too (measured).
 		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLockedWorktreeRefusal); msg != "" {
 			return refuse(msg)
 		}
@@ -3540,7 +3541,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 	// The branch step runs on this path too (measured). Without a repository its
 	// for-each-ref fails, and the branch counts as kept (measured).
 	kept := runBranchStep(req.use, repo, p.BranchName).kept()
-	return rpc.OKResult(req.ID, rpc.WorktreeRemoveResult{Success: true, BranchKept: kept})
+	return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
 }
 
 // worktreeRemoveHomeRefusal is the home guard of git.worktree_remove (D2). It refuses a
@@ -3649,12 +3650,12 @@ func unreadableRepoLockCheckRefusal(worktreePath, repo string) string {
 		" is locked (the repository at " + repo + " could not be read); retry"
 }
 
-// worktreeAdminDir reads a linked worktree's `.git` pointer file
+// linkedGitDirOf reads a linked worktree's `.git` pointer file
 // ("gitdir: <mainGitDir>/worktrees/<name>") and returns that admin directory, or
 // "" when worktreePath is not a linked worktree. The rollback of git.worktree_create
 // uses it to find the entry of the worktree it created. A `.git` that is not a
 // regular file, a FIFO for example, gives "" at once (readGitPlainFile).
-func worktreeAdminDir(worktreePath string) string {
+func linkedGitDirOf(worktreePath string) string {
 	b, err := readGitPlainFile(filepath.Join(worktreePath, ".git"))
 	if err != nil {
 		return ""

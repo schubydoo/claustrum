@@ -242,7 +242,7 @@ func TestLeafResolve(t *testing.T) {
 				}
 				return "/handle", nil
 			}
-			// leaf does not exist, so resolveAsFarAsExists keeps it.
+			// leaf does not exist, so canonicalExistingPrefix keeps it.
 			leaf := filepath.Join(t.TempDir(), "x", "leaf")
 			got, err := leafResolve(leaf)
 			if got != c.want || !errors.Is(err, c.wantErr) {
@@ -263,7 +263,7 @@ func TestLeafResolve(t *testing.T) {
 // the path of a handle for a leaf that evalSymlinks cannot resolve. b3081b51 writes
 // the record with the junction resolved (measured on Windows).
 // Mutations: in stagedRecordText or in stagedRecordRefusal, call
-// resolveAsFarAsExists in place of leafRecordPath (the record names the leaf as
+// canonicalExistingPrefix in place of leafRecordPath (the record names the leaf as
 // sent, or the record of the handle path is refused).
 func TestStagedRecordThroughHandle(t *testing.T) {
 	f := newStepFixture(t)
@@ -297,7 +297,7 @@ func TestStagedRecordThroughHandle(t *testing.T) {
 
 // The tests of the checkpoint after the add, and the rmdir of undoFailedAdd, compare
 // the path of the same resolve as the checkpoint (leafResolve). A path that now
-// leads elsewhere still refuses. Mutations: at the test of verifyCreatedWorktree or
+// leads elsewhere still refuses. Mutations: at the test of checkNewLeafIdentity or
 // of undoFailedAdd, call filepath.EvalSymlinks (row "same" gets the "no longer
 // leads" text, or the leaf stays).
 func TestCheckpointResolvesByHandle(t *testing.T) {
@@ -326,8 +326,8 @@ func TestCheckpointResolvesByHandle(t *testing.T) {
 			if c.moved {
 				handle = "/handle/elsewhere"
 			}
-			if got := verifyCreatedWorktree(leaf, cp); (got != "") != c.wantText {
-				t.Errorf("verifyCreatedWorktree = %q, want a text %v", got, c.wantText)
+			if got := checkNewLeafIdentity(leaf, cp); (got != "") != c.wantText {
+				t.Errorf("checkNewLeafIdentity = %q, want a text %v", got, c.wantText)
 			}
 			undoFailedAdd(leaf, cp)
 			if got := exists(leaf); got != c.wantStays {

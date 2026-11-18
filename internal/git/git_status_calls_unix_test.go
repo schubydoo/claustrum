@@ -166,14 +166,14 @@ func TestGitStatusCallOrder(t *testing.T) {
 	writeFile(t, filepath.Join(f.W, "new.txt"), "n\n", 0o644)
 	raw, calls := run(f.W, f.T)
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":false,"changes":[" M t.txt","?? new.txt"]}}`; raw != want {
-		t.Fatalf("K1 frame = %s\nwant %s", raw, want)
+		t.Fatalf("frame = %s\nwant %s", raw, want)
 	}
 	want := append(statusGateCalls("<fx>/W"), "/|-|--attr-source="+gitEmptyTree+" version")
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callStatus)...)
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callLsFiles)...)
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callHead)...)
 	want = append(want, statusCommandCalls("<fx>/W", "<fx>/W", callDiffIndex+"HEAD -- +locks")...)
-	wantStatusCalls(t, "K1", calls, want)
+	wantStatusCalls(t, "answered request", calls, want)
 }
 
 // Measured on Linux (b3081b51 and be1c1ca5): with path and baseRepo both the linked
@@ -235,27 +235,27 @@ func TestGitStatusGateCalls(t *testing.T) {
 		want             []string
 	}{
 		// Measured: no git call.
-		{"n10", f.W, filepath.Join(plain, ".claude", "worktrees", "r"), nil},
-		{"n10b1", f.W, filepath.Join(plain, ".claude", "worktrees"), nil},
+		{"baseRepo below a plain folder", f.W, filepath.Join(plain, ".claude", "worktrees", "r"), nil},
+		{"baseRepo the worktrees folder of a plain folder", f.W, filepath.Join(plain, ".claude", "worktrees"), nil},
 		// Measured: no git call.
-		{"n11c1", f.W, f.T + "/nosub/..", nil},
+		{"baseRepo with nosub dotdot", f.W, f.T + "/nosub/..", nil},
 		// Measured: no git call.
-		{"o23", f.W, filepath.Join(f.root, "M", "X"), nil},
+		{"baseRepo below a marker", f.W, filepath.Join(f.root, "M", "X"), nil},
 		// Measured: two calls with GIT_DIR=<null device> in a folder with no repository.
-		{"n10b2", f.W, filepath.Join(plain, ".claude"), []string{
+		{"baseRepo the .claude folder of a plain folder", f.W, filepath.Join(plain, ".claude"), []string{
 			"<fx>/P/.claude|A|config -z --list +nodir",
 			"<fx>/P/.claude|A|rev-parse --absolute-git-dir +nodir"}},
 		// Measured: the tests on path come before the fourth call.
-		{"n09", filepath.Join(f.root, "F"), f.T, gate[:3]},
-		{"n26b", filepath.Join(f.root, "gone"), f.T, gate[:3]},
+		{"path a file", filepath.Join(f.root, "F"), f.T, gate[:3]},
+		{"path gone", filepath.Join(f.root, "gone"), f.T, gate[:3]},
 		// Measured: a plain folder gets the two calls in the common directory.
 		{"plain folder", plain, f.T, statusGateCalls("<fx>/P")[1:]},
 		// Measured: for a path inside baseRepo, or baseRepo itself, the
 		// --work-tree value is baseRepo.
-		{"A05a", inside, f.T, statusGateCalls("<fx>/T")[1:]},
-		{"n18b", f.T, f.T, statusGateCalls("<fx>/T")[1:]},
+		{"path inside baseRepo", inside, f.T, statusGateCalls("<fx>/T")[1:]},
+		{"path baseRepo", f.T, f.T, statusGateCalls("<fx>/T")[1:]},
 		// Measured: an empty path is ".".
-		{"n25d1", "", f.T, statusGateCalls(".")[1:]},
+		{"empty path", "", f.T, statusGateCalls(".")[1:]},
 	} {
 		raw, calls := run(c.path, c.base)
 		if raw != statusNotRepo {

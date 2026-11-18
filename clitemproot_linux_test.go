@@ -64,6 +64,28 @@ func TestCLITempRootGivesAFolderBesideAnUnfitEntry(t *testing.T) {
 	}
 }
 
+// A temp dir named through a link gets its tests on the folder that the link names,
+// but the child gets the temp dir as written (claustrum's own, not measured).
+func TestCLITempRootChildGetsTheTempDirAsWritten(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	x, runDir := tempRootDir(t, true)
+	link := filepath.Join(filepath.Dir(x), "L")
+	if err := os.Symlink(x, link); err != nil {
+		t.Fatal(err)
+	}
+	env, res := runTempRoot(t, link, runDir, &rel)
+	if res == nil || res.Name == "" {
+		t.Fatalf("answer %+v, want a folder", res)
+	}
+	if v := tempEnvValue(env, "CLAUDE_CODE_TMPDIR"); v != filepath.Join(link, res.Name, "t") {
+		t.Errorf("CLAUDE_CODE_TMPDIR %q, want %q", v, filepath.Join(link, res.Name, "t"))
+	}
+	if fi, err := os.Lstat(filepath.Join(x, res.Name)); err != nil || !fi.IsDir() {
+		t.Errorf("new folder %v %v, want it in the folder that the link names", fi, err)
+	}
+}
+
 // The registry name is the first 8 bytes of the SHA-256 of the boot id, "/", the
 // pid namespace, a NUL and the temp dir as given.
 func TestCLITempRootRegistryName(t *testing.T) {
@@ -645,14 +667,14 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	}
 }
 
-// The gate between the step and the limit: the first of keep and giveUp wins.
+// The gate between the step and the limit: the first of keep and markGaveUp wins.
 func TestCLITempRootLateGate(t *testing.T) {
 	var kept tempRootLate
-	if !kept.keep() || kept.giveUp() {
-		t.Error("keep then giveUp: want the step to keep its folder")
+	if !kept.keep() || kept.markGaveUp() {
+		t.Error("keep then markGaveUp: want the step to keep its folder")
 	}
 	var late tempRootLate
-	if !late.giveUp() || late.keep() {
-		t.Error("giveUp then keep: want the step to keep nothing")
+	if !late.markGaveUp() || late.keep() {
+		t.Error("markGaveUp then keep: want the step to keep nothing")
 	}
 }

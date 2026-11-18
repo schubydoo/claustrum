@@ -19,19 +19,19 @@ import (
 func TestHostRootsRemainingForms(t *testing.T) {
 	r := &hostRoots{roots: []string{"/opt/claude", "/srv/other"}, daemonBin: "server"}
 
-	// stripRoot answers "" for a path no root contains, which is what makes sameSocketPath
+	// stripRoot answers "" for a path no root contains, which is what makes socketPathsEqual
 	// refuse two unrelated paths instead of calling them equal.
 	if got := r.stripRoot("/elsewhere/run/x/rpc.sock"); got != "" {
 		t.Errorf("stripRoot outside every root = %q, want empty", got)
 	}
-	if r.sameSocketPath("/elsewhere/a/rpc.sock", "/nowhere/b/rpc.sock") {
+	if r.socketPathsEqual("/elsewhere/a/rpc.sock", "/nowhere/b/rpc.sock") {
 		t.Error("two paths outside every root compared equal")
 	}
 
 	// The --socket=<path> spelling, alongside the separate-argument form the other tests use.
 	argv := []string{"/opt/claude/srv/a/server", "--serve", "--socket=/opt/claude/run/x/rpc.sock"}
-	if got := serveArgv(argv, "server"); got != "/opt/claude/run/x/rpc.sock" {
-		t.Errorf("serveArgv(--socket=) = %q, want the socket path", got)
+	if got := serveSocketOfArgv(argv, "server"); got != "/opt/claude/run/x/rpc.sock" {
+		t.Errorf("serveSocketOfArgv(--socket=) = %q, want the socket path", got)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestProbeSocketUnusableConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	hcDial = func(string) (net.Conn, error) { return conn, nil }
-	if state, pid, _ := probeSocket("/opt/claude/run/x/rpc.sock"); state != hcSockUnknown {
+	if state, pid, _ := classifySocket("/opt/claude/run/x/rpc.sock"); state != hcSockUnknown {
 		t.Errorf("probe of a peerless connection = state %d pid %d, want hcSockUnknown", state, pid)
 	}
 
@@ -57,13 +57,13 @@ func TestProbeSocketUnusableConnections(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
 	hcDial = func(string) (net.Conn, error) { return client, nil }
-	if state, _, _ := probeSocket("/opt/claude/run/x/rpc.sock"); state != hcSockUnknown {
+	if state, _, _ := classifySocket("/opt/claude/run/x/rpc.sock"); state != hcSockUnknown {
 		t.Errorf("probe of a non-unix connection = state %d, want hcSockUnknown", state)
 	}
 }
 
 func TestLockProbeUnopenableAndEmpty(t *testing.T) {
-	fakeProc(t) // lockProbe's held check reads procRoot/locks; an empty locks file means "not held"
+	fakeProc(t) // classifyLock's held check reads procRoot/locks; an empty locks file means "not held"
 
 	// A lock file that is a symlink: the probe opens with O_NOFOLLOW, so this fails with
 	// ELOOP rather than not-found. "Cannot open" is NOT "no lock" — a mutant that answered
@@ -73,8 +73,8 @@ func TestLockProbeUnopenableAndEmpty(t *testing.T) {
 	if err := os.Symlink(filepath.Join(dir, "target"), lockPath); err != nil {
 		t.Fatal(err)
 	}
-	if state, _, _ := lockProbe(dir); state != hcLockUnknown {
-		t.Errorf("lockProbe of an unopenable lock = %d, want hcLockUnknown", state)
+	if state, _, _ := classifyLock(dir); state != hcLockUnknown {
+		t.Errorf("classifyLock of an unopenable lock = %d, want hcLockUnknown", state)
 	}
 
 	// An empty lock file carries no record. A daemon leaves exactly that behind when it exits
@@ -84,8 +84,8 @@ func TestLockProbeUnopenableAndEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(empty, runDirLockName), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, rec, present := lockProbe(empty); state != hcLockStale || rec != nil || !present {
-		t.Errorf("lockProbe of an empty lock = state %d rec %v present %v, want stale/nil/true", state, rec, present)
+	if state, rec, present := classifyLock(empty); state != hcLockStale || rec != nil || !present {
+		t.Errorf("classifyLock of an empty lock = state %d rec %v present %v, want stale/nil/true", state, rec, present)
 	}
 }
 
@@ -97,8 +97,8 @@ func TestVerifyListenerServesAnotherSocket(t *testing.T) {
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", "/opt/claude/run/other/rpc.sock"}, true, "1")
 	// The reference's text, measured on Linux.
 	want := "the listener could not be verified as a daemon of ours (not serving that socket)"
-	if reason := c.verifyListener(73, "/opt/claude/run/x/rpc.sock"); reason != want {
-		t.Errorf("verifyListener = %q, want %q", reason, want)
+	if reason := c.listenerRefusal(73, "/opt/claude/run/x/rpc.sock"); reason != want {
+		t.Errorf("listenerRefusal = %q, want %q", reason, want)
 	}
 }
 
@@ -119,25 +119,25 @@ func TestJudgeOrphanUnreadableArms(t *testing.T) {
 
 	noAge := base
 	noAge.haveAge = false
-	if reap, reason := c.judgeOrphan(noAge); reap || reason != "its age could not be determined" {
+	if reap, reason := c.decideReap(noAge); reap || reason != "its age could not be determined" {
 		t.Errorf("age unknown: reap=%v reason=%q", reap, reason)
 	}
 
 	noEnv := base
 	noEnv.env = nil
-	if reap, reason := c.judgeOrphan(noEnv); reap || reason != "its environ could not be read" {
+	if reap, reason := c.decideReap(noEnv); reap || reason != "its environ could not be read" {
 		t.Errorf("environ unreadable: reap=%v reason=%q", reap, reason)
 	}
 
 	// Everything reads except the descriptor list: pid 75 has no fd directory in the fake
 	// tree, so the last gate cannot confirm it and it is spared.
-	if reap, reason := c.judgeOrphan(base); reap || reason != "its open descriptors were unreadable" {
+	if reap, reason := c.decideReap(base); reap || reason != "its open descriptors were unreadable" {
 		t.Errorf("fds unreadable: reap=%v reason=%q", reap, reason)
 	}
 	// With the descriptors readable the same record IS reaped, which is what makes the
 	// assertion above about that gate and not about one of the earlier ones.
 	hcPipeStdio(link, 75)
-	if reap, reason := c.judgeOrphan(base); !reap || reason != "" {
+	if reap, reason := c.decideReap(base); !reap || reason != "" {
 		t.Errorf("readable fds: reap=%v reason=%q, want a silent reap", reap, reason)
 	}
 	_, _ = proot, mk
@@ -157,7 +157,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	t.Cleanup(func() { hcHoldPid, hcSleep, hcClock = oldSig, oldSleep, oldClock })
 	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return nil })
 	// The sleep stub ADVANCES the fake clock rather than doing nothing. A guard that a
-	// mutation removes lets control reach waitGone, and with a frozen clock that poll loop
+	// mutation removes lets control reach awaitLeaderExit, and with a frozen clock that poll loop
 	// never reaches its deadline: the mutant would fail by hanging until the go test timeout
 	// instead of failing on the assertions below. Starting at the instant hcTestCleaner
 	// froze keeps every fixture's age unchanged.
@@ -170,10 +170,10 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	hcFakeDaemon(t, proot, mk, link, c.selfPid, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
 	if hcRetire(c, c.selfPid, socket) {
-		t.Error("retireAbandoned signalled this very daemon")
+		t.Error("endIdleDaemon signalled this very daemon")
 	}
 	if hcRetire(c, 1, socket) {
-		t.Error("retireAbandoned signalled pid 1")
+		t.Error("endIdleDaemon signalled pid 1")
 	}
 
 	// Too young. hcFakeDaemon's uptime is 100000s and the clock is fixed, so a start-ticks
@@ -182,7 +182,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	hcFakeDaemon(t, proot, mk, link, young, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "9999990")
 	if hcRetire(c, young, socket) {
-		t.Error("retireAbandoned signalled a daemon younger than the minimum age")
+		t.Error("endIdleDaemon signalled a daemon younger than the minimum age")
 	}
 
 	if len(signals) != 0 {
@@ -199,7 +199,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
 	link(victim, "fd/1", "/dev/null") // readable connections, none a client
 	if hcRetire(c, victim, socket) {
-		t.Error("retireAbandoned reported success after a failed signal")
+		t.Error("endIdleDaemon reported success after a failed signal")
 	}
 	if len(signals) != 1 || signals[0] != victim {
 		t.Errorf("signals = %v, want exactly the one attempt on %d", signals, victim)

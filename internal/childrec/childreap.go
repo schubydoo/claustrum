@@ -23,14 +23,14 @@ import (
 // The orphan reap (reference build 19f30c46). At -serve startup, right after a daemon
 // claims its run dir (which evicts a still-live predecessor on the same socket), it
 // reaps children that a since-exited predecessor daemon of THIS run dir left behind. The
-// daemon reads the per-spawn records the child registry wrote (childRecord, written by
+// daemon reads the per-spawn records the child registry wrote (spawnRecord, written by
 // writeChildRecordIn to <runDir>/children/<pid>.json) and, for each one whose owning daemon
 // is gone, verifies the live process really is that recorded child before ending its
 // process group.
 //
 // This decision logic is shared across the unix targets; only how a live process is read
 // (readLiveProc: /proc on linux, ps on darwin) and how this daemon's own node/host
-// identity is gathered (ownReapIdentity) are OS-specific. On windows ReapOrphans is a no-op
+// identity is gathered (ownReapIdentity) are OS-specific. On windows EndLeftoverChildren is a no-op
 // (childreap_other.go): the reference reaps nothing there (measured, planted records
 // survive a startup), so there is no reap to share.
 //
@@ -96,7 +96,7 @@ const maxRecordBytes = 4096
 // yields a [2, 2^31) window.
 const maxPid = 1<<31 - 1
 
-// verdict values from verifyOrphan (the per-record decision).
+// verdict values from checkRecordOwnWords (the per-record decision).
 const (
 	verdictReap        = 0 // a verified orphan of a dead predecessor daemon of this run dir
 	verdictGone        = 1 // the live process is gone; forget the record, nothing to end
@@ -114,7 +114,7 @@ const (
 	// stays and no signal goes out.
 	procUnknown = 3
 	// procNotChild: the process is not a child to end. The record goes and no
-	// signal goes out. For a recorded daemon it reads as alive (daemonAlive).
+	// signal goes out. For a recorded daemon it reads as alive (recordedDaemonLives).
 	procNotChild = 4
 )
 
@@ -123,7 +123,7 @@ const (
 // the lighter start-time and leadership re-checks.
 type liveProc struct {
 	state      int    // procAlive, procGone, procNotOurs, procUnknown or procNotChild
-	startTicks string // the process start-time, compared as a string to childRecord.Start
+	startTicks string // the process start-time, compared as a string to spawnRecord.Start
 	pgid       int    // the process group id
 	program    string // argv[0]
 	runDir     string // CLAUDE_SSH_RUN_DIR from the environment (wantEnv only)
@@ -142,7 +142,7 @@ type liveProc struct {
 	why string
 	// nsState is the state that the pid namespace test gives a child, on a read with
 	// wantEnv false. Such a read keeps state as the stat gives it, because the read
-	// of a daemon has no namespace test (claustrum's own, not measured). sameLeader
+	// of a daemon has no namespace test (claustrum's own, not measured). leaderStillMatches
 	// applies nsState. Only the linux reader sets it.
 	nsState int
 }
@@ -163,14 +163,14 @@ var (
 	reapNow = time.Now
 )
 
-// reapTarget is one process the sweep decided to end. start is kept for the pid-reuse
+// doomedChild is one process the sweep decided to end. start is kept for the pid-reuse
 // re-check just before the kill, and name is the record to forget once handled. rec is
 // the whole record, for the full test that comes before the SIGKILL.
-type reapTarget struct {
+type doomedChild struct {
 	pid   int
 	start string
 	name  string
-	rec   childRecord
+	rec   spawnRecord
 }
 
 // reapCounts is the tally of one sweep. The six fields are the six numbers of the
@@ -216,7 +216,7 @@ type reapCtx struct {
 	// late holds the record names of the signalled groups that are done. The sweep
 	// removes them together when the last group is done (forgetLate).
 	late []string
-	// unknown holds the pids of the signalled groups that got the lookAgain line.
+	// unknown holds the pids of the signalled groups that got the logUninspectableGroup line.
 	unknown map[int]bool
 }
 
@@ -237,13 +237,13 @@ func openChildrenDir(root *os.Root) (*os.Root, error) {
 	return root.OpenRoot(childrenDirName)
 }
 
-// ReapOrphans is the -serve startup reap. It lists the children folder of the run dir
+// EndLeftoverChildren is the -serve startup reap. It lists the children folder of the run dir
 // that the daemon holds open, decides each record, ends the verified orphans in two
 // phases, and logs a summary. It runs on every socket shape: measured on Linux and
 // macOS against f6010b97 and 89cb6289, a new daemon on a socket of another shape ends
 // the recorded child of a dead daemon. It is a no-op for a manager with no run dir,
 // and when the children entry is absent, is not a real folder or cannot be read.
-func (r *Records) ReapOrphans() {
+func (r *Records) EndLeftoverChildren() {
 	if r.RunDir == "" {
 		return
 	}
@@ -279,7 +279,7 @@ func (r *Records) ReapOrphans() {
 		logging.Warnf("[process.Registry] more than %d records in %s; leaving the rest for the next start", maxReapRecords, childrenPath)
 	}
 	var counts reapCounts
-	var targets []reapTarget
+	var targets []doomedChild
 	over := 0 // verified groups over maxReapTargets
 	for _, e := range entries {
 		name := e.Name()
@@ -309,7 +309,7 @@ func (r *Records) ReapOrphans() {
 		if rec.Node == ownNode {
 			// Same boot and machine: a predecessor of this run dir. Reap its children only
 			// once that daemon itself is gone.
-			if daemonAlive(rec.DaemonPid, rec.DaemonStart, c.ownDaemonPid) {
+			if recordedDaemonLives(rec.DaemonPid, rec.DaemonStart, c.ownDaemonPid) {
 				counts.skipped++
 				continue
 			}
@@ -317,7 +317,7 @@ func (r *Records) ReapOrphans() {
 			switch verdict {
 			case verdictReap:
 				if len(targets) < maxReapTargets {
-					targets = append(targets, reapTarget{pid: rec.Pid, start: rec.Start, name: name, rec: rec})
+					targets = append(targets, doomedChild{pid: rec.Pid, start: rec.Start, name: name, rec: rec})
 				} else {
 					over++
 					counts.skipped++ // batch full; leave for the next startup
@@ -345,7 +345,7 @@ func (r *Records) ReapOrphans() {
 		}
 		// Another boot or machine. Forget a record from an earlier boot of THIS machine, and
 		// forget a foreign record only once it is past the stale window.
-		if earlierBootOfThisMachine(rec.Host, rec.Node, ownHost, ownNode) {
+		if priorBootSameHost(rec.Host, rec.Node, ownHost, ownNode) {
 			c.forget(name)
 			counts.forgotten++
 			continue
@@ -402,7 +402,7 @@ func (c *reapCtx) recordEntries() (entries []fs.DirEntry, more bool) {
 }
 
 // skipReason says why a record is not a child to end, in two wordings. own is
-// claustrum's wording, which verifyOrphan returns. ref is the wording of 89cb6289 for
+// claustrum's wording, which checkRecordOwnWords returns. ref is the wording of 89cb6289 for
 // the same test, measured on Linux, which the two [process.Registry] lines print: the
 // record line of the walk and the no-longer-verifies line. Where no row shows a
 // reference text, ref equals own.
@@ -411,8 +411,8 @@ type skipReason struct{ own, ref string }
 // sameReason is a reason with no measured reference text.
 func sameReason(text string) skipReason { return skipReason{own: text, ref: text} }
 
-// verifyOrphan is the record test with claustrum's wording only.
-func verifyOrphan(rec childRecord, runDir string, ownDaemonPid, ownParentPid, ownPgid int) (int, string) {
+// checkRecordOwnWords is the record test with claustrum's wording only.
+func checkRecordOwnWords(rec spawnRecord, runDir string, ownDaemonPid, ownParentPid, ownPgid int) (int, string) {
 	c := &reapCtx{runDir: runDir, ownDaemonPid: ownDaemonPid, ownParentPid: ownParentPid, ownPgid: ownPgid}
 	verdict, why := c.verify(rec)
 	return verdict, why.own
@@ -422,7 +422,7 @@ func verifyOrphan(rec childRecord, runDir string, ownDaemonPid, ownParentPid, ow
 // returns a verdict and, for a skip, the reason. The reference texts are measured on
 // Linux against 89cb6289, also for the unreadable environment. claustrum quotes each
 // value with %q. Not measured: a value that %q escapes.
-func (c *reapCtx) verify(rec childRecord) (int, skipReason) {
+func (c *reapCtx) verify(rec spawnRecord) (int, skipReason) {
 	pid := rec.Pid
 	switch {
 	case pid < 2 || pid > maxPid:
@@ -545,7 +545,7 @@ func programMatches(recorded, live string) bool {
 // refuses an empty argv0 before it comes here, whatever program holds (measured).
 // f6010b97 sends no signal in these cases (measured). On macOS measurements show the command text rule of
 // runsProgram.
-func recordMatchesLive(rec childRecord, lp liveProc) bool {
+func recordMatchesLive(rec spawnRecord, lp liveProc) bool {
 	if runsProgram(rec.Argv0, lp) {
 		return true
 	}
@@ -612,7 +612,7 @@ func parsePSLine(line string) (pgid int, stat, text string, ok bool) {
 	return pgid, stat, text, true
 }
 
-// daemonAlive reports whether the daemon that spawned a child is still running. A daemon
+// recordedDaemonLives reports whether the daemon that spawned a child is still running. A daemon
 // pid below 2, or equal to this daemon's own pid (a reused slot for a different instance),
 // counts as gone so the child is treated as an orphan. Otherwise it is alive only when the
 // process is running and, if the record carries a daemon start-time, that start-time still
@@ -621,7 +621,7 @@ func parsePSLine(line string) (pgid int, stat, text string, ok bool) {
 // claustrum counts a daemon that is there and cannot be inspected as alive. `5fd08069`
 // keeps the record of the child and sends no signal there (measured on Linux). Not
 // measured on macOS: claustrum does the same there.
-func daemonAlive(daemonPid int, daemonStart string, ownDaemonPid int) bool {
+func recordedDaemonLives(daemonPid int, daemonStart string, ownDaemonPid int) bool {
 	if daemonPid < 2 || daemonPid == ownDaemonPid {
 		return false
 	}
@@ -638,7 +638,7 @@ func daemonAlive(daemonPid int, daemonStart string, ownDaemonPid int) bool {
 	return lp.startTicks == daemonStart
 }
 
-// earlierBootOfThisMachine reports whether a record is from an earlier boot of THIS same
+// priorBootSameHost reports whether a record is from an earlier boot of THIS same
 // machine: the machine ids (host) match but the boot part of the node differs. The node is
 // "<boot>/<...>" on linux and a bare boot-session id on darwin. strings.Cut on "/" returns
 // the boot prefix on linux and, when there is no "/", the whole string in `before` — so it
@@ -646,7 +646,7 @@ func daemonAlive(daemonPid int, daemonStart string, ownDaemonPid int) bool {
 // ignored: a darwin node has no "/" yet still carries a full boot id, so gating on it would
 // make this always return false on darwin and never prune an earlier boot's records there. A
 // record from a different machine, or one with an empty boot id, returns false.
-func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
+func priorBootSameHost(recHost, recNode, ownHost, ownNode string) bool {
 	if recHost == "" || recHost != ownHost {
 		return false
 	}
@@ -661,7 +661,7 @@ func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
 // reapTargets ends the collected orphans in two phases: SIGTERM the group and wait the
 // grace, then SIGKILL any survivor and wait the escalate. The targets come in the order
 // of the walk, and the SIGTERM calls go out in that order. It re-reads the process
-// (sameLeader) before the SIGTERM, so a pid reused between the sweep and the signal is
+// (leaderStillMatches) before the SIGTERM, so a pid reused between the sweep and the signal is
 // dropped rather than signalled. During the grace every survivor takes the whole record
 // test again at each poll, and once more before the SIGKILL. A group that no longer
 // passes is dropped at that poll and gets nothing more. When a target's leader exits
@@ -681,15 +681,15 @@ func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
 //
 // The two lines of a group are the reference's (`89cb6289`, measured on Linux and
 // macOS): the ending line at its SIGTERM, and the outlived line at its SIGKILL.
-func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
+func reapTargets(c *reapCtx, targets []doomedChild, counts *reapCounts) {
 	if len(targets) == 0 {
 		return
 	}
 	defer c.forgetLate()
 	// Phase 1: re-check identity, then SIGTERM the whole group.
-	var signaled []reapTarget
+	var signaled []doomedChild
 	for _, t := range targets {
-		verdict, reason := sameLeader(t.pid, t.start)
+		verdict, reason := leaderStillMatches(t.pid, t.start)
 		switch verdict {
 		case verdictGone, verdictSkip:
 			// Ended, reused or no longer a group leader since the walk: never signal.
@@ -726,7 +726,7 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 
 	// Phase 2: SIGKILL the groups that still pass the record test after the grace, then
 	// wait the escalate. The test runs once more here, right before the signal.
-	var killed, gone []reapTarget
+	var killed, gone []doomedChild
 	for _, t := range survivors {
 		verdict, reason := c.check(t, true)
 		switch verdict {
@@ -767,9 +767,9 @@ func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 	}
 }
 
-// lookAgain prints the line of a signalled group that cannot be inspected, once for
+// logUninspectableGroup prints the line of a signalled group that cannot be inspected, once for
 // each group. The text is the reference's (`5fd08069`, measured on Linux).
-func (c *reapCtx) lookAgain(t reapTarget, reason string) {
+func (c *reapCtx) logUninspectableGroup(t doomedChild, reason string) {
 	if c.unknown[t.pid] {
 		return
 	}
@@ -783,15 +783,15 @@ func (c *reapCtx) lookAgain(t reapTarget, reason string) {
 // keepUnknown ends the wait for a signalled group that still cannot be inspected. The
 // group gets no SIGKILL, and its record stays for the next start, counted as kept.
 // The text is the reference's (`5fd08069`, measured on Linux).
-func (c *reapCtx) keepUnknown(t reapTarget, reason string, counts *reapCounts) {
-	c.lookAgain(t, reason)
+func (c *reapCtx) keepUnknown(t doomedChild, reason string, counts *reapCounts) {
+	c.logUninspectableGroup(t, reason)
 	logging.Infof("[process.Registry] group %d could still not be inspected when the wait was up; keeping its record for the next start", t.pid)
 	counts.skipped++
 }
 
 // killAfterGrace sends the SIGKILL to a group that still passes the record test at the
 // end of the grace, with the reference's line for it.
-func (c *reapCtx) killAfterGrace(t reapTarget) {
+func (c *reapCtx) killAfterGrace(t doomedChild) {
 	logging.Warnf("[process.Registry] group %d outlived SIGTERM for %s: SIGKILL", t.pid, reapGrace)
 	_ = procinfo.KillGroup(t.pid, syscall.SIGKILL)
 }
@@ -819,14 +819,14 @@ func (c *reapCtx) forgetLate() {
 // pending. It notes the record of every resolved target for the removal at the end of
 // the sweep (forgetLater) and
 // returns the targets still pending at the deadline.
-func reapWait(c *reapCtx, targets []reapTarget, timeout time.Duration, reapedCounter *int, counts *reapCounts, full bool) []reapTarget {
+func reapWait(c *reapCtx, targets []doomedChild, timeout time.Duration, reapedCounter *int, counts *reapCounts, full bool) []doomedChild {
 	if len(targets) == 0 {
 		return nil
 	}
 	deadline := reapNow().Add(timeout)
 	pending := targets
 	for {
-		var still, gone []reapTarget
+		var still, gone []doomedChild
 		for _, t := range pending {
 			verdict, reason := c.check(t, full)
 			switch verdict {
@@ -838,7 +838,7 @@ func reapWait(c *reapCtx, targets []reapTarget, timeout time.Duration, reapedCou
 				// Cannot be inspected: no signal, and the next poll looks again. After
 				// the SIGKILL the group stays pending with no line, as before.
 				if full {
-					c.lookAgain(t, reason)
+					c.logUninspectableGroup(t, reason)
 				}
 				still = append(still, t)
 			default: // no longer ours to signal
@@ -856,11 +856,11 @@ func reapWait(c *reapCtx, targets []reapTarget, timeout time.Duration, reapedCou
 }
 
 // check tests one signalled target again. With full set it is the whole record test,
-// and the reason is the reference's wording. Without it, it is sameLeader, with no
+// and the reason is the reference's wording. Without it, it is leaderStillMatches, with no
 // reason. A gone verdict is not final: settleGone decides it.
-func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
+func (c *reapCtx) check(t doomedChild, full bool) (int, string) {
 	if !full {
-		return sameLeader(t.pid, t.start)
+		return leaderStillMatches(t.pid, t.start)
 	}
 	verdict, why := c.verify(t.rec)
 	return verdict, why.ref
@@ -888,12 +888,12 @@ func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
 // The cost: a leader that really ended, with members that linger, gets the group
 // SIGKILL one pause later (a measurement on Linux shows that SIGKILL right after the
 // SIGTERM, on 89cb6289 and on claustrum before this pause).
-func (c *reapCtx) settleGone(gone []reapTarget, reapedCounter *int) []reapTarget {
+func (c *reapCtx) settleGone(gone []doomedChild, reapedCounter *int) []doomedChild {
 	if len(gone) == 0 {
 		return nil
 	}
 	reapSleep(reapSettle)
-	var alive []reapTarget
+	var alive []doomedChild
 	for _, t := range gone {
 		if readLiveProc(t.pid, false).state == procGone {
 			reapGoneLeader(c, t, reapedCounter)
@@ -909,7 +909,7 @@ func (c *reapCtx) settleGone(gone []reapTarget, reapedCounter *int) []reapTarget
 // the records of the other signalled groups, at the end of the sweep. That time is
 // claustrum's own choice. When the reference removes such a record is not measured:
 // the measurement gives no time for it.
-func (c *reapCtx) drop(t reapTarget, reason string, counts *reapCounts) {
+func (c *reapCtx) drop(t doomedChild, reason string, counts *reapCounts) {
 	if reason != "" {
 		logging.Infof("[process.Registry] group %d no longer verifies (%s); nothing more is sent to it", t.pid, reason)
 	}
@@ -921,7 +921,7 @@ func (c *reapCtx) drop(t reapTarget, reason string, counts *reapCounts) {
 // read after the pause right before this call: it SIGKILLs the group when members linger, counts
 // the target reaped (in the bucket that reapedCounter names), and notes the record for
 // the removal at the end of the sweep.
-func reapGoneLeader(c *reapCtx, t reapTarget, reapedCounter *int) {
+func reapGoneLeader(c *reapCtx, t doomedChild, reapedCounter *int) {
 	if groupAlive(t.pid) {
 		_ = procinfo.KillGroup(t.pid, syscall.SIGKILL) // leader gone, group members linger
 	}
@@ -941,28 +941,28 @@ var recordTypeTested = func() {}
 // proves to be that same regular file. The sweep already skips every entry that is not
 // a regular file, so this is the second guard, for an entry that someone swaps between
 // the directory read and the open.
-func (c *reapCtx) read(name string) (childRecord, bool) {
+func (c *reapCtx) read(name string) (spawnRecord, bool) {
 	entry, err := c.dir.Lstat(name)
 	if err != nil || !entry.Mode().IsRegular() {
-		return childRecord{}, false
+		return spawnRecord{}, false
 	}
 	recordTypeTested()
 	f, err := c.dir.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return childRecord{}, false
+		return spawnRecord{}, false
 	}
 	defer f.Close()
 	// The read comes last in this test, so it runs only for the entry that Lstat saw.
-	var rec childRecord
+	var rec spawnRecord
 	if opened, err := f.Stat(); err != nil || !os.SameFile(entry, opened) || !decodeRecord(f, &rec) {
-		return childRecord{}, false
+		return spawnRecord{}, false
 	}
 	return rec, true
 }
 
 // decodeRecord reads at most maxRecordBytes of r and parses them as one record. A
 // longer file parses only when the rest of its first maxRecordBytes are blanks.
-func decodeRecord(r io.Reader, rec *childRecord) bool {
+func decodeRecord(r io.Reader, rec *spawnRecord) bool {
 	data, err := io.ReadAll(io.LimitReader(r, maxRecordBytes))
 	return err == nil && json.Unmarshal(data, rec) == nil
 }
@@ -976,7 +976,7 @@ func (c *reapCtx) forget(name string) {
 	_ = c.dir.Remove(name)
 }
 
-// sameLeader re-reads the process just before a kill and reports whether the target is
+// leaderStillMatches re-reads the process just before a kill and reports whether the target is
 // still the same, group-leading process. It returns verdictGone when the process is gone,
 // verdictSkip when the pid was reused (start-time changed), the process no longer leads
 // its group or it is not a child to end, and verdictReap when it is still safe to
@@ -987,7 +987,7 @@ func (c *reapCtx) forget(name string) {
 // own, not measured at this test. The settle reads (settleThenVerdict, settleGone)
 // stay on the stat alone. So a namespace link that is gone never leads to the group
 // SIGKILL of reapGoneLeader.
-func sameLeader(pid int, recStart string) (int, string) {
+func leaderStillMatches(pid int, recStart string) (int, string) {
 	lp := readLiveProc(pid, false)
 	if lp.state == procAlive && lp.nsState != procAlive {
 		lp.state = lp.nsState

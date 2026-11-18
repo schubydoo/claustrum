@@ -161,7 +161,7 @@ func LockRunFolder(socket, role string) Claim {
 		return notHolder()
 	}
 	short := OwnerRecord{Pid: os.Getpid(), Role: role, Node: nodeID()}
-	writeOwnerRecord(fd, short)
+	storeLockOwner(fd, short)
 	return Claim{
 		Holder:   true,
 		StopLate: func() {},
@@ -243,7 +243,7 @@ func evictRunDirHolder(fd int, path, socket string) (gone, locked bool) {
 	summary := func(outcome string) {
 		logging.Infof("[daemon] serve: previous owner of %s: %s", rundir, outcome)
 	}
-	holder, err := readOwnerRecord(path)
+	holder, err := loadLockOwner(path)
 	// A holder whose record names no daemon role is left alone. That covers a lock file
 	// with no record at all (role ""). The two lines are the reference's, measured on
 	// Linux against f6010b97 and 89cb6289. In that row a helper holds the lock and the
@@ -431,9 +431,9 @@ func stopRunDirHolderFD(socket string) (string, int) {
 // holds on fd. It returns the word. Both -stop paths use it: the one after a failed
 // connect and the one after the lock wait of StopAfterReply.
 func stopSignalHolder(fd int, path, socket string) string {
-	holder, err := readOwnerRecord(path)
+	holder, err := loadLockOwner(path)
 	if err != nil || holderSignalRefusal(holder, socket) != "" {
-		logging.Warnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
+		logging.Warnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, ownExeName(), socket)
 		return StopWordSurvivor
 	}
 	// The two lines below name the instance only when the record has one, as the serve
@@ -455,7 +455,7 @@ func stopSignalHolder(fd int, path, socket string) string {
 		// A record of another pid means that the lock changed hands. The line names the
 		// new holder from its record. 5fd08069 prints it (measured on Linux). A record
 		// that names a holder with no instance is not measured.
-		if now, err := readOwnerRecord(path); err == nil && now.Pid != holder.Pid {
+		if now, err := loadLockOwner(path); err == nil && now.Pid != holder.Pid {
 			logging.Warnf("[daemon] stop: %s changed hands during eviction (now %s); leaving the new holder alone", path, holderText(now))
 			return StopWordSurvivor
 		}
@@ -521,7 +521,7 @@ func StopAfterReply(socket string) (string, func()) {
 	}
 	// The role test and its line are the ones of the serve eviction, with "stop:".
 	// The line is the one of 5fd08069 (measured on Linux).
-	if holder, _ := readOwnerRecord(path); holder.Role != "serve" && holder.Role != "stop" {
+	if holder, _ := loadLockOwner(path); holder.Role != "serve" && holder.Role != "stop" {
 		// 5fd08069 tries the lock for about 0.5 s more before this word. In a
 		// measurement, it made 72 tries and printed it at 3.54 to 3.65 s (measured on
 		// Linux and macOS). A lock that comes free in these tries gives "stopped". That
@@ -536,7 +536,7 @@ func StopAfterReply(socket string) (string, func()) {
 	if word != StopWordTerminated && word != StopWordKilled {
 		return word, closeLock
 	}
-	writeOwnerRecord(fd, OwnerRecord{Pid: os.Getpid(), Role: "stop", Node: nodeID()})
+	storeLockOwner(fd, OwnerRecord{Pid: os.Getpid(), Role: "stop", Node: nodeID()})
 	_ = os.Remove(socket)
 	_ = os.Remove(filepath.Join(tokenFileDir(socket), persistedTokenName))
 	return word, release
@@ -714,10 +714,10 @@ func matchesServeArgv(argv []string, socket, self string) bool {
 	return serve && sockMatch
 }
 
-// selfBase is our own executable's basename, used to recognise a sibling daemon. On
+// ownExeName is our own executable's basename, used to recognise a sibling daemon. On
 // failure it returns "", which makes matchesServeArgv refuse (no argv0 can equal "") so
 // an unidentifiable self never signals a holder.
-func selfBase() string {
+func ownExeName() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
@@ -725,11 +725,11 @@ func selfBase() string {
 	return filepath.Base(exe)
 }
 
-// writeOwnerRecord marshals rec and writes it, followed by a newline, at offset 0 of the
+// storeLockOwner marshals rec and writes it, followed by a newline, at offset 0 of the
 // already-locked fd, truncating first so a shorter record never leaves stale trailing
 // bytes. Best-effort: a marshal or write failure leaves the lock held but the record
 // empty, and the daemon still serves.
-func writeOwnerRecord(fd int, rec OwnerRecord) {
+func storeLockOwner(fd int, rec OwnerRecord) {
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return
@@ -741,8 +741,8 @@ func writeOwnerRecord(fd int, rec OwnerRecord) {
 	_, _ = syscall.Pwrite(fd, data, 0)
 }
 
-// readOwnerRecord reads and parses the owner record from the lock file.
-func readOwnerRecord(path string) (OwnerRecord, error) {
+// loadLockOwner reads and parses the owner record from the lock file.
+func loadLockOwner(path string) (OwnerRecord, error) {
 	var rec OwnerRecord
 	b, err := os.ReadFile(path)
 	if err != nil {
