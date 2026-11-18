@@ -55,8 +55,10 @@ const maxEvalLinks = 255
 // removes the name before it, also a link (build 683cc6a9, Windows). A link
 // whose target is on a mapped network drive or is a `\\?\UNC\` path gives
 // errNoUsableName (build 683cc6a9, Windows). Any other UNC target, and a path
-// on a network drive with no such link, are claustrum's own, not measured. A junction acts as in filepath.EvalSymlinks.
-// The result gets the letter case of each name on disk from
+// on a network drive with no such link, are claustrum's own, not measured.
+// A junction to a drive path is followed as a link (4c111e86 and c9125eb8,
+// Windows). A junction to a volume name acts as a folder (claustrum's own, not
+// measured). The result gets the letter case of each name on disk from
 // filepath.EvalSymlinks.
 func realpathEval(p string) (string, error) {
 	p = filepath.Clean(p)
@@ -71,7 +73,8 @@ func realpathEval(p string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			if fi.Mode()&fs.ModeSymlink == 0 {
+			junction := fi.Mode()&fs.ModeIrregular != 0 && junctionToDrive(at)
+			if fi.Mode()&fs.ModeSymlink == 0 && !junction {
 				if !fi.IsDir() && i < len(names)-1 {
 					return "", syscall.ENOTDIR
 				}
@@ -99,6 +102,14 @@ func realpathEval(p string) (string, error) {
 		}
 		p = next
 	}
+}
+
+// junctionToDrive reports whether the entry at p is a junction whose target
+// begins with a drive letter, a colon and a slash. os.Readlink reads a symbolic
+// link or a junction and fails for any other kind of entry.
+func junctionToDrive(p string) bool {
+	t, err := os.Readlink(p)
+	return err == nil && len(t) >= 3 && pathcanon.IsDriveLetter(t[0]) && t[1] == ':' && os.IsPathSeparator(t[2])
 }
 
 // realpathJoin reads a relative link target from the folder of the link. A target
