@@ -133,7 +133,7 @@ func exitFrame(t *testing.T, frames <-chan ChildFrame) ChildFrame {
 // TestShutdownEndedChildLogsExitLine: on Linux a child that the shutdown sweep ends logs its
 // exited line with "(shutdown)", and a child that exited before the sweep keeps its
 // line. c9125eb8 and 4c111e86 log it in a spawn flood (measured on Linux). On macOS
-// 4c111e86 logs none (measured on macOS).
+// 4c111e86 logs almost none (measured on macOS).
 func TestShutdownEndedChildLogsExitLine(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
