@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -287,9 +288,12 @@ func TestShadowCallSevenBoundFromStart(t *testing.T) {
 // repository is old after a hook listing that waited more than probeKeep for
 // its pipes, so a second such call follows. After a short wait none follows.
 // 5fd08069 makes the second call after the 45 s wait (measured on Linux).
-// Mutation: set the short wait for the pipes again in gitRunLimited. The test
-// lowers probeKeep to 3.5 s and the short wait to 500 ms. The short row holds
-// the listing 500 ms, so 3 s is left before the kept answer is old.
+// Mutation: set the short wait for the pipes again in gitRunLimited. The clock
+// of the kept answer moves only by the wait for the held listing
+// (heldListingClock), so the time of the other calls on a slow runner does not
+// count. The test lowers probeKeep to 3.5 s and the short wait to 500 ms. The
+// short row holds the listing 500 ms, so 3 s is left before the kept answer is
+// old.
 func TestProbeAgainAfterALongHookListing(t *testing.T) {
 	setDuration(t, &probeKeep, 3500*time.Millisecond)
 	shortDrain(t)
@@ -301,12 +305,52 @@ func TestProbeAgainAfterALongHookListing(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			holdHookListing(t, "hold", row.hold)
+			timeLog := heldListingClock(t)
 			_, calls := f.info(t, f.repo, nil)
 			if got := len(probeCalls(calls)); got != row.want {
-				t.Errorf("after a listing held %v: %d calls about the repository, want %d", row.hold, got, row.want)
+				t.Errorf("after a listing held %v: %d calls about the repository, want %d (the listing and the next start took %v)",
+					row.hold, got, row.want, heldListingWait(timeLog))
 			}
 		})
 	}
+}
+
+// heldListingClock sets probeClock to a clock that stands still, except that it
+// moves on by heldListingWait. It returns the path of the time log of the stub.
+func heldListingClock(t *testing.T) string {
+	t.Helper()
+	timeLog := filepath.Join(t.TempDir(), "times")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+	base := time.Now()
+	old := probeClock
+	t.Cleanup(func() { probeClock = old })
+	probeClock = func() time.Time { return base.Add(heldListingWait(timeLog)) }
+	return timeLog
+}
+
+// heldListingWait reads the time log of the stub. It gives the time from the
+// start of the listing that holdHookListing holds to the start of the call
+// after it, or 0 while the log holds no such pair.
+func heldListingWait(timeLog string) time.Duration {
+	b, _ := os.ReadFile(timeLog)
+	var listing time.Time
+	for _, line := range strings.Split(string(b), "\n") {
+		words := strings.Split(line, "\x1f")
+		if len(words) < 4 || words[0] != "start" {
+			continue
+		}
+		ns, err := strconv.ParseInt(words[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch {
+		case !listing.IsZero():
+			return max(time.Unix(0, ns).Sub(listing), 0)
+		case stubMatches(words[3:], "config,-z,--list") && words[len(words)-1] == "--list":
+			listing = time.Unix(0, ns)
+		}
+	}
+	return 0
 }
 
 // TestStartTestCallsAndTheirPipes pins three measured rows (on
