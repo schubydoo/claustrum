@@ -217,7 +217,7 @@ Git calls of the daemon read its copy of the repository's git settings. [The set
 
 - A missing `<git dir>/worktrees` is made before the add, with mode 0777 less the umask. It stays after a failed add. On Linux and macOS a last `core.sharedrepository` line of the copy other than `umask` sets its mode (`b3081b51`, measured on macOS).
 - With `extensions.worktreeConfig` the new worktree gets the `config.worktree` file of `<git dir>`, or of a linked `baseRepo`, less `core.bare` and `core.worktree`.
-- While a `"shadowDirOff": true` request runs, the checkout has its index in `claude-ssh-checkout-<n>` of the temporary folder (`4c111e86`, measured on Linux and macOS). The folder has mode 0700. Windows is not measured.
+- While a `"shadowDirOff": true` request runs, the checkout has its index in `claude-ssh-checkout-<n>` of the temporary folder (`4c111e86`, measured on Linux and macOS). The folder has mode 0700, and Windows is not measured.
 - In the state `shadow` on Linux and macOS, the checkout has its index in [`.checkout-<n>`](git-rules-settings-copy.md#the-folders) (`4c111e86`, measured on Linux and macOS). Two creates at once get two such folders.
 - In the state `shadow` on Linux and macOS, the checkout uses [a private LFS store](#the-private-lfs-store).
 - In the state `shadow`, a failed `rev-parse --absolute-git-dir` stops the create with `git worktree add failed: cannot locate the repository's git directory: exit status <n>`. Exit 128 is measured, and exit 1 on macOS. With `"shadowDirOff":true` exit 1 stops it (`4c111e86`, all three systems).
