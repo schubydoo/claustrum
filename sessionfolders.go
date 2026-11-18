@@ -44,7 +44,7 @@ func bareCommandStart(cmd *exec.Cmd, command string, env map[string]string) {
 // is true for a spawn with the launcher param.
 //
 // A Claude Code shape is a command whose folder is named ccd-cli (the CLI path), or
-// args with a stream-json arg as cliSessionKey reads it. Both record cwd (measured
+// args with a stream-json arg as resumeKeyOf reads it. Both record cwd (measured
 // on Linux, macOS and Windows). Of the stream-json args only the bare `stream-json`
 // is measured, and the two `--...-format=stream-json` forms are claustrum's own.
 // A command named ccd-cli counts as the CLI path (b3081b51, measured on Linux,
@@ -102,7 +102,7 @@ func sessionFoldersOf(command string, args []string, cwd string, launched bool) 
 }
 
 // streamJSONArgs reports whether args hold a stream-json arg, by the rule of
-// cliSessionKey.
+// resumeKeyOf.
 func streamJSONArgs(args []string) bool {
 	for _, a := range args {
 		if a == "--input-format=stream-json" || a == "--output-format=stream-json" || a == "stream-json" {

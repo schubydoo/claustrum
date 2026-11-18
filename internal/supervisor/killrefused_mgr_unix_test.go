@@ -23,7 +23,7 @@ func TestKillAndWaitOfARefusedChild(t *testing.T) {
 		buf := captureLogBuf(t)
 		m := newTestProcManager(t)
 		p := refusedChild(m, "refused-k1")
-		found, died, alreadyExited, escalated := m.KillAndWait("refused-k1", "", 10*time.Millisecond, escalate)
+		found, died, alreadyExited, escalated := m.SignalAndAwait("refused-k1", "", 10*time.Millisecond, escalate)
 		if !found || died || alreadyExited || escalated != escalate {
 			t.Errorf("escalate %v: killAndWait = (found %v, died %v, alreadyExited %v, escalated %v), want (true, false, false, %v)",
 				escalate, found, died, alreadyExited, escalated, escalate)

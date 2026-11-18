@@ -125,7 +125,7 @@ func runInstall(o installOpts) {
 		ServerVersion: Version,
 		OS:            runtime.GOOS,
 		Arch:          runtime.GOARCH,
-		Libc:          detectLibc(),
+		Libc:          hostLibc(),
 	}
 
 	// Without -cli-version there is no CLI path, and the default folder does not
@@ -1088,7 +1088,7 @@ func (e *httpStatusError) Error() string {
 // ZERO (the default) DISABLES IT, which is the parity position for the TOTAL-exchange
 // deadline: no total cap was observed on the reference within the window measured. A
 // fully STALLED body (no bytes at all) is handled separately by the always-on read-idle
-// abort newWatchedBody adds (installIdleTimeout, 60 s, 4534d86 parity, measured), NOT
+// abort newMeteredBody adds (installIdleTimeout, 60 s, 4534d86 parity, measured), NOT
 // by this bound. What this bound would add beyond that is a cap on a
 // slow-but-PROGRESSING download, and no total cap was observed on the reference within
 // the window measured: measured against 4534d86, a body trickling 1 byte every 30 s was
@@ -1187,7 +1187,7 @@ func fetchCLI(url, dir string) (path, sum string, err error) {
 	if total < 0 {
 		total = 0
 	}
-	wb := newWatchedBody(resp.Body, total, start)
+	wb := newMeteredBody(resp.Body, total, start)
 	// Same bypass as decodeZstdTo: with the cap off the body streams straight
 	// through, hashed on the way past.
 	var body io.Reader = wb
@@ -1227,7 +1227,7 @@ func fetchCLI(url, dir string) (path, sum string, err error) {
 		return "", "", fail
 	}
 	if !wb.tickPrinted(s.Bytes) {
-		lastInstallFinal = &progressLine{Phase: "download", Bytes: s.Bytes, Total: total}
+		lastInstallFinal = &progressFrame{Phase: "download", Bytes: s.Bytes, Total: total}
 	}
 	return tmp, hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -1539,7 +1539,7 @@ func hasMuslLoader(glob func(string) ([]string, error)) bool {
 }
 
 // classifyLibc maps an `ldd --version` result to "musl" or "glibc". It is split
-// from detectLibc with an injectable glob so both branches are testable on any
+// from hostLibc with an injectable glob so both branches are testable on any
 // host — a glibc box can't otherwise reach the musl fallback.
 //
 // The order matches reference build 3ef9370, which reordered this in the daemon:

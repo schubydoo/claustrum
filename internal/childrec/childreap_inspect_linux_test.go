@@ -224,21 +224,21 @@ func TestReapDropsChildWithUnreadableNamespaceLink(t *testing.T) {
 // claustrum's own, not measured.
 func TestNamespaceTestOnEveryRead(t *testing.T) {
 	st := stageInspect(t)
-	if v, _ := sameLeader(inspChild, "9000"); v != verdictReap {
-		t.Fatalf("control: sameLeader = %d, want verdictReap", v)
+	if v, _ := leaderStillMatches(inspChild, "9000"); v != verdictReap {
+		t.Fatalf("control: leaderStillMatches = %d, want verdictReap", v)
 	}
 	if err := os.Remove(st.path(inspChild, "ns/pid")); err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := sameLeader(inspChild, "9000"); v != verdictGone {
-		t.Errorf("no link: sameLeader = %d, want verdictGone", v)
+	if v, _ := leaderStillMatches(inspChild, "9000"); v != verdictGone {
+		t.Errorf("no link: leaderStillMatches = %d, want verdictGone", v)
 	}
-	if !daemonAlive(inspChild, "9000", 42) {
-		t.Error("no link: daemonAlive = false, want the stat alone to decide for a daemon")
+	if !recordedDaemonLives(inspChild, "9000", 42) {
+		t.Error("no link: recordedDaemonLives = false, want the stat alone to decide for a daemon")
 	}
 	st.link(inspChild, "ns/pid", "pid:[2]")
-	if v, _ := sameLeader(inspChild, "9000"); v != verdictUnknown {
-		t.Errorf("another namespace: sameLeader = %d, want verdictUnknown", v)
+	if v, _ := leaderStillMatches(inspChild, "9000"); v != verdictUnknown {
+		t.Errorf("another namespace: leaderStillMatches = %d, want verdictUnknown", v)
 	}
 }
 
@@ -258,9 +258,9 @@ func TestReapTargetsNamespaceLinkGoesAfterSIGTERM(t *testing.T) {
 		}
 		return nil
 	}
-	tg := reapTarget{pid: inspChild, start: "9000", name: st.name, rec: orphanRecord(inspChild, "/n", "")}
+	tg := doomedChild{pid: inspChild, start: "9000", name: st.name, rec: orphanRecord(inspChild, "/n", "")}
 	var counts reapCounts
-	reapTargets(simCtx(t, st.runDir), []reapTarget{tg}, &counts)
+	reapTargets(simCtx(t, st.runDir), []doomedChild{tg}, &counts)
 
 	if len(st.sim.kills) != 1 || st.sim.kills[0].sig != syscall.SIGTERM {
 		t.Errorf("kills = %v, want exactly one SIGTERM and no SIGKILL", st.sim.kills)

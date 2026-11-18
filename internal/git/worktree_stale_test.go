@@ -79,8 +79,8 @@ func TestRemoveStaleWorktreeEntrySkipsMalformedEntries(t *testing.T) {
 // unchanged instead of being joined onto ".".
 func TestResolveAsFarAsExistsBareLeaf(t *testing.T) {
 	const leaf = "claustrum-no-such-leaf"
-	if got := resolveAsFarAsExists(leaf); got != leaf {
-		t.Errorf("resolveAsFarAsExists(%q) = %q, want it unchanged", leaf, got)
+	if got := canonicalExistingPrefix(leaf); got != leaf {
+		t.Errorf("canonicalExistingPrefix(%q) = %q, want it unchanged", leaf, got)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 // The darwin-specific half of the orphan reap: it reads a live process's group id, state and
 // program via `ps` (darwin has no /proc), its start-time via darwinProcStart, and its
 // environment markers via KERN_PROCARGS2. It also gathers this daemon's node/host identity
-// from the darwin sources. The shared decision logic (ReapOrphans, verifyOrphan, the two-phase
+// from the darwin sources. The shared decision logic (EndLeftoverChildren, checkRecordOwnWords, the two-phase
 // wait) lives in childreap.go.
 
 // ownReapIdentity returns this daemon's node and host for the reap's record-matching gate,

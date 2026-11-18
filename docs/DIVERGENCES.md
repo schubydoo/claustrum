@@ -180,11 +180,12 @@ have no flag and no key.
     tests paths behind Windows junctions too. With and without `worktreeRoot`,
     the leaf folder is tested by identity too.
   - Each rollback delete of `git.worktree_create`, and from the code its stale
-    step before the add. The leaf folder is tested by identity too. It is defense in depth and emits no frame. The
+    step before the add. The leaf folder is tested by identity too. A refused leaf stays and changes the
+    [text of a kept branch](protocol/git-rules-calls.md#the-branch-step-in-an-undo-text). The
     exception is the registration delete of a create that holds no git
-    directory and accepted no registration. That delete tests the `gitdir` record and the registrations
-    directory instead. The guard also runs before the cleanup of old
-    `.claude-new-worktree-*` entries and before the two staging removes. A
+    directory and accepted no registration. It tests the `gitdir` record and the registrations
+    directory instead. The guard also covers the cleanup of old
+    `.claude-new-worktree-*` entries and the two staging removes. A
     refused entry stays.
   - The deletes inside the folder `git-shadow` of the daemon.
   - `-install`, before the tree delete of a folder at the CLI path. The reply is
@@ -380,7 +381,7 @@ have no flag and no key.
 - **Pointers.** [DAEMON.md → Run-dir lock](DAEMON.md#run-dir-lock-daemonlock).
   The host cleaner has its own gate, which is parity
   ([Signals of the cleaner](DAEMON.md#signals-of-the-cleaner),
-  `retireAbandoned`). Code:
+  `endIdleDaemon`). Code:
   `internal/runlock/daemon_runlock_unix.go` (`holderSignalRefusal`, `StopRunDirHolder`),
   `internal/runlock/daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
   `internal/runlock/daemon_runlock_linux.go`.

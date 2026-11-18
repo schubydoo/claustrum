@@ -159,7 +159,7 @@ func TestShutdownSweepWithNoStreamJSONChildDoesNotWait(t *testing.T) {
 }
 
 // exitSignalOf reads frames until the exit frame and returns its signal member.
-func exitSignalOf(t *testing.T, frames <-chan StreamFrame) string {
+func exitSignalOf(t *testing.T, frames <-chan ChildFrame) string {
 	t.Helper()
 	deadline := time.After(10 * time.Second)
 	for {

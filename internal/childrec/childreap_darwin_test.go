@@ -35,10 +35,10 @@ func TestRealReadLiveProcDarwinCommandText(t *testing.T) {
 		t.Errorf("args = %q, want %q", lp.args, want)
 	}
 	// Measured: the record of a program with a blank in its path matches.
-	if !recordMatchesLive(childRecord{Argv0: "/tmp/e/bin/my stub"}, lp) {
+	if !recordMatchesLive(spawnRecord{Argv0: "/tmp/e/bin/my stub"}, lp) {
 		t.Error("a record of the program with a blank in its path did not match")
 	}
-	if !recordMatchesLive(childRecord{Argv0: "/tmp/e/bin/wrap", Program: "/tmp/e/bin/my stub"}, lp) {
+	if !recordMatchesLive(spawnRecord{Argv0: "/tmp/e/bin/wrap", Program: "/tmp/e/bin/my stub"}, lp) {
 		t.Error("a launcher record whose program has a blank in its path did not match")
 	}
 }
@@ -169,8 +169,8 @@ func TestEarlierBootOfThisMachineDarwin(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := earlierBootOfThisMachine(tc.recHost, tc.recNode, tc.ownHost, tc.ownNode); got != tc.want {
-				t.Errorf("earlierBootOfThisMachine = %v, want %v", got, tc.want)
+			if got := priorBootSameHost(tc.recHost, tc.recNode, tc.ownHost, tc.ownNode); got != tc.want {
+				t.Errorf("priorBootSameHost = %v, want %v", got, tc.want)
 			}
 		})
 	}

@@ -186,7 +186,7 @@ type testClient struct {
 	nc   net.Conn
 	mu   sync.Mutex
 	resp []json.RawMessage
-	fr   []supervisor.StreamFrame
+	fr   []supervisor.ChildFrame
 	// read counts the bytes of the lines read so far. endErr holds the first
 	// end member that does not match the real byte count. See checkEnd.
 	read   int64
@@ -250,7 +250,7 @@ func (cl *testClient) readLoop() {
 		cl.mu.Lock()
 		line = cl.checkEnd(line)
 		if probe.Type == "stream" {
-			var f supervisor.StreamFrame
+			var f supervisor.ChildFrame
 			if json.Unmarshal(line, &f) == nil {
 				cl.fr = append(cl.fr, f)
 			}
@@ -350,7 +350,7 @@ func (cl *testClient) waitResponses(n int) []json.RawMessage {
 
 // waitExit blocks until an "exit" frame for processID arrives, then returns all
 // frames for that process in arrival order.
-func (cl *testClient) waitExit(processID string) []supervisor.StreamFrame {
+func (cl *testClient) waitExit(processID string) []supervisor.ChildFrame {
 	cl.wait(func() bool {
 		for _, f := range cl.fr {
 			if f.ProcessID == processID && f.Stream == "exit" {
@@ -361,7 +361,7 @@ func (cl *testClient) waitExit(processID string) []supervisor.StreamFrame {
 	})
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
-	var out []supervisor.StreamFrame
+	var out []supervisor.ChildFrame
 	for _, f := range cl.fr {
 		if f.ProcessID == processID {
 			out = append(out, f)
@@ -373,7 +373,7 @@ func (cl *testClient) waitExit(processID string) []supervisor.StreamFrame {
 // streamBytes concatenates (by seq) the base64-decoded data of every frame on
 // the given stream, yielding the child's full stdout/stderr regardless of how
 // the daemon chunked it into frames.
-func streamBytes(t *testing.T, frames []supervisor.StreamFrame, stream string) string {
+func streamBytes(t *testing.T, frames []supervisor.ChildFrame, stream string) string {
 	t.Helper()
 	var sb []byte
 	for _, f := range frames {

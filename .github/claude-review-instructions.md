@@ -145,7 +145,7 @@ If you are uncertain, say nothing.
 ### Do not run the test suite or the reference binary
 
 Reviewing is a reading job here. Do not attempt `go test`, `make`, or `go build`.
-CI runs the suite on Linux, macOS and Windows on every push, for free. For anything
+CI runs the suite on Linux, macOS and Windows on every ready pull request, for free. For anything
 that is platform-sensitive or timing-sensitive, CI is a better instrument than this
 runner. A Linux box cannot settle a Windows permission claim.
 

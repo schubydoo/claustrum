@@ -40,7 +40,7 @@ func pickSourceCommit(u gitUse, repo, source string) string {
 	if local == "" || remote == "" {
 		return local + remote // the one that resolved, or "" when neither did (one is always "")
 	}
-	if _, ok := hardenedGit(u, repo, false, "-c", "core.commitGraph=false", "merge-base", "--is-ancestor", local, remote); ok {
+	if _, ok := gitUnderLimits(u, repo, false, "-c", "core.commitGraph=false", "merge-base", "--is-ancestor", local, remote); ok {
 		return remote
 	}
 	// stdout only: see resolveCommit.
@@ -51,7 +51,7 @@ func pickSourceCommit(u gitUse, repo, source string) string {
 	args := append([]string{"-c", "core.commitGraph=false", "-c", "diff.relative=false",
 		"diff", "--quiet", "--no-ext-diff", "--no-textconv", "--submodule=short",
 		strings.TrimSpace(base), local, "--"}, claudeConfigPathspecs...)
-	if _, ok := hardenedGit(u, repo, false, args...); !ok {
+	if _, ok := gitUnderLimits(u, repo, false, args...); !ok {
 		return remote
 	}
 	return local

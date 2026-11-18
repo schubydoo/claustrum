@@ -882,7 +882,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 	writeFile(t, src, "new\n", 0o644)
 	doneWithin(t, "the reads after the add", func() {
 		registry = gitDirRegistryDir(gitDir)
-		_, refusal = createdRegistrationRefusal(gitDir, leaf, worktreeAdminDir(leaf))
+		_, refusal = createdRegistrationRefusal(gitDir, leaf, linkedGitDirOf(leaf))
 		record = readAdminRecord(reg, leaf)
 		mismatch = adminRecordMismatch(reg, leaf, true)
 		installErr = guardedInstallWorktreeIndex(src, reg, leaf, testedRegistration{})

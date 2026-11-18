@@ -39,10 +39,10 @@ func TestTidyKeepsARunDirWhenProcLocksCannotBeRead(t *testing.T) {
 			t.Fatal(err)
 		}
 		hcBackdate(t, e.dirPath, 40*24*time.Hour)
-		state, _, present := lockProbe(e.dirPath)
+		state, _, present := classifyLock(e.dirPath)
 		buf := captureLogBuf(t)
 		var sum hcSummary
-		(&hostCleaner{selfPid: os.Getpid()}).tidyRunDirs([]runDirEntry{e}, &sum)
+		(&hostCleaner{selfPid: os.Getpid()}).sweepRunFolders([]staleRunFolder{e}, &sum)
 		log := buf.String()
 
 		if readable {
@@ -52,7 +52,7 @@ func TestTidyKeepsARunDirWhenProcLocksCannotBeRead(t *testing.T) {
 			continue
 		}
 		if state != hcLockUnexamined || !present {
-			t.Errorf("lockProbe = %d present=%v, want %d (not examined) for a lock file that is there", state, present, hcLockUnexamined)
+			t.Errorf("classifyLock = %d present=%v, want %d (not examined) for a lock file that is there", state, present, hcLockUnexamined)
 		}
 		want := fmt.Sprintf("[hostclean] run dir %q unused for 40 days: kept, its daemon.lock could not be examined\n", e.dirPath)
 		if len(removed) != 0 || !hcDirThere(t, e.dirPath) || sum != (hcSummary{}) || !strings.Contains(log, want) || strings.Count(log, "\n") != 1 {
@@ -98,10 +98,10 @@ func TestRetireRefusesAStoppedDaemon(t *testing.T) {
 			mk(pid, "stat", hcStoppedStat(pid, "1"))
 		}
 		c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-		e := runDirEntry{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+		e := staleRunFolder{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
 
-		detail := c.verifyListener(pid, socket)
-		retired, reason := c.retireAbandoned(e, pid, 1000)
+		detail := c.listenerRefusal(pid, socket)
+		retired, reason := c.endIdleDaemon(e, pid, 1000)
 
 		if !stopped {
 			if detail != "" || holds != 1 || len(sent) != 1 || sent[0] != syscall.SIGTERM {
@@ -199,9 +199,9 @@ func TestBusyReadThatItsDeadlineEndedRefusesTheRetire(t *testing.T) {
 		if ended {
 			c.busyEnded = map[int]bool{pid: true}
 		}
-		e := runDirEntry{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+		e := staleRunFolder{name: "x", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
 
-		retired, reason := c.retireAbandoned(e, pid, 1000)
+		retired, reason := c.endIdleDaemon(e, pid, 1000)
 
 		if !ended {
 			if holds != 1 || len(sent) != 1 || sent[0] != syscall.SIGTERM {

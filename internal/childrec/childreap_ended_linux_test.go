@@ -123,15 +123,15 @@ func TestReapChildThatEndsOnSIGTERMIsReaped(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe, _ := helperCommand(t, "term-exit0-gate")
-	tg := reapTarget{pid: pid, start: start, name: strconv.Itoa(pid) + ".json",
-		rec: childRecord{Pid: pid, Start: start, Argv0: exe}}
+	tg := doomedChild{pid: pid, start: start, name: strconv.Itoa(pid) + ".json",
+		rec: spawnRecord{Pid: pid, Start: start, Argv0: exe}}
 	if err := os.WriteFile(filepath.Join(runDir, "children", tg.name), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	endChildBeforeRead(t, pid, "cmdline", end)
 
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if counts.signalled != 1 || counts.reapedGrace != 1 || counts.forgotten != 0 || counts.reapedEscalate != 0 || counts.survived != 0 {
 		t.Errorf("counts = %+v, want the one group counted as ended in the grace", counts)
@@ -166,8 +166,8 @@ func TestReapChildThatReplacesItsProgramGetsNoSIGKILL(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(runDir, "children"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	tg := reapTarget{pid: pid, start: start, name: strconv.Itoa(pid) + ".json",
-		rec: childRecord{Pid: pid, Start: start, Argv0: exe}}
+	tg := doomedChild{pid: pid, start: start, name: strconv.Itoa(pid) + ".json",
+		rec: spawnRecord{Pid: pid, Start: start, Argv0: exe}}
 	if err := os.WriteFile(filepath.Join(runDir, "children", tg.name), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestReapChildThatReplacesItsProgramGetsNoSIGKILL(t *testing.T) {
 	}
 
 	var counts reapCounts
-	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []reapTarget{tg}, &counts) })
+	out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
 
 	if len(kills) != 1 || kills[0] != (killRec{pid, syscall.SIGTERM}) {
 		t.Errorf("signals = %v, want one SIGTERM to the group of the child and nothing more", kills)

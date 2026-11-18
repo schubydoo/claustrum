@@ -18,14 +18,14 @@ import (
 
 // pipeConn builds a conn over one end of a net.Pipe and returns the stream frames
 // that reach the other end.
-func pipeConn(t *testing.T) (*conn.Conn, <-chan supervisor.StreamFrame) {
+func pipeConn(t *testing.T) (*conn.Conn, <-chan supervisor.ChildFrame) {
 	t.Helper()
 	client, server := net.Pipe()
-	frames := make(chan supervisor.StreamFrame, 64)
+	frames := make(chan supervisor.ChildFrame, 64)
 	go func() {
 		sc := bufio.NewScanner(server)
 		for sc.Scan() {
-			var f supervisor.StreamFrame
+			var f supervisor.ChildFrame
 			if err := json.Unmarshal(sc.Bytes(), &f); err == nil {
 				frames <- f
 			}
@@ -36,7 +36,7 @@ func pipeConn(t *testing.T) (*conn.Conn, <-chan supervisor.StreamFrame) {
 }
 
 // firstStdout returns the decoded data of the first stdout frame, trimmed.
-func firstStdout(t *testing.T, ch <-chan supervisor.StreamFrame) string {
+func firstStdout(t *testing.T, ch <-chan supervisor.ChildFrame) string {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
 	for {

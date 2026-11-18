@@ -269,7 +269,7 @@ func TestRelativeAdminDirThroughSymlink(t *testing.T) {
 	}
 	sent := filepath.Join(deep, "link", "w1")
 
-	if err := installWorktreeIndex(src, absoluteAdminDir(sent, worktreeAdminDir(sent))); err != nil {
+	if err := installWorktreeIndex(src, absoluteAdminDir(sent, linkedGitDirOf(sent))); err != nil {
 		t.Fatalf("installWorktreeIndex: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(reg, "index")); err != nil {

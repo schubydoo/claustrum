@@ -15,7 +15,7 @@ import (
 
 // The linux-specific half of the orphan reap: it reads a live process from /proc and
 // gathers this daemon's node/host identity from the linux sources. The shared decision
-// logic (ReapOrphans, verifyOrphan, the two-phase wait) lives in childreap.go.
+// logic (EndLeftoverChildren, checkRecordOwnWords, the two-phase wait) lives in childreap.go.
 
 // procReadFile reads one file of a /proc/<pid> folder. A var so a test can let the
 // process end between two reads of one realReadLiveProc call.
@@ -77,7 +77,7 @@ func pidNamespace(proc string) (state int, why string) {
 // Linux). Every other read error gives procUnknown, which is claustrum's own, not
 // measured.
 //
-// daemonAlive reads both states of a recorded daemon as alive. `5fd08069` keeps the
+// recordedDaemonLives reads both states of a recorded daemon as alive. `5fd08069` keeps the
 // record of the child and sends no signal for a daemon stat that is a folder, has
 // mode 000 or does not parse (measured on Linux).
 func realReadLiveProc(pid int, wantEnv bool) liveProc {

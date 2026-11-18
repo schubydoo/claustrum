@@ -22,15 +22,15 @@ import (
 // removes anything outside a temp dir.
 //
 // One arm of hostclean.go is deliberately left uncovered, because no fixture can reach it
-// rather than because no test was written: runDirs' name == "." || ".." skip.
+// rather than because no test was written: listRunFolders' name == "." || ".." skip.
 // Readdirnames never yields those entries.
 //
-// retireAbandoned's hcSettledBusy arm used to be listed here as well. It is reachable
+// endIdleDaemon's hcSettledBusy arm used to be listed here as well. It is reachable
 // now: hcSettledBusy is one shared implementation that samples for real on linux too, so
 // TestRetireAbandonedSparesABusyDaemon drives that branch.
 
 // hcRetireFixture seams a live-then-dead socket and a signal that "replaces" the daemon's pid,
-// so retireAbandoned can succeed repeatedly. It returns the pid the fake peer reports.
+// so endIdleDaemon can succeed repeatedly. It returns the pid the fake peer reports.
 func hcRetireFixture(t *testing.T, proot string, mk func(int, string, string), link func(int, string, string), socketArgv string) int {
 	t.Helper()
 	self := os.Getpid()
@@ -48,7 +48,7 @@ func hcRetireFixture(t *testing.T, proot string, mk func(int, string, string), l
 	rounds := 0
 	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error {
 		// The daemon exits and its pid is taken by something else: the tracked identity no
-		// longer matches, which is how waitGone reports it gone.
+		// longer matches, which is how awaitLeaderExit reports it gone.
 		rounds++
 		mk(pid, "stat", hcRunningStat(pid, 1, pid, strconv.Itoa(100+rounds)))
 		return nil
@@ -81,7 +81,7 @@ func TestTidyRunDirsRetiresAnAnsweringDaemon(t *testing.T) {
 	hcRemoveAll = func(_ *os.Root, p string) error { removed = append(removed, p); return nil }
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 
 	if sum.daemonsRetired != 1 {
 		t.Errorf("daemonsRetired = %d, want 1", sum.daemonsRetired)
@@ -96,7 +96,7 @@ func TestTidyRunDirsRetiresAnAnsweringDaemon(t *testing.T) {
 func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
-	// The answering process serves a DIFFERENT socket, so verifyListener refuses it.
+	// The answering process serves a DIFFERENT socket, so listenerRefusal refuses it.
 	hcRetireFixture(t, proot, mk, link, "/opt/claude/run/other/rpc.sock")
 
 	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
@@ -109,7 +109,7 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{hcNewEntry(t, "x", 40*24*time.Hour)}, &sum)
+	c.sweepRunFolders([]staleRunFolder{hcNewEntry(t, "x", 40*24*time.Hour)}, &sum)
 
 	if sum.daemonsRetired != 0 || sum.runDirsRemoved != 0 {
 		t.Errorf("summary = %+v, want no retire and no removal", sum)
@@ -151,14 +151,14 @@ func TestTidyRunDirsStopsAtTheRetireBudget(t *testing.T) {
 
 	// Every entry names the same socket (the same fake daemon answers each time), which is
 	// what lets one fixture stand in for a host with many abandoned run dirs.
-	var entries []runDirEntry
+	var entries []staleRunFolder
 	for i := 0; i < hcMaxRetire+1; i++ {
 		e := hcEntry(t, runRoot, root, fmt.Sprintf("d%d", i), 40*24*time.Hour)
 		e.socket = socket
 		entries = append(entries, e)
 	}
 	var sum hcSummary
-	c.tidyRunDirs(entries, &sum)
+	c.sweepRunFolders(entries, &sum)
 
 	if sum.daemonsRetired != hcMaxRetire {
 		t.Errorf("daemonsRetired = %d, want the budget of %d", sum.daemonsRetired, hcMaxRetire)
@@ -191,12 +191,12 @@ func TestTidyRunDirsBudgetCountsAttempts(t *testing.T) {
 	buf := captureLogBuf(t)
 
 	runRoot, root := hcRunRoot(t)
-	var entries []runDirEntry
+	var entries []staleRunFolder
 	for i := 0; i < hcMaxRetire+1; i++ {
 		entries = append(entries, hcEntry(t, runRoot, root, fmt.Sprintf("d%d", i), 40*24*time.Hour))
 	}
 	var sum hcSummary
-	c.tidyRunDirs(entries, &sum)
+	c.sweepRunFolders(entries, &sum)
 
 	if dials != hcMaxRetire {
 		t.Errorf("dials = %d, want %d: the ninth dir is not probed once eight attempts failed", dials, hcMaxRetire)
@@ -283,7 +283,7 @@ func TestUndoRenameFailureIsLogged(t *testing.T) {
 
 	var sum hcSummary
 	e := hcNewEntry(t, "x", 40*24*time.Hour)
-	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	c.sweepRunFolders([]staleRunFolder{e}, &sum)
 
 	if removed != 0 || sum.runDirsRemoved != 0 {
 		t.Errorf("the dir was removed although a socket appeared (removed=%d)", removed)

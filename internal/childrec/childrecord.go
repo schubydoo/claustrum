@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// childRecord is the per-spawn orphan-registry record the daemon writes to
+// spawnRecord is the per-spawn orphan-registry record the daemon writes to
 // <runDir>/children/<pid>.json (reference build 19f30c46). A later daemon's
 // orphan-reap step reads these to decide whether a leftover child of a since-exited
 // daemon is an orphan to end. The field ORDER and the string-vs-number typing are the
@@ -17,7 +17,7 @@ import (
 // fixed, non-key-sorted order, with daemonStart and start as clock-tick STRINGS and
 // pid, daemonPid and at as numbers. It is an ordered struct, never a map, for the same
 // reason the wire results are.
-type childRecord struct {
+type spawnRecord struct {
 	Pid         int    `json:"pid"`
 	Node        string `json:"node"`
 	Host        string `json:"host"`
@@ -72,7 +72,7 @@ var recordTempMade = func() {}
 //
 // Uses encoding/json.Marshal, whose HTML escaping is inherited wire behaviour (see
 // docs/ARCHITECTURE.md), so the observable record bytes match 19f30c46's.
-func writeChildRecordIn(root *os.Root, rec childRecord) error {
+func writeChildRecordIn(root *os.Root, rec spawnRecord) error {
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return err

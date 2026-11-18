@@ -39,22 +39,22 @@ func TestStartTextWithTwoBlanksDoesNotMatch(t *testing.T) {
 	})
 
 	// The control: a record of this build verifies.
-	rec := childRecord{Pid: pid, Start: one, Argv0: "/f/bin/sigstub"}
-	if v, reason := verifyOrphan(rec, runDir, simOwnDaemon, simOwnParent, simOwnPgid); v != verdictReap {
+	rec := spawnRecord{Pid: pid, Start: one, Argv0: "/f/bin/sigstub"}
+	if v, reason := checkRecordOwnWords(rec, runDir, simOwnDaemon, simOwnParent, simOwnPgid); v != verdictReap {
 		t.Fatalf("one-blank record: verdict %d (%q), want reap", v, reason)
 	}
-	old := childRecord{Pid: pid, Start: two, Argv0: "/f/bin/sigstub"}
-	if v, reason := verifyOrphan(old, runDir, simOwnDaemon, simOwnParent, simOwnPgid); v != verdictSkip || reason != "the pid was reused" {
+	old := spawnRecord{Pid: pid, Start: two, Argv0: "/f/bin/sigstub"}
+	if v, reason := checkRecordOwnWords(old, runDir, simOwnDaemon, simOwnParent, simOwnPgid); v != verdictSkip || reason != "the pid was reused" {
 		t.Errorf("two-blank record: verdict %d (%q), want the reuse skip", v, reason)
 	}
-	if daemonAlive(daemon, two, simOwnDaemon) {
+	if recordedDaemonLives(daemon, two, simOwnDaemon) {
 		t.Error("a live daemon with a two-blank record reads as alive, want gone")
 	}
-	if !daemonAlive(daemon, one, simOwnDaemon) {
+	if !recordedDaemonLives(daemon, one, simOwnDaemon) {
 		t.Error("a live daemon with a one-blank record reads as gone")
 	}
-	if v, _ := sameLeader(pid, two); v != verdictSkip {
-		t.Errorf("sameLeader with a two-blank start = %d, want skip", v)
+	if v, _ := leaderStillMatches(pid, two); v != verdictSkip {
+		t.Errorf("leaderStillMatches with a two-blank start = %d, want skip", v)
 	}
 }
 
@@ -67,8 +67,8 @@ func TestStartTextMarkerWithTwoBlanksDoesNotMatch(t *testing.T) {
 		pid: {state: procAlive, startTicks: one, pgid: pid, program: "/f/bin/sigstub",
 			runDir: runDir, childMark: strconv.Itoa(pid) + ":" + two},
 	})
-	rec := childRecord{Pid: pid, Start: one, Argv0: "/f/bin/sigstub"}
-	if v, reason := verifyOrphan(rec, runDir, simOwnDaemon, simOwnParent, simOwnPgid); v != verdictSkip || reason != "process was not started directly by a daemon" {
+	rec := spawnRecord{Pid: pid, Start: one, Argv0: "/f/bin/sigstub"}
+	if v, reason := checkRecordOwnWords(rec, runDir, simOwnDaemon, simOwnParent, simOwnPgid); v != verdictSkip || reason != "process was not started directly by a daemon" {
 		t.Errorf("two-blank marker: verdict %d (%q), want the not-started-by-a-daemon skip", v, reason)
 	}
 }
