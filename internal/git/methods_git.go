@@ -1220,6 +1220,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
+		// A `.git` folder on a network share that git does not use (shareGitDir).
+		if g := shareGitDir(repo); g != "" && req.gitRefused {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: fmt.Sprintf(unusableGitText, g), ErrorCode: "worktree_add_failed"})
+		}
 		return notARepoResult(req.ID, repo)
 	}
 	// The create holds the git directory that its gate accepted until it answers
@@ -3460,6 +3464,14 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			// exists and every other length keep the refusal (claustrum's own,
 			// not measured).
 			return keptAll()
+		} else if noRepo && shareGitDir(repo) != "" {
+			// A `.git` folder on a network share that git does not use gets success,
+			// and nothing is deleted (shareGitDir). This noRepo is the answer of
+			// askGit, since a daemon GIT_DIR to a missing path answered above. No
+			// lock is checked. A locked registration in the share, the local drive
+			// or the 8.3 spelling gets success, and the lock, the registration and
+			// the branch stay (4c111e86, measured on Windows).
+			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
@@ -3531,18 +3543,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			probe = newRegistrationProbe(req.use, answered, inRepoWorkTree(repo))
 			probe.pairIfWorktreesDir(commonDir)
 		}
-		// The baseRepo part of the path is also matched in its resolved form, and the
-		// rest as sent. So a baseRepo sent in 8.3 form or through a junction still finds
-		// a locked registration when the worktree and its parent are gone (measured on
-		// Windows). A present worktree does not get this spelling, so an 8.3 leaf keeps
-		// its entry (measured).
-		underBase := ""
-		if p.WorktreeRoot == "" {
-			if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.IsLocal(rel) {
-				underBase = filepath.Join(pathcanon.FinalDir(repo), rel)
-			}
-		}
-		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
+		sp := goneWorktreePathSet(p, repo, path)
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (measured
 		// on Linux, macOS and Windows, and with worktreeRoot on Linux). On Windows c9125eb8
@@ -3582,6 +3583,22 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 	// for-each-ref fails, and the branch counts as kept (measured).
 	kept := runBranchStep(req.use, repo, p.BranchName).kept()
 	return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
+}
+
+// goneWorktreePathSet is the set of spellings that the lock tests of a gone
+// worktree match. The baseRepo part of the path is also matched in its resolved
+// form, and the rest as sent. So a baseRepo sent in 8.3 form or through a junction
+// still finds a locked registration when the worktree and its parent are gone
+// (measured on Windows). A present worktree does not get this spelling, so an 8.3
+// leaf keeps its entry (measured).
+func goneWorktreePathSet(p *gitParams, repo, path string) worktreePathSet {
+	underBase := ""
+	if p.WorktreeRoot == "" {
+		if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.IsLocal(rel) {
+			underBase = filepath.Join(pathcanon.FinalDir(repo), rel)
+		}
+	}
+	return newWorktreePathSet(path, p.WorktreePath, underBase)
 }
 
 // worktreeRemoveHomeRefusal is the home guard of git.worktree_remove (D2). It refuses a
