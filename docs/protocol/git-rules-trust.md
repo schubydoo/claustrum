@@ -446,7 +446,7 @@ On Windows these refuse the repository path of all five methods with no git call
 - Share denying every account: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 
-`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms and a share root pass, a forward slash separates, and `UNC` ignores letter case. Also claustrum's own, not measured: `ERROR_NETWORK_ACCESS_DENIED` as denied, a junction or link above the last name, a refused `"shadowDirOff":true` request and the place of the test first.
+`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the parent of `<path>` (claustrum's own for a deeper path). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root and an unreachable host pass, and a forward slash separates. Also claustrum's own, not measured: `UNC` in any letter case, `ERROR_NETWORK_ACCESS_DENIED` as denied, and a junction or link above the last name. A refused `"shadowDirOff":true` request and the place of the test first are claustrum's own, not measured, too.
 
 ## A FIFO where the daemon reads a git file
 
@@ -483,11 +483,10 @@ git that walks past a FIFO `.git`:
   create in that repository waits in git's own `git worktree add`. It also waits
   with `timeoutMs` 3000 (measured on Linux only).
 
-The [time limit](git-rules-calls.md#time-limits-of-git-calls) of the add ends that create (from the
-code). A device file or a socket as a `commondir` file or a `gitdir` record is no
-usable file (from the code). claustrum reads nothing from a FIFO that a writer
-opens during the request (from the code). After `git worktree add`, a `commondir`
+The [time limit](git-rules-calls.md#time-limits-of-git-calls) of the add ends that create. A device file or a socket as a `commondir` file or a `gitdir` record is no
+usable file. claustrum reads nothing from a FIFO that a writer
+opens during the request. After `git worktree add`, a `commondir`
 of the git directory of `baseRepo` that is not a regular file counts as none, so
-that git directory is its own common directory (from the code). A FIFO as the
+that git directory is its own common directory (all from the code). A FIFO as the
 config is in
 [config refusals](git-rules-config.md#repository-config-refusals).
