@@ -82,10 +82,10 @@ form a driver sees:
 - `download failed: response exceeds <n> bytes`: D10 cap on the download body, opt-in
 - `download failed: <transport err>`: a transport error before the body, for example a refused connection. The prefix `download failed: ` also wraps every other download error that has no bare form in this table
 - `download failed: Get "<url>": net/http: timeout awaiting response headers`: no response headers for 60 s (always-on, parity)
-- `download interrupted after <got>/<total> bytes: <transport err>`: a body read with a `Content-Length` that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity)
+- `download interrupted after <got>/<total> bytes: <transport err>`: a body read with a `Content-Length` that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, measured on Linux)
 - `download interrupted after <got> bytes: <transport err>`: the same for a body with no length. The chunked cut (`unexpected EOF`) is `b3081b51`, measured on Linux. A reset there is claustrum's own, not measured
 - `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)`: D12 download deadline, opt-in
-- `download stalled: no data for 60s after <got>/<total> bytes`: the read-idle abort of the `-cli-url` body (always-on, parity)
+- `download stalled: no data for 60s after <got>/<total> bytes`: the read-idle abort below (always-on, parity)
 - `mkdir cli dir: <err>`: cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup)
 - `cli version "…" must be a single path component`: D6 hardening
 - `cli path must not be or contain the home directory: "<path>"`: D2 hardening (see Staging and cleanup)
