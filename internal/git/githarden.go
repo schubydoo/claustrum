@@ -1461,9 +1461,9 @@ var (
 // The reread is how claustrum gives that line. On Windows 4c111e86 makes that one
 // read after a git appears (measured).
 //
-// While the check of session folders is off, a read is kept for that time off only
-// (claustrum's own, not measured, docs/protocol/git-rules-session-folders.md, the
-// off switch). A stored result
+// While the check of session folders is off, a read is kept for that time off only.
+// The marks of each part are in the off switch section of
+// docs/protocol/git-rules-session-folders.md. A stored result
 // serves a time off too (4c111e86, measured on Linux).
 func globalExcludesPath() string {
 	userExcludesMu.Lock()
@@ -1522,7 +1522,7 @@ func globalExcludesPath() string {
 // `config --includes --path` follows includes and expands a leading ~, matching the
 // reference. It runs WITHOUT the hardening profile so git reports the real global
 // setting, not the pin. The read is kept for the daemon, or under the off switch for
-// that time off only (claustrum's own, not measured, see globalExcludesPath). So it
+// that time off only (see globalExcludesPath and its marks). So it
 // has no time limit of a request. GIT_DIR=<null device> makes it read only the
 // user's global and system config, never a repo's own core.excludesFile. A repo
 // must not be able to inject excludes. 683cc6a9 makes one read too and looks up the default file on each
