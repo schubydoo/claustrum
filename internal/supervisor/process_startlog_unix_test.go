@@ -72,7 +72,7 @@ func TestExitLineAfterClientKill(t *testing.T) {
 // waits when the shutdown sweep ends it: killedBy and the exit frame say shutdown,
 // not client (an older build, measured on Linux in the log). The child ignores TERM,
 // so the killAndWait waits. On Linux a child that the shutdown ends logs its exited
-// line with "(shutdown)", as c9125eb8 and 4c111e86 do. On macOS 4c111e86 logs none.
+// line with "(shutdown)", as c9125eb8 and 4c111e86 do. On macOS 4c111e86 logs almost none.
 func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 	logs := captureLogBuf(t)
 	m := newTestProcManager(t)
@@ -376,9 +376,9 @@ func checkShutdownExitLine(t *testing.T, logs, line string) {
 
 // TestShutdownExitQuietBySystem pins the switch of each system and both of its
 // values. On Linux a child that the shutdown sweep ended logs its exited line
-// (c9125eb8 and 4c111e86, measured on Linux). On macOS it logs none (4c111e86,
+// (c9125eb8 and 4c111e86, measured on Linux). On macOS it logs almost none (4c111e86,
 // measured on macOS). A sent temp_root SIGTERM drops the line on both (4c111e86,
-// measured on Linux).
+// measured on Linux, and macOS is claustrum's own).
 func TestShutdownExitQuietBySystem(t *testing.T) {
 	want := map[string]bool{"linux": false, "darwin": true}
 	if w, ok := want[runtime.GOOS]; ok && quietEveryShutdownExit != w {

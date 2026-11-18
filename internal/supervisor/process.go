@@ -1421,9 +1421,10 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	sigName := sysproc.ExitSignalName(err)
 	// On Linux only, a child that the shutdown sweep ended logs its exited line.
 	// 4c111e86 logs it with "(shutdown)", and its exit race loses some lines (measured
-	// on Linux). On macOS it stays quiet (4c111e86, measured on macOS). On Linux and macOS one whose
-	// temp-root end still ran logs none (4c111e86, measured on Linux). claustrum's own,
-	// not measured: Windows, and a stream-json child that the sweep sent SIGTERM.
+	// on Linux). On macOS it logs almost none (4c111e86, measured on macOS). On Linux
+	// one whose temp-root end still ran logs none (4c111e86, measured on Linux). On
+	// macOS that case is claustrum's own, and quiet anyway. claustrum's own, not
+	// measured: Windows, and a stream-json child that the sweep sent SIGTERM.
 	if !quiet {
 		logging.Infof(FmtProcExited, LogID(p.id), code, exitLogSuffix(sigName, killedBy))
 	}

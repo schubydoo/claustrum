@@ -632,14 +632,14 @@ These line rules are claustrum's own unless an item names a build. `89cb6289` an
 
 The levels of these lines are claustrum's own. Unless an item says otherwise, each text is that of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
-- A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (`c9125eb8`, measured on Linux, macOS and Windows). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux).
+- A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (`c9125eb8`, measured on Linux, macOS and Windows). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux). On Linux start lines come after `[Server] shutdown requested` (`4c111e86`, measured on Linux).
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the error frame's text
-- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (`52d82f0a`, measured on Linux and macOS for `client`). On Linux start lines come after `[Server] shutdown requested`, and a child that the shutdown ends logs it with `(shutdown)` (`4c111e86`, measured on Linux). The exit race loses some lines. On macOS it logs none (`4c111e86`, measured on macOS). A child whose temp-folder end runs logs none (`4c111e86`, measured on Linux). On Windows the line stays (claustrum's own, not measured)
+- An exit (INFO): `[process.Manager] Process <id> exited with code <n>`, then `, terminated by <signal>` for a signal and `, asked to end by this daemon (<label>)` for a daemon kill (`52d82f0a`, measured on Linux and macOS for `client`). On Linux a child that the shutdown ends logs this line with `(shutdown)` (`4c111e86`, measured on Linux). The exit race loses some lines. On macOS such a child logs almost none (`4c111e86`, measured on macOS). A child whose temp-folder end runs logs none (`4c111e86`, measured on Linux). On Windows the line stays (claustrum's own, not measured)
 - A bad `process.kill` farewell (INFO): `[process] kill <id>: its farewell is not said: <rule>` (same build and systems)
 - A refused `process.killAndWait` (WARN): `[process.Manager] KillAndWait <id>: signal terminated failed: <error>`, `group kill failed: <error>` and `still running 7s after SIGKILL (D-state?)` (`52d82f0a`, measured on Linux and macOS)
 - A refused signal (WARN): `[signal] refused a signal to pid <n>: a pid below 2 is never a child`, from `sysproc.KillChildGroup`, `sysproc.ReapProcessGroup`, `procinfo.KillGroup` and `supervisor.SignalProcessGroup`. The same text is the error of a refused `process.kill` (claustrum's own, not measured)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
-- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS). For a missing folder, `open` names its nearest existing parent folder (claustrum's own, not measured).
+- Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS). For a missing folder, `open` names its nearest existing parent (claustrum's own, not measured).
 - A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once from the spawn that started the test (claustrum's own, not measured)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
@@ -656,7 +656,7 @@ The levels of these lines are claustrum's own. Unless an item says otherwise, ea
 - A group fails the test (INFO): `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it`
 - The reap summary (INFO): `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`
 
-At a shutdown the exit line can be missing. A reap that sent no `SIGTERM` and kept no record writes no summary.
+A reap that sent no `SIGTERM` and kept no record writes no summary.
 
 The main `<reason>` texts of a dropped record and of a group that fails the test are these:
 
