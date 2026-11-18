@@ -308,7 +308,7 @@ func TestReapLines(t *testing.T) {
 	writeRec(t, runDir, orphanRecord(onKill, "/f/bin/sigstub", ""))
 	writeRec(t, runDir, orphanRecord(dropped, "/nonexistent/other", ""))
 	// A record whose owning daemon is alive stays.
-	writeRec(t, runDir, childRecord{Pid: kept, Node: node, Host: host, Instance: "inst-live",
+	writeRec(t, runDir, spawnRecord{Pid: kept, Node: node, Host: host, Instance: "inst-live",
 		DaemonPid: owner, DaemonStart: "50", Argv0: "/f/bin/sigstub", Start: "9000", At: time.Now().UnixMilli()})
 	sim := newProcSim(t)
 	liveOrphan(sim, onTerm, runDir, syscall.SIGTERM)
@@ -351,7 +351,7 @@ func TestReapSummaryOfASweepThatOnlyKeeps(t *testing.T) {
 	}
 	runDir := t.TempDir()
 	const kept, owner = 800005101, 800005102
-	name := writeRec(t, runDir, childRecord{Pid: kept, Node: node, Host: host, Instance: "inst-live",
+	name := writeRec(t, runDir, spawnRecord{Pid: kept, Node: node, Host: host, Instance: "inst-live",
 		DaemonPid: owner, DaemonStart: "50", Argv0: "/f/bin/sigstub", Start: "9000", At: time.Now().UnixMilli()})
 	sim := newProcSim(t)
 	sim.live[owner] = &liveProc{state: procAlive, startTicks: "50", pgid: owner}
@@ -378,7 +378,7 @@ func TestReapRecordLineReasons(t *testing.T) {
 	mark := strconv.Itoa(pid) + ":9000"
 	for _, tc := range []struct {
 		name   string
-		rec    func(*childRecord)
+		rec    func(*spawnRecord)
 		live   func(lp *liveProc, runDir string)
 		reason string
 	}{
@@ -390,13 +390,13 @@ func TestReapRecordLineReasons(t *testing.T) {
 			"it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it"},
 		{"the child mark names another pid", nil, func(lp *liveProc, _ string) { lp.childMark = "999:9000" },
 			"it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)"},
-		{"another program", func(r *childRecord) { r.Argv0 = "/nonexistent/other" }, nil,
+		{"another program", func(r *spawnRecord) { r.Argv0 = "/nonexistent/other" }, nil,
 			`it does not run the recorded program "/nonexistent/other"`},
-		{"another program and a program key", func(r *childRecord) { r.Argv0, r.Program = "/nonexistent/other", "/tmp/e/bin/../bin/target" }, nil,
+		{"another program and a program key", func(r *spawnRecord) { r.Argv0, r.Program = "/nonexistent/other", "/tmp/e/bin/../bin/target" }, nil,
 			`it does not run the recorded program "/nonexistent/other" and neither runs nor was handed "/tmp/e/bin/../bin/target"`},
-		{"no program in the record", func(r *childRecord) { r.Argv0 = "" }, nil,
+		{"no program in the record", func(r *spawnRecord) { r.Argv0 = "" }, nil,
 			"the record names no program to verify against"},
-		{"another start", func(r *childRecord) { r.Start = "9001" }, nil,
+		{"another start", func(r *spawnRecord) { r.Start = "9001" }, nil,
 			`it did not start at the recorded "9001": the pid has been reused`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

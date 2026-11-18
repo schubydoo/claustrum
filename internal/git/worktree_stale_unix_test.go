@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// resolveAsFarAsExists returns the canonical path directly when the path exists
+// canonicalExistingPrefix returns the canonical path directly when the path exists
 // and contains a symlink (the fast path, before any ancestor-splitting).
 func TestResolveAsFarAsExistsExistingSymlink(t *testing.T) {
 	dir := t.TempDir()
@@ -20,8 +20,8 @@ func TestResolveAsFarAsExistsExistingSymlink(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("symlink: %v", err)
 	}
-	if got, want := resolveAsFarAsExists(link), canonicalPath(real); got != want {
-		t.Errorf("resolveAsFarAsExists(link) = %q, want %q", got, want)
+	if got, want := canonicalExistingPrefix(link), canonicalPath(real); got != want {
+		t.Errorf("canonicalExistingPrefix(link) = %q, want %q", got, want)
 	}
 }
 

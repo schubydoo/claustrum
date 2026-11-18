@@ -164,7 +164,7 @@ func inheritedConfigProblem(env []string) (int, string) {
 // git methods make. It runs the excludes read first. It returns the whole refusal
 // text and true when the count or one of its pairs is refused.
 func daemonCountRefusal() (string, bool) {
-	userExcludesFile()
+	globalExcludesPath()
 	if _, text := inheritedConfigProblem(os.Environ()); text != "" {
 		return hooksPinPrefix + text, true
 	}

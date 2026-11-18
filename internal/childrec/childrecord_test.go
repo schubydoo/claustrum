@@ -14,7 +14,7 @@ import (
 // writeChildRecord writes rec below runDir the way the daemon does: through an os.Root
 // of the run dir. The daemon holds that root open for its whole life. A test opens it
 // for the one write.
-func writeChildRecord(runDir string, rec childRecord) error {
+func writeChildRecord(runDir string, rec spawnRecord) error {
 	root, err := os.OpenRoot(runDir)
 	if err != nil {
 		return err
@@ -41,7 +41,7 @@ func TestChildRecordTempName(t *testing.T) {
 	var used string
 	childRecordTempName = func(pid int) string { used = old(pid); return used }
 
-	if err := writeChildRecord(runDir, childRecord{Pid: 4242, Start: "1", Argv0: "a"}); err != nil {
+	if err := writeChildRecord(runDir, spawnRecord{Pid: 4242, Start: "1", Argv0: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	if !regexp.MustCompile(`^children/\.rec-4242\.json\.[0-9a-z]{12}$`).MatchString(used) {
@@ -52,20 +52,20 @@ func TestChildRecordTempName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(children, 0o700) })
-	err := writeChildRecord(runDir, childRecord{Pid: 4242, Start: "1", Argv0: "a"})
+	err := writeChildRecord(runDir, spawnRecord{Pid: 4242, Start: "1", Argv0: "a"})
 	if err == nil || !regexp.MustCompile(`^openat children/\.rec-4242\.json\.[0-9a-z]{12}: permission denied$`).MatchString(err.Error()) {
 		t.Errorf("error = %v, want openat children/.rec-4242.json.<12 chars>: permission denied", err)
 	}
 }
 
-// TestWriteChildRecord pins the on-disk childRecord contract: the exact field ORDER
+// TestWriteChildRecord pins the on-disk spawnRecord contract: the exact field ORDER
 // and the string-vs-number typing measured byte-for-byte against 19f30c46 (daemonStart
 // and start are tick STRINGS; pid, daemonPid and at are numbers). A reordered struct
 // field or a string/number swap changes these bytes and fails here. It also checks the
 // write is atomic (no temp file left behind) and the children dir is 0700.
 func TestWriteChildRecord(t *testing.T) {
 	runDir := t.TempDir()
-	rec := childRecord{
+	rec := spawnRecord{
 		Pid:         4242,
 		Node:        "boot-uuid/pid:[4026531836]",
 		Host:        "machine-id:0123456789abcdef0123456789abcdef",
@@ -85,7 +85,7 @@ func TestWriteChildRecord(t *testing.T) {
 		t.Fatalf("read record: %v", err)
 	}
 	if string(got) != want {
-		t.Errorf("childRecord bytes:\n got=%s\nwant=%s", got, want)
+		t.Errorf("spawnRecord bytes:\n got=%s\nwant=%s", got, want)
 	}
 	// Atomic: the rename leaves only the final file, no temp.
 	ents, err := os.ReadDir(filepath.Join(runDir, "children"))
@@ -116,7 +116,7 @@ func TestWriteChildRecord(t *testing.T) {
 // as root. The remaining error branches (json.Marshal of this plain struct, and the
 // write to a freshly-made temp) do not fail on any input a test can honestly produce.
 func TestWriteChildRecordErrors(t *testing.T) {
-	rec := childRecord{Pid: 4242, Node: "n", Host: "h", Instance: "i", DaemonPid: 1, DaemonStart: "1", Argv0: "a", Start: "2", At: 3}
+	rec := spawnRecord{Pid: 4242, Node: "n", Host: "h", Instance: "i", DaemonPid: 1, DaemonStart: "1", Argv0: "a", Start: "2", At: 3}
 
 	t.Run("mkdir children fails", func(t *testing.T) {
 		runDir := t.TempDir()

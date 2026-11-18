@@ -190,9 +190,7 @@ These items stay open:
 - On Windows `files.realpath` through a junction still differs from `4c111e86` and
   `c9125eb8`. Two Windows texts still differ from `4c111e86` and `c9125eb8`: a remove
   with a dangling `commondir` junction, and a create on an unborn `HEAD`.
-- Some replies still differ from `4c111e86`. On Linux one is the text for a launcher, or
-  a folder above it, that other accounts can write. Another is a `cliTempRoot` string or
-  object with no `gitRead`. On macOS, a `processWrapper` number and `git.status` with
+- Some replies still differ from `4c111e86`. On macOS, a `processWrapper` number and `git.status` with
   only session-folder gits on the `PATH` differ. On Windows, a create and a remove on a
   share whose `.git` git cannot use differ. On Linux, near the `timeoutMs` cut, the seed
   of a Git LFS object can end on the other side of the cut.
@@ -371,7 +369,7 @@ usable `/proc` logs one start-time line and writes no child record (PR 811, meas
 Linux).
 
 **How it was bounded.** Each item above was measured side by side with `683cc6a9` on the
-systems named. A validation round on Linux, macOS and Windows compared claustrum with
+systems named. A validation run on Linux, macOS and Windows compared claustrum with
 `be1c1ca5`.
 
 **Divergences.** D2 and D24 cover the staged add. A D10 cap that fires before the disk
@@ -514,7 +512,7 @@ claustrum `6972043d` beside this build on Linux, macOS and Windows VMs. On Linux
 and macOS only the `server.capabilities` reply differed. PR 779 closed that after
 the battery, and no VM ran claustrum with PRs 779 to 781. On Windows 29 of 30
 streams were equal, and `plugins.prune` differed (see below). The Windows battery
-sent no `server.capabilities`. Areas outside these rounds
+sent no `server.capabilities`. Areas outside these runs
 are not measured on this build.
 
 **Divergences.** [CT-2](DIVERGENCES.md#ct-2) now covers a child with a pending
@@ -579,15 +577,15 @@ the `ldd` probe, and PR 749 the environment filter of the git calls. PR 753 sets
 the connection log lines, and PR 757 the git calls outside a repository. PR 754
 marks those rules so on the pages.
 
-**Older gaps closed.** Two fixes of the same work are for behavior that VM rounds
+**Older gaps closed.** Two fixes of the same work are for behavior that VM runs
 measured on `5fd08069` (Linux VM). Before an owner probe, PR 756 cleans the
 `.probe` folder. If it cannot prepare that folder, it refuses. If the
 shutdown sweep ends a child that a `process.killAndWait` waits for, PR 760
 labels the kill `shutdown`.
 
 **How it was bounded.** Each item of the wire delta was measured side by side
-with `5fd08069` on the systems that its tag names. A round on Linux, macOS and
-Windows VMs compared the `server.capabilities` reply. Areas outside these rounds
+with `5fd08069` on the systems that its tag names. A run on Linux, macOS and
+Windows VMs compared the `server.capabilities` reply. Areas outside these runs
 are not measured on this build.
 
 Two items stay open:
@@ -637,54 +635,51 @@ below).
 
 **How it was bounded.** The slices were measured side by side on Linux, macOS
 and Windows VMs. The final check of the whole build ran the full comparison
-battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas
-(rounds `task082-01` to `task082-03`). Its one frame difference was a
+battery on the Linux VM. On the macOS and Windows VMs it ran the changed areas.
+Its one frame difference was a
 `git.info` on a folder with no repository during the first start test. PR 596
-closed it, and the off switch during a `git.info` with it (rounds `task103-01`
-to `task103-06`).
+closed it, and the off switch during a `git.info` with it.
 
-In round `val-s3p2b2-5` 109 requests of the `val-s3p2b1` cells and 77 requests
-of newer cells ran with the order of the variables (Linux VM). The calls differ
+In one run 109 earlier requests and 77 newer requests
+ran with the order of the variables (Linux VM). The calls differ
 there in two kinds of place: the differences that stay, and the rows that the
-last edits of the copy follow. On the macOS VM 124 of 177 cells have no call
-that differs. The reply of claustrum to cell X2 of round `task077-03` is
-byte-equal in rounds `task077-04` to `task077-06` (Windows VM).
+last edits of the copy follow. On the macOS VM 124 of 177 tests have no call
+that differs. The reply of claustrum to one earlier Windows request is
+byte-equal in three later runs (Windows VM).
 
 One Windows claustrum run where both requests got
-`-32001` was the test kit, not claustrum (round `task104-01`). The check left
-two areas open. Their status is tracked outside this ledger. Later rounds
+`-32001` was the test kit, not claustrum. The check left
+two areas open. Their status is tracked outside this ledger. Later runs
 measured them:
 
 - The off switch during `git.status` and the worktree methods: Linux ran every
-  cell. macOS ran every cell but C6, C6b, C6n and S3 (`task105-03`,
-  `task105-10`). Windows ran only C0 to C2, C4 and C5.
+  case. macOS ran every case but four. Windows ran only five cases.
 - A `git.info` on a missing path, sent with the first git request, waits for
-  the start test less often on claustrum (round `task103-04`, Linux VM). Sent
-  after the start test began, it waits on both builds (round `task103-06`, Linux
+  the start test less often on claustrum (Linux VM). Sent
+  after the start test began, it waits on both builds (Linux
   VM). claustrum now takes the steps of a folder with no repository (claustrum's
-  own, not measured). No process starts for it on either build (cell
-  T7s of round `task107-01`, Linux VM). In round `task107-02` claustrum waited
-  in 31 of 60 runs and `5fd08069` in 37 of 60, within noise. `5fd08069` waited
-  in 44 of 60 in round `task107-01`, so the race is noisy and the rounds show no
+  own, not measured). No process starts for it on either build
+  (Linux VM). In a later run claustrum waited
+  in 31 of 60 tries and `5fd08069` in 37 of 60, within noise. `5fd08069` waited
+  in 44 of 60 in the run before, so the race is noisy and the runs show no
   measurable effect of the change.
 
 **Measured details.** Off the wire, `5fd08069` keeps an exited git wrapper as a zombie until the
 process that holds its stdout ends. For a config listing on standard input
-that wait ends at the 30 s bound of the call. Rounds `task101-03` and
-`task082-02` show both (Linux and macOS VMs). On the wire, with a holder of
+that wait ends at the 30 s bound of the call. Runs on the Linux and macOS VMs
+show both. On the wire, with a holder of
 stderr alone, it reaps git at its exit and goes on about 2 s later, about 1 s
-on that listing. Cells A1-e and B1-e of rounds `task111-01` and `task111-02`
-show it (Linux and macOS VMs). claustrum follows both (rounds `task111-03` and
-`task111-04`, Linux and macOS VMs).
+on that listing. Runs on the Linux and macOS VMs
+show it. claustrum follows both (Linux and macOS VMs).
 
 In `git.worktree_remove` a failed first listing in a repository is listed again,
-and the remove can go on (rounds `tier3-13`, `tier3-17` and `tier3-19`). Row G08
+and the remove can go on. A row
 of `f6010b97` answered the lock-check text there. In a plain folder `5fd08069`
-checks once (cell CaP0 of round `tier3-17`, Linux VM), where row A5 of `89cb6289`
+checks once (Linux VM), where a row of `89cb6289`
 checked twice.
 
 With an `lsof` run that `SIGKILL` cannot end, the macOS host cleaner is parity in
-the log line, signals and disk (round `tier4-01`, macOS VM). The pass differs:
+the log line, signals and disk (macOS VM). The pass differs:
 `5fd08069` ran `lsof` once and ended in 17 s, claustrum ran it three times and
 ended in 51 s. The cause: claustrum read a run it gave up on as busy and read the daemon again until its busy sampling ended (from the code).
 
@@ -715,7 +710,7 @@ Issue 442 tracked the reconciliation. The build carries a `go1.25.14` stamp
 - The configuration listing is `config -z --list`, with a new key-length limit
   and its text. A stray `commondir` gets new texts. The listing runs under
   `LC_ALL=C` and `LANGUAGE=C`, so a listing error is in English under a German
-  daemon locale (row L03, PR 450).
+  daemon locale (PR 450).
 - A failed listing is answered by its cause. `server.capabilities` gains the
   `git.info.discovered_root` feature. On Linux and macOS, `git.info` takes its
   root without `rev-parse --show-toplevel` (PR 450).
@@ -742,8 +737,8 @@ other differences.
 
 **Measured details.** With nothing set and with an empty daemon `GIT_CONFIG_KEY_0`, `89cb6289` answered
 `could not check whether <worktreePath> is locked (its registrations could not be
-examined); retry`, and the folder and the file stayed (cells CaP0 and CaP3 on Linux
-and macOS VMs, CabP0 and CabP3 with a `branchName` on the Linux VM).
+examined); retry`, and the folder and the file stayed (Linux
+and macOS VMs, and with a `branchName` on the Linux VM).
 
 The `startedAt` of `server.capabilities` on `89cb6289` is within 1.5 ms of the
 listen call (Linux VM).
@@ -1146,7 +1141,7 @@ method or phase changed.
 
 **Measured details.** The launcher bound: the `-serve` launcher of `5db5e4a`
 waited about 10 s for its child. With a zero-byte `-token-file` it exited 1 after 10.07 s. claustrum used
-10 s until row P7 of `89cb6289` (12.06 s, Linux VM).
+10 s until a row of `89cb6289` (12.06 s, Linux VM).
 
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
 

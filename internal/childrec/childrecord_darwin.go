@@ -28,7 +28,7 @@ func (r *Records) RecordChild(pid int, argv0, program string) {
 	if start == "" {
 		return
 	}
-	r.writeRecord(childRecord{
+	r.writeRecord(spawnRecord{
 		Pid:         pid,
 		Node:        bootSessionUUID(),
 		Host:        darwinHostname(),

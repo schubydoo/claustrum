@@ -14,7 +14,7 @@ import (
 )
 
 // untilExit reads frames until the exit frame and returns the stdout bytes before it.
-func untilExit(t *testing.T, frames <-chan StreamFrame) string {
+func untilExit(t *testing.T, frames <-chan ChildFrame) string {
 	t.Helper()
 	var out []byte
 	deadline := time.After(10 * time.Second)
@@ -117,7 +117,7 @@ func TestShutdownSweepRelabelsAWaitingKill(t *testing.T) {
 }
 
 // exitFrame reads frames until the exit frame and returns it.
-func exitFrame(t *testing.T, frames <-chan StreamFrame) StreamFrame {
+func exitFrame(t *testing.T, frames <-chan ChildFrame) ChildFrame {
 	t.Helper()
 	deadline := time.After(10 * time.Second)
 	for {

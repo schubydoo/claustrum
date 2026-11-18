@@ -17,7 +17,7 @@ import (
 
 const runDirLockName = runlock.LockName
 
-type ownerRecord = runlock.OwnerRecord
+type lockOwner = runlock.OwnerRecord
 
 func killGroup(pid int, sig syscall.Signal) error { return procinfo.KillGroup(pid, sig) }
 

@@ -825,7 +825,7 @@ func TestSocketWorktreeExistingBranch(t *testing.T) {
 // structs ARE the wire contract and an unreachable field order is still one that
 // a future input could expose.
 func TestWorktreeResultFieldOrder(t *testing.T) {
-	b, err := json.Marshal(rpc.WorktreeResult{
+	b, err := json.Marshal(rpc.WorktreeReply{
 		Success: true, Path: "/p", Error: "e", ErrorCode: "c", SourceBranch: "s", Branch: "b", BranchKept: true,
 	})
 	if err != nil {
@@ -835,7 +835,7 @@ func TestWorktreeResultFieldOrder(t *testing.T) {
 	// is claustrum's choice (not measured).
 	const want = `{"success":true,"path":"/p","error":"e","errorCode":"c","sourceBranch":"s","branch":"b","branchKept":true}`
 	if string(b) != want {
-		t.Errorf("rpc.WorktreeResult field order:\n got %s\nwant %s", b, want)
+		t.Errorf("rpc.WorktreeReply field order:\n got %s\nwant %s", b, want)
 	}
 }
 
@@ -933,25 +933,25 @@ func gitExitOK(repo string, args ...string) bool {
 // TestWorktreeRemoveResultShape pins the declared reply shape: field ORDER, and
 // that `error` is omitted when empty. The lenient cases still answer a bare
 // {"success":true}, which is what the committed goldens pin. `error` is populated
-// only on a refusal or failure branch (see rpc.WorktreeRemoveResult). Asserted
+// only on a refusal or failure branch (see rpc.WorktreeRemoveReply). Asserted
 // directly so the order cannot drift on a path no golden covers.
 func TestWorktreeRemoveResultShape(t *testing.T) {
-	b, err := json.Marshal(rpc.WorktreeRemoveResult{Success: true, Error: "e"})
+	b, err := json.Marshal(rpc.WorktreeRemoveReply{Success: true, Error: "e"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := `{"success":true,"error":"e"}`; string(b) != want {
-		t.Errorf("rpc.WorktreeRemoveResult = %s, want %s", b, want)
+		t.Errorf("rpc.WorktreeRemoveReply = %s, want %s", b, want)
 	}
 	// omitempty: a reply with no error and no kept branch is a bare {"success":true}.
-	b, _ = json.Marshal(rpc.WorktreeRemoveResult{Success: true})
+	b, _ = json.Marshal(rpc.WorktreeRemoveReply{Success: true})
 	if want := `{"success":true}`; string(b) != want {
-		t.Errorf("rpc.WorktreeRemoveResult (no error) = %s, want %s", b, want)
+		t.Errorf("rpc.WorktreeRemoveReply (no error) = %s, want %s", b, want)
 	}
 	// branchKept follows error (`89cb6289`, measured).
-	b, _ = json.Marshal(rpc.WorktreeRemoveResult{Success: false, Error: "e", BranchKept: true})
+	b, _ = json.Marshal(rpc.WorktreeRemoveReply{Success: false, Error: "e", BranchKept: true})
 	if want := `{"success":false,"error":"e","branchKept":true}`; string(b) != want {
-		t.Errorf("rpc.WorktreeRemoveResult (kept) = %s, want %s", b, want)
+		t.Errorf("rpc.WorktreeRemoveReply (kept) = %s, want %s", b, want)
 	}
 }
 

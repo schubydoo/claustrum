@@ -33,7 +33,7 @@ func TestJobEndsTheTree(t *testing.T) {
 		{"jt-kill", func(m *supervisor.Manager, id string) result { _ = m.Kill(id, ""); return result{} },
 			", asked to end by this daemon (client)"},
 		{"jt-killAndWait", func(m *supervisor.Manager, id string) result {
-			f, d, a, e := m.KillAndWait(id, "", 3*time.Second, true)
+			f, d, a, e := m.SignalAndAwait(id, "", 3*time.Second, true)
 			return result{f, d, a, e}
 		}, ", asked to end by this daemon (client)"},
 		{"jt-clean-stop", func(m *supervisor.Manager, _ string) result { m.KillAll(); return result{} }, ""},

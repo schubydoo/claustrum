@@ -269,7 +269,7 @@ func TestRelativeAdminDirThroughSymlink(t *testing.T) {
 	}
 	sent := filepath.Join(deep, "link", "w1")
 
-	if err := installWorktreeIndex(src, absoluteAdminDir(sent, worktreeAdminDir(sent))); err != nil {
+	if err := installWorktreeIndex(src, absoluteAdminDir(sent, linkedGitDirOf(sent))); err != nil {
 		t.Fatalf("installWorktreeIndex: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(reg, "index")); err != nil {
@@ -467,7 +467,7 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 		name, existing, undo, branch string
 		lockLeafParent               bool
 	}{
-		{"A14", "", both, "w1", false},
+		{"leaf deleted, branch kept", "", both, "w1", false},
 		{"attach", "ex", attach, "ex", false},
 		{"leaf parent locked", "", both, "w1", true},
 	} {
@@ -560,11 +560,11 @@ func TestInstallWorktreeIndexOrder(t *testing.T) {
 	for _, tc := range []struct {
 		name, entry, lock, want string
 	}{
-		{"Y3", "file", "w1", "removeat w1/index: permission denied"},
-		{"Y7", "full folder", "", "removeat w1/index: directory not empty"},
-		{"Z11b", "file", "registrations", "openat w1/index: permission denied"},
-		{"Z7a", "empty folder", "", ""},
-		{"Z7b", "symlink", "", ""},
+		{"file, registration 0500", "file", "w1", "removeat w1/index: permission denied"},
+		{"folder with a file", "full folder", "", "removeat w1/index: directory not empty"},
+		{"file, registrations 0600", "file", "registrations", "openat w1/index: permission denied"},
+		{"empty folder", "empty folder", "", ""},
+		{"symlink", "symlink", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src, _ := indexSource(t)
@@ -655,7 +655,8 @@ func TestRelativeBackPointer(t *testing.T) {
 // registration alone. In the timeout rows the stub sleeps after the chmod, and
 // the deadline kills it during the checkout.
 //
-// b3081b51 measured Z11a, Z14 and Z14e. Z11b and Z13 follow from the same step
+// b3081b51 measured the plain row and both timeout rows. The index file row and the
+// attach row follow from the same step
 // (claustrum's own, not measured on b3081b51: 89cb6289 gave the openat and
 // RemoveAll texts there).
 func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
@@ -666,11 +667,11 @@ func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 		name, existing, undo, branch string
 		indexFile, timeout           bool
 	}{
-		{"Z11a", "", both, "w1", false, false},
-		{"Z11b", "", both, "w1", true, false},
-		{"Z13", "ex", attach, "ex", false, false},
-		{"Z14", "", both, "w1", false, true},
-		{"Z14e", "ex", attach, "ex", false, true},
+		{"plain", "", both, "w1", false, false},
+		{"index file first", "", both, "w1", true, false},
+		{"attach", "ex", attach, "ex", false, false},
+		{"timeout", "", both, "w1", false, true},
+		{"attach timeout", "ex", attach, "ex", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, h, tmp := indexInstallFixture(t)

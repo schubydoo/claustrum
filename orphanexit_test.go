@@ -60,9 +60,9 @@ func fakeCapServerReplying(t *testing.T, path, reply string) *int64 {
 	return &count
 }
 
-// reachesUs is the reached result of pathReachesUs.
+// reachesUs is the reached result of socketStillOurs.
 func reachesUs(s *server, socket string) bool {
-	reached, _ := s.pathReachesUs(socket)
+	reached, _ := s.socketStillOurs(socket)
 	return reached
 }
 
@@ -73,19 +73,19 @@ func TestPathReachesUsInstanceIDMismatch(t *testing.T) {
 	other := filepath.Join(dir, "other.sock")
 	fakeCapServer(t, other, "ffffffffffffffffffffffffffffffff")
 	if reachesUs(s, other) {
-		t.Error("pathReachesUs must be false when the reply instanceId is not ours")
+		t.Error("socketStillOurs must be false when the reply instanceId is not ours")
 	}
 	// A server that echoes OUR instanceId: reaches us.
 	mine := filepath.Join(dir, "mine.sock")
 	fakeCapServer(t, mine, s.instanceID)
 	if !reachesUs(s, mine) {
-		t.Error("pathReachesUs must be true when the reply instanceId matches ours")
+		t.Error("socketStillOurs must be true when the reply instanceId matches ours")
 	}
 }
 
 // TestExitWhenOrphanedRequiresTwoProbes rebinds the socket to a foreign live daemon
 // (different instanceId) and asserts the orphaned daemon shuts down only after exactly
-// orphanProbeFailuresToExit self-probes. It kills two mutants at once: a pathReachesUs
+// orphanProbeFailuresToExit self-probes. It kills two mutants at once: a socketStillOurs
 // that always claims success (the daemon would then never shut down and the select
 // times out) and a probe count reduced to one (the foreign server would see one probe,
 // not two).
@@ -158,14 +158,14 @@ func bootOrphanServer(t *testing.T) (*server, string) {
 	return s, sock
 }
 
-// startOrphanLoop runs exitWhenOrphaned and registers a cleanup that signals shutdown
+// startOrphanLoop runs watchSocketOwnership and registers a cleanup that signals shutdown
 // and waits for the goroutine to fully return. Registered after shrinkOrphanTimers /
 // bootOrphanServer, so it runs FIRST (LIFO) — the goroutine stops touching the shrunk
 // timer vars and the server before those cleanups restore/close them.
 func startOrphanLoop(t *testing.T, s *server, sock string) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
-	go func() { s.exitWhenOrphaned(sock); close(done) }()
+	go func() { s.watchSocketOwnership(sock); close(done) }()
 	t.Cleanup(func() {
 		s.signalShutdown()
 		<-done
@@ -209,10 +209,10 @@ func TestSocketLooksOrphaned(t *testing.T) {
 func TestPathReachesUs(t *testing.T) {
 	s, sock := bootOrphanServer(t)
 	if !reachesUs(s, sock) {
-		t.Error("pathReachesUs must be true against our own live socket")
+		t.Error("socketStillOurs must be true against our own live socket")
 	}
 	if reachesUs(s, sock+".nope") {
-		t.Error("pathReachesUs must be false when the dial fails")
+		t.Error("socketStillOurs must be false when the dial fails")
 	}
 }
 
@@ -226,12 +226,12 @@ func TestPathReachesUsMalformedReplies(t *testing.T) {
 	eof := filepath.Join(dir, "eof.sock")
 	fakeCapServerReplying(t, eof, "") // consumes the request, then closes
 	if reachesUs(s, eof) {
-		t.Error("pathReachesUs must be false when the peer closes without replying")
+		t.Error("socketStillOurs must be false when the peer closes without replying")
 	}
 	bad := filepath.Join(dir, "bad.sock")
 	fakeCapServerReplying(t, bad, "not-json\n")
 	if reachesUs(s, bad) {
-		t.Error("pathReachesUs must be false when the reply line is not JSON")
+		t.Error("socketStillOurs must be false when the reply line is not JSON")
 	}
 }
 
@@ -323,12 +323,12 @@ func TestExitWhenOrphanedNoOpWhenDisabled(t *testing.T) {
 	}
 	s.instanceID = "" // guard: an empty instanceId disables the self-probe entirely
 	done := make(chan struct{})
-	go func() { s.exitWhenOrphaned(sock); close(done) }()
+	go func() { s.watchSocketOwnership(sock); close(done) }()
 	select {
 	case <-done:
 		// returned at once (no-op)
 	case <-time.After(1 * time.Second):
-		t.Fatal("exitWhenOrphaned did not no-op with an empty instanceId")
+		t.Fatal("watchSocketOwnership did not no-op with an empty instanceId")
 	}
 	select {
 	case <-s.shutdown:

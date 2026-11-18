@@ -14,7 +14,7 @@ import (
 )
 
 // worktreeCheckpoint records how the freshly created worktree leaf looked right
-// after mkdirWorktreeLeaf, so verifyCreatedWorktree can confirm `git worktree add`
+// after mkdirWorktreeLeaf, so checkNewLeafIdentity can confirm `git worktree add`
 // populated that same directory rather than one swapped in underneath it.
 type worktreeCheckpoint struct {
 	info       os.FileInfo // identity (dev+inode, or volume serial+file index, via os.SameFile) of the created leaf
@@ -37,7 +37,7 @@ func (cp worktreeCheckpoint) release() {
 var evalSymlinks = filepath.EvalSymlinks
 
 // checkpointCreatedWorktree captures the leaf's identity for the post-add check.
-// A capture failure yields an empty checkpoint, which verifyCreatedWorktree treats
+// A capture failure yields an empty checkpoint, which checkNewLeafIdentity treats
 // as "nothing to compare against" and passes — the verification is a best-effort
 // guard, never a new way to fail an honest create.
 //
@@ -248,7 +248,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	case held:
 	case tested.path != "":
 	case u.accepted != nil:
-		if admin := worktreeAdminDir(worktreePath); admin != "" {
+		if admin := linkedGitDirOf(worktreePath); admin != "" {
 			heldRegistration = absoluteAdminDir(worktreePath, admin)
 		}
 	default:
@@ -317,7 +317,7 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 // leafSafeToRemove is the guard of each delete of the leaf in a rollback after a
 // good add: the home guard (D2) and the checkpoint identity of the leaf.
 func leafSafeToRemove(worktreePath string, cp worktreeCheckpoint) bool {
-	return worktreePath != "" && !leafHoldsHome(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
+	return worktreePath != "" && !leafHoldsHome(worktreePath) && checkNewLeafIdentity(worktreePath, cp) == ""
 }
 
 // leafHoldsHome is the home guard (D2) of each rollback delete of the leaf. The text
@@ -429,7 +429,7 @@ func removeEmptyLeaf(leaf string) error {
 // and that dir's commondir file names the main repository's git dir. A git dir
 // with no commondir file (a submodule's, for example) is its own common dir.
 func worktreeRegistryDir(repo string) string {
-	admin := worktreeAdminDir(repo)
+	admin := linkedGitDirOf(repo)
 	if admin == "" {
 		return filepath.Join(repo, ".git", "worktrees")
 	}
@@ -724,7 +724,7 @@ func absoluteAdminDir(worktreePath, admin string) string {
 // path as the .git file spells it can hold a "link/.." pair. On Linux and macOS a
 // lexical clean of such a path names another folder than the kernel does.
 func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
-	adminDir := worktreeAdminDir(worktreePath)
+	adminDir := linkedGitDirOf(worktreePath)
 	if adminDir == "" {
 		return createdRegistration{}
 	}
@@ -761,7 +761,7 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	return reg
 }
 
-// verifyCreatedWorktree confirms `git worktree add` populated the very directory
+// checkNewLeafIdentity confirms `git worktree add` populated the very directory
 // claustrum created, guarding against a directory — or one of its ancestors —
 // swapped between the pre-create checks and the add. This is claustrum's own
 // defensive post-condition; without it claustrum answered {"success":true} even when
@@ -777,7 +777,7 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 //
 // git worktree add populates the pre-created leaf in place, preserving its identity
 // (measured), so an unraced create always matches and passes.
-func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
+func checkNewLeafIdentity(worktreePath string, cp worktreeCheckpoint) string {
 	if cp.info == nil {
 		return "" // nothing captured — do not invent a failure
 	}
@@ -816,7 +816,7 @@ func gitDirRegistryDir(gitDir string) string {
 // git.worktree_create. refusal is the answer when that file does not name a
 // registration of the repository, or "" when it does. gitDir is the git directory
 // of baseRepo, as git answered it before the add. adminDir is the gitdir value of
-// that .git file (worktreeAdminDir). The caller reads it once. This function does
+// that .git file (linkedGitDirOf). The caller reads it once. This function does
 // not read the .git file. The call runs right after a successful add.
 //
 // registration is the folder that gets the index of the new worktree. It is "" with

@@ -144,7 +144,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 
 | `fault` | Case | `reason` |
 |---|---|---|
-| `writable` | A group or other write bit on the file or a folder above it, 1777 too | `` `<D>` can be changed by accounts other than its owner (mode <mode>), so the launcher can't be trusted. Remove that write access, or keep the launcher somewhere that has none. `` |
+| `writable` | A group or other write bit on the file or a folder above it, 1777 too (`4c111e86`, measured on Linux) | `` `<D>` can be changed by accounts other than its owner (mode <mode>). Remove that write access. `` |
 | `owner` | Owned by the uid of the daemon (`4c111e86`, measured on a FUSE mount) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
 | `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
 | `owner` | Owned by another uid (`4c111e86`, measured with a digest) | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. `` |

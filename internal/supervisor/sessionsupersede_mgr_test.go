@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// supersedeSession with an empty key is a no-op and must never evict a process.
-// Production only reaches supersedeSession for a non-empty session key (spawn gates
+// endEarlierSpawns with an empty key is a no-op and must never evict a process.
+// Production only reaches endEarlierSpawns for a non-empty session key (spawn gates
 // the call), so this exercises the defensive empty-key guard directly. The victim's
-// sessionKey is "" — the exact value that would match supersedeSession("") if the
+// sessionKey is "" — the exact value that would match endEarlierSpawns("") if the
 // guard were absent — yet it must survive.
 func TestSupersedeSessionEmptyKeyIsNoop(t *testing.T) {
 	m := newTestProcManager(t)
@@ -25,13 +25,13 @@ func TestSupersedeSessionEmptyKeyIsNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	m.supersedeSession("", "other")
+	m.endEarlierSpawns("", "other")
 	// Without the guard the call collects the victim and sends it SIGTERM. cat ends
 	// promptly on SIGTERM, so poll long enough for that kill to surface.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		if !p.IsRunning() {
-			t.Fatal(`supersedeSession("") killed a process; the empty-key guard did not fire`)
+			t.Fatal(`endEarlierSpawns("") killed a process; the empty-key guard did not fire`)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

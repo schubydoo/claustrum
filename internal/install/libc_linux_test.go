@@ -12,7 +12,7 @@ import (
 )
 
 // TestDetectLibcHonoursThePackageVar is the ONE test that drives the production
-// path: detectLibc() itself, running the `ldd` at lddPath, with nothing else
+// path: hostLibc() itself, running the `ldd` at lddPath, with nothing else
 // injected. Every other ldd-bound test calls detectLibcWith directly and hands it
 // a timeout, so all of them stay green if the single production call site stops
 // reading LddProbeTimeout.
@@ -40,17 +40,17 @@ func TestDetectLibcHonoursThePackageVar(t *testing.T) {
 	t.Cleanup(func() { LddProbeTimeout = old })
 
 	// The shipped 5 s bound: the 1 s stub answers in time and its answer stands.
-	if got := detectLibc(); got != "musl" {
-		t.Errorf("detectLibc() at the shipped bound = %q, want musl — a 1s ldd answers "+
+	if got := hostLibc(); got != "musl" {
+		t.Errorf("hostLibc() at the shipped bound = %q, want musl — a 1s ldd answers "+
 			"inside 5s and its output must decide", got)
 	}
 
 	// Shrunk below the stub's latency: the probe is cut off and the fallback
 	// stands. A call site that ignores LddProbeTimeout fails HERE.
 	LddProbeTimeout = 50 * time.Millisecond
-	if got := detectLibc(); got != "glibc" {
-		t.Errorf("detectLibc() with a 50ms bound = %q, want the glibc fallback — "+
-			"detectLibc must pass LddProbeTimeout through, not a hardcoded value", got)
+	if got := hostLibc(); got != "glibc" {
+		t.Errorf("hostLibc() with a 50ms bound = %q, want the glibc fallback — "+
+			"hostLibc must pass LddProbeTimeout through, not a hardcoded value", got)
 	}
 }
 
@@ -77,7 +77,7 @@ func TestLddRunsInTheRootFolder(t *testing.T) {
 	}
 }
 
-// detectLibc's fallback branch: when `ldd` can't be executed, it probes for the
+// hostLibc's fallback branch: when `ldd` can't be executed, it probes for the
 // musl loader and otherwise reports glibc. An lddPath and an lddFallbackPath with no
 // file force that branch.
 func TestDetectLibcLddMissing(t *testing.T) {
@@ -85,8 +85,8 @@ func TestDetectLibcLddMissing(t *testing.T) {
 	t.Cleanup(func() { lddPath, lddFallbackPath = old, oldFallback })
 	lddPath = filepath.Join(t.TempDir(), "ldd")         // no file there
 	lddFallbackPath = filepath.Join(t.TempDir(), "ldd") // no file there
-	if got := detectLibc(); got != "glibc" && got != "musl" {
-		t.Errorf("detectLibc() with no ldd = %q, want glibc or musl", got)
+	if got := hostLibc(); got != "glibc" && got != "musl" {
+		t.Errorf("hostLibc() with no ldd = %q, want glibc or musl", got)
 	}
 }
 
