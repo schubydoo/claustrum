@@ -968,7 +968,8 @@ func gitListBranches(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// On Windows a path that the network-path check cannot look at is refused next
-	// (measured on Windows, pathLookRefusal).
+	// (measured on Windows, pathLookRefusal). Its place here is claustrum's own, not
+	// measured.
 	if msg := pathLookRefusal(p.Path); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -2890,10 +2891,11 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	if msg := unlookablePathRefusal(repo); msg != "" {
 		return refuse(msg)
 	}
-	// On Windows a baseRepo whose .git objects folder the network-path check cannot
-	// look at is refused next, after the lock-check words (measured on Windows,
-	// pathLookRefusal). No git call and no delete run (from the code). Its place
-	// here is claustrum's own, not measured.
+	// On Windows a baseRepo with a name, or a .git objects folder, that the
+	// network-path check cannot look at is refused next, after the lock-check words
+	// (measured on Windows for the .git objects folder, pathLookRefusal). The walk of
+	// the names is claustrum's own, not measured. No git call and no delete run (from
+	// the code). Its place here is claustrum's own, not measured.
 	if msg := pathLookRefusal(repo); msg != "" {
 		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 	}

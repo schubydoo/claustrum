@@ -1,6 +1,6 @@
 # Windows link and share paths of the git methods
 
-On Windows the git methods test the links, the shares and the reparse tags of a repository path before git runs on the repository. The object sources and the chain test are on [the trust page](git-rules-trust.md#the-object-sources-on-windows).
+On Windows the git methods test the links, the shares and the reparse tags of a repository path before git runs on the repository. The object sources and the chain test are on [the trust page](git-rules-trust.md#the-object-sources-on-windows). A rule here names its build, or it has the build of its section.
 
 ## A link to a network or device path
 
@@ -17,7 +17,9 @@ These rows are measured on Windows on `4c111e86`. They set the raw tags with no 
 - A `.git` folder with `IO_REPARSE_TAG_PROJFS` is plain for `git.info`, `git.status`, `git.list_branches` and a remove. So is a worktree folder with it below `baseRepo` in `git.status`. A create in `shadow` makes a worktree there, where claustrum refuses. Its text is that of a config behind a link, because the held git directory takes a plain folder only (from the code).
 - With no filter for `IO_REPARSE_TAG_WIM`, a look below such a folder fails. A repository below it gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`, with no git call on the repository. A `.git` with that tag gets it on all five methods, naming `<path>\.git\objects`. A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`, with `<path>` Go-quoted.
 
-Claustrum's own, not measured: every other tag that is no name surrogate is no link, and only `ERROR_CANT_ACCESS_FILE` refuses. Also claustrum's own, not measured: one log line per request, the cleaned path in the text and the place of the remove test. The test looks at each name of the path, then at the `objects` folder of a `.git` folder there (claustrum's own, not measured).
+Claustrum's own, not measured: four link tests take every other tag that is no name surrogate as no link. They test the git directory, a `git.status` worktree, the config includes and a share path. The other link tests still count such a folder as a link (claustrum's own, not measured).
+
+Also claustrum's own, not measured: only `ERROR_CANT_ACCESS_FILE` refuses, and a remove and a create below an `IO_REPARSE_TAG_WIM` folder refuse the same way. The test looks at each name of the path, then at the `objects` folder of a `.git` folder there. One log line per request, the cleaned path in the text and the place of the test in each method are claustrum's own too. A refused remove deletes nothing (from the code).
 
 ## UNC refusals
 
