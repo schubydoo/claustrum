@@ -36,7 +36,7 @@ The result has one of four shapes. Each keeps this member order:
 | `unusable` | A value is set, but the daemon refuses it. `reason` says why. |
 | `unreadable` | A settings file or the drop-in folder cannot be read. `path` names it. |
 
-On macOS `fault` follows `reason`: `missing` for a missing launcher, folder or file that cannot run, `not_absolute` for a bare name and `other` for a `processWrapper` of `5` (`4c111e86`). Any other value that is not a string sends `other`, other refusals none (claustrum's own).
+On macOS `fault` follows `reason` (`4c111e86`): `missing` for a missing launcher, folder or file that cannot run, `not_absolute` for a bare name. It is `other` for a `processWrapper` of `5` (`4c111e86`). Any other value that is not a string sends `other`, other refusals none (claustrum's own).
 
 With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, measured on Linux):
 
@@ -45,7 +45,7 @@ With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, me
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
 
-`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or a drop-in holds a key other than `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS), a file that is not JSON (macOS), and a file that is not a JSON object, cannot be read or is over 2 MiB (claustrum's own). On Linux a `launcherCheck` with no `path` gets the second shape with the fault `not_absolute` (`c9125eb8`).
+`argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or drop-in holds any key but `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). So does a file that is not a JSON object, cannot be read or is over 2 MiB (claustrum's own). On Linux a `launcherCheck` with no `path` gets the second shape and fault `not_absolute` (`c9125eb8`).
 
 The daemon reads the files on every call, so an edit shows on the next call. The `CLAUDE_SSH_MANAGED_LAUNCHER` variable does not change a frame (measured on macOS).
 
