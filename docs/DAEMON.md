@@ -609,7 +609,7 @@ same refusal with its own prefix. No daemon, socket, `daemon.lock` or
 claustrum: open log: open <path>: is a directory
 ```
 
-On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket there. The first daemon holds the log open, so the rename fails, and the launcher truncates the log. The second daemon then logs there. Each daemon writes at the offset of its own handle, so the first daemon's earlier lines are lost and its later lines sit behind a block of NUL bytes. A log that another process holds with no delete share is truncated too,
+On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket. The first daemon holds the log open, so the rename fails and the launcher truncates the log for the second daemon. Each daemon writes at the offset of its own handle, so the first daemon's earlier lines are lost and later ones follow NUL bytes. A log that another process holds with no delete share is truncated too,
 and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
 
 ### Lines of connections
@@ -625,11 +625,12 @@ These line rules are claustrum's own unless an item names a build. `89cb6289` an
 - The bad line logs `[Server] Parse error number <n>: <json error>`. The older text has no count.
 - The counters are per daemon, one per kind of line. A count starts at 1 and never resets. The line is logged for the counts 1 to 10 and for each multiple of 1000.
 - A failed accept logs `[Server] accept error (retrying): <error>`. The next accept comes 100 ms later each time (claustrum's own). 4c111e86 and c9125eb8 log about 10 such lines a second (measured on Linux).
-- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error. During the shutdown they are not logged. A connection with no mark logs no `writeResponse` and no `scanner error` line.
+- The `writeResponse: wrote <n>/<m> bytes, error=<error>`, `Failed to write response: <error>` and `scanner error on <label>: <error>` lines quote the error, and the shutdown logs none. An unmarked connection logs no `writeResponse` or `scanner error` line.
+- After a bad last line and a close, an unmarked connection logs no `Failed to write response` line (`4c111e86`, measured on Linux). macOS and Windows are claustrum's own.
 
 ### Lines of child processes
 
-These lines tell of [process.spawn](protocol/process-spawn.md) children and their [records and the reap](#child-records-and-the-reap-linux-and-macos). The levels are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
+The levels of these lines are claustrum's own. Unless an item says otherwise, each text is the text of `89cb6289`, measured on Linux. The group-ended, outlived and dropped-record lines are measured on macOS too.
 
 - A start (INFO): `[process.Manager] Process <id> started, PID=<n>, command=<command>` (`c9125eb8`, measured on Linux, macOS and Windows). With a launcher, ` via launcher <argv0>` follows. A launcher that supplies Claude Code logs `[process.Manager] Process <id> started, PID=<n>, via launcher <argv0>, which supplies Claude Code` (`c9125eb8`, measured on Linux).
 - A failed start (ERROR): `[process.Manager] Failed to start process <id>: <message>`, with the error frame's text
@@ -671,7 +672,7 @@ The main `<reason>` texts of a dropped record and of a group that fails the test
 
 #### A long id in a line
 
-Four lines cut an `<id>` of more than 8 bytes to the first 8 bytes and `…`. They are the start, failed-start, exit and `Starting <stream> streaming` lines. This holds for `c9125eb8` and `4c111e86`, measured on Linux, macOS and Windows. The [unattended end](protocol/process-link-bound.md#the-unattended-end) line cuts it too (`c9125eb8` and `4c111e86`, measured on Linux). So does the line of a lost temp folder (`4c111e86`, measured on Linux and macOS). claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
+The start, failed-start, exit and `Starting <stream> streaming` lines cut an `<id>` over 8 bytes to its first 8 bytes and `…`. `c9125eb8` and `4c111e86` do so, measured on Linux, macOS and Windows. The [unattended end](protocol/process-link-bound.md#the-unattended-end) line cuts it too (`c9125eb8` and `4c111e86`, measured on Linux). So does the line of a lost temp folder (`4c111e86`, measured on Linux and macOS). claustrum's own, not measured: an id with a byte above 0x7f. Every other line shows the whole `<id>`, also a launcher start line (claustrum's own).
 
 ## Orphan-exit self-probe
 

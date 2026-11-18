@@ -57,6 +57,6 @@ func TestInstallAndProbeOnWindowsWithGate(t *testing.T) {
 	var o, e bytes.Buffer
 	RunProbeCLI(&o, &e, cli)
 	if o.String() != "" || e.String() != "" {
-		t.Errorf("PRB-7: stdout %q stderr %q, want both empty", o.String(), e.String())
+		t.Errorf("stdout %q stderr %q, want both empty", o.String(), e.String())
 	}
 }

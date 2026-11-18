@@ -76,6 +76,11 @@ var baseRepoWalksAsSpelled = false
 // a variable so that a test on Linux can set it.
 var leafResolvesByHandle = false
 
+// removeNamesStrayFile is false on Linux and macOS. A remove of a worktree folder
+// that exists keeps the lock-check text for the S2 refusal of a stray commondir
+// there (not measured). It is a variable so that a test on Linux can set it.
+var removeNamesStrayFile = false
+
 // removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
 // of a worktree folder that exists refuses such a folder (measured on Linux and
 // macOS).
