@@ -44,8 +44,8 @@ type winJobTestChild struct {
 }
 
 // startJobTestChild starts the test child suspended, puts it in a job and resumes it.
-// The job has the flags of JobsKeep, so the close of its handle ends nothing (claustrum's
-// own, not measured). The only end of the child is End at the bound.
+// The job has the flags 0x2800 of JobsOn (measured on Windows against 4c111e86), also
+// with -keep-children. So the close of its handle at the reap ends what is left in it.
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
 // join error (claustrum's own, not measured). A failed resume leaves the child asleep
@@ -57,12 +57,12 @@ func startJobTestChild() (jobTestChild, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd.SysProcAttr = SpawnSysProcAttr(JobsKeep)
+	cmd.SysProcAttr = SpawnSysProcAttr(JobsOn)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	c := &winJobTestChild{cmd: cmd, exited: make(chan struct{})}
-	c.group, c.jobErr = ConfineProcess(cmd.Process, JobsKeep)
+	c.group, c.jobErr = ConfineProcess(cmd.Process, JobsOn)
 	h, hErr := openJobTestWait(cmd.Process.Pid)
 	_ = ResumeChild(cmd.Process, cmd.SysProcAttr)
 	go func() {
@@ -82,18 +82,18 @@ var openJobTestWait = func(pid int) (windows.Handle, error) {
 
 func (c *winJobTestChild) Exited() <-chan struct{} { return c.exited }
 
-// End ends the test child alone, by its own handle, with exit code 1. 4c111e86 gives
-// the child exit code 1 at the bound (measured on Windows). It ends no other process
-// of the job (claustrum's own). With no handle it ends nothing and gives an error, and
-// awaitJobTest then fails the test.
+// End ends the test job, with exit code 1. Measured on Windows against 4c111e86: at the
+// bound the test child and its conhost, both in the test job, exit 0x1 within 2 ms. End
+// ends no other job and no process outside the test job. With no job it ends nothing and
+// gives an error, and awaitJobTest then fails the test (claustrum's own).
 func (c *winJobTestChild) End() error {
 	g := c.group
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.h == 0 {
-		return errors.New("no handle of the self-test child")
+	if g.job == 0 {
+		return errors.New("no job of the self-test child")
 	}
-	return os.NewSyscallError("TerminateProcess", windows.TerminateProcess(g.h, 1))
+	return os.NewSyscallError("TerminateJobObject", windows.TerminateJobObject(g.job, 1))
 }
 
 // Reap waits for the child and closes its handles. A child that is in no job fails

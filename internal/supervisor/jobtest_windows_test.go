@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -80,13 +81,20 @@ func TestWindowsJobTestFailsWithTheExitStatus(t *testing.T) {
 	}
 }
 
-// TestWindowsJobTestEndsOnlyTheHungChild: a test child that starts a grandchild and
-// then sleeps is ended at the bound with exit code 1, as on 4c111e86 (measured on
-// Windows). The grandchild is in the job of the test child and lives on, so the end
-// reaches neither the job nor another process.
-func TestWindowsJobTestEndsOnlyTheHungChild(t *testing.T) {
+// TestWindowsJobTestEndsTheTestJob: a test child that starts a grandchild and then
+// sleeps is in a job with the flags 0x2800, as on 4c111e86 (measured on Windows). At the
+// bound the end of the test job ends the child and the grandchild in it with exit code 1,
+// as 4c111e86 ends the child and its conhost. A process outside the test job lives on.
+func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	useJobTestHelper(t, "tree", pidFile)
+	exe, env := helperCommand(t, "sleep")
+	other := exec.Command(exe, "60")
+	other.Env = BuildEnv(env)
+	if err := other.Start(); err != nil {
+		t.Fatalf("start of the process outside the job: %v", err)
+	}
+	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
 	buf := captureLogBuf(t)
 	test, c := startJobTestForTest(t, 300*time.Millisecond, 3*time.Second)
 	gpid := 0
@@ -100,12 +108,17 @@ func TestWindowsJobTestEndsOnlyTheHungChild(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	gh, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(gpid))
+	if err != nil {
+		t.Fatalf("open of the grandchild %d: %v", gpid, err)
+	}
 	t.Cleanup(func() {
-		if h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(gpid)); err == nil {
-			_ = windows.TerminateProcess(h, 1)
-			_ = windows.CloseHandle(h)
-		}
+		_ = windows.TerminateProcess(gh, 1)
+		_ = windows.CloseHandle(gh)
 	})
+	if flags := jobLimitFlags(t, c); flags != 0x2800 {
+		t.Errorf("limit flags of the test job = %#x, want 0x2800", flags)
+	}
 	if test.State() != JobTestPending {
 		t.Fatalf("state = %d, want pending", test.State())
 	}
@@ -122,17 +135,61 @@ func TestWindowsJobTestEndsOnlyTheHungChild(t *testing.T) {
 	if !strings.Contains(buf.String(), ": the program had not run to its end after 3s\n") {
 		t.Errorf("log = %q, want the bound line", buf.String())
 	}
-	if !winProcessAlive(gpid) {
-		t.Errorf("the grandchild %d ended", gpid)
+	if ev, _ := windows.WaitForSingleObject(gh, 10000); ev != windows.WAIT_OBJECT_0 {
+		t.Fatalf("the grandchild %d in the test job did not end", gpid)
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(gh, &code); err != nil || code != 1 {
+		t.Errorf("exit code of the grandchild = %d (%v), want 1", code, err)
+	}
+	if !winProcessAlive(other.Process.Pid) {
+		t.Errorf("the process %d outside the test job ended", other.Process.Pid)
 	}
 }
 
-// TestWindowsJobTestEndWithNoHandle: End of a child with no kill handle ends nothing and
-// gives an error, so awaitJobTest fails the test.
-func TestWindowsJobTestEndWithNoHandle(t *testing.T) {
-	c := &winJobTestChild{group: &ProcGroup{}}
+// jobLimitFlags gives the limit flags of the job of the test child c.
+func jobLimitFlags(t *testing.T, c *winJobTestChild) uint32 {
+	t.Helper()
+	c.group.mu.Lock()
+	defer c.group.mu.Unlock()
+	if c.group.job == 0 {
+		t.Fatal("the test child has no job")
+	}
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	if err := windows.QueryInformationJobObject(c.group.job, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)), nil); err != nil {
+		t.Fatalf("query of the test job: %v", err)
+	}
+	return info.BasicLimitInformation.LimitFlags
+}
+
+// TestWindowsJobTestEndWithNoJob: End of a child with a kill handle and no job ends
+// nothing and gives an error, so awaitJobTest fails the test. The child is the own child
+// of the test.
+func TestWindowsJobTestEndWithNoJob(t *testing.T) {
+	exe, env := helperCommand(t, "sleep")
+	cmd := exec.Command(exe, "60")
+	cmd.Env = BuildEnv(env)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	g, err := ConfineProcess(cmd.Process, JobsOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(g.Close)
+	c := &winJobTestChild{cmd: cmd, group: g}
 	if err := c.End(); err == nil {
-		t.Error("End with no handle gave no error")
+		t.Error("End with no job gave no error")
+	}
+	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	if ev, _ := windows.WaitForSingleObject(h, 500); ev != uint32(windows.WAIT_TIMEOUT) {
+		t.Error("End with no job ended the child")
 	}
 }
 

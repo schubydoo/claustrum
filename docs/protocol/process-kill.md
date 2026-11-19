@@ -84,7 +84,7 @@ With no job, a process that the child started can hold the output pipes of the c
 
 #### The start test of the jobs
 
-Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, no child gets a job, and each spawn answers `{"success":true,"outsideJob":true}`. A hung test child is ended at 1 minute.
+Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, no child gets a job, and each spawn answers `{"success":true,"outsideJob":true}`. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
 From 5 s to that end the test is pending: the socket opens, and each spawn runs its child in no job and answers `"outsideJob":true`.
 
@@ -92,12 +92,11 @@ claustrum's own, not measured:
 
 - A test child that ends clean before the end turns the jobs on.
 - A failed start of the test child fails the test with its error.
-- The test job has the flags of `-keep-children`, so its close ends nothing.
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`.
 - A failed resume leaves the child asleep until the end. A failed wait handle gets no end.
 - After a failed end or a failed wait handle, a reap within 5 s gives the result. Else the test fails with the reason of the end.
 - The time in the line is rounded to the nearest millisecond.
-- The end reaches the test child alone, by its own handle.
+- The end reaches no other job or child.
 
 ## Rare states
 

@@ -15,7 +15,7 @@ import (
 // in a job. As admin the test passes in about 28 ms and logs nothing. As a user who is
 // no admin the child exits 0xc0000142 and the daemon logs jobTestFailedLine. A child
 // that has not ended after 5 s gives jobTestPendingLine, and the socket opens then.
-// The daemon ends that child at 1 minute. The child exits with code 1 then, and the
+// The daemon ends the test job at 1 minute. The child exits with code 1 then, and the
 // daemon logs jobTestFailedLine with jobTestBoundReason.
 
 // jobTestFailedLine is the line of a failed test: the time since the start of the test
@@ -45,7 +45,7 @@ var jobTestReapGrace = 5 * time.Second
 type jobTestChild interface {
 	// Exited closes at the exit of the child, before its reap.
 	Exited() <-chan struct{}
-	// End ends the child, with exit code 1.
+	// End ends the test job of the child, with exit code 1.
 	End() error
 	// Reap waits for the child. Its error is the reason of a failed test, and nil
 	// passes the test.
@@ -58,7 +58,7 @@ type jobTestChild interface {
 func runJobTest(c jobTestChild, start time.Time, pendingAfter, bound time.Duration) *JobTest {
 	t := &JobTest{}
 	// The gate closes at the exit of the child and before its reap, so the end at the
-	// bound reaches only the test child while it is not reaped.
+	// bound reaches the test job only while its child is not reaped.
 	gate := &sysproc.LeaderGate{}
 	reaped := make(chan error, 1)
 	go func() {
@@ -80,8 +80,8 @@ func runJobTest(c jobTestChild, start time.Time, pendingAfter, bound time.Durati
 	return t
 }
 
-// awaitJobTest waits for the result of a pending test. At the bound it ends the child,
-// once and only through the gate, and fails the test with the bound reason (measured on
+// awaitJobTest waits for the result of a pending test. At the bound it ends the test
+// job once, only through the gate, and fails the test with the bound reason (measured on
 // Windows against 4c111e86). A child that exited just before the bound is not ended,
 // and its result counts.
 //
