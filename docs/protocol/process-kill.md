@@ -13,7 +13,7 @@ An untagged rule on this page matches build `89cb6289`.
 | Parameter | Required | Meaning |
 |---|---|---|
 | `id` | no | The id of the process, as given to `process.spawn`. An absent, empty, unknown or [spent](process-link-bound.md#the-spent-id) `id` signals nothing. An unknown `id` of up to 128 bytes is [given up](process-spawn.md#a-given-up-id). |
-| `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. On Windows the daemon ignores the name: see [Differences by system](#differences-by-system). |
+| `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. |
 | `farewell`, `graceMs` | no | The [farewell](process-farewell.md) for the stdin of the child, and the wait before the signal. |
 
 After a second `process.spawn` with the `id` of a process that still runs, the request reaches the newer process only. See [process.spawn](process-spawn.md#a-spawn-with-an-id-that-is-in-use).
@@ -24,7 +24,7 @@ After a second `process.spawn` with the `id` of a process that still runs, the r
 {"success": true}
 ```
 
-A farewell adds `farewellEnd`: see [Farewell](process-farewell.md). The `exit` frame says whether a process got the signal or ended.
+A farewell adds `farewellEnd`: see [Farewell](process-farewell.md).
 
 ## Errors
 
@@ -43,8 +43,6 @@ On Linux and macOS, each child runs in its own process group. Two cases:
 - Each other signal goes to the direct child only. A process that the child started in the background keeps running. Use `"signal": "KILL"` to end the tree.
 
 `52d82f0a` keeps both, also in `process.killAndWait`, and no signal reaches another session (Linux and macOS, measured).
-
-On Windows a kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
 
 ## The exit frame
 
@@ -76,6 +74,8 @@ Since `52d82f0a` each child on Windows runs in a job. A kill and `process.killAn
 
 With `CLAUDE_SSH_NO_JOBS=1` the line ends `false (off switch: true)`. There is no job, and the shutdown and the exit of the child leave the tree. A kill ends the direct child only, as on `89cb6289`. claustrum starts a child suspended until it is in its job (claustrum's own, not measured).
 
+Since `4c111e86` the daemon first runs its program with `--version` in a job. As admin it passes. As a user who is no admin it fails: no child gets a job, and each spawn answers `{"success":true,"outsideJob":true}`. A hung test child is ended at 1 minute.
+
 The `exit` frame on Windows has no `signal` member:
 
 ```json
@@ -87,7 +87,7 @@ With no job, a process that the child started can hold the output pipes of the c
 ## Rare states
 
 ??? note "A child that already ended"
-    `process.kill` sends no signal to a child that already ended. That holds also before its `exit` frame, while the daemon still collects its last output, with one exception. On Linux and macOS `"signal": "KILL"` then sends `SIGKILL` to the group at once, as `b3081b51` does (measured). If a live process has the pid of the ended child, that request sends nothing (claustrum's own, not measured). So a holder of the output pipe in the group ends, and the `exit` frame comes at once with no `killedBy`. A holder that left the group keeps the frame waiting up to 5 seconds. On Windows that request sends nothing (claustrum's own, not measured). With a valid farewell that request sends nothing on every system (claustrum's own, not measured). The result is `{"success": true}` all the same. After the `exit` frame `52d82f0a` signals no group member either (measured on Linux and macOS).
+    `process.kill` sends no signal to a child that already ended. That holds also before its `exit` frame, while the daemon still collects its last output, with one exception. On Linux and macOS `"signal": "KILL"` then sends `SIGKILL` to the group at once, as `b3081b51` does (measured). If a live process has the pid of the ended child, that request sends nothing (claustrum's own, not measured). So a holder of the output pipe in the group ends, and the `exit` frame comes at once with no `killedBy`. A holder that left the group keeps the frame waiting up to 5 seconds. On Windows, and with a valid farewell on every system, that request sends nothing (claustrum's own, not measured). The result is `{"success": true}` all the same. After the `exit` frame `52d82f0a` signals no group member either (measured on Linux and macOS).
 
 ## Differences from the reference
 

@@ -204,8 +204,10 @@ func TestDocsNoPhantomMethod(t *testing.T) {
 	// It lists these on Linux only.
 	known["launcher.checked_by_handle"] = true
 	known["launcher.local_kinds_only"] = true
-	// featuresFor adds this one on a daemon with jobs on (Windows).
+	// featuresFor adds one of these on a daemon with jobs on (Windows).
 	known[jobFeature] = true
+	known[jobPendingFeature] = true
+	known[jobUnavailableFeature] = true
 	for _, f := range docFiles(t) {
 		for _, span := range docSpans(docRead(t, docRel(f))) {
 			if !docNamespaceRE.MatchString(span) || span == "" {
@@ -257,6 +259,8 @@ func TestDocsNoPhantomMethodInGoText(t *testing.T) {
 		known[f] = true
 	}
 	known[jobFeature] = true
+	known[jobPendingFeature] = true
+	known[jobUnavailableFeature] = true
 	files := goSourceFiles(t)
 	flagDefRE := regexp.MustCompile(`flag\.[A-Za-z0-9]+\(`)
 	check := func(file string, n int, text string) {

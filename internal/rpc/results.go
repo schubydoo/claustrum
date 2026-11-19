@@ -128,6 +128,11 @@ type AdoptEnvReply struct {
 // supervisor.Proc.startTime.
 type SpawnReply struct {
 	Success bool `json:"success"`
+	// OutsideJob answers "outsideJob":true on Windows for a child in no job because the
+	// start test of the jobs had not passed. The frame {"success":true,"outsideJob":true}
+	// is measured on Windows against 4c111e86. Its place before the other members is
+	// claustrum's own.
+	OutsideJob bool `json:"outsideJob,omitempty"`
 	// CLITempRoot answers a spawn with "cliTempRoot":true on Linux and macOS. It is
 	// nil when the daemon has nothing to say, so the frame stays {"success":true}.
 	// Its place before the CT-1 members is claustrum's own.

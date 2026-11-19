@@ -8,3 +8,10 @@ func SetPidInUseForTest(f func(pid int) bool) (prev func(pid int) bool) {
 	prev, pidInUse = pidInUse, f
 	return prev
 }
+
+// NewJobTestForTest gives a start test of the jobs in the state s.
+func NewJobTestForTest(s JobTestState) *JobTest {
+	t := &JobTest{}
+	t.state.Store(uint32(s))
+	return t
+}

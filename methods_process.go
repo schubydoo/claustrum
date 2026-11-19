@@ -286,7 +286,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if err != nil {
 		return spawnErrorReply(req.ID, err, p.Cwd)
 	}
-	res := rpc.SpawnReply{Success: true, CLITempRoot: mp.CLITempRoot()}
+	res := rpc.SpawnReply{Success: true, OutsideJob: mp.OutsideJob(), CLITempRoot: mp.CLITempRoot()}
 	if p.WantPid {
 		res.Pid = mp.Pid()
 		res.StartTime = mp.StartTime()

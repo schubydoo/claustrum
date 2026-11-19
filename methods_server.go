@@ -116,10 +116,20 @@ const filesReadRealFeature = "files.read.real"
 // jobFeature is the feature of a daemon that puts each child in a job.
 const jobFeature = "process.spawn.job"
 
+// jobPendingFeature and jobUnavailableFeature take the place of jobFeature while the
+// start test of the jobs is pending and after it failed (measured on Windows against
+// 4c111e86).
+const (
+	jobPendingFeature     = "process.spawn.job_pending"
+	jobUnavailableFeature = "process.spawn.job_unavailable"
+)
+
 // featuresFor is the features list of this daemon. A daemon that puts each child in a
 // job, which only Windows does, adds process.spawn.job after server.instance_id. With
 // CLAUDE_SSH_NO_JOBS=1 the name is not in the list (`52d82f0a`, measured on Windows).
-// The jobs of -keep-children (supervisor.JobsKeep) list it too (claustrum's own).
+// The jobs of -keep-children (supervisor.JobsKeep) list it too (claustrum's own). A
+// pending or failed start test of the jobs lists jobPendingFeature or
+// jobUnavailableFeature in its place (measured on Windows against 4c111e86).
 func (s *server) featuresFor() []string {
 	list := capabilityFeatures
 	if !files.ReadRealAvailable() {
@@ -127,6 +137,12 @@ func (s *server) featuresFor() []string {
 	}
 	if s.procs == nil || s.procs.Jobs == supervisor.JobsOff {
 		return list
+	}
+	switch s.procs.JobTest.State() {
+	case supervisor.JobTestPending:
+		return append(slices.Clip(list), jobPendingFeature)
+	case supervisor.JobTestFailed:
+		return append(slices.Clip(list), jobUnavailableFeature)
 	}
 	return append(slices.Clip(list), jobFeature)
 }

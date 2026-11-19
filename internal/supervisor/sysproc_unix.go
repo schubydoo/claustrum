@@ -38,9 +38,9 @@ func ResumeChild(*os.Process, *syscall.SysProcAttr) error { return nil }
 // shutdown sweep ended. Measured on macOS, and on Linux for a temp-root end.
 const quietShutdownExit = true
 
-// childJobsAtStart gives JobsOff and logs no line: Linux and macOS have no jobs. The
-// log of 52d82f0a has no job line on Linux (measured).
-func childJobsAtStart(bool, ChildJobs) ChildJobs { return JobsOff }
+// childJobsAtStart gives JobsOff and no start test, and it logs no line: Linux and
+// macOS have no jobs. The log of 52d82f0a has no job line on Linux (measured).
+func childJobsAtStart(bool, ChildJobs) (ChildJobs, *JobTest) { return JobsOff, nil }
 
 // Signal delivers the signal as SignalProcessGroup does. Nil-receiver safe (it
 // doesn't touch the receiver). A failed delivery returns a *SignalFailed.
