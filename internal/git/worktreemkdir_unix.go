@@ -243,6 +243,25 @@ func heldLeafLacksGitFile(cp worktreeCheckpoint) bool {
 	return errors.Is(statErr, unix.ENOENT)
 }
 
+// heldLeafUnlinked reports whether the leaf that the checkpoint holds open has
+// no link left, so it was deleted. A removed folder has a link count of 0
+// (from the code, not measured on macOS).
+func heldLeafUnlinked(cp worktreeCheckpoint) bool {
+	if cp.info == nil || len(cp.held) == 0 {
+		return false
+	}
+	rc, err := cp.held[0].SyscallConn()
+	if err != nil {
+		return false
+	}
+	var st unix.Stat_t
+	var statErr error
+	if err := rc.Control(func(fd uintptr) { statErr = unix.Fstat(int(fd), &st) }); err != nil || statErr != nil {
+		return false
+	}
+	return st.Nlink == 0
+}
+
 // writeHeldLeafGitFile gives the held leaf of cp a new `.git` file with text,
 // through the handle that the checkpoint holds, also after the leaf was
 // renamed away. It is one exclusive create of mode 0666 that follows no link,

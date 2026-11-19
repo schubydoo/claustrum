@@ -1132,10 +1132,11 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// movedAway is true on Linux and macOS when another folder took the path
 	// of the leaf after the add, and the held leaf has no `.git` entry. The
 	// move then completes through the held leaf, and the create is refused
-	// (leafMovedAfterAdd).
+	// (leafMovedAfterAdd). A deleted leaf keeps errLeafMoved and gets no
+	// staging folder (claustrum's own, not measured).
 	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
-		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
+		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) || heldLeafUnlinked(cp) {
 			return err
 		}
 		movedAway = true
