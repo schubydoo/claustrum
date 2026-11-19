@@ -204,6 +204,14 @@ func TestSocketAdoptEnvFrames(t *testing.T) {
 	}
 }
 
+// helperExitWait bounds the wait for the exit frame of a child of an adopted set.
+// The only time bound on the exit frame is the 5 s pipe drain grace, and the
+// helper has no grandchild. So this wait is the test's own. Under -race the helper
+// sleeps 1 s before it exits, because the adopted set holds no GORACE. On a loaded
+// macOS runner of CI the test failed at the 5 s of waitExit. Its job log has no
+// pipe drain grace line from 23:55:17 to 23:55:40 UTC.
+const helperExitWait = 20 * time.Second
+
 // adoptChildEnv spawns the environ helper on cl as id and returns its environment.
 func adoptChildEnv(t *testing.T, cl *testClient, id string, n int) map[string]string {
 	t.Helper()
@@ -230,7 +238,7 @@ func adoptChildEnvWith(t *testing.T, cl *testClient, id string, n int, extra map
 		t.Fatalf("spawn %s: %s", id, got)
 	}
 	env := map[string]string{}
-	for _, e := range strings.Split(streamBytes(t, cl.waitExit(id), "stdout"), "\n") {
+	for _, e := range strings.Split(streamBytes(t, cl.waitExitWithin(helperExitWait, id), "stdout"), "\n") {
 		if name, value, ok := strings.Cut(e, "="); ok && name != "" {
 			env[strings.ToUpper(name)] = value
 		}
@@ -609,7 +617,7 @@ func TestSocketAdoptEnvGitReadReadsNoPATHAgain(t *testing.T) {
 	if got := string(cl.call(gitReadReq(t, 2, "g", repo, []string{"rev-parse", "--show-toplevel"}, nil))); !strings.Contains(got, `"success":true`) {
 		t.Fatalf("gitRead spawn: %s", got)
 	}
-	cl.waitExit("g")
+	cl.waitExitWithin(helperExitWait, "g")
 	noReadStarted(t, f, "a gitRead spawn")
 	adoptChildEnv(t, cl, "plain", 3)
 	r := startedRead(t, f)
