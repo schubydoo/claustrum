@@ -126,6 +126,25 @@ func TestHeldGitDirOfATaggedFolder(t *testing.T) {
 	}
 }
 
+// With GODEBUG=winsymlink=0 Go reads a junction as a symbolic link. It is
+// still no folder for the hold. Go reads GODEBUG again after os.Setenv.
+func TestHeldGitDirRefusesAJunctionWithOldLinkModes(t *testing.T) {
+	t.Setenv("GODEBUG", "winsymlink=0")
+	root := resolveTestRoot(t, t.TempDir())
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	jn := filepath.Join(root, "jn")
+	makeJunction(t, jn, target)
+	if fi, err := os.Lstat(jn); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		t.Fatalf("with winsymlink=0 the junction reads as %v, %v", fi, err)
+	}
+	if gitDirIdentity(jn) != nil {
+		t.Error("a junction has the identity of a folder with winsymlink=0")
+	}
+}
+
 // TestCreateWithATaggedGitDirOnWindows must match the Windows row on 4c111e86:
 // a create in shadow whose `.git` folder has the reparse tag
 // IO_REPARSE_TAG_PROJFS answers success. The registration and the branch are
