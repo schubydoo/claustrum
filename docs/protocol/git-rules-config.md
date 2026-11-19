@@ -1,6 +1,6 @@
 # Config refusals of the git methods
 
-In the state `shadow`, the daemon reads the git config of a repository itself. This page gives the refusals that follow.
+This page gives the refusals of the daemon's config read.
 
 An untagged rule on this page follows build `5fd08069`, measured on Linux.
 
@@ -48,8 +48,10 @@ doubles it again. The path of the `open <file>:` text is not in quotes, and it i
 cut. The `<worktreePath>` of the remove text is as sent, and it is not cut.
 
 On Linux and macOS the path of the config is the resolved path, so a request through
-a symbolic link gets the real path. On Windows a request through a junction keeps the
-spelling of the junction, and a request in another letter case gets the real spelling.
+a symbolic link gets the real path. On Windows a request in another letter case gets
+the real spelling. A request through a junction keeps the junction spelling, except
+[a junction `path`](git-rules-trust.md#how-the-daemon-finds-the-git-directory) of
+`git.info` or `git.list_branches` (4c111e86).
 
 The path of an included file is the folder of the file that holds the setting, one
 separator, and the value as written. The Windows `is outside` text is the exception:
@@ -87,7 +89,7 @@ version and the extensions of an included file are not tested.
 | `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on. This text comes before an extension refusal. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory. `NUL` and a stream such as `a/inc.cfg::$DATA` get it too (b3081b51, measured on Windows) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it also in an `includeIf` section whose condition does not match. `<value>` is cut to its first 300 characters |
-| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Also Windows, on every git method that reads the config: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`. Windows: an include through a junction in the git directory, with `<file>` as written (b3081b51, measured on Windows on `git.info`, `git.list_branches` and `git.worktree_create`). An include below a folder with the reparse tag `0x9000001A` is followed (b3081b51, measured on Windows) |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`, except a junction `path` of `git.info` or `git.list_branches` ([4c111e86](git-rules-trust.md#how-the-daemon-finds-the-git-directory)). Windows: an include through a junction in the git directory, with `<file>` as written (b3081b51, measured on Windows on `git.info`, `git.list_branches` and `git.worktree_create`). An include below a folder with the reparse tag `0x9000001A` is followed (b3081b51, measured on Windows) |
 
 No refusal comes from a config that is missing, empty, a dangling symbolic link or a
 symbolic link to a regular file. A NUL byte in a value, an empty `include.path` and
@@ -187,7 +189,7 @@ These rules are from the code and are not measured on `5fd08069`:
   "more settings" text, as measured. The two include limits come before the open of an included
   file.
 - A read with a failed open or read of the daemon is not kept, also when it accepts
-  the config. So the next request reads again.
+  the config.
 - The change test misses a change that keeps the size, modification time, mode and
   identity, where the system gives one, of each file of the read.
 - An open error of the file of an `includeIf` section gives no refusal. An open
@@ -210,8 +212,9 @@ These rules are from the code and are not measured on `5fd08069`:
   repositories (`safe.bareRepository = explicit`), gets the refusal.
 - An `includeIf` line in a file three levels below the config gets the "includes go
   past" text.
-- On Windows the daemon refuses a link at a config file and at an included file, and a
-  junction or a directory symbolic link at the git directory itself. It tests no other
+- On Windows the daemon refuses a link at a config file and at an included file. It
+  refuses a junction or a directory symbolic link at the git directory itself, except a
+  junction `path` of `git.info` or `git.list_branches` ([4c111e86](git-rules-trust.md#how-the-daemon-finds-the-git-directory)). It tests no other
   folder above the config. It also refuses an include value that starts with a slash or
   a drive. A link at an included file or at the file of an `includeIf` section gets no
   connect to a named pipe, and neither does the change test.

@@ -8,6 +8,12 @@ func gitInfoRoot(_ *gitStop, walkRoot, _, _ string, _, _ []string) string {
 	return walkRoot
 }
 
+// lastNameJunctionTarget finds no junction on Linux and macOS, which have none.
+// The walk resolves a symbolic link there (walkStart).
+func lastNameJunctionTarget(string) (string, bool) {
+	return "", false
+}
+
 // existingPathSpelling is the path of the `already exists` refusal of
 // git.worktree_create without worktreeRoot. Off Windows it is the cleaned path with
 // the symlinks of its parent folder resolved and its last name kept

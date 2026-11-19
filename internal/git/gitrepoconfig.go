@@ -1433,17 +1433,22 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 	// read tests the state of each file, and a link to the same folder keeps
 	// those states. The refusal is not kept. A link that is there before the
 	// first request gets the same refusal on 5fd08069 (measured on Windows).
-	if d := gitDirLinkDetail(t.pinCommonDir); d != "" {
+	// The read takes t.configDir when it is set (configDirThroughJunction).
+	dir := t.pinCommonDir
+	if t.configDir != "" {
+		dir = t.configDir
+	}
+	if d := gitDirLinkDetail(dir); d != "" {
 		return &repoVerdict{refusal: repoConfigPrefix + d}
 	}
 	home, _ := os.UserHomeDir()
-	k := repoVerdictKey{gitDir: t.pinCommonDir, home: home}
+	k := repoVerdictKey{gitDir: dir, home: home}
 	if v, ok := keptRepoVerdict(k); ok && v.refusal == "" {
 		return v
 	}
 	var log repoReadLog
 	v := &repoVerdict{}
-	r, d := readRepoConfig(s.context(), t.pinCommonDir, &log)
+	r, d := readRepoConfig(s.context(), dir, &log)
 	switch {
 	case d != "":
 		v.refusal = repoConfigPrefix + d

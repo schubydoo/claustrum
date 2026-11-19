@@ -17,18 +17,18 @@ the daemon walks up from the request folder:
 - The walk starts at the request folder with symlinks resolved. A refusal names
   the resolved path.
 - On Windows the walk resolves no junction before the last component of the
-  path. It starts at the path as spelled, and it takes a `..` by text. Take a
-  repository `<P>` with a junction `<P>\J` into a repository `<R>`. For
-  `<P>\J\sub` each git call carries `GIT_COMMON_DIR=<P>\.git`. Through a second
-  junction `<KP>` to `<P>`, the pin is `<KP>\.git`. A junction as the last
-  component gives the pin of `<P>` too. A folder symlink in the place of the
-  junction resolves, and the pin is `<R>\.git`. A junction outside any repository
-  gives "no repository", and each git call carries `GIT_DIR=NUL`.
-- On Windows the resolve of a folder path can fail, for example at a missing name
-  before `..`. The walk then starts at the spelled path. `git.status` resolves the
-  path first. If that resolve fails, it answers there (all from the code).
-- On Windows a refusal of a config on `git.info` follows the spelled start too. In
-  the state `shadow` without `"shadowDirOff":true`, it is the
+  path. It starts at the spelled path and takes `..` by text. With a junction
+  `<P>\J` into repository `<R>`, each git call on
+  `<P>\J\sub` carries `GIT_COMMON_DIR=<P>\.git` (a folder symlink gives `<R>\.git`). A second junction
+  `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
+  the pin of `<P>` too. A junction outside any repository gives "no repository",
+  and each git call carries `GIT_DIR=NUL`.
+- On Windows any folder path that does not resolve, like `<P>\gone\..`, starts the walk as spelled.
+  `git.status` resolves it first and answers there on failure (all
+  from the code).
+- On Windows a config refusal of `git.info` follows the spelled start too,
+  except a junction `path`. In `shadow` without
+  `"shadowDirOff":true`, it is the
   [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
   with no value, gets the hooks refusal. So does any refused config outside that
@@ -61,9 +61,19 @@ then any spaces, tabs, CRs or LFs, then `refs/`. It also passes when it starts
 with 40 hex digits in either case. A symlink `HEAD` passes when its target text
 starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
 
+??? note "Junction paths"
+    On Windows `git.info` and `git.list_branches` read the config of a junction
+    `path` that holds its git directory through its target, so a refusal names that
+    file, and one to a bare repository answers as that repository (`4c111e86`,
+    measured).
+    Other methods, a daemon `GIT_DIR` and a target with no drive letter keep the
+    pin. A junction chain
+    reads its first target, so one to a bare repository is refused. Both are
+    claustrum's own, not measured.
+
 ### How the daemon judges the git directory
 
-The daemon then judges the git directory G:
+The daemon judges the git directory G:
 
 - G is a linked-worktree entry when its parent is named `worktrees`, its own name
   is not `.git`, and its grandparent passes the git-directory test. The entries of
@@ -101,8 +111,7 @@ The daemon then judges the git directory G:
   daemon `GIT_DIR` can name an entry as `…\GIT~1\WORKTR~1\<name>`. That G is no
   entry, so its `commondir` gets S1 for `../..` (not measured).
 - On Windows the daemon resolves G when a component of G is a symlink. Else it
-  keeps G as spelled, also with a junction before its last component. For a
-  junction `<KP>` to a repository, the pin is `<KP>\.git`.
+  keeps G as spelled, also with a junction before its last component.
 
 ### A stray `commondir`
 
@@ -145,8 +154,8 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   Each failure of the copy step there gives that answer (claustrum's own, not measured).
 - On Linux and macOS a `GIT_DIR` that names a `.git` file means "no repository".
   On Windows that `.git` file is trusted and pinned to itself. Without
-  `"shadowDirOff":true` class 2 of
-  [config refusals](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
+  `"shadowDirOff":true`
+  [class 2](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
 - Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the
   daemon's environment sets `GIT_COMMON_DIR` (measured on Linux and Windows). A
   relative value is first joined to the request folder (measured on Linux and
@@ -247,12 +256,11 @@ Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
 listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
 a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
-repository, and it keeps the "no repository" column (from the code).
-`git.worktree_remove` keeps that column unless its listing fails (from the code).
-For the `.git` file, `git.info` and `git.list_branches` run no listing either
-(from the code).
+repository, and it keeps the "no repository" column.
+`git.worktree_remove` keeps that column unless its listing fails.
+For the `.git` file, `git.info` and `git.list_branches` run no listing either.
 The listing of `git.status` still carries `GIT_DIR=<null>`, and
-its failure is the refusal of `git.status` (both from the code). With an incomplete
+its failure is the refusal of `git.status`. These four are from the code. With an incomplete
 `GIT_CONFIG` pair of the daemon, each method answers "no repository" for the
 `.git` file, and a remove of a gone worktree gets success (`b3081b51`).
 
