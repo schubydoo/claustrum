@@ -85,6 +85,10 @@ func TestWindowsJobTestFailsWithTheExitStatus(t *testing.T) {
 // sleeps is in a job with the flags 0x2800, as on 4c111e86 (measured on Windows). At the
 // bound the end of the test job ends the child and the grandchild in it with exit code 1,
 // as 4c111e86 ends the child and its conhost. A process outside the test job lives on.
+// The close of the test job at the reap ends the grandchild with code 0 (measured on
+// Windows with an end of the child alone), so the code 1 of the grandchild shows the end.
+// The flags are read right after the start, and the bound is longer than the wait for the
+// grandchild pid, so a slow start cannot reap the test job first.
 func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	useJobTestHelper(t, "tree", pidFile)
@@ -96,9 +100,12 @@ func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
 	buf := captureLogBuf(t)
-	test, c := startJobTestForTest(t, 300*time.Millisecond, 3*time.Second)
+	test, c := startJobTestForTest(t, 300*time.Millisecond, 8*time.Second)
+	if flags := jobLimitFlags(t, c); flags != 0x2800 {
+		t.Errorf("limit flags of the test job = %#x, want 0x2800", flags)
+	}
 	gpid := 0
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for gpid == 0 {
 		if b, err := os.ReadFile(pidFile); err == nil {
 			gpid, _ = strconv.Atoi(string(b))
@@ -116,9 +123,6 @@ func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 		_ = windows.TerminateProcess(gh, 1)
 		_ = windows.CloseHandle(gh)
 	})
-	if flags := jobLimitFlags(t, c); flags != 0x2800 {
-		t.Errorf("limit flags of the test job = %#x, want 0x2800", flags)
-	}
 	if test.State() != JobTestPending {
 		t.Fatalf("state = %d, want pending", test.State())
 	}
@@ -132,7 +136,7 @@ func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 	if code := c.cmd.ProcessState.ExitCode(); code != 1 {
 		t.Errorf("exit code of the test child = %d, want 1", code)
 	}
-	if !strings.Contains(buf.String(), ": the program had not run to its end after 3s\n") {
+	if !strings.Contains(buf.String(), ": the program had not run to its end after 8s\n") {
 		t.Errorf("log = %q, want the bound line", buf.String())
 	}
 	if ev, _ := windows.WaitForSingleObject(gh, 10000); ev != windows.WAIT_OBJECT_0 {
