@@ -482,9 +482,10 @@ func (req *gitCall) keepLiveForm(off bool, t gitDirTrust, dir string) {
 // held after it (acceptGitDir), and held takes it for the release at the
 // reply. The request takes the copy, the read of the config and that hold as
 // its own use, so every later step acts through the held folder. A git
-// directory that is no longer that real directory refuses the later gate, and
-// the form stays without a copy (claustrum's own, not measured). After the add
-// the later gate changes only the form, as in keepLiveForm (measured).
+// directory that is no longer that folder (heldFolderKind) refuses the later
+// gate, and the form stays without a copy (claustrum's own, not measured).
+// After the add the later gate changes only the form, as in keepLiveForm
+// (measured).
 func (req *gitCall) keepLiveCreate(off bool, t gitDirTrust, repo string, added *bool, held **acceptedGitDir) {
 	req.followSwitch(off, func(l *liveSwitch, ask bool) (gitUse, bool) {
 		use, read, gitRefused, configRefused := req.use, req.repoRead, req.gitRefused, req.configRefused

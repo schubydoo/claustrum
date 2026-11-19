@@ -72,9 +72,10 @@ import (
 // later call has no copy: the off switch changes only the form of the calls.
 //
 // Three steps take a new folder from the path, on Linux and macOS. The first is
-// right after `rev-parse --absolute-git-dir`, when git answered another real
-// directory that passes the gate (acceptedGitDir.movedTo). The second is right
-// after a good `worktree add`, when a new real directory at the path passes
+// right after `rev-parse --absolute-git-dir`, when git answered another
+// folder (heldFolderKind) that passes the gate (acceptedGitDir.movedTo). The
+// second is right after a good `worktree add`, when a new folder
+// (heldFolderKind) at the path passes
 // the gate (acceptedGitDir.replacedAtPath). In a staged add addStage.finish
 // takes it before the move (adopt). The steps above then act through that
 // folder.

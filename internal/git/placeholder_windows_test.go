@@ -4,9 +4,11 @@ package git
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -88,6 +90,102 @@ func TestPlaceholderFolderIsNoLink(t *testing.T) {
 	makeJunction(t, jn, filepath.Join(root, "target"))
 	if gitDirLinkDetail(jn) == "" || !linkBelow(filepath.Dir(jn), jn) {
 		t.Error("a junction is no link")
+	}
+}
+
+// A folder with the reparse tag IO_REPARSE_TAG_PROJFS can be the held git
+// directory of a create. A write through the held root lands in it. A junction
+// to it is still no folder and is not opened as one. Without heldFolderKind
+// in gitDirIdentity the tagged folder gets no identity.
+func TestHeldGitDirOfATaggedFolder(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	tagged := filepath.Join(root, ".git")
+	tagFolder(t, tagged, ioReparseTagProjFS)
+	a := acceptGitDir(tagged, gitDirIdentity(tagged))
+	if a == nil {
+		t.Fatal("the tagged folder is not held")
+	}
+	defer a.release()
+	if !a.stands() {
+		t.Error("the tagged folder does not stand")
+	}
+	if err := a.root.Mkdir("made", 0o755); err != nil {
+		t.Fatalf("a folder through the held root: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(tagged, "made")); err != nil {
+		t.Errorf("the folder in the tagged git directory: %v", err)
+	}
+	jn := filepath.Join(root, "jn")
+	makeJunction(t, jn, tagged)
+	if gitDirIdentity(jn) != nil {
+		t.Error("a junction to the tagged folder has the identity of a folder")
+	}
+	if held, err := openHeldGitDir(jn); err == nil {
+		_ = held.Close()
+		t.Error("a junction at the last name is opened as the held folder")
+	}
+}
+
+// With GODEBUG=winsymlink=0 Go reads a junction as a symbolic link. It is
+// still no folder for the hold. Go reads GODEBUG again after os.Setenv. This
+// is a guard test: it passes on the code before heldFolderKind as well,
+// because goesAsTree refuses a symbolic link too.
+func TestHeldGitDirRefusesAJunctionWithOldLinkModes(t *testing.T) {
+	t.Setenv("GODEBUG", "winsymlink=0")
+	root := resolveTestRoot(t, t.TempDir())
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	jn := filepath.Join(root, "jn")
+	makeJunction(t, jn, target)
+	if fi, err := os.Lstat(jn); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		t.Fatalf("with winsymlink=0 the junction reads as %v, %v", fi, err)
+	}
+	if gitDirIdentity(jn) != nil {
+		t.Error("a junction has the identity of a folder with winsymlink=0")
+	}
+}
+
+// TestCreateWithATaggedGitDirOnWindows must match the Windows row on 4c111e86:
+// a create in shadow whose `.git` folder has the reparse tag
+// IO_REPARSE_TAG_PROJFS answers success. The registration and the branch are
+// in that folder, and the leaf is made. The removal of the cleanup is a
+// recorder. Without heldFolderKind in gitDirIdentity the create gets the text
+// of a config behind a link.
+func TestCreateWithATaggedGitDirOnWindows(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	recordStagingRemovals(t)
+	src := filepath.Join(resolveTestRoot(t, t.TempDir()), "src")
+	if err := os.Rename(f.gitDir, src); err != nil {
+		t.Fatal(err)
+	}
+	tagFolder(t, f.gitDir, ioReparseTagProjFS)
+	copyGitDir(t, src, f.gitDir)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	var reply struct {
+		Result struct {
+			Success bool
+			Path    string
+		}
+	}
+	if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+		t.Fatalf("the reply %s: %v", raw, err)
+	}
+	if !reply.Result.Success || reply.Result.Path != leaf {
+		t.Fatalf("git.worktree_create = %s, want success at %s", raw, leaf)
+	}
+	for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("refs", "heads", "w1")} {
+		if _, err := os.Lstat(filepath.Join(f.gitDir, name)); err != nil {
+			t.Errorf("%s in the tagged git directory: %v", name, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(leaf, ".git")); err != nil {
+		t.Errorf("the .git file of the leaf: %v", err)
 	}
 }
 

@@ -27,7 +27,8 @@ import (
 // open and compares identities:
 //
 //   - The folder is read once after the trust check and before the gate
-//     (gitDirIdentity). It must be a real directory: no link and no junction.
+//     (gitDirIdentity). It must be a folder: no link and no junction
+//     (heldFolderKind).
 //   - After the gate the create opens it and holds it open until the reply
 //     (acceptGitDir). The open folder must have that identity. While it is
 //     open, no new folder gets that identity.
@@ -113,9 +114,9 @@ func realDirText(gitDir string) string {
 }
 
 // gitDirIdentity is the Lstat of the git directory at path with its file
-// identity read now, or nil when path is no real directory. On Windows
-// os.SameFile reads the identity of a FileInfo from the path at the first
-// compare (probeStat).
+// identity read now, or nil when path is no folder (heldFolderKind). On
+// Windows os.SameFile reads the identity of a FileInfo from the path at the
+// first compare (probeStat).
 //
 // On Linux and macOS the mode and the identity come from the one Lstat call.
 // On Windows they come from two opens of the path: Go has no call that gives
@@ -132,11 +133,29 @@ func realDirText(gitDir string) string {
 // read-tree call at point 12 (measured).
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
-	if err != nil || !goesAsTree(fi.Mode()) {
+	if err != nil || !heldFolderKind(fi.Mode()) {
 		return nil
 	}
 	os.SameFile(fi, fi)
 	return fi
+}
+
+// heldFolderKind reports whether an entry with the mode m of its Lstat can be
+// the held git directory: a folder. With the default winsymlink setting, Go on
+// Windows gives the folder bit only to a folder whose reparse tag is no name
+// surrogate. So a junction, a directory symbolic link and every other name
+// surrogate are no folder here. With winsymlink=0 Go gives the folder bit to a
+// name surrogate that is no junction and no symbolic link. The open of the
+// hold then refuses it (openHeldGitDir, from the code). No test covers such a
+// name surrogate, as before heldFolderKind (claustrum's own, not measured). A
+// `.git` folder with IO_REPARSE_TAG_PROJFS has the folder bit and the
+// irregular bit. 4c111e86 makes the worktree of a create in shadow there
+// (measured on Windows). Every other tag that is no name surrogate is a folder
+// here too (claustrum's own, not measured). On Linux and macOS Go sets no
+// irregular bit on a folder, so this is the test of goesAsTree there (from
+// the code). goesAsTree still decides the kinds of the deletes.
+func heldFolderKind(m fs.FileMode) bool {
+	return m.IsDir()
 }
 
 // gitDirLinkDetail refuses a git directory that is a junction, where
@@ -171,7 +190,7 @@ func gitDirLinkText(gitDir string) string {
 
 // acceptGitDir opens the git directory at path and holds it. before is what
 // gitDirIdentity gave for path before the gate of the request. It returns nil
-// when path is no longer that real directory.
+// when path is no longer that folder (heldFolderKind).
 func acceptGitDir(path string, before os.FileInfo) *acceptedGitDir {
 	if before == nil {
 		return nil
@@ -255,8 +274,8 @@ func (a *acceptedGitDir) release() {
 	}
 }
 
-// stands reports whether the path still names the held folder, as a real
-// directory.
+// stands reports whether the path still names the held folder, as a folder
+// (heldFolderKind).
 //
 // The spelling of the request is tested too (sent). On Linux and macOS a
 // `.git` that is a symbolic link before the request is resolved by the trust
@@ -310,8 +329,8 @@ func answeredElsewhere(u gitUse, gitDir string) bool {
 }
 
 // movedTo is the hold of a create on the git directory gitDir that git
-// answered, when that is another real directory than the held one and passes
-// the gate. It is nil in every other case. repo is the baseRepo of the create.
+// answered, when that is another folder (heldFolderKind) than the held one and
+// passes the gate. It is nil in every other case. repo is the baseRepo of the create.
 // The caller releases the new hold.
 //
 // The rows are measured on Linux and macOS (2 of 2 runs on macOS). A symbolic link to a
@@ -401,10 +420,10 @@ func (a *acceptedGitDir) takeGitDirCopy(u gitUse, pinned string, read *repoVerdi
 	}
 }
 
-// replacedAtPath is the hold of a create on a new real directory at the path
-// of the held git directory, right after a good `worktree add`. It is nil when
-// the path names no real directory, still names the held folder, or names a
-// folder that fails the gate. repo is the baseRepo of the create. The caller
+// replacedAtPath is the hold of a create on a new folder (heldFolderKind) at
+// the path of the held git directory, right after a good `worktree add`. It is
+// nil when the path names no such folder, still names the held folder, or
+// names a folder that fails the gate. repo is the baseRepo of the create. The caller
 // releases the new hold.
 //
 // The row is measured on Linux and macOS. While
@@ -449,9 +468,10 @@ func (a *acceptedGitDir) adopt(next *acceptedGitDir) {
 	a.addBranch, a.addTip = branch, tip
 }
 
-// takeOver is the hold on the real directory gitDir, whose identity before the
-// open is before, when the trust check of repo pins it and its config passes
-// the gate. The new hold keeps the trust verdict of the first gate.
+// takeOver is the hold on the folder (heldFolderKind) gitDir, whose identity
+// before the open is before, when the trust check of repo pins it and its
+// config passes the gate. The new hold keeps the trust verdict of the first
+// gate.
 func (a *acceptedGitDir) takeOver(gitDir string, before os.FileInfo, repo string) *acceptedGitDir {
 	t := gitDirTrustFor(repo)
 	if before == nil || t.verdict != gitDirTrusted || !sameGitDirPath(t.pinCommonDir, gitDir) {
