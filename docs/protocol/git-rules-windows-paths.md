@@ -14,10 +14,10 @@ On Windows `b3081b51` refuses a repository path through a symlink or junction to
 
 These rows are measured on Windows on `4c111e86`. They set raw tags with no ProjFS provider.
 
-- A `.git` folder with `IO_REPARSE_TAG_PROJFS` is plain for `git.info`, `git.status`, `git.list_branches` and a remove. So is a worktree folder with it below `baseRepo` in `git.status`. A create in `shadow` makes a worktree there, where claustrum refuses. Its text is that of a config behind a link, because the held git directory takes a plain folder only (from the code).
+- A `.git` folder with `IO_REPARSE_TAG_PROJFS` is plain for `git.info`, `git.status`, `git.list_branches` and a remove. So is a worktree folder with it below `baseRepo` in `git.status`. A create in `shadow` makes a worktree there. Claustrum holds such a `.git` as a folder (from the code).
 - With no filter for `IO_REPARSE_TAG_WIM`, a look below such a folder fails. A repository there gets ``Claude couldn't check that `<path>` stays on a local drive, so git wasn't run. Try again.`` on `git.info`, `git.status` and `git.list_branches`, with no git call on it. A `.git` with that tag gets it on all five methods, naming `<path>\.git\objects`. A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it. The log gets `[GitHandler] network-path check of "<path>": could not determine where the path's links point: The file cannot be accessed by the system.`, with `<path>` Go-quoted.
 
-Claustrum's own, not measured: four link tests take every other tag that is no name surrogate as no link. They test the git directory, a `git.status` worktree, the config includes and a share path. An include below an `IO_REPARSE_TAG_CLOUD` folder is measured: it is followed ([`b3081b51`, measured on Windows](git-rules-config.md#class-1-the-git-config)). The other link tests still count such a folder as a link (claustrum's own, not measured).
+Claustrum's own, not measured: four link tests and the hold of a create take every other tag that is no name surrogate as no link. They test the git directory, a `git.status` worktree, the config includes and a share path. An include below an `IO_REPARSE_TAG_CLOUD` folder is measured: it is followed ([`b3081b51`, measured on Windows](git-rules-config.md#class-1-the-git-config)). The other link tests still count such a folder as a link (claustrum's own, not measured).
 
 Also claustrum's own, not measured:
 

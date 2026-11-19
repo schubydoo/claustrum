@@ -27,7 +27,8 @@ import (
 // open and compares identities:
 //
 //   - The folder is read once after the trust check and before the gate
-//     (gitDirIdentity). It must be a real directory: no link and no junction.
+//     (gitDirIdentity). It must be a folder: no link and no junction
+//     (heldFolderKind).
 //   - After the gate the create opens it and holds it open until the reply
 //     (acceptGitDir). The open folder must have that identity. While it is
 //     open, no new folder gets that identity.
@@ -132,11 +133,25 @@ func realDirText(gitDir string) string {
 // read-tree call at point 12 (measured).
 func gitDirIdentity(path string) os.FileInfo {
 	fi, err := os.Lstat(path)
-	if err != nil || !goesAsTree(fi.Mode()) {
+	if err != nil || !heldFolderKind(fi.Mode()) {
 		return nil
 	}
 	os.SameFile(fi, fi)
 	return fi
+}
+
+// heldFolderKind reports whether an entry with the mode m of its Lstat can be
+// the held git directory: a folder. On Windows Go gives the folder bit only to
+// a folder whose reparse tag is no name surrogate, so a junction, a directory
+// symbolic link and every other name surrogate are no folder here. A `.git`
+// folder with IO_REPARSE_TAG_PROJFS is a folder that is irregular. 4c111e86
+// makes the worktree of a create in shadow there (measured on Windows). Every
+// other tag that is no name surrogate is a folder here too (claustrum's own,
+// not measured). On Linux and macOS Go sets no irregular bit on a folder, so
+// this is the test of goesAsTree there (from the code). goesAsTree still
+// decides the kinds of the deletes.
+func heldFolderKind(m fs.FileMode) bool {
+	return m.IsDir()
 }
 
 // gitDirLinkDetail refuses a git directory that is a junction, where

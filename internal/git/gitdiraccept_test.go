@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,6 +184,29 @@ func TestAcceptGitDir(t *testing.T) {
 	mustWrite(t, file, "x\n")
 	if gitDirIdentity(file) != nil {
 		t.Error("a file has the identity of a real directory")
+	}
+}
+
+// TestHeldFolderKind: the modes that Go gives on Windows. A folder whose
+// reparse tag is no name surrogate, such as IO_REPARSE_TAG_PROJFS, can be held.
+// A junction (irregular, no folder bit), a symbolic link and a file cannot.
+// With goesAsTree in its place the tagged folder fails, and with a test of
+// the irregular bit alone the junction passes.
+func TestHeldFolderKind(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		mode fs.FileMode
+		want bool
+	}{
+		{"plain folder", fs.ModeDir | 0o755, true},
+		{"tagged folder", fs.ModeDir | fs.ModeIrregular | 0o755, true},
+		{"junction", fs.ModeIrregular | 0o666, false},
+		{"symbolic link", fs.ModeSymlink | 0o666, false},
+		{"file", 0o644, false},
+	} {
+		if got := heldFolderKind(row.mode); got != row.want {
+			t.Errorf("%s (%v): got %v, want %v", row.name, row.mode, got, row.want)
+		}
 	}
 }
 
