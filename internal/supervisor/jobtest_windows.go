@@ -49,8 +49,9 @@ type winJobTestChild struct {
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
 // join error (claustrum's own, not measured). A failed resume leaves the child asleep
-// until End at the bound. If the wait handle does not open, the gate closes at once,
-// End never runs, and the test waits for the child to end by itself (claustrum's own).
+// until End at the bound. If the wait handle does not open, the gate closes at once and
+// End never runs. The test then fails jobTestReapGrace after the bound (awaitJobTest),
+// and the child is left to end by itself (claustrum's own, not measured).
 func startJobTestChild() (jobTestChild, error) {
 	cmd, err := newJobTestCmd()
 	if err != nil {
@@ -62,7 +63,7 @@ func startJobTestChild() (jobTestChild, error) {
 	}
 	c := &winJobTestChild{cmd: cmd, exited: make(chan struct{})}
 	c.group, c.jobErr = ConfineProcess(cmd.Process, JobsKeep)
-	h, hErr := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
+	h, hErr := openJobTestWait(cmd.Process.Pid)
 	_ = ResumeChild(cmd.Process, cmd.SysProcAttr)
 	go func() {
 		if hErr == nil {
@@ -74,11 +75,17 @@ func startJobTestChild() (jobTestChild, error) {
 	return c, nil
 }
 
+// openJobTestWait opens the wait handle of the test child. A test replaces it.
+var openJobTestWait = func(pid int) (windows.Handle, error) {
+	return windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
+}
+
 func (c *winJobTestChild) Exited() <-chan struct{} { return c.exited }
 
 // End ends the test child alone, by its own handle, with exit code 1. 4c111e86 gives
 // the child exit code 1 at the bound (measured on Windows). It ends no other process
-// of the job (claustrum's own).
+// of the job (claustrum's own). With no handle it ends nothing and gives an error, and
+// awaitJobTest then fails the test.
 func (c *winJobTestChild) End() error {
 	g := c.group
 	g.mu.Lock()

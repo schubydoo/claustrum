@@ -19,6 +19,8 @@ type fakeJobTestChild struct {
 	ends    atomic.Int32
 	// endExits makes End close exited and give the result of an ended child.
 	endExits bool
+	// endErr is the error of End. An End with an error lets the child run.
+	endErr error
 }
 
 func newFakeJobTestChild(endExits bool) *fakeJobTestChild {
@@ -28,6 +30,10 @@ func newFakeJobTestChild(endExits bool) *fakeJobTestChild {
 func (c *fakeJobTestChild) Exited() <-chan struct{} { return c.exited }
 
 func (c *fakeJobTestChild) End() error {
+	if c.endErr != nil {
+		c.ends.Add(1)
+		return c.endErr
+	}
 	if c.ends.Add(1) == 1 && c.endExits {
 		close(c.exited)
 		c.release <- errors.New("exit status 1")
@@ -137,10 +143,44 @@ func TestJobTestEndsAHungChildOnceAtTheBound(t *testing.T) {
 	if !re.MatchString(buf.String()) {
 		t.Errorf("log = %q, want the bound line", buf.String())
 	}
-	time.Sleep(100 * time.Millisecond)
+}
+
+// TestJobTestFailsWhenTheEndFails: after an end that fails at the bound and no reap in
+// the grace, the test fails with the bound reason, so it does not stay pending
+// (claustrum's own).
+func TestJobTestFailsWhenTheEndFails(t *testing.T) {
+	old := jobTestReapGrace
+	jobTestReapGrace = 100 * time.Millisecond
+	t.Cleanup(func() { jobTestReapGrace = old })
+	buf := captureLogBuf(t)
+	c := newFakeJobTestChild(false)
+	c.endErr = errors.New("no handle of the self-test child")
+	test := runJobTest(c, time.Now(), 20*time.Millisecond, 200*time.Millisecond)
+	waitJobTestState(t, test, JobTestFailed)
 	if n := c.ends.Load(); n != 1 {
-		t.Errorf("End ran %d times after the fail, want 1", n)
+		t.Errorf("End ran %d times, want 1", n)
 	}
+	if !strings.Contains(buf.String(), ": the program had not run to its end after 200ms\n") {
+		t.Errorf("log = %q, want the bound line", buf.String())
+	}
+}
+
+// TestJobTestFailsWhenTheReapNeverComes: a child whose exit closed the gate and whose
+// reap does not come fails the test jobTestReapGrace after the bound, with no end, as
+// after a wait handle that did not open (claustrum's own).
+func TestJobTestFailsWhenTheReapNeverComes(t *testing.T) {
+	old := jobTestReapGrace
+	jobTestReapGrace = 100 * time.Millisecond
+	t.Cleanup(func() { jobTestReapGrace = old })
+	captureLogBuf(t)
+	c := newFakeJobTestChild(false)
+	close(c.exited)
+	test := runJobTest(c, time.Now(), 20*time.Millisecond, 200*time.Millisecond)
+	waitJobTestState(t, test, JobTestFailed)
+	if n := c.ends.Load(); n != 0 {
+		t.Errorf("End ran %d times, want 0", n)
+	}
+	c.release <- nil
 }
 
 // TestJobTestSendsNoEndAfterTheExit: a child that has exited but is not reaped at the

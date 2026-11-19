@@ -216,7 +216,7 @@ These are not measured:
 - The owner test of the new folder.
 - The count is per daemon. A folder gives its place back at the exit frame of its last spawn, or, while a step or a refresh holds the lock, once it ends.
 - The step runs after the `cwd`, launcher and session command tests, and before the start.
-- `cliTempRoot` comes before `pid` and `startTime`.
+- `outsideJob`, then `cliTempRoot`, come before `pid` and `startTime`.
 - A failed registry write is not logged. A failed hold does not stop the spawn.
 
 On macOS the kinds `a link`, `not a folder` and `another account's` are measured too. So are the folder with its `t`, the log line, the link and file text and the 0333 text. The other rules are claustrum's own on macOS. There the record takes `kern.bootsessionuuid` as the boot id, with no pid namespace.
@@ -387,11 +387,11 @@ A spawn whose `args` name a stream-json session of the Claude Code CLI ends ever
 - `--input-format=stream-json`, `--output-format=stream-json` or a bare `stream-json`, and
 - a session id from `--session-id <v>` or `--session-id=<v>`. Without one, it is `--resume <v>` or `--resume=<v>`, unless `--fork-session` is there too.
 
-The argument after a bare `--session-id` or `--resume` is its value. The id has 1 to 128 characters (from the code). Each is a letter, a digit, `-`, `_`, `.` or `:`, and the first is not `-` (from the code). Any other spawn supersedes nothing.
+The argument after a bare `--session-id` or `--resume` is its value. The id has 1 to 128 characters. Each is a letter, a digit, `-`, `_`, `.` or `:`, and the first is not `-` (both from the code). Any other spawn supersedes nothing.
 
 #### How the old process ends
 
-The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once (claustrum's own). Two spawns of one session run one after the other (claustrum's own).
+The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once, and two spawns of one session run one after the other (both claustrum's own).
 
 A spawn with the `id` and the session of a running process only replaces it, as [the `id` in use](#a-spawn-with-an-id-that-is-in-use) says.
 

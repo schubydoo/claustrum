@@ -37,6 +37,10 @@ const (
 	jobTestBound = time.Minute
 )
 
+// jobTestReapGrace is the wait at the bound for the reap of a child that the end did not
+// reach (claustrum's own, not measured). A test shortens it.
+var jobTestReapGrace = 5 * time.Second
+
 // jobTestChild is the child of the start test.
 type jobTestChild interface {
 	// Exited closes at the exit of the child, before its reap.
@@ -77,11 +81,14 @@ func runJobTest(c jobTestChild, start time.Time, pendingAfter, bound time.Durati
 }
 
 // awaitJobTest waits for the result of a pending test. At the bound it ends the child,
-// once and only through the gate. A child that exited just before the bound is not
-// ended, and its result counts.
+// once and only through the gate, and fails the test with the bound reason (measured on
+// Windows against 4c111e86). A child that exited just before the bound is not ended,
+// and its result counts.
 //
-// The state after a child that ends by itself in the pending time is claustrum's own,
-// not measured: a clean exit puts the jobs in use for the later spawns.
+// claustrum's own, not measured: a clean exit in the pending time puts the jobs in use
+// for the later spawns. After an end that fails, or a gate that the exit closed, the
+// result of a reap within jobTestReapGrace counts, and else the test fails with the
+// bound reason. So the test never stays pending past the bound and the grace.
 func (t *JobTest) awaitJobTest(c jobTestChild, gate *sysproc.LeaderGate, reaped <-chan error, start time.Time, bound time.Duration) {
 	timer := time.NewTimer(bound - time.Since(start))
 	defer timer.Stop()
@@ -92,17 +99,26 @@ func (t *JobTest) awaitJobTest(c jobTestChild, gate *sysproc.LeaderGate, reaped 
 	case <-timer.C:
 	}
 	ended := false
-	gate.Do(func() {
-		ended = true
-		_ = c.End()
-	})
+	gate.Do(func() { ended = c.End() == nil })
 	took := time.Since(start)
-	err := <-reaped
-	if !ended {
-		t.finish(start, err)
+	boundErr := fmt.Errorf(jobTestBoundReason, bound)
+	if ended {
+		// A child that exited clean just before the end took hold keeps its pass.
+		if err := <-reaped; err == nil {
+			t.finish(start, nil)
+			return
+		}
+		t.fail(took, boundErr)
 		return
 	}
-	t.fail(took, fmt.Errorf(jobTestBoundReason, bound))
+	grace := time.NewTimer(jobTestReapGrace)
+	defer grace.Stop()
+	select {
+	case err := <-reaped:
+		t.finish(start, err)
+	case <-grace.C:
+		t.fail(took, boundErr)
+	}
 }
 
 // finish takes the result err of a reaped child.

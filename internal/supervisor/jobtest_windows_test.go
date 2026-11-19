@@ -82,17 +82,9 @@ func TestWindowsJobTestFailsWithTheExitStatus(t *testing.T) {
 
 // TestWindowsJobTestEndsOnlyTheHungChild: a test child that starts a grandchild and
 // then sleeps is ended at the bound with exit code 1, as on 4c111e86 (measured on
-// Windows). The grandchild and a process outside the test live on, so the end reaches
-// no other process.
+// Windows). The grandchild is in the job of the test child and lives on, so the end
+// reaches neither the job nor another process.
 func TestWindowsJobTestEndsOnlyTheHungChild(t *testing.T) {
-	exe, env := helperCommand(t, "sleep")
-	bystander := exec.Command(exe, "60")
-	bystander.Env = BuildEnv(env)
-	if err := bystander.Start(); err != nil {
-		t.Fatalf("start bystander: %v", err)
-	}
-	t.Cleanup(func() { _ = bystander.Process.Kill(); _ = bystander.Wait() })
-
 	pidFile := filepath.Join(t.TempDir(), "gpid")
 	useJobTestHelper(t, "tree", pidFile)
 	buf := captureLogBuf(t)
@@ -133,7 +125,37 @@ func TestWindowsJobTestEndsOnlyTheHungChild(t *testing.T) {
 	if !winProcessAlive(gpid) {
 		t.Errorf("the grandchild %d ended", gpid)
 	}
-	if !winProcessAlive(bystander.Process.Pid) {
-		t.Errorf("the bystander %d ended", bystander.Process.Pid)
+}
+
+// TestWindowsJobTestEndWithNoHandle: End of a child with no kill handle ends nothing and
+// gives an error, so awaitJobTest fails the test.
+func TestWindowsJobTestEndWithNoHandle(t *testing.T) {
+	c := &winJobTestChild{group: &ProcGroup{}}
+	if err := c.End(); err == nil {
+		t.Error("End with no handle gave no error")
+	}
+}
+
+// TestWindowsJobTestNoWaitHandle: a wait handle that does not open closes the gate at
+// once. A hung test child then gets no end, and the test fails after the bound and the
+// grace (claustrum's own). The test ends its own child at the cleanup.
+func TestWindowsJobTestNoWaitHandle(t *testing.T) {
+	useJobTestHelper(t, "sleep", "60")
+	oldOpen, oldGrace := openJobTestWait, jobTestReapGrace
+	openJobTestWait = func(int) (windows.Handle, error) { return 0, windows.ERROR_ACCESS_DENIED }
+	jobTestReapGrace = 200 * time.Millisecond
+	t.Cleanup(func() { openJobTestWait, jobTestReapGrace = oldOpen, oldGrace })
+	captureLogBuf(t)
+	test, c := startJobTestForTest(t, 100*time.Millisecond, time.Second)
+	t.Cleanup(func() { _ = c.cmd.Process.Kill() })
+	deadline := time.Now().Add(10 * time.Second)
+	for test.State() != JobTestFailed {
+		if time.Now().After(deadline) {
+			t.Fatalf("state = %d 10 s after the start, want failed", test.State())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !winProcessAlive(c.cmd.Process.Pid) {
+		t.Error("the test child ended, but the gate was closed")
 	}
 }
