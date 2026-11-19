@@ -18,10 +18,10 @@ daemon. The wire surface is the product.
 |------|---------|
 | Build the binary | `make build`. The build uses `-trimpath`, and the binary is stripped. Output: `./claustrum` |
 | Cross-build all 6 targets | `make all`. Targets: linux/darwin/windows × amd64/arm64 → `dist/` |
-| Format | `make fmt` runs `gofmt -l -w *.go handlers internal` |
+| Format | `make fmt` runs `gofmt -l -w *.go handlers internal`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. Config: `.golangci.yml` (v2) |
-| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). The time limit is explicit, because a race run took over 9 minutes, near the 10 minute default of `go test` |
+| Tests | `make test` (`go test -race -timeout 20m`, `internal/git` in four shards). It runs the unit and socket-integration suites. The time limit is explicit, because a race run took over 9 minutes, near the 10 minute default of `go test` |
 
 - Use Go 1.26 and `CGO_ENABLED=0`. The build toolchain is held
   below 1.27. The default `jsonv2` in 1.27 moves inherited wire bytes, so build
@@ -70,7 +70,7 @@ Windows lacks two methods: `files.find` and `files.mkdir`.
 
 ## Conventions
 
-- Results are ordered structs,
+- Byte-identical wire frames are the contract. Results are ordered structs,
   not maps. Any change to `rpc.go`, `methods_*.go`, `internal/supervisor/process.go`,
   `internal/rpc/`, `internal/files/`, `internal/git/` must keep the socket-integration suite and its golden
   fixtures green (`make test`). An intentional
@@ -92,7 +92,8 @@ Windows lacks two methods: `files.find` and `files.mkdir`.
 
 ## Always do
 
-- Every change to `main` goes through a branch and a PR.
+- Every change to `main` goes through a branch and a PR. Never commit or push
+  to `main` directly.
 - Use Conventional Commits for PR titles (`feat:` / `fix:` / `docs:` /
   `chore:` / `ci:` …). PRs squash-merge, so the title becomes the commit
   subject. Titles are hygiene only. They do not drive releases.
@@ -298,9 +299,9 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   own). Send none after the `timeoutMs` stop or the LFS space stop.
 - **The bound stops of `-install` and `-probe-cli`** (`internal/install/groupstop.go`, `runCLIVersion`). Never widen: each
   sends its group `SIGKILL` only before the reap of its run (`sysproc.LeaderGate`).
-- **The job start test** (Windows, `awaitJobTest`). A test child that runs at 1 minute gets one `TerminateProcess`
-  through `sysproc.LeaderGate` ([rules](docs/protocol/process-kill.md#windows-child-trees)). Never widen: end only that
-  child, once, before its reap.
+- **The job start test** (Windows, `4c111e86`, `awaitJobTest`, [rules](docs/protocol/process-kill.md#the-start-test-of-the-jobs)).
+  Never widen: end this test's job by `TerminateJobObject` once at 1 minute before its child's reap
+  (`sysproc.LeaderGate`), or close it at that reap or the daemon exit. End nothing else.
 
 ## Gotchas — Part B: the live divergences
 
@@ -348,7 +349,8 @@ reachable knob, because Claude Desktop owns the argv.
 - Terms → [`docs/GLOSSARY.md`](docs/GLOSSARY.md)
 - Shipped ledger → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
 - Host-local guardrails + tool routing → `CLAUDE.local.md` (gitignored)
-- CI · security · releases → [`.github/workflows/`](.github/workflows/). Releases: pending
+- CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
+  `ci` / `security` aggregators are the required checks). Releases: pending
   `.changeset/` fragments → knope opens a version PR (`knope-prepare.yml`).
   Merging it tags `v*` (`knope-release.yml`), and the tag fires `release.yml`.
   That release is signed and carries SBOM and SLSA, via
