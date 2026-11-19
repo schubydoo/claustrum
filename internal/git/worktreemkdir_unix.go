@@ -156,6 +156,13 @@ func rmdirWorktreeLeaf(worktreePath string) error {
 	return unlinkWorktreeLeaf(worktreePath, nil, false)
 }
 
+// rmdirWorktreeLeafUnder removes worktreePath only if it is an empty directory,
+// by one unlinkat with AT_REMOVEDIR through a handle of its parent, which must
+// have the identity parent. A file or a link at the leaf stays.
+func rmdirWorktreeLeafUnder(worktreePath string, parent os.FileInfo) error {
+	return unlinkWorktreeLeaf(worktreePath, parent, false)
+}
+
 // unlinkWorktreeLeaf is the removal of removeWorktreeLeaf and rmdirWorktreeLeaf.
 // anyEntry selects the first unlinkat with no flag.
 func unlinkWorktreeLeaf(worktreePath string, parent os.FileInfo, anyEntry bool) error {
@@ -234,6 +241,57 @@ func heldLeafLacksGitFile(cp worktreeCheckpoint) bool {
 		return false
 	}
 	return errors.Is(statErr, unix.ENOENT)
+}
+
+// heldLeafUnlinked reports whether the leaf that the checkpoint holds open has
+// no link left, so it was deleted. On Linux a removed folder has a link count
+// of 0. On macOS it does not (measured on the macOS CI leg), and addStage.move
+// sees the deleted leaf at the failed write of its `.git` file instead.
+func heldLeafUnlinked(cp worktreeCheckpoint) bool {
+	if cp.info == nil || len(cp.held) == 0 {
+		return false
+	}
+	rc, err := cp.held[0].SyscallConn()
+	if err != nil {
+		return false
+	}
+	var st unix.Stat_t
+	var statErr error
+	if err := rc.Control(func(fd uintptr) { statErr = unix.Fstat(int(fd), &st) }); err != nil || statErr != nil {
+		return false
+	}
+	return st.Nlink == 0
+}
+
+// writeHeldLeafGitFile gives the held leaf of cp a new `.git` file with text,
+// through the handle that the checkpoint holds, also after the leaf was
+// renamed away. It is one exclusive create of mode 0666 that follows no link,
+// so a `.git` entry there fails with fs.ErrExist and nothing is written
+// through it. addStage.move calls it for a leaf whose path names another
+// folder (4c111e86 writes that file there, measured on Linux).
+func writeHeldLeafGitFile(cp worktreeCheckpoint, text string) error {
+	if cp.info == nil || len(cp.held) == 0 {
+		return errors.New("the create holds no checkpoint of the new worktree")
+	}
+	rc, err := cp.held[0].SyscallConn()
+	if err != nil {
+		return err
+	}
+	fd, openErr := -1, error(nil)
+	if err := rc.Control(func(dir uintptr) {
+		fd, openErr = unix.Openat(int(dir), ".git", unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o666)
+	}); err != nil {
+		return err
+	}
+	if openErr != nil {
+		return &fs.PathError{Op: "openat", Path: ".git", Err: openErr}
+	}
+	f := os.NewFile(uintptr(fd), ".git")
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // leafParentOpenHook is a test seam. It runs in removeWorktreeLeaf before the open

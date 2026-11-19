@@ -110,6 +110,21 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 // handle, and those need the identity of the leaf and of its parent (claustrum's
 // own, not measured).
 func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
+	undoFailedAddLeaf(worktreePath, cp, false)
+}
+
+// undoMovedAwayLeaf is undoFailedAdd for a leaf that another folder took right
+// after a staged add (leafMovedAfterAdd), with the same guards. It removes only
+// an empty folder, by one rmdir through the handle of the parent, and never a
+// tree. 4c111e86 removes an empty folder there (measured on Linux and macOS),
+// by the maintainer's decision of 2026-11-18. A link or a file at the path
+// stays (claustrum's own, not measured).
+func undoMovedAwayLeaf(worktreePath string, cp worktreeCheckpoint) {
+	undoFailedAddLeaf(worktreePath, cp, true)
+}
+
+// undoFailedAddLeaf is undoFailedAdd. folderOnly removes no file and no link.
+func undoFailedAddLeaf(worktreePath string, cp worktreeCheckpoint, folderOnly bool) {
 	if worktreePath == "" || leafHoldsHome(worktreePath) {
 		return
 	}
@@ -126,6 +141,10 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 	}
 	if cp.info == nil || cp.parentInfo == nil {
 		_ = rmdirWorktreeLeaf(worktreePath)
+		return
+	}
+	if folderOnly {
+		_ = rmdirWorktreeLeafUnder(worktreePath, cp.parentInfo)
 		return
 	}
 	_ = removeWorktreeLeaf(worktreePath, cp.parentInfo)

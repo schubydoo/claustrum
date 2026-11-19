@@ -179,7 +179,9 @@ registration or the branch (method page). Before the add, the stale step removes
 one stale `worktrees` entry, and only one with no `locked` file. The one tree delete with no home guard is the
 registration of a create that holds no git directory and accepted no registration.
 Never widen: Never widen a delete of the [steps that move
-the hold](#steps-that-move-the-hold).
+the hold](#steps-that-move-the-hold). Never widen: on Linux and macOS the branch step runs behind a link at `.git`
+only when the link names the held git directory. Only an empty folder that took the leaf right after a staged add goes,
+by one rmdir (`undoMovedAwayLeaf`).
 
 #### Path 4: the `git.worktree_create` staging sweep
 
@@ -272,8 +274,8 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
 
 ### Other rules
 
-- **Writes of `git.worktree_create`** (`writeLeafGitFile`, `writeWorktreeConfig`,
-  `addStage.move`). Each goes through an `os.Root`. Only the staging
+- **Writes of `git.worktree_create`** (`writeLeafGitFile`, `writeHeldLeafGitFile`, `writeWorktreeConfig`,
+  `addStage.move`). Each goes through an `os.Root` or the held leaf. Only the staging
   sweep and the two staging removes are tree deletes ([The settings
   copy](docs/protocol/git-worktree-create.md#the-settings-copy)).
 - **Auth** is in-band per request. No mode reads `CLAUDE_RPC_TOKEN`, and children do not

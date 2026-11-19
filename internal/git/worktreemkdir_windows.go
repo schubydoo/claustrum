@@ -3,6 +3,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -79,6 +80,12 @@ func rmdirWorktreeLeaf(worktreePath string) error {
 	return removeWorktreeLeaf(worktreePath, nil)
 }
 
+// rmdirWorktreeLeafUnder is removeWorktreeLeaf on Windows. No create there
+// reaches it (undoMovedAwayLeaf runs on Linux and macOS only).
+func rmdirWorktreeLeafUnder(worktreePath string, parent os.FileInfo) error {
+	return removeWorktreeLeaf(worktreePath, parent)
+}
+
 // failedAddLeafResolve is the path that undoFailedAdd compares with the
 // checkpoint. On Windows it is leafResolve, so a link at the leaf stays (not
 // measured).
@@ -90,6 +97,18 @@ func failedAddLeafResolve(worktreePath string) (string, error) {
 // run (adminRecordChecked).
 func heldLeafLacksGitFile(worktreeCheckpoint) bool {
 	return false
+}
+
+// heldLeafUnlinked is false on Windows, where the staged add does not take the
+// held leaf (stagedAddWindowsSteps).
+func heldLeafUnlinked(worktreeCheckpoint) bool {
+	return false
+}
+
+// writeHeldLeafGitFile has no Windows form: the staged add of Windows keeps
+// its own rule for a leaf that another folder replaced (addStage.move).
+func writeHeldLeafGitFile(worktreeCheckpoint, string) error {
+	return errors.New("the held leaf takes no write on Windows")
 }
 
 // holdWorktreeDir opens the directory at path and returns the handle, or nil when
