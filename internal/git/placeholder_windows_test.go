@@ -127,7 +127,9 @@ func TestHeldGitDirOfATaggedFolder(t *testing.T) {
 }
 
 // With GODEBUG=winsymlink=0 Go reads a junction as a symbolic link. It is
-// still no folder for the hold. Go reads GODEBUG again after os.Setenv.
+// still no folder for the hold. Go reads GODEBUG again after os.Setenv. This
+// is a guard test: it passes on the code before heldFolderKind as well,
+// because goesAsTree refuses a symbolic link too.
 func TestHeldGitDirRefusesAJunctionWithOldLinkModes(t *testing.T) {
 	t.Setenv("GODEBUG", "winsymlink=0")
 	root := resolveTestRoot(t, t.TempDir())

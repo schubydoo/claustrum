@@ -146,13 +146,14 @@ func gitDirIdentity(path string) os.FileInfo {
 // surrogate. So a junction, a directory symbolic link and every other name
 // surrogate are no folder here. With winsymlink=0 Go gives the folder bit to a
 // name surrogate that is no junction and no symbolic link. The open of the
-// hold then refuses it (openHeldGitDir, from the code). A `.git` folder with
-// IO_REPARSE_TAG_PROJFS has the folder bit and the irregular bit. 4c111e86
-// makes the worktree of a create in shadow there (measured on Windows). Every
-// other tag that is no name surrogate is a folder here too (claustrum's own,
-// not measured). On Linux and macOS Go sets no irregular bit on a folder, so
-// this is the test of goesAsTree there (from the code). goesAsTree still
-// decides the kinds of the deletes.
+// hold then refuses it (openHeldGitDir, from the code). No test covers such a
+// name surrogate, as before heldFolderKind (claustrum's own, not measured). A
+// `.git` folder with IO_REPARSE_TAG_PROJFS has the folder bit and the
+// irregular bit. 4c111e86 makes the worktree of a create in shadow there
+// (measured on Windows). Every other tag that is no name surrogate is a folder
+// here too (claustrum's own, not measured). On Linux and macOS Go sets no
+// irregular bit on a folder, so this is the test of goesAsTree there (from
+// the code). goesAsTree still decides the kinds of the deletes.
 func heldFolderKind(m fs.FileMode) bool {
 	return m.IsDir()
 }
@@ -273,8 +274,8 @@ func (a *acceptedGitDir) release() {
 	}
 }
 
-// stands reports whether the path still names the held folder, as a real
-// directory.
+// stands reports whether the path still names the held folder, as a folder
+// (heldFolderKind).
 //
 // The spelling of the request is tested too (sent). On Linux and macOS a
 // `.git` that is a symbolic link before the request is resolved by the trust
@@ -328,8 +329,8 @@ func answeredElsewhere(u gitUse, gitDir string) bool {
 }
 
 // movedTo is the hold of a create on the git directory gitDir that git
-// answered, when that is another real directory than the held one and passes
-// the gate. It is nil in every other case. repo is the baseRepo of the create.
+// answered, when that is another folder (heldFolderKind) than the held one and
+// passes the gate. It is nil in every other case. repo is the baseRepo of the create.
 // The caller releases the new hold.
 //
 // The rows are measured on Linux and macOS (2 of 2 runs on macOS). A symbolic link to a
