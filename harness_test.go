@@ -351,7 +351,13 @@ func (cl *testClient) waitResponses(n int) []json.RawMessage {
 // waitExit blocks until an "exit" frame for processID arrives, then returns all
 // frames for that process in arrival order.
 func (cl *testClient) waitExit(processID string) []supervisor.ChildFrame {
-	cl.wait(func() bool {
+	return cl.waitExitWithin(5*time.Second, processID)
+}
+
+// waitExitWithin is waitExit with its own deadline.
+func (cl *testClient) waitExitWithin(limit time.Duration, processID string) []supervisor.ChildFrame {
+	cl.t.Helper()
+	cl.waitWithin(limit, func() bool {
 		for _, f := range cl.fr {
 			if f.ProcessID == processID && f.Stream == "exit" {
 				return true
