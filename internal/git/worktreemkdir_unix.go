@@ -156,6 +156,13 @@ func rmdirWorktreeLeaf(worktreePath string) error {
 	return unlinkWorktreeLeaf(worktreePath, nil, false)
 }
 
+// rmdirWorktreeLeafUnder removes worktreePath only if it is an empty directory,
+// by one unlinkat with AT_REMOVEDIR through a handle of its parent, which must
+// have the identity parent. A file or a link at the leaf stays.
+func rmdirWorktreeLeafUnder(worktreePath string, parent os.FileInfo) error {
+	return unlinkWorktreeLeaf(worktreePath, parent, false)
+}
+
 // unlinkWorktreeLeaf is the removal of removeWorktreeLeaf and rmdirWorktreeLeaf.
 // anyEntry selects the first unlinkat with no flag.
 func unlinkWorktreeLeaf(worktreePath string, parent os.FileInfo, anyEntry bool) error {

@@ -803,6 +803,73 @@ func TestCreateWithALinkToTheRenamedGitDirAtTheAdd(t *testing.T) {
 	}
 }
 
+// TestCreateWithALinkToACopyMadeAtTheAdd: right after a good `worktree add` the
+// git directory is copied, with the new branch w1 at the tip of the add, and
+// renamed away, and `.git` becomes a link to the copy. The branch step keeps
+// w1 in both folders, as for any link that does not name the held git
+// directory (claustrum's own, not measured with a copy made at this step).
+// Mutation: drop the identity test of linksToHeld and keep only its Lstat, and
+// w1 of the copy goes.
+func TestCreateWithALinkToACopyMadeAtTheAdd(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	atStep(t, "staged", func() {
+		if err := os.CopyFS(copied, os.DirFS(f.gitDir)); err != nil {
+			t.Errorf("the copy of the git directory: %v", err)
+			return
+		}
+		if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+			t.Errorf("the rename of the git directory: %v", err)
+			return
+		}
+		linkAt(t, f.gitDir, copied)
+	})
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if got, want := createError(t, raw), completingAddPrefix+realDirText(f.gitDir); got != want {
+		t.Errorf("the error = %s\n    want %s", got, want)
+	}
+	for _, dir := range []string{f.gitDir + "-real", copied} {
+		if _, err := os.Lstat(filepath.Join(dir, "refs", "heads", "w1")); err != nil {
+			t.Errorf("w1 in %s: %v, want it kept", dir, err)
+		}
+	}
+}
+
+// TestCreateWithADaemonCommonDirKeepsTheBranchOfTheClone: the daemon's
+// environment has GIT_COMMON_DIR of a clone whose own branch w1 is at the tip
+// of the add. A `.git` is planted in the leaf right after the staged add, and
+// the rollback runs the branch step. git reads the branches of the git
+// directory of baseRepo there, not those of the clone, so w1 of the clone stays
+// and the new w1 of the repository goes (from the code and git 2.47, not
+// measured on a reference). Mutation: give the calls of the branch step
+// GIT_DIR=<the clone>, and w1 of the clone goes.
+func TestCreateWithADaemonCommonDirKeepsTheBranchOfTheClone(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	clone := filepath.Join(resolveTestRoot(t, t.TempDir()), "clone")
+	runGit(t, filepath.Dir(clone), "clone", "-q", f.repo, clone)
+	runGit(t, clone, "branch", "w1", "origin/main")
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(clone, ".git"))
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	atStep(t, "staged", func() { mustWrite(t, filepath.Join(leaf, ".git"), "planted\n") })
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf, "sourceBranch": "main"})
+	if got, want := createError(t, raw), plantedGitFileText(leaf); got != want {
+		t.Errorf("the error = %s\n    want %s", got, want)
+	}
+	if _, err := os.Lstat(filepath.Join(clone, ".git", "refs", "heads", "w1")); err != nil {
+		t.Errorf("w1 of the clone: %v, want it kept", err)
+	}
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); !os.IsNotExist(err) {
+		t.Errorf("w1 of the repository: %v, want it gone", err)
+	}
+}
+
 // TestCreateWithTheRegistrationsFolderGoneAfterTheAdd: right after a good
 // `worktree add` the folder `worktrees` of the git directory is renamed away.
 // 4c111e86 makes `worktrees` again, moves the registration into it and
@@ -847,17 +914,17 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 // Linux and macOS). The registration w1 is moved into place with no `locked`
 // file, the renamed leaf holds the new `.git` file, and branch w1 stays. An
 // empty folder at the path goes, as on 4c111e86. A folder with a file there
-// stays with the file: the rollback is that of a failed add, never a tree
-// delete (claustrum's own, not measured). Mutations: keep the old error of
-// leafHoldsNoGitFile (the frame differs, and the registration and the branch
-// go), write the `.git` file by the path (the frame differs), return no
-// leafMovedAfterAdd (the frame differs), drop the undoFailedAdd call (the empty
-// folder stays), or remove the folder with os.RemoveAll (the file goes).
+// stays with the file, and a link there stays with its target: the rollback is
+// one rmdir, never a tree delete (claustrum's own, not measured). Mutations:
+// keep the old error of leafHoldsNoGitFile (the frame differs, and the
+// registration and the branch go), write the `.git` file by the path (the frame
+// differs), return no leafMovedAfterAdd (the frame differs), drop the
+// undoMovedAwayLeaf call (the empty folder stays), call undoFailedAdd in its
+// place (the link goes), or remove the folder with os.RemoveAll (the file goes).
 func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 	for _, row := range []struct {
-		name string
-		file bool
-	}{{"an empty folder", false}, {"a folder with a file", true}} {
+		name, kind string
+	}{{"an empty folder", "empty"}, {"a folder with a file", "file"}, {"a link to a folder", "link"}} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -865,15 +932,23 @@ func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 			}
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 			old := leaf + ".old"
+			target := filepath.Join(resolveTestRoot(t, t.TempDir()), "target")
+			if err := os.Mkdir(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
 			atStep(t, "staged", func() {
 				if err := os.Rename(leaf, old); err != nil {
 					t.Errorf("the rename of the leaf: %v", err)
 					return
 				}
+				if row.kind == "link" {
+					linkAt(t, leaf, target)
+					return
+				}
 				if err := os.Mkdir(leaf, 0o755); err != nil {
 					t.Errorf("the new folder: %v", err)
 				}
-				if row.file {
+				if row.kind == "file" {
 					mustWrite(t, filepath.Join(leaf, "keep.txt"), "kept\n")
 				}
 			})
@@ -899,14 +974,22 @@ func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 			if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); err != nil {
 				t.Errorf("the branch: %v, want it kept", err)
 			}
-			if !row.file {
+			switch row.kind {
+			case "empty":
 				if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
 					t.Errorf("the empty folder at the path: %v, want it gone", err)
 				}
-				return
-			}
-			if got := mustRead(t, filepath.Join(leaf, "keep.txt")); got != "kept\n" {
-				t.Errorf("the file in the folder at the path = %q, want it kept", got)
+			case "file":
+				if got := mustRead(t, filepath.Join(leaf, "keep.txt")); got != "kept\n" {
+					t.Errorf("the file in the folder at the path = %q, want it kept", got)
+				}
+			case "link":
+				if fi, err := os.Lstat(leaf); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+					t.Errorf("the link at the path: %v, want it kept", err)
+				}
+				if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
+					t.Errorf("the target of the link: %v, want it kept", err)
+				}
 			}
 		})
 	}

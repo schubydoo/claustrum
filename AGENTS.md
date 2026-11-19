@@ -180,8 +180,8 @@ one stale `worktrees` entry, and only one with no `locked` file. The one tree de
 registration of a create that holds no git directory and accepted no registration.
 Never widen: Never widen a delete of the [steps that move
 the hold](#steps-that-move-the-hold). Never widen: on Linux and macOS the branch step runs behind a link at `.git`
-only when the link names the held git directory. A folder that took the leaf right after a staged add goes
-only by `undoFailedAdd`, never as a tree.
+only when the link names the held git directory. Only an empty folder that took the leaf right after a staged add goes,
+by one rmdir (`undoMovedAwayLeaf`).
 
 #### Path 4: the `git.worktree_create` staging sweep
 

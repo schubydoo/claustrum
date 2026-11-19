@@ -1925,9 +1925,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// A leaf that an entry of the registrations folder still names is refused
 	// before the add, with the rollback of a failed add. No git call makes a
 	// branch then. be1c1ca5 answers so, measured on Linux, macOS and Windows.
-	// The stale step has run before this test. A daemon GIT_COMMON_DIR makes git
-	// register in another folder, so the test does not run then, and git decides
-	// as before (claustrum's own, not measured). With "shadowDirOff":true a
+	// The stale step has run before this test. With a daemon GIT_COMMON_DIR the
+	// test does not run, and git decides (claustrum's own, not measured). With "shadowDirOff":true a
 	// locked entry gets no refusal here, and git decides (registeredLeafRefusal).
 	//
 	// On Windows a junction at `<git dir>\worktrees` of the held folder refuses
@@ -1963,16 +1962,16 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// A staged add whose leaf another folder replaced right after the add is
 	// refused with the text of a replaced leaf (leafMovedAfterAdd). 4c111e86
 	// keeps the registration and the new branch, and it removes the empty
-	// folder at the path (measured on Linux and macOS). claustrum removes that
-	// folder only by the rollback of a failed add (undoFailedAdd), never as a
-	// tree (the maintainer's decision of 2026-11-18). A folder with an entry
-	// stays (claustrum's own, not measured).
+	// folder at the path (measured on Linux and macOS). claustrum removes only an
+	// empty folder there, with the guards of a failed add (undoMovedAwayLeaf),
+	// never as a tree (the maintainer's decision of 2026-11-18). A folder with an
+	// entry, a file and a link stay (claustrum's own, not measured).
 	movedAwayReply := func(err error) (rpc.Response, bool) {
 		var movedAway *leafMovedAfterAdd
 		if !errors.As(err, &movedAway) {
 			return rpc.Response{}, false
 		}
-		undoFailedAdd(p.WorktreePath, checkpoint)
+		undoMovedAwayLeaf(p.WorktreePath, checkpoint)
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: leafReplacedText(parentResolvedPath(p.WorktreePath)), ErrorCode: "unsafe_path"}), true
 	}
 	if resp, ok := movedAwayReply(addErr); ok {

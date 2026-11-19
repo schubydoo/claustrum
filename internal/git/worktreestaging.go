@@ -1257,8 +1257,8 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 // leafMovedAfterAdd is the error of a staged add whose leaf another folder
 // replaced right after the add, on Linux and macOS. The move completed through
 // the held leaf. The create answers leafReplacedText with unsafe_path. Its
-// rollback is that of a failed add (undoFailedAdd), so only an empty folder at
-// the path goes. 4c111e86 keeps the moved registration, the new branch, the
+// rollback removes only an empty folder at the path (undoMovedAwayLeaf).
+// 4c111e86 keeps the moved registration, the new branch, the
 // renamed leaf and its new `.git` file there, and removes an empty copy at the
 // path (measured on Linux and macOS).
 type leafMovedAfterAdd struct{}
