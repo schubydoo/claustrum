@@ -3,6 +3,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,6 +91,12 @@ func failedAddLeafResolve(worktreePath string) (string, error) {
 // run (adminRecordChecked).
 func heldLeafLacksGitFile(worktreeCheckpoint) bool {
 	return false
+}
+
+// writeHeldLeafGitFile has no Windows form: the staged add of Windows keeps
+// its own rule for a leaf that another folder replaced (addStage.move).
+func writeHeldLeafGitFile(worktreeCheckpoint, string) error {
+	return errors.New("the held leaf takes no write on Windows")
 }
 
 // holdWorktreeDir opens the directory at path and returns the handle, or nil when

@@ -107,7 +107,13 @@ func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	// be1c1ca5 deletes the branch through a symbolic link at `.git` that was
 	// put there right before the add. claustrum keeps the branch and adds no
 	// text (claustrum's own). Windows runs the step as before.
-	if !stagedAddWindowsSteps && u.swapped("branch step") {
+	//
+	// A symbolic link at `.git` whose target is the held folder itself is the
+	// exception: the step runs through it. 4c111e86 deletes the new branch
+	// after the staged add when `.git` was renamed and a link to it put at
+	// its place right after the add (measured on Linux and macOS). The tip
+	// test of checkAndDeleteBranch still keeps another branch of that name.
+	if !stagedAddWindowsSteps && u.swapped("branch step") && !u.accepted.linksToHeld() {
 		return branchStepResult{kind: branchBehindSwap}
 	}
 	// After a failed step of the `config.worktree` file the config is read

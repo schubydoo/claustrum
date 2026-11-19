@@ -1960,6 +1960,24 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
 		return resp
 	}
+	// A staged add whose leaf another folder replaced right after the add is
+	// refused with the text of a replaced leaf (leafMovedAfterAdd). 4c111e86
+	// keeps the registration and the new branch, and it removes the empty
+	// folder at the path (measured on Linux and macOS). claustrum removes that
+	// folder only by the rollback of a failed add (undoFailedAdd), never as a
+	// tree (the maintainer's decision of 2026-11-18). A folder with an entry
+	// stays (claustrum's own, not measured).
+	movedAwayReply := func(err error) (rpc.Response, bool) {
+		var movedAway *leafMovedAfterAdd
+		if !errors.As(err, &movedAway) {
+			return rpc.Response{}, false
+		}
+		undoFailedAdd(p.WorktreePath, checkpoint)
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: leafReplacedText(parentResolvedPath(p.WorktreePath)), ErrorCode: "unsafe_path"}), true
+	}
+	if resp, ok := movedAwayReply(addErr); ok {
+		return resp
+	}
 	// An add whose repository folder went gets the rollback of a failed add,
 	// with the text alone and no fallback add (from the code, not measured).
 	// So does an add whose folder `.s<n>` cannot be made on Linux and macOS
@@ -2012,6 +2030,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, nil, fallbackArgs...)
 		added = addErr == nil
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
+			return resp
+		}
+		if resp, ok := movedAwayReply(addErr); ok {
 			return resp
 		}
 		if addErr != nil {

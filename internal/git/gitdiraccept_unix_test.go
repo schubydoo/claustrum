@@ -763,6 +763,208 @@ func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 	}
 }
 
+// TestCreateWithALinkToTheRenamedGitDirAtTheAdd: right after a good `worktree
+// add` the git directory is renamed, and a symbolic link to it
+// is put at `.git`. 4c111e86 answers the text of TestCreateWithAGitDirThatChangedAtTheAdd,
+// removes the leaf and deletes the new branch through the link (measured on
+// Linux and macOS). No registration stays. Mutation: drop the linksToHeld test
+// in runBranchStep, and the branch stays.
+func TestCreateWithALinkToTheRenamedGitDirAtTheAdd(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	real := f.gitDir + ".real"
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	atStep(t, "staged", func() {
+		if err := os.Rename(f.gitDir, real); err != nil {
+			t.Errorf("the rename of the git directory: %v", err)
+			return
+		}
+		linkAt(t, f.gitDir, filepath.Base(real))
+	})
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+		jsonString(t, completingAddPrefix+realDirText(f.gitDir)) + `,"errorCode":"worktree_add_failed"}}`
+	if raw != want {
+		t.Errorf("reply = %s\nwant %s", raw, want)
+	}
+	if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+		t.Errorf("the leaf: %v, want it gone", err)
+	}
+	if _, err := os.Lstat(filepath.Join(real, "refs", "heads", "w1")); !os.IsNotExist(err) {
+		t.Errorf("the branch in the renamed git directory: %v, want it deleted", err)
+	}
+	if _, err := os.Lstat(filepath.Join(real, "refs", "heads", "main")); err != nil {
+		t.Errorf("the branch main: %v, want it kept", err)
+	}
+	if _, err := os.Lstat(filepath.Join(real, "worktrees", "w1")); !os.IsNotExist(err) {
+		t.Errorf("the registration: %v, want none", err)
+	}
+}
+
+// TestCreateWithTheRegistrationsFolderGoneAfterTheAdd: right after a good
+// `worktree add` the folder `worktrees` of the git directory is renamed away.
+// 4c111e86 makes `worktrees` again, moves the registration into it and
+// succeeds (measured on Linux and macOS). The renamed folder stays. Mutation:
+// drop the mkdir of `worktrees` in addStage.move, and the rename fails.
+func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	wt := filepath.Join(f.gitDir, worktreesSubdir)
+	gone := wt + ".gone"
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	atStep(t, "staged", func() {
+		if err := os.Rename(wt, gone); err != nil {
+			t.Errorf("the rename of the registrations folder: %v", err)
+		}
+	})
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want a good create", raw)
+	}
+	if got, want := mustRead(t, filepath.Join(leaf, ".git")), "gitdir: "+filepath.Join(wt, "w1")+"\n"; got != want {
+		t.Errorf("the .git file of the leaf = %q, want %q", got, want)
+	}
+	for _, name := range []string{"HEAD", "commondir", "gitdir", "index"} {
+		if _, err := os.Lstat(filepath.Join(wt, "w1", name)); err != nil {
+			t.Errorf("%s of the registration: %v", name, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); err != nil {
+		t.Errorf("the branch: %v, want it kept", err)
+	}
+	if fi, err := os.Lstat(gone); err != nil || !fi.IsDir() {
+		t.Errorf("the renamed registrations folder: %v, want it kept", err)
+	}
+}
+
+// TestCreateWithTheLeafReplacedAfterTheAdd: right after a good staged `worktree
+// add` the leaf is renamed to w1.old, and a new folder is put at its path.
+// 4c111e86 answers the text of a replaced leaf with unsafe_path (measured on
+// Linux and macOS). The registration w1 is moved into place with no `locked`
+// file, the renamed leaf holds the new `.git` file, and branch w1 stays. An
+// empty folder at the path goes, as on 4c111e86. A folder with a file there
+// stays with the file: the rollback is that of a failed add, never a tree
+// delete (claustrum's own, not measured). Mutations: keep the old error of
+// leafHoldsNoGitFile (the frame differs, and the registration and the branch
+// go), write the `.git` file by the path (the frame differs), return no
+// leafMovedAfterAdd (the frame differs), drop the undoFailedAdd call (the empty
+// folder stays), or remove the folder with os.RemoveAll (the file goes).
+func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		file bool
+	}{{"an empty folder", false}, {"a folder with a file", true}} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			old := leaf + ".old"
+			atStep(t, "staged", func() {
+				if err := os.Rename(leaf, old); err != nil {
+					t.Errorf("the rename of the leaf: %v", err)
+					return
+				}
+				if err := os.Mkdir(leaf, 0o755); err != nil {
+					t.Errorf("the new folder: %v", err)
+				}
+				if row.file {
+					mustWrite(t, filepath.Join(leaf, "keep.txt"), "kept\n")
+				}
+			})
+			raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+				jsonString(t, "refusing to create worktree: `"+leaf+"` is no longer the directory that was created for the worktree") +
+				`,"errorCode":"unsafe_path"}}`
+			if raw != want {
+				t.Errorf("reply = %s\nwant %s", raw, want)
+			}
+			reg := filepath.Join(f.gitDir, worktreesSubdir, "w1")
+			if got, want := mustRead(t, filepath.Join(old, ".git")), "gitdir: "+reg+"\n"; got != want {
+				t.Errorf("the .git file of the renamed leaf = %q, want %q", got, want)
+			}
+			for _, name := range []string{"HEAD", "commondir", "gitdir"} {
+				if _, err := os.Lstat(filepath.Join(reg, name)); err != nil {
+					t.Errorf("%s of the registration: %v, want it kept", name, err)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(reg, "locked")); !os.IsNotExist(err) {
+				t.Errorf("locked of the registration: %v, want none", err)
+			}
+			if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); err != nil {
+				t.Errorf("the branch: %v, want it kept", err)
+			}
+			if !row.file {
+				if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+					t.Errorf("the empty folder at the path: %v, want it gone", err)
+				}
+				return
+			}
+			if got := mustRead(t, filepath.Join(leaf, "keep.txt")); got != "kept\n" {
+				t.Errorf("the file in the folder at the path = %q, want it kept", got)
+			}
+		})
+	}
+}
+
+// TestCreateWithADaemonCommonDir: the daemon's environment has GIT_COMMON_DIR,
+// and the add is staged anyway. 4c111e86 does so (measured on Linux and macOS):
+//
+//   - A clone of the repository there: the create succeeds, and the repository
+//     has the registration. The clone gets none.
+//   - Another repository there: the add fails, and git's staged path is "the
+//     new folder" in the text (measured on Linux).
+//
+// Mutation: leave the add unstaged with that variable (worktreeAdd), and the
+// clone gets the registration and the text keeps the path.
+func TestCreateWithADaemonCommonDir(t *testing.T) {
+	for _, row := range []struct {
+		name  string
+		clone bool
+	}{{"a clone", true}, {"another repository", false}} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			other := filepath.Join(resolveTestRoot(t, t.TempDir()), "other")
+			if row.clone {
+				runGit(t, filepath.Dir(other), "clone", "-q", f.repo, other)
+			} else {
+				_, gd := configRepo(t)
+				other = filepath.Dir(gd)
+			}
+			t.Setenv("GIT_COMMON_DIR", filepath.Join(other, ".git"))
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf, "sourceBranch": "main"})
+			if _, err := os.Lstat(filepath.Join(other, ".git", worktreesSubdir, "w1")); !os.IsNotExist(err) {
+				t.Errorf("the registration in the other folder: %v, want none", err)
+			}
+			if !row.clone {
+				if got := createError(t, raw); !strings.Contains(got, "invalid reference: HEAD") || !strings.HasSuffix(got, "(the new folder is `"+leaf+"`)") {
+					t.Errorf("the error = %s, want git's text with the new folder", got)
+				}
+				return
+			}
+			if !strings.Contains(raw, `"success":true`) {
+				t.Fatalf("git.worktree_create = %s, want a good create", raw)
+			}
+			reg := filepath.Join(f.gitDir, worktreesSubdir, "w1")
+			if got, want := mustRead(t, filepath.Join(leaf, ".git")), "gitdir: "+reg+"\n"; got != want {
+				t.Errorf("the .git file of the leaf = %q, want %q", got, want)
+			}
+			if _, err := os.Lstat(filepath.Join(reg, "index")); err != nil {
+				t.Errorf("the index of the registration: %v", err)
+			}
+		})
+	}
+}
+
 // TestCreateWithALinkedGitDirThatChanges: `.git` is a symbolic link to a real
 // git directory before the first request, and the daemon serves the repository
 // (measured on Linux). After `rev-parse --absolute-git-dir` the link is

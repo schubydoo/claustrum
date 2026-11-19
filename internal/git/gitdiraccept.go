@@ -295,6 +295,27 @@ func (a *acceptedGitDir) stands() bool {
 	return err == nil && os.SameFile(sent, a.info)
 }
 
+// linksToHeld reports whether the path of the held git directory is now a
+// symbolic link whose target is the held folder itself, also through the
+// spelling of the request (sent). It is false on nil. The branch step of a
+// rollback runs through such a link (runBranchStep).
+func (a *acceptedGitDir) linksToHeld() bool {
+	if a == nil {
+		return false
+	}
+	for _, p := range []string{a.path, a.sent} {
+		if p == "" {
+			continue
+		}
+		now, err := os.Stat(p)
+		if err != nil || !os.SameFile(now, a.info) {
+			return false
+		}
+	}
+	fi, err := os.Lstat(a.path)
+	return err == nil && fi.Mode()&fs.ModeSymlink != 0
+}
+
 // answeredElsewhere reports the two states in which a create on Windows gets
 // no refusal right after `rev-parse --absolute-git-dir`, although the path no
 // longer names the held folder. gitDir is the directory that git answered.

@@ -200,10 +200,22 @@ func newRegistrationName(before, after []string) (string, bool) {
 // entry ends the environment, after GIT_CONFIG_VALUE_1 (4c111e86, measured on
 // Linux for an add with -b). The add of an existing branch and macOS follow
 // (not measured). On Windows Go sorts the block by name (D23).
+//
+// With a daemon GIT_COMMON_DIR that the other calls keep (daemonCommonDirStays)
+// the call has no entry of the copy. Its daemon entry goes, and the end gets
+// GIT_OBJECT_DIRECTORY=<that folder>/objects and GIT_COMMON_DIR=<addDir>. The
+// rows of 4c111e86 fit an add that reads the objects of that folder (measured on
+// Linux and macOS). The two entries and their order are claustrum's own (not
+// measured).
 func withAddCopy(env []string, repoDir, addDir string) []string {
 	out := slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
 		return kv == "GIT_COMMON_DIR="+repoDir
 	})
+	if len(out) == len(env) && daemonCommonDirStays() {
+		daemon := os.Getenv("GIT_COMMON_DIR")
+		out = slices.DeleteFunc(out, func(kv string) bool { return strings.HasPrefix(kv, "GIT_COMMON_DIR=") })
+		return append(out, "GIT_OBJECT_DIRECTORY="+filepath.Join(daemon, "objects"), "GIT_COMMON_DIR="+addDir)
+	}
 	if len(out) == len(env) {
 		return out
 	}
@@ -877,8 +889,10 @@ func stagedAddText(stderr string, err error, worktreePath string) string {
 // registration (measured on Windows). be1c1ca5 answers the same text on Linux
 // for a symbolic link at `.git` that was put there right after the add or
 // right before it, and removes the leaf. After a link right after the add the
-// branch stays. After a link right before it, be1c1ca5 deletes the branch
-// through the link, and claustrum keeps it (runBranchStep, D24).
+// branch stays on be1c1ca5. 4c111e86 deletes it when the link names the
+// renamed git directory itself (measured on Linux and macOS), and claustrum
+// follows (runBranchStep). After a link right before it, be1c1ca5 deletes the
+// branch through the link, and claustrum keeps it (runBranchStep, D24).
 //
 // On Linux and macOS a new real directory at the path that passes the gate
 // takes the hold first (acceptedGitDir.replacedAtPath), and the move goes
@@ -932,7 +946,8 @@ func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
 	if err := st.move(leaf, cp); err != nil {
 		var incomplete *addIncomplete
 		var refused *addRefused
-		if errors.As(err, &incomplete) || errors.As(err, &refused) {
+		var movedAway *leafMovedAfterAdd
+		if errors.As(err, &incomplete) || errors.As(err, &refused) || errors.As(err, &movedAway) {
 			return err
 		}
 		return &addIncomplete{text: err.Error()}
@@ -1078,7 +1093,8 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 //     that names the leaf (stagedRecordText), and the file `locked` with
 //     `initializing` and a newline (be1c1ca5, measured on Linux, macOS and
 //     Windows).
-//  5. The target is the first free name of registrationTarget (measured).
+//  5. The target is the first free name of registrationTarget (measured). On
+//     Linux and macOS a `worktrees` folder that is gone is made first.
 //  6. The rename gets the retry of renameretry.Retry (measured). A rename that
 //     still fails ends the move.
 //  7. The entry at the target must still be the staging folder. Else the text
@@ -1113,8 +1129,16 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if !stagedLeafNamesEntry(dir, st.leafName, filepath.Base(st.dir), name, st.u.gitDir) {
 		return stagedOtherEntryRefusal(leaf)
 	}
+	// movedAway is true on Linux and macOS when another folder took the path
+	// of the leaf after the add, and the held leaf has no `.git` entry. The
+	// move then completes through the held leaf, and the create is refused
+	// (leafMovedAfterAdd).
+	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
-		return err
+		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
+			return err
+		}
+		movedAway = true
 	}
 	source := filepath.Join(worktreesSubdir, name)
 	if fi, err := dir.Lstat(source); err != nil || !goesAsTree(fi.Mode()) {
@@ -1172,6 +1196,15 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		return fail(err)
 	}
 	stagedEntryModes(reg, st.git, staging)
+	// On Linux and macOS a `worktrees` folder that went after the add is made
+	// again, and the create goes on. 4c111e86 succeeds after `worktrees` was
+	// renamed right after the add (measured on Linux and macOS). The mode is
+	// that of openAddStage (not measured). Windows keeps its rule.
+	if !stagedAddWindowsSteps {
+		if err := st.git.Mkdir(worktreesSubdir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+			return fail(err)
+		}
+	}
 	targetName, ok, lastErr := registrationTarget(st.git, name)
 	if !ok && stagedAddWindowsSteps && lastErr != nil {
 		return fail(lastErr)
@@ -1198,7 +1231,11 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		return &addIncomplete{text: replacedEntryText}
 	}
 	defer func() { _ = entry.Close() }()
-	if err := writeLeafGitFile(leaf, cp, worktreeGitFileText(st.u.heldGitDir(), targetName)); err != nil {
+	writeGitFile := func() error { return writeLeafGitFile(leaf, cp, worktreeGitFileText(st.u.heldGitDir(), targetName)) }
+	if movedAway {
+		writeGitFile = func() error { return writeHeldLeafGitFile(cp, worktreeGitFileText(st.u.heldGitDir(), targetName)) }
+	}
+	if err := writeGitFile(); err != nil {
 		st.removeMoved(target, heldInfo)
 		if errors.Is(err, fs.ErrExist) {
 			return &addRefused{text: plantedGitFileText(leaf)}
@@ -1211,7 +1248,23 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if st.u.accepted != nil {
 		st.u.accepted.staged = stagedEntry{name: targetName, info: heldInfo}
 	}
+	if movedAway {
+		return &leafMovedAfterAdd{}
+	}
 	return nil
+}
+
+// leafMovedAfterAdd is the error of a staged add whose leaf another folder
+// replaced right after the add, on Linux and macOS. The move completed through
+// the held leaf. The create answers leafReplacedText with unsafe_path. Its
+// rollback is that of a failed add (undoFailedAdd), so only an empty folder at
+// the path goes. 4c111e86 keeps the moved registration, the new branch, the
+// renamed leaf and its new `.git` file there, and removes an empty copy at the
+// path (measured on Linux and macOS).
+type leafMovedAfterAdd struct{}
+
+func (*leafMovedAfterAdd) Error() string {
+	return "the new worktree is no longer the folder of the create"
 }
 
 // initializingLock is the text of the file `locked` of a registration while
@@ -1361,6 +1414,10 @@ func readHeldStagedLeafGitFile(dir *os.Root, name string) ([]byte, bool) {
 	return data, true
 }
 
+// errLeafMoved is the error of leafHoldsNoGitFile for a leaf path that names
+// another folder than the one of the checkpoint.
+var errLeafMoved = errors.New("the new worktree is no longer the folder of the create")
+
 // leafHoldsNoGitFile tests that leaf is still the folder of the checkpoint cp
 // and holds no `.git` entry. A `.git` there gives addRefused with
 // plantedGitFileText.
@@ -1374,7 +1431,7 @@ func leafHoldsNoGitFile(leaf string, cp worktreeCheckpoint) error {
 	}
 	defer func() { _ = root.Close() }()
 	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, cp.info) {
-		return errors.New("the new worktree is no longer the folder of the create")
+		return errLeafMoved
 	}
 	if _, err := root.Lstat(".git"); err == nil {
 		return &addRefused{text: plantedGitFileText(leaf)}

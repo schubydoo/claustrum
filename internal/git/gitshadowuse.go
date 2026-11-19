@@ -264,7 +264,14 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 		}
 		return stderr, err
 	}
-	named = named && shadowLinksWorktrees
+	// On Linux and macOS a daemon GIT_COMMON_DIR does not stop the staged add.
+	// Its other calls keep that variable (daemonCommonDirStays), and the add
+	// gets the folder `.s<n>` in its place (withAddCopy). With a GIT_COMMON_DIR
+	// of a clone of the repository, 4c111e86 registers the worktree in the
+	// repository and succeeds (measured on Linux and macOS). With one of another
+	// repository its add fails with the staged path of git as "the new folder"
+	// (measured on Linux). Windows keeps the add of that variable (not measured).
+	named = (named || (daemonCommonDirStays() && f.addNamesCopy(repo))) && shadowLinksWorktrees
 	// heldAtListing is true when the path still names the held folder right
 	// before the listing of the add.
 	heldAtListing := f.accepted != nil && f.accepted.stands()
@@ -697,7 +704,24 @@ const repointMaxBytes = 8192
 // GIT_COMMON_DIR and no GIT_DIR in the daemon's own environment no call names
 // the copy (daemonCommonDirStays).
 func (u gitUse) names(dir string) (gitDirTrust, bool) {
-	if !u.shadow() || daemonCommonDirStays() {
+	if daemonCommonDirStays() {
+		return gitDirTrust{}, false
+	}
+	return u.namesCopy(dir)
+}
+
+// addNamesCopy reports whether the `worktree add` of a create in dir is staged
+// with a daemon GIT_COMMON_DIR (worktreeAdd): without that variable the call
+// names the copy.
+func (u gitUse) addNamesCopy(dir string) bool {
+	_, ok := u.namesCopy(dir)
+	return ok
+}
+
+// namesCopy is names with no test of the daemon's own GIT_COMMON_DIR. It tells
+// whether a call in dir names the copy of this request when that variable is gone.
+func (u gitUse) namesCopy(dir string) (gitDirTrust, bool) {
+	if !u.shadow() {
 		return gitDirTrust{}, false
 	}
 	t := gitDirTrustFor(dir)
