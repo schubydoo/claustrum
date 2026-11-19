@@ -1132,8 +1132,9 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// movedAway is true on Linux and macOS when another folder took the path
 	// of the leaf after the add, and the held leaf has no `.git` entry. The
 	// move then completes through the held leaf, and the create is refused
-	// (leafMovedAfterAdd). A deleted leaf keeps errLeafMoved and gets no
-	// staging folder (claustrum's own, not measured).
+	// (leafMovedAfterAdd). A deleted leaf keeps errLeafMoved (claustrum's
+	// own, not measured). On Linux it gets no staging folder. On macOS the
+	// failed write of its `.git` file removes the moved folder again.
 	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
 		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) || heldLeafUnlinked(cp) {
@@ -1238,6 +1239,13 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	}
 	if err := writeGitFile(); err != nil {
 		st.removeMoved(target, heldInfo)
+		if movedAway && errors.Is(err, fs.ErrNotExist) {
+			// The held leaf was deleted after the add. On macOS its link
+			// count stays above 0 (measured on the macOS CI leg), so
+			// heldLeafUnlinked cannot see it. The reply stays errLeafMoved
+			// (claustrum's own, not measured).
+			return errLeafMoved
+		}
 		if errors.Is(err, fs.ErrExist) {
 			return &addRefused{text: plantedGitFileText(leaf)}
 		}

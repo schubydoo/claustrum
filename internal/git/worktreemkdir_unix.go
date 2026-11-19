@@ -244,8 +244,9 @@ func heldLeafLacksGitFile(cp worktreeCheckpoint) bool {
 }
 
 // heldLeafUnlinked reports whether the leaf that the checkpoint holds open has
-// no link left, so it was deleted. A removed folder has a link count of 0
-// (from the code, not measured on macOS).
+// no link left, so it was deleted. On Linux a removed folder has a link count
+// of 0. On macOS it does not (measured on the macOS CI leg), and addStage.move
+// sees the deleted leaf at the failed write of its `.git` file instead.
 func heldLeafUnlinked(cp worktreeCheckpoint) bool {
 	if cp.info == nil || len(cp.held) == 0 {
 		return false

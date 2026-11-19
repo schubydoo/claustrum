@@ -922,9 +922,10 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 // undoMovedAwayLeaf call (the empty folder stays), call undoFailedAdd in its
 // place (the link goes), or remove the folder with os.RemoveAll (the file goes).
 // A leaf that is deleted and replaced, not renamed, keeps the text of
-// errLeafMoved, and the move makes no registration and no staging folder
-// (claustrum's own, not measured). Mutation: drop the heldLeafUnlinked test
-// (the text is that of the failed write of `.git`). An attach add of main
+// errLeafMoved, and no registration or staging folder is left (claustrum's
+// own, not measured). Linux sees it by the link count, macOS at the failed
+// write of `.git`. Mutation: drop both tests (the text is that of the failed
+// write of `.git`). An attach add of main
 // fails, since main is checked out, and its fallback add gets the same reply
 // (from the code, not measured). Mutation: drop the movedAwayReply call after
 // the fallback add (the frame differs).
