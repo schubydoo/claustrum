@@ -47,6 +47,8 @@ With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<n
 
 `startTime` is an opaque token that detects a reused pid, not an OS start time.
 
+On Windows a failed or pending [start test of the jobs](process-kill.md#the-start-test-of-the-jobs) adds `"outsideJob":true` after `success` (`4c111e86`, measured on Windows).
+
 With `"cliTempRoot": true` on Linux and macOS the result can carry a `cliTempRoot` member after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
 
 After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
