@@ -88,7 +88,7 @@ func runJobTest(c jobTestChild, start time.Time, pendingAfter, bound time.Durati
 // claustrum's own, not measured: a clean exit in the pending time puts the jobs in use
 // for the later spawns. After an end that fails, or a gate that the exit closed, the
 // result of a reap within jobTestReapGrace counts, and else the test fails with the
-// bound reason. So the test never stays pending past the bound and the grace.
+// bound reason. After an end that took hold, the result waits for the reap with no bound.
 func (t *JobTest) awaitJobTest(c jobTestChild, gate *sysproc.LeaderGate, reaped <-chan error, start time.Time, bound time.Duration) {
 	timer := time.NewTimer(bound - time.Since(start))
 	defer timer.Stop()

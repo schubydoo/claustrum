@@ -62,7 +62,7 @@ The `exit` frame waits for the output of the child. If another process holds the
     On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case, except for `KILL` in the exit drain.
 
 === "Windows"
-    The `signal` name is ignored. A kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
+    A kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
 
 ### Windows child trees
 
@@ -86,17 +86,18 @@ With no job, a process that the child started can hold the output pipes of the c
 
 Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, no child gets a job, and each spawn answers `{"success":true,"outsideJob":true}`. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
-From 5 s to that end the test is pending: the socket opens, and each spawn runs its child in no job and answers `"outsideJob":true`.
+From 5 s to that end the test is pending: the socket opens, and each spawn runs as after a failed test.
+
+claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows), and at the daemon exit (from the code).
 
 claustrum's own, not measured:
 
-- A test child that ends clean before the end turns the jobs on.
+- A clean exit before the end turns the jobs on.
 - A failed start of the test child fails the test with its error.
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`.
-- A failed resume leaves the child asleep until the end. A failed wait handle gets no end.
-- After a failed end or a failed wait handle, a reap within 5 s gives the result. Else the test fails with the reason of the end.
-- The time in the line is rounded to the nearest millisecond.
-- The end reaches no other job or child.
+- A failed resume leaves the child asleep. After a failed end, as with no job, or with no wait handle, a reap within 5 s gives the result. Else the test fails with the reason of the end.
+- The line rounds the time to the nearest millisecond.
+- The end reaches nothing else.
 
 ## Rare states
 

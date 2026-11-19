@@ -45,13 +45,15 @@ type winJobTestChild struct {
 
 // startJobTestChild starts the test child suspended, puts it in a job and resumes it.
 // The job has the flags 0x2800 of JobsOn (measured on Windows against 4c111e86), also
-// with -keep-children. So the close of its handle at the reap ends what is left in it.
+// with -keep-children. So the close of its handle at the reap, or at the exit of the
+// daemon, ends what is left in it. At the reap that end has code 0 (measured on Windows).
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
-// join error (claustrum's own, not measured). A failed resume leaves the child asleep
-// until End at the bound. If the wait handle does not open, the gate closes at once and
-// End never runs. The test then fails jobTestReapGrace after the bound (awaitJobTest),
-// and the child is left to end by itself (claustrum's own, not measured).
+// join error (claustrum's own, not measured). A failed resume leaves the child asleep.
+// End at the bound reaches it only with a job and a wait handle. With no job End fails.
+// If the wait handle does not open, the gate closes at once and End never runs. In both
+// cases the test fails jobTestReapGrace after the bound unless the reap comes first
+// (awaitJobTest), and the daemon leaves the child as it is (claustrum's own, not measured).
 func startJobTestChild() (jobTestChild, error) {
 	cmd, err := newJobTestCmd()
 	if err != nil {
