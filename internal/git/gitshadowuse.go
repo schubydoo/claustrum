@@ -248,13 +248,13 @@ func (u gitUse) shadow() bool {
 // `rev-parse --absolute-git-dir` and is the last call (measured on Linux,
 // macOS and Windows). A real folder there is the control case.
 //
-// The call holds the lock of the add step (lockWorktreeAddStep), so a remove in
-// the same git directory deletes no registration while it runs. On Windows the
-// lock also covers the staging steps (not measured). The lock comes before
-// fixedForm, so an add that waits for a remove takes the form of the off switch
-// at its start, and the gate of fixedForm runs under the lock.
+// The call and its staging steps hold the create lock and the lock of the add
+// step (takeAddLocks), so a remove in the same git directory deletes no
+// registration while they run. The locks come after the listing of the add and
+// the pair before it, as 4c111e86 runs those calls of a second create during a
+// held add (measured on Linux, in its call log). So fixedForm and its
+// gate run before a wait for a remove (claustrum's own, not measured).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, offMember bool, afterListing func(), args ...string) (string, error) {
-	defer lockWorktreeAddStep(repo)()
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
 	if named && stagedAddWindowsSteps {
@@ -334,6 +334,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	// On Linux and macOS an add that names the copy is staged as on Windows,
 	// after the steps above (runAddStaged). be1c1ca5 does so on Linux and macOS.
+	defer takeAddLocks(cp.lock, repo)()
 	if named {
 		stderr, err := runAddStaged(ctx, f, cmd, leaf, cp)
 		if err == nil && f.accepted != nil {
@@ -361,11 +362,10 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 }
 
 // addListingThenPair runs the listing of a `worktree add` in repo and then pair,
-// when set, and no add. It holds the lock of the add step, as worktreeAdd does.
+// when set, and no add.
 // A create refuses a leaf with a locked stale entry after these calls
-// (4c111e86, measured on macOS).
+// (4c111e86, measured on macOS). Like the listing of an add, it takes no lock.
 func addListingThenPair(ctx context.Context, u gitUse, repo string, pair func()) {
-	defer lockWorktreeAddStep(repo)()
 	offLinkListing(ctx, u, repo)
 	if pair != nil {
 		pair()
@@ -896,8 +896,9 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 //   - `.gitdir-<n>` for one git.status (measured on Linux and Windows).
 //   - `.index-<n>` for the checkout of one create (measured). It has mode 0700
 //     on Linux (measured). On all three systems 4c111e86 names it
-//     `.checkout-<n>` (measured). claustrum names it `.index-<n>` on Windows
-//     (checkoutDirPrefix, claustrum's own).
+//     `.checkout-<n>` (checkoutDirPrefix, measured). In fallback-git that
+//     name is measured on Windows. On Linux and macOS it is claustrum's own
+//     there (not measured).
 //   - `.worktreeinclude-<n>` with the file `patterns` for one include step
 //     (measured).
 //
@@ -905,10 +906,10 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 // `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
 // `claude-ssh-worktreeinclude-<n>`. The last one holds the file `patterns`
 // (5fd08069, measured on Linux). The index folder is the one of 4c111e86
-// (measured on Linux and macOS). c9125eb8 used `claude-ssh-index-<n>`.
+// (measured on all three systems). c9125eb8 used `claude-ssh-index-<n>`.
 const (
 	shadowStatusDirPrefix  = ".gitdir-"
-	shadowIndexDirPrefix   = ".index-"
+	checkoutDirPrefix      = ".checkout-"
 	shadowIncludeDirPrefix = ".worktreeinclude-"
 	includePatternsName    = "patterns"
 )
@@ -932,8 +933,8 @@ var requestDirMkdir = os.Mkdir
 // The error of a folder that cannot be made in the folder of the daemon names
 // its full path, with the operation `mkdir`. With a folder of the daemon of
 // mode 0500 a create of 5fd08069 answers `git worktree add failed (checkout):
-// mkdir <S>/.index-<n>: permission denied` (measured on Linux). On Linux and
-// macOS claustrum prints `.checkout-<n>` there. On Windows
+// mkdir <S>/.index-<n>: permission denied` (measured on Linux). claustrum
+// prints `.checkout-<n>` there. On Windows
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
 // On Linux and macOS a folder of the daemon of mode 0100 gets that mkdir
@@ -944,7 +945,7 @@ var requestDirMkdir = os.Mkdir
 // not through the root (makeRequestDir). On Windows with a deny entry for new
 // folders on <S> and the backup and restore privileges enabled, the create of
 // 5fd08069 succeeds. The root mkdir of claustrum failed there at `.s<n>`
-// (measured) and at `.index-<n>`. With both privileges disabled both builds
+// (measured) and at its checkout folder. With both privileges disabled both builds
 // fail with the text above (measured). By path the create of claustrum
 // succeeds (measured). The prefixes .config-, .worktreeinclude- and the
 // .gitdir- of git.status are not measured there (claustrum's own).

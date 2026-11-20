@@ -523,7 +523,18 @@ func openSeenRegular(root *os.Root, path string, seen os.FileInfo) (*os.File, er
 // `info/exclude` come from the copy of the repository, which this request
 // brought up to date. Each file is written in place: a poll of 5fd08069 saw a
 // file with 0 bytes first and with its full size 4 to 5 ms later (measured).
+//
+// A folder of the copy that the limit of the folders removed fails the fill
+// first, with privateCopyText and the error of its stat, as `stat .: no such
+// file or directory` (Linux and macOS) or `GetFileAttributesEx .: The system
+// cannot find the file specified.` (Windows). 4c111e86 answers so with
+// errorCode worktree_add_failed (measured on Linux, macOS and Windows), and
+// runs no add (measured on Linux). A good staging of 4c111e86 makes `.s<n>`
+// before the stat of the copy (measured on Linux).
 func (st *addStage) fill(regs []registrationCopy, overLimit *addOwnFiles) error {
+	if _, err := fs.Stat(os.DirFS(st.u.repoDir), "."); err != nil {
+		return &addOwnFiles{text: privateCopyText + err.Error()}
+	}
 	repo, err := openRootNoWait(st.u.repoDir)
 	if err != nil {
 		return err
@@ -782,8 +793,12 @@ func (e *addNotPrepared) Error() string { return e.text }
 // A failed step before the call gives its error with prepareWorktreesPrefix,
 // and git does not run (openAddStage). The listing comes before those steps:
 // 5fd08069 makes it and then stops (measured).
+//
+// The locks of the add (takeAddLocks) come after the listing.
 func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
-	return runAddStaged(ctx, u, hardenedGitCmd(ctx, u, repo, false, nil, args...), leaf, cp)
+	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
+	defer takeAddLocks(cp.lock, repo)()
+	return runAddStaged(ctx, u, cmd, leaf, cp)
 }
 
 // runAddStaged runs the `worktree add` call cmd of the request u with the
@@ -798,14 +813,13 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 // A `.s<n>` that cannot be made answers privateCopyText on Linux and macOS, as
 // be1c1ca5 does on Linux. Windows keeps the text of 5fd08069 (the maintainer's
 // choice, not measured on be1c1ca5).
+//
+// The step holds no folder of a repository, and the add child names `.s<n>`,
+// so the limit of the folders can remove the folder of the copy while the add
+// runs. 4c111e86 removes it then (measured on Linux, macOS and Windows), and
+// a second create that waits for that add fails with the stat text (fill).
 func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp worktreeCheckpoint) (string, error) {
-	// The staging folder is filled from the copy, so it holds the folder of
-	// the copy until it goes (from the code).
-	drop, err := u.holdCopy(cmd.Args)
-	if err != nil {
-		return "", err
-	}
-	defer drop()
+	beforeRepoHold(cmd.Args)
 	st, err := openAddStage(u)
 	if err != nil {
 		var ownFiles *addOwnFiles
