@@ -57,40 +57,27 @@ func TestStagedEntryModesSteps(t *testing.T) {
 	}
 }
 
-// TestWriteStagedRecordKeepsOtherRecords: writeStagedRecord changes nothing
-// when the registration has no record, or a record that names another path
-// than the staged leaf. A record of the staged leaf gets the text of the
-// leaf. Without the test of the record each record gets that text.
-func TestWriteStagedRecordKeepsOtherRecords(t *testing.T) {
+// TestStagedRecordNamesLeaf: a registration with no record, or with a
+// record that names another path than the staged leaf, keeps the record of
+// git. A record of the staged leaf gets a new record. Without the test of the
+// record each record gets a new one.
+func TestStagedRecordNamesLeaf(t *testing.T) {
 	base := t.TempDir()
 	st := &addStage{dir: filepath.Join(base, ".s1"), leafName: "w1", git: openTestRoot(t, base)}
-	leaf := filepath.Join(base, "leaf", "w1")
 	reg := filepath.Join(base, "reg")
 	if err := os.MkdirAll(reg, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.writeStagedRecord(openTestRoot(t, reg), "stg", leaf); err != nil {
-		t.Errorf("no record = %v, want nil", err)
+	if st.stagedRecordNamesLeaf(openTestRoot(t, reg)) {
+		t.Error("no record names the staged leaf")
 	}
 	mustWrite(t, filepath.Join(reg, "gitdir"), "/elsewhere/.git\n")
-	mustWrite(t, filepath.Join(base, "stg", "gitdir"), "/elsewhere/.git\n")
-	if err := st.writeStagedRecord(openTestRoot(t, reg), "stg", leaf); err != nil {
-		t.Errorf("another record = %v, want nil", err)
+	if st.stagedRecordNamesLeaf(openTestRoot(t, reg)) {
+		t.Error("a record of another path names the staged leaf")
 	}
-	if got := mustRead(t, filepath.Join(base, "stg", "gitdir")); got != "/elsewhere/.git\n" {
-		t.Errorf("the record = %q, want it as it was", got)
-	}
-	staged := filepath.Join(st.dir, stagedLeafFolder, "w1", ".git")
-	mustWrite(t, filepath.Join(reg, "gitdir"), staged+"\n")
-	mustWrite(t, filepath.Join(base, "stg", "gitdir"), staged+"\n")
-	if err := st.writeStagedRecord(openTestRoot(t, reg), "stg", leaf); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := mustRead(t, filepath.Join(base, "stg", "gitdir")), stagedRecordText(leaf); got != want {
-		t.Errorf("the record = %q, want %q", got, want)
-	}
-	if err := st.writeStagedRecord(openTestRoot(t, reg), "gone", leaf); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("a staging folder with no record = %v, want a missing file", err)
+	mustWrite(t, filepath.Join(reg, "gitdir"), filepath.Join(st.dir, stagedLeafFolder, "w1", ".git")+"\n")
+	if !st.stagedRecordNamesLeaf(openTestRoot(t, reg)) {
+		t.Error("the record of the staged leaf does not name it")
 	}
 }
 
