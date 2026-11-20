@@ -202,11 +202,11 @@ CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/
 
 ### `-keep-children`
 
-Use `-keep-children` to let child processes survive a daemon restart or
-upgrade. A graceful shutdown then leaves the spawned children running. Without
-the flag, a shutdown kills the whole tree on Linux and macOS, and each job
-on Windows (`52d82f0a`). The new daemon does not re-adopt the survivors, and they lose
-their stdio. [CT-2](DIVERGENCES.md#ct-2) has these limits and the others.
+Use `-keep-children` to let children survive a daemon restart or
+upgrade. A graceful shutdown then leaves them running. Without
+the flag, a shutdown kills the whole tree on Linux and macOS, and on Windows the tree of each child in a
+[job](protocol/process-kill.md#windows-child-trees) (`52d82f0a`). The new daemon does not re-adopt the survivors, and they lose
+their stdio. [CT-2](DIVERGENCES.md#ct-2) has the limits.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children
