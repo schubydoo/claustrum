@@ -286,7 +286,7 @@ A held folder logs 49 of these lines. In place of the 50th it logs `[process.Man
 
 A folder stays checked after its last child ended. A loss 5 s after that end still counts at the next check (measured on macOS).
 
-The folder keeps its `flock`, as does the folder of a late step (`4c111e86`, measured on Linux). These are claustrum's own: the `flock` goes when its checks end, but stays with a new hold. Its checks write nothing and log no line but a loss and the two lines of a check that does not answer (those two measured on Linux). They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
+The folder keeps its `flock`, as does the folder of a late step (`4c111e86`, measured on Linux). These are claustrum's own: macOS, and the `flock` goes when its checks end, but stays with a new hold. Its checks write nothing and log no line but a loss and the two lines of a check that does not answer (those two measured on Linux). They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
 
 ### The managed launcher
 

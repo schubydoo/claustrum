@@ -1115,9 +1115,8 @@ func TestCLITempRootGivenBackFolderKeepsItsFlock(t *testing.T) {
 	if n := givenCount(); n != 0 {
 		t.Fatalf("%d given-back folders after the check, want 0", n)
 	}
-	if err := flock(); err != nil {
-		t.Errorf("flock after the record ended: %v, want no hold", err)
-	}
+	// A copy of a look at the given-back folder shares the flock until it closes.
+	waitFor(t, "no hold after the record ended", func() bool { return flock() == nil })
 }
 
 // At most tempRootGivenKeep given-back folders are checked, and each for
