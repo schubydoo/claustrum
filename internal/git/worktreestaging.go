@@ -1089,8 +1089,8 @@ func sweepOldStaging(git *os.Root, gitDir string, now time.Time) {
 //     plantedGitFileText (be1c1ca5, measured on Linux). These tests come
 //     before the staging folder is made.
 //  4. The staging folder gets a copy of the whole tree of the registration
-//     (copyRegistrationTree), the modes of stagedEntryModes, a `gitdir` record
-//     that names the leaf (stagedRecordText), and the file `locked` with
+//     (copyRegistrationTree), the modes of stagedEntryModes, a `gitdir`
+//     record that names the leaf (stagedRecordText), and the file `locked` with
 //     `initializing` and a newline (be1c1ca5, measured on Linux, macOS and
 //     Windows).
 //  5. The target is the first free name of registrationTarget (measured). On
@@ -1188,11 +1188,21 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if err != nil {
 		return fail(err)
 	}
-	if err := copyRegistrationTree(reg, st.git, staging, ""); err != nil {
+	// A record of the staged leaf gets no copy. writeStagedRecord makes it new,
+	// so the staging folder sees no remove of `gitdir`. 4c111e86 removes no
+	// `gitdir` there (measured on Linux).
+	newRecord := st.stagedRecordNamesLeaf(reg)
+	skip := ""
+	if newRecord {
+		skip = "gitdir"
+	}
+	if err := copyRegistrationTree(reg, st.git, staging, "", skip); err != nil {
 		return fail(err)
 	}
-	if err := st.writeStagedRecord(reg, staging, leaf); err != nil {
-		return fail(err)
+	if newRecord {
+		if err := st.writeStagedRecord(staging, leaf); err != nil {
+			return fail(err)
+		}
 	}
 	if err := writeCopyEntries(st.git, staging, []copyEntry{{path: "locked", data: []byte(initializingLock)}}, 0o755, 0o644); err != nil {
 		return fail(err)
@@ -1307,33 +1317,28 @@ var removeLockedFile = func(entry *os.Root) error {
 	return renameretry.While(renameretry.Bound, renameretry.Held, func() error { return entry.Remove("locked") })
 }
 
-// writeStagedRecord gives the staging folder a `gitdir` record that names
-// the `.git` file of leaf, when git wrote one that names the staged leaf.
-// be1c1ca5 has `<leaf>/.git` and a newline there, with the links of the
-// path resolved and a trailing blank kept (measured on Linux). Who writes
-// it is not measured. A record of another form stays as git wrote it.
-func (st *addStage) writeStagedRecord(reg *os.Root, staging, leaf string) error {
+// stagedRecordNamesLeaf is true when the `gitdir` record of reg, the
+// registration that git wrote, names the `.git` file of the staged leaf.
+// be1c1ca5 has `<leaf>/.git` and a newline in the moved registration, with the
+// links of the path resolved and a trailing blank kept (measured on Linux).
+// Who writes it is not measured. A record of another form gets a copy as git
+// wrote it.
+func (st *addStage) stagedRecordNamesLeaf(reg *os.Root) bool {
 	old, ok := readRootFile(reg, "gitdir", registrationFileMaxBytes)
 	if !ok {
-		return nil
+		return false
 	}
 	stagedGit := filepath.Join(st.dir, stagedLeafFolder, st.leafName, ".git")
 	rec := strings.TrimSuffix(string(old), "\n")
-	if filepath.Clean(filepath.FromSlash(rec)) != filepath.Clean(stagedGit) && !sameGitDirPath(canonicalExistingPrefix(filepath.FromSlash(rec)), canonicalExistingPrefix(stagedGit)) {
-		return nil
-	}
-	path := filepath.Join(staging, "gitdir")
-	fi, err := st.git.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if err := st.git.Remove(path); err != nil {
-		return err
-	}
-	if err := writeRootFile(st.git, path, []byte(stagedRecordText(leaf)), fi.Mode().Perm()); err != nil {
-		return err
-	}
-	return st.git.Chmod(path, fi.Mode().Perm())
+	return filepath.Clean(filepath.FromSlash(rec)) == filepath.Clean(stagedGit) || sameGitDirPath(canonicalExistingPrefix(filepath.FromSlash(rec)), canonicalExistingPrefix(stagedGit))
+}
+
+// writeStagedRecord gives the staging folder a new `gitdir` record that names
+// the `.git` file of leaf, by one exclusive create with the mode of
+// copyRegistrationTree. An entry `gitdir` there fails the write, and nothing
+// is removed or written through it.
+func (st *addStage) writeStagedRecord(staging, leaf string) error {
+	return writeRootFile(st.git, filepath.Join(staging, "gitdir"), []byte(stagedRecordText(leaf)), 0o644)
 }
 
 // stagedRecordText is the `gitdir` record of the new worktree leaf: the
@@ -1495,13 +1500,17 @@ func registrationTarget(root *os.Root, name string) (target string, ok bool, las
 // `openat j: path escapes from parent` (measured on Windows). The target of
 // the junction stays. b3081b51 copies an
 // `info/sparse-checkout` of 1 MiB + 1 and of 4 MiB whole (measured on Linux).
-// claustrum has no bound (claustrum's own, not measured above 4 MiB).
-func copyRegistrationTree(src, dst *os.Root, base, rel string) error {
+// claustrum has no bound (claustrum's own, not measured above 4 MiB). An entry
+// skip at the top of src gets no copy.
+func copyRegistrationTree(src, dst *os.Root, base, rel, skip string) error {
 	names, err := rootDirNames(src, cmp.Or(rel, "."))
 	if err != nil {
 		return err
 	}
 	for _, n := range names {
+		if rel == "" && n == skip {
+			continue
+		}
 		path := filepath.Join(rel, n)
 		fi, err := src.Lstat(path)
 		if err != nil {
@@ -1511,7 +1520,7 @@ func copyRegistrationTree(src, dst *os.Root, base, rel string) error {
 			if err := dst.Mkdir(filepath.Join(base, path), 0o755); err != nil {
 				return err
 			}
-			if err := copyRegistrationTree(src, dst, base, path); err != nil {
+			if err := copyRegistrationTree(src, dst, base, path, ""); err != nil {
 				return err
 			}
 			continue
