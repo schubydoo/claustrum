@@ -933,8 +933,8 @@ var requestDirMkdir = os.Mkdir
 // The error of a folder that cannot be made in the folder of the daemon names
 // its full path, with the operation `mkdir`. With a folder of the daemon of
 // mode 0500 a create of 5fd08069 answers `git worktree add failed (checkout):
-// mkdir <S>/.index-<n>: permission denied` (measured on Linux). On Linux and
-// macOS claustrum prints `.checkout-<n>` there. On Windows
+// mkdir <S>/.index-<n>: permission denied` (measured on Linux). claustrum
+// prints `.checkout-<n>` there. On Windows
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
 // On Linux and macOS a folder of the daemon of mode 0100 gets that mkdir
