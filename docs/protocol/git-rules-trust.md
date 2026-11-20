@@ -303,12 +303,11 @@ The classes come in this order:
    `git.worktree_remove` (measured on Linux and Windows). On Windows another gone git dir
    answers the error of
    [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository) in the folder
-   that holds `.git` (measured on Linux and Windows). `git.info` runs that call
+   that holds `.git` (`5fd08069`, measured on Linux and Windows). `git.info` runs that call
    itself, and its later runs give "no repository" (`c8e2f083`, measured on
    Linux). With `"shadowDirOff":true`
-   that git dir gets the hooks refusal on every method (measured on Linux). Linux
-   and macOS give "no repository" in both modes
-   ([git.status](git-status.md#rare-states)).
+   that git dir gets the hooks refusal on every method (`5fd08069`, measured on
+   Linux). Linux and macOS: see [git.status](git-status.md#rare-states).
    On Linux and macOS a remove of a gone worktree without `worktreeRoot` gets
    success in both modes (`b3081b51`, measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
