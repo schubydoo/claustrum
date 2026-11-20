@@ -245,8 +245,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   the file in any folder but the inherited folder or its nearest existing parent.
 - **The startup reap** (Linux and macOS) sends `SIGTERM`, then `SIGKILL`, to the group of a recorded pid after
   the identity test (`reapTargets`, [the reap](docs/DAEMON.md#the-reap)). Each remove of `forget` and
-  `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` is
-  [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
+  `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
+  wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
 
 #### The private temp folder of a spawn
