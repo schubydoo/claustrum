@@ -1223,8 +1223,8 @@ func logTempRootChange(h *heldTempRoot, format string, args ...any) {
 // right after this test can still meet each write that follows it: the remake of a
 // missing folder (Mkdirat, then takeTempRootAt), the hold of an own folder at the name
 // (takeTempRootAt: fitTempRoot, Fchmod, UtimesNanoAt and the exclusive flock), or the
-// new t of a folder (fitTempRoot). takeCheck then gives the given-back folder the handle
-// of the copy, so it keeps that flock.
+// new t of a folder (fitTempRoot). takeCheck then keeps the flock of the given-back
+// folder.
 func (h *heldTempRoot) mayWrite() bool {
 	return !h.given && (h.of == nil || !h.of.handedBack.Load())
 }
