@@ -1264,7 +1264,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// with no error, other than "not a git repository", keeps the listing
 		// below (claustrum's own, not measured). Linux and macOS keep the listing (not
 		// measured).
-		if runtime.GOOS == "windows" && t.goneGitFile {
+		if goneGitFileStartTest && t.goneGitFile {
 			if msg := req.shadow.gate(bool(p.ShadowDirOff)); msg != "" {
 				return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 			}

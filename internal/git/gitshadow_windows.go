@@ -237,6 +237,11 @@ func openNoShare(path string, access uint32) (*os.File, error) {
 // that step.
 var goneNotARepoKeepsAll = true
 
+// goneGitFileStartTest is true on Windows: a create on a `.git` file to a
+// missing path runs the start test and the call about the repository
+// (gitWorktreeCreateLocked). A variable, so that a test can run that step.
+var goneGitFileStartTest = true
+
 // printedPathAsIs is true on Windows: the "disagree" text shows an absolute
 // answer of git as git printed it, also when it is not clean (askGit).
 // b3081b51 does so (measured on Windows).
