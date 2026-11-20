@@ -60,7 +60,7 @@ func TestCreateFailedAddOnWindows(t *testing.T) {
 // TestCreateFailedReadTreeOnWindows must match the measured cases: the add
 // is real and the wrapper answers exit 1 for the `read-tree`. The reply is
 // the failed checkout. The registration, the new worktree folder, the
-// branch, `.s<n>` and `.index-<n>` are gone, and no staging folder is
+// branch, `.s<n>` and the checkout folder are gone, and no staging folder is
 // left.
 func TestCreateFailedReadTreeOnWindows(t *testing.T) {
 	f := newSeededShadowFixture(t)
@@ -86,7 +86,7 @@ func TestCreateFailedReadTreeOnWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), addCopyPrefix) || strings.HasPrefix(e.Name(), shadowIndexDirPrefix) {
+		if strings.HasPrefix(e.Name(), addCopyPrefix) || strings.HasPrefix(e.Name(), checkoutDirPrefix) {
 			t.Errorf("the folder of the daemon still holds %s", e.Name())
 		}
 	}

@@ -233,7 +233,7 @@ func (h *ShadowHost) folderUse() gitUse {
 
 // gate runs before the first git call of a method in a repository that the trust
 // check accepted, or on a `.git` file to a missing path for git.info (gitInfo)
-// and a Windows git.worktree_create (gitWorktreeCreateLocked).
+// and git.worktree_create (gitWorktreeCreateLocked).
 // It returns the text of a failed start test, or "".
 //
 // A request with the member runs no test and makes no folder (measured on
@@ -790,6 +790,11 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 // a new folder .check-<n> in it and removes that folder. It returns the state,
 // or the cause of a failed test.
 //
+// An entry at the folder that remakeFolder removes goes first, and the test runs
+// in a new folder. At a test after a kept failure on 4c111e86 an empty file, a
+// FIFO or a link there goes, the four git requests succeed, and the link's
+// target gets nothing (measured on Linux, also for a link to nothing).
+//
 // The name .check-<n> has a decimal number that differs per attempt. The folder
 // is gone at the reply, also after a failed test (measured on Linux). A folder
 // that cannot be made gives `mkdir <S>/.check-<n>: no space left on device`
@@ -801,7 +806,8 @@ func (h *ShadowHost) startTest() (state, cause string) {
 		return "", ""
 	}
 	if h.dir != "" {
-		if _, err := os.Lstat(h.dir); err != nil {
+		fi, err := os.Lstat(h.dir)
+		if err != nil || goesAtFolderPath(fi.Mode()) && h.removeOwnFolderFile(h.dir) == nil {
 			h.dropLock()
 			h.dir = ""
 		}
@@ -1066,14 +1072,16 @@ func readStopText(path string) string {
 // the cause has the same end, and the request has 5 test calls (measured on
 // Linux). The first version call has no option list, the root folder as its
 // working directory and no added variable. The second has the option list,
-// the folder and the variables of a test call. Which of the two gives the
-// text is not measured.
+// the folder and the variables of a test call. The text is the stdout of the
+// second call alone, also when that call fails. With no stdout the end is
+// ` ()` (4c111e86, measured on Linux for `init`).
 //
 // The calls from call 6 on get no such end. Four rows have none: a failed
 // `worktree add` (measured), an ended `rev-parse --verify` and an ended
-// `worktree add`. No record has a failed `config`, `commit-tree` or `update-ref`
-// call of the calls 1 to 5. Those three share the path of `init` and `mktree`:
-// not measured (setupFailed in shadowTestCalls).
+// `worktree add`. A failed `config`, `commit-tree` or `update-ref` call of the
+// calls 1 to 5 takes the path of `init` and `mktree` (setupFailed in
+// shadowTestCalls). Its version text is measured on b3081b51 on Linux, and
+// not on 4c111e86.
 //
 // whole is the cannot-run text when the first call fails, and then no second call
 // runs (b3081b51, measured on Linux).
@@ -1083,14 +1091,7 @@ func shadowVersionNote(check string, env []string) (note, whole string) {
 		return "", gitCannotRunPrefix + listingRun{stderr: first.stderr, err: first.err}.detail()
 	}
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
-	text := second.out
-	if text == "" {
-		text = first.out
-	}
-	if text == "" {
-		return "", ""
-	}
-	return " (" + text + ")", ""
+	return " (" + second.out + ")", ""
 }
 
 // The first texts of the folder `shadow` of the test, and the end of its config
@@ -1198,7 +1199,7 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 //
 // The test runs for a trusted git directory. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (measured on
-// Linux). git.info and a Windows git.worktree_create on a `.git` file to a
+// Linux). git.info and git.worktree_create on a `.git` file to a
 // missing path are the exceptions (gitInfo, gitWorktreeCreateLocked). Each
 // method gives the text of a failed test the shape that it gives a refused
 // config: the error object on git.info, git.status and git.list_branches,
