@@ -101,9 +101,9 @@ var unusableRows = []unusableRow{
 }
 
 // gitFileNowhereRows are the rows whose frame can depend on the text of git. 4c111e86 is
-// measured there with git 2.55 on Windows, and with git 2.56.1 on Linux. With the text
-// of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older text on
-// Linux and macOS (macOS claustrum's own). On Windows it follows the 5fd08069 rows of
+// measured there with git 2.55 on Windows, and with git 2.56.1 on Linux and macOS. With
+// the text of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older
+// text on Linux and macOS. On Windows it follows the 5fd08069 rows of
 // TestGitFileNowhereFourMethodsStub. The frame of an empty folder there is from the
 // code, not measured. TestCreateUnusableGitFileStub pins both texts.
 var gitFileNowhereRows = map[string]bool{
