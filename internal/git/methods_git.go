@@ -2448,7 +2448,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// keeps it to its end (fixedForm, claustrum's own, not measured: no cell
 		// changes the hold inside the checkout). Under a live hold the index goes
 		// in a new folder `claude-ssh-checkout-<n>` of the temporary folder
-		// (4c111e86, Linux and macOS. c9125eb8 used `claude-ssh-index-<n>`).
+		// (4c111e86, Linux and macOS, the name also on Windows. c9125eb8 used
+		// `claude-ssh-index-<n>`).
 		// 5fd08069 runs one listing there before the read-tree call. With no hold it
 		// puts the index in `.index-<n>` of the folder of the daemon and runs two
 		// (measured on Linux). The filter rule follows that form too (claustrum's
