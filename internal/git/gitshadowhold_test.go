@@ -565,9 +565,8 @@ func branchThere(t *testing.T, repo, name string) bool {
 
 // A refused call of git.worktree_create before the add answers its text in the
 // result object, byte for byte (the frame of the text of `repoLimitError`,
-// measured). Nothing of the worktree stays. On Windows the add child names the
-// staging folder, so the row "add" drops the folder at the staging hold
-// (holdCopy), before the staging folder is made (from the code, not measured).
+// measured). Nothing of the worktree stays. The add child names the staging
+// folder and refuses nothing: TestStagedAddFillsNoGoneCopy has that step.
 func TestRepoHoldCreateFrames(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -576,7 +575,6 @@ func TestRepoHoldCreateFrames(t *testing.T) {
 	}{
 		{"listing", subIs("config"), textB},
 		{"repository test", argsHave("rev-parse", "--is-inside-work-tree"), textA},
-		{"add", argsHave("worktree", "add"), textA},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newHoldTrial(t, c.match)
