@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,11 +40,13 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// afterCheck runs cond under tempRoots.mu. A check logs its line while it holds that
-// lock and fits the folder after the line. So cond sees the line only once that check
-// has ended.
+// afterCheck runs cond under tempRootChecking and tempRoots.mu. A check logs its line
+// while it holds tempRootChecking and fits the folder after the line. So cond sees the
+// line only once that check has ended.
 func afterCheck(cond func() bool) func() bool {
 	return func() bool {
+		tempRootChecking.Lock()
+		defer tempRootChecking.Unlock()
 		tempRoots.mu.Lock()
 		defer tempRoots.mu.Unlock()
 		return cond()
@@ -516,9 +519,11 @@ func wantNoEndAfter(t *testing.T, change func(x, name string), line string) {
 // underCheckLock runs f while no check runs.
 func underCheckLock(t *testing.T, f func() error) {
 	t.Helper()
+	tempRootChecking.Lock()
 	tempRoots.mu.Lock()
 	err := f()
 	tempRoots.mu.Unlock()
+	tempRootChecking.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1052,6 +1057,79 @@ func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
 	}
 }
 
+// A held folder and a folder given back before it, lost at one check, come in the order
+// of the hold: the folder held first comes first in the loss lines and in the lost list
+// (claustrum's own).
+func TestCLITempRootGivenBackAndHeldLossesKeepTheOrderOfTheHold(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x1, runDir1 := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	a := runTempRootBound(t, x1, runDir1, &rel, nil)
+	rel[0]()
+	b := runTempRootBound(t, x2, runDir2, &rel, nil)
+	if a == nil || b == nil || givenCount() != 1 {
+		t.Fatalf("answers %+v and %+v with %d given-back folders, want two folders and 1", a, b, givenCount())
+	}
+	linkAtName(t, x1, a.Name)
+	linkAtName(t, x2, b.Name)
+	ticks.check(t)
+	line := func(n string) string {
+		return "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"
+	}
+	wantLinesInOrder(t, logs.String(), line(a.Name), line(b.Name))
+	x3, runDir3 := tempRootDir(t, true)
+	c := runTempRootBound(t, x3, runDir3, &rel, nil)
+	var got []string
+	if c != nil {
+		for _, g := range c.Gone {
+			got = append(got, g.Name)
+		}
+	}
+	if want := []string{a.Name, b.Name}; !slices.Equal(got, want) {
+		t.Errorf("lost list %v, want %v", got, want)
+	}
+}
+
+// A held folder whose handle cannot be copied for a check logs the failed-check line,
+// and a later good check logs that all is well again. Nobody is ended (claustrum's own).
+func TestCLITempRootHandleThatCannotBeCopiedLogsTheFailedCheck(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	h := heldRecordOf(x, a.Name)
+	if h == nil {
+		t.Fatal("no held record")
+	}
+	closed, err := os.Open(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = closed.Close()
+	tempRoots.mu.Lock()
+	f := h.f
+	h.f = closed // a copy of a closed handle fails with EBADF
+	tempRoots.mu.Unlock()
+	ticks.check(t)
+	tempRoots.mu.Lock()
+	h.f = f
+	tempRoots.mu.Unlock()
+	ticks.check(t)
+	pre := "[process.Manager] Claude Code's private temp folder " + a.Name
+	wantLinesInOrder(t, logs.String(),
+		pre+": the temp dir could not be looked at: "+unix.EBADF.Error()+"; nobody is ended over that, and it is looked at again",
+		pre+": all is well with it again")
+	if ends.Load() != 0 {
+		t.Errorf("%d ends, want none", ends.Load())
+	}
+}
+
 // A new hold of a given-back folder ends its old record and closes the old handle, so
 // a later loss gives one line and one entry of the list (claustrum's own).
 func TestCLITempRootHeldAgainEndsTheGivenRecord(t *testing.T) {
@@ -1258,6 +1336,285 @@ func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
 		<-pass.done
 	}
 	tempRootCheckDev = old
+}
+
+// The check of a held folder holds no lock that a spawn takes while it looks at the
+// folder, so a spawn in another temp dir that answers gets its folder at once while that
+// check does not answer (4c111e86,
+// measured on Linux on a dead NFS mount). A loss that the check finds still ends the
+// child that asked, once the check answers.
+func TestCLITempRootHeldCheckHoldsNoLock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	old := tempRootLimit
+	tempRootLimit = time.Second
+	t.Cleanup(func() { tempRootLimit = old })
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	linkAtName(t, x, a.Name)
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	start := time.Now()
+	_, res, release, _ := privateTempRoot([]string{"TMPDIR=" + x2}, runDir2)
+	rel = append(rel, release)
+	if d := time.Since(start); res == nil || !tempRootNameRE.MatchString(res.Name) || d >= tempRootLimit {
+		t.Errorf("answer %+v after %v during the check of a held folder, want a folder at once", res, d)
+	}
+	if ends.Load() != 0 {
+		t.Error("an end before the check answered")
+	}
+	close(free)
+	<-done
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 || ends.Load() != 1 {
+		t.Errorf("%d loss lines and %d ends after the check, want 1 and 1\nlog:\n%s", n, ends.Load(), logs.String())
+	}
+}
+
+// A folder given back while its check does not answer takes only the loss that the
+// check finds: one loss line, and its given-back record ends (claustrum's own).
+func TestCLITempRootGivenBackDuringItsCheckTakesTheLoss(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	linkAtName(t, x, a.Name)
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	rel[0]()
+	if n := givenCount(); n != 1 {
+		t.Fatalf("%d given-back folders during the check, want 1", n)
+	}
+	close(free)
+	<-done
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 || givenCount() != 0 {
+		t.Errorf("%d loss lines, %d given-back folders, want 1 and 0\nlog:\n%s", n, givenCount(), logs.String())
+	}
+}
+
+// A loss that the check of one held folder finds ends the child that asked at once,
+// while the check of a later held folder does not answer yet (claustrum's own).
+func TestCLITempRootLossEndsBeforeALaterCheckAnswers(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	runTempRootBound(t, x2, runDir2, &rel, nil)
+	var st2 unix.Stat_t
+	if err := unix.Stat(x2, &st2); err != nil {
+		t.Fatal(err)
+	}
+	linkAtName(t, x, a.Name)
+	free := make(chan struct{})
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if st.Ino == st2.Ino && st.Dev == st2.Dev { // the look at the temp dir of the second folder
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	waitFor(t, "end of the child of the lost folder", func() bool { return ends.Load() == 1 })
+	close(free)
+	<-done
+}
+
+// A folder given back while its check runs gets no write from that check: a missing
+// folder is not made anew at its name (claustrum's own).
+func TestCLITempRootGivenBackDuringItsCheckGetsNoWrite(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	f := filepath.Join(x, a.Name)
+	if err := os.Rename(f, f+".away"); err != nil {
+		t.Fatal(err)
+	}
+	rel[0]()
+	close(free)
+	<-done
+	if _, err := os.Lstat(f); !os.IsNotExist(err) {
+		t.Errorf("the name: %v, want no folder made anew", err)
+	}
+	if strings.Contains(logs.String(), "made anew") {
+		t.Errorf("log %q, want no line that the folder is made anew", logs.String())
+	}
+}
+
+// onLogLine is a log sink that runs fn once, at the first line that holds sub, before
+// it writes that line.
+type onLogLine struct {
+	buf  syncBuffer
+	sub  string
+	once sync.Once
+	fn   func()
+}
+
+func (w *onLogLine) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), w.sub) {
+		w.once.Do(w.fn)
+	}
+	return w.buf.Write(p)
+}
+
+// A folder given back right after the write test of its check, while the check makes it
+// anew at its name, loses that flock when the check gives its result: a spawn of the same
+// temp dir right after gets that folder again (claustrum's own).
+func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	given := func() bool {
+		tempRoots.mu.Lock()
+		defer tempRoots.mu.Unlock()
+		return len(tempRoots.held) == 0 && len(tempRoots.given) == 1
+	}
+	// The line that the folder is made anew comes after the write test and before the
+	// mkdir, so the give-back lands in that window.
+	w := &onLogLine{sub: "made anew", fn: func() {
+		rel[0]()
+		for end := time.Now().Add(5 * time.Second); !given() && time.Now().Before(end); {
+			time.Sleep(time.Millisecond)
+		}
+	}}
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(w)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	var again *rpc.CLITempRoot
+	var againRel func()
+	var calls atomic.Int32
+	setAfterOneCheck(t, func() {
+		if calls.Add(1) == 1 {
+			var bind func(func())
+			_, again, againRel, bind = privateTempRoot([]string{"TMPDIR=" + x}, runDir)
+			bind(nil)
+		}
+	})
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	f := filepath.Join(x, a.Name)
+	if err := os.Rename(f, f+".away"); err != nil {
+		t.Fatal(err)
+	}
+	ticks.check(t)
+	if againRel != nil {
+		rel = append(rel, againRel)
+	}
+	if !strings.Contains(w.buf.String(), "made anew") {
+		t.Fatalf("log %q, want the line that the folder is made anew", w.buf.String())
+	}
+	if again == nil || again.Name != a.Name {
+		t.Errorf("the spawn right after the check got %+v, want the folder %s again", again, a.Name)
+	}
 }
 
 // A check of a given-back folder that does not answer holds up no check of a held
