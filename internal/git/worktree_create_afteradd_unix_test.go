@@ -475,9 +475,8 @@ func TestWorktreeCreateOffGitDirLinkBeforeRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"shadowDirOff": true})
-	if !strings.Contains(raw, `"success":true`) {
-		t.Fatalf("git.worktree_create = %s, want success", raw)
-	}
+	gitFile := "gitdir: " + filepath.Join(f.realRoot(t), "T", ".git.real", "worktrees", "w1") + "\n"
+	f.wantCreated(t, raw, gitFile, filepath.Join(gitDir+".real", "worktrees", "w1"))
 }
 
 // TestWorktreeCreateLeafReplacedBeforeAdd pins a measured case of c9125eb8 and
