@@ -541,8 +541,8 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 // this class.
 //
 // git 2.56 prints "fatal: gitfile does not point to a valid repository: <G>/.git"
-// there. 4c111e86 then answers that text after the same prefix (measured on Linux with
-// git 2.56.1). The second request, through a symlinked level, is not measured with git
+// there. 4c111e86 then answers that text after the same prefix (measured on Linux and
+// macOS with git 2.56.1). The second request, through a symlinked level, is not measured with git
 // 2.56.
 func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	f := newWRFixture(t)

@@ -71,12 +71,13 @@ var unusableRows = []unusableRow{
 		writeFile(t, filepath.Join(b, ".git"), "junk\n", 0o644)
 		return b, b
 	}},
-	// Windows only, as the next two rows (gitFileNowhereRows).
+	// Windows only, as the empty-folder row (gitFileNowhereRows).
 	{".git file with an empty gitdir", func(t *testing.T, tmp string) (string, string) {
 		b := plainFolder(t, tmp)
 		writeFile(t, filepath.Join(b, ".git"), "gitdir: \n", 0o644)
 		return b, b
 	}},
+	// Windows, and Linux and macOS with git 2.56.1.
 	{".git file to a missing path", func(t *testing.T, tmp string) (string, string) {
 		b := plainFolder(t, tmp)
 		writeFile(t, filepath.Join(b, ".git"), "gitdir: nowhere-dir\n", 0o644)
@@ -101,8 +102,8 @@ var unusableRows = []unusableRow{
 }
 
 // gitFileNowhereRows are the rows whose frame can depend on the text of git. 4c111e86 is
-// measured there with git 2.55 on Windows, and with git 2.56.1 on Linux and macOS. With
-// the text of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older
+// measured there with git 2.55 on Windows, and a missing path with git 2.56.1 on Linux
+// and macOS. With the text of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older
 // text on Linux and macOS. On Windows it follows the 5fd08069 rows of
 // TestGitFileNowhereFourMethodsStub. The frame of an empty folder there is from the
 // code, not measured. TestCreateUnusableGitFileStub pins both texts.
