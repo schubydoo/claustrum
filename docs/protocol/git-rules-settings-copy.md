@@ -1,6 +1,6 @@
 # Settings copy of the git methods
 
-In the state `shadow`, when the start test passes, the daemon keeps its own copy of a repository's git settings. The state `fallback-git` and `"shadowDirOff":true` make no copy. This page gives its states, folders and git calls.
+In the state `shadow`, when the start test passes, the daemon keeps its own copy of a repository's git settings. The state `fallback-git` and `"shadowDirOff":true` make no copy.
 
 An untagged rule on this page was measured against build `5fd08069` on Linux. A rule that names a system was measured on that system.
 

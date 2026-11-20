@@ -48,8 +48,8 @@ import (
 // goes right after the answer for it, so the folder holds at most one file.
 // The folder goes at the end of the check (4c111e86, measured on Linux and
 // macOS. Windows shows the folder with a file named by an object id during a
-// check). The folder
-// has mode 0700 and a file mode 0600, and the start order is measured on Linux.
+// check). The folder has mode 0700 and a file mode 0600. The modes and the
+// start order are of 4c111e86, measured on Linux.
 //
 // After a stop c9125eb8 reads the trees of a level below the top with one
 // `cat-file --buffer --batch` and hashes them with a new long-running
