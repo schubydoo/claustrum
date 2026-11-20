@@ -33,8 +33,8 @@ func linkWalkFails(p string, foldFirst bool) bool {
 // names that remain are walked. The baseRepo of git.worktree_create and
 // git.worktree_remove and the git.list_branches path take that order. b3081b51 judges
 // <T>\missing\.. and <T>\t.txt\.. as <T> there (measured on Windows). Without foldFirst
-// each name is tested first, so those two paths fail. No production caller takes that
-// order.
+// each name is tested first, so those two paths fail. The baseRepo of git.status takes
+// that order.
 func spelledWalkFails(p string, stat func(string) (fs.FileInfo, error), foldFirst bool) bool {
 	vol := filepath.VolumeName(p)
 	cur, rest := vol, p[len(vol):]

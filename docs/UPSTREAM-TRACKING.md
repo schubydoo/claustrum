@@ -609,9 +609,6 @@ On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the
 last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from
 the Go source, not measured). These answers rest on that failure:
 
-- The `"isRepo": false` answer of `git.status` (`baseRepo`) for
-  `<dir>\<junction>\T` (from the code), except a junction to a network or
-  device path.
 - The `git.info` answers for a path with a junction before its last component
   (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
   pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
