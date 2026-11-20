@@ -82,12 +82,11 @@ text:
 `worktree_add_failed`. `git.worktree_remove` answers it after `failed to remove
 worktree: could not check whether <worktreePath> is locked: `, with no `errorCode`.
 
-A failed read of the test repository's config is followed by one `git version` call. If it fails
-too, the text is `git cannot run on this host; git not run: <exec error>: <git text>`
-alone, in the same frames. The exec error and the text are those of `git version`. A
-remove deletes nothing there (Linux, macOS and Windows). The same holds for a failed
-call that makes the test repository: if the first `git version` fails too, that text is
-the answer, and the second `version` call does not run (`b3081b51`, measured on Linux,
+One `git version` call follows a failed read of the test repository's config. If it fails
+too, the text is its `git cannot run on this host; git not run: <exec error>: <git text>`
+alone, in the same frames. A remove deletes nothing there (Linux, macOS and Windows).
+The same holds for a failed first `git version` call after a failed call that makes
+the test repository, and the second does not run (`b3081b51`, measured on Linux,
 claustrum's own on macOS and Windows).
 
 The test's `commit-tree` call names the tree that `mktree` printed. A `mktree` that
@@ -98,7 +97,7 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder. Each line end is one space. An empty line and the blanks at line ends stay, each blank as one space, except at both ends of the text (`b3081b51`, measured on Linux) |
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS), not the first `config --get`. The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`, and for `config`, `commit-tree` and `update-ref` on `b3081b51` on Linux) |
+| the same with ` (<version stdout>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`, and for `config`, `commit-tree` and `update-ref` on `b3081b51` on Linux). The brackets hold the second `version` call's stdout, even if it fails (`4c111e86`, measured on Linux for `init`) |
 | `this repository's git config cannot be used: <error lines of git>` | The read of the test repository's config failed, and the plain `git version` after it works |
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the daemon's lock file cannot be made. On Windows a lock file that cannot be made gives the reason alone. With a deny entry for writes on `git-shadow` and the backup and restore privileges on, that is `Access is denied.` (`b3081b51`, measured on Windows) |

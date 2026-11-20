@@ -1073,14 +1073,16 @@ func readStopText(path string) string {
 // the cause has the same end, and the request has 5 test calls (measured on
 // Linux). The first version call has no option list, the root folder as its
 // working directory and no added variable. The second has the option list,
-// the folder and the variables of a test call. Which of the two gives the
-// text is not measured.
+// the folder and the variables of a test call. The text is the stdout of the
+// second call alone, also when that call fails. With no stdout the end is
+// ` ()` (4c111e86, measured on Linux for `init`).
 //
 // The calls from call 6 on get no such end. Four rows have none: a failed
 // `worktree add` (measured), an ended `rev-parse --verify` and an ended
-// `worktree add`. No record has a failed `config`, `commit-tree` or `update-ref`
-// call of the calls 1 to 5. Those three share the path of `init` and `mktree`:
-// not measured (setupFailed in shadowTestCalls).
+// `worktree add`. A failed `config`, `commit-tree` or `update-ref` call of the
+// calls 1 to 5 takes the path of `init` and `mktree` (setupFailed in
+// shadowTestCalls). Its version text is measured on b3081b51 on Linux, and
+// not on 4c111e86.
 //
 // whole is the cannot-run text when the first call fails, and then no second call
 // runs (b3081b51, measured on Linux).
@@ -1090,14 +1092,7 @@ func shadowVersionNote(check string, env []string) (note, whole string) {
 		return "", gitCannotRunPrefix + listingRun{stderr: first.stderr, err: first.err}.detail()
 	}
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
-	text := second.out
-	if text == "" {
-		text = first.out
-	}
-	if text == "" {
-		return "", ""
-	}
-	return " (" + text + ")", ""
+	return " (" + second.out + ")", ""
 }
 
 // The first texts of the folder `shadow` of the test, and the end of its config
