@@ -229,7 +229,7 @@ request gets this text and nothing goes:
 
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
-A folder goes between a request's git calls, never during one. The next call
+A folder goes between git calls, never during one naming it. The next call
 makes it again with no new config read, except a call right after its own config
 listing (claustrum's own, not measured). A failed remake gets the `cannot write its
 copy` text, or the 128 text when all 128 folders are held, and a call whose folder went and is not made

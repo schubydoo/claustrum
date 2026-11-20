@@ -29,67 +29,122 @@ func underRepoMutex(repo string, fn func() rpc.Response) rpc.Response {
 	return fn()
 }
 
-// worktreeCreateLocks serialises the steps of git.worktree_create before its
-// checkout step, per git directory. The main repository and a linked worktree
-// of it get one lock. 5fd08069 runs a create through the main repository and a
-// create through a linked worktree of it one after the other. With the first
-// `worktree add` held for 2 s, the second add starts after the first one
-// ended, and both creates succeed (measured on Linux, 3 of 3 runs). The key is
-// that of the branch lock (worktreeGitDirKey). With a GIT_COMMON_DIR in the
-// environment of the daemon that key is <baseRepo>/.git, so the two creates
-// get two locks (not measured).
+// worktreeCreateLocks serialises the add of git.worktree_create, per
+// git directory. The main repository and a linked worktree of it get one lock.
+// 5fd08069 runs a create through the main repository and a create through a
+// linked worktree of it one after the other. With the first `worktree add`
+// held for 2 s, the second add starts after the first one ended, and both
+// creates succeed (measured on Linux, 3 of 3 runs). The key is that of the
+// branch lock (worktreeGitDirKey). With a GIT_COMMON_DIR in the environment of
+// the daemon that key is <baseRepo>/.git, so the two creates get two locks
+// (not measured).
+//
+// A create takes the lock right before its `worktree add`: after the listing
+// of the add and the pair before it, and before the staging folder is made
+// (takeAddLocks). It ends the hold right after its second listing of the
+// registrations folder, which comes after the add and its move. So the
+// steps of a second create before its add run while the first add runs, and
+// that create then waits. 4c111e86 runs the listings and the rev-parse calls
+// of the second create during a held add of the first, and the second create
+// answers the stat text of the gone copy 1 ms after that add ends (measured
+// on Linux, in its call log). The steps between the end of the hold
+// and the next git call of the first create are claustrum's own.
 //
 // Two different repositories run at the same time, as on 5fd08069 (measured
 // on Linux). A remove does not take this lock. It takes the lock of the add
 // step (lockWorktreeAddStep).
 //
-// The hold ends before the checkout step (release), and a rollback after it
-// takes the lock again (retake) until the reply. So two creates of one
-// repository check out at the same time, while the steps up to the add and
-// each rollback still run one create at a time. A rollback then removes no
-// registration, leaf or branch name that a second create is making. Both
-// points are claustrum's own. The rows show only the outcome: two creates of
-// 4c111e86 started 0 s or 1 s apart both download both Git LFS objects. At
-// 0 s apart each reply came 7.2 to 7.41 s after its request (measured on
-// Linux, two runs). macOS and Windows are claustrum's own, not measured.
-// Claustrum's own, not measured: a rollback waits for the create lock, so a
-// reply after a timeout can come later than timeoutMs.
+// Each rollback takes the lock first (createHold.retake) and holds it until
+// the reply. So no rollback runs during the staged add of a second create, and
+// it removes no registration, leaf or branch name that such an add is making
+// (claustrum's own, not measured). A rollback that waits for the lock can
+// answer later than timeoutMs (claustrum's own, not measured).
 var worktreeCreateLocks sync.Map // canonical git dir -> *sync.Mutex
 
-// createLockRetakes runs right before a retake waits for the create lock. A
+// createLockRetakes runs right before a rollback waits for the create lock. A
 // test replaces it.
 var createLockRetakes = func() {}
 
-// withWorktreeCreateLock runs fn, a git.worktree_create, while it holds the
-// create lock of the git directory of repo. fn ends the hold by release and
-// takes the lock again by retake. Both run on the goroutine of fn only. The
+// createHold is the hold of the create lock by one git.worktree_create
+// (withWorktreeCreateLock). It is used on the goroutine of that create only.
+// beforeAdd runs right after the locks of an add are taken (takeAddLocks). A
+// nil hold takes no create lock.
+type createHold struct {
+	mu        *sync.Mutex
+	held      bool
+	beforeAdd func()
+}
+
+// retake takes the create lock for a rollback, unless the hold has it.
+func (h *createHold) retake() {
+	if h == nil || h.held {
+		return
+	}
+	createLockRetakes()
+	h.mu.Lock()
+	h.held = true
+}
+
+// release ends the hold of the create lock, if it has it.
+func (h *createHold) release() {
+	if h == nil || !h.held {
+		return
+	}
+	h.held = false
+	h.mu.Unlock()
+}
+
+// withWorktreeCreateLock runs fn, a git.worktree_create, with the hold of the
+// create lock of the git directory of repo. The hold starts free: the add
+// takes the lock (takeAddLocks), and each rollback takes it (retake). The
 // order is always the per-repo lock of a remove, the create lock, the lock of
 // the add step, the branch lock, so they do not deadlock. A rollback after
 // retake holds no lock of the add step or branch lock before it.
-func withWorktreeCreateLock(repo string, fn func(release, retake func()) rpc.Response) rpc.Response {
+func withWorktreeCreateLock(repo string, fn func(hold *createHold) rpc.Response) rpc.Response {
 	m, _ := worktreeCreateLocks.LoadOrStore(worktreeGitDirKey(repo), &sync.Mutex{})
-	mu := m.(*sync.Mutex)
-	mu.Lock()
-	held := true
-	release := func() {
-		if held {
-			held = false
-			mu.Unlock()
-		}
+	hold := &createHold{mu: m.(*sync.Mutex)}
+	defer hold.release()
+	return fn(hold)
+}
+
+// beforeAddLocks runs right before an add waits for its locks
+// (takeAddLocks), and afterAddHold right after a create ended the hold of the
+// create lock after its add (endAddHold). Tests replace them. Production never
+// does.
+var (
+	beforeAddLocks = func() {}
+	afterAddHold   = func() {}
+)
+
+// takeAddLocks takes the create lock of hold and the lock of the add step of
+// repo for one `worktree add`, and runs hold.beforeAdd. end ends the lock of
+// the add step. The create lock stays until endAddHold. A nil hold takes the
+// lock of the add step alone.
+func takeAddLocks(hold *createHold, repo string) (end func()) {
+	beforeAddLocks()
+	if hold != nil && !hold.held {
+		hold.mu.Lock()
+		hold.held = true
 	}
-	retake := func() {
-		if !held {
-			createLockRetakes()
-			mu.Lock()
-			held = true
-		}
+	unlockStep := lockWorktreeAddStep(repo)
+	if hold != nil && hold.beforeAdd != nil {
+		hold.beforeAdd()
 	}
-	defer release()
-	return fn(release, retake)
+	return unlockStep
+}
+
+// endAddHold ends the hold of the create lock after the add and the tests
+// that read the registrations folder after it.
+func (h *createHold) endAddHold() {
+	if h == nil || !h.held {
+		return
+	}
+	h.release()
+	afterAddHold()
 }
 
 // worktreeAddLocks is the lock of the add step per git directory. A create holds
-// it while its `worktree add` runs (worktreeAdd). A remove holds it from the
+// it while its `worktree add` runs (takeAddLocks). A remove holds it from the
 // delete of the registration to its reply, and not for the delete of the leaf.
 // 5fd08069 shows this order (measured on Linux and macOS): the leaf goes during
 // a held add, and the registration and the branch go after it, then the reply. A

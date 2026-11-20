@@ -141,8 +141,12 @@ func removeStaleWorktreeEntry(repo, worktreePath string, held *acceptedGitDir) (
 			stale = append(stale, e.Name())
 		}
 	}
-	// Two or more stale entries: every one stays (measured).
-	if len(stale) == 1 {
+	// Two or more stale entries: every one stays (measured). A leaf that is
+	// there now removes nothing: a create of the same leaf that started after
+	// the leaf test of this request may own the entry (claustrum's own, not
+	// measured).
+	_, leafErr := os.Lstat(worktreePath)
+	if len(stale) == 1 && leafErr != nil {
 		removed = removeStaleRegistration(root, stale[0], filepath.Join(base, stale[0]))
 		if !removed {
 			_, err := root.Lstat(stale[0] + "/locked")

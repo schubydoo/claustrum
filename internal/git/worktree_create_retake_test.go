@@ -7,103 +7,53 @@ import (
 	"testing"
 )
 
-// TestCreateRollbacksRetakeTheLock: in gitWorktreeCreateLocked each call of
-// undoFailedCheckout and removeCreatedLeaf after the call of release follows a
-// call of retake in the same block, and so does the call in the closure
-// goneCheckout (withWorktreeCreateLock, claustrum's own). Mutation: drop any
-// one retake() after the release, or the one in goneCheckout.
+// TestCreateRollbacksRetakeTheLock: each rollback of a create takes the create
+// lock first, so no rollback runs during the staged add of another create of
+// the repository (withWorktreeCreateLock, claustrum's own). The first statement
+// of undoFailedAddLeaf, undoFailedCheckout and removeCreatedLeaf is
+// `cp.lock.retake()`. Mutation: drop it from any one of them.
 func TestCreateRollbacksRetakeTheLock(t *testing.T) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "methods_git.go", nil, 0)
+	file, err := parser.ParseFile(fset, "worktreeverify.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fn *ast.FuncDecl
+	want := map[string]bool{"undoFailedAddLeaf": false, "undoFailedCheckout": false, "removeCreatedLeaf": false}
 	for _, d := range file.Decls {
-		if f, ok := d.(*ast.FuncDecl); ok && f.Name.Name == "gitWorktreeCreateLocked" {
-			fn = f
+		f, ok := d.(*ast.FuncDecl)
+		if !ok || f.Recv != nil {
+			continue
 		}
-	}
-	if fn == nil {
-		t.Fatal("no gitWorktreeCreateLocked in methods_git.go")
-	}
-	// callOf looks at a simple statement only. A statement with a block of its
-	// own is looked at in that block.
-	callOf := func(s ast.Stmt, names ...string) bool {
-		switch s.(type) {
-		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.DeclStmt:
-		default:
-			return false
+		if _, ok := want[f.Name.Name]; !ok {
+			continue
 		}
-		found := false
-		ast.Inspect(s, func(n ast.Node) bool {
-			if _, ok := n.(*ast.FuncLit); ok {
-				return false
-			}
-			if c, ok := n.(*ast.CallExpr); ok {
-				if id, ok := c.Fun.(*ast.Ident); ok {
-					for _, name := range names {
-						found = found || id.Name == name
-					}
-				}
-			}
-			return true
-		})
-		return found
+		want[f.Name.Name] = len(f.Body.List) > 0 && isLockRetake(f.Body.List[0])
 	}
-	isCall := func(s ast.Stmt, name string) bool {
-		e, ok := s.(*ast.ExprStmt)
+	for name, ok := range want {
 		if !ok {
-			return false
-		}
-		c, ok := e.X.(*ast.CallExpr)
-		if !ok {
-			return false
-		}
-		id, ok := c.Fun.(*ast.Ident)
-		return ok && id.Name == name && len(c.Args) == 0
-	}
-	var released token.Pos
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if s, ok := n.(ast.Stmt); ok && released == token.NoPos && isCall(s, "release") {
-			released = s.Pos()
-		}
-		return true
-	})
-	if released == token.NoPos {
-		t.Fatal("no call of release in gitWorktreeCreateLocked")
-	}
-	checked := 0
-	visit := func(list []ast.Stmt, inClosure bool) {
-		for i, s := range list {
-			if (inClosure || s.Pos() > released) && callOf(s, "undoFailedCheckout", "removeCreatedLeaf") {
-				checked++
-				if i == 0 || !isCall(list[i-1], "retake") {
-					t.Errorf("%s: a rollback with no retake() right before it", fset.Position(s.Pos()))
-				}
-			}
+			t.Errorf("%s does not start with cp.lock.retake()", name)
 		}
 	}
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.AssignStmt:
-			if id, ok := x.Lhs[0].(*ast.Ident); ok && id.Name == "goneCheckout" {
-				lit := x.Rhs[0].(*ast.FuncLit)
-				visit(lit.Body.List, true)
-				return false
-			}
-		case *ast.FuncLit:
-			return false
-		case *ast.BlockStmt:
-			visit(x.List, false)
-		case *ast.CaseClause:
-			visit(x.Body, false)
-		}
-		return true
-	})
-	// The instrument finds each rollback after the release and the one of
-	// goneCheckout.
-	if checked < 11 {
-		t.Errorf("checked %d rollbacks, want at least 11", checked)
+}
+
+// isLockRetake reports whether s is the statement `cp.lock.retake()`.
+func isLockRetake(s ast.Stmt) bool {
+	e, ok := s.(*ast.ExprStmt)
+	if !ok {
+		return false
 	}
+	c, ok := e.X.(*ast.CallExpr)
+	if !ok || len(c.Args) != 0 {
+		return false
+	}
+	sel, ok := c.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "retake" {
+		return false
+	}
+	lock, ok := sel.X.(*ast.SelectorExpr)
+	if !ok || lock.Sel.Name != "lock" {
+		return false
+	}
+	cp, ok := lock.X.(*ast.Ident)
+	return ok && cp.Name == "cp"
 }

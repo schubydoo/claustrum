@@ -150,8 +150,7 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // caller is base plus the caller's timeoutMs (4534d86 parity). The read-tree
 // checkout runs under caller, so the caller's deadline kills the checkout. The
 // daemon also tests caller after the add and after the copy step. When timeoutMs
-// is 0 or less, caller is base itself. The deadline counts from arrival, the time
-// when the create holds its lock. The stop of the settle call that follows from it
+// is 0 or less, caller is base itself. The deadline counts from arrival. The stop of the settle call that follows from it
 // is measured on Linux (683cc6a9). The other three tests of timeoutMs, before,
 // during and after the checkout, count from arrival too (claustrum's own, not
 // measured). A deadline that passed already gives a caller that is done.
@@ -1174,12 +1173,12 @@ func gitWorktreeCreate(req *gitCall) rpc.Response {
 			req.runAtReply()
 		}
 	}()
-	resp := withWorktreeCreateLock(repo, func(release, retake func()) rpc.Response {
+	resp := withWorktreeCreateLock(repo, func(hold *createHold) rpc.Response {
 		// The start of the deadline of timeoutMs (worktreeCreateCtx), before any
-		// git call. A wait for the create lock does not count (claustrum's own, not
-		// measured).
+		// git call. A wait for the create lock at the add counts (claustrum's
+		// own, not measured).
 		arrival := time.Now()
-		return gitWorktreeCreateLocked(req, &p, repo, arrival, release, retake)
+		return gitWorktreeCreateLocked(req, &p, repo, arrival, hold)
 	})
 	if len(req.atReply) > 0 {
 		resp.AfterWrite = req.runAtReply
@@ -1188,9 +1187,9 @@ func gitWorktreeCreate(req *gitCall) rpc.Response {
 	return resp
 }
 
-// release ends the hold of the create lock before the checkout step, and
-// retake takes it again before a rollback (withWorktreeCreateLock).
-func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival time.Time, release, retake func()) rpc.Response {
+// hold is the hold of the create lock: the add takes it, and each rollback
+// takes it again (withWorktreeCreateLock).
+func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival time.Time, hold *createHold) rpc.Response {
 	// On Windows a baseRepo through a link to a network or device path is refused
 	// first, with no git call, and the text is the error of a failed add (measured
 	// on Windows, networkLinkRefusal). No folder and no branch is made (measured on
@@ -1591,8 +1590,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// (git adds into the pre-made empty dir). An unwritable/foreign-owned parent fails HERE as
 	// `failed to create worktree directory: mkdirat <leaf>: <errno>` with errorCode
 	// mkdir_failed — where claustrum used to reach git and return worktree_add_failed.
-	// mkdirWorktreeLeaf reproduces the `mkdirat <leaf>` wording byte-for-byte (unix;
-	// os.MkdirAll on Windows). Measured against 7d193f89.
+	// mkdirWorktreeLeaf reproduces the `mkdirat <leaf>` wording byte-for-byte
+	// (unix). Measured against 7d193f89.
 	if err := mkdirWorktreeLeaf(p.WorktreePath); err != nil {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
@@ -1604,6 +1603,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// populated this same directory and nothing swapped it during the add. The
 	// checkpoint holds the leaf and its parent open until the create answers.
 	checkpoint := checkpointCreatedWorktree(p.WorktreePath)
+	checkpoint.lock = hold
 	defer checkpoint.release()
 	// The steps below test the held git directory (acceptedGitDir). The texts
 	// are those of 5fd08069 on Windows, with a junction at `repo\.git` to a copy
@@ -1943,9 +1943,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// another error than "does not exist", the create is refused with the text of
 	// otherEntryRefusal and removes nothing. The second listing before the
 	// fallback add is claustrum's own too (not measured).
+	//
+	// Both listings run under the create lock: the first right after the add
+	// takes it (takeAddLocks), and the second before the create ends its hold
+	// (endAddHold). So the add of a second create, which waits for that hold,
+	// adds no name between them (claustrum's own, not measured).
 	var entriesBefore []string
 	entriesDir, entriesListed := "", false
-	listEntriesBefore := func() {
+	hold.beforeAdd = func() {
+		entriesDir, entriesListed = "", false
 		if (adminRecordChecked || stagedAddWindowsSteps) && gitAnswered {
 			entriesDir = gitDirRegistryDir(gitDir)
 			entriesBefore, entriesListed = registrationNames(entriesDir)
@@ -1982,7 +1988,6 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return refuseAdd(msg)
 		}
 	}
-	listEntriesBefore()
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
 	added = addErr == nil
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
@@ -2054,7 +2059,6 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if startCommit != "" {
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
-		listEntriesBefore()
 		addStderr, addErr = worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, nil, fallbackArgs...)
 		added = addErr == nil
 		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
@@ -2251,6 +2255,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		indexDir, tested = moved.path, moved
 	}
+	// The tests that read the registrations folder after the add are done: a
+	// second create of the repository may add now (worktreeCreateLocks).
+	hold.endAddHold()
 	// indexDir is the registration that gets the index (createdRegistrationRefusal, or
 	// absoluteAdminDir if rev-parse gave no answer). Its gitdir record names worktreePath
 	// after symlink resolution. If it was read and names anything else, the create is
@@ -2382,7 +2389,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// (errGitDirChanged). goneCheckout answers a checkout that stops for such a
 	// git directory, with detail after the words of the checkout.
 	goneCheckout := func(detail string) rpc.Response {
-		retake()
+		hold.retake()
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
@@ -2557,7 +2564,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		var rtErr, installErr error
 		// A second create of the repository goes on while this one checks out.
 		// Each rollback below takes the lock again first (withWorktreeCreateLock).
-		release()
+		hold.release()
 		rtStderr, rtDrained, keepTook, rtErr, installErr = runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
 			indexDir, repo, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit, p.TimeoutMs, arrival)
@@ -2585,7 +2592,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// text is indexInstallText. A placement that fails after a drain overrun takes
 			// this arm too. That is claustrum's choice (not measured).
 			msg := "git worktree add failed (checkout): " + indexInstallText(rtStderr, installErr)
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
@@ -2607,7 +2614,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// private folder goes, both before the reply (4c111e86, measured on
 			// Linux). The place of this arm before the deadline arm and the
 			// filter arms is claustrum's own, not measured.
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			room.removeStore()
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
@@ -2631,7 +2638,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// too little room for a file that the keep left out. It reads the
 			// private store before the rollback.
 			if text, ok := notKeptText(p.TimeoutMs, rule, cu.gitDir); ok {
-				retake()
+				hold.retake()
 				undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 				return rpc.OKResult(req.ID, rpc.WorktreeReply{
 					Success:    false,
@@ -2642,7 +2649,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			}
 			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
@@ -2655,7 +2662,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// stderr (gitsshdoor.go). be1c1ca5 answers the fixed text (measured
 			// on Linux and macOS). Its place before the filter arm is
 			// claustrum's own.
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
@@ -2671,7 +2678,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// (claustrum's own, not measured). One name has another answer with no
 			// settings copy: the filter lfs of the outside config, when the repository
 			// names a program for git-lfs (claustrum's own).
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			if refusedName == lfsFilterName && filters.lfsKey != "" {
 				return rpc.OKResult(req.ID, rpc.WorktreeReply{
@@ -2711,7 +2718,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			} else {
 				msg += checkoutNote(rtStderr, text, rule)
 			}
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
@@ -2735,7 +2742,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// that folder.
 		if leafGitFileGone(p.WorktreePath) {
 			if !windowsAddTests {
-				retake()
+				hold.retake()
 				removeCreatedLeaf(p.WorktreePath, checkpoint)
 			}
 			return refuseUnsafe(gitFileGoneText(p.WorktreePath))
@@ -2772,7 +2779,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			if r.asked {
 				u.branchGate = checkAsk
 			}
-			retake()
+			hold.retake()
 			undo, kept := undoFailedCheckout(u, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
@@ -2801,7 +2808,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// (keepWithinDeadline).
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) && !keepWithinDeadline(callerCtx, keepTook, time.Now()) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
-		retake()
+		hold.retake()
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,

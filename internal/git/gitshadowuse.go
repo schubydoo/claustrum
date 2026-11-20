@@ -248,13 +248,13 @@ func (u gitUse) shadow() bool {
 // `rev-parse --absolute-git-dir` and is the last call (measured on Linux,
 // macOS and Windows). A real folder there is the control case.
 //
-// The call holds the lock of the add step (lockWorktreeAddStep), so a remove in
-// the same git directory deletes no registration while it runs. On Windows the
-// lock also covers the staging steps (not measured). The lock comes before
-// fixedForm, so an add that waits for a remove takes the form of the off switch
-// at its start, and the gate of fixedForm runs under the lock.
+// The call and its staging steps hold the create lock and the lock of the add
+// step (takeAddLocks), so a remove in the same git directory deletes no
+// registration while they run. The locks come after the listing of the add and
+// the pair before it, as 4c111e86 runs those calls of a second create during a
+// held add (measured on Linux, in its call log). So fixedForm and its
+// gate run before a wait for a remove (claustrum's own, not measured).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, offMember bool, afterListing func(), args ...string) (string, error) {
-	defer lockWorktreeAddStep(repo)()
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
 	if named && stagedAddWindowsSteps {
@@ -334,6 +334,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	}
 	// On Linux and macOS an add that names the copy is staged as on Windows,
 	// after the steps above (runAddStaged). be1c1ca5 does so on Linux and macOS.
+	defer takeAddLocks(cp.lock, repo)()
 	if named {
 		stderr, err := runAddStaged(ctx, f, cmd, leaf, cp)
 		if err == nil && f.accepted != nil {
@@ -361,11 +362,10 @@ func offLinkListing(ctx context.Context, u gitUse, repo string) {
 }
 
 // addListingThenPair runs the listing of a `worktree add` in repo and then pair,
-// when set, and no add. It holds the lock of the add step, as worktreeAdd does.
+// when set, and no add.
 // A create refuses a leaf with a locked stale entry after these calls
-// (4c111e86, measured on macOS).
+// (4c111e86, measured on macOS). Like the listing of an add, it takes no lock.
 func addListingThenPair(ctx context.Context, u gitUse, repo string, pair func()) {
-	defer lockWorktreeAddStep(repo)()
 	offLinkListing(ctx, u, repo)
 	if pair != nil {
 		pair()

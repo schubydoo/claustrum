@@ -15,9 +15,13 @@ import (
 
 // mkdirWorktreeLeaf creates the worktree directory. The unix build rewraps its
 // error to match the `mkdirat <leaf>` wording of 7d193f89. Windows has no such
-// wording pinned, so a plain MkdirAll is sufficient here.
+// wording pinned. The parents are there already (mkdirRepoWorktreeParents). A
+// leaf that is there fails, as on Linux and macOS: the create refused such a
+// leaf before, so a second create of the same leaf that starts during the
+// first gets the error, and that create makes no checkpoint of the leaf of the
+// first, and no rollback of it (claustrum's own, not measured).
 func mkdirWorktreeLeaf(worktreePath string) error {
-	return os.MkdirAll(worktreePath, 0o755)
+	return os.Mkdir(worktreePath, 0o755)
 }
 
 // mkdirRepoWorktreeParents makes the missing directories of dir with os.MkdirAll
