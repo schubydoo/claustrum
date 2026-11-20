@@ -551,7 +551,7 @@ func TestWorktreeRemoveNoRepositoryCallsCarryNullGitDir(t *testing.T) {
 // With git 2.56 the listing fails with its gitfile text. b3081b51 then answers
 // success with the branch kept (measured on Linux), and with worktreeRoot 4c111e86
 // refuses with git's text after "git finds no repository here: " (measured on Linux
-// with git 2.56.1). The calls are not measured with git 2.56, so that branch compares
+// and macOS with git 2.56.1). The calls are not measured with git 2.56, so that branch compares
 // the frames and the disk only.
 func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	f := newRegFixture(t)

@@ -113,7 +113,7 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 //
 // git 2.56 fails the listing there with its gitfile text. The four "no repository"
 // frames stay then too, also for the reply to the first git request of a
-// daemon and with "shadowDirOff":true (4c111e86, measured on Linux with git 2.56.1).
+// daemon and with "shadowDirOff":true (4c111e86, measured on Linux and macOS with git 2.56.1).
 // The empty key is not measured with git 2.56. The test decides by the text of the git
 // on PATH.
 func TestGitFileToNowhereKeepsFrame(t *testing.T) {

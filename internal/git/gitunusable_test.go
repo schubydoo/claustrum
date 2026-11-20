@@ -71,12 +71,13 @@ var unusableRows = []unusableRow{
 		writeFile(t, filepath.Join(b, ".git"), "junk\n", 0o644)
 		return b, b
 	}},
-	// Windows only, as the next two rows (gitFileNowhereRows).
+	// Windows only, as the empty-folder row (gitFileNowhereRows).
 	{".git file with an empty gitdir", func(t *testing.T, tmp string) (string, string) {
 		b := plainFolder(t, tmp)
 		writeFile(t, filepath.Join(b, ".git"), "gitdir: \n", 0o644)
 		return b, b
 	}},
+	// Windows, and Linux and macOS with git 2.56.1.
 	{".git file to a missing path", func(t *testing.T, tmp string) (string, string) {
 		b := plainFolder(t, tmp)
 		writeFile(t, filepath.Join(b, ".git"), "gitdir: nowhere-dir\n", 0o644)
@@ -101,9 +102,9 @@ var unusableRows = []unusableRow{
 }
 
 // gitFileNowhereRows are the rows whose frame can depend on the text of git. 4c111e86 is
-// measured there with git 2.55 on Windows, and with git 2.56.1 on Linux. With the text
-// of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older text on
-// Linux and macOS (macOS claustrum's own). On Windows it follows the 5fd08069 rows of
+// measured there with git 2.55 on Windows, and a missing path with git 2.56.1 on Linux
+// and macOS. With the text of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older
+// text on Linux and macOS. On Windows it follows the 5fd08069 rows of
 // TestGitFileNowhereFourMethodsStub. The frame of an empty folder there is from the
 // code, not measured. TestCreateUnusableGitFileStub pins both texts.
 var gitFileNowhereRows = map[string]bool{
@@ -195,7 +196,7 @@ func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
 // with one of the two texts, so no git 2.56 is needed. With the older text the create
 // answers the 4c111e86 text (measured with git 2.55 on Windows). On Linux and macOS a
 // missing path gets that text with the text of git 2.56 too (4c111e86, measured on Linux
-// with git 2.56.1, macOS claustrum's own). On Windows it gets the error of the call about
+// and macOS with git 2.56.1). On Windows it gets the error of the call about
 // the repository (5fd08069). An empty folder then gets the listing refusal (from the
 // code, not measured). The test runs the answers of both systems. Mutations: answer
 // not_a_repo in notARepoResult, or answer the gitfile text in noRepoCalls on Linux.
