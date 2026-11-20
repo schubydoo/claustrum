@@ -44,6 +44,58 @@ func TestShadowFolderFileIsMadeAFolderAgain(t *testing.T) {
 	}
 }
 
+// replaceAfterKeptFailure runs a git.info whose start test fails, puts an entry
+// in place of the folder of the daemon by make, lets the cause go and moves the
+// clock past the keep of the failure. It returns the old folder path.
+func replaceAfterKeptFailure(t *testing.T, f shadowFixture, make func(path string) error) string {
+	t.Helper()
+	now := useShadowClock(t)
+	failBothAdds(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, "Claude could not test git on the remote machine") {
+		t.Fatalf("first git.info = %s, want a failed test", raw)
+	}
+	first := daemonFolder(t, f.run)
+	f.d.Shadow.mu.Lock()
+	f.d.Shadow.dropLock()
+	f.d.Shadow.mu.Unlock()
+	if err := os.RemoveAll(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := make(first); err != nil {
+		t.Fatal(err)
+	}
+	slowGit(t, "", "", 0, "", "")
+	*now = now.Add(shadowFailureKeep)
+	return first
+}
+
+// wantHealedAtRetest: the four requests succeed, the entry at first is gone
+// and the folder of the daemon is a folder again.
+func wantHealedAtRetest(t *testing.T, f shadowFixture, first string) {
+	t.Helper()
+	for _, m := range f.fiveRequests(nil)[:4] {
+		if raw, _ := f.call(t, m.method, m.params); strings.Contains(raw, `"error"`) {
+			t.Errorf("%s at the test after the kept failure = %s", m.method, raw)
+		}
+	}
+	if _, err := os.Lstat(first); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the entry at the old folder: %v, want it gone", err)
+	}
+	if fi, err := os.Lstat(daemonFolder(t, f.run)); err != nil || !fi.IsDir() {
+		t.Errorf("the folder of the daemon: %v, %v, want a folder", fi, err)
+	}
+}
+
+// TestShadowFolderFileHealsAtRetest: an empty file at the folder of the daemon
+// goes at the test after a kept failure, and the requests succeed, as on
+// 4c111e86 (measured on Linux). Mutation: keep h.dir in startTest when its
+// Lstat succeeds, and the test fails with "not a directory".
+func TestShadowFolderFileHealsAtRetest(t *testing.T) {
+	f := newShadowFixture(t)
+	first := replaceAfterKeptFailure(t, f, func(p string) error { return os.WriteFile(p, nil, 0o644) })
+	wantHealedAtRetest(t, f, first)
+}
+
 // TestRemoveOwnFolderFile: the remove takes a file at a name in git-shadow.
 // A folder, a path outside git-shadow and a path below a folder of
 // git-shadow stay.

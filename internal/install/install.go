@@ -998,8 +998,7 @@ func writeProbeCLIResult(w io.Writer, v probeCLIVerdict) {
 // zstdDecompress, and the downloaded body in fetchCLI. A crafted .zst can be
 // tiny compressed and expand to fill the remote disk; the cap bounds that.
 //
-// ZERO (the default) DISABLES IT, which is what the reference does at every size
-// the probe could reach. Measured at 5db5e4a with a 600 MiB payload (21 KB
+// ZERO (the default) DISABLES IT. Measured at 5db5e4a with a 600 MiB payload (21 KB
 // compressed) on the -cli-zst path: the reference decompressed all of it and got
 // as far as the runnability check, answering
 //
@@ -1013,6 +1012,10 @@ func writeProbeCLIResult(w io.Writer, v probeCLIVerdict) {
 // 512 MiB (PRs 57 and 59) and is the sibling of the files.extract_tar cap, which
 // gets the same flip in its own PR. Opt in with -max-cli-bytes or the
 // max-cli-bytes key in claustrum.conf. Also set directly by tests.
+//
+// The cap off leaves the window limit of the zstd decoder: a frame with a window
+// over 512 MiB is refused. A single-segment frame has its declared size as its
+// window. CT-7 in docs/DIVERGENCES.md gives the frames measured on 4c111e86.
 //
 // The -cli-url half was measured separately (the download body, 629 MB
 // incompressible): same result, with a cap-on control answering "response
