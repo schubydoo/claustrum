@@ -17,7 +17,8 @@ import (
 // no admin the child exits 0xc0000142 and the daemon logs jobTestFailedLine. A child
 // that has not ended after 5 s gives jobTestPendingLine, and the socket opens then.
 // The daemon ends the test job at 1 minute. The child exits with code 1 then, and the
-// daemon logs jobTestFailedLine with jobTestBoundReason.
+// daemon logs jobTestFailedLine with jobTestBoundReason. A child that still sleeps after
+// its resume is ended at once (beginJobTest).
 
 // jobTestFailedLine is the line of a failed test: the time since the start of the test
 // and the reason (measured on Windows against 4c111e86).
@@ -30,6 +31,11 @@ const jobTestPendingLine = "[process] job objects are not used yet, so ending a 
 // jobTestBoundReason is the reason of a test that the bound ended. It names
 // jobTestBound (measured on Windows against 4c111e86).
 const jobTestBoundReason = "the program had not run to its end after %s"
+
+// jobTestAsleepReason is the reason of a test whose child still sleeps after its resume.
+// It names the suspend count of the thread before the resume (measured on Windows
+// against 4c111e86, with one suspend from outside: the count 2).
+const jobTestAsleepReason = "starting it inside a Windows job object failed: a thread had been suspended %d times, so it still sleeps"
 
 const (
 	// jobTestPendingAfter is the wait of the start for the test (measured on Windows).
@@ -55,6 +61,27 @@ type jobTestChild interface {
 	// Reap waits for the child. Its error is the reason of a failed test, and nil
 	// passes the test.
 	Reap() error
+}
+
+// beginJobTest runs the test of the child c, which started at start. suspended is the
+// highest suspend count of a thread of c before its resume. Above 1 the thread still
+// sleeps, and the test fails at once (measured on Windows against 4c111e86). The test
+// job then ends at once, as 4c111e86 ends that child with exit code 1 (measured on
+// Windows). The end runs once, only through the gate, and this test gets no end at the bound.
+func beginJobTest(c jobTestChild, start time.Time, suspended uint32, pendingAfter, bound time.Duration) *JobTest {
+	if suspended <= 1 {
+		return runJobTest(c, start, pendingAfter, bound)
+	}
+	t := &JobTest{}
+	gate := &sysproc.LeaderGate{}
+	go func() {
+		<-c.Exited()
+		gate.Close()
+		_ = c.Reap()
+	}()
+	gate.Do(func() { _ = c.End() })
+	t.fail(time.Since(start), fmt.Errorf(jobTestAsleepReason, suspended))
+	return t
 }
 
 // runJobTest runs the test of the child c, which started at start. It waits up to

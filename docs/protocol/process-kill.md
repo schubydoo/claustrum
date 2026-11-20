@@ -37,7 +37,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 ## Which processes a signal reaches
 
-On Linux and macOS, each child runs in its own process group. Two cases:
+On Linux and macOS, each child runs in its own process group.
 
 - `KILL` goes to the whole process group of the child. So the processes that the child started end too, unless one left the group.
 - Each other signal goes to the direct child only. A process that the child started in the background keeps running.
@@ -81,31 +81,33 @@ With no job, a process that the child started can hold its output pipes. Then th
 
 #### The start test of the jobs
 
-Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, so a kill ends the direct child only (from the code). At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
+Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a non-admin user it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, so a kill ends the direct child only (from the code). At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
 From 5 s to that end the test is pending, and the socket opens.
 
 claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code).
 
-A failed resume fails the test at once on `4c111e86` (measured on Windows), and not yet on claustrum (TASK-716).
+The resume can leave a thread of the test child with a suspend count above 1. Then the test fails at once with `starting it inside a Windows job object failed: a thread had been suspended <n> times, so it still sleeps`. `4c111e86` then ends the job, and the child exits `0x1` (measured on Windows, only with n = 2).
 
-claustrum's own, not measured:
+##### claustrum's own, not measured
 
 - A clean exit before the end turns the jobs on.
 - A failed start of the test child fails the test with its error.
-- A failed join fails the test with `starting it inside a Windows job object failed: <error>`.
+- A failed join fails the test with `starting it inside a Windows job object failed: <error>`. With a child left asleep, the asleep text wins.
 - A spawn in the pending time runs as after a failed test.
-- After a failed end, as with no job, or with no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
+- At the bound, after a failed end, as with no job or no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
+- At an asleep failure with no job the child stays asleep until the daemon exits. One with no wait handle can miss its end.
+- Another error of the resume does not stop the test.
 - The line rounds the time to the nearest millisecond.
 - The end reaches nothing else.
 
 ## Rare states
 
 ??? note "A child that already ended"
-    `process.kill` sends no signal to a child that already ended. That holds also before its `exit` frame, while the daemon still collects its last output, with one exception. On Linux and macOS `"signal": "KILL"` then sends `SIGKILL` to the group at once, as `b3081b51` does (measured). If a live process has the pid of the ended child, that request sends nothing (claustrum's own, not measured). So a holder of the output pipe in the group ends, and the `exit` frame comes at once with no `killedBy`. A holder that left the group keeps the frame waiting up to 5 seconds. On Windows, and with a valid farewell on every system, that request sends nothing (claustrum's own, not measured). The result is `{"success": true}` all the same. After the `exit` frame `52d82f0a` signals no group member either (measured on Linux and macOS).
+    `process.kill` sends no signal to a child that already ended. That holds also before its `exit` frame, while the daemon collects its last output, with one exception. On Linux and macOS `"signal": "KILL"` then sends `SIGKILL` to the group at once, as `b3081b51` does (measured). If a live process has the pid of the ended child, that request sends nothing (claustrum's own, not measured). So a holder of the output pipe in the group ends, and the `exit` frame comes at once with no `killedBy`. A holder that left the group keeps the frame waiting up to 5 seconds. On Windows, and with a valid farewell on every system, that request sends nothing (claustrum's own, not measured). The result is `{"success": true}`. After the `exit` frame `52d82f0a` signals no group member either (measured on Linux and macOS).
 
 ## Differences from the reference
 
 No entry of the [divergence catalog](../DIVERGENCES.md) changes this method.
 
-The skip of a child that already ended is a guard. The operating system can reuse the process id (pid) or group number of an ended child. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. For `KILL` claustrum follows the reference and accepts the risk of a reused group number. Before the `exit` frame a `TERM` of `b3081b51` reaches no process either (measured on Linux). On macOS and for `INT` and `HUP` that skip is claustrum's own, not measured.
+The skip of a child that already ended guards against a reused process id (pid) or group number ([item 21 of the ledger](../IMPROVEMENTS.md)). For `KILL` claustrum follows the reference and accepts the risk of a reused group number. Before the `exit` frame a `TERM` of `b3081b51` reaches no process either (measured on Linux). On macOS and for `INT` and `HUP` that skip is claustrum's own, not measured.

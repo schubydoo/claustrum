@@ -22,7 +22,7 @@ var newJobTestCmd = func() (*exec.Cmd, error) {
 	return exec.Command(exe, "--version"), nil
 }
 
-// startJobTest starts the test child and runs the test (runJobTest). A failed start
+// startJobTest starts the test child and begins the test (beginJobTest). A failed start
 // fails the test with its error (claustrum's own, not measured).
 func startJobTest() *JobTest {
 	start := time.Now()
@@ -32,7 +32,7 @@ func startJobTest() *JobTest {
 		t.fail(time.Since(start), err)
 		return t
 	}
-	return runJobTest(c, start, jobTestPendingAfter, jobTestBound)
+	return beginJobTest(c, start, c.suspended, jobTestPendingAfter, jobTestBound)
 }
 
 // winJobTestChild is the test child on Windows.
@@ -41,6 +41,8 @@ type winJobTestChild struct {
 	group  *ProcGroup
 	jobErr error
 	exited chan struct{}
+	// suspended is the highest suspend count of a thread before the resume.
+	suspended uint32
 }
 
 // startJobTestChild starts the test child suspended, puts it in a job and resumes it.
@@ -50,14 +52,15 @@ type winJobTestChild struct {
 // claustrum's own).
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
-// join error (claustrum's own, not measured). A failed resume leaves the child asleep.
-// 4c111e86 fails the test at once then (measured on Windows), a known difference that
-// TASK-716 follows. End at the bound reaches the child only with a job and a wait handle.
-// With no job End fails. If the wait handle does not open, the gate closes at once and
-// End never runs. In both cases the test fails jobTestReapGrace after the bound unless
+// join error (claustrum's own, not measured). A resume that leaves a thread asleep fails
+// the test and ends the test job at once (beginJobTest). Other errors of the resume do not stop the test
+// (claustrum's own, not measured). End at the bound reaches the child only with a job
+// and a wait handle. With no job End fails. If the wait handle does not open, the gate
+// closes at once and End never runs. In both cases the test fails jobTestReapGrace after the bound unless
 // the reap comes first (awaitJobTest), and the daemon leaves the child as it is
-// (claustrum's own, not measured).
-func startJobTestChild() (jobTestChild, error) {
+// (claustrum's own, not measured). With no wait handle, the end at an asleep failure
+// runs only if it comes before the close of the gate (claustrum's own, not measured).
+func startJobTestChild() (*winJobTestChild, error) {
 	cmd, err := newJobTestCmd()
 	if err != nil {
 		return nil, err
@@ -69,7 +72,7 @@ func startJobTestChild() (jobTestChild, error) {
 	c := &winJobTestChild{cmd: cmd, exited: make(chan struct{})}
 	c.group, c.jobErr = ConfineProcess(cmd.Process, JobsOn)
 	h, hErr := openJobTestWait(cmd.Process.Pid)
-	_ = ResumeChild(cmd.Process, cmd.SysProcAttr)
+	c.suspended, _ = resumeJobTestChild(cmd.Process, cmd.SysProcAttr)
 	go func() {
 		if hErr == nil {
 			_, _ = windows.WaitForSingleObject(h, windows.INFINITE)
@@ -80,6 +83,10 @@ func startJobTestChild() (jobTestChild, error) {
 	return c, nil
 }
 
+// resumeJobTestChild resumes the test child and gives the suspend count of
+// resumeChildCount. A test replaces it.
+var resumeJobTestChild = resumeChildCount
+
 // openJobTestWait opens the wait handle of the test child. A test replaces it.
 var openJobTestWait = func(pid int) (windows.Handle, error) {
 	return windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
@@ -88,7 +95,8 @@ var openJobTestWait = func(pid int) (windows.Handle, error) {
 func (c *winJobTestChild) Exited() <-chan struct{} { return c.exited }
 
 // End ends the test job, with exit code 1. Measured on Windows against 4c111e86: at the
-// bound the test child and its conhost, both in the test job, exit 0x1 within 2 ms. End
+// bound the test child and its conhost, both in the test job, exit 0x1 within 2 ms. A
+// child that still sleeps after its resume exits 0x1 after about 8 ms. End
 // ends no other job and no process outside the test job. With no job it ends nothing and
 // gives an error, and awaitJobTest then fails the test (claustrum's own).
 func (c *winJobTestChild) End() error {
@@ -102,9 +110,7 @@ func (c *winJobTestChild) End() error {
 }
 
 // Reap waits for the child and closes its handles. A child that is in no job fails
-// the test with the join error, a text of claustrum's own. After a failed resume 4c111e86
-// fails the test at once with "a thread had been suspended 2 times, so it still sleeps"
-// (measured on Windows). claustrum does not test the resume yet (TASK-716).
+// the test with the join error, a text of claustrum's own.
 func (c *winJobTestChild) Reap() error {
 	err := c.cmd.Wait()
 	c.group.Close()
