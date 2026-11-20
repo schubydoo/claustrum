@@ -639,7 +639,7 @@ The levels of these lines are claustrum's own. Unless an item says otherwise, ea
 - A refused signal (WARN): `[signal] refused a signal to pid <n>: a pid below 2 is never a child`, from `sysproc.KillChildGroup`, `sysproc.ReapProcessGroup`, `procinfo.KillGroup` and `supervisor.SignalProcessGroup`. It is also the error of a refused `process.kill` (claustrum's own, not measured)
 - The drain limit (WARN): `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
 - Temp name dropped (WARN): `[process.Manager] the inherited <name>=<value> is not handed on to a child: open <value>/.claude-ssh-<n>: <reason>` (`683cc6a9`, measured on macOS). For a missing folder, `open` names its nearest existing parent (claustrum's own, not measured).
-- A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once from the spawn that started the test (claustrum's own, not measured)
+- A slow temp folder (WARN): `[process.Manager] the temporary folder <value> has not answered in 2s: children keep it until it does`, once (`4c111e86`, measured on Linux)
 - A supersede (INFO): `[process.Manager] process <new id> supersedes <old id> for session <key>: died=<bool> escalated=<bool> alreadyExited=<bool>` (from the code), after the exit line of the old process
 - `children` not a folder (ERROR): `[process.Registry] <run dir>/children is not a directory; recording nothing`, or `reaping nothing` at a start
 - `children` unreadable at a start (ERROR): `[process.Registry] cannot read <run dir>/children: <error>; reaping nothing` (`c9125eb8`, measured on macOS with mode 000). Other errors and the line on Linux are claustrum's own, not measured

@@ -20,8 +20,8 @@ var tempFolderNames = []string{"CLAUDE_CODE_TMPDIR", "TMPDIR", "TMP", "TEMP"}
 
 // tempProbeWait is the longest time that a spawn waits for one test, counted from
 // the start of that test. After it the name stays. A test of 683cc6a9 held the
-// remove 3 s, and the replies came at 2.17 s with the name kept. The bound of 2 s
-// per test is claustrum's own, not measured. A variable for the tests.
+// remove 3 s, and the replies came at 2.17 s with the name kept. 4c111e86 logs its
+// line after 2 s (measured on Linux). The 2 s per test is claustrum's own. A variable for the tests.
 var tempProbeWait = 2 * time.Second
 
 // afterTempProbeCreate runs between the create and the remove of the test file. It
@@ -48,7 +48,7 @@ var tempProbes = struct {
 // The tests of all names start first. Then a spawn waits for each test until
 // tempProbeWait after the start of that test, and keeps the name after it. A spawn
 // that joins a test older than tempProbeWait does not wait. The spawn that started a test logs one
-// line when its wait ends first (claustrum's own, not measured).
+// line when its wait ends first (claustrum's own). The text is that of 4c111e86, measured on Linux.
 func DropUnusableTempVars(env []string) []string {
 	type tested struct {
 		name, dir string
