@@ -1099,6 +1099,8 @@ func heldCopies() heldCheck {
 // no longer checked takes nothing. The caller holds tempRoots.mu.
 func takeCheck(h, c *heldTempRoot) {
 	if h.lost.Load() || (tempRoots.held[filepath.Join(h.dir, h.name)] != h && !slices.Contains(tempRoots.given, h)) {
+		_ = c.f.Close()
+		c.f = nil // a remade folder of a record that left the lists keeps no flock
 		return
 	}
 	if !h.given {
