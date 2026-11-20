@@ -87,7 +87,7 @@ From 5 s to that end the test is pending, and the socket opens.
 
 claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code).
 
-A failed resume fails the test at once on `4c111e86` (measured on Windows), and not yet on claustrum (TASK-716).
+A resume that leaves the child asleep fails the test at once (measured on Windows). Only `4c111e86` then ends the child.
 
 claustrum's own, not measured:
 

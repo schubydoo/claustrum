@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -50,7 +51,7 @@ func startJobTestForTest(t *testing.T, pendingAfter, bound time.Duration) (*JobT
 	if err != nil {
 		t.Fatalf("start of the test child: %v", err)
 	}
-	return runJobTest(c, time.Now(), pendingAfter, bound), c.(*winJobTestChild)
+	return runJobTest(c, time.Now(), pendingAfter, bound), c
 }
 
 // TestWindowsJobTestPassesWithAChildThatEndsClean: a test child that exits 0 in its job
@@ -64,6 +65,27 @@ func TestWindowsJobTestPassesWithAChildThatEndsClean(t *testing.T) {
 	}
 	if c.jobErr != nil {
 		t.Errorf("the test child joined no job: %v", c.jobErr)
+	}
+}
+
+// TestWindowsJobTestFailsAtOnceAfterAResumeThatLeavesItAsleep: the seam adds 1 to the
+// count of the real resume, as one more suspend from outside does. The suspended start
+// gives the count 1, so the test fails at once with the count 2. The real child runs.
+func TestWindowsJobTestFailsAtOnceAfterAResumeThatLeavesItAsleep(t *testing.T) {
+	useJobTestHelper(t, "echo", "hi")
+	buf := captureLogBuf(t)
+	old := resumeJobTestChild
+	t.Cleanup(func() { resumeJobTestChild = old })
+	resumeJobTestChild = func(p *os.Process, attr *syscall.SysProcAttr) (uint32, error) {
+		n, err := resumeChildCount(p, attr)
+		return n + 1, err
+	}
+	test := startJobTest()
+	if test.State() != JobTestFailed {
+		t.Fatalf("state = %d, want failed at once", test.State())
+	}
+	if want := ": starting it inside a Windows job object failed: a thread had been suspended 2 times, so it still sleeps\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log = %q, want the line that ends %q", buf.String(), want)
 	}
 }
 

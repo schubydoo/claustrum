@@ -31,6 +31,11 @@ const jobTestPendingLine = "[process] job objects are not used yet, so ending a 
 // jobTestBound (measured on Windows against 4c111e86).
 const jobTestBoundReason = "the program had not run to its end after %s"
 
+// jobTestAsleepReason is the reason of a test whose child still sleeps after its resume.
+// It names the suspend count of the thread before the resume (measured on Windows
+// against 4c111e86, with one suspend from outside: the count 2).
+const jobTestAsleepReason = "starting it inside a Windows job object failed: a thread had been suspended %d times, so it still sleeps"
+
 const (
 	// jobTestPendingAfter is the wait of the start for the test (measured on Windows).
 	jobTestPendingAfter = 5 * time.Second
@@ -55,6 +60,23 @@ type jobTestChild interface {
 	// Reap waits for the child. Its error is the reason of a failed test, and nil
 	// passes the test.
 	Reap() error
+}
+
+// beginJobTest runs the test of the child c, which started at start. suspended is the
+// highest suspend count of a thread of c before its resume. Above 1 the thread still
+// sleeps, and the test fails at once (measured on Windows against 4c111e86). The child
+// is not ended then. Its job closes at its reap, or at the exit of the daemon.
+func beginJobTest(c jobTestChild, start time.Time, suspended uint32, pendingAfter, bound time.Duration) *JobTest {
+	if suspended <= 1 {
+		return runJobTest(c, start, pendingAfter, bound)
+	}
+	t := &JobTest{}
+	t.fail(time.Since(start), fmt.Errorf(jobTestAsleepReason, suspended))
+	go func() {
+		<-c.Exited()
+		_ = c.Reap()
+	}()
+	return t
 }
 
 // runJobTest runs the test of the child c, which started at start. It waits up to
