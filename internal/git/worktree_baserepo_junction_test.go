@@ -198,6 +198,20 @@ func TestBaseRepoJunctionWalkSimulated(t *testing.T) {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 	})
+	// A git.status baseRepo with a junction before its last name gets the status, as on
+	// 4c111e86 (measured on Windows). Mutation: test baseRepo in gitStatus with the
+	// evalSymlinks seam in place of linkWalkFails (isRepo false).
+	t.Run("status-junction-at-parent", func(t *testing.T) {
+		f := newStatusFixture(t)
+		jp := filepath.Join(t.TempDir(), "JP")
+		symlink(t, jp, f.root)
+		resetUserExcludesCache(t)
+		clearDaemonConfigEnv(t)
+		junctionWalkLikeWindows(t, jp)
+		if got := statusFrame(t, f.W, filepath.Join(jp, "T")); got != statusClean {
+			t.Errorf("got  %s\nwant %s", got, statusClean)
+		}
+	})
 	// With the walk of Windows, ".." drops a missing name or a file before it untested,
 	// as b3081b51 lists <T>\missing\.. and <T>\t.txt\.. (measured on Windows). Off
 	// Windows the kernel walks git's path, so a refused count shows that the walk passed.

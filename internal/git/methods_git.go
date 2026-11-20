@@ -760,7 +760,10 @@ func gitStatus(req *gitCall) rpc.Response {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, kept)
 		}
 	}
-	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
+	// A baseRepo whose walk fails, such as a missing name or a dangling junction, answers
+	// isRepo false with no git call. On Windows the walk goes by the names as sent, so a
+	// junction before the last name passes (4c111e86, measured on Windows).
+	if linkWalkFails(p.BaseRepo, false) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
 	// The read of the user's excludes comes next, so it also runs before a trust
@@ -942,13 +945,6 @@ func linkOutOfFolder(p string) bool {
 	}
 	folder, err := filepath.EvalSymlinks(filepath.Dir(p))
 	return err == nil && filepath.Dir(target) != folder
-}
-
-// unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
-// git.status treats such a baseRepo as missing (docs/protocol/git-status.md).
-func unresolvable(p string) bool {
-	_, err := filepath.EvalSymlinks(p)
-	return err != nil
 }
 
 // samePath compares two paths after lexical cleaning. Callers that compare against
