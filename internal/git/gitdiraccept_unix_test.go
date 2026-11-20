@@ -926,7 +926,7 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 // A leaf that is deleted and replaced by an empty folder, not renamed, gets
 // the text of the failed write of `.git` with worktree_add_failed, and the
 // moved registration, the branch and the empty folder go (4c111e86, measured
-// on Linux; macOS is claustrum's own, not measured). Mutations: restore the
+// on Linux and macOS). Mutations: restore the
 // early return for a deleted leaf (the frame differs), or drop the
 // undoMovedAwayLeaf call of the refusal (the empty folder stays). An attach add of main
 // fails, since main is checked out, and its fallback add gets the same reply

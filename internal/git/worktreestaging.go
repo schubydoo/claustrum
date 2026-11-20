@@ -1137,7 +1137,7 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// move then completes through the held leaf, and the create is refused
 	// (leafMovedAfterAdd). A deleted leaf gets the move too, and the failed
 	// write of its `.git` file removes the moved folder again (4c111e86,
-	// measured on Linux). macOS is claustrum's own, not measured.
+	// measured on Linux and macOS).
 	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
 		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
@@ -1257,8 +1257,7 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 		if movedAway && errors.Is(err, fs.ErrNotExist) {
 			// The held leaf was deleted after the add. 4c111e86 answers the
 			// error of the write with worktree_add_failed, and an empty folder
-			// at the path goes (measured on Linux). macOS is claustrum's own,
-			// not measured.
+			// at the path goes (measured on Linux and macOS).
 			return &addRefused{text: err.Error(), failedAdd: true, leafDeleted: true}
 		}
 		if errors.Is(err, fs.ErrExist) {

@@ -1930,9 +1930,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, branch, checkpoint, reg)
 		if refused != nil && refused.leafDeleted {
 			// A leaf deleted right after a staged add: an empty folder at the
-			// path goes after the branch step (4c111e86, measured on Linux).
-			// claustrum removes it by one rmdir. macOS is claustrum's own, not
-			// measured.
+			// path goes (4c111e86, measured on Linux and macOS), after the
+			// branch step (measured on Linux). claustrum removes it by one rmdir.
 			undoMovedAwayLeaf(p.WorktreePath, checkpoint)
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
