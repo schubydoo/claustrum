@@ -76,6 +76,7 @@ form a driver sees:
 - `checksum mismatch: expected=<x>, actual=<y>`: `-cli-checksum` verify failed (see [Checksum and verify ordering](#checksum-and-verify-ordering))
 - `opening input: <err>`: `-cli-zst` open error
 - `decompressing: <err>`: bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux). A full disk gives `write <cli-dir>/.fetch-<n>: <text>` (`\` on Windows). The text is `no space left on device` (Linux, macOS) or `There is not enough space on the disk.` (Windows)
+- `decompressing: decompressed size exceeds configured limit`: a single-segment zstd frame declares over 512 MiB (parity). `decompressing: window size exceeded`: a frame with a 1 GiB window (measured on Linux, `-cli-zst`)
 - `decompressing: decompressed CLI exceeds <n> bytes`: CT-7 cap, opt-in
 - `staging cli: <err>`: no staging file can be made in the cli-dir (claustrum's own, not measured)
 - `download failed with status <n>`: the server answered a status other than 200. The text has no URL and no reason phrase

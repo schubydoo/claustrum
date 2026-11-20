@@ -302,6 +302,37 @@ func TestFailedInitNamesTheGitVersion(t *testing.T) {
 	}
 }
 
+// TestFailedInitTakesTheSecondVersionText: the init of the start test fails,
+// the first `git version` works, and the second gives no stdout. The brackets
+// at the end of the cause then hold nothing. On 4c111e86 that is ` ()`, both
+// for a second call that exits 128 with a text on stderr and for one that
+// exits 0 (measured on Linux).
+func TestFailedInitTakesTheSecondVersionText(t *testing.T) {
+	for _, r := range []struct {
+		name, exit, stderr string
+	}{
+		{"fails", "128", "fatal: forced failure of the second version call\n"},
+		{"empty", "0", ""},
+	} {
+		t.Run(r.name, func(t *testing.T) {
+			f := newShadowFixture(t)
+			slowGit(t, "init", "fail", 0, "fatal: forced failure by the test wrapper\n", "")
+			t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "core.hooksPath=/dev/null,version")
+			t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", r.exit)
+			t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", r.stderr)
+			raw, calls := f.info(t, f.repo, nil)
+			dir := daemonFolder(t, f.run)
+			want := jsonQuoted(t, failedTestText("git init failed under "+strconv.Quote(dir)+": fatal: forced failure by the test wrapper ()"))
+			if !strings.Contains(raw, `"message":`+want) {
+				t.Errorf("git.info = %s\nwant the message %s", raw, want)
+			}
+			if len(calls) != 4 || !slices.Equal(calls[2].argv, []string{"version"}) || calls[3].argv[len(calls[3].argv)-1] != "version" {
+				t.Errorf("%d calls, want the excludes read, the init and two version calls", len(calls))
+			}
+		})
+	}
+}
+
 // TestDaemonGitDirToMissingPath: the daemon has a GIT_DIR that names a missing
 // path, and F is a plain folder. The copy of the repository then fails, and each
 // method answers "no repository". git.info has the member of the start test of
