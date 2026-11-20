@@ -1220,8 +1220,10 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// store (lfsstore.go). It runs after a checkout that exited 0, after the
 		// settle step, and the reply waits for it. 4c111e86 starts its copy after
 		// the settle call ends, and answers right after the copy ends or is cut
-		// (measured on macOS). An object that the settle call put into the
-		// private store is kept too (claustrum's own, not measured).
+		// (measured on macOS). On Linux the object comes at the reply (measured),
+		// and this order is claustrum's own, not measured. An object that the
+		// settle call put into the private store is kept too (claustrum's own,
+		// not measured).
 		if err == nil && keep {
 			start := time.Now()
 			returnDownloads(u, lfs.path, keepAfterGood)
