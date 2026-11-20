@@ -8,14 +8,10 @@ import (
 	"testing"
 )
 
-// goneGitFileCreate makes a folder G whose `.git` file names a missing path, turns
-// on the Windows step (goneGitFileStartTest) for the test, and returns the shadow
-// fixture, G and the params of a create there.
+// goneGitFileCreate makes a folder G whose `.git` file names a missing path, and
+// returns the shadow fixture, G and the params of a create there.
 func goneGitFileCreate(t *testing.T, off bool) (shadowFixture, string, map[string]any) {
 	t.Helper()
-	old := goneGitFileStartTest
-	goneGitFileStartTest = true
-	t.Cleanup(func() { goneGitFileStartTest = old })
 	f := newShadowFixture(t)
 	g := filepath.Join(resolveTestRoot(t, t.TempDir()), "G")
 	if err := os.MkdirAll(g, 0o755); err != nil {
@@ -29,15 +25,16 @@ func goneGitFileCreate(t *testing.T, off bool) (shadowFixture, string, map[strin
 	return f, g, params
 }
 
-// TestCreateGoneGitFileStartTestStep runs the Windows step of a create on a `.git`
-// file to a missing path on every system (goneGitFileStartTest). 4c111e86 runs the
+// TestCreateGoneGitFileStartTestStep runs the step of a create on a `.git` file
+// to a missing path (gitWorktreeCreateLocked). 4c111e86 runs the
 // start test and the call about the repository there, and after the reply the
-// folder of the daemon holds its lock and `.probe` (measured on Windows). The stub
+// folder of the daemon holds its lock and `.probe` (measured on Linux and Windows). The stub
 // gives the answers of an older git: the first run of the call exits 128 with "not
 // a git repository", the second run exits 0, and the create answers the unusable
 // refusal with no listing. A call that fails with exit 1 and a failed start test
 // answer their text. With "shadowDirOff":true no test runs, and the stubbed listing
-// gives the refusal. Those three rows are claustrum's own, not measured. The text
+// gives the refusal. Those three rows are claustrum's own, not measured, except
+// that 4c111e86 runs no test with the switch (measured on Linux). The text
 // of git 2.56 is a Windows row (TestCreateGoneGitFileRunsTheStartTest). Mutation:
 // drop the gate call, the askGit call or its "not a git repository" answer for the
 // gone `.git` file in gitWorktreeCreateLocked.
