@@ -472,18 +472,17 @@ Unless an item names another build, the daemon items below are measured against
   not drift and not [D20](DIVERGENCES.md#d20). See
   [Passes, orphans and stale run dirs](DAEMON.md#passes-orphans-and-stale-run-dirs).
 - On Windows a daemon that outlives its SSH session is not drift, against
-  `f6010b97` and `89cb6289`. Since `52d82f0a` each child is in a job, and a kill
+  `f6010b97` and `89cb6289`. Since `52d82f0a` each child is in a job, since `4c111e86` after a passed [start test](protocol/process-kill.md#the-start-test-of-the-jobs). A kill
   or a killed daemon ends its tree. With `CLAUDE_SSH_NO_JOBS=1` a tree that outlives
-  the shutdown or the exit of the child is not drift. Neither are children that
-  outlive a killed daemon there (`89cb6289`. With the switch, not measured on `52d82f0a`). See [The job of the launcher](DAEMON.md#the-job-of-the-launcher-windows)
-  and [Windows child trees](protocol/process-kill.md#windows-child-trees).
+  the shutdown or the child's exit is not drift. Neither are children that
+  outlive a killed daemon there (`89cb6289`. With the switch, not measured on `52d82f0a`). See [The job of the launcher](DAEMON.md#the-job-of-the-launcher-windows).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
   waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds
   `pid`, `role` and `node` only. That is not drift. See
   [The bind after the reap](DAEMON.md#the-bind-after-the-reap-linux-and-macos).
 - On Linux and macOS records and both identity markers on a socket that is not
   `run/<id>/rpc.sock` are not drift. Records that stay after a start past 128
-  record names or 64 groups are not drift either (measured on Linux). An older claustrum
+  record names or 64 groups are not drift (measured on Linux). An older claustrum
   build wrote two blanks before a one-digit day in its macOS start texts. On macOS
   a `daemonStart` in that form does not match, so a new daemon reads that live
   daemon as gone, and a `start` in that form does not match either. Neither is

@@ -438,6 +438,8 @@ component_management:
         - internal/sysproc/leaderexit_other.go
         - internal/supervisor/childjobs.go
         - internal/supervisor/childjobs_windows.go
+        - internal/supervisor/jobtest.go
+        - internal/supervisor/jobtest_windows.go
         # 4534d86 exit-frame `signal` name: read from the wait status on unix, always
         # empty on Windows (parity).
         - internal/sysproc/process_signal_unix.go

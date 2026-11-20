@@ -256,6 +256,10 @@ type Proc struct {
 	// releaseTemp gives that folder back after the exit frame (clitemproot_unix.go).
 	cliTempRoot *rpc.CLITempRoot
 	releaseTemp func()
+
+	// outsideJob is set at spawn when the start test of the jobs had not passed, so the
+	// child is in no job (Manager.JobTest).
+	outsideJob bool
 }
 
 type Manager struct {
@@ -309,6 +313,11 @@ type Manager struct {
 	// ChildJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
 	// once at the start of the daemon. The zero value is off.
 	Jobs ChildJobs
+	// JobTest is the start test of the jobs (Windows only, see jobtest.go). After it
+	// failed, a spawn answers "outsideJob":true (measured on Windows against 4c111e86).
+	// While it is pending, a spawn answers the same (claustrum's own, not measured). In
+	// both states the spawn puts its child in no job (from the code). Nil: no test.
+	JobTest *JobTest
 
 	// adopted is the environment of the last good server.adoptEnv (adoptenv.go).
 	adopted adoptedEnv
@@ -534,6 +543,7 @@ func (p *Proc) IsLive() bool {
 func (p *Proc) Pid() int                      { return p.pid }
 func (p *Proc) StartTime() float64            { return p.startTime }
 func (p *Proc) CLITempRoot() *rpc.CLITempRoot { return p.cliTempRoot }
+func (p *Proc) SpawnedOutside() bool          { return p.outsideJob }
 
 // signalGroup is a seam over ProcGroup.Signal so the "do not signal a reaped
 // process" guards are testable without actually delivering a signal to whatever
@@ -1003,7 +1013,13 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			releaseTemp()
 		}
 	}()
-	cmd.SysProcAttr = SpawnSysProcAttr(m.Jobs)
+	// The job mode of this child. A start test of the jobs that has not passed puts it in
+	// no job. The state is read once, so the start and the reply agree.
+	jobs, outsideJob := m.Jobs, false
+	if jobs != JobsOff && m.JobTest.SpawnsOutside() {
+		jobs, outsideJob = JobsOff, true
+	}
+	cmd.SysProcAttr = SpawnSysProcAttr(jobs)
 	// Launch through the exec-child trampoline, on every socket shape, so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
 	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
@@ -1145,7 +1161,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// handle of the direct child, and with m.jobs the job that the child joins here. A
 	// failure here is non-fatal: kill falls back to the parent. It comes before the
 	// check below, which needs the handle.
-	group, err := confineProc(cmd.Process, m.Jobs)
+	group, err := confineProc(cmd.Process, jobs)
 	if err != nil {
 		logging.Warnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
 	}
@@ -1229,6 +1245,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 
 		cliTempRoot: tempAnswer,
 		releaseTemp: releaseTemp,
+		outsideJob:  outsideJob,
 	}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c

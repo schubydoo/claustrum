@@ -37,6 +37,12 @@ func TestMain(m *testing.M) {
 		os.Setenv("GORACE", "atexit_sleep_ms=0")
 	}
 
+	// The start test of the Windows jobs runs this binary as `--version`, as the daemon
+	// runs its own program. That copy passes the test and runs no test of the suite.
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		os.Exit(0)
+	}
+
 	mode := os.Getenv("CLAUSTRUM_TEST_HELPER")
 
 	// The fork-bomb guard of the TestMain of package main. A copy of this binary
@@ -203,7 +209,8 @@ func runHelper(mode string, args []string) int {
 	case "tree":
 		// Fixture for the whole-tree kill tests: wait for the parent's go-ahead on
 		// stdin, spawn a grandchild sleeper, record its PID in args[0], then linger
-		// so the tree stays alive until it is killed.
+		// so the tree stays alive until it is killed. The PID goes to a temp file
+		// first and then moves to args[0], so a reader never sees a part of it.
 		var b [1]byte
 		_, _ = os.Stdin.Read(b[:])
 		exe, err := os.Executable()
@@ -217,7 +224,12 @@ func runHelper(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+		tmp := args[0] + ".tmp"
+		if err := os.WriteFile(tmp, []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.Rename(tmp, args[0]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

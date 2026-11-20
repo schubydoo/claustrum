@@ -48,6 +48,12 @@ func TestMain(m *testing.M) {
 		os.Setenv("GORACE", "atexit_sleep_ms=0")
 	}
 
+	// The start test of the Windows jobs runs this binary as `--version`, as the daemon
+	// runs its own program. That copy passes the test and runs no test of the suite.
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		os.Exit(0)
+	}
+
 	mode := os.Getenv("CLAUSTRUM_TEST_HELPER")
 
 	// A re-exec'd daemon child must never run the suite. runServe's parent half

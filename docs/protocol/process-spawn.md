@@ -43,11 +43,13 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 {"success": true}
 ```
 
-With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the wall clock of the daemon at the spawn, in epoch seconds.
+With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the daemon's wall clock at the spawn, in epoch seconds.
 
 `startTime` is an opaque token that detects a reused pid, not an OS start time.
 
-With `"cliTempRoot": true` on Linux and macOS the result can carry a `cliTempRoot` member after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
+On Windows a failed (`4c111e86`, measured on Windows) or pending (claustrum's own) [start test](process-kill.md#the-start-test-of-the-jobs) adds `"outsideJob":true` after `success`.
+
+With `"cliTempRoot": true` on Linux and macOS the result can carry `cliTempRoot` after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
 
 After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
 
@@ -216,7 +218,7 @@ These are not measured:
 - The owner test of the new folder.
 - The count is per daemon. A folder gives its place back at the exit frame of its last spawn, or, while a step or a refresh holds the lock, once it ends.
 - The step runs after the `cwd`, launcher and session command tests, and before the start.
-- `cliTempRoot` comes before `pid` and `startTime`.
+- `outsideJob`, then `cliTempRoot`, come before `pid` and `startTime`.
 - A failed registry write is not logged. A failed hold does not stop the spawn.
 
 On macOS the kinds `a link`, `not a folder` and `another account's` are measured too. So are the folder with its `t`, the log line, the link and file text and the 0333 text. The other rules are claustrum's own on macOS. There the record takes `kern.bootsessionuuid` as the boot id, with no pid namespace.
@@ -316,7 +318,7 @@ claustrum's own: the macOS refusal comes before step 2. With a command, the own-
 
 === "Windows"
 
-    - **Process group and job.** The child starts in a new process group and in a [job](process-kill.md#windows-child-trees) (`52d82f0a`).
+    - **Process group and job.** The child gets a new process group and a [job](process-kill.md#windows-child-trees) (`52d82f0a`), since `4c111e86` after a passed [start test](process-kill.md#the-start-test-of-the-jobs).
     - **`launcher`.** Refused with `-32004`.
     - **`signal` in the `exit` frame.** Never.
 
@@ -376,7 +378,7 @@ The daemon advertises it as the feature `process.spawn.shellAgentSocket`. A chil
 A spawn with the `id` of a process that still runs succeeds and replaces its table entry. The first process gets no signal and keeps running. Then:
 
 - `process.kill`, `process.stdin` and `process.reattach` of that `id` reach the second process only.
-- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own).
+- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except in a Windows job with no `-keep-children` (claustrum's own).
 - Each process keeps the connection that spawned it, under the same `processId`, and each counts its own `seq`. So a connection that sent both spawns gets two streams under one `processId`, with two `exit` frames (measured on Linux).
 - A `process.reattach` moves the stream of the second process and closes the connection that had it. A connection that gets the frames of the first process keeps getting them (measured on Linux).
 
@@ -387,11 +389,11 @@ A spawn whose `args` name a stream-json session of the Claude Code CLI ends ever
 - `--input-format=stream-json`, `--output-format=stream-json` or a bare `stream-json`, and
 - a session id from `--session-id <v>` or `--session-id=<v>`. Without one, it is `--resume <v>` or `--resume=<v>`, unless `--fork-session` is there too.
 
-The argument after a bare `--session-id` or `--resume` is its value. The id has 1 to 128 characters (from the code). Each is a letter, a digit, `-`, `_`, `.` or `:`, and the first is not `-` (from the code). Any other spawn supersedes nothing.
+The argument after a bare `--session-id` or `--resume` is its value. The id has 1 to 128 characters. Each is a letter, a digit, `-`, `_`, `.` or `:`, and the first is not `-` (both from the code). Any other spawn supersedes nothing.
 
 #### How the old process ends
 
-The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once (claustrum's own). Two spawns of one session run one after the other (claustrum's own).
+The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old process ends at once, and two spawns of one session run one after the other (both claustrum's own).
 
 A spawn with the `id` and the session of a running process only replaces it, as [the `id` in use](#a-spawn-with-an-id-that-is-in-use) says.
 

@@ -435,3 +435,27 @@ func TestCapabilitiesListTheJobNameOnlyWithJobs(t *testing.T) {
 		t.Error("featuresFor wrote into the spare capacity of the shared list")
 	}
 }
+
+// A start test of the jobs that is pending or failed puts process.spawn.job_pending or
+// process.spawn.job_unavailable in the last place, where process.spawn.job goes
+// (measured on Windows against 4c111e86). A daemon with the jobs off lists neither.
+func TestCapabilitiesListTheJobTestState(t *testing.T) {
+	s := &server{procs: &supervisor.Manager{}}
+	base := s.featuresFor()
+	for _, tc := range []struct {
+		jobs  supervisor.ChildJobs
+		state supervisor.JobTestState
+		want  []string
+	}{
+		{supervisor.JobsOn, supervisor.JobTestPending, append(slices.Clone(base), jobPendingFeature)},
+		{supervisor.JobsOn, supervisor.JobTestFailed, append(slices.Clone(base), jobUnavailableFeature)},
+		{supervisor.JobsKeep, supervisor.JobTestFailed, append(slices.Clone(base), jobUnavailableFeature)},
+		{supervisor.JobsOn, supervisor.JobTestPassed, append(slices.Clone(base), jobFeature)},
+		{supervisor.JobsOff, supervisor.JobTestFailed, base},
+	} {
+		s.procs.Jobs, s.procs.JobTest = tc.jobs, supervisor.NewJobTestForTest(tc.state)
+		if got := s.featuresFor(); !slices.Equal(got, tc.want) {
+			t.Errorf("jobs %d state %d: features = %v, want %v", tc.jobs, tc.state, got, tc.want)
+		}
+	}
+}

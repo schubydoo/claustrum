@@ -165,8 +165,12 @@ func TestJobLineAtStart(t *testing.T) {
 				_ = os.Unsetenv(supervisor.ChildJobsOffEnv)
 			}
 			buf := captureLogBuf(t)
-			if got := supervisor.StartChildJobs(tc.keep); got != tc.want {
+			got, test := supervisor.StartChildJobs(tc.keep)
+			if got != tc.want {
 				t.Errorf("jobs = %d, want %d", got, tc.want)
+			}
+			if test.State() != supervisor.JobTestPassed {
+				t.Errorf("start test state = %d, want passed", test.State())
 			}
 			// Another test can leave a child whose exit line lands in this buffer, so the
 			// check counts the job lines only.
