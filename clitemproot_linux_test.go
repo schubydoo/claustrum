@@ -127,7 +127,7 @@ func TestCLITempRootReusesItsName(t *testing.T) {
 	if fi, _ := os.Stat(filepath.Join(x, a.Name)); fi == nil || time.Since(fi.ModTime()) > time.Hour {
 		t.Errorf("write time %v, want now", fi)
 	}
-	// With nothing held, as in a new daemon, the registry gives the name again.
+	// With no live spawn, the registry gives the name again, through the given-back record.
 	for _, r := range rel {
 		r()
 	}
@@ -135,6 +135,25 @@ func TestCLITempRootReusesItsName(t *testing.T) {
 	_, c := runTempRoot(t, x, runDir, &rel)
 	if c == nil || c.Name != a.Name {
 		t.Fatalf("answer after the hold %+v, want the name %s", c, a.Name)
+	}
+	// With no given-back record, as in a new daemon, the registry gives the name again,
+	// and the spawn opens the folder and takes its flock afresh.
+	for _, r := range rel {
+		r()
+	}
+	rel = nil
+	stopTempRootChecks() // the given-back record ends, and its flock with it
+	_, d := runTempRoot(t, x, runDir, &rel)
+	if d == nil || d.Name != a.Name {
+		t.Fatalf("answer of a new daemon %+v, want the name %s", d, a.Name)
+	}
+	f, err := os.Open(filepath.Join(x, a.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("flock of the folder: %v, want the new hold to have it", err)
 	}
 	if got := ccdFolders(t, x); len(got) != 1 {
 		t.Errorf("folders %v, want one", got)
