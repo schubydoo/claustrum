@@ -228,10 +228,62 @@ var tempRootsLost struct {
 
 // tempRootLate decides between the answer of the step and the time limit. A file
 // call that a stuck mount holds cannot be stopped, so the step goes on after the
-// limit. The step keeps its folder only if keep comes before markGaveUp.
+// limit. The step keeps its folder only if keep comes before markGaveUp. dir is the
+// temp dir of the step. While a step goes on after its limit, its dir is in
+// tempRootLateDirs, from markGaveUp to the end of the step (ended). A step that at
+// its limit only waits for tempRoots.mu (lockWait), whoever holds it, is no late step:
+// its temp dir answers, so the next spawn runs its own step.
 type tempRootLate struct {
-	mu           sync.Mutex
-	gaveUp, kept bool
+	mu                            sync.Mutex
+	gaveUp, kept, ended, lockWait bool
+	dir                           string
+}
+
+// waitsForLock marks the wait of the step for tempRoots.mu, from just before the Lock
+// to just after it.
+func (l *tempRootLate) waitsForLock(w bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lockWait = w
+}
+
+// tempRootLateDirs counts the steps of each temp dir that go on after their limit. A
+// spawn whose temp dir is in it gets tempRootNoReply at once, with no step and no line:
+// 4c111e86 answers so while that temp dir does not answer, and runs the step of another
+// temp dir (measured on Linux, on a dead NFS mount). These are claustrum's own, not
+// measured: macOS, the end of that time when the late step returns, the key by the path
+// of the temp dir as given, a step that starts while an earlier one of the same temp
+// dir is within its limit, and no late step for a step that only waits for the lock.
+var tempRootLateDirs = struct {
+	mu   sync.Mutex
+	dirs map[string]int
+}{dirs: map[string]int{}}
+
+// tempDirStepIsLate reports whether a step of dir goes on after its limit.
+func tempDirStepIsLate(dir string) bool {
+	tempRootLateDirs.mu.Lock()
+	defer tempRootLateDirs.mu.Unlock()
+	return tempRootLateDirs.dirs[dir] > 0
+}
+
+// addLateDir counts one more late step of dir, or one less with n at -1. The caller
+// holds the mu of the tempRootLate.
+func addLateDir(dir string, n int) {
+	tempRootLateDirs.mu.Lock()
+	defer tempRootLateDirs.mu.Unlock()
+	if tempRootLateDirs.dirs[dir] += n; tempRootLateDirs.dirs[dir] <= 0 {
+		delete(tempRootLateDirs.dirs, dir)
+	}
+}
+
+// stepEnded marks the end of the step, and takes a late step out of tempRootLateDirs.
+func (l *tempRootLate) stepEnded() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.ended = true
+	if l.gaveUp && l.dir != "" {
+		addLateDir(l.dir, -1)
+	}
 }
 
 func (l *tempRootLate) keep() bool {
@@ -245,6 +297,11 @@ func (l *tempRootLate) markGaveUp() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.gaveUp = !l.kept
+	if l.gaveUp && !l.ended && !l.lockWait && l.dir != "" {
+		addLateDir(l.dir, 1)
+	} else {
+		l.dir = "" // no late step: stepEnded takes nothing out
+	}
 	return l.gaveUp
 }
 
@@ -261,11 +318,16 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 		release func()
 		bind    func(end func())
 	}
-	late := &tempRootLate{}
+	dir := childTempDir(env)
+	if filepath.IsAbs(dir) && tempDirStepIsLate(dir) {
+		return env, addGoneList(&rpc.CLITempRoot{WhyNot: tempRootNoReply}), func() {}, func(func()) {}
+	}
+	late := &tempRootLate{dir: dir}
 	done := make(chan answer, 1)
 	in := slices.Clone(env)
 	go func() {
 		e, r, rel, b := tempRootStep(in, runDir, late)
+		late.stepEnded()
 		done <- answer{e, r, rel, b}
 	}()
 	t := time.NewTimer(tempRootLimit)
@@ -372,7 +434,9 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	if kind == "a link" || kind == "not a folder" || kind == "out of reach" {
 		return refuse(tempRootSteppedAround)
 	}
+	late.waitsForLock(true)
 	tempRoots.mu.Lock()
+	late.waitsForLock(false)
 	defer tempRoots.mu.Unlock()
 	canAdd := len(tempRoots.held) < tempRootLiveCap
 	var root *os.Root
