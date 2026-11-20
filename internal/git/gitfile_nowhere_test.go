@@ -60,8 +60,8 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // systems. On Windows git spells its path with forward slashes, and the root in quotes
 // keeps backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
 // refusal in noRepoCalls on Linux, drop statusGitFileNowhere, refuse the gitfile text in
-// statusNoRepoCalls, or key the rule on the state of the daemon. Where a create runs
-// the call about the repository first (gitWorktreeCreateLocked), the stub gives its first
+// statusNoRepoCalls, or key the rule on the state of the daemon. A create runs the call
+// about the repository first (gitWorktreeCreateLocked), so the stub gives its first
 // run the same text. Mutation there: answer "no repository" after every answer of the
 // call in gitWorktreeCreateLocked.
 //

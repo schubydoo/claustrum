@@ -609,7 +609,9 @@ func TestCLITempRootTempDirOrder(t *testing.T) {
 
 // After the time limit the reply says so and the child gets the env as it was. A
 // folder that the step made after the limit stays, with no registry, no hold and
-// no count.
+// no count. The spawn whose own step hits the limit logs the line of the limit once, and a
+// second spawn of that temp dir gets the text at once with no second line (4c111e86,
+// measured on Linux).
 func TestCLITempRootTimeLimit(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -629,6 +631,7 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 		}
 	})
 	in := []string{"TMPDIR=" + x}
+	logs := captureLogBuf(t)
 	start := time.Now()
 	env, res, release, _ := privateTempRoot(in, runDir)
 	rel = append(rel, release)
@@ -636,12 +639,24 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	if want := `{"whyNot":"the temp dir did not answer in time"}`; string(b) != want {
 		t.Fatalf("answer %s, want %s", b, want)
 	}
+	if want := "[process.Manager] the temp dir has not answered in 100ms: Claude Code starts anyway, and may refuse its folder there"; strings.Count(logs.String(), want) != 1 {
+		t.Errorf("log %q, want the line of the limit once", logs.String())
+	}
 	if time.Since(start) < tempRootLimit || !slices.Equal(env, in) {
 		t.Errorf("after %v env %q, want the limit and the env as it was", time.Since(start), env)
 	}
 	name := <-stuck
 	if got := ccdFolders(t, x); len(got) != 1 || got[0] != name {
 		t.Fatalf("folders %v, want the one that the step made", got)
+	}
+	start = time.Now()
+	_, res, release, _ = privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d >= tempRootLimit {
+		t.Errorf("second answer %+v after %v, want the text of the limit at once", res, d)
+	}
+	if want := "the temp dir has not answered in"; strings.Count(logs.String(), want) != 1 {
+		t.Errorf("log %q, want no second line of the limit", logs.String())
 	}
 	unblock()
 	// The step holds tempRoots.mu until it ends, so this lock waits for its end.
@@ -676,5 +691,145 @@ func TestCLITempRootLateGate(t *testing.T) {
 	var late tempRootLate
 	if !late.markGaveUp() || late.keep() {
 		t.Error("markGaveUp then keep: want the step to keep nothing")
+	}
+}
+
+// While the step of a temp dir goes on after its limit, a spawn with the same temp dir
+// gets the text of the limit at once, with no step of its own. Once the late step ends, a
+// spawn runs its step again (4c111e86, measured on Linux on a dead NFS mount).
+func TestCLITempRootLateStepSameTempDir(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := tempRootLimit
+	tempRootLimit = 300 * time.Millisecond
+	t.Cleanup(func() { tempRootLimit = old })
+	x, runDir := tempRootDir(t, true)
+	stuck, free := make(chan string, 2), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(free) }) }
+	t.Cleanup(unblock)
+	setAfterMkdir(t, func(dir, name string) {
+		stuck <- name
+		select {
+		case <-free:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	in := []string{"TMPDIR=" + x}
+	_, res, release, _ := privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if res == nil || res.WhyNot != tempRootNoReply {
+		t.Fatalf("first answer %+v, want the text of the limit", res)
+	}
+	select {
+	case <-stuck:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the late step made no folder")
+	}
+	start := time.Now()
+	env, res, release, _ := privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d >= tempRootLimit/2 || !slices.Equal(env, in) {
+		t.Fatalf("second answer %+v after %v, env %q, want the text of the limit at once and the env as it was", res, d, env)
+	}
+	select {
+	case name := <-stuck:
+		t.Fatalf("a second mkdir %s, want only the one of the late step", name)
+	case <-time.After(100 * time.Millisecond):
+	}
+	unblock()
+	deadline := time.Now().Add(5 * time.Second)
+	for tempDirStepIsLate(x) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if tempDirStepIsLate(x) {
+		t.Fatal("the late step ended, want its temp dir out of the late list")
+	}
+	setAfterMkdir(t, func(dir, name string) {})
+	_, res, release, _ = privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if res == nil || res.Name == "" {
+		t.Errorf("answer after the late step %+v, want a folder", res)
+	}
+}
+
+// A step that ended before the limit fired is no late step, and a late step leaves the
+// late list at its end.
+func TestCLITempRootLateDirMarks(t *testing.T) {
+	a := &tempRootLate{dir: "/late-a"}
+	a.stepEnded()
+	if !a.markGaveUp() || tempDirStepIsLate("/late-a") {
+		t.Error("end then give-up: want no late step")
+	}
+	b := &tempRootLate{dir: "/late-b"}
+	if !b.markGaveUp() || !tempDirStepIsLate("/late-b") {
+		t.Error("give-up: want a late step")
+	}
+	b.stepEnded()
+	if tempDirStepIsLate("/late-b") {
+		t.Error("give-up then end: want no late step")
+	}
+}
+
+// A step of temp dir B that at its limit only waits for tempRoots.mu, held by the stuck
+// step of temp dir A, is no late step: B answers, so the next spawn with B runs its own
+// step (claustrum's own).
+func TestCLITempRootLockWaitIsNoLateStep(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := tempRootLimit
+	tempRootLimit = 200 * time.Millisecond
+	t.Cleanup(func() { tempRootLimit = old })
+	a, runDir := tempRootDir(t, true)
+	b, _ := tempRootDir(t, true)
+	stuck, free := make(chan string, 1), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(free) }) }
+	t.Cleanup(unblock)
+	setAfterMkdir(t, func(dir, name string) {
+		if dir != a {
+			return
+		}
+		stuck <- name
+		select {
+		case <-free:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	_, res, release, _ := privateTempRoot([]string{"TMPDIR=" + a}, runDir)
+	rel = append(rel, release)
+	if res == nil || res.WhyNot != tempRootNoReply {
+		t.Fatalf("answer of A %+v, want the text of the limit", res)
+	}
+	select {
+	case <-stuck:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the step of A made no folder")
+	}
+	if !tempDirStepIsLate(a) {
+		t.Fatal("A: want a late step")
+	}
+	inB := []string{"TMPDIR=" + b}
+	for i := range 2 {
+		start := time.Now()
+		_, res, release, _ = privateTempRoot(inB, runDir)
+		rel = append(rel, release)
+		if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d < tempRootLimit {
+			t.Fatalf("answer %d of B %+v after %v, want its own step to wait for the lock up to the limit", i, res, d)
+		}
+		if tempDirStepIsLate(b) {
+			t.Fatalf("after answer %d of B: B is in the late list, want no late step for a wait for the lock", i)
+		}
+	}
+	unblock()
+	deadline := time.Now().Add(5 * time.Second)
+	for tempDirStepIsLate(a) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	tempRoots.mu.Lock() // the steps of B end after A frees the lock
+	live := tempRoots.live
+	tempRoots.mu.Unlock()
+	if live != 0 {
+		t.Errorf("live %d after the late steps, want 0", live)
 	}
 }

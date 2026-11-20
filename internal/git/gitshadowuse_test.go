@@ -291,8 +291,8 @@ func TestGitTempNames(t *testing.T) {
 			t.Errorf("name %q, want %q", got, want)
 		}
 	}
-	// 4c111e86 names the checkout folder `.checkout-<n>` on Linux and macOS, and
-	// makes none on Windows (measured). claustrum keeps `.index-<n>` there.
+	// 4c111e86 names the checkout folder `.checkout-<n>` on all three systems
+	// (measured). On Windows claustrum names it `.index-<n>`.
 	want := ".checkout-"
 	if runtime.GOOS == "windows" {
 		want = ".index-"
