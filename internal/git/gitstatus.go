@@ -134,8 +134,8 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // git.status keeps the answer isRepo:false that it gave before. c8e2f083 answers
 // isRepo:false on a `.git` file to a gone path (measured on Linux). Its answer to a
 // failed listing here is not measured. On Linux and macOS the gitfile text of git 2.56
-// (saysGitFileNowhere) keeps isRepo:false too (4c111e86, measured on Linux with git
-// 2.56.1, macOS claustrum's own).
+// (saysGitFileNowhere) keeps isRepo:false too (4c111e86, measured on Linux and macOS with
+// git 2.56.1).
 //
 // s holds the time limits of the request. The listing is the first of the
 // request (configListingLimit).
@@ -161,8 +161,8 @@ func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
 // methods there, with no GIT_DIR. With off, the "shadowDirOff":true member, 5fd08069 makes
 // this listing (measured on Linux). Without the member the listing is claustrum's own call.
 // 5fd08069 runs a `rev-parse --git-dir` there. With git 2.43 and 2.56.1 the answer is "" on
-// Linux and macOS (gitFileNowhereAsOlderGit; 4c111e86, measured on Linux, macOS claustrum's
-// own). On Windows the gitfile text of git 2.56 gives the error of the call about the
+// Linux and macOS (gitFileNowhereAsOlderGit; 4c111e86, measured on Linux, and on macOS with
+// git 2.56.1). On Windows the gitfile text of git 2.56 gives the error of the call about the
 // repository, and with off the listing refusal (5fd08069, measured on Linux).
 func statusGitFileNowhere(t gitDirTrust, s *gitStop, baseRepo string, off bool) string {
 	if !t.noRepoPinned() || !goneNonEntryGitFile(baseRepo) {

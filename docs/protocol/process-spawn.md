@@ -173,6 +173,10 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 | `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. A folder that the step makes later stays. `refused` is absent. On Linux `4c111e86` logs `[process.Manager] the temp dir has not answered in 2s: Claude Code starts anyway, and may refuse its folder there`, which claustrum logs at WARN. |
 | `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
 
+#### While a step is late (build `4c111e86`)
+
+While the step of a temp dir goes on after the limit, a spawn with that temp dir gets `the temp dir did not answer in time` at once, with no step and no line (`4c111e86`, measured on Linux). These are claustrum's own: macOS, the end of that time when the late step returns, a step that starts within the limit of an earlier one, no such time for a step that only waits for the lock of the folders, whoever holds it, and the key, which is the path of the temp dir as given, so two spellings of one dir or a link each run their own step.
+
 #### A failed test of the temp dir (build `4c111e86`)
 
 These rules are measured on macOS. On Linux they are claustrum's own.
