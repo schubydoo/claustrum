@@ -755,3 +755,66 @@ func TestCLITempRootLateDirMarks(t *testing.T) {
 		t.Error("give-up then end: want no late step")
 	}
 }
+
+// A step of temp dir B that at its limit only waits for tempRoots.mu, held by the stuck
+// step of temp dir A, is no late step: B answers, so the next spawn with B runs its own
+// step (claustrum's own).
+func TestCLITempRootLockWaitIsNoLateStep(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := tempRootLimit
+	tempRootLimit = 200 * time.Millisecond
+	t.Cleanup(func() { tempRootLimit = old })
+	a, runDir := tempRootDir(t, true)
+	b, _ := tempRootDir(t, true)
+	stuck, free := make(chan string, 1), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(free) }) }
+	t.Cleanup(unblock)
+	setAfterMkdir(t, func(dir, name string) {
+		if dir != a {
+			return
+		}
+		stuck <- name
+		select {
+		case <-free:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	_, res, release, _ := privateTempRoot([]string{"TMPDIR=" + a}, runDir)
+	rel = append(rel, release)
+	if res == nil || res.WhyNot != tempRootNoReply {
+		t.Fatalf("answer of A %+v, want the text of the limit", res)
+	}
+	select {
+	case <-stuck:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the step of A made no folder")
+	}
+	if !tempDirStepIsLate(a) {
+		t.Fatal("A: want a late step")
+	}
+	inB := []string{"TMPDIR=" + b}
+	for i := range 2 {
+		start := time.Now()
+		_, res, release, _ = privateTempRoot(inB, runDir)
+		rel = append(rel, release)
+		if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d < tempRootLimit {
+			t.Fatalf("answer %d of B %+v after %v, want its own step to wait for the lock up to the limit", i, res, d)
+		}
+		if tempDirStepIsLate(b) {
+			t.Fatalf("after answer %d of B: B is in the late list, want no late step for a wait for the lock", i)
+		}
+	}
+	unblock()
+	deadline := time.Now().Add(5 * time.Second)
+	for tempDirStepIsLate(a) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	tempRoots.mu.Lock() // the steps of B end after A frees the lock
+	live := tempRoots.live
+	tempRoots.mu.Unlock()
+	if live != 0 {
+		t.Errorf("live %d after the late steps, want 0", live)
+	}
+}
