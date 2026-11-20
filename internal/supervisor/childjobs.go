@@ -56,9 +56,9 @@ func (t *JobTest) State() JobTestState {
 	return JobTestState(t.state.Load())
 }
 
-// Outside reports that a spawn now runs its child outside a job and answers
+// SpawnsOutside reports that a spawn now runs its child outside a job and answers
 // "outsideJob":true. Nil-receiver safe.
-func (t *JobTest) Outside() bool { return t.State() != JobTestPassed }
+func (t *JobTest) SpawnsOutside() bool { return t.State() != JobTestPassed }
 
 // StartChildJobs reads the off switch, removes it from the environment of the daemon
 // and gives the job mode of the children. The switch is on only for the exact text

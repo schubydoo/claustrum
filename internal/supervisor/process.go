@@ -543,7 +543,7 @@ func (p *Proc) IsLive() bool {
 func (p *Proc) Pid() int                      { return p.pid }
 func (p *Proc) StartTime() float64            { return p.startTime }
 func (p *Proc) CLITempRoot() *rpc.CLITempRoot { return p.cliTempRoot }
-func (p *Proc) OutsideJob() bool              { return p.outsideJob }
+func (p *Proc) SpawnedOutside() bool          { return p.outsideJob }
 
 // signalGroup is a seam over ProcGroup.Signal so the "do not signal a reaped
 // process" guards are testable without actually delivering a signal to whatever
@@ -1016,7 +1016,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// The job mode of this child. A start test of the jobs that has not passed puts it in
 	// no job. The state is read once, so the start and the reply agree.
 	jobs, outsideJob := m.Jobs, false
-	if jobs != JobsOff && m.JobTest.Outside() {
+	if jobs != JobsOff && m.JobTest.SpawnsOutside() {
 		jobs, outsideJob = JobsOff, true
 	}
 	cmd.SysProcAttr = SpawnSysProcAttr(jobs)

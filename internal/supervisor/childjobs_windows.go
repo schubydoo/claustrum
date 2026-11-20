@@ -20,6 +20,6 @@ func childJobsAtStart(off bool, mode ChildJobs) (ChildJobs, *JobTest) {
 	if !off {
 		test = startJobTest()
 	}
-	logging.Infof(childJobsLine, !off && !test.Outside(), off)
+	logging.Infof(childJobsLine, !off && !test.SpawnsOutside(), off)
 	return mode, test
 }

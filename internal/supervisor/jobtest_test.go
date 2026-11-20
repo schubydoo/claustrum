@@ -50,8 +50,8 @@ func (c *fakeJobTestChild) End() error {
 
 func (c *fakeJobTestChild) Reap() error { return <-c.release }
 
-// exit lets the child end by itself with the result err.
-func (c *fakeJobTestChild) exit(err error) {
+// endBySelf lets the child end by itself with the result err.
+func (c *fakeJobTestChild) endBySelf(err error) {
 	close(c.exited)
 	c.release <- err
 }
@@ -90,10 +90,10 @@ func TestJobTestLineTexts(t *testing.T) {
 func TestJobTestPassesQuietly(t *testing.T) {
 	buf := captureLogBuf(t)
 	c := newFakeJobTestChild(false)
-	c.exit(nil)
+	c.endBySelf(nil)
 	test := runJobTest(c, time.Now(), 5*time.Second, time.Minute)
-	if test.State() != JobTestPassed || test.Outside() {
-		t.Errorf("state = %d, outside %v, want passed", test.State(), test.Outside())
+	if test.State() != JobTestPassed || test.SpawnsOutside() {
+		t.Errorf("state = %d, outside %v, want passed", test.State(), test.SpawnsOutside())
 	}
 	if n := c.ends.Load(); n != 0 {
 		t.Errorf("End ran %d times, want 0", n)
@@ -108,10 +108,10 @@ func TestJobTestPassesQuietly(t *testing.T) {
 func TestJobTestFailsWithTheExit(t *testing.T) {
 	buf := captureLogBuf(t)
 	c := newFakeJobTestChild(false)
-	c.exit(errors.New("exit status 0xc0000142"))
+	c.endBySelf(errors.New("exit status 0xc0000142"))
 	test := runJobTest(c, time.Now(), 5*time.Second, time.Minute)
-	if test.State() != JobTestFailed || !test.Outside() {
-		t.Errorf("state = %d, outside %v, want failed", test.State(), test.Outside())
+	if test.State() != JobTestFailed || !test.SpawnsOutside() {
+		t.Errorf("state = %d, outside %v, want failed", test.State(), test.SpawnsOutside())
 	}
 	if n := c.ends.Load(); n != 0 {
 		t.Errorf("End ran %d times, want 0", n)
@@ -130,8 +130,8 @@ func TestJobTestEndsAHungChildOnceAtTheBound(t *testing.T) {
 	c := newFakeJobTestChild(true)
 	start := time.Now()
 	test := runJobTest(c, start, 200*time.Millisecond, 2*time.Second)
-	if test.State() != JobTestPending || !test.Outside() {
-		t.Fatalf("state = %d, outside %v, want pending", test.State(), test.Outside())
+	if test.State() != JobTestPending || !test.SpawnsOutside() {
+		t.Fatalf("state = %d, outside %v, want pending", test.State(), test.SpawnsOutside())
 	}
 	if n := c.ends.Load(); n != 0 {
 		t.Errorf("End ran %d times before the bound, want 0", n)
@@ -231,7 +231,7 @@ func TestJobTestLatePass(t *testing.T) {
 	if test.State() != JobTestPending {
 		t.Fatalf("state = %d, want pending", test.State())
 	}
-	c.exit(nil)
+	c.endBySelf(nil)
 	waitJobTestState(t, test, JobTestPassed)
 	if n := c.ends.Load(); n != 0 {
 		t.Errorf("End ran %d times, want 0", n)
@@ -274,8 +274,8 @@ func TestSpawnOutsideJobByTestState(t *testing.T) {
 			if err != nil {
 				t.Fatalf("spawn: %v", err)
 			}
-			if p.OutsideJob() != tc.want {
-				t.Errorf("OutsideJob = %v, want %v", p.OutsideJob(), tc.want)
+			if p.SpawnedOutside() != tc.want {
+				t.Errorf("OutsideJob = %v, want %v", p.SpawnedOutside(), tc.want)
 			}
 			wantJobs := tc.jobs
 			if tc.want {
