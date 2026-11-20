@@ -86,7 +86,7 @@ func TestCreateFailedReadTreeOnWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), addCopyPrefix) || strings.HasPrefix(e.Name(), shadowIndexDirPrefix) {
+		if strings.HasPrefix(e.Name(), addCopyPrefix) || strings.HasPrefix(e.Name(), checkoutDirPrefix) {
 			t.Errorf("the folder of the daemon still holds %s", e.Name())
 		}
 	}

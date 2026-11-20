@@ -204,7 +204,7 @@ func TestRequestDir(t *testing.T) {
 	}
 
 	// With no copy the folder is in the temporary folder.
-	dir, remove, err = (gitUse{}).requestDir(shadowIndexDirPrefix, checkoutIndexTempPrefix)
+	dir, remove, err = (gitUse{}).requestDir(checkoutDirPrefix, checkoutIndexTempPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestRequestDirMakesTheAddCopyByPath(t *testing.T) {
 	old := requestDirMkdir
 	t.Cleanup(func() { requestDirMkdir = old })
 
-	for _, prefix := range []string{addCopyPrefix, shadowIndexDirPrefix, shadowStatusDirPrefix,
+	for _, prefix := range []string{addCopyPrefix, checkoutDirPrefix, shadowStatusDirPrefix,
 		shadowIncludeDirPrefix, shadowConfigDirPrefix} {
 		requestDirMkdir = func(path string, perm os.FileMode) error {
 			paths = append(paths, path)
@@ -276,7 +276,7 @@ func TestRequestDirMakesTheAddCopyByPath(t *testing.T) {
 // TestGitTempNames pins the names of the short-lived entries. With
 // "shadowDirOff":true 5fd08069 has them in the temporary folder
 // (measured). The index name there is the one of 4c111e86 (measured on
-// Linux and macOS). Without the member they are in the folder of the daemon (measured).
+// all three systems). Without the member they are in the folder of the daemon (measured).
 func TestGitTempNames(t *testing.T) {
 	for got, want := range map[string]string{
 		statusGitDirTempPrefix:  "claude-ssh-gitdir-",
@@ -284,21 +284,14 @@ func TestGitTempNames(t *testing.T) {
 		includeTempPrefix:       "claude-ssh-worktreeinclude-",
 		includePatternsName:     "patterns",
 		shadowStatusDirPrefix:   ".gitdir-",
-		shadowIndexDirPrefix:    ".index-",
 		shadowIncludeDirPrefix:  ".worktreeinclude-",
+		// 4c111e86 names the checkout folder `.checkout-<n>` on all three
+		// systems (measured).
+		checkoutDirPrefix: ".checkout-",
 	} {
 		if got != want {
 			t.Errorf("name %q, want %q", got, want)
 		}
-	}
-	// 4c111e86 names the checkout folder `.checkout-<n>` on all three systems
-	// (measured). On Windows claustrum names it `.index-<n>`.
-	want := ".checkout-"
-	if runtime.GOOS == "windows" {
-		want = ".index-"
-	}
-	if checkoutDirPrefix != want {
-		t.Errorf("checkoutDirPrefix = %q, want %q", checkoutDirPrefix, want)
 	}
 }
 
