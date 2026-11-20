@@ -180,9 +180,8 @@ func (r listingRun) hooks() []string {
 // carries GIT_DIR=<null device>. c8e2f083 then takes the generic path on exit 128
 // (measured on Linux and Windows).
 //
-// One text still counts: for the gitfile text of git 2.56 (saysGitFileNowhere)
-// claustrum gives no "no repository" verdict and keeps the earlier refusal
-// (claustrum's own, not measured).
+// One text still counts: for the gitfile text of git 2.56 (saysGitFileNowhere) this
+// verdict is false. The callers answer that text (gitFileText).
 func (r listingRun) saysNoRepository() bool {
 	var ee *exec.ExitError
 	if !errors.As(r.err, &ee) || ee.ExitCode() != 128 || listingNamesGitDir(r.gitDir, r.env) ||
@@ -296,13 +295,14 @@ func listingEnvOf(daemon []string) []string {
 // answers "not a git repository" there, so the frame stays (measured on Linux and
 // macOS).
 //
-// git 2.56 answers its gitfile text there (saysGitFileNowhere). A gone entry under
-// .git/worktrees then gets "no repository" (measured on Linux and Windows). It does so also
-// as the first git request of a daemon and with "shadowDirOff":true (measured on Linux).
-// Any other gone git dir gets the error of the call about the repository (measured on Linux
-// and Windows), also as the first git request (measured on Linux and Windows). With off,
-// the "shadowDirOff":true member of the request, it gets the listing refusal (measured on
-// Linux).
+// git 2.56 answers its gitfile text there (saysGitFileNowhere). On Linux and macOS the
+// frame stays then too (gitFileNowhereAsOlderGit), with and without "shadowDirOff":true,
+// also for the reply to the first git request of a daemon, for a gone entry under
+// .git/worktrees and for a missing relative or absolute path (4c111e86, measured on
+// Linux with git 2.56.1, macOS claustrum's own). On Windows a gone entry gets "no
+// repository", and any other gone git dir the error of the call about the repository,
+// also as the first git request (5fd08069, measured on Linux and Windows), or with off
+// the listing refusal (5fd08069, measured on Linux).
 //
 // Not measured: a listing that passes and exceeds a limit of parseConfigListing, and
 // a `.git` file with no gitdir line. claustrum answers them by hostileConfigRefusal.
@@ -313,7 +313,7 @@ func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy, off bool, args ...s
 	c := hostileConfigRefusal(u, dir, heavy)
 	if c.gitFileText != "" {
 		switch {
-		case !goneNonEntryGitFile(dir):
+		case gitFileNowhereAsOlderGit, !goneNonEntryGitFile(dir):
 			return ""
 		case off:
 			return c.refusal

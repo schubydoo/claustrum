@@ -210,6 +210,12 @@ func linkedLockOpen(path string) error {
 // variable, so that a test can run the Windows step.
 var goneNotARepoKeepsAll = false
 
+// gitFileNowhereAsOlderGit is true on Linux and macOS: the gitfile text of git 2.56
+// (saysGitFileNowhere) gets the answers of an older git (4c111e86, measured on Linux
+// with git 2.56.1, macOS claustrum's own). A variable, so that a test can run the
+// Windows answers.
+var gitFileNowhereAsOlderGit = true
+
 // printedPathAsIs is false on Linux and macOS: the "disagree" text shows an
 // answer that is not clean as the cleaned path (askGit, not measured).
 const printedPathAsIs = false

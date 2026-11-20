@@ -127,8 +127,8 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
    `cannot list the repository's worktrees: exit status 128` and deletes nothing.
    Without `worktreeRoot` it answers `{"success":true,"branchKept":true}`. It
    deletes the worktree folder and its entry, and the branch stays. If the folder
-   is gone before the request, it deletes the entry (all measured on Linux). When G fails the
-   git-directory test, that symlink gets S3 (measured on Linux).
+   is gone before the request, it deletes the entry. When G fails the
+   git-directory test, that symlink gets S3 (all measured on Linux).
 2. A `commondir` that is not a regular file of at most 1048576 bytes gets S2 with
    its reason. A relative symlink inside G is followed. A dangling symlink
    that is absolute, or that leaves G, gets S2 with `path escapes
@@ -157,9 +157,8 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   `"shadowDirOff":true`
   [class 2](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
 - Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the
-  daemon's environment sets `GIT_COMMON_DIR` (measured on Linux and Windows). A
-  relative value is first joined to the request folder (measured on Linux and
-  Windows). On Windows `/dev/null` names nothing, so it becomes
+  daemon's environment sets `GIT_COMMON_DIR`. A relative value is first joined
+  to the request folder (both measured on Linux and Windows). On Windows `/dev/null` names nothing, so it becomes
   `<request dir>\dev\null`.
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
@@ -277,10 +276,9 @@ The classes come in this order:
    unless the request has `"shadowDirOff":true` (from the code).
    `git.worktree_remove` without `worktreeRoot` answers
    `{"success":true,"branchKept":true}` for a gone worktree with a `branchName`,
-   and the lock-check refusal for a worktree directory that exists (measured on
-   Linux). With `worktreeRoot` and a `baseRepo` that exists, it answers the
+   and the lock-check refusal for a worktree directory that exists. With `worktreeRoot` and a `baseRepo` that exists, it answers the
    work-tree refusal with the exec error alone, before the trust check: `exec:
-   "git": executable file not found in $PATH` (measured on Linux). A `baseRepo`
+   "git": executable file not found in $PATH` (both measured on Linux). A `baseRepo`
    that does not exist gets no work-tree refusal ([git.worktree_remove](git-worktree-remove.md#the-repository-checks)).
    A refused daemon `GIT_CONFIG_COUNT` answers before the exec error when `stat`
    reads `baseRepo` (not measured).
@@ -300,15 +298,16 @@ The classes come in this order:
    With a `branchName`, `git.worktree_remove` without `worktreeRoot` keeps the
    branch, and a gone worktree answers `{"success":true,"branchKept":true}`. For a
    `.git` file to a gone git dir, git 2.56 says `gitfile does not point to a valid
-   repository` instead (measured on Linux and Windows). A gone entry under
-   `.git/worktrees` then answers "no repository" on each method but
-   `git.worktree_remove` (measured on Linux and Windows). Another gone git dir
+   repository` instead, and a gone entry under
+   `.git/worktrees` answers "no repository" on each method but
+   `git.worktree_remove` (measured on Linux and Windows). On Windows another gone git dir
    answers the error of
    [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository) in the folder
-   that holds `.git` (measured on Linux and Windows). `git.info` runs that call
+   that holds `.git` (`5fd08069`, measured on Linux and Windows). `git.info` runs that call
    itself, and its later runs give "no repository" (`c8e2f083`, measured on
    Linux). With `"shadowDirOff":true`
-   that git dir gets the hooks refusal on every method (measured on Linux).
+   that git dir gets the hooks refusal on every method (`5fd08069`, measured on
+   Linux). Linux and macOS: see the method pages.
    On Linux and macOS a remove of a gone worktree without `worktreeRoot` gets
    success in both modes (`b3081b51`, measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
