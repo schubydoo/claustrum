@@ -70,6 +70,61 @@ func TestGitStatusFileLinkIntoOtherRepoNotRepo(t *testing.T) {
 	}
 }
 
+// git.status on a file link from a repository to a file outside any repository
+// gets no gate: 2 calls, and no failing ask can change the reply.
+func TestGitStatusFileLinkToPlainFolderNoGate(t *testing.T) {
+	f := newShadowFixture(t)
+	setProbeClock(t)
+	plain := filepath.Join(filepath.Dir(f.repo), "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(plain, "file")
+	if err := os.WriteFile(target, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(f.repo, "link2")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	slowGit(t, "core.hooksPath=/dev/null,core.fsmonitor=,rev-parse,--git-dir", "fail", 0, "fatal: injected", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
+	raw, calls := f.call(t, "git.status", map[string]any{"path": link, "baseRepo": link})
+	if raw != statusNotRepo {
+		t.Errorf("frame = %s\nwant %s", raw, statusNotRepo)
+	}
+	if len(calls) != 2 {
+		t.Errorf("%d calls, want 2", len(calls))
+	}
+}
+
+// git.status on a file link from a folder outside any repository into a
+// repository gets the gate of the target's folder: a failing ask answers its
+// -32603 text at that repository.
+func TestGitStatusFileLinkFromPlainFolderAsksGit(t *testing.T) {
+	f := newShadowFixture(t)
+	setProbeClock(t)
+	plain := filepath.Join(filepath.Dir(f.repo), "plainq")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(f.repo, "README.into")
+	if err := os.WriteFile(target, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(plain, "link3")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	slowGit(t, "core.hooksPath=/dev/null,core.fsmonitor=,rev-parse,--git-dir", "fail", 0, "fatal: injected", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
+	raw, _ := f.call(t, "git.status", map[string]any{"path": link, "baseRepo": link})
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"git could not check this repository on the remote machine: at \"` + f.repo + `\": fatal: injected"}}`
+	if raw != want {
+		t.Errorf("frame = %s\nwant %s", raw, want)
+	}
+}
+
 // git.status on a regular file inside a repository keeps the "disagree" text
 // when git names another git directory, as a folder baseRepo does. Only a file
 // link out of its folder answers "no repository".

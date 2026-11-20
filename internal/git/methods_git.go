@@ -838,10 +838,15 @@ func gitStatus(req *gitCall) rpc.Response {
 	// repository. 4c111e86 answers "no repository" there, not the "disagree" text
 	// (measured on Linux). macOS is claustrum's own. A regular file keeps the
 	// "disagree" text of askGit (linkOutOfFolder).
+	//
+	// For a file link the folder of its target is judged, not the folder of the
+	// link. A link in a repository to a file outside any repository gets no gate,
+	// and a link from outside into a repository gets it, as on 4c111e86 (measured
+	// on Linux). macOS is claustrum's own.
 	gateTrust, noGate, outLink := t, false, false
 	if fi, err := os.Stat(p.BaseRepo); err == nil && runtime.GOOS != "windows" && !fi.IsDir() &&
 		t.verdict == gitDirTrusted && t.pinCommonDir == "" {
-		if folder := readGitDirTrust(filepath.Dir(p.BaseRepo), false); folder.verdict == gitDirTrusted && folder.pinCommonDir != "" {
+		if folder := readGitDirTrust(filepath.Dir(resolvedFile(p.BaseRepo)), false); folder.verdict == gitDirTrusted && folder.pinCommonDir != "" {
 			gateTrust, outLink = folder, linkOutOfFolder(p.BaseRepo)
 		} else {
 			noGate = true
@@ -931,6 +936,14 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, err.Error())
 	}
 	return rpc.OKResult(req.ID, rpc.GitStatusReply{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
+}
+
+// resolvedFile is p with its symbolic links resolved, or p when they do not resolve.
+func resolvedFile(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 // linkOutOfFolder reports whether p is a symbolic link whose resolved target is
