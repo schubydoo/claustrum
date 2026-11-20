@@ -96,7 +96,8 @@ The resume can leave a thread of the test child with a suspend count above 1. Th
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`. With a child left asleep, the asleep text wins.
 - A spawn in the pending time runs as after a failed test.
 - At the bound, after a failed end, as with no job or no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
-- At an asleep failure with no job the end fails, and the child stays asleep until the daemon exits. One with no wait handle can miss its end.
+- At an asleep failure with no job the child stays asleep until the daemon exits. One with no wait handle can miss its end.
+- Another error of the resume does not stop the test.
 - The line rounds the time to the nearest millisecond.
 - The end reaches nothing else.
 
