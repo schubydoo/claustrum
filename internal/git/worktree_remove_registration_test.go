@@ -85,7 +85,7 @@ func TestWorktreeRemoveDaemonGitDirEndState(t *testing.T) {
 		t.Error("the worktree folder stays")
 	}
 	if !exists(f.entry(f.T, "s0")) {
-		t.Error("the entry s0 of T is gone, want it kept (row 1)")
+		t.Error("the entry s0 of T is gone, want it kept")
 	}
 	if !hasBranch(t, f.T, "s0") {
 		t.Error("the branch s0 of T is gone")
@@ -102,7 +102,7 @@ func TestWorktreeRemoveDaemonCommonDirOnlyEndState(t *testing.T) {
 		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
 	}
 	if exists(f.S) || exists(f.entry(f.T, "s0")) {
-		t.Error("the folder or the entry s0 of T stays, want both gone (row 5)")
+		t.Error("the folder or the entry s0 of T stays, want both gone")
 	}
 }
 

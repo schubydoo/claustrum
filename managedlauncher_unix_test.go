@@ -715,7 +715,7 @@ func exitCodeOf(frames []supervisor.ChildFrame) int {
 	return -999
 }
 
-// TestSpawnThroughLauncher pins on a live socket: the child argv
+// TestSpawnThroughLauncher pins these rules on a live socket: the child argv
 // is the launcher argv, then the command, then the args; the launcher's streams
 // are the process's own; a null or absent launcher spawns the command itself; a
 // null element is an empty arg. It also pins the "via launcher" log line.
