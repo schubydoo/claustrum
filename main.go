@@ -177,8 +177,8 @@ func main() {
 	flag.Parse()
 	resolveVersion()
 
-	// Optional claustrum.conf next to the binary gates opt-in options; absent
-	// or malformed → stock defaults. Precedence is explicit CLI flag > config >
+	// Optional claustrum.conf next to the binary sets options; absent or
+	// unreadable → stock defaults. Precedence is explicit CLI flag > config >
 	// default, so record which flags the user actually set.
 	cfg := loadConfig()
 	cliSet := map[string]bool{}
