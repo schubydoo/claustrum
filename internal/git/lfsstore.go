@@ -920,11 +920,17 @@ func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
 }
 
 // keepTickEvery is the time between two keeps of keepTicker. On 4c111e86 the
-// first of two objects reached the store of the repository 1.0 s after its
-// download, while the checkout still ran (measured on Linux). The second
-// reached it at the reply. The period is claustrum's own, from that row. A
+// passes came at 2 s, 4 s and 6 s of the checkout, and none at 1 s (measured on
+// Linux and macOS). No pass at time zero is claustrum's own, not measured. A
 // test shrinks it.
-var keepTickEvery = time.Second
+var keepTickEvery = 2 * time.Second
+
+// newKeepTick gives the ticks of a keepTicker with the period d and their
+// stop. Its first tick comes after d. A test replaces it.
+var newKeepTick = func(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(d)
+	return t.C, t.Stop
+}
 
 // keepTicker keeps the objects that git-lfs downloaded into a private store
 // while the read-tree call runs. Each tick keeps each new object of the store
@@ -970,14 +976,14 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 				logging.Warnf("[GitHandler] the keep of Git LFS objects during the checkout stopped: %v", r)
 			}
 		}()
-		tick := time.NewTicker(every)
-		defer tick.Stop()
+		tick, stopTick := newKeepTick(every)
+		defer stopTick()
 		tried := map[string]bool{}
 		for {
 			select {
 			case <-k.quit:
 				return
-			case <-tick.C:
+			case <-tick:
 			}
 			for _, oid := range downloadedOIDs(private) {
 				if tried[oid] {

@@ -4,6 +4,7 @@ package git
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"hash"
 	"io"
 	"os"
@@ -427,5 +428,59 @@ func TestLFSKeepTickStopsBeforeTheDrain(t *testing.T) {
 	}
 	if !exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
 		t.Error("a.bin is not in the store of the repository")
+	}
+}
+
+// TestKeepTickEveryTwoSeconds: the ticks of the keep come every 2 s, and a
+// ticker with no tick keeps nothing, so no pass runs at time zero. On 4c111e86
+// the passes came at 2 s, 4 s and 6 s (measured on Linux and macOS). A second
+// ticker gets two ticks and keeps the object, so the test can see a keep.
+// Mutations: set keepTickEvery to time.Second, or run one pass before the loop
+// of startKeepTicker.
+func TestKeepTickEveryTwoSeconds(t *testing.T) {
+	seamFreeSpace(t)
+	var period time.Duration
+	ticks := make(chan time.Time)
+	old := newKeepTick
+	newKeepTick = func(d time.Duration) (<-chan time.Time, func()) {
+		period = d
+		return ticks, func() {}
+	}
+	t.Cleanup(func() { newKeepTick = old })
+	gitDir := filepath.Join(t.TempDir(), ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	info, err := root.Stat(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := gitUse{gitDir: gitDir, accepted: &acceptedGitDir{path: gitDir, root: root, info: info}}
+	private := filepath.Join(t.TempDir(), "lfs")
+	body := "alpha-object"
+	sum := sha256.Sum256([]byte(body))
+	oid := hex.EncodeToString(sum[:])
+	mustWrite(t, storeObjectPath(private, oid), body)
+	kept := storeObjectPath(filepath.Join(gitDir, "lfs"), oid)
+
+	startKeepTicker(u, private).end()
+	if period != 2*time.Second {
+		t.Errorf("the keep ticks every %v, want 2s", period)
+	}
+	if exists(kept) {
+		t.Fatal("a ticker with no tick kept the object")
+	}
+	k := startKeepTicker(u, private)
+	// The second send waits for the end of the pass of the first.
+	ticks <- time.Now()
+	ticks <- time.Now()
+	k.end()
+	if !exists(kept) {
+		t.Error("a ticker with two ticks did not keep the object")
 	}
 }
