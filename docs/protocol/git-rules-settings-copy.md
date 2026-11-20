@@ -167,15 +167,15 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
   Linux and macOS, not Windows).
 - `4c111e86` names a create's index folder
-  `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
+  `.checkout-<n>` (measured on all three systems). It is there at the reply and goes
   soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request using the
   copy (measured on Linux and macOS).
   claustrum removes it with the old daemon's folder in [the
-  sweep](#the-sweep-of-git-shadow) (from the code). On Windows `4c111e86` makes no
-  `.checkout-<n>` folder (measured), and claustrum keeps `.index-<n>`.
+  sweep](#the-sweep-of-git-shadow) (from the code). On Windows it holds no
+  LFS object (measured). claustrum names it `.index-<n>`.
 - In `shadow` a create keeps `.readback-objects-<n>` there for its
   content check (`b3081b51`, measured on Linux).
 - On Windows, if the daemon's folder denies new folders, a create still works

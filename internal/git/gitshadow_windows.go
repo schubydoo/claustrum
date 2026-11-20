@@ -87,8 +87,8 @@ const probeConfigFreeRun = false
 
 // checkoutDirPrefix starts the name of the folder of the checkout of one create
 // in the folder of the daemon (runWorktreeCheckout). On Windows 4c111e86 makes
-// no `.checkout-<n>` folder (measured), so claustrum keeps the name
-// `.index-<n>` there.
+// a `.checkout-<n>` folder there too, with no LFS object in it (measured on
+// Windows). claustrum names that folder `.index-<n>` (claustrum's own).
 const checkoutDirPrefix = shadowIndexDirPrefix
 
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
