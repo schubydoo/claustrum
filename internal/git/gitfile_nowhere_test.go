@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -58,7 +59,9 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // spells its path with forward slashes, and the root in quotes keeps backslashes, as in
 // V-S2w. Mutations: answer the listing refusal in noRepoCalls, drop
 // statusGitFileNowhere, name dir in place of the folder that holds `.git` in
-// failedListingCheck, or key the rule on the state of the daemon.
+// failedListingCheck, or key the rule on the state of the daemon. On Windows: answer
+// "no repository" after every answer of the call about the repository in
+// gitWorktreeCreateLocked.
 //
 // Without "shadowDirOff":true git.info runs that call itself. Its exit 128 gets the
 // second run, which exits 0, so git.info answers "no repository" (measured on Linux
@@ -95,6 +98,15 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 			defer func() { f.d = kept }()
 			stubListing(t, 128, "")
 			stubStderr(t, tc.stderr, false)
+			if runtime.GOOS == "windows" && !tc.off && tc.want != "" {
+				// On Windows the create runs the call about the repository before the
+				// listing. Its first run in G gets the text of git 2.56, its second run
+				// exits 0, and the create goes on to the listing.
+				t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
+				t.Setenv("CLAUSTRUM_GITSTUB_DIR2", g)
+				t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "128")
+				t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", tc.stderr)
+			}
 			if tc.first {
 				// git.info runs the start test here. Its call 7 lists the test config
 				// from standard input, and a real git answers that call.
