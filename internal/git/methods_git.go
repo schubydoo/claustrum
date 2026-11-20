@@ -2160,9 +2160,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// With "shadowDirOff":true a link in place of the git directory that git
 		// answered gets the text of a gone `.git` file, with no checkout. The leaf,
 		// the registration and the branch stay (4c111e86, measured on Linux and
-		// macOS). The place after the tests of the .git file is not measured. A
-		// link made after the answer of git and before the add does not stop the
-		// add, and this test refuses it (claustrum's own, not measured).
+		// macOS). A link made after the answer of git and before the add does not
+		// stop the add, and this test refuses it (claustrum's own, not measured).
 		if bool(p.ShadowDirOff) && gitDirIsLinkNow(gitDir) {
 			return refuseUnsafe(gitFileGoneText(parentResolvedPath(p.WorktreePath)))
 		}
