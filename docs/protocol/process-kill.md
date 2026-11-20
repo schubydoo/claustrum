@@ -87,7 +87,7 @@ From 5 s to that end the test is pending, and the socket opens.
 
 claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code).
 
-After a resume leaving the child asleep, the daemon fails the test and ends the job at once (measured on Windows: the child exits `0x1`).
+The resume can leave a thread of the test child with a suspend count above 1. Then the test fails at once with `starting it inside a Windows job object failed: a thread had been suspended <n> times, so it still sleeps`. `4c111e86` then ends the job, and the child exits `0x1` (measured on Windows, only with n = 2).
 
 ##### claustrum's own, not measured
 
@@ -96,7 +96,7 @@ After a resume leaving the child asleep, the daemon fails the test and ends the 
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`. With a child left asleep, the asleep text wins.
 - A spawn in the pending time runs as after a failed test.
 - At the bound, after a failed end, as with no job or no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
-- An asleep failure with no job ends nothing, and one with no wait handle can miss its end.
+- At an asleep failure with no job the end fails, and the child stays asleep until the daemon exits. One with no wait handle can miss its end.
 - The line rounds the time to the nearest millisecond.
 - The end reaches nothing else.
 
