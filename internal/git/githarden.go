@@ -1219,8 +1219,9 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// The keep of the objects that git-lfs downloaded into the private
 		// store (lfsstore.go). It runs after a checkout that exited 0, after the
 		// settle step, and the reply waits for it. 4c111e86 starts its copy after
-		// the settle call ends, and answers right after the copy ends or its
-		// budget stops it (measured on macOS).
+		// the settle call ends, and answers right after the copy ends or is cut
+		// (measured on macOS). An object that the settle call put into the
+		// private store is kept too (claustrum's own, not measured).
 		if err == nil && keep {
 			start := time.Now()
 			returnDownloads(u, lfs.path, keepAfterGood)
