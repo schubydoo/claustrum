@@ -170,7 +170,7 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 | `only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this` | The entry is a link or a file (`4c111e86`). A temp dir that cannot be searched (see [a failed test](#a-failed-test-of-the-temp-dir-build-4c111e86)). |
 | `no folder could be made in the temp dir: permission denied` | The mkdir of the new folder failed (see [a failed test](#a-failed-test-of-the-temp-dir-build-4c111e86)). |
 | `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | The daemon holds 8 folders (`c9125eb8` and `4c111e86`, measured on macOS). Spawns that share a folder take one place (measured on Linux). Or the daemon made 8 new folders in the last minute (see [the cap of new folders](#the-cap-of-new-folders-build-4c111e86)). |
-| `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. A folder that the step makes later stays. `refused` is absent. On Linux `4c111e86` logs `[process.Manager] the temp dir has not answered in 2s: Claude Code starts anyway, and may refuse its folder there` once, for the spawn whose own step hits the limit, and claustrum logs it at WARN (see [while a step is late](#while-a-step-is-late-build-4c111e86)). |
+| `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. `refused` is absent. On Linux `4c111e86` logs `[process.Manager] the temp dir has not answered in 2s: Claude Code starts anyway, and may refuse its folder there` once, for the spawn whose own step hits the limit, and claustrum logs it at WARN (see [while a step is late](#while-a-step-is-late-build-4c111e86)). A late step logs its own line and writes the record, and the next spawn gets its folder (`4c111e86`, measured on Linux; `b3081b51` kept the folder with no record). |
 | `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
 
 #### While a step is late (build `4c111e86`)
@@ -217,7 +217,8 @@ These are not measured:
 - Random hex, an age bound of 24 h, and the order of the `refused` tests. The link and file test comes after the account test.
 - The test of `t` and its `rmdir`. A `t` that is not an own folder of mode 0700 gives the `removed` text too. A later daemon takes again only a folder of mode 0500 with an own `t` of mode 0700.
 - The rest of the order of the four names. With none of them set, the temp dir is `/tmp`. A relative value of `CLAUDE_CODE_TMPDIR`, `TMP` or `TEMP` gives no member too, and the next name is not tried.
-- The limit is 2 s. After it the step goes on, writes no record and holds no folder. The limit also covers a wait for the lock ([while a step is late](#while-a-step-is-late-build-4c111e86)).
+- The limit is 2 s. After it the step goes on. The limit also covers a wait for the lock ([while a step is late](#while-a-step-is-late-build-4c111e86)).
+- On macOS a late step logs its line and writes the record.
 - The WARN level of the line of the time limit, and that macOS logs that line too. A late step can log the refuse line of its own `whyNot`.
 - A failed stat of an entry that exists, other than `EACCES`, gives no member.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
@@ -285,7 +286,7 @@ A held folder logs 49 of these lines. In place of the 50th it logs `[process.Man
 
 A folder stays checked after its last child ended. A loss 5 s after that end still counts at the next check (measured on macOS).
 
-These are claustrum's own: the folder loses its `flock`, and its checks write nothing and log no line but a loss and the two lines of a check that does not answer (those two measured on Linux). They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
+These are claustrum's own: the folder loses its `flock`, also a folder that no child uses, which a late step gives back at once (`4c111e86` keeps that flock, measured on Linux). Its checks write nothing and log no line but a loss and the two lines of a check that does not answer (those two measured on Linux). They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
 
 ### The managed launcher
 
