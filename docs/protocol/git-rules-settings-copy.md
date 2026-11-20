@@ -132,10 +132,10 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file, FIFO or link there goes, never its target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). Only `shadow`,
-  `fallback-git` within 10 minutes and a missing git (`git.info`, and `git.status` on Linux and macOS)
-  heal it. A start test
-  fails at it, or tests in a link's target (claustrum's own, not measured). On Linux
+  succeed in a new folder (`4c111e86` on Linux and macOS). `shadow`,
+  `fallback-git`, a missing git (`git.info`, and `git.status` on Linux and macOS)
+  and a start test heal it. A test after a kept failure is measured on Linux. Other
+  start tests are claustrum's own. On Linux
   and macOS one file `unlinkat` after the home guard removes it, never a folder or
   tree (from the code). Other non-folder kinds, a file with content and Windows (a
   regular file, or an empty folder in its place) are claustrum's own.

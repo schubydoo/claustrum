@@ -791,6 +791,11 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 // a new folder .check-<n> in it and removes that folder. It returns the state,
 // or the cause of a failed test.
 //
+// An entry at the folder that remakeFolder removes goes first, and the test runs
+// in a new folder. At a test after a kept failure on 4c111e86 an empty file, a
+// FIFO or a link there goes, the four git requests succeed, and the link's
+// target gets nothing (measured on Linux, also for a link to nothing).
+//
 // The name .check-<n> has a decimal number that differs per attempt. The folder
 // is gone at the reply, also after a failed test (measured on Linux). A folder
 // that cannot be made gives `mkdir <S>/.check-<n>: no space left on device`
@@ -802,7 +807,8 @@ func (h *ShadowHost) startTest() (state, cause string) {
 		return "", ""
 	}
 	if h.dir != "" {
-		if _, err := os.Lstat(h.dir); err != nil {
+		fi, err := os.Lstat(h.dir)
+		if err != nil || goesAtFolderPath(fi.Mode()) && h.removeOwnFolderFile(h.dir) == nil {
 			h.dropLock()
 			h.dir = ""
 		}
