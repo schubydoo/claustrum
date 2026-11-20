@@ -280,7 +280,7 @@ func TestInstallProgressPrintsOnlyChangedCounts(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		withTotal bool
-	}{{"with a length (G02)", true}, {"chunked (G06)", false}} {
+	}{{"with a length", true}, {"chunked", false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if tc.withTotal {

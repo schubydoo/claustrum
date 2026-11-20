@@ -124,7 +124,7 @@ func TestWorktreeRemoveDaemonCommonDirOnlySubfolderBase(t *testing.T) {
 		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
 	}
 	if exists(wt) || exists(f.entry(f.T, "p2b")) {
-		t.Error("the folder or the entry p2b of T stays, want both gone (row p2b)")
+		t.Error("the folder or the entry p2b of T stays, want both gone")
 	}
 }
 
@@ -142,10 +142,10 @@ func TestWorktreeRemoveDaemonGitDirAndOtherCommonDir(t *testing.T) {
 		t.Fatalf("frame = %s\nwant success", raw)
 	}
 	if exists(f.S) || exists(zz) {
-		t.Error("the folder or the entry zz of X stays, want both gone (row p3b)")
+		t.Error("the folder or the entry zz of X stays, want both gone")
 	}
 	if !exists(f.entry(f.T, "s0")) {
-		t.Error("the entry s0 of T is gone, want it kept (row p3b)")
+		t.Error("the entry s0 of T is gone, want it kept")
 	}
 }
 

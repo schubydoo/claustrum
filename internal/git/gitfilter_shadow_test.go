@@ -366,8 +366,8 @@ func filterItems(calls []envCall) []string {
 	return items
 }
 
-// TestShadowFilterRules: the rows measured on Linux, and G5a and G5b
-// (measured on macOS) in the state shadow, and rows that are not measured.
+// TestShadowFilterRules: the rows measured on Linux, and the two includeIf
+// orders (measured on macOS) in the state shadow, and rows that are not measured.
 // "user" is the marker of the user config and "repository" the one of
 // .git/config.
 func TestShadowFilterRules(t *testing.T) {
@@ -406,11 +406,11 @@ func TestShadowFilterRules(t *testing.T) {
 		}, false, nil, false},
 		// Measured on macOS: a bare smudge line in .git/config refuses beside smudge =
 		// cat in an includeIf file of the repository, in either order.
-		{"G5a an includeIf file with smudge = cat, then a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+		{"an includeIf file with smudge = cat, then a bare smudge line", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
 			f.addConfig(t, "[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = inc.cfg\n[filter \"x\"]\n\tsmudge\n")
 		}, true, off, false},
-		{"G5b a bare smudge line, then an includeIf file with smudge = cat", func(t *testing.T, f shadowFilterFixture, _, _ string) {
+		{"a bare smudge line, then an includeIf file with smudge = cat", func(t *testing.T, f shadowFilterFixture, _, _ string) {
 			setIncludeFile(t, f.gitDir, "inc.cfg", "[filter \"x\"]\n\tsmudge = cat\n")
 			f.addConfig(t, "[filter \"x\"]\n\tsmudge\n[includeIf \"gitdir:"+f.top(t)+"/\"]\n\tpath = inc.cfg\n")
 		}, true, off, false},

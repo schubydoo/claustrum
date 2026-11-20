@@ -305,11 +305,11 @@ func TestShadowRefusedAddWithAGoodSecondAddGivesFallback(t *testing.T) {
 // lines of git on a full disk.
 func TestShadowAddWithNoSpaceLeftFailsTheTest(t *testing.T) {
 	for name, c := range map[string]struct{ stderr, cause string }{
-		"one line (N1)": {
+		"one line": {
 			"fatal: could not create directory: No space left on device\n",
 			"fatal: could not create directory: No space left on device",
 		},
-		"two lines (N2)": {
+		"two lines": {
 			"Preparing worktree (detached HEAD 7e08a7b)\nfatal: could not write to 'wt/locked': No space left on device\n",
 			"Preparing worktree (detached HEAD 7e08a7b) fatal: could not write to 'wt/locked': No space left on device",
 		},

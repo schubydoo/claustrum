@@ -114,7 +114,7 @@ func TestDaemonCountRefusalTexts(t *testing.T) {
 		{"tab alone", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=\t"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "\t" is not a count`},
 		{"KEY_01 is not pair 1", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
-			"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_01=user.s4v7", "GIT_CONFIG_VALUE_01=S4KEEP_01"},
+			"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_01=user.v7", "GIT_CONFIG_VALUE_01=KEEP_01"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair 1 is incomplete`},
 		{"pair 1 missing", []string{"GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_COUNT=2"},
 			`config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair 1 is incomplete`},
@@ -170,19 +170,19 @@ func TestHardenedGitEnvPairs(t *testing.T) {
 		{"unset", nil, []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
 		{"one inherited pair and stale names",
-			[]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
-				"GIT_CONFIG_KEY_1=S4KEEP_k1", "GIT_CONFIG_KEY_2=S4KEEP_k2", "GIT_CONFIG_VALUE_2=S4KEEP_v2"},
-			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
+			[]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
+				"GIT_CONFIG_KEY_1=KEEP_k1", "GIT_CONFIG_KEY_2=KEEP_k2", "GIT_CONFIG_VALUE_2=KEEP_v2"},
+			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"KEY_9 and VALUE_9 with no count", []string{"GIT_CONFIG_KEY_9=S4MARK_k", "GIT_CONFIG_VALUE_9=S4MARK_v"},
+		{"KEY_9 and VALUE_9 with no count", []string{"GIT_CONFIG_KEY_9=MARK_k", "GIT_CONFIG_VALUE_9=MARK_v"},
 			[]string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
 		{"windows pairs above the count",
-			[]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
-				"GIT_CONFIG_VALUE_1=S4KEEP_v1", "GIT_CONFIG_KEY_5=S4KEEP_k5", "GIT_CONFIG_VALUE_5=S4KEEP_v5"},
-			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
+			[]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
+				"GIT_CONFIG_VALUE_1=KEEP_v1", "GIT_CONFIG_KEY_5=KEEP_k5", "GIT_CONFIG_VALUE_5=KEEP_v5"},
+			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
-		{"windows count 0", []string{"GIT_CONFIG_COUNT=0", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v"},
+		{"windows count 0", []string{"GIT_CONFIG_COUNT=0", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v"},
 			[]string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}},
 		{"leading zero", []string{"GIT_CONFIG_COUNT=01", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false"},
@@ -200,7 +200,7 @@ func TestHardenedGitEnvPairs(t *testing.T) {
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
 		{"leading-zero index", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
-			"GIT_CONFIG_KEY_01=user.s4", "GIT_CONFIG_VALUE_01=v01"},
+			"GIT_CONFIG_KEY_01=user.key", "GIT_CONFIG_VALUE_01=v01"},
 			[]string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
 	} {
@@ -223,8 +223,8 @@ func TestHardenedGitEnvPairs(t *testing.T) {
 // Other names that start GIT_CONFIG pass through every call.
 func TestHardenedGitEnvKeepsOtherConfigNames(t *testing.T) {
 	clearDaemonConfigEnv(t)
-	keep := []string{"GIT_CONFIGX=S4MARK_a", "GIT_CONFIG_=S4MARK_b", "GIT_CONFIG_S4=S4MARK_c",
-		"GIT_CONFIG_COUNTX=S4MARK_d"}
+	keep := []string{"GIT_CONFIGX=MARK_a", "GIT_CONFIG_=MARK_b", "GIT_CONFIG_Z=MARK_c",
+		"GIT_CONFIG_COUNTX=MARK_d"}
 	plantEnv(t, keep...)
 	for _, env := range [][]string{hardenedGitEnv(false, nil, nil), hardenedGitEnv(true, nil, nil), precursorEnv(false, nil)} {
 		for _, kv := range keep {
@@ -270,13 +270,13 @@ func TestHardenedGitEnvOrder(t *testing.T) {
 		daemon, tail []string
 	}{
 		{"pair above the count",
-			[]string{"HOME=/h", "PATH=/p", "USER=u", "LANG=C", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark",
-				"GIT_CONFIG_VALUE_0=S4KEEP_v", "GIT_CONFIG_KEY_2=S4KEEP_k2", "GIT_CONFIG_VALUE_2=S4KEEP_v2", "CLAUDE_SSH_DAEMON_CHILD=1"},
-			[]string{"GIT_COMMON_DIR=/c", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
+			[]string{"HOME=/h", "PATH=/p", "USER=u", "LANG=C", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.mark",
+				"GIT_CONFIG_VALUE_0=KEEP_v", "GIT_CONFIG_KEY_2=KEEP_k2", "GIT_CONFIG_VALUE_2=KEEP_v2", "CLAUDE_SSH_DAEMON_CHILD=1"},
+			[]string{"GIT_COMMON_DIR=/c", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
 		{"leading-zero index",
 			[]string{"HOME=/h", "PATH=/p", "USER=u", "LANG=C", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fileMode",
-				"GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_01=user.s4", "GIT_CONFIG_VALUE_01=v01", "CLAUDE_SSH_DAEMON_CHILD=1"},
+				"GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_01=user.key", "GIT_CONFIG_VALUE_01=v01", "CLAUDE_SSH_DAEMON_CHILD=1"},
 			[]string{"GIT_COMMON_DIR=/c", "GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=core.fileMode", "GIT_CONFIG_VALUE_0=false",
 				"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2="}},
 	} {
@@ -299,10 +299,10 @@ func TestHardenedGitEnvOrder(t *testing.T) {
 func TestDropConfigOverrides(t *testing.T) {
 	// Measured, also on Windows: the exact upper-case names go. git_config and
 	// Git_Config_Parameters stay, also on Windows. GIT_CONFIG_GLOBAL stays.
-	in := []string{"GIT_CONFIG=S4MARK_1", "git_config=S4MARK_2", "GIT_CONFIG_PARAMETERS=S4MARK_3",
-		"Git_Config_Parameters=S4MARK_4", "GIT_CONFIG_GLOBAL=S4MARK_5", "=C:=C:\\", "S4_PLAIN=S4MARK_6"}
-	want := []string{"git_config=S4MARK_2", "Git_Config_Parameters=S4MARK_4", "GIT_CONFIG_GLOBAL=S4MARK_5", "=C:=C:\\",
-		"S4_PLAIN=S4MARK_6"}
+	in := []string{"GIT_CONFIG=MARK_1", "git_config=MARK_2", "GIT_CONFIG_PARAMETERS=MARK_3",
+		"Git_Config_Parameters=MARK_4", "GIT_CONFIG_GLOBAL=MARK_5", "=C:=C:\\", "PLAIN=MARK_6"}
+	want := []string{"git_config=MARK_2", "Git_Config_Parameters=MARK_4", "GIT_CONFIG_GLOBAL=MARK_5", "=C:=C:\\",
+		"PLAIN=MARK_6"}
 	if got := dropConfigOverrides(in); !slices.Equal(got, want) {
 		t.Errorf("dropConfigOverrides = %q\nwant %q", got, want)
 	}
@@ -440,15 +440,15 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 	run := installEnvStub(t)
 	f := newWTFixture(t, false)
 	clearDaemonConfigEnv(t)
-	cfg := filepath.Join(t.TempDir(), "s4.cfg")
+	cfg := filepath.Join(t.TempDir(), "planted.cfg")
 	writeFile(t, cfg, "", 0o644)
-	planted := []string{"GIT_CONFIG=" + cfg, "GIT_CONFIG_PARAMETERS='user.s4param'='S4MARK_p'",
-		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
-		"GIT_CONFIG_KEY_1=S4KEEP_k1", "GIT_CONFIG_KEY_2=S4KEEP_k2", "GIT_CONFIG_VALUE_2=S4KEEP_v2",
+	planted := []string{"GIT_CONFIG=" + cfg, "GIT_CONFIG_PARAMETERS='user.param'='MARK_p'",
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
+		"GIT_CONFIG_KEY_1=KEEP_k1", "GIT_CONFIG_KEY_2=KEEP_k2", "GIT_CONFIG_VALUE_2=KEEP_v2",
 		"GIT_ALLOW_PROTOCOL=ssh:https:git"}
 	plantEnv(t, planted...)
 	listingSet := sorted(planted[2:8]...)
-	pinnedSet := sorted("GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.s4mark", "GIT_CONFIG_VALUE_0=S4KEEP_v",
+	pinnedSet := sorted("GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=user.mark", "GIT_CONFIG_VALUE_0=KEEP_v",
 		"GIT_CONFIG_KEY_1=hook.enabled", "GIT_CONFIG_VALUE_1=false", "GIT_CONFIG_KEY_2=hook.event", "GIT_CONFIG_VALUE_2=")
 
 	var calls []stubCall

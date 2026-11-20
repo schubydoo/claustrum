@@ -155,7 +155,7 @@ func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 		mustWrite(t, filepath.Join(repo, ".git"), "gitdir: "+gd+"\n")
 		return repo, gd, filepath.Join(repo, ".claude", "worktrees", "w1")
 	}
-	t.Run("S1L", func(t *testing.T) {
+	t.Run("locked entry", func(t *testing.T) {
 		repo, gd, leaf := setup(t)
 		old := filepath.Join(gd, "worktrees", "old")
 		mustWrite(t, filepath.Join(old, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
@@ -167,7 +167,7 @@ func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 			t.Error("the locked entry is gone, want it kept")
 		}
 	})
-	t.Run("S1T", func(t *testing.T) {
+	t.Run("two stale entries", func(t *testing.T) {
 		repo, gd, leaf := setup(t)
 		for _, name := range []string{"old", "old2"} {
 			mustWrite(t, filepath.Join(gd, "worktrees", name, "gitdir"), filepath.ToSlash(leaf)+"/.git\n")
@@ -190,10 +190,10 @@ func TestStaleStepByPathKeepsLockedAndTwinEntries(t *testing.T) {
 // inside it, does the same. That case is claustrum's own, not measured.
 func TestStaleStepActsNothingBehindALink(t *testing.T) {
 	for _, kind := range []struct {
-		cell string
+		name string
 		link func(*testing.T, string, string)
-	}{{"D1J", makeJunction}, {"D1S", makeDirSymlink}} {
-		t.Run(kind.cell+" by the path", func(t *testing.T) {
+	}{{"junction", makeJunction}, {"directory symlink", makeDirSymlink}} {
+		t.Run(kind.name+" by the path", func(t *testing.T) {
 			root := t.TempDir()
 			repo := filepath.Join(root, "repo")
 			leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
@@ -211,7 +211,7 @@ func TestStaleStepActsNothingBehindALink(t *testing.T) {
 				}
 			}
 		})
-		t.Run(kind.cell+" through the held git directory", func(t *testing.T) {
+		t.Run(kind.name+" through the held git directory", func(t *testing.T) {
 			f := newHeldFixture(t)
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "gone")
 			target := filepath.Join(f.gitDir, "T")

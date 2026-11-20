@@ -172,23 +172,23 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 	const session = "; beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
 		"marker); a worktree location must be outside every session's worktree"
 	for _, r := range []locCreateRow{
-		{name: "C-W2", root: "<X>/", path: "<X>/./a/b/c",
+		{name: "dot part in the path", root: "<X>/", path: "<X>/./a/b/c",
 			text: "refusing to create worktree: `<X>/./a/b/c` is not <worktree location>/<directory>/<name> beneath <X>/"},
-		{name: "C-W3", root: "<X>", path: "<X>/.Claude-Managed-Worktrees/w1",
+		{name: "reserved marker name", root: "<X>", path: "<X>/.Claude-Managed-Worktrees/w1",
 			text: "refusing to create worktree: <X>/.Claude-Managed-Worktrees/w1 uses the reserved name " +
 				".Claude-Managed-Worktrees for a directory under the worktree location"},
-		{name: "C-W4", root: "<X>/.GIT/loc", path: "<X>/.GIT/loc/p/w1",
+		{name: ".GIT in the root", root: "<X>/.GIT/loc", path: "<X>/.GIT/loc/p/w1",
 			text: "refusing to create worktree: <X>/.GIT/loc has a component named .GIT, which is reserved" + locRootTail},
-		{name: "C-W4e", setup: func(t *testing.T, c *locCell) { c.dir(t, "<X>/x/.git") },
+		{name: ".git in the root", setup: func(t *testing.T, c *locCell) { c.dir(t, "<X>/x/.git") },
 			root: "<X>/x/.git/loc", path: "<X>/x/.git/loc/p/w1",
 			text: "refusing to create worktree: <X>/x/.git/loc has a component named .git, which is reserved" + locRootTail},
-		{name: "C-W5", setup: setG, base: "<X>/proj/src", root: "<X>", path: "<X>/proj/w2",
+		{name: "root holds the repository", setup: setG, base: "<X>/proj/src", root: "<X>", path: "<X>/proj/w2",
 			text: "refusing to create worktree: <X> would place worktrees in <X>/proj, which contains the " +
 				"repository <X>/proj/src; choose a location the repository is not inside"},
-		{name: "C-W6", setup: setG, base: "<B>/cwS/src", root: "<X>", path: "<X>/proj/w2",
+		{name: "root holds the repository through a link", setup: setG, base: "<B>/cwS/src", root: "<X>", path: "<X>/proj/w2",
 			text: "refusing to create worktree: <X> would place worktrees in <X>/proj, which contains the " +
 				"repository <B>/cwS/src; choose a location the repository is not inside"},
-		{name: "C-W7", setup: func(t *testing.T, c *locCell) {
+		{name: "root in a separate git directory", setup: func(t *testing.T, c *locCell) {
 			runGit(t, c.B, "init", "-q", "-b", "main", "--separate-git-dir="+c.p("<B>/cwG"), c.p("<B>/cwT"))
 			dropGroupWrite(t, c.p("<B>/cwG"))
 			writeFile(t, c.p("<B>/cwT/keep"), "keep\n", 0o644)
@@ -199,7 +199,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 		}, base: "<B>/cwT", root: "<B>/cwG/loc", path: "<B>/cwG/loc/q/w2", extra: []string{"<B>/cwG", "<B>/cwT"},
 			text: "refusing to create worktree: <B>/cwG/loc leads into the repository <B>/cwT (at <B>/cwG); " +
 				"a worktree location must be outside the repository"},
-		{name: "C-W19", setup: func(t *testing.T, c *locCell) {
+		{name: "root holds a worktree", setup: func(t *testing.T, c *locCell) {
 			runGit(t, c.T, "worktree", "add", "-q", c.p("<X>/proj"))
 			dropGroupWrite(t, c.p("<X>/proj"))
 			c.dir(t, "<X>/proj/w1")
@@ -207,7 +207,7 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 		}, root: "<X>", path: "<X>/proj/w2",
 			text: "refusing to create worktree: <X> would place worktrees in <X>/proj, which is (or is inside) " +
 				"<X>/proj, a worktree of the repository <T>; a worktree location must be outside the repository's checkouts"},
-		{name: "C-W21", setup: func(t *testing.T, c *locCell) {
+		{name: "root in a worktree through a link", setup: func(t *testing.T, c *locCell) {
 			r0Repo(t, c.p("<X>/T0"))
 			runGit(t, c.p("<X>/T0"), "worktree", "add", "-q", c.p("<X>/W"))
 			dropGroupWrite(t, c.p("<X>/W"))
@@ -219,44 +219,44 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 		}, base: "<B>/cwS21", root: "<X>/W/T/x", path: "<X>/W/T/x/p/w1",
 			text: "refusing to create worktree: <X>/W/T/x leads into <X>/W, a worktree of the repository <B>/cwS21 " +
 				"(at <X>/W); a worktree location must be outside the repository's checkouts"},
-		{name: "C-W9", setup: setM, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
+		{name: "marker file above the root", setup: setM, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
 			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
 		// A marker folder and a marker link with no target count too (4c111e86,
 		// measured on Linux and macOS).
-		{name: "C-W9-folder", setup: func(t *testing.T, c *locCell) {
+		{name: "marker folder above the root", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/proj/loc/p")
 			c.file(t, "<X>/proj/loc/p/keep")
 			c.dir(t, "<X>/proj/"+managedWorktreesMarker)
 		}, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
 			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
-		{name: "C-W9-dangling", setup: func(t *testing.T, c *locCell) {
+		{name: "marker link with no target", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/proj/loc/p")
 			c.file(t, "<X>/proj/loc/p/keep")
 			c.link(t, "<X>/nowhere", "<X>/proj/"+managedWorktreesMarker)
 		}, root: "<X>/proj/loc", path: "<X>/proj/loc/p/w1",
 			text: "refusing to create worktree: `<X>/proj/loc` leads into a session worktree (at <X>/proj/loc" + session},
-		{name: "C-W10", setup: setM, root: "<X>/proj/new", path: "<X>/proj/new/p/w1",
+		{name: "new root in a session folder", setup: setM, root: "<X>/proj/new", path: "<X>/proj/new/p/w1",
 			text: "refusing to create worktree: <X>/proj/new would be made inside a session worktree or its " +
 				"per-repository directory (at <X>/proj/new" + session},
-		{name: "C-W11", setup: setM, root: "<X>/proj", path: "<X>/proj/p/w1",
+		{name: "root is a marked folder", setup: setM, root: "<X>/proj", path: "<X>/proj/p/w1",
 			text: "refusing to create worktree: `<X>/proj` is itself a per-repository worktree directory (it holds a " +
 				".claude-managed-worktrees marker); choose the directory above it, or another location"},
 		// Equal on both builds: claustrum keeps its text.
-		{name: "C-W12", setup: func(t *testing.T, c *locCell) {
+		{name: "root in a session worktree checkout", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/C/.claude/worktrees/w0")
 			c.file(t, "<X>/C/.claude/worktrees/w0/.git")
 		}, root: "<X>/C/.claude/worktrees/w0/loc", path: "<X>/C/.claude/worktrees/w0/loc/p/w1",
 			text: "refusing to create worktree: `<X>/C/.claude/worktrees/w0/loc` is inside a git checkout " +
 				"(<X>/C/.claude/worktrees/w0 has a .git entry); a worktree location must be outside every checkout, " +
 				"so that no session working in one can reach it — choose a directory that is not part of any repository"},
-		{name: "C-W13", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/q/w2",
+		{name: "link chain too long", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/q/w2",
 			text: "refusing to create worktree: `<B>/cwl/l1/loc` passes through too many symbolic links (a loop?)"},
-		{name: "C-W14", setup: func(t *testing.T, c *locCell) {
+		{name: "file in the root path", setup: func(t *testing.T, c *locCell) {
 			c.file(t, "<X>/F")
 			chmodForTest(t, c.p("<X>/F"), 0o666)
 		}, root: "<X>/F/x", path: "<X>/F/x/p/w1", code: "mkdir_failed",
 			text: "failed to create parent directory: <X>/F: not a directory"},
-		{name: "C-W15", setup: func(t *testing.T, c *locCell) {
+		{name: "root in a checkout", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/a/b/c")
 			c.file(t, "<X>/a/.git")
 			chmodForTest(t, c.p("<X>/a/b"), 0o777)
@@ -269,13 +269,13 @@ func TestLocationCellsCreateRefused(t *testing.T) {
 	}
 }
 
-// locChain is the chain: <B>/cwl/l1 to l45 are 45 links, and l45 leads to <X>/R13.
+// locChain is the chain: <B>/cwl/l1 to l45 are 45 links, and l45 leads to <X>/end.
 // The kernel follows at most 40 of them on Linux and 32 on macOS.
 func locChain(t *testing.T, c *locCell) {
-	c.dir(t, "<X>/R13/loc/p/w1")
-	c.file(t, "<X>/R13/loc/p/keep")
+	c.dir(t, "<X>/end/loc/p/w1")
+	c.file(t, "<X>/end/loc/p/keep")
 	c.dir(t, "<B>/cwl")
-	c.link(t, "<X>/R13", "<B>/cwl/l45")
+	c.link(t, "<X>/end", "<B>/cwl/l45")
 	for i := 44; i >= 1; i-- {
 		if err := os.Symlink(fmt.Sprintf("l%d", i+1), c.p(fmt.Sprintf("<B>/cwl/l%d", i))); err != nil {
 			t.Fatal(err)
@@ -283,7 +283,7 @@ func locChain(t *testing.T, c *locCell) {
 	}
 }
 
-// C-W1: a relative worktreePath wins over the filesystem-root text of the root "/".
+// A relative worktreePath wins over the filesystem-root text of the root "/".
 func TestLocationCellRelativePathFirst(t *testing.T) {
 	c := newLocCell(t)
 	before := c.tree(t)
@@ -297,7 +297,7 @@ func TestLocationCellRelativePathFirst(t *testing.T) {
 	}
 }
 
-// C-W8: the root is in the listed worktree w0 whose folder is gone. 5fd08069 makes
+// The root is in the listed worktree w0 whose folder is gone. 5fd08069 makes
 // <X>/w0 (mode 0700, empty) and refuses. The entry of w0 stays.
 func TestLocationCellGoneWorktreeFolderMade(t *testing.T) {
 	requireWorktreeListZ(t)
@@ -321,29 +321,29 @@ func TestLocationCellGoneWorktreeFolderMade(t *testing.T) {
 	}
 }
 
-// C-W16: the root passes through a link that another user owns. The round used a
+// The root passes through a link that another user owns. The measurement used a
 // second user. Here a link in <B> gets the owner uid 1002 through the stat seam.
 func TestLocationCellLinkOwner(t *testing.T) {
 	if os.Geteuid() == 1002 {
 		t.Skip("the test user is uid 1002, the owner of the link in this cell")
 	}
 	c := newLocCell(t)
-	if err := os.Mkdir(c.p("<B>/cw16"), 0o700); err != nil {
+	if err := os.Mkdir(c.p("<B>/owned"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	c.link(t, "<B>/cw16", "<B>/L2")
+	c.link(t, "<B>/owned", "<B>/L2")
 	foreignOwner(t, 1002, c.p("<B>/L2"))
-	r := locCreateRow{root: "<B>/L2/loc", path: "<B>/L2/loc/p/w1", extra: []string{"<B>/cw16"},
+	r := locCreateRow{root: "<B>/L2/loc", path: "<B>/L2/loc/p/w1", extra: []string{"<B>/owned"},
 		text: "refusing to create worktree: <B>/L2/loc passes through <B>/L2, which is owned by uid 1002, " +
 			"neither you nor the system; choose a location you reach through your own directories"}
-	before := c.tree(t, c.p("<B>/cw16"))
+	before := c.tree(t, c.p("<B>/owned"))
 	wantLocFrame(t, c.create(t, "<T>", r.root, r.path), failFrame(t, c.p(r.text), "unsafe_path"))
-	if after := c.tree(t, c.p("<B>/cw16")); after != before {
+	if after := c.tree(t, c.p("<B>/owned")); after != before {
 		t.Errorf("the tree changed; 5fd08069 makes nothing\nbefore\n%s\nafter\n%s", before, after)
 	}
 }
 
-// C-W18: the <directory> level is writable by every user. 5fd08069 refuses, and the
+// The <directory> level is writable by every user. 5fd08069 refuses, and the
 // old registration of the leaf keeps its probe file.
 func TestLocationCellWritableFolderKeepsRegistration(t *testing.T) {
 	privateGroup(t)
@@ -372,13 +372,13 @@ func TestLocationCellWritableFolderKeepsRegistration(t *testing.T) {
 	}
 }
 
-// C-W20: the root is a link to "/". The round put the link at /cwL. Here it is in
+// The root is a link to "/". The measurement put the link at /cwL. Here it is in
 // <B>, and the <directory> level is a name that does not exist below "/".
 func TestLocationCellRootLinkToSlash(t *testing.T) {
 	skipIfRoot(t)
 	c := newLocCell(t)
 	c.link(t, "/", "<B>/cwL")
-	name := "claustrum-cw20-" + filepath.Base(c.B)
+	name := "claustrum-rootlink-" + filepath.Base(c.B)
 	if _, err := os.Lstat("/" + name); err == nil {
 		t.Skipf("/%s exists", name)
 	}
@@ -389,12 +389,12 @@ func TestLocationCellRootLinkToSlash(t *testing.T) {
 	}
 }
 
-// C-W17 and C-W17b: a failed `worktree list`, with and without -z, or a failed
+// A failed `worktree list`, with and without -z, or a failed
 // `rev-parse --show-toplevel`, stops the create. Nothing is made.
 func TestLocationCellFailedCallStops(t *testing.T) {
 	for _, r := range []struct{ name, call, text string }{
-		{"C-W17", "worktree list", "cannot list the repository's worktrees: exit status 128"},
-		{"C-W17b", "rev-parse --show-toplevel", "cannot determine the repository's work tree: exit status 128"},
+		{"failed worktree list", "worktree list", "cannot list the repository's worktrees: exit status 128"},
+		{"failed show-toplevel", "rev-parse --show-toplevel", "cannot determine the repository's work tree: exit status 128"},
 	} {
 		t.Run(r.name, func(t *testing.T) {
 			c := newLocCell(t)
@@ -409,7 +409,7 @@ func TestLocationCellFailedCallStops(t *testing.T) {
 	}
 }
 
-// P0: the positive create. Both builds make <X>/p (mode 0700) with the marker and
+// The positive create. Both builds make <X>/p (mode 0700) with the marker and
 // the worktree.
 func TestLocationCellCreateSucceeds(t *testing.T) {
 	c := newLocCell(t)
@@ -460,7 +460,8 @@ func (r locRemoveRow) run(t *testing.T) {
 }
 
 // The remove cells. 5fd08069 refuses each and removes nothing. claustrum before
-// this change removed the leaf in C-S1 to C-S8. Each row runs in its temp dir
+// this change removed the leaf in the first seven rows and in
+// TestLocationCellRemoveRootLinkToSlash. Each row runs in its temp dir
 // only, so it is safe without the change too.
 func TestLocationCellsRemoveRefused(t *testing.T) {
 	requireWorktreeListZ(t)
@@ -471,26 +472,26 @@ func TestLocationCellsRemoveRefused(t *testing.T) {
 		c.link(t, "<X>/proj", "<B>/cwS")
 	}
 	for _, r := range []locRemoveRow{
-		{name: "C-S1", setup: func(t *testing.T, c *locCell) {
+		{name: "reserved .Git name in the path", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/.Git/w1")
 			c.file(t, "<X>/.Git/keep")
 		}, root: "<X>", path: "<X>/.Git/w1", noCalls: true, stay: []string{"<X>/.Git/w1", "<X>/.Git/keep"},
 			text: "refusing to remove worktree: <X>/.Git/w1 uses the reserved name .Git for a directory under the worktree location"},
-		{name: "C-S2", setup: func(t *testing.T, c *locCell) {
+		{name: ".GIT in the root", setup: func(t *testing.T, c *locCell) {
 			c.dir(t, "<X>/.GIT/loc/p/w1")
 			c.file(t, "<X>/.GIT/loc/p/keep")
 		}, root: "<X>/.GIT/loc", path: "<X>/.GIT/loc/p/w1", noCalls: true,
 			stay: []string{"<X>/.GIT/loc/p/w1", "<X>/.GIT/loc/p/keep"},
 			text: "refusing to remove worktree: <X>/.GIT/loc has a component named .GIT, which is reserved" + locRootTail},
-		{name: "C-S3", setup: setG, base: "<X>/proj/src", root: "<X>", path: "<X>/proj/w1", noCalls: true,
+		{name: "root holds the repository", setup: setG, base: "<X>/proj/src", root: "<X>", path: "<X>/proj/w1", noCalls: true,
 			stay: []string{"<X>/proj/w1", "<X>/proj/keep", "<X>/proj/src/.git"},
 			text: "refusing to remove worktree: <X> would place worktrees in <X>/proj, which contains the " +
 				"repository <X>/proj/src; choose a location the repository is not inside"},
-		{name: "C-S8", setup: setG, base: "<B>/cwS/src", root: "<X>", path: "<X>/proj/w1",
+		{name: "root holds the repository through a link", setup: setG, base: "<B>/cwS/src", root: "<X>", path: "<X>/proj/w1",
 			stay: []string{"<X>/proj/w1", "<X>/proj/keep", "<X>/proj/src/.git"},
 			text: "refusing to remove worktree: <X> would place worktrees in <X>/proj, which contains the " +
 				"repository <B>/cwS/src; choose a location the repository is not inside"},
-		{name: "C-S4", setup: func(t *testing.T, c *locCell) {
+		{name: "root in a separate git directory", setup: func(t *testing.T, c *locCell) {
 			runGit(t, c.B, "init", "-q", "-b", "main", "--separate-git-dir="+c.p("<B>/cwG"), c.p("<B>/cwT"))
 			writeFile(t, c.p("<B>/cwT/keep"), "keep\n", 0o644)
 			runGit(t, c.p("<B>/cwT"), "add", "keep")
@@ -501,24 +502,24 @@ func TestLocationCellsRemoveRefused(t *testing.T) {
 			stay: []string{"<B>/cwG/loc/p/w1", "<B>/cwG/loc/p/keep"},
 			text: "refusing to remove worktree: <B>/cwG/loc leads into the repository <B>/cwT (at <B>/cwG); " +
 				"a worktree location must be outside the repository"},
-		{name: "C-S7", setup: func(t *testing.T, c *locCell) {
+		{name: "root holds a worktree", setup: func(t *testing.T, c *locCell) {
 			runGit(t, c.T, "worktree", "add", "-q", c.p("<X>/proj"))
 			c.dir(t, "<X>/proj/w1")
 			c.file(t, "<X>/proj/keep")
 		}, root: "<X>", path: "<X>/proj/w1", stay: []string{"<X>/proj/w1", "<X>/proj/keep", "<X>/proj/.git"},
 			text: "refusing to remove worktree: <X> would place worktrees in <X>/proj, which is (or is inside) " +
 				"<X>/proj, a worktree of the repository <T>; a worktree location must be outside the repository's checkouts"},
-		{name: "C-S5", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/p/w1",
-			stay: []string{"<X>/R13/loc/p/w1", "<X>/R13/loc/p/keep"},
+		{name: "link chain too long", setup: locChain, root: "<B>/cwl/l1/loc", path: "<B>/cwl/l1/loc/p/w1",
+			stay: []string{"<X>/end/loc/p/w1", "<X>/end/loc/p/keep"},
 			text: "refusing to remove worktree: `<B>/cwl/l1/loc` passes through too many symbolic links (a loop?)"},
-		{name: "C-W22", setup: func(t *testing.T, c *locCell) { c.link(t, "<X>", "<B>/LK") },
+		{name: "missing root behind a link", setup: func(t *testing.T, c *locCell) { c.link(t, "<X>", "<B>/LK") },
 			root: "<B>/LK/missing", path: "<B>/LK/missing/p/w1",
 			text: "failed to remove worktree: the worktree location <B>/LK/missing is not reachable (<X>/missing " +
 				"does not exist); nothing was removed — retry once it is available, or remove the worktree by hand"},
-		{name: "C-W23", setup: func(t *testing.T, c *locCell) { c.link(t, "<B>/LP", "<B>/LP") },
+		{name: "link loop", setup: func(t *testing.T, c *locCell) { c.link(t, "<B>/LP", "<B>/LP") },
 			root: "<B>/LP/loc", path: "<B>/LP/loc/p/w1",
 			text: "refusing to remove worktree: `<B>/LP/loc` passes through too many symbolic links (a loop?)"},
-		{name: "C-W24", setup: func(t *testing.T, c *locCell) { c.file(t, "<X>/F") },
+		{name: "file in the root path", setup: func(t *testing.T, c *locCell) { c.file(t, "<X>/F") },
 			root: "<X>/F/x", path: "<X>/F/x/p/w1",
 			text: "failed to remove worktree: the worktree location <X>/F/x is not reachable (<X>/F: not a " +
 				"directory); nothing was removed — retry once it is available, or remove the worktree by hand"},
@@ -527,7 +528,7 @@ func TestLocationCellsRemoveRefused(t *testing.T) {
 	}
 }
 
-// C-S6: the root is a link to "/". The round removed /cwalk-p/w1 through /cwL. Here
+// The root is a link to "/". The measurement removed /cwalk-p/w1 through /cwL. Here
 // the link is in <B>, and the leaf is a new folder in /tmp with a file in it. The
 // test skips where /tmp is not a folder (macOS, where /tmp is a link) or cannot be
 // written.
@@ -535,7 +536,7 @@ func TestLocationCellRemoveRootLinkToSlash(t *testing.T) {
 	if fi, err := os.Lstat("/tmp"); err != nil || !fi.IsDir() {
 		t.Skip("/tmp is not a folder on this host")
 	}
-	leaf, err := os.MkdirTemp("/tmp", "claustrum-cs6-")
+	leaf, err := os.MkdirTemp("/tmp", "claustrum-rootlink-remove-")
 	if err != nil {
 		t.Skipf("cannot make a folder in /tmp: %v", err)
 	}
@@ -550,7 +551,7 @@ func TestLocationCellRemoveRootLinkToSlash(t *testing.T) {
 	}
 }
 
-// P1: the remove of an empty leaf in a marked <directory> level succeeds on both
+// The remove of an empty leaf in a marked <directory> level succeeds on both
 // builds. The leaf goes, and keep stays.
 func TestLocationCellRemoveEmptyLeaf(t *testing.T) {
 	c := newLocCell(t)
@@ -564,7 +565,7 @@ func TestLocationCellRemoveEmptyLeaf(t *testing.T) {
 	c.stays(t, "<X>/p/keep")
 }
 
-// C-W7 and C-S4 with a listing that names only the work tree <B>/cwT. git 2.47
+// The separate git directory rows of the create and the remove, with a listing that names only the work tree <B>/cwT. git 2.47
 // lists a separate git directory as the main worktree, so the rows above match it
 // through the listing. This listing is constructed: the test shows that the git
 // directory itself refuses the root, whatever git lists.
@@ -601,22 +602,22 @@ func TestLocationCellSeparateGitDirNotListed(t *testing.T) {
 func TestLocationCellLinkOutOfCheckout(t *testing.T) {
 	requireWorktreeListZ(t)
 	for _, r := range []locCreateRow{
-		{name: "X1", setup: func(t *testing.T, c *locCell) {
+		{name: "link out of a checkout", setup: func(t *testing.T, c *locCell) {
 			r0Repo(t, c.p("<X>/home"))
-			c.dir(t, "<B>/out22")
-			c.link(t, "<B>/out22", "<X>/home/link")
-		}, root: "<X>/home/link/wt", path: "<X>/home/link/wt/p/w1", extra: []string{"<B>/out22"},
+			c.dir(t, "<B>/out")
+			c.link(t, "<B>/out", "<X>/home/link")
+		}, root: "<X>/home/link/wt", path: "<X>/home/link/wt/p/w1", extra: []string{"<B>/out"},
 			text: "refusing to create worktree: `<X>/home/link/wt` is inside a git checkout (<X>/home has a .git " +
 				"entry); a worktree location must be outside every checkout, so that no session working in one " +
 				"can reach it — choose a directory that is not part of any repository"},
-		{name: "X2", setup: func(t *testing.T, c *locCell) {
+		{name: "link out of the repository", setup: func(t *testing.T, c *locCell) {
 			r0Repo(t, c.p("<X>/R"))
 			writeFile(t, c.p("<X>/R/sub/f"), "f\n", 0o644)
 			runGit(t, c.p("<X>/R"), "add", "sub/f")
 			runGit(t, c.p("<X>/R"), "commit", "-q", "-m", "sub")
-			c.dir(t, "<B>/out22b")
-			c.link(t, "<B>/out22b", "<X>/R/out")
-		}, base: "<X>/R/sub", root: "<X>/R/out/wt", path: "<X>/R/out/wt/p/w1", extra: []string{"<B>/out22b"},
+			c.dir(t, "<B>/outb")
+			c.link(t, "<B>/outb", "<X>/R/out")
+		}, base: "<X>/R/sub", root: "<X>/R/out/wt", path: "<X>/R/out/wt/p/w1", extra: []string{"<B>/outb"},
 			text: "refusing to create worktree: <X>/R/out/wt leads into the repository <X>/R/sub (at <X>/R); " +
 				"a worktree location must be outside the repository"},
 	} {
@@ -626,10 +627,10 @@ func TestLocationCellLinkOutOfCheckout(t *testing.T) {
 
 // Measured on Linux: a missing root with a final slash. The reason names the path
 // with the slash dropped. Measurements on macOS name the path with its links
-// followed, as C-W22 does.
+// followed, as the missing root behind a link does.
 func TestLocationCellMissingRootSlash(t *testing.T) {
-	r := locRemoveRow{root: "<B>/gone22/", path: "<B>/gone22/p/w1",
-		text: "failed to remove worktree: the worktree location <B>/gone22/ is not reachable (<B>/gone22 does " +
+	r := locRemoveRow{root: "<B>/gone/", path: "<B>/gone/p/w1",
+		text: "failed to remove worktree: the worktree location <B>/gone/ is not reachable (<B>/gone does " +
 			"not exist); nothing was removed — retry once it is available, or remove the worktree by hand"}
 	r.run(t)
 }

@@ -14,7 +14,7 @@ import (
 // gitWorktreeCreateLocked, and each row but the marker row fails.
 func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {
 	f := newNoRepoFixture(t)
-	// The daemon state of -serve, with a settings control, as on the VM rows.
+	// The daemon state of -serve, with a settings control, as in the measurements.
 	f.d, _ = newShadowDeps(t)
 	marker := filepath.Join(filepath.Dir(f.top), "MK")
 	if err := os.MkdirAll(filepath.Join(marker, "sub"), 0o755); err != nil {
