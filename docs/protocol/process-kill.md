@@ -13,7 +13,7 @@ An untagged rule on this page matches build `89cb6289`.
 | Parameter | Required | Meaning |
 |---|---|---|
 | `id` | no | The id of the process, as given to `process.spawn`. An absent, empty, unknown or [spent](process-link-bound.md#the-spent-id) `id` signals nothing. An unknown `id` of up to 128 bytes is [given up](process-spawn.md#a-given-up-id). |
-| `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. So `quit` and `int` send `SIGTERM`. On Windows the name is ignored. |
+| `signal` | no | `TERM`, `KILL`, `INT` or `HUP`, with or without the prefix `SIG`. The default is `TERM`. The names are case-sensitive, and each other value means `TERM`. On Windows the name is ignored. |
 | `farewell`, `graceMs` | no | The [farewell](process-farewell.md) for the stdin of the child, and the wait before the signal. |
 
 For an `id` that two spawns share, see [process.spawn](process-spawn.md#a-spawn-with-an-id-that-is-in-use).
@@ -40,7 +40,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 On Linux and macOS, each child runs in its own process group. Two cases:
 
 - `KILL` goes to the whole process group of the child. So the processes that the child started end too, unless one left the group.
-- Each other signal goes to the direct child only. A process that the child started in the background keeps running. Use `"signal": "KILL"` to end the tree.
+- Each other signal goes to the direct child only. A process that the child started in the background keeps running.
 
 `52d82f0a` keeps both, also in `process.killAndWait`, and no signal reaches another session (Linux and macOS, measured).
 
@@ -84,18 +84,21 @@ With no job, a process that the child started can hold the output pipes of the c
 
 #### The start test of the jobs
 
-Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, no child gets a job, and each spawn answers `{"success":true,"outsideJob":true}`. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
+Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
-From 5 s to that end the test is pending: the socket opens, and each spawn runs as after a failed test.
+From 5 s to that end the test is pending, and the socket opens.
 
-claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows), and at the daemon exit (from the code).
+claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code).
+
+A failed resume fails the test at once on `4c111e86` (measured on Windows), and not yet on claustrum (TASK-716).
 
 claustrum's own, not measured:
 
 - A clean exit before the end turns the jobs on.
 - A failed start of the test child fails the test with its error.
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`.
-- A failed resume leaves the child asleep. After a failed end, as with no job, or with no wait handle, a reap within 5 s gives the result. Else the test fails with the reason of the end.
+- A spawn in the pending time runs as after a failed test.
+- After a failed end, as with no job, or with no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
 - The line rounds the time to the nearest millisecond.
 - The end reaches nothing else.
 

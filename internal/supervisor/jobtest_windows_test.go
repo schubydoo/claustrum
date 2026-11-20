@@ -86,7 +86,7 @@ func TestWindowsJobTestFailsWithTheExitStatus(t *testing.T) {
 // bound the end of the test job ends the child and the grandchild in it with exit code 1,
 // as 4c111e86 ends the child and its conhost. A process outside the test job lives on.
 // The close of the test job at the reap ends the grandchild with code 0 (measured on
-// Windows with an end of the child alone), so the code 1 of the grandchild shows the end.
+// Windows in a claustrum test that ended the child alone), so the code 1 of the grandchild shows the end.
 // The flags are read right after the start, and the bound is longer than the wait for the
 // grandchild pid, so a slow start cannot reap the test job first.
 func TestWindowsJobTestEndsTheTestJob(t *testing.T) {

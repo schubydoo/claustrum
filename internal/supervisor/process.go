@@ -313,9 +313,10 @@ type Manager struct {
 	// ChildJobs). One job for each child follows 52d82f0a (measured on Windows). It is set
 	// once at the start of the daemon. The zero value is off.
 	Jobs ChildJobs
-	// JobTest is the start test of the jobs (Windows only, see jobtest.go). While it is
-	// pending or after it failed, a spawn puts its child in no job and answers
-	// "outsideJob":true (measured on Windows against 4c111e86). Nil: no test.
+	// JobTest is the start test of the jobs (Windows only, see jobtest.go). After it
+	// failed, a spawn answers "outsideJob":true (measured on Windows against 4c111e86).
+	// While it is pending, a spawn answers the same (claustrum's own, not measured). In
+	// both states the spawn puts its child in no job (from the code). Nil: no test.
 	JobTest *JobTest
 
 	// adopted is the environment of the last good server.adoptEnv (adoptenv.go).

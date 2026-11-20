@@ -46,14 +46,17 @@ type winJobTestChild struct {
 // startJobTestChild starts the test child suspended, puts it in a job and resumes it.
 // The job has the flags 0x2800 of JobsOn (measured on Windows against 4c111e86), also
 // with -keep-children. So the close of its handle at the reap, or at the exit of the
-// daemon, ends what is left in it. At the reap that end has code 0 (measured on Windows).
+// daemon, ends what is left in it. At the reap that end has code 0 (measured on Windows,
+// claustrum's own).
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
 // join error (claustrum's own, not measured). A failed resume leaves the child asleep.
-// End at the bound reaches it only with a job and a wait handle. With no job End fails.
-// If the wait handle does not open, the gate closes at once and End never runs. In both
-// cases the test fails jobTestReapGrace after the bound unless the reap comes first
-// (awaitJobTest), and the daemon leaves the child as it is (claustrum's own, not measured).
+// 4c111e86 fails the test at once then (measured on Windows), a known difference that
+// TASK-716 follows. End at the bound reaches the child only with a job and a wait handle.
+// With no job End fails. If the wait handle does not open, the gate closes at once and
+// End never runs. In both cases the test fails jobTestReapGrace after the bound unless
+// the reap comes first (awaitJobTest), and the daemon leaves the child as it is
+// (claustrum's own, not measured).
 func startJobTestChild() (jobTestChild, error) {
 	cmd, err := newJobTestCmd()
 	if err != nil {
@@ -99,9 +102,9 @@ func (c *winJobTestChild) End() error {
 }
 
 // Reap waits for the child and closes its handles. A child that is in no job fails
-// the test. The text of that reason is claustrum's own: 4c111e86 logs it with "a thread
-// had been suspended 2 times, so it still sleeps" (measured), which claustrum does not
-// test.
+// the test with the join error, a text of claustrum's own. After a failed resume 4c111e86
+// fails the test at once with "a thread had been suspended 2 times, so it still sleeps"
+// (measured on Windows). claustrum does not test the resume yet (TASK-716).
 func (c *winJobTestChild) Reap() error {
 	err := c.cmd.Wait()
 	c.group.Close()
