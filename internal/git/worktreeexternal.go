@@ -773,7 +773,7 @@ func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) 
 	// With git 2.56 a `.git` file to a gone target fails the listing with the gitfile
 	// text. On Linux and macOS 4c111e86 then answers git's text as for "not a git
 	// repository", also for a subfolder and with "shadowDirOff":true (measured on Linux
-	// with git 2.56.1, macOS claustrum's own).
+	// and macOS with git 2.56.1).
 	if c.gitFileText != "" {
 		return workTreeUnknownPrefix + noRepositoryHerePrefix + c.noRepoText, ""
 	}
