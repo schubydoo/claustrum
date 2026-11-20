@@ -448,10 +448,23 @@ func TestWorktreeCreateOffGitDirLinkAfterAdd(t *testing.T) {
 	f.wantNothingRolledBack(t, gitFile, filepath.Join(gitDir+".real", "worktrees", "w1"))
 }
 
-// TestWorktreeCreateOffGitDirLinkBeforeRequest pins that the test above refuses
-// no create whose .git was a link before the request. git answers the target
-// of the link as the git directory, so the create succeeds (claustrum's own,
-// not measured).
+// TestWorktreeCreateGitDirLinkAfterAddNoMember pins that the check that
+// TestWorktreeCreateOffGitDirLinkAfterAdd pins runs only with "shadowDirOff":true.
+// A create without the member, in the same state, succeeds (claustrum's own, not
+// measured).
+func TestWorktreeCreateGitDirLinkAfterAddNoMember(t *testing.T) {
+	f, h := postAddFixture(t)
+	gitDir := filepath.Dir(f.regDir)
+	afterAddSteps(t, []string{"rename", gitDir, gitDir + ".real"}, []string{"symlink", ".git.real", gitDir})
+	raw, _ := f.createWith(t, h, "w1", 0, nil)
+	gitFile := "gitdir: " + filepath.Join(f.realRoot(t), "T", ".git", "worktrees", "w1") + "\n"
+	f.wantCreated(t, raw, gitFile, filepath.Join(gitDir+".real", "worktrees", "w1"))
+}
+
+// TestWorktreeCreateOffGitDirLinkBeforeRequest pins that the check that
+// TestWorktreeCreateOffGitDirLinkAfterAdd pins refuses no create whose .git was
+// a link before the request. git answers the target of the link as the git
+// directory, so the create succeeds (claustrum's own, not measured).
 func TestWorktreeCreateOffGitDirLinkBeforeRequest(t *testing.T) {
 	f, h := postAddFixture(t)
 	gitDir := filepath.Dir(f.regDir)
