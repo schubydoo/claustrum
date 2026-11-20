@@ -56,9 +56,10 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // the call about the repository, also on a subfolder and as the first git request, and
 // with "shadowDirOff":true the listing refusal (5fd08069, measured on Linux and Windows, the
 // listing refusal on Linux). The older
-// text keeps "no repository" (measured on Linux). The test runs both answers. On Windows git spells its path with forward slashes, and the root in quotes
-// keeps backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
-// refusal in noRepoCalls on Linux, drop statusGitFileNowhere, refuse the gitfile text in
+// text keeps "no repository" (measured on Linux). The test runs both answers. On
+// Windows git spells its path with forward slashes, and the root in quotes keeps
+// backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
+// refusal in noRepoCalls, drop statusGitFileNowhere, refuse the gitfile text in
 // statusNoRepoCalls, or key the rule on the state of the daemon. Where a create runs
 // the call about the repository first (goneGitFileStartTest), the stub gives its first
 // run the same text. Mutation there: answer "no repository" after every answer of the
@@ -145,7 +146,8 @@ func gitFileNowhereFourMethods(t *testing.T, older bool) {
 				// git.worktree_remove of a gone worktree without worktreeRoot: with
 				// the answers of an older git success, the branch kept (4c111e86,
 				// measured on Linux, macOS and Windows with git 2.56.1), else the
-				// lock-check refusal with the text of 5fd08069.
+				// lock-check refusal with the text of 5fd08069. The remove as the first
+				// git request of a daemon is claustrum's own, not measured.
 				gone := filepath.Join(g, ".claude", "worktrees", "w9")
 				remove := methodFrame{"git.worktree_remove", map[string]any{"baseRepo": g, "worktreePath": gone, "branchName": "w9"},
 					resultOf(`{"success":true,"branchKept":true}`)}

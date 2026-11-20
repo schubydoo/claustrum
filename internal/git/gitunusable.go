@@ -28,7 +28,7 @@ const cannotLookText = "Claude couldn't look into `%s` for a repository, so it m
 // repository. So is a `.git` file with no `gitdir: ` line. A garbage HEAD is measured on
 // Linux and Windows, and a `.git` folder of junk only on Linux. A `.git` file that is
 // empty, names a missing path or names an empty folder is measured on Windows, a missing
-// path also on Linux and macOS with git 2.56.1. A dangling `.git` link and a `.git` FIFO are measured on Linux and macOS. The git calls
+// path also on Linux, macOS and Windows with git 2.56.1. A dangling `.git` link and a `.git` FIFO are measured on Linux and macOS. The git calls
 // before the answer stay as they were (measured on Linux).
 func notARepoResult(id interface{}, repo string) rpc.Response {
 	if g, noLook := unusableDotGit(repo); g != "" {

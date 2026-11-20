@@ -300,7 +300,7 @@ The classes come in this order:
    `.git` file to a gone git dir, git 2.56 says `gitfile does not point to a valid
    repository` instead, and a gone entry under
    `.git/worktrees` answers "no repository" on each method but
-   `git.worktree_remove` (measured on Linux and Windows). On Windows another gone git dir
+   `git.worktree_remove` (measured on Linux and Windows). Another gone git dir
    answers the error of
    [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository) in the folder
    that holds `.git` (`5fd08069`, measured on Linux and Windows). `git.info` runs that call

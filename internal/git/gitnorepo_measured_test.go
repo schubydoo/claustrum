@@ -58,7 +58,7 @@ func TestNoRepoFolderListingExit128(t *testing.T) {
 // GIT_DIR=<null device>. git.status answers isRepo:false in both cases. For
 // `<dir>/gone/x` the stub answers both runs of the call and the listings with the
 // answers of git 2.43. git 2.56 prints its gitfile text in the listing there, and
-// git.status then refuses (TestGitFileNowhereFourMethodsStub). Mutations:
+// git.status keeps isRepo:false (TestGitFileNowhereFourMethodsStub). Mutations:
 // drop the call about the repository in gitInfo (the first case fails), or keep
 // GIT_COMMON_DIR for a gone worktree entry in judgeGitDir (the second case fails).
 func TestGoneGitFileInfoCalls(t *testing.T) {
