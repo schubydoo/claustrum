@@ -52,7 +52,7 @@ A process that got the signal of this request gets an `exit` frame with `"killed
 {"type": "stream", "processId": "p1", "stream": "exit", "seq": 3, "exitCode": -1, "signal": "SIGTERM", "killedBy": "client"}
 ```
 
-A child that catches the signal and exits by itself gets its own exit code, and `killedBy` stays. A child that ended before the request gets no `killedBy`. The full frame rules are in [Stream notifications](streams.md#stream-notifications).
+A child that catches the signal and exits by itself gets its own exit code, and `killedBy` stays. A child that ended before the request gets no `killedBy`. Frame rules: [Stream notifications](streams.md#stream-notifications).
 
 The `exit` frame waits for the output of the child. If another process holds the output pipe open, the frame comes up to 5 seconds after the child ended.
 
@@ -61,12 +61,9 @@ The `exit` frame waits for the output of the child. If another process holds the
 === "Linux and macOS"
     On Linux the signal to the direct child goes through a pid file descriptor, so it cannot reach another process. macOS and an old Linux kernel send it by pid. `KILL` goes to the group by its number on both. The skip of an ended child guards that case, except for `KILL` in the exit drain.
 
-=== "Windows"
-    A kill ends the job of the child (`52d82f0a`): see [Windows child trees](#windows-child-trees).
-
 ### Windows child trees
 
-Since `52d82f0a` each child on Windows runs in a job. A kill and `process.killAndWait` end the job at once, with exit code 1. `server.shutdown` ends the job too. A `taskkill /F` of the daemon ends the tree, but not with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). A process outside the job stays, also one that the child started with `CREATE_BREAKAWAY_FROM_JOB`. When the child exits, the rest of its job ends, and the `exit` frame comes at once. The start line (measured on Windows):
+Since `52d82f0a` each child runs in a job, since `4c111e86` after a passed start test. A kill and `process.killAndWait` end the job at once, with exit code 1. `server.shutdown` ends the job too. A `taskkill /F` of the daemon ends the tree, but not with `-keep-children` ([CT-2](../DIVERGENCES.md#ct-2)). A process outside the job stays, also one that the child started with `CREATE_BREAKAWAY_FROM_JOB`. When the child exits, the rest of its job ends, and the `exit` frame comes at once. The start line (measured on Windows):
 
 ```
 [daemon] job objects for child processes as the socket opens: true (off switch: false)
@@ -80,11 +77,11 @@ The `exit` frame on Windows has no `signal` member:
 {"type": "stream", "processId": "c1", "stream": "exit", "seq": 1, "exitCode": 1, "killedBy": "client"}
 ```
 
-With no job, a process that the child started can hold the output pipes of the child. Then the `exit` frame comes 5 seconds after the kill. For the answers of `process.killAndWait` in that state, see [its page](process-killandwait.md#which-processes-the-force-reaches).
+With no job, a process that the child started can hold its output pipes. Then the `exit` frame comes 5 seconds after the kill. For the answers of `process.killAndWait` in that state, see [its page](process-killandwait.md#which-processes-the-force-reaches).
 
 #### The start test of the jobs
 
-Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
+Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, as with the off switch, so a kill ends the direct child only. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
 From 5 s to that end the test is pending, and the socket opens.
 
@@ -111,4 +108,4 @@ claustrum's own, not measured:
 
 No entry of the [divergence catalog](../DIVERGENCES.md) changes this method.
 
-The skip of a child that already ended is a guard. The operating system can reuse the process id (pid) or the group number of an ended child. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. For `KILL` claustrum follows the reference and accepts the risk of a reused group number. Before the `exit` frame a `TERM` of `b3081b51` reaches no process either (measured on Linux). On macOS and for `INT` and `HUP` that skip is claustrum's own, not measured.
+The skip of a child that already ended is a guard. The operating system can reuse the process id (pid) or group number of an ended child. Item 21 of the [ledger of completed work](../IMPROVEMENTS.md) has the guard. For `KILL` claustrum follows the reference and accepts the risk of a reused group number. Before the `exit` frame a `TERM` of `b3081b51` reaches no process either (measured on Linux). On macOS and for `INT` and `HUP` that skip is claustrum's own, not measured.
