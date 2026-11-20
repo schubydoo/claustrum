@@ -375,8 +375,8 @@ the linked pages.
   working directory and variables. Without the member these are equal: the
   folder variables and the six heavy values of the light calls of a create. So
   is the `lfs.storage` item of the checkout. That is measured
-  on Linux and macOS in the state `shadow`. On Linux and macOS the index folder
-  follows `4c111e86` (`.checkout-<n>`), and so does the `lfs.storage` item
+  on Linux and macOS in the state `shadow`. The index folder follows `4c111e86`
+  (`.checkout-<n>`), and on Linux and macOS so does the `lfs.storage` item
   ([the private LFS store](protocol/git-worktree-create.md#the-private-lfs-store)). On Windows the variables and the
   names of the short-lived entries are measured in the state `fallback-git`. `internal/git/githarden.go` holds the
   lists. See [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls).

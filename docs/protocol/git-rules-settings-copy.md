@@ -172,7 +172,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request using the
-  copy (measured on Linux and macOS).
+  copy (measured on all three systems).
   claustrum removes it with the old daemon's folder in [the
   sweep](#the-sweep-of-git-shadow) (from the code). On Windows the `.checkout-<n>` folder of `4c111e86` holds no
   LFS object (measured).
