@@ -1015,7 +1015,7 @@ func writeProbeCLIResult(w io.Writer, v probeCLIVerdict) {
 //
 // The cap off leaves the window limit of the zstd decoder: a frame with a window
 // over 512 MiB is refused. A single-segment frame has its declared size as its
-// window. 4c111e86 refuses the same frames (measured on Linux at a 1 GiB window).
+// window. CT-7 in docs/DIVERGENCES.md gives the frames measured on 4c111e86.
 //
 // The -cli-url half was measured separately (the download body, 629 MB
 // incompressible): same result, with a cap-on control answering "response
