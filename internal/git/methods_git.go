@@ -3628,9 +3628,9 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			// git 2.56 fails the listing of a `.git` file to a gone target that is no
 			// entry with its gitfile text. b3081b51 then answers success and keeps the
 			// branch, with and without "shadowDirOff":true (measured on Linux), and so
-			// does 4c111e86 (measured on Windows with git 2.56.1). Without
-			// gitFileNowhereAsOlderGit the answer is the refusal of 5fd08069, with the
-			// listing refusal under the switch.
+			// does 4c111e86 (measured on Linux, macOS and Windows with git 2.56.1).
+			// Without gitFileNowhereAsOlderGit the answer is the refusal of 5fd08069,
+			// with the listing refusal under the switch.
 			if c.gitFileText != "" && goneNonEntryGitFile(repo) {
 				if gitFileNowhereAsOlderGit {
 					return keptAll()

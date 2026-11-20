@@ -309,7 +309,7 @@ The classes come in this order:
    that git dir gets the hooks refusal on every method (`5fd08069`, measured on
    Linux). `4c111e86` answers as with an older git: see the method pages.
    A remove of a gone worktree without `worktreeRoot` gets
-   success in both modes (`b3081b51`, measured on Linux, `4c111e86` on Windows).
+   success in both modes (`b3081b51`, measured on Linux, `4c111e86` on each system).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
    runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
    If that call fails too, it is the ["cannot run" text](#the-cannot-run-and-hooks-refusal-texts). Else it is the hooks refusal.
