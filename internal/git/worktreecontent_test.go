@@ -237,6 +237,33 @@ func TestContentCheckScratchFiles(t *testing.T) {
 	}
 }
 
+// TestContentCheckPartFileGoes: a write of a scratch file that fails after it
+// made the file is followed by the remove of that file, and the create
+// matches with separate hash-object runs (claustrum's own, not measured).
+func TestContentCheckPartFileGoes(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	oldWrite, oldRemove := writeObjectBody, removeObjectBody
+	t.Cleanup(func() { writeObjectBody, removeObjectBody = oldWrite, oldRemove })
+	var failed, removed []string
+	writeObjectBody = func(root *os.Root, name string, body []byte) error {
+		failed = append(failed, name)
+		_ = oldWrite(root, name, body[:len(body)/2])
+		return fs.ErrPermission
+	}
+	removeObjectBody = func(root *os.Root, name string) error {
+		removed = append(removed, name)
+		return oldRemove(root, name)
+	}
+	raw, _ := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if len(failed) == 0 || !slices.Equal(failed, removed) {
+		t.Errorf("failed writes %q, removes %q, want a remove of each", failed, removed)
+	}
+	noReadbackFolder(t, f)
+}
+
 // TestRemoveObjectBodyRemovesOnlyAFile: the remove of a scratch file takes
 // one regular file by name. A folder or a link at the name stays, and so does
 // the target of the link. A name at the path of the home folder is refused
