@@ -311,7 +311,7 @@ func TestCopyRegistrationTreeStopsAtAnEntryThatIsThere(t *testing.T) {
 			mustWrite(t, filepath.Join(src, "HEAD"), "ref: refs/heads/w1\n")
 			mustWrite(t, filepath.Join(src, "sub", "deep", "f"), "x\n")
 			row.stage(t, dst)
-			if err := copyRegistrationTree(openTestRoot(t, src), openTestRoot(t, dst), "s", ""); !errors.Is(err, os.ErrExist) {
+			if err := copyRegistrationTree(openTestRoot(t, src), openTestRoot(t, dst), "s", "", ""); !errors.Is(err, os.ErrExist) {
 				t.Errorf("the copy = %v, want an entry that exists", err)
 			}
 			if got := mustRead(t, filepath.Join(dst, row.kept)); got != "k\n" {
@@ -321,7 +321,7 @@ func TestCopyRegistrationTreeStopsAtAnEntryThatIsThere(t *testing.T) {
 	}
 	t.Run("a source that cannot be listed", func(t *testing.T) {
 		src, dst := t.TempDir(), t.TempDir()
-		if err := copyRegistrationTree(openTestRoot(t, src), openTestRoot(t, dst), "s", "gone"); !errors.Is(err, os.ErrNotExist) {
+		if err := copyRegistrationTree(openTestRoot(t, src), openTestRoot(t, dst), "s", "gone", ""); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("the copy = %v, want a missing folder", err)
 		}
 	})
@@ -440,5 +440,50 @@ func TestMoveEndsAtAFailedStagingMkdir(t *testing.T) {
 	var incomplete *addIncomplete
 	if !errors.Is(err, os.ErrClosed) || errors.As(err, &incomplete) {
 		t.Errorf("move = %v, want the error of the mkdir", err)
+	}
+}
+
+// TestStagedRecordGetsNoCopy pins the new `gitdir` record of the staging
+// folder. The copy of the registration passes over a `gitdir` at its top, and
+// the record is one exclusive create of stagedRecordText. 4c111e86 removes no
+// `gitdir` in the staging folder (measured on Linux). A `gitdir` planted
+// there fails the write with the text that the copy gave before, and it
+// stays. Without the skip the copy makes a `gitdir`. With a remove before the
+// write the planted file goes.
+func TestStagedRecordGetsNoCopy(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	mustWrite(t, filepath.Join(src, "gitdir"), "/staged/.git\n")
+	mustWrite(t, filepath.Join(src, "HEAD"), "ref: refs/heads/w1\n")
+	mustWrite(t, filepath.Join(src, "sub", "gitdir"), "deep\n")
+	if err := os.Mkdir(filepath.Join(dst, "s"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srcRoot, dstRoot := openTestRoot(t, src), openTestRoot(t, dst)
+	if err := copyRegistrationTree(srcRoot, dstRoot, "s", "", "gitdir"); err != nil {
+		t.Fatalf("the copy = %v, want no error", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dst, "s", "gitdir")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the gitdir of the copy: %v, want none", err)
+	}
+	if got := mustRead(t, filepath.Join(dst, "s", "sub", "gitdir")); got != "deep\n" {
+		t.Errorf("sub/gitdir = %q, want the copy", got)
+	}
+	leaf := filepath.Join(t.TempDir(), "w1")
+	st := &addStage{git: dstRoot}
+	if err := st.writeStagedRecord("s", leaf); err != nil {
+		t.Fatalf("the record = %v, want no error", err)
+	}
+	if got, want := mustRead(t, filepath.Join(dst, "s", "gitdir")), stagedRecordText(leaf); got != want {
+		t.Errorf("the record = %q, want %q", got, want)
+	}
+
+	mustWrite(t, filepath.Join(dst, "p", "gitdir"), "planted\n")
+	before := copyRootFile(srcRoot, "gitdir", dstRoot, filepath.Join("p", "gitdir"), 0o644)
+	err := st.writeStagedRecord("p", leaf)
+	if !errors.Is(err, fs.ErrExist) || before == nil || err.Error() != before.Error() {
+		t.Errorf("the record over a planted gitdir = %v, want %v", err, before)
+	}
+	if got := mustRead(t, filepath.Join(dst, "p", "gitdir")); got != "planted\n" {
+		t.Errorf("the planted gitdir = %q, want it as it was", got)
 	}
 }

@@ -25,7 +25,7 @@ func TestCopyRegistrationTreeCopiesALargeFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "info", "sparse-checkout"), big, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyRegistrationTree(openTestRoot(t, src), openTestRoot(t, dst), "s", ""); err != nil {
+	if err := copyRegistrationTree(openTestRoot(t, src), openTestRoot(t, dst), "s", "", ""); err != nil {
 		t.Fatalf("the copy = %v, want no error", err)
 	}
 	if got, err := os.ReadFile(filepath.Join(dst, "s", "info", "sparse-checkout")); err != nil || !bytes.Equal(got, big) {
