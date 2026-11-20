@@ -165,10 +165,10 @@ type heldTempRoot struct {
 	checkFailed bool        // the last check failed (checkTempRoot)
 	changes     int         // the change lines of the checks so far (tempRootChangeCap)
 	lost        atomic.Bool // set once, when a check finds the folder lost
-	// given is true once the last spawn gave the folder back, at givenAt. The checks
-	// then go on with no flock and no write (checkTempRoots). gone is true once a check
-	// of a given-back folder found its temp dir gone, no entry or another folder at the
-	// name.
+	// given is true once the last spawn gave the folder back, at givenAt. The folder
+	// keeps its flock, and the checks go on with no write (checkTempRoots). gone is true
+	// once a check of a given-back folder found its temp dir gone, no entry or another
+	// folder at the name.
 	given, gone bool
 	givenAt     time.Time
 	// probe is true for the copy of a given-back folder that a check looks at with no
@@ -483,8 +483,8 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	// When the limit came first, the child got the env as it was. The step still writes
 	// the record, logs its line and takes the folder, so the next spawn gets it (4c111e86,
 	// measured on Linux on a dead NFS mount). It then gives the folder back at once if no
-	// spawn uses it, as a spawn whose child ended (claustrum's own; 4c111e86 keeps its
-	// flock, measured on Linux; all of it on macOS).
+	// spawn uses it, as a spawn whose child ended, and the folder keeps its flock (the
+	// give-back claustrum's own, the flock 4c111e86, measured on Linux; all of it on macOS).
 	onTime := late.keep()
 	if made && root != nil {
 		writeTempRootRegistry(root, reg, name)
@@ -565,9 +565,9 @@ func giveBackTempRoot(h *heldTempRoot, path string) {
 		return
 	}
 	delete(tempRoots.held, path)
-	// The flock goes now (claustrum's own). The checks go on, so a later loss still
+	// The folder keeps its flock (4c111e86, measured on Linux) until its record ends
+	// and its handle closes (claustrum's own). The checks go on, so a later loss still
 	// counts (4c111e86, measured on macOS).
-	_ = unix.Flock(int(h.f.Fd()), unix.LOCK_UN)
 	h.given, h.givenAt = true, time.Now()
 	tempRoots.given = append(tempRoots.given, h)
 	if n := len(tempRoots.given) - tempRootGivenKeep; n > 0 {
@@ -686,7 +686,16 @@ func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int, canA
 	if !canAdd {
 		return nil, "", false
 	}
-	f, ok := openTempRoot(xfd, name, uid, 0o500)
+	// A given-back folder keeps the flock of its handle, which a second open of it
+	// cannot take. So the hold of such a folder takes a copy of that handle, which shares
+	// the flock (claustrum's own).
+	var f *os.File
+	ok := false
+	if g := givenTempRootOf(&st); g == nil {
+		f, ok = openTempRoot(xfd, name, uid, 0o500)
+	} else if fd, err := unix.FcntlInt(g.f.Fd(), unix.F_DUPFD_CLOEXEC, 0); err == nil {
+		f, ok = ownTempRoot(os.NewFile(uintptr(fd), name), uid, 0o500)
+	}
 	if !ok || !childDirFit(int(f.Fd()), uid) {
 		if ok {
 			_ = f.Close()
@@ -712,13 +721,29 @@ func openTempRoot(xfd int, name string, uid int, mode uint32) (*os.File, bool) {
 	if err != nil {
 		return nil, false
 	}
-	f := os.NewFile(uintptr(fd), name)
+	return ownTempRoot(os.NewFile(uintptr(fd), name), uid, mode)
+}
+
+// ownTempRoot gives back f when it is a folder of uid with the given mode, and closes it
+// otherwise.
+func ownTempRoot(f *os.File, uid int, mode uint32) (*os.File, bool) {
 	var st unix.Stat_t
-	if unix.Fstat(fd, &st) != nil || int(st.Uid) != uid || statMode(&st)&0o7777 != mode {
+	if unix.Fstat(int(f.Fd()), &st) != nil || int(st.Uid) != uid || statMode(&st)&0o7777 != mode {
 		_ = f.Close()
 		return nil, false
 	}
 	return f, true
+}
+
+// givenTempRootOf gives the given-back record whose folder st is, or nil. The caller
+// holds tempRoots.mu.
+func givenTempRootOf(st *unix.Stat_t) *heldTempRoot {
+	for _, g := range tempRoots.given {
+		if g.dev == statDev(st) && g.ino == st.Ino {
+			return g
+		}
+	}
+	return nil
 }
 
 // makeTempRoot makes a new folder ccd-<10 hex> with mode 0700, then its inner folder

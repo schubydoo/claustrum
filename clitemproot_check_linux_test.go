@@ -832,7 +832,7 @@ func givenCount() int {
 
 // A loss in the time that the child ran still counts after the give-back: the next
 // check finds it, and the next reply lists it (4c111e86, measured on macOS). The
-// flock goes at the give-back (claustrum's own).
+// folder keeps its flock at the give-back (4c111e86, measured on Linux).
 func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -850,8 +850,8 @@ func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		t.Errorf("flock after the give-back: %v, want none held", err)
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("flock after the give-back: %v, want the daemon to hold it", err)
 	}
 	ticks.check(t)
 	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
@@ -1080,6 +1080,43 @@ func TestCLITempRootHeldAgainEndsTheGivenRecord(t *testing.T) {
 	}
 	if c := runTempRootBound(t, x, runDir, &rel, nil); c == nil || len(c.Gone) != 1 {
 		t.Errorf("the next answer %+v, want one lost entry", c)
+	}
+}
+
+// A given-back folder keeps its flock (4c111e86, measured on Linux). The next spawn
+// takes it again, and the flock goes once its given-back record ends (claustrum's own).
+func TestCLITempRootGivenBackFolderKeepsItsFlock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	f, err := os.Open(filepath.Join(x, a.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	flock := func() error { return unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB) }
+	rel[0]()
+	if err := flock(); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("flock after the give-back: %v, want the daemon to hold it", err)
+	}
+	if b := runTempRootBound(t, x, runDir, &rel, nil); b == nil || b.Name != a.Name {
+		t.Fatalf("second answer %+v, want the given-back folder %s again", b, a.Name)
+	}
+	rel[1]()
+	if err := flock(); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("flock after the second give-back: %v, want the daemon to hold it", err)
+	}
+	tempRoots.mu.Lock()
+	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
+	tempRoots.mu.Unlock()
+	ticks.check(t)
+	if n := givenCount(); n != 0 {
+		t.Fatalf("%d given-back folders after the check, want 0", n)
+	}
+	if err := flock(); err != nil {
+		t.Errorf("flock after the record ended: %v, want no hold", err)
 	}
 }
 
