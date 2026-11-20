@@ -311,13 +311,11 @@ func (l *tempRootLate) markGaveUp() bool {
 // privateTempRoot runs the step for the env of one child. It returns the env, the
 // member of the reply (nil for none) and the function that gives the folder back.
 // The step runs in its own goroutine on a copy of the env. After tempRootLimit the
-// spawn goes on with the env as it was. A folder that a late step made stays, with
-// no registry write and no hold (b3081b51, measured on Linux). A late step closes
-// a folder that it took (claustrum's own, not measured). A spawn whose own step hits
-// the limit logs tempRootNoReplyLine (4c111e86, measured on Linux; on macOS claustrum's
-// own). A spawn of a temp dir with a late step returns before it, with no line. A spawn
-// whose step waits past the limit for the lock logs it too, a known difference that
-// TASK-734 follows.
+// spawn goes on with the env as it was. A late step still takes its folder for the next
+// spawn (tempRootStep). A spawn whose own step hits the limit logs tempRootNoReplyLine
+// (4c111e86, measured on Linux; on macOS claustrum's own). A spawn of a temp dir with a
+// late step returns before it, with no line. A spawn whose step waits past the limit for
+// the lock logs it too, a known difference that TASK-734 follows.
 func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, func(), func(end func())) {
 	type answer struct {
 		env     []string
@@ -482,13 +480,12 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		holdTempRoot(h.f)
 		fresh, made = true, true
 	}
-	if !late.keep() {
-		// The limit came first. The child got the env as it was.
-		if fresh {
-			_ = h.f.Close()
-		}
-		return env, nil, none, noBind
-	}
+	// When the limit came first, the child got the env as it was. The step still writes
+	// the record, logs its line and takes the folder, so the next spawn gets it (4c111e86,
+	// measured on Linux on a dead NFS mount). It then gives the folder back at once if no
+	// spawn uses it, as a spawn whose child ended (claustrum's own; 4c111e86 keeps its
+	// flock, measured on Linux; all of it on macOS).
+	onTime := late.keep()
 	if made && root != nil {
 		writeTempRootRegistry(root, reg, name)
 	}
@@ -507,33 +504,23 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 			go checkTempRoots(tempRoots.checks, tempRoots.checksEnded, ticks, stopTicks, afterTempRootChecks, afterTempRootOneCheck)
 		}
 	}
+	logging.Infof("[process.Manager] Claude Code's temp folder is unfit (it is %s): Claude Code gets %s/%s beside it", kind, name, tempRootChildDir)
+	if !onTime {
+		if len(h.users) == 0 {
+			giveBackTempRoot(h, filepath.Join(dir, name))
+		}
+		return env, nil, none, noBind
+	}
 	u := &tempRootUser{}
 	h.users = append(h.users, u)
 	tempRoots.live++
-	logging.Infof("[process.Manager] Claude Code's temp folder is unfit (it is %s): Claude Code gets %s/%s beside it", kind, name, tempRootChildDir)
 	env = sysproc.ReplaceOrAppendEnv(env, "CLAUDE_CODE_TMPDIR", filepath.Join(dir, name, tempRootChildDir))
 	giveBack := func() { // the caller holds tempRoots.mu
 		defer tempRoots.mu.Unlock()
 		tempRoots.live--
 		h.users = slices.DeleteFunc(h.users, func(o *tempRootUser) bool { return o == u })
 		if len(h.users) == 0 {
-			close(h.stop)
-			if tempRoots.held[filepath.Join(dir, name)] != h {
-				_ = h.f.Close() // a lost folder is not checked again
-				return
-			}
-			delete(tempRoots.held, filepath.Join(dir, name))
-			// The flock goes now (claustrum's own). The checks go on, so a later loss still
-			// counts (4c111e86, measured on macOS).
-			_ = unix.Flock(int(h.f.Fd()), unix.LOCK_UN)
-			h.given, h.givenAt = true, time.Now()
-			tempRoots.given = append(tempRoots.given, h)
-			if n := len(tempRoots.given) - tempRootGivenKeep; n > 0 {
-				for _, g := range tempRoots.given[:n] {
-					_ = g.f.Close()
-				}
-				tempRoots.given = slices.Delete(tempRoots.given, 0, n)
-			}
+			giveBackTempRoot(h, filepath.Join(dir, name))
 		}
 	}
 	// The release runs before the exit of the child ends a killAndWait wait. A step
@@ -567,6 +554,28 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 		}
 	}
 	return env, &rpc.CLITempRoot{Refused: kind, Name: name}, release, bind
+}
+
+// giveBackTempRoot gives back the folder h at path once no spawn uses it. The caller
+// holds tempRoots.mu.
+func giveBackTempRoot(h *heldTempRoot, path string) {
+	close(h.stop)
+	if tempRoots.held[path] != h {
+		_ = h.f.Close() // a lost folder is not checked again
+		return
+	}
+	delete(tempRoots.held, path)
+	// The flock goes now (claustrum's own). The checks go on, so a later loss still
+	// counts (4c111e86, measured on macOS).
+	_ = unix.Flock(int(h.f.Fd()), unix.LOCK_UN)
+	h.given, h.givenAt = true, time.Now()
+	tempRoots.given = append(tempRoots.given, h)
+	if n := len(tempRoots.given) - tempRootGivenKeep; n > 0 {
+		for _, g := range tempRoots.given[:n] {
+			_ = g.f.Close()
+		}
+		tempRoots.given = slices.Delete(tempRoots.given, 0, n)
+	}
 }
 
 func tempEnvValue(env []string, key string) string {

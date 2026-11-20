@@ -16,7 +16,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a Windows create (`4c111e86`, measured on Windows), on a `.git` file to a missing repository starts it |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a create (`4c111e86`, measured on Linux and Windows), on a `.git` file to a missing repository starts it |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
@@ -25,7 +25,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
   no member. A path that does not exist gets the same, but starts no test itself. On
-  a folder with no repository the other methods answer at once, except a Windows create on a `.git` file to a missing path (`4c111e86`, measured on Windows).
+  a folder with no repository the other methods answer at once, except a create on a `.git` file to a missing path (`4c111e86`, measured on Linux and Windows).
 - As the first git request of a daemon, a `git.info` on a folder whose `.git` file
   names a missing path runs the test and gives that reply. A missing entry under
   `worktrees` of an existing git directory runs no test, and the reply has no member
@@ -132,10 +132,10 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file, FIFO or link there goes, never its target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). Only `shadow`,
-  `fallback-git` within 10 minutes and a missing git (`git.info`, and `git.status` on Linux and macOS)
-  heal it. A start test
-  fails at it, or tests in a link's target (claustrum's own, not measured). On Linux
+  succeed in a new folder (`4c111e86` on Linux and macOS). `shadow`,
+  `fallback-git`, a missing git (`git.info`, and `git.status` on Linux and macOS)
+  and a start test heal it. A test after a kept failure is measured on Linux. Other
+  start tests are claustrum's own. On Linux
   and macOS one file `unlinkat` after the home guard removes it, never a folder or
   tree (from the code). Other non-folder kinds, a file with content and Windows (a
   regular file, or an empty folder in its place) are claustrum's own.
