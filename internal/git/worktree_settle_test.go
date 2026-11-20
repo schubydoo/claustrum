@@ -473,11 +473,12 @@ func TestWorktreeCreateDeadlineCountsFromTheRequest(t *testing.T) {
 	}
 }
 
-// A wait for the create lock of the repository does not count toward timeoutMs:
-// the deadline starts once the create holds the lock (claustrum's own, not
-// measured). Mutation: take arrival in gitWorktreeCreate before
-// withWorktreeCreateLock.
-func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
+// A create starts with no wait for the create lock, and its deadline starts
+// at the request. A wait for the lock at its add, while the add of another
+// create holds it, counts toward timeoutMs (claustrum's own, not measured).
+// Mutation: take the create lock at the start of withWorktreeCreateLock, as
+// before TASK-705. The deadline then starts after the release.
+func TestWorktreeCreateDeadlineCountsTheWaitAtTheAdd(t *testing.T) {
 	const wait = 1500 * time.Millisecond
 	f, h, _ := settleFixture(t, 0, 0)
 	old := callerDeadline
@@ -495,9 +496,11 @@ func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
 	lockDone := make(chan struct{})
 	go func() {
 		defer close(lockDone)
-		withWorktreeCreateLock(f.base, func(_, _ func()) response {
+		withWorktreeCreateLock(f.base, func(hold *createHold) response {
+			end := takeAddLocks(hold, f.base)
 			close(held)
 			<-release
+			end()
 			return response{}
 		})
 	}()
@@ -518,8 +521,8 @@ func TestWorktreeCreateDeadlineStartsAfterTheLock(t *testing.T) {
 	if deadline.IsZero() || released.IsZero() {
 		t.Fatalf("deadline %v, release %v: want both", deadline, released)
 	}
-	if got, limit := deadline.Sub(released), time.Duration(markerTimeoutMs)*time.Millisecond; got < limit {
-		t.Errorf("the deadline ends %v after the lock was free, want at least %v: the wait counted", got, limit)
+	if got, limit := deadline.Sub(released), time.Duration(markerTimeoutMs)*time.Millisecond; got > limit-wait/2 {
+		t.Errorf("the deadline ends %v after the lock was free, want at most %v: the wait did not count", got, limit-wait/2)
 	}
 }
 

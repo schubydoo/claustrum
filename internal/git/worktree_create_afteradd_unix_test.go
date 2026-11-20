@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -793,10 +794,9 @@ func TestWorktreeCreateSpellingCallEndedByDeadline(t *testing.T) {
 // two creates: the first through the main repository, the second through a linked
 // worktree of it. The stub holds the first `worktree add` after git made the
 // registration. The second add must not run inside that hold, so both creates
-// succeed. At the start of the second add the stub copies the checkout file of the
-// first worktree, which is there only after the first add ended. Without the lock by
-// git directory the copy is missing, and the first create sees two new entries and
-// is refused.
+// succeed. The time log of the stub has the end of the first add and the start of
+// the second. Without the lock by git directory the second add starts first, and
+// the first create sees two new entries and is refused.
 func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	f := newWTFixture(t, true)
 	installGitSlowStub(t, f.realGit)
@@ -804,8 +804,8 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	// Only the add of the first create has the word w1.
 	slowGit(t, "worktree,add,w1", "post", 4*time.Second, "", "")
 	firstLeaf := filepath.Join(f.top, ".claude", "worktrees", "w1")
-	snap := filepath.Join(t.TempDir(), "first-checkout")
-	duringCallSteps(t, "worktree,add,w2", "", []string{"snap", filepath.Join(firstLeaf, "t.txt"), snap})
+	timeLog := filepath.Join(t.TempDir(), "time.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
 	firstLine := rpcLine(t, "git.worktree_create", createParams(f.top, firstLeaf, "w1"))
 	secondLeaf := filepath.Join(f.base, ".claude", "worktrees", "w2")
 	secondLine := rpcLine(t, "git.worktree_create", createParams(f.base, secondLeaf, "w2"))
@@ -829,8 +829,9 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	second := gitDispatch(t, h, secondLine)
-	if _, err := os.Stat(snap); err != nil {
-		t.Errorf("the second add started before the first add ended: %v", err)
+	firstEnd, secondStart := addTimes(t, timeLog, "w1", "w2")
+	if !secondStart.After(firstEnd) {
+		t.Errorf("the second add started at %v, before the first add ended at %v", secondStart, firstEnd)
 	}
 	if got := <-first; !strings.Contains(got, `"success":true`) {
 		t.Errorf("the create through the main repository = %s\nwant success", got)
@@ -846,6 +847,36 @@ func TestWorktreeCreateThroughLinkedWorktreeWaits(t *testing.T) {
 	if got, want := f.regs(t), []string{"LW", "w1", "w2"}; !slices.Equal(got, want) {
 		t.Errorf("registrations = %q, want %q", got, want)
 	}
+}
+
+// addTimes reads the time log of the stub: the end of the `worktree add` call
+// whose argv ends with a path of the name first, and the start of the one of
+// the name second.
+func addTimes(t *testing.T, timeLog, first, second string) (firstEnd, secondStart time.Time) {
+	t.Helper()
+	pids := map[string]string{}
+	for _, line := range strings.Split(mustRead(t, timeLog), "\n") {
+		w := strings.Split(line, "\x1f")
+		if len(w) < 3 {
+			continue
+		}
+		ns, err := strconv.ParseInt(w[1], 10, 64)
+		if err != nil {
+			t.Fatalf("time log line %q: %v", line, err)
+		}
+		switch {
+		case w[0] == "start" && argvHas(w[3:], "worktree", "add") && filepath.Base(w[len(w)-1]) == second:
+			secondStart = time.Unix(0, ns)
+		case w[0] == "start" && argvHas(w[3:], "worktree", "add") && filepath.Base(w[len(w)-1]) == first:
+			pids[w[2]] = first
+		case w[0] == "end" && pids[w[2]] == first:
+			firstEnd = time.Unix(0, ns)
+		}
+	}
+	if firstEnd.IsZero() || secondStart.IsZero() {
+		t.Fatalf("the time log has no end of the %s add (%v) or no start of the %s add (%v)", first, firstEnd, second, secondStart)
+	}
+	return firstEnd, secondStart
 }
 
 // TestWorktreeCreateRefusalKeepsLeafGitFile pins two refusals of the tests
