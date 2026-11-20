@@ -295,8 +295,7 @@ func readShadowHead(gitDir string) ([]byte, bool) {
 // the three is measured.
 //
 // A good call counts as a use of the folder. The folder is free again at once:
-// only a git child, or the staging folder of a Windows create, holds it
-// (holdRepo, holdCopy).
+// only a git child holds it (holdRepo).
 func (h *ShadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) {
 	h.repoMu.Lock()
 	defer h.repoMu.Unlock()

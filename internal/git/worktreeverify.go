@@ -21,6 +21,9 @@ type worktreeCheckpoint struct {
 	parentInfo os.FileInfo // identity of the leaf's parent, read from the held parent handle
 	resolved   string      // the leaf path with every symlink component resolved
 	held       []*os.File  // open handles on the leaf and its parent, see holdWorktreeDir
+	// lock is the hold of the create lock of the create. Each rollback takes it
+	// first (createHold.retake), and the add takes it (takeAddLocks).
+	lock *createHold
 }
 
 // release closes the handles that the checkpoint holds. The create calls it once,
@@ -125,6 +128,7 @@ func undoMovedAwayLeaf(worktreePath string, cp worktreeCheckpoint) {
 
 // undoFailedAddLeaf is undoFailedAdd. folderOnly removes no file and no link.
 func undoFailedAddLeaf(worktreePath string, cp worktreeCheckpoint, folderOnly bool) {
+	cp.lock.retake()
 	if worktreePath == "" || leafHoldsHome(worktreePath) {
 		return
 	}
@@ -225,6 +229,7 @@ func undoFailedAddLeaf(worktreePath string, cp worktreeCheckpoint, folderOnly bo
 // its text without the "the worktree itself was removed, but " start. That is
 // claustrum's own guard (not measured): no honest input reaches it.
 func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktreeCheckpoint, tested testedRegistration) (text string, kept bool) {
+	cp.lock.retake()
 	// Without tested, the admin dir is found through the leaf's .git file, which
 	// step A deletes.
 	var registration createdRegistration
@@ -357,6 +362,7 @@ func leafHoldsHome(worktreePath string) bool {
 // registration and runs no branch step. A step that fails or a guard that
 // refuses ends it, and nothing is reported.
 func removeCreatedLeaf(worktreePath string, cp worktreeCheckpoint) {
+	cp.lock.retake()
 	if !leafSafeToRemove(worktreePath, cp) || clearWorktreeLeaf(worktreePath) != "" || !leafSafeToRemove(worktreePath, cp) {
 		return
 	}

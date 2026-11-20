@@ -37,7 +37,7 @@ func (f lfsFixture) createLine(t *testing.T, branch string) string {
 // of its own and succeeds, and A removes only its own registration
 // (claustrum's own: the rollback deletes no name that B is making).
 //
-// Mutation: make retake a no-op in withWorktreeCreateLock. A then answers
+// Mutation: make createHold.retake a no-op. A then answers
 // and removes its registration n1 during the add of B, git gives B the name
 // n1 again, and B is refused with otherEntryRefusal.
 func TestWorktreeCreateRollbackWaitsForAnotherAdd(t *testing.T) {

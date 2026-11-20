@@ -115,8 +115,7 @@ type ShadowHost struct {
 	// time. repos has what the daemon knows of each folder that it made, by its
 	// name. A folder that is not there starts again with nothing known
 	// (syncRepo).
-	// repoBusy counts the holds of each folder: a git child, or the staging
-	// folder of a Windows create (holdRepo, holdCopy).
+	// repoBusy counts the holds of each folder by a git child (holdRepo).
 	// useCount numbers the uses (shadowRepo.used). renewFailed has the error of
 	// the last build that failed to make a folder again (renewRepo), by name.
 	repoMu      sync.Mutex
