@@ -358,16 +358,16 @@ The trampoline adds no frame.
     If the trampoline does not start, the daemon logs `[process.Manager] exec trampoline failed for <id> (<error>); starting it directly — a successor daemon will not be able to reap it` and starts the command directly (measured on Linux). The frame then names the command, for example `fork/exec <command>: permission denied` for a `cwd` that the daemon cannot enter. From the code: if that direct start works, the reply is success, and the child gets `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`.
 
 ??? note "A later daemon start"
-    A later daemon start ends a child of a gone daemon that still matches its record, with `SIGTERM` and then `SIGKILL` ([Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos)). A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
+    A later daemon start can end the child ([Child records and the reap](../DAEMON.md#child-records-and-the-reap-linux-and-macos)). A record that cannot be written does not fail the spawn, and the child still gets both identity markers.
 
 ### The SSH agent hand-off (Linux and macOS)
 
-The daemon advertises it as the feature `process.spawn.shellAgentSocket`. A child whose environment has no `SSH_AUTH_SOCK` entry gets the one that the user's login shell exports. Its rules are measured on Linux and macOS.
+Its `server.capabilities` feature is `process.spawn.shellAgentSocket`. A child whose environment has no `SSH_AUTH_SOCK` entry gets the one that the user's login shell exports. Its rules are measured on Linux and macOS.
 
-- An entry that is there wins, even an empty one such as `"SSH_AUTH_SOCK":""` in `env`. `"disableShellAgentSocket":true` skips the step too.
+- An entry that is there wins, even an empty one such as `"SSH_AUTH_SOCK":""` in `env`.
 - The daemon runs the same shell as the `PATH` read at the first spawn that needs a socket. The run has a 4 s limit, and the daemon gives up on a shell that the kill cannot end at 5 s.
 - Measured on Linux against `683cc6a9`: a plain file gets no connect call. A live answer holds with no connect at 60 s, for a dead agent, and is gone at 610 s. A new socket there is dialed again. claustrum's own: any other non-socket, the 600 s, and the key of path, device, inode and mtime.
-- A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, and not after 3 failed runs in a row. A connection attempt still open after 500 ms ends the hand-off for good, and so does a stat (claustrum's own).
+- A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, and not after 3 failed runs in a row. A stat or connect still open after 500 ms ends the hand-off for good and logs `[shellenv] A check of SSH_AUTH_SOCK=<path> never returned (a hung filesystem?); not using it or asking the login shell again for this daemon's lifetime` (claustrum's own, not measured).
 - While the `PATH` read runs, the step runs no shell (measured against `52d82f0a`).
 - The step never fails a spawn. Each shell run and each give-up writes a `[shellenv]` log line.
 
@@ -395,7 +395,7 @@ The argument after a bare `--session-id` or `--resume` is its value. The id has 
 
 The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old process ends at once, and two spawns of one session run one after the other (both claustrum's own).
 
-A spawn with the `id` and the session of a running process only replaces it, as [the `id` in use](#a-spawn-with-an-id-that-is-in-use) says.
+A spawn with the `id` and the session of a running process only replaces it ([the `id` in use](#a-spawn-with-an-id-that-is-in-use)).
 
 #### Edge cases
 
