@@ -161,6 +161,25 @@ func TestWorktreeRemoveThroughJunctionDropsEntry(t *testing.T) {
 	}
 }
 
+// A worktree leaf that is a junction to a live worktree is refused with the path in
+// backticks. The junction, the worktree behind it, its entry and its branch stay
+// (`4c111e86`, measured on Windows, row e_junction_remove).
+func TestWorktreeRemoveJunctionLeafIsRefused(t *testing.T) {
+	f := newRmFixture(t)
+	live := filepath.Join(filepath.Dir(f.repo), "jt5")
+	runGit(t, f.repo, "worktree", "add", "-q", "-b", "w1", live)
+	leaf := filepath.Join(filepath.Dir(f.wt), "w1")
+	makeJunction(t, leaf, live)
+	raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": leaf, "branchName": "w1"})
+	wantRemoveError(t, raw, "refusing to remove worktree: `"+leaf+"` is not a directory")
+	mustExist(t, leaf)
+	mustExist(t, filepath.Join(live, ".git"))
+	mustExist(t, filepath.Join(f.repo, ".git", "worktrees", "jt5"))
+	if !f.hasBranch("w1") {
+		t.Error("branch w1 was deleted")
+	}
+}
+
 // Measured (`b3081b51`, on Windows): `.git\worktrees` is moved to TARGET, and a
 // junction or a directory symbolic link to TARGET takes its place. A remove of
 // the live worktree deletes nothing and answers the lock-check refusal. The
