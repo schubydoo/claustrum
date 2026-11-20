@@ -39,11 +39,13 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// afterCheck runs cond under tempRoots.mu. A check logs its line while it holds that
-// lock and fits the folder after the line. So cond sees the line only once that check
-// has ended.
+// afterCheck runs cond under tempRootChecking and tempRoots.mu. A check logs its line
+// while it holds tempRootChecking and fits the folder after the line. So cond sees the
+// line only once that check has ended.
 func afterCheck(cond func() bool) func() bool {
 	return func() bool {
+		tempRootChecking.Lock()
+		defer tempRootChecking.Unlock()
 		tempRoots.mu.Lock()
 		defer tempRoots.mu.Unlock()
 		return cond()
@@ -516,9 +518,11 @@ func wantNoEndAfter(t *testing.T, change func(x, name string), line string) {
 // underCheckLock runs f while no check runs.
 func underCheckLock(t *testing.T, f func() error) {
 	t.Helper()
+	tempRootChecking.Lock()
 	tempRoots.mu.Lock()
 	err := f()
 	tempRoots.mu.Unlock()
+	tempRootChecking.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1222,6 +1226,105 @@ func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
 		<-pass.done
 	}
 	tempRootCheckDev = old
+}
+
+// The check of a held folder holds no lock while it looks at the folder, so a spawn in
+// another temp dir gets its folder at once while that check does not answer (4c111e86,
+// measured on Linux on a dead NFS mount). A loss that the check finds still ends the
+// child that asked, once the check answers.
+func TestCLITempRootHeldCheckHoldsNoLock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	old := tempRootLimit
+	tempRootLimit = 300 * time.Millisecond
+	t.Cleanup(func() { tempRootLimit = old })
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	linkAtName(t, x, a.Name)
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	start := time.Now()
+	_, res, release, _ := privateTempRoot([]string{"TMPDIR=" + x2}, runDir2)
+	rel = append(rel, release)
+	if d := time.Since(start); res == nil || !tempRootNameRE.MatchString(res.Name) || d >= tempRootLimit {
+		t.Errorf("answer %+v after %v during the check of a held folder, want a folder at once", res, d)
+	}
+	if ends.Load() != 0 {
+		t.Error("an end before the check answered")
+	}
+	close(free)
+	<-done
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 || ends.Load() != 1 {
+		t.Errorf("%d loss lines and %d ends after the check, want 1 and 1\nlog:\n%s", n, ends.Load(), logs.String())
+	}
+}
+
+// A folder given back while its check does not answer takes only the loss that the
+// check finds: one loss line, no end, and its given-back record ends (claustrum's own).
+func TestCLITempRootGivenBackDuringItsCheckTakesTheLoss(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	linkAtName(t, x, a.Name)
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	rel[0]()
+	if n := givenCount(); n != 1 {
+		t.Fatalf("%d given-back folders during the check, want 1", n)
+	}
+	close(free)
+	<-done
+	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
+	if n := strings.Count(logs.String(), line); n != 1 || ends.Load() != 0 || givenCount() != 0 {
+		t.Errorf("%d loss lines, %d ends, %d given-back folders, want 1, 0 and 0\nlog:\n%s", n, ends.Load(), givenCount(), logs.String())
+	}
 }
 
 // A check of a given-back folder that does not answer holds up no check of a held
