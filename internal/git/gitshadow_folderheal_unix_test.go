@@ -114,6 +114,47 @@ func TestShadowFolderLinkGoesAsALink(t *testing.T) {
 	}
 }
 
+// TestShadowFolderEntryHealsAtRetest: a FIFO, a link to a folder and a link
+// to nothing at the folder of the daemon go at the test after a kept failure.
+// The requests succeed, the link's target gets nothing and a missing target
+// is not made (4c111e86, measured on Linux). Mutation: keep h.dir in
+// startTest when its Lstat succeeds.
+func TestShadowFolderEntryHealsAtRetest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		link bool
+		gone bool
+	}{{"FIFO", false, false}, {"link to a folder", true, false}, {"link to nothing", true, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newShadowFixture(t)
+			target := filepath.Join(t.TempDir(), "T")
+			if tc.link && !tc.gone {
+				if err := os.Mkdir(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				mustWrite(t, filepath.Join(target, "keep"), "x")
+			}
+			first := replaceAfterKeptFailure(t, f, func(p string) error {
+				if tc.link {
+					return os.Symlink(target, p)
+				}
+				return syscall.Mkfifo(p, 0o600)
+			})
+			wantHealedAtRetest(t, f, first)
+			switch {
+			case tc.gone:
+				if _, err := os.Lstat(target); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("the target: %v, want nothing there", err)
+				}
+			case tc.link:
+				if got := entryNames(t, target); len(got) != 1 || got[0] != "keep" {
+					t.Errorf("the target holds %v, want keep only", got)
+				}
+			}
+		})
+	}
+}
+
 // TestUnsearchableDaemonFolderTexts: with mode 0000 4c111e86 answers the
 // mkdir of the folder of the repository, and at `.probe` the mkdir of
 // `.probe` (measured on Linux, and in `shadow` on macOS).
