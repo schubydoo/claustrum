@@ -695,11 +695,11 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 - **Behavior.** `install.MaxCLIBytes` caps the decompressed CLI
   (`decompressing: decompressed CLI exceeds <n> bytes`) and the download body
   (`download failed: response exceeds <n> bytes`).
-- **Reference.** 4c111e86 refuses a zstd frame with a window over 512 MiB. A
-  single-segment frame has its declared size as its window: over 512 MiB gives
-  `decompressing: decompressed size exceeds configured limit` on `-cli-zst` and
-  `-cli-url`. On `-cli-zst` a frame with a 128 KiB window installs at 2 GiB
-  (both measured on Linux, macOS and Windows), and a frame with a 1 GiB window
+- **Reference.** On 4c111e86 a single-segment zstd frame that declares over
+  512 MiB gives `decompressing: decompressed size exceeds configured limit` on
+  `-cli-zst` and `-cli-url` (measured on Linux, macOS and Windows). On `-cli-zst`
+  a frame with a 128 KiB window installs at 2 GiB (measured on Linux, macOS and
+  Windows), and a frame with a 1 GiB window
   gives `decompressing: window size exceeded` (measured on Linux). claustrum
   with the cap off gives the same answers. At 5db5e4a a 629 MB download body
   reaches the run test of the new CLI.
