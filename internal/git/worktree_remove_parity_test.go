@@ -2,6 +2,7 @@ package git
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,6 +118,27 @@ func TestWorktreeRemoveFileLeafIsRefused(t *testing.T) {
 	mustExist(t, leaf)
 	if !f.hasBranch("f0") {
 		t.Error("branch f0 was deleted")
+	}
+}
+
+// On Windows a junction leaf (ModeIrregular) puts the path in backticks. A regular file
+// leaf, and any leaf on Linux and macOS, has none (`4c111e86`, measured on Windows, row
+// e_junction_remove).
+func TestLeafNotDirText(t *testing.T) {
+	p := `C:\w\R\.claude\worktrees\w1`
+	for _, c := range []struct {
+		goos string
+		mode fs.FileMode
+		want string
+	}{
+		{"windows", fs.ModeIrregular, "`" + p + "` is not a directory"},
+		{"windows", 0, p + " is not a directory"},
+		{"linux", fs.ModeIrregular, p + " is not a directory"},
+		{"darwin", 0, p + " is not a directory"},
+	} {
+		if got := leafNotDirText(c.goos, p, c.mode); got != c.want {
+			t.Errorf("leafNotDirText(%s, %v) = %q, want %q", c.goos, c.mode, got, c.want)
+		}
 	}
 }
 
