@@ -156,6 +156,15 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 					// git.status refuses the empty key on its own listing (measured).
 					continue
 				}
+				if m.method == "git.worktree_create" && ph.env != nil {
+					// The create runs the same call (gitWorktreeCreateLocked) and answers
+					// its error the same way (claustrum's own, not measured).
+					got := f.frame(t, m.method, m.params)
+					if !strings.Contains(got, `"error":"git could not check this repository on the remote machine: at `) || !strings.Contains(got, `"errorCode":"worktree_add_failed"`) {
+						t.Errorf("%s = %s\nwant the error of the call about the repository", m.method, got)
+					}
+					continue
+				}
 				if got := f.frame(t, m.method, m.params); got != m.frame {
 					t.Errorf("%s = %s\nwant %s", m.method, got, m.frame)
 				}

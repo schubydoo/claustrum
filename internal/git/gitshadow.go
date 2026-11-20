@@ -234,7 +234,7 @@ func (h *ShadowHost) folderUse() gitUse {
 
 // gate runs before the first git call of a method in a repository that the trust
 // check accepted, or on a `.git` file to a missing path for git.info (gitInfo)
-// and a Windows git.worktree_create (gitWorktreeCreateLocked).
+// and git.worktree_create (gitWorktreeCreateLocked).
 // It returns the text of a failed start test, or "".
 //
 // A request with the member runs no test and makes no folder (measured on
@@ -1199,7 +1199,7 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 //
 // The test runs for a trusted git directory. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (measured on
-// Linux). git.info and a Windows git.worktree_create on a `.git` file to a
+// Linux). git.info and git.worktree_create on a `.git` file to a
 // missing path are the exceptions (gitInfo, gitWorktreeCreateLocked). Each
 // method gives the text of a failed test the shape that it gives a refused
 // config: the error object on git.info, git.status and git.list_branches,
