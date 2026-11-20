@@ -207,14 +207,27 @@ func TestJobTestFailsWhenTheReapNeverComes(t *testing.T) {
 // bound gets no end, and its own result counts.
 func TestJobTestSendsNoEndAfterTheExit(t *testing.T) {
 	captureLogBuf(t)
+	bound := make(chan struct{}, 1)
+	hook := func() {
+		select {
+		case bound <- struct{}{}:
+		default:
+		}
+	}
+	afterJobTestBound.Store(&hook)
+	t.Cleanup(func() { afterJobTestBound.Store(nil) })
 	c := newFakeJobTestChild(false)
 	test := runJobTest(c, time.Now(), 20*time.Millisecond, 200*time.Millisecond)
 	if test.State() != JobTestPending {
 		t.Fatalf("state = %d, want pending", test.State())
 	}
-	// The child exits, and its reap waits past the bound.
+	// The child exits, and its reap waits until the step at the bound has passed the gate.
 	close(c.exited)
-	time.Sleep(350 * time.Millisecond)
+	select {
+	case <-bound:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the step at the bound did not run within 5 s")
+	}
 	c.release <- nil
 	waitJobTestState(t, test, JobTestPassed)
 	if n := c.ends.Load(); n != 0 {

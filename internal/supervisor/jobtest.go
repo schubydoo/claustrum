@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -40,6 +41,10 @@ const (
 // jobTestReapGrace is the wait at the bound for the reap of a child that the end did not
 // reach (claustrum's own, not measured). A test shortens it.
 var jobTestReapGrace = 5 * time.Second
+
+// afterJobTestBound is a test seam. It is nil in production. A test sets it to learn
+// that the step at the bound has passed the gate.
+var afterJobTestBound atomic.Pointer[func()]
 
 // jobTestChild is the child of the start test.
 type jobTestChild interface {
@@ -100,6 +105,9 @@ func (t *JobTest) awaitJobTest(c jobTestChild, gate *sysproc.LeaderGate, reaped 
 	}
 	ended := false
 	gate.Do(func() { ended = c.End() == nil })
+	if f := afterJobTestBound.Load(); f != nil {
+		(*f)()
+	}
 	took := time.Since(start)
 	boundErr := fmt.Errorf(jobTestBoundReason, bound)
 	if ended {
