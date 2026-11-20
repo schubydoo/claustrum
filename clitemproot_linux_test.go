@@ -608,10 +608,11 @@ func TestCLITempRootTempDirOrder(t *testing.T) {
 }
 
 // After the time limit the reply says so and the child gets the env as it was. A
-// folder that the step made after the limit stays, with no registry, no hold and
-// no count. The spawn whose own step hits the limit logs the line of the limit once, and a
-// second spawn of that temp dir gets the text at once with no second line (4c111e86,
-// measured on Linux).
+// folder that the step made after the limit stays with its record and its line, and the
+// next spawn gets it (4c111e86, measured on Linux). The step gives it back at once: no
+// count and no hold (claustrum's own). The spawn whose own step hits the limit logs the
+// line of the limit once, and a second spawn of that temp dir while the step is late gets
+// the text at once with no second line (4c111e86, measured on Linux).
 func TestCLITempRootTimeLimit(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -661,24 +662,38 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	unblock()
 	// The step holds tempRoots.mu until it ends, so this lock waits for its end.
 	tempRoots.mu.Lock()
-	live, held := tempRoots.live, len(tempRoots.held)
+	live, held, given := tempRoots.live, len(tempRoots.held), len(tempRoots.given)
 	tempRoots.mu.Unlock()
-	if got := ccdFolders(t, x); len(got) != 1 || got[0] != name || live != 0 || held != 0 {
-		t.Fatalf("folders %v, live %d, held %d, want the late folder and no count", got, live, held)
+	if got := ccdFolders(t, x); len(got) != 1 || got[0] != name || live != 0 || held != 0 || given != 1 {
+		t.Fatalf("folders %v, live %d, held %d, given %d, want the late folder given back and no count", got, live, held, given)
+	}
+	if want := "Claude Code gets " + name + "/t beside it"; strings.Count(logs.String(), want) != 1 {
+		t.Errorf("log %q, want the line of the late folder once", logs.String())
 	}
 	f, err := os.Open(filepath.Join(x, name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		t.Errorf("flock of the late folder: %v, want no hold", err)
 	}
-	if _, err := os.Stat(filepath.Join(runDir, tempRootRegistryName(x))); !os.IsNotExist(err) {
-		t.Errorf("registry: %v, want none", err)
+	_ = f.Close()
+	if b, err := os.ReadFile(filepath.Join(runDir, tempRootRegistryName(x))); err != nil || string(b) != name {
+		t.Errorf("registry %q %v, want the late folder", b, err)
 	}
 	if fi, err := os.Lstat(filepath.Join(x, tempEntryName())); err != nil || !fi.IsDir() {
 		t.Errorf("the entry: %v %v, want it to stay", fi, err)
+	}
+	// The late mark ends just after the step frees the lock.
+	deadline := time.Now().Add(5 * time.Second)
+	for tempDirStepIsLate(x) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	setAfterMkdir(t, func(dir, name string) {})
+	_, res, release, _ = privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if got := ccdFolders(t, x); res == nil || res.Name != name || len(got) != 1 {
+		t.Errorf("next answer %+v, folders %v, want the late folder", res, got)
 	}
 }
 
