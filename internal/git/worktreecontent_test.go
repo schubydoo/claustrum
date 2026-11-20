@@ -596,7 +596,9 @@ func TestContentCheckHashOfAnotherID(t *testing.T) {
 
 // TestContentCheckBodyNotWritten: a file of the object that cannot be written
 // sends that object to a separate `hash-object --stdin -w`, with no log line,
-// and the create matches (claustrum's own, not measured).
+// and the create matches. The long-running hash-object of each kind starts
+// before the write, as in 4c111e86, and gets no object (claustrum's own, not
+// measured).
 func TestContentCheckBodyNotWritten(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	old := writeObjectBody
@@ -613,8 +615,8 @@ func TestContentCheckBodyNotWritten(t *testing.T) {
 	if want := checkedLine("1", "file", 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
-	if long, separate := hashObjectWrites(calls); long != 0 || separate != 2 {
-		t.Errorf("%d long-running and %d separate hash-object -w calls, want 0 and 2", long, separate)
+	if long, separate := hashObjectWrites(calls); long != 2 || separate != 2 {
+		t.Errorf("%d long-running and %d separate hash-object -w calls, want 2 and 2", long, separate)
 	}
 }
 

@@ -250,11 +250,20 @@ func (c *contentCheck) hashLong(kind, id string, body []byte) (string, error) {
 // hashOn hashes body, the object id of kind, with h, a long-running
 // hash-object of that kind. A nil h starts one. h is the one that ran, or nil.
 // The object goes to the file id in the scratch folder, which goes after the
-// answer (removeObjectBody). An id that is no object id takes no file
-// (claustrum's own).
+// answer (removeObjectBody). The git starts before the folder and the file
+// (4c111e86, measured on Linux). On Windows a daemon killed at the first sight
+// of the folder leaves the same objects on both builds (measured). An id that is no object id takes
+// no file, and a git started for an object with no file stays for the next
+// one (claustrum's own).
 func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (string, *objectBatch, error) {
 	if !isObjectID(id) {
 		return "", h, errNoHashHelper
+	}
+	if h == nil {
+		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		if h == nil {
+			return "", nil, errNoHashHelper
+		}
 	}
 	dir, err := c.scratchDir()
 	if err != nil {
@@ -268,12 +277,6 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 		return "", h, errNoHashHelper
 	}
 	defer func() { _ = removeObjectBody(dir, id) }()
-	if h == nil {
-		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
-		if h == nil {
-			return "", nil, errNoHashHelper
-		}
-	}
 	got, err := h.hash(p)
 	return got, h, err
 }
