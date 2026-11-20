@@ -55,13 +55,6 @@ const statusFollowsPrintedGitDir = false
 // test after a good answer (askGit).
 const probeConfigFreeRun = true
 
-// checkoutDirPrefix starts the name of the folder of the checkout of one create
-// in the folder of the daemon (runWorktreeCheckout). On Linux and macOS
-// 4c111e86 names it `.checkout-<n>` with a decimal number, and the index of the
-// checkout is in it (measured). claustrum uses the same name in the state
-// fallback-git (claustrum's own, not measured).
-const checkoutDirPrefix = ".checkout-"
-
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // the folder of the daemon. On Linux and macOS it goes through root, the root
 // at folder (requestDir). No row has a deny entry with enabled privileges on
@@ -209,11 +202,6 @@ func linkedLockOpen(path string) error {
 // lock-check refusal (removeGoneWorktree). Not measured there on b3081b51. A
 // variable, so that a test can run the Windows step.
 var goneNotARepoKeepsAll = false
-
-// goneGitFileStartTest is false on Linux and macOS: a create on a `.git` file to
-// a missing path keeps the listing (gitWorktreeCreateLocked). A variable, so
-// that a test can run the Windows step.
-var goneGitFileStartTest = false
 
 // gitFileNowhereAsOlderGit is true on Linux and macOS: the gitfile text of git 2.56
 // (saysGitFileNowhere) gets the answers of an older git (4c111e86, measured on Linux

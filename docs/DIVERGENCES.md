@@ -695,8 +695,14 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 - **Behavior.** `install.MaxCLIBytes` caps the decompressed CLI
   (`decompressing: decompressed CLI exceeds <n> bytes`) and the download body
   (`download failed: response exceeds <n> bytes`).
-- **Reference.** It takes a 600 MiB payload as far as the run test of the new
-  CLI, on both paths.
+- **Reference.** On 4c111e86 a single-segment zstd frame that declares over
+  512 MiB gives `decompressing: decompressed size exceeds configured limit` on
+  `-cli-zst` and `-cli-url` (measured on Linux, macOS and Windows). On `-cli-zst`
+  a frame with a 128 KiB window installs at 2 GiB (measured on Linux, macOS and
+  Windows), and a frame with a 1 GiB window
+  gives `decompressing: window size exceeded` (measured on Linux). claustrum
+  with the cap off gives the same answers. At 5db5e4a a 629 MB download body
+  reaches the run test of the new CLI.
 - **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
   with `-max-cli-bytes <n>` or the `max-cli-bytes` key. Off bypasses both
   `LimitReader`s. claustrum streams the download into the staging file and
