@@ -239,10 +239,11 @@ type tempRootLate struct {
 
 // tempRootLateDirs counts the steps of each temp dir that go on after their limit. A
 // spawn whose temp dir is in it gets tempRootNoReply at once, with no step and no line:
-// 4c111e86 answers so while the late step of that temp dir has not returned, and runs
-// the step of another temp dir (measured on Linux, on a dead NFS mount). These are
-// claustrum's own, not measured: macOS, the key by the path of the temp dir as given,
-// and a step that starts while an earlier one of the same temp dir is within its limit.
+// 4c111e86 answers so while that temp dir does not answer, and runs the step of another
+// temp dir (measured on Linux, on a dead NFS mount). These are claustrum's own, not
+// measured: macOS, the end of that time when the late step returns, the key by the path
+// of the temp dir as given, and a step that starts while an earlier one of the same temp
+// dir is within its limit.
 var tempRootLateDirs = struct {
 	mu   sync.Mutex
 	dirs map[string]int
