@@ -195,7 +195,7 @@ func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
 // with one of the two texts, so no git 2.56 is needed. With the older text the create
 // answers the 4c111e86 text (measured with git 2.55 on Windows). On Linux and macOS a
 // missing path gets that text with the text of git 2.56 too (4c111e86, measured on Linux
-// with git 2.56.1, macOS claustrum's own). On Windows it gets the error of the call about
+// and macOS with git 2.56.1). On Windows it gets the error of the call about
 // the repository (5fd08069). An empty folder then gets the listing refusal (from the
 // code, not measured). The test runs the answers of both systems. Mutations: answer
 // not_a_repo in notARepoResult, or answer the gitfile text in noRepoCalls on Linux.

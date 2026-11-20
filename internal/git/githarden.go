@@ -1578,8 +1578,8 @@ type configVerdict struct {
 	// git methods answer it, or the refusal with "shadowDirOff":true, as 5fd08069 does
 	// (measured on Linux and Windows, the refusal on Linux). On Linux and macOS they
 	// answer as for "not a git repository" (gitFileNowhereAsOlderGit), and a remove of a
-	// gone worktree without worktreeRoot gets success (4c111e86, measured on Linux with
-	// git 2.56.1, macOS claustrum's own).
+	// gone worktree without worktreeRoot gets success (4c111e86, measured on Linux and
+	// macOS with git 2.56.1).
 	gitFileText string
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).
