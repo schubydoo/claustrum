@@ -83,7 +83,7 @@ func setOrigin(t *testing.T, repo, slug, branch string) {
 //
 // The stand-in covers git.info with an absolute path only. A relative path goes to
 // filepath.EvalSymlinks, and so does a path that needs its doubled separators kept.
-// The four other git methods test the resolve through unresolvable or linkWalkFails,
+// The four other git methods test the resolve through linkWalkFails,
 // which this helper does not set. Do not use this helper for a cell of those methods.
 func junctionsLikeWindows(t *testing.T) func(t *testing.T, link, target string) {
 	t.Helper()
