@@ -158,7 +158,11 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 				}
 				if m.method == "git.worktree_create" && ph.env != nil {
 					// The create runs the same call (gitWorktreeCreateLocked) and answers
-					// its error the same way (claustrum's own, not measured).
+					// its error the same way. The fixture has a passed start test. With a
+					// real git the start test of a daemon with this key fails first, and a
+					// create or git.info as the first git request answers the failed-test
+					// text on 4c111e86 and on claustrum (measured on Linux, git 2.43). So
+					// this answer is claustrum's own and needs a stub git.
 					got := f.frame(t, m.method, m.params)
 					if !strings.Contains(got, `"error":"git could not check this repository on the remote machine: at `) || !strings.Contains(got, `"errorCode":"worktree_add_failed"`) {
 						t.Errorf("%s = %s\nwant the error of the call about the repository", m.method, got)
