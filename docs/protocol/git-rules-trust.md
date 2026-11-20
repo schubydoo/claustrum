@@ -157,8 +157,8 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   `"shadowDirOff":true`
   [class 2](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
 - Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the
-  daemon's environment sets `GIT_COMMON_DIR`, and a relative value is first joined
-  to the request folder (measured on Linux and Windows). On Windows `/dev/null` names nothing, so it becomes
+  daemon's environment sets `GIT_COMMON_DIR`. A relative value is first joined
+  to the request folder (both measured on Linux and Windows). On Windows `/dev/null` names nothing, so it becomes
   `<request dir>\dev\null`.
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
@@ -307,7 +307,7 @@ The classes come in this order:
    itself, and its later runs give "no repository" (`c8e2f083`, measured on
    Linux). With `"shadowDirOff":true`
    that git dir gets the hooks refusal on every method (`5fd08069`, measured on
-   Linux). Linux and macOS: see [git.status](git-status.md#rare-states).
+   Linux). Linux and macOS: see the method pages.
    On Linux and macOS a remove of a gone worktree without `worktreeRoot` gets
    success in both modes (`b3081b51`, measured on Linux).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
