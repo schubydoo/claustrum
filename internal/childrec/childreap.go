@@ -669,8 +669,9 @@ func priorBootSameHost(recHost, recNode, ownHost, ownNode string) bool {
 // member lingers, the wait SIGKILLs the group so the survivor is not left behind. It counts
 // the groups that got SIGTERM and splits them into the grace and escalate
 // buckets. A group still alive after the escalate is counted survived and its record is KEPT,
-// so a later daemon can still find a group that this one did not end. It updates counts. (The survivor arm is claustrum's own, not probe-measured:
-// a process cannot be made to outlive SIGKILL on demand.)
+// so a later daemon can still find a group that this one did not end. It updates counts. (The
+// survivor line and its count in the summary are measured on 4c111e86, Linux, with a leader in
+// an uninterruptible sleep. The kept record is claustrum's own, not measured.)
 //
 // The records of the groups that got SIGTERM go together, when the last group is done,
 // and not one by one as each group ends. Measured on Linux against 89cb6289: of five
@@ -761,8 +762,9 @@ func reapTargets(c *reapCtx, targets []doomedChild, counts *reapCounts) {
 	}
 	for _, t := range reapWait(c, killed, reapEscalate, &counts.reapedEscalate, counts, false) {
 		counts.survived++ // outlived SIGKILL (a zombie or an uninterruptible sleep)
-		// This line is claustrum's own: no row has a group that outlived SIGKILL.
-		logging.Infof("[process.Reaper] child %d (%s): still present after SIGKILL", t.pid, t.name)
+		// The line is the reference's (4c111e86, measured on Linux with a leader in an
+		// uninterruptible sleep). Its level is claustrum's own.
+		logging.Warnf("[process.Registry] WARNING group %d survived SIGKILL; keeping its record for the next start", t.pid)
 		// The record is KEPT so a later daemon can find a group this one could not end.
 	}
 }
