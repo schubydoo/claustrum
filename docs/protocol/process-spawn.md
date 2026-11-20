@@ -266,6 +266,7 @@ These count as lost too and end the child in the same way (measured on macOS, on
 - A temp dir that is gone logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir is gone; nobody is ended over that, and it is looked at again` (measured on macOS).
 - A held folder of mode 0 logs `[process.Manager] Claude Code's private temp folder <name>: its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again` (measured on macOS, and on Linux as one line per run of such checks).
 - On Linux (on macOS claustrum's own) a temp dir that cannot be read logs `[process.Manager] Claude Code's private temp folder <name>: the temp dir could not be looked at: <error>; nobody is ended over that, and it is looked at again`. A later good check logs `[process.Manager] Claude Code's private temp folder <name>: all is well with it again`.
+- On Linux (on macOS claustrum's own) a check that has not answered after 4 s, as on a dead NFS mount, logs `[process.Manager] Claude Code's private temp folder <name>: its name does not answer; nobody is ended over that, and it is looked at again` once, also for a folder given back. If that check then finds all well, it logs the line that all is well again. The bound of 4 s is claustrum's own.
 
 #### The cap of these lines (build `4c111e86`)
 
@@ -278,7 +279,7 @@ A held folder logs 49 of these lines. In place of the 50th it logs `[process.Man
 
 A folder stays checked after its last child ended. A loss 5 s after that end still counts at the next check (measured on macOS).
 
-These are claustrum's own: the folder loses its `flock`, and its checks write nothing and log only a loss. They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
+These are claustrum's own: the folder loses its `flock`, and its checks write nothing and log only a loss and the two lines of a check that does not answer. They end when it is lost or held again, when its temp dir is gone, or when its name holds no entry or another own folder. They also end after 10 min, and for the oldest past 8 such folders.
 
 ### The managed launcher
 

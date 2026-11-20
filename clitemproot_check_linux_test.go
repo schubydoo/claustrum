@@ -1330,3 +1330,62 @@ func TestCLITempRootGivenUpLookBlocksANewOne(t *testing.T) {
 	<-first.done
 	tempRootCheckDev = old
 }
+
+// A check whose look at the folder does not answer logs once that the name does not
+// answer, and the check that then returns logs that all is well again. Nobody is ended.
+// This holds for a held folder and for one given back (4c111e86, measured on Linux on a
+// dead NFS mount).
+func TestCLITempRootNameThatDoesNotAnswerHeld(t *testing.T) { nameDoesNotAnswer(t, false) }
+
+func TestCLITempRootNameThatDoesNotAnswerGivenBack(t *testing.T) { nameDoesNotAnswer(t, true) }
+
+func nameDoesNotAnswer(t *testing.T, given bool) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	oldWait := tempRootNameWait
+	tempRootNameWait = 20 * time.Millisecond
+	t.Cleanup(func() { tempRootNameWait = oldWait })
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	if given {
+		rel[0]()
+	}
+	free, answered := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if calls.Add(1) == 1 { // the first look does not answer until free
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+			defer close(answered)
+		}
+		return statDev(st)
+	}
+	go func() { ticks.ticks <- time.Now() }()
+	prefix := "[process.Manager] Claude Code's private temp folder " + a.Name + ": "
+	stuck := prefix + "its name does not answer; nobody is ended over that, and it is looked at again"
+	well := prefix + "all is well with it again"
+	waitFor(t, "the line that the name does not answer", func() bool { return strings.Contains(logs.String(), stuck) })
+	holdsFor(t, 5*tempRootNameWait, "one such line and no line that all is well", func() bool {
+		s := logs.String()
+		return strings.Count(s, stuck) == 1 && !strings.Contains(s, well)
+	})
+	close(free)
+	<-answered
+	waitFor(t, "the line that all is well again", func() bool { return strings.Contains(logs.String(), well) })
+	if n, w := strings.Count(logs.String(), stuck), strings.Count(logs.String(), well); n != 1 || w != 1 || ends.Load() != 0 {
+		t.Errorf("%d stuck lines, %d well lines and %d ends, want 1, 1 and 0", n, w, ends.Load())
+	}
+	tempRoots.mu.Lock()
+	pass := tempRoots.givenPass
+	tempRoots.mu.Unlock()
+	if pass != nil {
+		<-pass.done
+	}
+	tempRootCheckDev = old
+}

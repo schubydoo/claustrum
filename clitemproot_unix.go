@@ -780,7 +780,7 @@ func dropGivenTempRoots(end func(*heldTempRoot) bool) {
 // These are claustrum's own, not measured: the order of the hold within one check
 // (4c111e86 gave an order that changed from check to check), the checks of a given-back
 // folder past 8 s and their end, the end of the loop, and no flock, no write and no
-// line but a loss line for a given-back folder. The caller gives the ticks
+// line but a loss line and the lines of checkTempRootTimed for a given-back folder. The caller gives the ticks
 // (tempRootCheckTicks), the call after each check and the call after each folder of a
 // check, so a test can set them.
 func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks, after, afterOne func()) {
@@ -838,7 +838,7 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 			switch p := probes[h]; {
 			case h.lost.Load():
 			case !h.given:
-				checkTempRoot(h)
+				checkTempRootTimed(h)
 			case p != nil && p.lossWhy != "":
 				markTempRootLost(h, p.lossWhy, p.lossWord)
 			case p != nil:
@@ -898,7 +898,7 @@ func startGivenPass() *givenPass {
 	tempRoots.givenOpen++
 	go func() {
 		for _, c := range p.probes {
-			checkTempRoot(c)
+			checkTempRootTimed(c)
 		}
 		tempRoots.mu.Lock()
 		p.answered = true
@@ -956,7 +956,37 @@ const (
 	tempRootDirGoneLine     = "[process.Manager] Claude Code's private temp folder %s: the temp dir is gone; nobody is ended over that, and it is looked at again"
 	tempRootOwnerShutLine   = "[process.Manager] Claude Code's private temp folder %s: its owner cannot use it (chmod 500 it); nobody is ended over that, and it is looked at again"
 	tempRootChangeCapLine   = "[process.Manager] Claude Code's private temp folder %s: its state keeps changing, and is logged no more unless it is lost"
+	tempRootNoAnswerLine    = "[process.Manager] Claude Code's private temp folder %s: its name does not answer; nobody is ended over that, and it is looked at again"
 )
+
+// tempRootNameWait is the time that one check of a folder gets before the line that its
+// name does not answer. On a dead NFS mount 4c111e86 logs that line about 4 s after the
+// start of the check that does not answer, once, for a held folder and for one given
+// back (measured on Linux). The bound of 4 s is claustrum's own. A variable for the tests.
+var tempRootNameWait = 4 * time.Second
+
+// checkTempRootTimed runs checkTempRoot(h). A check that has not returned after
+// tempRootNameWait logs the line that the name of h does not answer. Once that check
+// returns with all well, it logs the line that all is well with h again (measured on
+// Linux, 4c111e86). These are claustrum's own, not measured: the two lines do not count
+// toward tempRootChangeCap, and a check that returns with a failure or a loss logs its
+// own line in place of the second one.
+func checkTempRootTimed(h *heldTempRoot) {
+	failedBefore := h.checkFailed
+	logged := make(chan struct{})
+	t := time.AfterFunc(tempRootNameWait, func() {
+		logging.Infof(tempRootNoAnswerLine, h.name)
+		close(logged)
+	})
+	checkTempRoot(h)
+	if t.Stop() {
+		return
+	}
+	<-logged
+	if !failedBefore && !h.checkFailed && !h.lost.Load() && h.lossWhy == "" && !h.gone {
+		logging.Infof(tempRootWellAgainLn, h.name)
+	}
+}
 
 // tempRootChangeCap is the count of change lines of one hold of a folder: a failed-check
 // line or the line that all is well again. 4c111e86 logs 49 lines of a folder of mode 0 and
