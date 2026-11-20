@@ -837,7 +837,7 @@ func givenCount() int {
 
 // A loss in the time that the child ran still counts after the give-back: the next
 // check finds it, and the next reply lists it (4c111e86, measured on macOS). The
-// flock goes at the give-back (claustrum's own).
+// folder keeps its flock at the give-back (4c111e86, measured on Linux).
 func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -855,8 +855,8 @@ func TestCLITempRootLossBeforeTheGiveBackCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		t.Errorf("flock after the give-back: %v, want none held", err)
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("flock after the give-back: %v, want the daemon to hold it", err)
 	}
 	ticks.check(t)
 	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
@@ -1159,6 +1159,42 @@ func TestCLITempRootHeldAgainEndsTheGivenRecord(t *testing.T) {
 	if c := runTempRootBound(t, x, runDir, &rel, nil); c == nil || len(c.Gone) != 1 {
 		t.Errorf("the next answer %+v, want one lost entry", c)
 	}
+}
+
+// A given-back folder keeps its flock (4c111e86, measured on Linux). The next spawn
+// takes it again, and the flock goes once its given-back record ends (claustrum's own).
+func TestCLITempRootGivenBackFolderKeepsItsFlock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	f, err := os.Open(filepath.Join(x, a.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	flock := func() error { return unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB) }
+	rel[0]()
+	if err := flock(); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("flock after the give-back: %v, want the daemon to hold it", err)
+	}
+	if b := runTempRootBound(t, x, runDir, &rel, nil); b == nil || b.Name != a.Name {
+		t.Fatalf("second answer %+v, want the given-back folder %s again", b, a.Name)
+	}
+	rel[1]()
+	if err := flock(); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("flock after the second give-back: %v, want the daemon to hold it", err)
+	}
+	tempRoots.mu.Lock()
+	tempRoots.given[0].givenAt = time.Now().Add(-tempRootGivenFor)
+	tempRoots.mu.Unlock()
+	ticks.check(t)
+	if n := givenCount(); n != 0 {
+		t.Fatalf("%d given-back folders after the check, want 0", n)
+	}
+	// A copy of a look at the given-back folder shares the flock until it closes.
+	waitFor(t, "no hold after the record ended", func() bool { return flock() == nil })
 }
 
 // At most tempRootGivenKeep given-back folders are checked, and each for
@@ -1530,9 +1566,10 @@ func (w *onLogLine) Write(p []byte) (int, error) {
 }
 
 // A folder given back right after the write test of its check, while the check makes it
-// anew at its name, loses that flock when the check gives its result: a spawn of the same
-// temp dir right after gets that folder again (claustrum's own).
-func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
+// anew at its name, keeps that flock when the check gives its result, as a given-back
+// folder keeps its flock (4c111e86, measured on Linux; the give-back during the check is
+// claustrum's own). A spawn of the same temp dir right after gets that folder again.
+func TestCLITempRootGivenBackDuringItsRemakeKeepsTheFlock(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	ticks := fakeCheckTicks(t)
@@ -1557,14 +1594,23 @@ func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
 	var again *rpc.CLITempRoot
 	var againRel func()
 	var calls atomic.Int32
+	var flockErr error
+	var name string // set before the check
 	setAfterOneCheck(t, func() {
 		if calls.Add(1) == 1 {
+			if o, err := os.Open(filepath.Join(x, name)); err != nil {
+				flockErr = err
+			} else {
+				flockErr = unix.Flock(int(o.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+				_ = o.Close()
+			}
 			var bind func(func())
 			_, again, againRel, bind = privateTempRoot([]string{"TMPDIR=" + x}, runDir)
 			bind(nil)
 		}
 	})
 	a := runTempRootBound(t, x, runDir, &rel, nil)
+	name = a.Name
 	f := filepath.Join(x, a.Name)
 	if err := os.Rename(f, f+".away"); err != nil {
 		t.Fatal(err)
@@ -1575,6 +1621,9 @@ func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
 	}
 	if !strings.Contains(w.buf.String(), "made anew") {
 		t.Fatalf("log %q, want the line that the folder is made anew", w.buf.String())
+	}
+	if !errors.Is(flockErr, unix.EWOULDBLOCK) {
+		t.Errorf("flock of the remade folder after the check: %v, want the given-back folder to hold it", flockErr)
 	}
 	if again == nil || again.Name != a.Name {
 		t.Errorf("the spawn right after the check got %+v, want the folder %s again", again, a.Name)
