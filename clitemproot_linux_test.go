@@ -609,7 +609,7 @@ func TestCLITempRootTempDirOrder(t *testing.T) {
 
 // After the time limit the reply says so and the child gets the env as it was. A
 // folder that the step made after the limit stays, with no registry, no hold and
-// no count.
+// no count. The reply logs the line of the limit once (4c111e86, measured on Linux).
 func TestCLITempRootTimeLimit(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -629,12 +629,16 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 		}
 	})
 	in := []string{"TMPDIR=" + x}
+	logs := captureLogBuf(t)
 	start := time.Now()
 	env, res, release, _ := privateTempRoot(in, runDir)
 	rel = append(rel, release)
 	b, _ := json.Marshal(res)
 	if want := `{"whyNot":"the temp dir did not answer in time"}`; string(b) != want {
 		t.Fatalf("answer %s, want %s", b, want)
+	}
+	if want := "[process.Manager] the temp dir has not answered in 100ms: Claude Code starts anyway, and may refuse its folder there"; strings.Count(logs.String(), want) != 1 {
+		t.Errorf("log %q, want the line of the limit once", logs.String())
 	}
 	if time.Since(start) < tempRootLimit || !slices.Equal(env, in) {
 		t.Errorf("after %v env %q, want the limit and the env as it was", time.Since(start), env)
