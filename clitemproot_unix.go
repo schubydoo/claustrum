@@ -961,17 +961,17 @@ const (
 )
 
 // tempRootNameWait is the time that one check of a folder gets before the line that its
-// name does not answer. On a dead NFS mount 4c111e86 logs that line about 4 s after the
-// start of the check that does not answer, once, for a held folder and for one given
-// back (measured on Linux). The bound of 4 s is claustrum's own. A variable for the tests.
+// name does not answer. On a dead NFS mount 4c111e86 logs that line once, for a held
+// folder and for one given back (measured on Linux). The bound of 4 s is claustrum's
+// own. A variable for the tests.
 var tempRootNameWait = 4 * time.Second
 
 // checkTempRootTimed runs checkTempRoot(h). A check that has not returned after
 // tempRootNameWait logs the line that the name of h does not answer. Once that check
 // returns with all well, it logs the line that all is well with h again (measured on
-// Linux, 4c111e86). These are claustrum's own, not measured: the two lines do not count
-// toward tempRootChangeCap, and a check that returns with a failure or a loss logs its
-// own line in place of the second one.
+// Linux, 4c111e86). These are claustrum's own, not measured: the line that the name does
+// not answer does not count toward tempRootChangeCap, and a check that returns with a
+// failure or a loss logs its own line in place of the second one.
 func checkTempRootTimed(h *heldTempRoot) {
 	failedBefore := h.checkFailed
 	logged := make(chan struct{})
