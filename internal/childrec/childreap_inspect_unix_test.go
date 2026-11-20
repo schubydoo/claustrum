@@ -145,3 +145,45 @@ func TestDaemonAliveCannotInspect(t *testing.T) {
 		}
 	}
 }
+
+// TestReapGroupThatOutlivesSIGKILL: a group whose leader outlives the SIGKILL and its
+// wait logs that it survived, is counted survived and keeps its record. The line is
+// the reference's (4c111e86, measured on Linux with a leader in an uninterruptible
+// sleep). Control: a group that ends on the SIGKILL logs no such line.
+func TestReapGroupThatOutlivesSIGKILL(t *testing.T) {
+	const line = "WARN  [process.Registry] WARNING group 1073742825 survived SIGKILL; keeping its record for the next start\n"
+	for _, tc := range []struct {
+		name     string
+		survives bool
+	}{
+		{"the leader outlives the SIGKILL", true},
+		{"control: the leader ends on the SIGKILL", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sim, runDir, tg := simTarget(t)
+			sim.onKill[tg.pid] = func(sig syscall.Signal) error {
+				if sig == syscall.SIGKILL && !tc.survives {
+					delete(sim.live, tg.pid)
+				}
+				return nil
+			}
+			var counts reapCounts
+			out := captureLog(t, func() { reapTargets(simCtx(t, runDir), []doomedChild{tg}, &counts) })
+			if sim.sigCount(syscall.SIGTERM) != 1 || sim.sigCount(syscall.SIGKILL) != 1 {
+				t.Errorf("kills = %v, want one SIGTERM and one SIGKILL", sim.kills)
+			}
+			if !tc.survives {
+				if strings.Contains(out, "survived SIGKILL") || counts.survived != 0 {
+					t.Errorf("control: log = %q, survived = %d, want no survivor", out, counts.survived)
+				}
+				return
+			}
+			if strings.Count(out, line) != 1 {
+				t.Errorf("log = %q\nwant %q once", out, line)
+			}
+			if counts.survived != 1 || !recordExists(runDir, tg.name) {
+				t.Errorf("survived = %d, record there = %v, want 1 and the record kept", counts.survived, recordExists(runDir, tg.name))
+			}
+		})
+	}
+}
