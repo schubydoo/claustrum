@@ -903,11 +903,14 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 			}
 			wait.Stop()
 		}
-		// The held folders are looked at through copies with no lock too, so a temp dir
-		// that does not answer holds up no spawn: 4c111e86 gives a spawn of another temp
-		// dir its folder at once while the mount of a held folder is dead (measured on
-		// Linux). Each copy gives its result to its folder under the lock right after its
-		// look (takeCheck). The losses of one check still reach the lost list together.
+		// The held folders are looked at through copies too, with no lock that a spawn
+		// takes, so the check of a held folder in a temp dir that does not answer holds up
+		// no spawn: 4c111e86 gives a spawn of another temp dir that answers its folder at
+		// once while the mount of a held folder is dead (measured on Linux). Each copy
+		// gives its result to its folder under the lock right after its look (takeCheck).
+		// The losses of one check still reach the lost list together, at its end. A spawn
+		// between two folders of a check gets a new folder for a folder just lost, and the
+		// list of its reply lacks that folder (claustrum's own).
 		tempRootChecking.Lock()
 		tempRoots.mu.Lock()
 		held := heldCopies()

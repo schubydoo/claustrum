@@ -177,7 +177,7 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 
 While the step of a temp dir goes on after the limit, a spawn with that temp dir gets `the temp dir did not answer in time` at once, with no step and no line (`4c111e86`, measured on Linux). These are claustrum's own: macOS, the end of that time when the late step returns, a step that starts within the limit of an earlier one, no such time for a step that only waits for the lock of the folders, whoever holds it, and the key, which is the path of the temp dir as given, so two spellings of one dir or a link each run their own step.
 
-While the mount of a held folder does not answer, a spawn with another temp dir gets its folder at once (`4c111e86`, measured on Linux).
+While the mount of a held folder does not answer, a spawn with another temp dir that answers gets its folder at once (`4c111e86`, measured on Linux). These are claustrum's own: macOS, and a `whyNot` while a refresh does not answer.
 
 #### A failed test of the temp dir (build `4c111e86`)
 

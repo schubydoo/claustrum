@@ -1228,8 +1228,9 @@ func TestCLITempRootGivenBackCheckHoldsNoLock(t *testing.T) {
 	tempRootCheckDev = old
 }
 
-// The check of a held folder holds no lock while it looks at the folder, so a spawn in
-// another temp dir gets its folder at once while that check does not answer (4c111e86,
+// The check of a held folder holds no lock that a spawn takes while it looks at the
+// folder, so a spawn in another temp dir that answers gets its folder at once while that
+// check does not answer (4c111e86,
 // measured on Linux on a dead NFS mount). A loss that the check finds still ends the
 // child that asked, once the check answers.
 func TestCLITempRootHeldCheckHoldsNoLock(t *testing.T) {
@@ -1238,7 +1239,7 @@ func TestCLITempRootHeldCheckHoldsNoLock(t *testing.T) {
 	ticks := fakeCheckTicks(t)
 	logs := captureLogBuf(t)
 	old := tempRootLimit
-	tempRootLimit = 300 * time.Millisecond
+	tempRootLimit = time.Second
 	t.Cleanup(func() { tempRootLimit = old })
 	x, runDir := tempRootDir(t, true)
 	x2, runDir2 := tempRootDir(t, true)
@@ -1259,6 +1260,13 @@ func TestCLITempRootHeldCheckHoldsNoLock(t *testing.T) {
 		return statDev(st)
 	}
 	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -1284,14 +1292,13 @@ func TestCLITempRootHeldCheckHoldsNoLock(t *testing.T) {
 }
 
 // A folder given back while its check does not answer takes only the loss that the
-// check finds: one loss line, no end, and its given-back record ends (claustrum's own).
+// check finds: one loss line, and its given-back record ends (claustrum's own).
 func TestCLITempRootGivenBackDuringItsCheckTakesTheLoss(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	ticks := fakeCheckTicks(t)
 	logs := captureLogBuf(t)
 	x, runDir := tempRootDir(t, true)
-	var ends atomic.Int32
 	a := runTempRootBound(t, x, runDir, &rel, nil)
 	linkAtName(t, x, a.Name)
 	in, free := make(chan struct{}), make(chan struct{})
@@ -1308,6 +1315,13 @@ func TestCLITempRootGivenBackDuringItsCheckTakesTheLoss(t *testing.T) {
 		return statDev(st)
 	}
 	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -1322,8 +1336,8 @@ func TestCLITempRootGivenBackDuringItsCheckTakesTheLoss(t *testing.T) {
 	close(free)
 	<-done
 	line := "[process.Manager] Claude Code's private temp folder " + a.Name + " counts as lost: it is a link"
-	if n := strings.Count(logs.String(), line); n != 1 || ends.Load() != 0 || givenCount() != 0 {
-		t.Errorf("%d loss lines, %d ends, %d given-back folders, want 1, 0 and 0\nlog:\n%s", n, ends.Load(), givenCount(), logs.String())
+	if n := strings.Count(logs.String(), line); n != 1 || givenCount() != 0 {
+		t.Errorf("%d loss lines, %d given-back folders, want 1 and 0\nlog:\n%s", n, givenCount(), logs.String())
 	}
 }
 
@@ -1355,6 +1369,13 @@ func TestCLITempRootLossEndsBeforeALaterCheckAnswers(t *testing.T) {
 		return statDev(st)
 	}
 	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -1389,6 +1410,13 @@ func TestCLITempRootGivenBackDuringItsCheckGetsNoWrite(t *testing.T) {
 		return statDev(st)
 	}
 	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	t.Cleanup(func() {
+		select {
+		case <-free:
+		default:
+			close(free)
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
