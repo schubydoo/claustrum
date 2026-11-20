@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,7 +17,10 @@ import (
 type fakeJobTestChild struct {
 	exited  chan struct{}
 	release chan error // the result that Reap gives
-	ends    atomic.Int32
+	// reaped closes after Reap took its result from release.
+	reaped     chan struct{}
+	reapedOnce sync.Once
+	ends       atomic.Int32
 	// endExits makes End close exited and give the result of an ended child.
 	endExits bool
 	// endErr is the error of End. An End with an error lets the child run.
@@ -27,7 +31,7 @@ type fakeJobTestChild struct {
 }
 
 func newFakeJobTestChild(endExits bool) *fakeJobTestChild {
-	return &fakeJobTestChild{exited: make(chan struct{}), release: make(chan error, 1), endExits: endExits}
+	return &fakeJobTestChild{exited: make(chan struct{}), release: make(chan error, 1), reaped: make(chan struct{}), endExits: endExits}
 }
 
 func (c *fakeJobTestChild) Exited() <-chan struct{} { return c.exited }
@@ -48,7 +52,11 @@ func (c *fakeJobTestChild) End() error {
 	return nil
 }
 
-func (c *fakeJobTestChild) Reap() error { return <-c.release }
+func (c *fakeJobTestChild) Reap() error {
+	err := <-c.release
+	c.reapedOnce.Do(func() { close(c.reaped) })
+	return err
+}
 
 // endBySelf lets the child end by itself with the result err.
 func (c *fakeJobTestChild) endBySelf(err error) {
@@ -158,9 +166,19 @@ func TestJobTestFailsAtOnceWhenTheChildStillSleeps(t *testing.T) {
 	if n := c.ends.Load(); n != 1 {
 		t.Errorf("End ran %d times after the bound, want 1", n)
 	}
+	// The clean reap does not turn the failed test into a pass. The check waits
+	// until the reap goroutine of beginJobTest took the result, then watches the
+	// state for a short time.
 	c.endBySelf(nil)
-	if test.State() != JobTestFailed {
-		t.Errorf("state = %d after the exit, want failed", test.State())
+	select {
+	case <-c.reaped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the child was not reaped within 5 s of its exit")
+	}
+	for until := time.Now().Add(200 * time.Millisecond); time.Now().Before(until); time.Sleep(time.Millisecond) {
+		if s := test.State(); s != JobTestFailed {
+			t.Fatalf("state = %d after the reap, want failed", s)
+		}
 	}
 }
 
