@@ -64,6 +64,17 @@ func notADir(fi fs.FileInfo, err error) bool {
 	return err == nil && !fi.IsDir()
 }
 
+// leafNotDirText is the refusal text for a worktree leaf of mode m that is not a
+// directory. On Windows a junction leaf (ModeIrregular) puts the path in backticks
+// (`4c111e86`, measured on Windows, row e_junction_remove). Another reparse point of that
+// mode gets the same text (not measured). Any other leaf has no backticks.
+func leafNotDirText(goos, path string, m fs.FileMode) string {
+	if goos == "windows" && m&fs.ModeIrregular != 0 {
+		return "`" + path + "` is not a directory"
+	}
+	return path + " is not a directory"
+}
+
 // removeTarget is the located worktree: the open directory that holds it, the name of
 // the worktree in that directory, and the spelling of the worktree in the texts. The
 // zero value is a worktree whose directory is not there.
