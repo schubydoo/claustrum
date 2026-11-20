@@ -84,7 +84,7 @@ done
 # 3b) CLI flag set from -help (safe; no daemon). The reference flag set is the
 # baseline: a reference flag ABSENT from claustrum is real upstream drift (a new
 # flag to reconcile). claustrum also carries intentional claustrum-only flags —
-# the opt-in divergences D3/D10/D12, the deprecated -cli-probe-timeout,
+# the opt-in CT-6/CT-7/CT-8 bounds, the deprecated -cli-probe-timeout,
 # -files-read-regular-only, -git-timeout and -libc-probe-timeout,
 # plus wire-log / metrics / listen-pipe / token-fd / keep-children — which are
 # expected and listed in CLAUSTRUM_ONLY. A

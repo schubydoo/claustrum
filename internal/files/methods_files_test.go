@@ -727,7 +727,7 @@ func TestFilesExtractTarCapCountsBytesAlreadyWritten(t *testing.T) {
 // non-zero default makes claustrum fail an extraction the reference completes.
 // That measurement disproves a 512 MiB cap; it does not prove there is none
 // above 629 MB, and this comment must not say otherwise. This asserts the
-// default itself, because that constant IS the divergence —
+// default itself, because that constant IS the option —
 // TestFilesExtractTarSizeLimit and TestFilesExtractTarCapMaxInt64DoesNotOverflow
 // are the two tests that override it.
 func TestFilesExtractTarCapDefaultsOff(t *testing.T) {

@@ -130,7 +130,7 @@ The daemon ignores a failure of the delete of the archive. So an archive that it
 
 ## The size limit
 
-By default there is no limit on the size of the extracted files. An operator sets one with the flag `-max-extract-bytes <n>` or the key `max-extract-bytes` in `claustrum.conf`. The limit is on the sum of the file contents. See [D3](../DIVERGENCES.md#d3).
+By default there is no limit on the size of the extracted files. An operator sets one with the flag `-max-extract-bytes <n>` or the key `max-extract-bytes` in `claustrum.conf`. The limit is on the sum of the file contents. See [CT-6](../DIVERGENCES.md#ct-6).
 
 ## Differences by system
 
@@ -162,7 +162,7 @@ By default there is no limit on the size of the extracted files. An operator set
 ## Differences from the reference
 
 - [D2](../DIVERGENCES.md#d2): claustrum refuses a `destDir` that is the home directory or holds it. The reference deletes the home directory for `"destDir": "~"`.
-- [D3](../DIVERGENCES.md#d3): the optional size limit. It is off by default.
+- [CT-6](../DIVERGENCES.md#ct-6): the optional size limit. It is off by default.
 
 The test for a replaced `destDir` and the test of the two views of `destDir` before the delete are claustrum's own, and both are part of [D2](../DIVERGENCES.md#d2).
 
