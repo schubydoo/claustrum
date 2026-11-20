@@ -133,8 +133,9 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // The listing names GIT_DIR, so failedListingCheck gives it no "no repository" verdict.
 // git.status keeps the answer isRepo:false that it gave before. c8e2f083 answers
 // isRepo:false on a `.git` file to a gone path (measured on Linux). Its answer to a
-// failed listing here is not measured. The gitfile text of git 2.56 (saysGitFileNowhere)
-// keeps isRepo:false too (4c111e86, measured on Linux with git 2.56.1).
+// failed listing here is not measured. On Linux and macOS the gitfile text of git 2.56
+// (saysGitFileNowhere) keeps isRepo:false too (4c111e86, measured on Linux with git
+// 2.56.1, macOS claustrum's own).
 //
 // s holds the time limits of the request. The listing is the first of the
 // request (configListingLimit).
@@ -142,7 +143,8 @@ func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
 	ctx := s.context()
 	pin := []string{"GIT_DIR=" + os.DevNull}
 	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
-	if r.err != nil && !noGit && !r.exit128Says(notARepoHead) && !r.saysGitFileNowhere() {
+	if r.err != nil && !noGit && !r.exit128Says(notARepoHead) &&
+		(!gitFileNowhereAsOlderGit || !r.saysGitFileNowhere()) {
 		if c := failedListingCheck(gitUse{stop: s}, r, baseRepo, true); c.refusal != "" {
 			return c.refusal
 		}
@@ -154,17 +156,26 @@ func statusNoRepoCalls(s *gitStop, baseRepo string, noGit bool) string {
 	return ""
 }
 
-// statusGitFileNowhere runs the listing of the other methods for a baseRepo whose `.git`
-// file names a gone git dir that is no entry under .git/worktrees, with no GIT_DIR. With
-// "shadowDirOff":true 5fd08069 makes this listing (measured on Linux). Without the member
-// the listing is claustrum's own call. 5fd08069 runs a `rev-parse --git-dir` there. The
-// answer is "no repository" with any git: with git 2.56 its gitfile text fails the
-// listing, and 4c111e86 still answers "no repository", with and without the member
-// (measured on Linux with git 2.56.1).
-func statusGitFileNowhere(t gitDirTrust, s *gitStop, baseRepo string) {
-	if t.noRepoPinned() && goneNonEntryGitFile(baseRepo) {
-		hostileConfigRefusal(gitUse{stop: s}, baseRepo, true)
+// statusGitFileNowhere is the refusal of git.status for a baseRepo whose `.git` file names a
+// gone git dir that is no entry under .git/worktrees, or "". It runs the listing of the other
+// methods there, with no GIT_DIR. With off, the "shadowDirOff":true member, 5fd08069 makes
+// this listing (measured on Linux). Without the member the listing is claustrum's own call.
+// 5fd08069 runs a `rev-parse --git-dir` there. With git 2.43 and 2.56.1 the answer is "" on
+// Linux and macOS (gitFileNowhereAsOlderGit; 4c111e86, measured on Linux, macOS claustrum's
+// own). On Windows the gitfile text of git 2.56 gives the error of the call about the
+// repository, and with off the listing refusal (5fd08069, measured on Linux).
+func statusGitFileNowhere(t gitDirTrust, s *gitStop, baseRepo string, off bool) string {
+	if !t.noRepoPinned() || !goneNonEntryGitFile(baseRepo) {
+		return ""
 	}
+	c := hostileConfigRefusal(gitUse{stop: s}, baseRepo, true)
+	switch {
+	case c.gitFileText == "", gitFileNowhereAsOlderGit:
+		return ""
+	case off:
+		return c.refusal
+	}
+	return c.gitFileText
 }
 
 // statusPath is what the gate takes from `path`.

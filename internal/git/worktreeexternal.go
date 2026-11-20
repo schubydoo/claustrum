@@ -771,10 +771,16 @@ func externalWorkTreeRefusal(req *gitCall, repo string, off rpc.JSONTrueSwitch) 
 	// the order of the listings of f6010b97 here (measured on Linux).
 	c := hostileConfigRefusal(u, repo, false)
 	// With git 2.56 a `.git` file to a gone target fails the listing with the gitfile
-	// text. 4c111e86 then answers git's text as for "not a git repository", also for a
-	// subfolder and with "shadowDirOff":true (measured on Linux with git 2.56.1).
-	if c.gitFileText != "" {
+	// text. On Linux and macOS 4c111e86 then answers git's text as for "not a git
+	// repository", also for a subfolder and with "shadowDirOff":true (measured on Linux
+	// with git 2.56.1, macOS claustrum's own). On Windows the answer is the error of the
+	// call about the repository, and with "shadowDirOff":true the listing refusal below
+	// (5fd08069).
+	if c.gitFileText != "" && gitFileNowhereAsOlderGit {
 		return workTreeUnknownPrefix + noRepositoryHerePrefix + c.noRepoText, ""
+	}
+	if c.gitFileText != "" && !bool(off) {
+		return workTreeUnknownPrefix + c.gitFileText, ""
 	}
 	if c.refusal != "" {
 		return workTreeUnknownPrefix + c.refusal, ""

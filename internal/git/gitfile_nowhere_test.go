@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,14 +49,36 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 
 // The four methods on a `.git` file to nowhere, on a daemon in the state shadow, with a
 // stub in place of git that fails each listing with one of the two texts. So no git
-// 2.56 is needed. Both texts keep the "no repository" frames, also on a subfolder, as
-// the first git request of a daemon and with "shadowDirOff":true (4c111e86, measured on
-// Linux with git 2.56.1 and with git 2.43). Mutations: answer the gitfile text or the
-// listing refusal in noRepoCalls, or refuse the gitfile text in statusNoRepoCalls.
+// 2.56 is needed. On Linux and macOS (gitFileNowhereAsOlderGit) both texts keep the "no
+// repository" frames, also on a subfolder for git.info, also for the reply to the first
+// git request of a daemon and with "shadowDirOff":true (4c111e86, measured on Linux with
+// git 2.56.1, macOS claustrum's own). On Windows the text of git 2.56 gives the error of
+// the call about the repository, also on a subfolder and as the first git request, and
+// with "shadowDirOff":true the listing refusal (5fd08069, measured on Linux and Windows, the
+// listing refusal on Linux). The older
+// text keeps "no repository" (measured on Linux). The test runs the answers of both
+// systems. On Windows git spells its path with forward slashes, and the root in quotes
+// keeps backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
+// refusal in noRepoCalls on Linux, drop statusGitFileNowhere, refuse the gitfile text in
+// statusNoRepoCalls, or key the rule on the state of the daemon.
 //
 // Without "shadowDirOff":true git.info runs that call itself. Its exit 128 gets the
-// second run, which exits 0, so git.info answers "no repository" (measured on Linux).
+// second run, which exits 0, so git.info answers "no repository" (measured on Linux
+// with an older git).
 func TestGitFileNowhereFourMethodsStub(t *testing.T) {
+	for _, older := range []bool{true, false} {
+		t.Run(fmt.Sprintf("as older git %v", older), func(t *testing.T) {
+			kept := gitFileNowhereAsOlderGit
+			gitFileNowhereAsOlderGit = older
+			t.Cleanup(func() { gitFileNowhereAsOlderGit = kept })
+			gitFileNowhereFourMethods(t, older)
+		})
+	}
+}
+
+// gitFileNowhereFourMethods is TestGitFileNowhereFourMethodsStub with the answers of
+// Linux and macOS (older) or of Windows.
+func gitFileNowhereFourMethods(t *testing.T, older bool) {
 	f := newNoRepoFixture(t)
 	f.d, _ = newSeededShadowDeps(t)
 	g := filepath.Join(filepath.Dir(f.n), "G")
@@ -70,15 +93,20 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := "fatal: gitfile does not point to a valid repository: " + filepath.ToSlash(filepath.Join(rg, ".git"))
+	check := fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", rg, text)
+	hooks := "config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: " + text
+	if older {
+		check, hooks = "", ""
+	}
 	for _, tc := range []struct {
-		name, stderr string
-		off, first   bool
+		name, stderr, want string
+		off, first         bool
 	}{
-		{"git 2.56", text + "\n", false, false},
-		{"older git", "fatal: not a git repository: " + filepath.ToSlash(nowhere) + "\n", false, false},
-		{"git 2.56, first request", text + "\n", false, true},
-		{"git 2.56, shadowDirOff", text + "\n", true, false},
-		{"older git, shadowDirOff", "fatal: not a git repository: " + filepath.ToSlash(nowhere) + "\n", true, false},
+		{"git 2.56", text + "\n", check, false, false},
+		{"older git", "fatal: not a git repository: " + filepath.ToSlash(nowhere) + "\n", "", false, false},
+		{"git 2.56, first request", text + "\n", check, false, true},
+		{"git 2.56, shadowDirOff", text + "\n", hooks, true, false},
+		{"older git, shadowDirOff", "fatal: not a git repository: " + filepath.ToSlash(nowhere) + "\n", "", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			kept := f.d
@@ -90,7 +118,7 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 				// from standard input, and a real git answers that call.
 				t.Setenv("CLAUSTRUM_GITSTUB_ENVEND", "GIT_COMMON_DIR="+filepath.Join("nowhere", "gitdir"))
 			}
-			rows := gitFileNowhereFrames(t, g, "", tc.off)
+			rows := gitFileNowhereFrames(t, g, tc.want, tc.off)
 			if !tc.off {
 				// git.info runs the call about the repository in place of the listing.
 				// It exits 128, and its second run exits 0 (TestGoneGitFileInfoCalls).

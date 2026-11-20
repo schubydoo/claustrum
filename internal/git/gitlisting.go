@@ -180,9 +180,8 @@ func (r listingRun) hooks() []string {
 // carries GIT_DIR=<null device>. c8e2f083 then takes the generic path on exit 128
 // (measured on Linux and Windows).
 //
-// One text still counts: for the gitfile text of git 2.56 (saysGitFileNowhere)
-// claustrum gives no "no repository" verdict and keeps the earlier refusal
-// (claustrum's own, not measured).
+// One text still counts: for the gitfile text of git 2.56 (saysGitFileNowhere) this
+// verdict is false. The callers answer that text (gitFileText).
 func (r listingRun) saysNoRepository() bool {
 	var ee *exec.ExitError
 	if !errors.As(r.err, &ee) || ee.ExitCode() != 128 || listingNamesGitDir(r.gitDir, r.env) ||
@@ -296,20 +295,30 @@ func listingEnvOf(daemon []string) []string {
 // answers "not a git repository" there, so the frame stays (measured on Linux and
 // macOS).
 //
-// git 2.56 answers its gitfile text there (saysGitFileNowhere). The frame stays then too,
-// with and without "shadowDirOff":true and as the first git request of a daemon, for a
-// gone entry under .git/worktrees and for a missing relative or absolute path (4c111e86,
-// measured on Linux with git 2.56.1). macOS and Windows are not measured.
+// git 2.56 answers its gitfile text there (saysGitFileNowhere). On Linux and macOS the
+// frame stays then too (gitFileNowhereAsOlderGit), with and without "shadowDirOff":true,
+// also for the reply to the first git request of a daemon, for a gone entry under
+// .git/worktrees and for a missing relative or absolute path (4c111e86, measured on
+// Linux with git 2.56.1, macOS claustrum's own). On Windows a gone entry gets "no
+// repository", and any other gone git dir the error of the call about the repository,
+// also as the first git request (5fd08069, measured on Linux and Windows), or with off
+// the listing refusal (5fd08069, measured on Linux).
 //
 // Not measured: a listing that passes and exceeds a limit of parseConfigListing, and
 // a `.git` file with no gitdir line. claustrum answers them by hostileConfigRefusal.
-func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy bool, args ...string) string {
+func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy, off bool, args ...string) string {
 	if !t.noRepoPinned() {
 		return ""
 	}
 	c := hostileConfigRefusal(u, dir, heavy)
 	if c.gitFileText != "" {
-		return ""
+		switch {
+		case gitFileNowhereAsOlderGit, !goneNonEntryGitFile(dir):
+			return ""
+		case off:
+			return c.refusal
+		}
+		return c.gitFileText
 	}
 	if !c.refused() {
 		hardenedGitFirst(u, dir, heavy, c.listing, args...)
@@ -331,8 +340,8 @@ func noRepoCalls(t gitDirTrust, u gitUse, dir string, heavy bool, args ...string
 // `rev-parse --git-dir`, with GIT_DIR=<null device> and exit 128 (measured on
 // Linux). A folder with no `.git` entry is not measured for git.list_branches:
 // it gets the call too.
-func noRepoInfoCalls(t gitDirTrust, s *gitStop, dir string) string {
-	return noRepoCalls(t, gitUse{stop: s}, dir, true, "rev-parse", "--git-dir")
+func noRepoInfoCalls(t gitDirTrust, s *gitStop, dir string, off bool) string {
+	return noRepoCalls(t, gitUse{stop: s}, dir, true, off, "rev-parse", "--git-dir")
 }
 
 // missingPathListing is the listing of noRepoInfoCalls for a git.info on dir, a
@@ -360,8 +369,8 @@ func missingPathListing(dir string) error {
 // With the member and with no run folder the two calls keep the four light
 // values (not measured). A folder with no `.git` entry is not measured: it
 // gets the call too.
-func noRepoCreateCalls(t gitDirTrust, s *gitStop, six bool, dir string) string {
-	return noRepoCalls(t, gitUse{lightSix: six, stop: s}, dir, false, "rev-parse", "--is-inside-work-tree")
+func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) string {
+	return noRepoCalls(t, gitUse{lightSix: six, stop: s}, dir, false, off, "rev-parse", "--is-inside-work-tree")
 }
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
