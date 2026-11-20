@@ -706,14 +706,21 @@ func TestCLITempRootLateStepSameTempDir(t *testing.T) {
 	if res == nil || res.WhyNot != tempRootNoReply {
 		t.Fatalf("first answer %+v, want the text of the limit", res)
 	}
+	select {
+	case <-stuck:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the late step made no folder")
+	}
 	start := time.Now()
 	env, res, release, _ := privateTempRoot(in, runDir)
 	rel = append(rel, release)
 	if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d >= tempRootLimit/2 || !slices.Equal(env, in) {
 		t.Fatalf("second answer %+v after %v, env %q, want the text of the limit at once and the env as it was", res, d, env)
 	}
-	if n := len(stuck); n != 1 {
-		t.Fatalf("%d mkdirs, want only the one of the late step", n)
+	select {
+	case name := <-stuck:
+		t.Fatalf("a second mkdir %s, want only the one of the late step", name)
+	case <-time.After(100 * time.Millisecond):
 	}
 	unblock()
 	deadline := time.Now().Add(5 * time.Second)
