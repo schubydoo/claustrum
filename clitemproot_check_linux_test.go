@@ -1327,6 +1327,90 @@ func TestCLITempRootGivenBackDuringItsCheckTakesTheLoss(t *testing.T) {
 	}
 }
 
+// A loss that the check of one held folder finds ends the child that asked at once,
+// while the check of a later held folder does not answer yet (claustrum's own).
+func TestCLITempRootLossEndsBeforeALaterCheckAnswers(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	runTempRootBound(t, x2, runDir2, &rel, nil)
+	var st2 unix.Stat_t
+	if err := unix.Stat(x2, &st2); err != nil {
+		t.Fatal(err)
+	}
+	linkAtName(t, x, a.Name)
+	free := make(chan struct{})
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if st.Ino == st2.Ino && st.Dev == st2.Dev { // the look at the temp dir of the second folder
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		}
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	waitFor(t, "end of the child of the lost folder", func() bool { return ends.Load() == 1 })
+	close(free)
+	<-done
+}
+
+// A folder given back while its check runs gets no write from that check: a missing
+// folder is not made anew at its name (claustrum's own).
+func TestCLITempRootGivenBackDuringItsCheckGetsNoWrite(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	in, free := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldDev := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		once.Do(func() {
+			close(in)
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = oldDev })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticks.ticks <- time.Now()
+		<-ticks.done
+	}()
+	<-in
+	f := filepath.Join(x, a.Name)
+	if err := os.Rename(f, f+".away"); err != nil {
+		t.Fatal(err)
+	}
+	rel[0]()
+	close(free)
+	<-done
+	if _, err := os.Lstat(f); !os.IsNotExist(err) {
+		t.Errorf("the name: %v, want no folder made anew", err)
+	}
+	if strings.Contains(logs.String(), "made anew") {
+		t.Errorf("log %q, want no line that the folder is made anew", logs.String())
+	}
+}
+
 // A check of a given-back folder that does not answer holds up no check of a held
 // folder: each tick still checks the held folders, their losses reach the list at that
 // tick, and no new look at the given-back folders starts meanwhile (claustrum's own).
