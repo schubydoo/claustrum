@@ -152,7 +152,7 @@ func main() {
 
 		keepChildren = flag.Bool("keep-children", false, "On graceful shutdown, leave spawned child processes running instead of killing them, so they survive a daemon restart/upgrade. Off by default; -serve only. The new daemon does not re-adopt the survivors.")
 
-		maxExtract = flag.Int64("max-extract-bytes", 0, "Cap the total uncompressed bytes files.extract_tar will write, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the max-extract-bytes key in claustrum.conf is usually the reachable way to set this.")
+		maxExtract = flag.Int64("max-extract-bytes", 0, "Cap the total uncompressed bytes files.extract_tar will write, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value turns on an opt-in claustrum option. -serve only. Claude Desktop owns the argv, so the max-extract-bytes key in claustrum.conf is usually the reachable way to set this.")
 
 		listenPipe = flag.Bool("listen-pipe", false, "Additionally serve the same JSON-RPC over a Windows named pipe (claustrum picks the name and writes it to rpc.pipe beside the socket) so clients that cannot consume the AF_UNIX socket on Windows can still connect. Off by default; -serve only; Windows-only (ignored with a warning elsewhere). Strictly additive — the AF_UNIX socket and the wire contract are unchanged.")
 
@@ -162,7 +162,7 @@ func main() {
 		cliChecksum = flag.String("cli-checksum", "", "Expected SHA256 of the compressed CLI .zst")
 		cliZst      = flag.String("cli-zst", "", "Path to an already-uploaded CLI .zst (SFTP fallback)")
 		cliKeep     = flag.Int("cli-keep", 3, "How many of the newest CLI version files to keep after a good install, the new CLI among them. The new CLI always stays, so 0 or a negative value removes every other one. The prune before the fetch of a cache miss keeps one fewer, and at least one")
-		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
+		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value turns on an opt-in claustrum option. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
 		_ = flag.Duration("cli-probe-timeout", 0, "Deprecated and ignored. The direct <cli> --version run of -install always uses the bounds of the reference: 30s for a CLI that is present, 120s for a CLI that this run installed. Passing this flag, or setting the cli-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
 
@@ -172,13 +172,13 @@ func main() {
 
 		_ = flag.Duration("libc-probe-timeout", 0, "Deprecated and ignored. The `ldd --version` libc probe always bounds ldd itself at 5s, as the reference does. Passing this flag, or setting the libc-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
 
-		cliDownload = flag.Duration("cli-download-timeout", 0, "Bound the whole -cli-url download exchange with this wall-clock `duration` (e.g. 10m). 0 (the default) means no bound, which is what the reference does; a non-zero value is an opt-in divergence that fails any download slower than it, honest or not. -install only. Claude Desktop owns the argv, so the cli-download-timeout key in claustrum.conf is usually the reachable way to set this.")
+		cliDownload = flag.Duration("cli-download-timeout", 0, "Bound the whole -cli-url download exchange with this wall-clock `duration` (e.g. 10m). 0 (the default) means no bound, which is what the reference does; a non-zero value turns on an opt-in claustrum option that fails any download slower than it, honest or not. -install only. Claude Desktop owns the argv, so the cli-download-timeout key in claustrum.conf is usually the reachable way to set this.")
 	)
 	flag.Parse()
 	resolveVersion()
 
-	// Optional claustrum.conf next to the binary gates opt-in divergences; absent
-	// or malformed → stock defaults. Precedence is explicit CLI flag > config >
+	// Optional claustrum.conf next to the binary sets options; absent or
+	// unreadable → stock defaults. Precedence is explicit CLI flag > config >
 	// default, so record which flags the user actually set.
 	cfg := loadConfig()
 	cliSet := map[string]bool{}

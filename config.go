@@ -15,9 +15,8 @@ import (
 )
 
 // configFileName is an optional key=value file read from the directory that holds
-// the executable. When it is absent (or unreadable, non-regular, or malformed),
-// claustrum behaves as a stock replica of the reference daemon: every setting it
-// carries gates an opt-in divergence that is off by default. Keys mirror the CLI
+// the executable. When it is absent, unreadable or not a regular file, no setting
+// comes from it. Keys mirror the CLI
 // flag names; unknown keys and invalid values are ignored, so the file is
 // forward-compatible. A wire-log path that cannot be opened stops the -serve
 // boot (newServerOnSocket). max-extract-bytes, max-cli-bytes and
@@ -100,8 +99,8 @@ type config struct {
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
-// fails: any problem (no executable path, missing/non-regular/unreadable file,
-// malformed lines) yields a zero config, i.e. stock behavior.
+// fails: no executable path, or a missing, non-regular or unreadable file, yields a
+// zero config, i.e. stock behavior. A malformed line is skipped.
 func loadConfig() config {
 	dir, ok := executableDir()
 	if !ok {

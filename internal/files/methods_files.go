@@ -463,7 +463,7 @@ func filesExtractTar(req *rpc.Request) rpc.Response {
 // error the reference never produces at that size. The
 // cap shipped on by default at 512 MiB and that was a live user-facing break —
 // Claude Desktop owns the argv, so a caller who hit it had no way through. It is
-// now opt-in: divergence D3, set via -max-extract-bytes or the max-extract-bytes
+// now opt-in: option CT-6, set via -max-extract-bytes or the max-extract-bytes
 // key in claustrum.conf. Also set directly by tests.
 var MaxExtractBytes int64
 

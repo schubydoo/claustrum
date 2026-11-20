@@ -539,7 +539,7 @@ func TestInstallHeldFinalChunkPrintsNoRepeatLine(t *testing.T) {
 	}
 }
 
-// An opted-in D12 deadline that fires in the body keeps its documented text. It
+// An opted-in CT-8 deadline that fires in the body keeps its documented text. It
 // is not an interrupted download.
 func TestInstallDownloadDeadlineKeepsItsText(t *testing.T) {
 	setCLIDownloadTimeout(t, 300*time.Millisecond)

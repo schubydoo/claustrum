@@ -21,7 +21,7 @@ import (
 // git.worktree_create. A measurement measured them on 5fd08069 (measured on Linux,
 // macOS and Windows). git.worktree_remove gets none of these limits. Its first call
 // has the bound of 30 s of the call about the repository (measured on Linux). The
-// limits are always on. They are no limiter of an opt-in divergence.
+// limits are always on.
 var (
 	// gitCallLimit ends one git call of those four methods. Measurements show the
 	// stop at 120 s. The read-tree call of a create has no such limit (measured).

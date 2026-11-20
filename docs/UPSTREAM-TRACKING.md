@@ -144,7 +144,7 @@ If the check reports drift:
 
 Not every claustrum behavior is meant to match the reference.
 [docs/DIVERGENCES.md](DIVERGENCES.md) catalogs the deliberate divergences
-(the D series and CT-1..CT-5) and the four-rule standard that governs them. That file is the
+(the D series), claustrum's options (CT-1..CT-8) and the four-rule standard that governs them. That file is the
 canonical home for what each one is, why it exists, how to activate it, and its
 reopen trigger. When the drift check flags one of them, it is expected, not drift.
 Check it against the catalog before you "fix" it.
@@ -163,11 +163,8 @@ means that a probe which reaches the path shows it. The battery never drives
 | ID | Default | Battery-visible? | Symptom |
 |----|---------|------------------|---------|
 | [D2](DIVERGENCES.md#d2) | Always-on | Maybe | A delete path that is or holds the home folder is refused, also on `-install` |
-| [D3](DIVERGENCES.md#d3) | Off | No | An opt-in size cap fails `files.extract_tar` |
 | [D6](DIVERGENCES.md#d6) | Always-on | No, install path | A `-cli-version` of more than one path component is refused |
 | [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Linux and macOS a FIFO, another user's file or a link to one at `remote-server.log` fails the start. On Windows a file link does. The `git-shadow` sweep writes nothing through a link |
-| [D10](DIVERGENCES.md#d10) | Off | No, install path | An opt-in size cap fails `-install` |
-| [D12](DIVERGENCES.md#d12) | Off | No, install path | An opt-in bound fails a slow `-install` download |
 | [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
 | [D19](DIVERGENCES.md#d19) | Always-on, Windows | Maybe | `git.worktree_remove` refuses a junction between `baseRepo` and the leaf |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
@@ -181,6 +178,9 @@ means that a probe which reaches the path shows it. The battery never drives
 | [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the static check's `-version` diff | The `claustrum.conf` file |
 | [CT-4](DIVERGENCES.md#ct-4) | Not built | No | None |
 | [CT-5](DIVERGENCES.md#ct-5) | Opt-in, Windows | No | An extra named-pipe transport |
+| [CT-6](DIVERGENCES.md#ct-6) | Off | No | An opt-in size cap fails `files.extract_tar` |
+| [CT-7](DIVERGENCES.md#ct-7) | Off | No, install path | An opt-in size cap fails `-install` |
+| [CT-8](DIVERGENCES.md#ct-8) | Off | No, install path | An opt-in bound fails a slow `-install` download |
 
 D1, D4, D5, D7, D9, D11, D13, D14, D16, D17, D18, D21 and D25 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
@@ -203,9 +203,9 @@ before you conclude that something is drift.
 ### Drift, or an activated opt-in? — the parse-behaviour table
 
 An opt-in key that is *present* is not a deadline that is *in force*. An unparseable,
-negative or inert value leaves the divergence off, and the resulting parity behavior reads
+negative or inert value leaves the option off, and the resulting parity behavior reads
 like drift. So check for the key or flag first, and check that its value parses to
-a positive duration. One knob takes a duration: D12 (`cli-download-timeout`),
+a positive duration. One knob takes a duration: CT-8 (`cli-download-timeout`),
 which logs under `[Install]`. The deprecated `git-timeout`, `cli-probe-timeout`,
 `libc-probe-timeout` and `files-read-regular-only` set nothing, whatever their
 value. A flag value that does not parse still exits 2:
@@ -434,9 +434,9 @@ the linked pages.
   See [Git-directory trust check](protocol/git-rules-trust.md#git-directory-trust-check),
   [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls) and
   [git.info → The root](protocol/git-info.md#the-root).
-- D12 needs a valid zstd body. The decoder answers an invalid body at once, and
-  that reads like "no divergence". A zero download timeout frees the body read
-  only. The [transport clocks](DIVERGENCES.md#conventions-for-opt-in-divergences)
+- CT-8 needs a valid zstd body. The decoder answers an invalid body at once, and
+  that reads like parity. A zero download timeout frees the body read
+  only. The [transport clocks](DIVERGENCES.md#conventions-for-opt-in-entries)
   and the 60 s wait for the response headers still apply, and that wait is
   parity. See [-install](INSTALL.md#-install-ensure-the-agent-cli).
 - A connection reset in the body answers
