@@ -992,6 +992,16 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 					continue
 				}
 				raw, calls := run("git.status", map[string]any{"baseRepo": r.base, "path": r.path})
+				// On Windows the names of baseRepo are walked as sent, so the ".." after
+				// the live link L passes the walk and the request goes on as for T
+				// (claustrum's own, not measured for a link). 4c111e86 runs git for a
+				// junction P in S\P\..\P\repo (measured on Windows).
+				if runtime.GOOS == "windows" && r.row == "live link then .." {
+					if raw != phase.control {
+						t.Errorf("%s\n got %s\nwant %s", r.row, raw, phase.control)
+					}
+					continue
+				}
 				if raw != bare {
 					t.Errorf("%s\n got %s\nwant %s", r.row, raw, bare)
 				}
