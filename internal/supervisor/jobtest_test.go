@@ -122,6 +122,59 @@ func TestJobTestFailsWithTheExit(t *testing.T) {
 	}
 }
 
+// TestJobTestFailsAtOnceWhenTheChildStillSleeps: a thread with the suspend count 2
+// before the resume still sleeps. The test fails at once with the text of 4c111e86
+// (measured on Windows), and ends the test job once at once. The fake child lives on
+// past the bound, and it gets no second end.
+func TestJobTestFailsAtOnceWhenTheChildStillSleeps(t *testing.T) {
+	buf := captureLogBuf(t)
+	bound := make(chan struct{}, 1)
+	hook := func() {
+		select {
+		case bound <- struct{}{}:
+		default:
+		}
+	}
+	afterJobTestBound.Store(&hook)
+	t.Cleanup(func() { afterJobTestBound.Store(nil) })
+	c := newFakeJobTestChild(false)
+	test := beginJobTest(c, time.Now(), 2, 20*time.Millisecond, 200*time.Millisecond)
+	if test.State() != JobTestFailed || !test.SpawnsOutside() {
+		t.Fatalf("state = %d, outside %v, want failed at once", test.State(), test.SpawnsOutside())
+	}
+	if n := c.ends.Load(); n != 1 {
+		t.Errorf("End ran %d times at the failure, want 1", n)
+	}
+	re := regexp.MustCompile(`\[process\] job objects are not used on this host, so ending a process will not end what it started: the self-test failed after (\d+ms|0s): starting it inside a Windows job object failed: a thread had been suspended 2 times, so it still sleeps\n`)
+	if !re.MatchString(buf.String()) {
+		t.Errorf("log = %q, want the failed line", buf.String())
+	}
+	// The step at the bound does not run. The wait is past the bound of 200 ms.
+	select {
+	case <-bound:
+		t.Error("the step at the bound ran after the failure")
+	case <-time.After(time.Second):
+	}
+	if n := c.ends.Load(); n != 1 {
+		t.Errorf("End ran %d times after the bound, want 1", n)
+	}
+	c.endBySelf(nil)
+	if test.State() != JobTestFailed {
+		t.Errorf("state = %d after the exit, want failed", test.State())
+	}
+}
+
+// TestJobTestRunsWhenTheResumeWakesTheChild: the suspend count 1 of a suspended start
+// runs the test as usual.
+func TestJobTestRunsWhenTheResumeWakesTheChild(t *testing.T) {
+	captureLogBuf(t)
+	c := newFakeJobTestChild(false)
+	c.endBySelf(nil)
+	if test := beginJobTest(c, time.Now(), 1, 5*time.Second, time.Minute); test.State() != JobTestPassed {
+		t.Errorf("state = %d, want passed", test.State())
+	}
+}
+
 // TestJobTestEndsAHungChildOnceAtTheBound: a child that runs past the pending time makes
 // the test pending with its line. At the bound the test ends that child once and
 // fails with the bound reason.

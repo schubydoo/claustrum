@@ -173,38 +173,47 @@ func childJobFlags(jobs ChildJobs) uint32 {
 // thread of another process has its pid. A child that did not start suspended needs
 // nothing. claustrum's own code, not measured.
 func ResumeChild(proc *os.Process, attr *syscall.SysProcAttr) error {
+	_, err := resumeChildCount(proc, attr)
+	return err
+}
+
+// resumeChildCount is ResumeChild, and it also gives the highest suspend count that a
+// thread had before its resume. A count above 1 means that the thread still sleeps.
+func resumeChildCount(proc *os.Process, attr *syscall.SysProcAttr) (uint32, error) {
 	if attr == nil || attr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
-		return nil
+		return 0, nil
 	}
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
 	if err != nil {
-		return os.NewSyscallError("CreateToolhelp32Snapshot", err)
+		return 0, os.NewSyscallError("CreateToolhelp32Snapshot", err)
 	}
 	defer func() { _ = windows.CloseHandle(snap) }()
 	te := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
 	resumed := 0
+	var most uint32
 	for err = windows.Thread32First(snap, &te); err == nil; err = windows.Thread32Next(snap, &te) {
 		if te.OwnerProcessID != uint32(proc.Pid) {
 			continue
 		}
 		th, openErr := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, te.ThreadID)
 		if openErr != nil {
-			return os.NewSyscallError("OpenThread", openErr)
+			return most, os.NewSyscallError("OpenThread", openErr)
 		}
-		_, resumeErr := windows.ResumeThread(th)
+		before, resumeErr := windows.ResumeThread(th)
 		_ = windows.CloseHandle(th)
 		if resumeErr != nil {
-			return os.NewSyscallError("ResumeThread", resumeErr)
+			return most, os.NewSyscallError("ResumeThread", resumeErr)
 		}
+		most = max(most, before)
 		resumed++
 	}
 	if !errors.Is(err, windows.ERROR_NO_MORE_FILES) {
-		return os.NewSyscallError("Thread32Next", err)
+		return most, os.NewSyscallError("Thread32Next", err)
 	}
 	if resumed == 0 {
-		return errors.New("no thread of the child")
+		return 0, errors.New("no thread of the child")
 	}
-	return nil
+	return most, nil
 }
 
 // Signal ends the job of the child, or the direct child when it has no job. Windows

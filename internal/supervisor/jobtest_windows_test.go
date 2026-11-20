@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -50,7 +51,7 @@ func startJobTestForTest(t *testing.T, pendingAfter, bound time.Duration) (*JobT
 	if err != nil {
 		t.Fatalf("start of the test child: %v", err)
 	}
-	return runJobTest(c, time.Now(), pendingAfter, bound), c.(*winJobTestChild)
+	return runJobTest(c, time.Now(), pendingAfter, bound), c
 }
 
 // TestWindowsJobTestPassesWithAChildThatEndsClean: a test child that exits 0 in its job
@@ -64,6 +65,47 @@ func TestWindowsJobTestPassesWithAChildThatEndsClean(t *testing.T) {
 	}
 	if c.jobErr != nil {
 		t.Errorf("the test child joined no job: %v", c.jobErr)
+	}
+}
+
+// TestWindowsJobTestFailsAtOnceAfterAResumeThatLeavesItAsleep: the seam adds 1 to the
+// count of the real resume, as one more suspend from outside does. The suspended start
+// gives the count 1, so the test fails at once with the count 2. The test job then ends
+// at once, and the child, which sleeps 60 s, exits 1, as on 4c111e86 (measured on Windows).
+func TestWindowsJobTestFailsAtOnceAfterAResumeThatLeavesItAsleep(t *testing.T) {
+	useJobTestHelper(t, "sleep", "60")
+	buf := captureLogBuf(t)
+	old := resumeJobTestChild
+	t.Cleanup(func() { resumeJobTestChild = old })
+	var child windows.Handle
+	resumeJobTestChild = func(p *os.Process, attr *syscall.SysProcAttr) (uint32, error) {
+		h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(p.Pid))
+		if err != nil {
+			t.Fatalf("open of the test child %d: %v", p.Pid, err)
+		}
+		child = h
+		t.Cleanup(func() { _ = windows.CloseHandle(h) })
+		n, err := resumeChildCount(p, attr)
+		return n + 1, err
+	}
+	c, err := startJobTestChild()
+	if err != nil {
+		t.Fatalf("start of the test child: %v", err)
+	}
+	t.Cleanup(func() { _ = c.cmd.Process.Kill() })
+	test := beginJobTest(c, time.Now(), c.suspended, 5*time.Second, time.Minute)
+	if test.State() != JobTestFailed {
+		t.Fatalf("state = %d, want failed at once", test.State())
+	}
+	if want := ": starting it inside a Windows job object failed: a thread had been suspended 2 times, so it still sleeps\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log = %q, want the line that ends %q", buf.String(), want)
+	}
+	if ev, _ := windows.WaitForSingleObject(child, 5000); ev != windows.WAIT_OBJECT_0 {
+		t.Fatal("the test child did not end within 5 s")
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(child, &code); err != nil || code != 1 {
+		t.Errorf("exit code of the test child = %d (%v), want 1", code, err)
 	}
 }
 
