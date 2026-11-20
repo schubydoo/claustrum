@@ -69,8 +69,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 ### The start test
 
 The first request without the member that reaches a repository runs the test. On a `.git` file that names a
-missing path the steps after the test differ from `5fd08069` (measured on macOS and
-Windows), with equal frames
+missing path a macOS create differs from `5fd08069` after the test (measured), with equal frames
 ([UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
 test makes a small repository and a copy of it in a folder `.check-<n>` of the
 daemon, and runs git calls there. One of them is the read of the test repository's
