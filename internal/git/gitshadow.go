@@ -234,7 +234,7 @@ func (h *ShadowHost) folderUse() gitUse {
 
 // gate runs before the first git call of a method in a repository that the trust
 // check accepted, or on a `.git` file to a missing path for git.info (gitInfo)
-// and a Windows git.worktree_create (gitWorktreeCreateLocked).
+// and git.worktree_create (gitWorktreeCreateLocked).
 // It returns the text of a failed start test, or "".
 //
 // A request with the member runs no test and makes no folder (measured on
@@ -791,6 +791,11 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 // a new folder .check-<n> in it and removes that folder. It returns the state,
 // or the cause of a failed test.
 //
+// An entry at the folder that remakeFolder removes goes first, and the test runs
+// in a new folder. At a test after a kept failure on 4c111e86 an empty file, a
+// FIFO or a link there goes, the four git requests succeed, and the link's
+// target gets nothing (measured on Linux, also for a link to nothing).
+//
 // The name .check-<n> has a decimal number that differs per attempt. The folder
 // is gone at the reply, also after a failed test (measured on Linux). A folder
 // that cannot be made gives `mkdir <S>/.check-<n>: no space left on device`
@@ -802,7 +807,8 @@ func (h *ShadowHost) startTest() (state, cause string) {
 		return "", ""
 	}
 	if h.dir != "" {
-		if _, err := os.Lstat(h.dir); err != nil {
+		fi, err := os.Lstat(h.dir)
+		if err != nil || goesAtFolderPath(fi.Mode()) && h.removeOwnFolderFile(h.dir) == nil {
 			h.dropLock()
 			h.dir = ""
 		}
@@ -1194,7 +1200,7 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 //
 // The test runs for a trusted git directory. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (measured on
-// Linux). git.info and a Windows git.worktree_create on a `.git` file to a
+// Linux). git.info and git.worktree_create on a `.git` file to a
 // missing path are the exceptions (gitInfo, gitWorktreeCreateLocked). Each
 // method gives the text of a failed test the shape that it gives a refused
 // config: the error object on git.info, git.status and git.list_branches,

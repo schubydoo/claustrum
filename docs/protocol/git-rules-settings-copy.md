@@ -16,7 +16,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a Windows create (`4c111e86`, measured on Windows), on a `.git` file to a missing repository starts it |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a create (`4c111e86`, measured on Linux and Windows), on a `.git` file to a missing repository starts it |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
@@ -25,7 +25,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
   no member. A path that does not exist gets the same, but starts no test itself. On
-  a folder with no repository the other methods answer at once, except a Windows create on a `.git` file to a missing path (`4c111e86`, measured on Windows).
+  a folder with no repository the other methods answer at once, except a create on a `.git` file to a missing path (`4c111e86`, measured on Linux and Windows).
 - As the first git request of a daemon, a `git.info` on a folder whose `.git` file
   names a missing path runs the test and gives that reply. A missing entry under
   `worktrees` of an existing git directory runs no test, and the reply has no member
@@ -131,10 +131,10 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file, FIFO or link there goes, never its target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). Only `shadow`,
-  `fallback-git` within 10 minutes and a missing git (`git.info`, and `git.status` on Linux and macOS)
-  heal it. A start test
-  fails at it, or tests in a link's target (claustrum's own, not measured). On Linux
+  succeed in a new folder (`4c111e86` on Linux and macOS). `shadow`,
+  `fallback-git`, a missing git (`git.info`, and `git.status` on Linux and macOS)
+  and a start test heal it. A test after a kept failure is measured on Linux. Other
+  start tests are claustrum's own. On Linux
   and macOS one file `unlinkat` after the home guard removes it, never a folder or
   tree (from the code). Other non-folder kinds, a file with content and Windows (a
   regular file, or an empty folder in its place) are claustrum's own.
@@ -158,20 +158,20 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - `.probe` is the folder of [the repository
   call](#the-call-about-the-repository).
 - A request also keeps short-lived entries in the daemon's folder:
-  `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` (claustrum: `.index-<n>` on Windows) and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
+  `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In `fallback-git` the first three are there
-  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
-  `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
+  too (`.gitdir-<n>` on all three systems and `.checkout-<n>` on Windows, measured, and the rest
+  from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
   `claude-ssh-worktreeinclude-<n>`. That temporary index name is as on `4c111e86` (measured on
-  Linux and macOS, not Windows).
+  all three systems).
 - `4c111e86` names a create's index folder
   `.checkout-<n>` (measured on all three systems). It is there at the reply and goes
   soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request using the
-  copy (measured on Linux and macOS).
+  copy (measured on all three systems).
   claustrum removes it with the old daemon's folder in [the
   sweep](#the-sweep-of-git-shadow) (from the code). On Windows the `.checkout-<n>` folder of `4c111e86` holds no
   LFS object (measured).

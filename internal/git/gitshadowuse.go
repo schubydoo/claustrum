@@ -896,8 +896,9 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 //   - `.gitdir-<n>` for one git.status (measured on Linux and Windows).
 //   - `.index-<n>` for the checkout of one create (measured). It has mode 0700
 //     on Linux (measured). On all three systems 4c111e86 names it
-//     `.checkout-<n>` (measured). claustrum names it `.index-<n>` on Windows
-//     (checkoutDirPrefix, claustrum's own).
+//     `.checkout-<n>` (checkoutDirPrefix, measured). In fallback-git that
+//     name is measured on Windows. On Linux and macOS it is claustrum's own
+//     there (not measured).
 //   - `.worktreeinclude-<n>` with the file `patterns` for one include step
 //     (measured).
 //
@@ -905,10 +906,10 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 // `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
 // `claude-ssh-worktreeinclude-<n>`. The last one holds the file `patterns`
 // (5fd08069, measured on Linux). The index folder is the one of 4c111e86
-// (measured on Linux and macOS). c9125eb8 used `claude-ssh-index-<n>`.
+// (measured on all three systems). c9125eb8 used `claude-ssh-index-<n>`.
 const (
 	shadowStatusDirPrefix  = ".gitdir-"
-	shadowIndexDirPrefix   = ".index-"
+	checkoutDirPrefix      = ".checkout-"
 	shadowIncludeDirPrefix = ".worktreeinclude-"
 	includePatternsName    = "patterns"
 )
@@ -932,8 +933,8 @@ var requestDirMkdir = os.Mkdir
 // The error of a folder that cannot be made in the folder of the daemon names
 // its full path, with the operation `mkdir`. With a folder of the daemon of
 // mode 0500 a create of 5fd08069 answers `git worktree add failed (checkout):
-// mkdir <S>/.index-<n>: permission denied` (measured on Linux). On Linux and
-// macOS claustrum prints `.checkout-<n>` there. On Windows
+// mkdir <S>/.index-<n>: permission denied` (measured on Linux). claustrum
+// prints `.checkout-<n>` there. On Windows
 // the folder `.s<n>` of a create gives `mkdir
 // C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.` (measured on Windows).
 // On Linux and macOS a folder of the daemon of mode 0100 gets that mkdir
@@ -944,7 +945,7 @@ var requestDirMkdir = os.Mkdir
 // not through the root (makeRequestDir). On Windows with a deny entry for new
 // folders on <S> and the backup and restore privileges enabled, the create of
 // 5fd08069 succeeds. The root mkdir of claustrum failed there at `.s<n>`
-// (measured) and at `.index-<n>`. With both privileges disabled both builds
+// (measured) and at its checkout folder. With both privileges disabled both builds
 // fail with the text above (measured). By path the create of claustrum
 // succeeds (measured). The prefixes .config-, .worktreeinclude- and the
 // .gitdir- of git.status are not measured there (claustrum's own).
