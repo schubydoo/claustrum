@@ -46,8 +46,9 @@ func TestGitStatusFileBaseRepoAsksGit(t *testing.T) {
 	}
 }
 
-// git.status on a file link from a repository into another repository answers
-// "no repository", not the "disagree" text of askGit.
+// git.status on a file link from a repository into another repository gets the
+// gate of the target's repository (14 calls, as for a regular file there) and
+// answers "no repository".
 func TestGitStatusFileLinkIntoOtherRepoNotRepo(t *testing.T) {
 	f := newShadowFixture(t)
 	setProbeClock(t)
@@ -64,9 +65,12 @@ func TestGitStatusFileLinkIntoOtherRepoNotRepo(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := f.call(t, "git.status", map[string]any{"path": link, "baseRepo": link})
+	raw, calls := f.call(t, "git.status", map[string]any{"path": link, "baseRepo": link})
 	if raw != statusNotRepo {
 		t.Errorf("frame = %s\nwant %s", raw, statusNotRepo)
+	}
+	if len(calls) != 14 {
+		t.Errorf("%d calls, want 14 (the gate of the target's repository)", len(calls))
 	}
 }
 
