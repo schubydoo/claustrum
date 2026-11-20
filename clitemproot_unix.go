@@ -688,7 +688,7 @@ func reuseTempRoot(xfd int, dir string, root *os.Root, reg string, uid int, canA
 	}
 	// A given-back folder keeps the flock of its handle, which a second open of it
 	// cannot take. So the hold of such a folder takes a copy of that handle, which shares
-	// the flock (claustrum's own).
+	// the flock (claustrum's own). A copy that fails (no free fd) gives a new folder.
 	var f *os.File
 	ok := false
 	if g := givenTempRootOf(&st); g == nil {
