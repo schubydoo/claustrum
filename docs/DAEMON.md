@@ -498,6 +498,7 @@ At a `-serve` start, after the run-dir lock and before the bind, the daemon read
 - It walks `children` in directory order and handles the first 128 names that end in `.json`. The rest wait for the next start. Kept records count toward the 128. So 128 records of another machine, which stay for 30 days, stop every reap, and an orphan behind them stays alive.
 - It sends `SIGTERM` to 64 groups at most. The others keep their records for the next start.
 - Only a regular file is a record. A link, a FIFO or an empty folder with a `.json` name is removed, with no signal. The target of a link stays. A folder with content stays (from the code).
+- A record that changes between its type test and its open gets no signal and no line (from the code).
 - It reads at most 4096 bytes of a record. A record whose first 4096 bytes are not one JSON value is removed, with no signal.
 - If `children` is not a real folder, it reads, signals and removes nothing. That is measured for a symbolic link to a folder. The other kinds are claustrum's own.
 
@@ -511,6 +512,8 @@ A record of a daemon that is alive stays. So does a record from another machine,
 A process that the daemon cannot inspect keeps its record and gets no signal (`5fd08069`, from the code). The daemon does not test the owner of a record file.
 
 After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. Then the daemon waits 1 s at most for the group to end (claustrum's own value). After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). A group that still cannot be inspected at the end, or that outlives the `SIGKILL`, keeps its record (for the group that outlives it, `4c111e86`, measured on Linux). A group that outlives the `SIGKILL` logs at WARN (claustrum's own level) `[process.Registry] WARNING group <pgid> survived SIGKILL; keeping its record for the next start` (`4c111e86`, measured on Linux).
+
+Two risks remain (from the code). A process can change between the last read of `/proc` or `ps` and the signal. That window is wider on macOS, where `ps` runs as its own process. And a remove of a record takes what sits at its name at that time, by one plain remove, never as a tree.
 
 ## Idle-connection close
 
