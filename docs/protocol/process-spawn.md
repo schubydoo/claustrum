@@ -142,7 +142,7 @@ The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTR
 
 ### A temp folder that takes no file (build `683cc6a9`)
 
-On Linux and macOS a daemon value of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` or `TEMP` does not reach a child if its folder cannot take a new file `.claude-ssh-<n>`. For a missing folder the nearest existing parent folder takes the test. A missing folder under a folder that takes the file stays. On Linux a relative value stays too, and spawns at once share one test, which removes the file. `TMP`, the order of the names and the test of the parent are claustrum's own, not measured. So is 2 s per test. `4c111e86` logs its line after 2 s too (measured on Linux). The maintainer approved the test of the parent.
+On Linux and macOS a daemon value of `CLAUDE_CODE_TMPDIR`, `TMPDIR`, `TMP` or `TEMP` does not reach a child if its folder cannot take a new file `.claude-ssh-<n>`. For a missing folder the nearest existing parent folder takes the test. A missing folder under a folder that takes the file stays. On Linux a relative value stays too, and spawns at once share one test, which removes the file. `TMP`, the order of the names and the test of the parent are claustrum's own, not measured. So is 2 s per test. `4c111e86` logs the slow temp folder line of [Lines of child processes](../DAEMON.md#lines-of-child-processes) after 2 s too (measured on Linux). The maintainer approved the test of the parent.
 
 ### The private temp folder (build `b3081b51`)
 
