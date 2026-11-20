@@ -49,7 +49,7 @@ The ending line is followed by `SIGHUP`. A child that is still there gets `SIGKI
 
 claustrum's own: the end comes up to one step after the time, a quarter of the time and at most 60 s. The step starts at the spawn, and so does the clock of a link that is gone by then.
 
-claustrum's own: on Linux and macOS the `SIGKILL` goes to the group, as for [process.kill](process-kill.md). On Windows the first signal ends the job of the child.
+claustrum's own: on Linux and macOS the `SIGKILL` goes to the group, as for [process.kill](process-kill.md). On Windows the first signal acts as a [kill](process-kill.md#windows-child-trees).
 
 A reattach from another open connection stops the clock, and the process keeps running with no line (`c9125eb8` and `4c111e86`, measured on Linux). claustrum's own, not measured: the clock starts again from zero when the link and each such connection are gone.
 

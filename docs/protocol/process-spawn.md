@@ -43,11 +43,11 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 {"success": true}
 ```
 
-With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the wall clock of the daemon at the spawn, in epoch seconds.
+With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the OS pid of the child. `startTime` is the daemon's wall clock at the spawn, in epoch seconds.
 
 `startTime` is an opaque token that detects a reused pid, not an OS start time.
 
-On Windows a failed (`4c111e86`, measured on Windows) or pending (claustrum's own) [start test](process-kill.md#the-start-test-of-the-jobs) adds `"outsideJob":true` after `success`.
+On Windows a failed (`4c111e86`, measured) or pending (claustrum's own) [start test](process-kill.md#the-start-test-of-the-jobs) adds `"outsideJob":true` after `success`.
 
 With `"cliTempRoot": true` on Linux and macOS the result can carry a `cliTempRoot` member after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
 
@@ -318,7 +318,7 @@ claustrum's own: the macOS refusal comes before step 2. With a command, the own-
 
 === "Windows"
 
-    - **Process group and job.** The child starts in a new process group and in a [job](process-kill.md#windows-child-trees) (`52d82f0a`).
+    - **Process group and job.** The child gets a new process group and a [job](process-kill.md#windows-child-trees) (`52d82f0a`), since `4c111e86` after a passed [start test](process-kill.md#the-start-test-of-the-jobs).
     - **`launcher`.** Refused with `-32004`.
     - **`signal` in the `exit` frame.** Never.
 
@@ -378,7 +378,7 @@ The daemon advertises it as the feature `process.spawn.shellAgentSocket`. A chil
 A spawn with the `id` of a process that still runs succeeds and replaces its table entry. The first process gets no signal and keeps running. Then:
 
 - `process.kill`, `process.stdin` and `process.reattach` of that `id` reach the second process only.
-- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except on Windows with jobs on and no `-keep-children` (claustrum's own).
+- `-stop` and `server.shutdown` end only the processes of the table, so the first process outlives the daemon, except in a Windows job with no `-keep-children` (claustrum's own).
 - Each process keeps the connection that spawned it, under the same `processId`, and each counts its own `seq`. So a connection that sent both spawns gets two streams under one `processId`, with two `exit` frames (measured on Linux).
 - A `process.reattach` moves the stream of the second process and closes the connection that had it. A connection that gets the frames of the first process keeps getting them (measured on Linux).
 
@@ -393,7 +393,7 @@ The argument after a bare `--session-id` or `--resume` is its value. The id has 
 
 #### How the old process ends
 
-The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old job ends at once, and two spawns of one session run one after the other (both claustrum's own).
+The daemon sends `SIGTERM` to the direct child of the old process and waits. After 3 s it sends `SIGKILL` to the group. The `exit` frame of the old process reaches its client with `"killedBy":"client"`. The pipe drain of that frame takes up to 5 s. Then the new process starts, and its reply comes after that `exit` frame. On Windows the old process ends at once, and two spawns of one session run one after the other (both claustrum's own).
 
 A spawn with the `id` and the session of a running process only replaces it, as [the `id` in use](#a-spawn-with-an-id-that-is-in-use) says.
 
