@@ -442,11 +442,10 @@ A restart on a live socket unlinks the old socket and binds a new one, off the J
 
 The daemon claims `daemon.lock` and reaps the recorded children of a dead daemon. Only then does it remove the old socket file, bind, and complete the lock's owner record. So nothing listens on the path while the reap waits for a group. A client connect in that wait fails:
 with the socket file of the dead daemon there, it gets `ECONNREFUSED`, and with
-none, it gets `ENOENT`. A recorded child that ignores `SIGTERM` makes the
-wait about 2 s. The reap is under [Child records](#child-records-and-the-reap-linux-and-macos), and its [log lines](#lines-of-child-processes) are below.
+none, `ENOENT`. A recorded child that ignores `SIGTERM` makes the
+wait about 2 s.
 
-On Windows the daemon also removes the old socket file before it binds and runs no
-reap there.
+On Windows the daemon also removes the old socket file before it binds.
 
 ### A long socket path (Linux and macOS)
 
@@ -511,7 +510,7 @@ A record of a daemon that is alive stays. So does a record from another machine,
 
 A process that the daemon cannot inspect keeps its record and gets no signal (`5fd08069`, from the code). The daemon does not test the owner of a record file.
 
-After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. Then the daemon waits 1 s at most for the group to end (claustrum's own value). After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). A group that still cannot be inspected at the end, or that outlives the `SIGKILL`, keeps its record. 
+After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the whole test again. A group that fails it gets nothing more. A group that still passes after 2 s gets `SIGKILL`. Then the daemon waits 1 s at most for the group to end (claustrum's own value). After the last group is done, the records of all signalled groups go together. A leader that reads as gone is read again after 50 ms before the `SIGKILL` of its group ([D20](DIVERGENCES.md#d20)). A group that still cannot be inspected at the end, or that outlives the `SIGKILL`, keeps its record. A group that outlives the `SIGKILL` logs `[process.Reaper] child <pid> (<pid>.json): still present after SIGKILL` (claustrum's own, not measured).
 
 ## Idle-connection close
 

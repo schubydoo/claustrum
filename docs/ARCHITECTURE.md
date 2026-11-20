@@ -15,10 +15,10 @@ build tag alone, marks the part of a group for one OS.
 
 | group | files | what they hold |
 |---|---|---|
-| Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install`, `-probe-cli` and `-bridge`. |
-| Transport | `server.go`, `connlog.go`, `internal/conn/`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go`, `internal/sockroute/` | The `AF_UNIX` listener and the connection loop. Connection writes and the end member of each line. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. |
+| Modes | `main.go`, `config.go`, `buildstamp.go`, `bridge*.go`, `selflocate_*.go`, `ignorepipe*.go` | The flags and the mode switch. `claustrum.conf`. The version stamp. `-bridge` and `-stop`. The self-locate test of `-serve`. No exit on SIGPIPE in `-install`, `-probe-cli` and `-bridge`. |
+| Transport | `server.go`, `connlog.go`, `internal/conn/`, `detach_*.go`, `dahandoff.go`, `livepred_*.go`, `peerpid_*.go`, `peercheck*.go`, `pipetransport*.go`, `raiselimit_*.go`, `shutdownreply_*.go`, `internal/sockroute/` | The `AF_UNIX` listener and the connection loop. Connection writes and the end member of each line. The idle close of a connection. The self-daemonize. The socket handoff between two daemons. The peer check. The opt-in Windows named pipe. The open-file limit that children inherit. The wait of the `server.shutdown` reply. |
 | Dispatch | `rpc.go`, `internal/rpc/`, `methods_*.go`, `capfeatures_*.go`, `expandpaths.go`, `internal/homeguard/`, `internal/files/`, `pluginsibling_*.go`, `internal/supervisor/spawncheck.go`, `handlers/prune.go` | The request and response types, the error codes, the dispatch order and the params gate. Result structs, whose field order is wire contract. `methods_*.go`, `internal/files/` and `internal/git/` have the 24 method handlers. The `server.capabilities` features. `ExpandPaths`. `homeguard.WipesHomeDir`. OS parts of `plugins.prune`. `internal/supervisor/spawncheck.go` holds the `process.spawn` launcher checks. |
-| Process | `internal/supervisor/process.go`, `internal/sysproc/`, `internal/supervisor/`, `internal/supervisor/sessionsupersede.go`, `internal/shellenv/`, `internal/sessiondirs/` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. The record of session folders. |
+| Process | `internal/supervisor/process.go`, `internal/sysproc/`, `internal/supervisor/`, `internal/supervisor/sessionsupersede.go`, `internal/shellenv/`, `internal/sessiondirs/`, `clitemproot_*.go`, `sessionfolders.go`, `spawnsteps.go` | The registry, seq, replay buffer and subscribers. The signal names. The kill of a child and its Windows job. The exec-child trampoline. The supersede of a session spawn. The login-shell PATH. The SSH agent hand-off. The session folders. The private temp folder. |
 | Git | `internal/git/` | See [The git subsystem](#the-git-subsystem). |
 | Install | `internal/install/` | `-install` and `-probe-cli`. The download. The file test of a cache hit. The libc probe. The managed launcher, its settings reader and the child env strip. |
 | Host and lock | `internal/runlock/`, `internal/tokenfile/`, `internal/childrec/`, `internal/supervisor/procrecords_*.go`, `internal/hostsweep/`, `internal/procinfo/`, `orphanexit.go`, `selfexit_*.go` | The run-dir lock. `daemon.token`. The child records and their reap. The host cleaner. The orphan exit and the idle exit. |
@@ -76,8 +76,7 @@ delete, the prune and the `__INSTALL_RESULT__` facts.
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
 Unix, reparents to init. It then binds the socket and sets its mode to `0600`.
-On Linux and macOS, the run-dir lock and, for its holder, the orphan reap come first. Most rules are in PROTOCOL.md and [Running the daemon](DAEMON.md). This list
-names the files, the seams and the rules with no other home.
+On Linux and macOS, the run-dir lock and, for its holder, the orphan reap come first. Most rules are in PROTOCOL.md and [Running the daemon](DAEMON.md).
 
 ```mermaid
 flowchart TD
