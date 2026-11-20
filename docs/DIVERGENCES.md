@@ -21,7 +21,7 @@ claustrum's code is marked "from the code".
 
 Byte-identical JSON-RPC frames are the product. A divergence needs a reason.
 Matching does not. "Off by default" means byte-identical, not almost
-byte-identical. An opt-in divergence that is not active leaves the wire exactly as
+byte-identical. An opt-in entry that is not active leaves the wire exactly as
 the reference leaves it. The
 [out-of-scope list](#explicitly-out-of-scope-would-break-compatibility) at the end
 gives the changes we will never make.
@@ -68,8 +68,8 @@ or large. So an honest input trips it too. The test:
 
 Take an honest input that is reachable, and a guard that the caller cannot turn
 off. Then always-on is not justified, however the reference behaves on the
-hostile path. That is why each timeout or size cap is an option, off by default
-(CT-6, CT-7, CT-8). D2 passes both
+hostile path. That is why each claustrum timeout or size cap that an honest input trips is an
+option, off by default (CT-6, CT-7, CT-8). D2 passes both
 halves: the home wipe is unrecoverable data loss, and no honest caller has a use
 for it. A caller can still reach that path by accident, which is what the guard
 is for.
@@ -739,7 +739,8 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 ## Retired entries
 
 A retired entry is a divergence that the reference made moot, or one that the
-maintainer retired to follow the reference. It links to the home of its rule
+maintainer retired to follow the reference. D3, D10 and D12 moved to the
+options instead, and their flags still work. An entry links to the home of its rule
 where it has one. Its number is not reused. A retired
 flag and its `claustrum.conf` key are still accepted and set nothing. Either one
 logs one warning in the mode of the flag, `-serve` or `-install`. A duration flag
@@ -749,6 +750,10 @@ whose value does not parse fails the flag parse with exit 2 (from the code).
 
 claustrum checks a supplied `-cli-checksum` against the `-cli-zst` blob, as the
 reference does: see [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
+
+### D3 · The `files.extract_tar` size cap (moved) { #d3 }
+
+It is now [CT-6](#ct-6).
 
 ### D4 · `files.read` refuses a file that is not regular (retired) { #d4 }
 
@@ -772,11 +777,19 @@ A method ignores a member that another method of its namespace reads, as the
 reference does: see [PROTOCOL.md → Params presence and
 typing](PROTOCOL.md#params-presence-and-typing).
 
+### D10 · The `-install` CLI size cap (moved) { #d10 }
+
+It is now [CT-7](#ct-7).
+
 ### D11 · Deadline on the `<cli> --version` run of `-install` (retired) { #d11 }
 
 D11 made a deadline on that run opt-in, and claustrum now stops it at the 30 s and
 120 s of the reference, always: see
 [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli).
+
+### D12 · The `-install` download bound (moved) { #d12 }
+
+It is now [CT-8](#ct-8).
 
 ### D13 · `-install` verified the checksum before decompressing (retired) { #d13 }
 

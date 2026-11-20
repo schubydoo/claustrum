@@ -157,7 +157,7 @@ leaves the frames of a client unchanged:
 - `-wire-log` appends every JSON-RPC frame to a file for diagnostics. It redacts
   credentials by key only.
 
-One opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid` and
+An opt-in member of claustrum's own changes a frame: `"wantPid":true` adds `pid` and
 `startTime` to the result of `process.spawn`, and of `process.reattach` for a found process (CT-1). Three more flags turn on a claustrum
 option: `-max-extract-bytes` (CT-6), `-max-cli-bytes` (CT-7) and `-cli-download-timeout`
 (CT-8). [docs/DIVERGENCES.md](docs/DIVERGENCES.md) has each entry and its limits. The

@@ -144,7 +144,7 @@ If the check reports drift:
 
 Not every claustrum behavior is meant to match the reference.
 [docs/DIVERGENCES.md](DIVERGENCES.md) catalogs the deliberate divergences
-(the D series and CT-1..CT-8) and the four-rule standard that governs them. That file is the
+(the D series), claustrum's options (CT-1..CT-8) and the four-rule standard that governs them. That file is the
 canonical home for what each one is, why it exists, how to activate it, and its
 reopen trigger. When the drift check flags one of them, it is expected, not drift.
 Check it against the catalog before you "fix" it.
@@ -435,7 +435,7 @@ the linked pages.
   [Hardened git calls](protocol/git-rules-calls.md#hardened-git-calls) and
   [git.info → The root](protocol/git-info.md#the-root).
 - CT-8 needs a valid zstd body. The decoder answers an invalid body at once, and
-  that reads like "no divergence". A zero download timeout frees the body read
+  that reads like parity. A zero download timeout frees the body read
   only. The [transport clocks](DIVERGENCES.md#conventions-for-opt-in-entries)
   and the 60 s wait for the response headers still apply, and that wait is
   parity. See [-install](INSTALL.md#-install-ensure-the-agent-cli).
