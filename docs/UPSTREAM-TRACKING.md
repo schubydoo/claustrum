@@ -472,9 +472,9 @@ Unless an item names another build, the daemon items below are measured against
   not drift and not [D20](DIVERGENCES.md#d20). See
   [Passes, orphans and stale run dirs](DAEMON.md#passes-orphans-and-stale-run-dirs).
 - On Windows a daemon that outlives its SSH session is not drift, against
-  `f6010b97` and `89cb6289`. Since `52d82f0a` each child is in a job after a passed [start test](protocol/process-kill.md#the-start-test-of-the-jobs), and a kill
+  `f6010b97` and `89cb6289`. Since `52d82f0a` each child is in a job, since `4c111e86` after a passed [start test](protocol/process-kill.md#the-start-test-of-the-jobs). A kill
   or a killed daemon ends its tree. With `CLAUDE_SSH_NO_JOBS=1` a tree that outlives
-  the shutdown or the exit of the child is not drift. Neither are children that
+  the shutdown or the child's exit is not drift. Neither are children that
   outlive a killed daemon there (`89cb6289`. With the switch, not measured on `52d82f0a`). See [The job of the launcher](DAEMON.md#the-job-of-the-launcher-windows).
 - On Linux and macOS a daemon accepts no connection while the reap of its start
   waits. A connect then gets `ECONNREFUSED` or `ENOENT`, and `daemon.lock` holds
