@@ -50,7 +50,7 @@ var shadowHosts sync.Map
 
 // beforeRepoHold and afterRepoDrop are seams for the tests. The first runs
 // right before a git child that names a repository folder looks for its
-// record, and before the hold of a Windows staging step (holdCopy). The second
+// record, and before the staging step of an add (runAddStaged). The second
 // runs right after such a child dropped its hold. Production never reassigns
 // them.
 var (
@@ -198,18 +198,6 @@ func (u gitUse) renewCopy() {
 type shadowRepoRefusal struct{ text string }
 
 func (e shadowRepoRefusal) Error() string { return e.text }
-
-// holdCopy takes the hold of the repository folder of u for a step that is no
-// git child: the staging folder of a Windows create, until it goes. A refusal
-// is the error of the add. A request with no copy holds nothing. args is the
-// argv of the add, for the seam beforeRepoHold.
-func (u gitUse) holdCopy(args []string) (func(), error) {
-	if u.host == nil || u.repoDir == "" {
-		return func() {}, nil
-	}
-	beforeRepoHold(args)
-	return u.host.holdRepo(u.folder, filepath.Base(u.repoDir), false)
-}
 
 // copyGone reports whether err is the refusal of a git call whose repository
 // folder went (repoCopyGone), or whose build failed to make it again

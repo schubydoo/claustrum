@@ -33,7 +33,9 @@ import (
 //     -t <type> --literally --no-filters --stdin-paths -w`, or `hash-object -t
 //     <type> --literally --no-filters --stdin -w`, hashes each one again
 //     (worktreecontentbatch.go). Its objects go to a short-lived folder
-//     `.readback-objects-<n>` of the folder of the daemon (requestDir).
+//     `.readback-objects-<n>` of the folder of the daemon (requestDir). The
+//     long-running one reads each object from a file in a second such folder,
+//     `.readback-scratch-<n>` (scratchDir).
 //   - `hash-object --no-filters --stdin-paths` hashes the files of the new
 //     worktree. A file whose id differs, or every file after a failed call, is
 //     compared with `cat-file blob <id>`, and then with `cat-file --filters
@@ -52,6 +54,11 @@ type contentCheck struct {
 	commit string
 	// objects is the folder of the objects that the hash-object calls write.
 	objects string
+	// scratch is the root of the folder of the files that the long-running
+	// hash-object calls read (scratchDir), or nil before the first one.
+	// dropScratch removes the folder.
+	scratch     *os.Root
+	dropScratch func()
 	// read is the count of objects that the check read: the commit, each tree
 	// and each blob of the compare step.
 	read int
@@ -110,9 +117,16 @@ const contentLogHintCap = 400
 // shadowReadbackDirPrefix starts the name of the folder of the objects that the
 // check writes (measured on Linux). readbackTempPrefix is its prefix in the
 // temporary folder, claustrum's own: the check runs in the state shadow only.
+//
+// shadowScratchDirPrefix starts the name of the folder of the files that the
+// long-running hash-object calls read (4c111e86, measured on Linux, macOS and
+// Windows). scratchTempPrefix is its prefix in the temporary folder
+// (claustrum's own).
 const (
 	shadowReadbackDirPrefix = ".readback-objects-"
 	readbackTempPrefix      = "claude-ssh-readback-objects-"
+	shadowScratchDirPrefix  = ".readback-scratch-"
+	scratchTempPrefix       = "claude-ssh-readback-scratch-"
 )
 
 // contentTopNames are the files at the top of the commit that the check
@@ -183,6 +197,9 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	}
 	defer remove()
 	c.objects = dir
+	// The scratch folder goes before the folder of the objects (4c111e86,
+	// measured on Linux), after the gits of the check end (claustrum's own).
+	defer c.removeScratch()
 	c.startBatch()
 	defer c.stopBatch()
 	body, text := c.readObject("commit", c.commit)
@@ -377,7 +394,7 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 		return nil, failText(stderr, err)
 	}
 	if c.batch != nil && !c.stopped {
-		got, err := c.hashLong(kind, body)
+		got, err := c.hashLong(kind, id, body)
 		switch {
 		case err == nil:
 			if text := hashText(kind, id, got); text != "" {

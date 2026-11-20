@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/logging"
 )
 
@@ -39,8 +40,16 @@ import (
 // another kind is read again by a separate run, and the batch goes on. A
 // malformed answer, a failed start and a stop at the limit end the batch as an
 // end of its output does. The batch and each hash-object have the limit of one
-// call for the whole check. The long-running hash-object reads the object from
-// the file objectBodyName in the folder of the objects of the check.
+// call for the whole check.
+//
+// The long-running hash-object reads each object from a file named by its id
+// in a folder `.readback-scratch-<n>` beside the folder of the objects. The
+// folder is made at the first such object, after its git started. Each file
+// goes right after the answer for it, so the folder holds at most one file.
+// The folder goes at the end of the check (4c111e86, measured on Linux and
+// macOS. Windows shows the folder with a file named by an object id during a
+// check). The folder has mode 0700 and a file mode 0600. The modes and the
+// start order are of 4c111e86, measured on Linux.
 //
 // After a stop c9125eb8 reads the trees of a level below the top with one
 // `cat-file --buffer --batch` and hashes them with a new long-running
@@ -86,11 +95,6 @@ var errBatchAnswer = errors.New("an answer that cannot be read")
 // opened. A separate run hashes that object, and the long-running gits go on
 // (claustrum's own, not measured).
 var errNoHashHelper = errors.New("no long-running hash-object for this object")
-
-// objectBodyName is the file that holds the object for the long-running
-// hash-object, in the folder of the objects of the check (claustrum's own,
-// not measured). The folder goes after the check with the file.
-const objectBodyName = "object-body"
 
 // objectBatch is one long-running git of the check: `cat-file --batch`, or a
 // hash-object with --stdin-paths.
@@ -232,27 +236,28 @@ func (c *contentCheck) stopBatch() {
 	}
 }
 
-// hashLong hashes body as an object of kind with the long-running hash-object
-// of that kind, which it starts at the first object of the kind.
-func (c *contentCheck) hashLong(kind string, body []byte) (string, error) {
-	id, h, err := c.hashOn(c.hashers[kind], kind, body)
+// hashLong hashes body, the object id of kind, with the long-running
+// hash-object of that kind, which it starts at the first object of the kind.
+func (c *contentCheck) hashLong(kind, id string, body []byte) (string, error) {
+	got, h, err := c.hashOn(c.hashers[kind], kind, id, body)
 	if h != nil && c.hashers[kind] == nil {
 		if c.hashers == nil {
 			c.hashers = map[string]*objectBatch{}
 		}
 		c.hashers[kind] = h
 	}
-	return id, err
+	return got, err
 }
 
-// hashOn hashes body as an object of kind with h, a long-running hash-object
-// of that kind. A nil h starts one. h is the one that ran, or nil.
-func (c *contentCheck) hashOn(h *objectBatch, kind string, body []byte) (string, *objectBatch, error) {
-	p := filepath.Join(c.objects, objectBodyName)
-	if strings.ContainsAny(p, "\r\n") {
-		return "", h, errNoHashHelper
-	}
-	if err := writeObjectBody(c.objects, body); err != nil {
+// hashOn hashes body, the object id of kind, with h, a long-running
+// hash-object of that kind. A nil h starts one. h is the one that ran, or nil.
+// The object goes to the file id in the scratch folder, which goes after the
+// answer (removeObjectBody). The git starts before the folder and the file
+// (4c111e86, measured on Linux). An id that is no object id takes no file,
+// and a git started for an object with no file stays for the next one
+// (claustrum's own).
+func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (string, *objectBatch, error) {
+	if !isObjectID(id) {
 		return "", h, errNoHashHelper
 	}
 	if h == nil {
@@ -261,19 +266,98 @@ func (c *contentCheck) hashOn(h *objectBatch, kind string, body []byte) (string,
 			return "", nil, errNoHashHelper
 		}
 	}
-	id, err := h.hash(p)
-	return id, h, err
+	root, err := c.scratchDir()
+	if err != nil {
+		return "", h, errNoHashHelper
+	}
+	p := filepath.Join(root.Name(), id)
+	if strings.ContainsAny(p, "\r\n") {
+		return "", h, errNoHashHelper
+	}
+	if err := writeObjectBody(root, id, body); err != nil {
+		// A part of the file that the write left goes too, so the folder
+		// holds no file after a failed write (claustrum's own).
+		_ = removeObjectBody(root, id)
+		return "", h, errNoHashHelper
+	}
+	defer func() { _ = removeObjectBody(root, id) }()
+	got, err := h.hash(p)
+	return got, h, err
 }
 
-// writeObjectBody writes body to objectBodyName in dir, through a root at dir.
-// Tests replace it.
-var writeObjectBody = func(dir string, body []byte) error {
-	root, err := os.OpenRoot(dir)
+// scratchDir returns the root of the scratch folder of the check, which it
+// makes and opens at the first call (requestDir, openRootNoWait). Every write
+// and remove of a file goes through that one root, so a link put at the path
+// of the folder after the open is never followed. The remove of requestDir goes in
+// dropScratch. A folder that does not open goes at once.
+func (c *contentCheck) scratchDir() (*os.Root, error) {
+	if c.scratch != nil {
+		return c.scratch, nil
+	}
+	dir, remove, err := c.u.requestDir(shadowScratchDirPrefix, scratchTempPrefix)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openScratchRoot(dir)
+	if err != nil {
+		remove()
+		return nil, err
+	}
+	// The root must be the folder that the mkdir made. An entry put at its
+	// path between the mkdir and the open stays, and the check hashes with no
+	// file (claustrum's own).
+	made, lerr := os.Lstat(dir)
+	opened, serr := root.Stat(".")
+	if lerr != nil || serr != nil || !made.IsDir() || !os.SameFile(made, opened) {
+		_ = root.Close()
+		return nil, errors.New("the scratch folder changed after its mkdir")
+	}
+	c.scratch, c.dropScratch = root, remove
+	return root, nil
+}
+
+// openScratchRoot opens the scratch folder that scratchDir just made. Tests
+// replace it, to change the folder between its mkdir and its open.
+var openScratchRoot = openRootNoWait
+
+// removeScratch closes the root of the scratch folder and removes the folder,
+// if it was made.
+func (c *contentCheck) removeScratch() {
+	if c.scratch != nil {
+		_ = c.scratch.Close()
+	}
+	if c.dropScratch != nil {
+		c.dropScratch()
+	}
+	c.scratch, c.dropScratch = nil, nil
+}
+
+// writeObjectBody writes body to the file name through root, the scratch
+// folder of the check. Tests replace it.
+var writeObjectBody = func(root *os.Root, name string, body []byte) error {
+	return root.WriteFile(name, body, 0o600)
+}
+
+// removeObjectBody removes name, the file of one object that writeObjectBody
+// wrote through root, the scratch folder of the check. After
+// homeguard.WipesHomeDir it is one plain remove of a regular file by name
+// through that root, never a tree and never a link target. An entry put in
+// its place between the test of its kind and the remove goes by that one
+// remove too. The root, as for the write, also reaches a file under a folder
+// of the daemon of mode 0300, which 4c111e86 empties there (measured on
+// Linux). It is a variable so that a test can see the call.
+var removeObjectBody = func(root *os.Root, name string) error {
+	if homeguard.WipesHomeDir(filepath.Join(root.Name(), name)) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	fi, err := root.Lstat(name)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = root.Close() }()
-	return root.WriteFile(objectBodyName, body, 0o600)
+	if !fi.Mode().IsRegular() {
+		return errors.New("the object file is not a regular file")
+	}
+	return root.Remove(name)
 }
 
 // objectWriteEnv is the environment after the environment of a hash-object
@@ -348,7 +432,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	hashing := true
 	for i, t := range level {
 		if body := read[i]; body != nil && hashing {
-			got, ran, err := c.hashOn(h, "tree", body)
+			got, ran, err := c.hashOn(h, "tree", t.id, body)
 			h = ran
 			switch {
 			case err == nil:

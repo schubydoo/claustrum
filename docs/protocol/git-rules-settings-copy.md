@@ -1,6 +1,6 @@
 # Settings copy of the git methods
 
-In the state `shadow`, when the start test passes, the daemon keeps its own copy of a repository's git settings. The state `fallback-git` and `"shadowDirOff":true` make no copy. This page gives its states, folders and git calls.
+In the state `shadow`, when the start test passes, the daemon keeps its own copy of a repository's git settings. The state `fallback-git` and `"shadowDirOff":true` make no copy.
 
 An untagged rule on this page was measured against build `5fd08069` on Linux. A rule that names a system was measured on that system.
 
@@ -16,7 +16,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a Windows create (`4c111e86`, measured on Windows), on a `.git` file to a missing repository starts it |
+| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a create (`4c111e86`, measured on Linux and Windows), on a `.git` file to a missing repository starts it |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
@@ -25,7 +25,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
   no member. A path that does not exist gets the same, but starts no test itself. On
-  a folder with no repository the other methods answer at once, except a Windows create on a `.git` file to a missing path (`4c111e86`, measured on Windows).
+  a folder with no repository the other methods answer at once, except a create on a `.git` file to a missing path (`4c111e86`, measured on Linux and Windows).
 - As the first git request of a daemon, a `git.info` on a folder whose `.git` file
   names a missing path runs the test and gives that reply. A missing entry under
   `worktrees` of an existing git directory runs no test, and the reply has no member
@@ -82,12 +82,11 @@ text:
 `worktree_add_failed`. `git.worktree_remove` answers it after `failed to remove
 worktree: could not check whether <worktreePath> is locked: `, with no `errorCode`.
 
-A failed read of the test repository's config is followed by one `git version` call. If it fails
-too, the text is `git cannot run on this host; git not run: <exec error>: <git text>`
-alone, in the same frames. The exec error and the text are those of `git version`. A
-remove deletes nothing there (Linux, macOS and Windows). The same holds for a failed
-call that makes the test repository: if the first `git version` fails too, that text is
-the answer, and the second `version` call does not run (`b3081b51`, measured on Linux,
+One `git version` call follows a failed read of the test repository's config. If it fails
+too, the text is its `git cannot run on this host; git not run: <exec error>: <git text>`
+alone, in the same frames. A remove deletes nothing there (Linux, macOS and Windows).
+The same holds for a failed first `git version` call after a failed call that makes
+the test repository, and the second does not run (`b3081b51`, measured on Linux,
 claustrum's own on macOS and Windows).
 
 The test's `commit-tree` call names the tree that `mktree` printed. A `mktree` that
@@ -98,7 +97,7 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <error lines of git, space-joined>` | A test call other than the read of the test repository's config failed. Go's `%q` quotes the folder. Each line end is one space. An empty line and the blanks at line ends stay, each blank as one space, except at both ends of the text (`b3081b51`, measured on Linux) |
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended such a test call after 30 seconds (Linux and macOS), not the first `config --get`. The reply comes near 31 s (Linux). On Windows the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`, and for `config`, `commit-tree` and `update-ref` on `b3081b51` on Linux) |
+| the same with ` (<version stdout>)` at its end | The failed or ended call was one of the calls that make the test repository (measured for `init` and `mktree`, and for `config`, `commit-tree` and `update-ref` on `b3081b51` on Linux). The brackets hold the second `version` call's stdout, even if it fails (`4c111e86`, measured on Linux for `init`) |
 | `this repository's git config cannot be used: <error lines of git>` | The read of the test repository's config failed, and the plain `git version` after it works |
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the daemon's lock file cannot be made. On Windows a lock file that cannot be made gives the reason alone. With a deny entry for writes on `git-shadow` and the backup and restore privileges on, that is `Access is denied.` (`b3081b51`, measured on Windows) |
@@ -132,10 +131,10 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - If the folder is removed while the daemon runs, the next request makes it again
   with another hex part (Linux and macOS).
 - An empty file, FIFO or link there goes, never its target, and requests
-  succeed in a new folder (`4c111e86` on Linux and macOS). Only `shadow`,
-  `fallback-git` within 10 minutes and a missing git (`git.info`, and `git.status` on Linux and macOS)
-  heal it. A start test
-  fails at it, or tests in a link's target (claustrum's own, not measured). On Linux
+  succeed in a new folder (`4c111e86` on Linux and macOS). `shadow`,
+  `fallback-git`, a missing git (`git.info`, and `git.status` on Linux and macOS)
+  and a start test heal it. A test after a kept failure is measured on Linux. Other
+  start tests are claustrum's own. On Linux
   and macOS one file `unlinkat` after the home guard removes it, never a folder or
   tree (from the code). Other non-folder kinds, a file with content and Windows (a
   regular file, or an empty folder in its place) are claustrum's own.
@@ -159,29 +158,29 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - `.probe` is the folder of [the repository
   call](#the-call-about-the-repository).
 - A request also keeps short-lived entries in the daemon's folder:
-  `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` (claustrum: `.index-<n>` on Windows) and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
+  `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In `fallback-git` the first three are there
-  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
-  `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
+  too (`.gitdir-<n>` on all three systems and `.checkout-<n>` on Windows, measured, and the rest
+  from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
   `claude-ssh-worktreeinclude-<n>`. That temporary index name is as on `4c111e86` (measured on
-  Linux and macOS, not Windows).
+  all three systems).
 - `4c111e86` names a create's index folder
   `.checkout-<n>` (measured on all three systems). It is there at the reply and goes
   soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request using the
-  copy (measured on Linux and macOS).
+  copy (measured on all three systems).
   claustrum removes it with the old daemon's folder in [the
   sweep](#the-sweep-of-git-shadow) (from the code). On Windows the `.checkout-<n>` folder of `4c111e86` holds no
   LFS object (measured).
 - In `shadow` a create keeps `.readback-objects-<n>` there for its
-  content check (`b3081b51`, measured on Linux).
+  content check (`b3081b51`, measured on Linux), and `.readback-scratch-<n>` (`4c111e86`, measured on all three systems).
 - On Windows, if the daemon's folder denies new folders, a create still works
   with the backup and restore privileges on, and with both off fails at `.s<n>`.
 - On Linux and macOS a daemon folder with mode `0300` still takes a create. An empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
-  `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
+  `.checkout-<n>` and `.readback-objects-<n>`, while an emptied `.readback-scratch-<n>` goes, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
   not measured). Modes `0100` and `0000` (`4c111e86`, measured on Linux and, in `shadow`,
   macOS): `0100` uses its entries and a create fails at `.s<n>`, `0000` gives the
   `mkdir` error of the folder or `.probe`.
@@ -230,7 +229,7 @@ request gets this text and nothing goes:
 
 `Claude could not prepare its own files on the remote machine: git is running in 128 repositories at once; try again`
 
-A folder goes between a request's git calls, never during one. The next call
+A folder goes between git calls, never during one naming it. The next call
 makes it again with no new config read, except a call right after its own config
 listing (claustrum's own, not measured). A failed remake gets the `cannot write its
 copy` text, or the 128 text when all 128 folders are held, and a call whose folder went and is not made

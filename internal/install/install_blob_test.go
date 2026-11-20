@@ -2,6 +2,7 @@ package install
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -80,6 +81,45 @@ func TestInstallURLBodyThatIsNoArchive(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The cap off still refuses a zstd frame with a window over 512 MiB. A
+// single-segment frame has its declared size as its window. At a declared 512 MiB
+// the frame passes that test and fails on its short content. On 4c111e86 the
+// texts are the same (measured on Linux, the single-segment rows on macOS and
+// Windows too).
+func TestInstallRefusesAZstdWindowOver512MiB(t *testing.T) {
+	single := func(declared uint64) []byte {
+		return binary.LittleEndian.AppendUint64([]byte{0xe0}, declared) // single segment, 8-byte size
+	}
+	for _, tc := range []struct {
+		id     string
+		header []byte
+		want   string
+	}{
+		{"single segment, 512 MiB+1", single(512<<20 + 1), "decompressing: decompressed size exceeds configured limit"},
+		{"single segment, 512 MiB", single(512 << 20), "decompressing: frame size does not match size on stream"},
+		{"1 GiB window, no size", []byte{0x00, 0xa0}, "decompressing: window size exceeded"},
+	} {
+		blob := filepath.Join(t.TempDir(), "in.zst")
+		if err := os.WriteFile(blob, zstdFrame(tc.header, 4096), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cliDir := filepath.Join(t.TempDir(), "cli")
+		got := captureInstallFacts(t, installOpts{cliDir: cliDir, cliVersion: "9.9.9", cliZst: blob})
+		if got.CliError != tc.want {
+			t.Errorf("%s: cliError = %q, want %q", tc.id, got.CliError, tc.want)
+		}
+	}
+}
+
+// zstdFrame is one zstd frame: the magic, the frame header after it, and one
+// last raw block of n zero bytes.
+func zstdFrame(header []byte, n int) []byte {
+	b := append([]byte{0x28, 0xb5, 0x2f, 0xfd}, header...)
+	h := uint32(n)<<3 | 1
+	b = append(b, byte(h), byte(h>>8), byte(h>>16))
+	return append(b, make([]byte, n)...)
 }
 
 func sha256Hex(b []byte) string {
