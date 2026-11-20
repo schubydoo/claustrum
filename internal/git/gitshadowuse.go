@@ -895,8 +895,9 @@ func (u gitUse) hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 //
 //   - `.gitdir-<n>` for one git.status (measured on Linux and Windows).
 //   - `.index-<n>` for the checkout of one create (measured). It has mode 0700
-//     on Linux (measured). On Linux and macOS 4c111e86 names it
-//     `.checkout-<n>` (checkoutDirPrefix, measured).
+//     on Linux (measured). On all three systems 4c111e86 names it
+//     `.checkout-<n>` (measured). claustrum names it `.index-<n>` on Windows
+//     (checkoutDirPrefix, claustrum's own).
 //   - `.worktreeinclude-<n>` with the file `patterns` for one include step
 //     (measured).
 //
