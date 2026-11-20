@@ -177,7 +177,7 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 
 While the step of a temp dir goes on after the limit, a spawn with that temp dir gets `the temp dir did not answer in time` at once, with no step and no line (`4c111e86`, measured on Linux). These are claustrum's own: macOS, the end of that time when the late step returns, a step that starts within the limit of an earlier one, no such time for a step that only waits for the lock of the folders, whoever holds it, and the key, which is the path of the temp dir as given, so two spellings of one dir or a link each run their own step.
 
-In claustrum a spawn with another temp dir whose step waits past the limit for the lock logs the line of the limit too, where `4c111e86` gave a folder at once: a known difference that TASK-734 follows.
+In claustrum a spawn with another temp dir whose step waits past the limit for the lock gets this `whyNot` and logs the line of the limit, where `4c111e86` gave a folder at once (measured on Linux): a known difference that TASK-734 follows.
 
 #### A failed test of the temp dir (build `4c111e86`)
 
@@ -217,7 +217,7 @@ These are not measured:
 - Random hex, an age bound of 24 h, and the order of the `refused` tests. The link and file test comes after the account test.
 - The test of `t` and its `rmdir`. A `t` that is not an own folder of mode 0700 gives the `removed` text too. A later daemon takes again only a folder of mode 0500 with an own `t` of mode 0700.
 - The rest of the order of the four names. With none of them set, the temp dir is `/tmp`. A relative value of `CLAUDE_CODE_TMPDIR`, `TMP` or `TEMP` gives no member too, and the next name is not tried.
-- The limit is 2 s. After it the step goes on, writes no record and holds no folder. The limit also covers the wait for the step of another spawn, so a spawn can get this text for a temp dir that answers.
+- The limit is 2 s. After it the step goes on, writes no record and holds no folder. The limit also covers a wait for the lock ([while a step is late](#while-a-step-is-late-build-4c111e86)).
 - The WARN level of the line of the time limit, and that macOS logs that line too. A late step can log the refuse line of its own `whyNot`.
 - A failed stat of an entry that exists, other than `EACCES`, gives no member.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
