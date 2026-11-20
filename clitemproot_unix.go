@@ -482,8 +482,9 @@ func tempRootStep(env []string, runDir string, late *tempRootLate) ([]string, *r
 	}
 	// When the limit came first, the child got the env as it was. The step still writes
 	// the record, logs its line and takes the folder, so the next spawn gets it (4c111e86,
-	// measured on Linux on a dead NFS mount). It then gives the folder back at once, as a
-	// spawn whose child ended (claustrum's own, not measured, and macOS).
+	// measured on Linux on a dead NFS mount). It then gives the folder back at once if no
+	// spawn uses it, as a spawn whose child ended (claustrum's own; 4c111e86 keeps its
+	// flock, measured on Linux; all of it on macOS).
 	onTime := late.keep()
 	if made && root != nil {
 		writeTempRootRegistry(root, reg, name)
