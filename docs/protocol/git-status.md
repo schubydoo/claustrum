@@ -171,7 +171,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - With no user excludes file, the status runs.
     - The junction rules of Windows do not apply.
     - A `baseRepo` where git cannot start, such as a file, gives `"isRepo": false`.
-    - A repository file gets [the repository call](git-rules-settings-copy.md#the-call-about-the-repository), `-32603` and the settings copy, also after a 15 s hold. A file link counts in its target's folder. `4c111e86` is measured on Linux, and macOS is claustrum's own.
+    - A repository file gets [the repository call](git-rules-settings-copy.md#the-call-about-the-repository), `-32603` and the settings copy, also after a 15 s hold. A file link counts in the folder of its target. A target in another repository or in none gives `"isRepo": false`, and a link from outside any repository gets the gate of the target's repository. `4c111e86` is measured on Linux, and macOS is claustrum's own.
     - A last `path` component inside `baseRepo` that ends in a dot or space, or holds a colon, is not special.
     - Letter case in the registration match is exact.
     - `path` matches only as sent and as resolved.
