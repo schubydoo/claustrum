@@ -36,6 +36,34 @@ func linkWalkFails(p string, foldFirst bool) bool {
 // each name is tested first, so those two paths fail. The baseRepo of git.status takes
 // that order.
 func spelledWalkFails(p string, stat func(string) (fs.FileInfo, error), foldFirst bool) bool {
+	return walkSpelled(p, stat, stat, foldFirst)
+}
+
+// statusBaseWalkFails reports whether the walk of a git.status baseRepo fails. On Linux
+// and macOS it is the walk of evalSymlinks. On Windows the names before the last name
+// take spelledWalkFails without foldFirst. The last name only needs an entry, so a
+// dangling junction passes, and the later os.Stat in gitStatus answers it after the
+// excludes read (measured on Windows). A link as the last name is followed, as the
+// filepath.EvalSymlinks gate before it did (from the code, not measured).
+func statusBaseWalkFails(p string) bool {
+	if !baseRepoWalksAsSpelled {
+		return linkWalkFails(p, false)
+	}
+	return walkSpelled(p, baseRepoWalkStat, lastNameEntry, false)
+}
+
+// lastNameEntry is os.Lstat, except that it follows a symbolic link.
+func lastNameEntry(p string) (fs.FileInfo, error) {
+	fi, err := os.Lstat(p)
+	if err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return os.Stat(p)
+	}
+	return fi, err
+}
+
+// walkSpelled is the walk of spelledWalkFails. lastStat tests the last name, and stat
+// tests each name before it.
+func walkSpelled(p string, stat, lastStat func(string) (fs.FileInfo, error), foldFirst bool) bool {
 	vol := filepath.VolumeName(p)
 	cur, rest := vol, p[len(vol):]
 	if rest != "" && os.IsPathSeparator(rest[0]) {
@@ -56,7 +84,11 @@ func spelledWalkFails(p string, stat func(string) (fs.FileInfo, error), foldFirs
 		if n == ".." {
 			continue
 		}
-		fi, err := stat(cur)
+		test := stat
+		if i == len(names)-1 {
+			test = lastStat
+		}
+		fi, err := test(cur)
 		if err != nil || (i < len(names)-1 && !fi.IsDir()) {
 			return true
 		}

@@ -760,10 +760,10 @@ func gitStatus(req *gitCall) rpc.Response {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, kept)
 		}
 	}
-	// A baseRepo whose walk fails, such as a missing name or a dangling junction, answers
-	// isRepo false with no git call. On Windows the walk goes by the names as sent, so a
-	// junction before the last name passes (4c111e86, measured on Windows).
-	if linkWalkFails(p.BaseRepo, false) || statusBaseInManagedTree(p.BaseRepo) {
+	// A baseRepo whose walk fails, such as a missing name, answers isRepo false with no
+	// git call. On Windows the walk goes by the names as sent, so a junction before the
+	// last name passes (4c111e86, measured on Windows). See statusBaseWalkFails.
+	if statusBaseWalkFails(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
 	// The read of the user's excludes comes next, so it also runs before a trust
@@ -792,8 +792,8 @@ func gitStatus(req *gitCall) rpc.Response {
 		}
 		return notRepo
 	}
-	// A baseRepo that resolves and cannot be opened answers here, with no further git
-	// call. On Windows that is a dangling junction (measured).
+	// A baseRepo that passes the walk and cannot be opened answers here, with no further
+	// git call. On Windows that is a dangling junction (measured).
 	if _, err := os.Stat(p.BaseRepo); err != nil {
 		return notRepo
 	}

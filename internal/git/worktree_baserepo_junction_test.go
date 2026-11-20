@@ -2,6 +2,7 @@ package git
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -210,6 +211,50 @@ func TestBaseRepoJunctionWalkSimulated(t *testing.T) {
 		junctionWalkLikeWindows(t, jp)
 		if got := statusFrame(t, f.W, filepath.Join(jp, "T")); got != statusClean {
 			t.Errorf("got  %s\nwant %s", got, statusClean)
+		}
+	})
+	// The last name of a git.status baseRepo only needs an entry, so a dangling junction
+	// there gets its answer after the excludes read (measured on Windows). Here the stat of
+	// the walk fails on the last name while its entry exists. Mutation: in
+	// statusBaseWalkFails, test the last name with baseRepoWalkStat (isRepo false).
+	t.Run("status-last-name-not-stat", func(t *testing.T) {
+		f := newStatusFixture(t)
+		resetUserExcludesCache(t)
+		clearDaemonConfigEnv(t)
+		junctionWalkLikeWindows(t)
+		oldStat := baseRepoWalkStat
+		t.Cleanup(func() { baseRepoWalkStat = oldStat })
+		baseRepoWalkStat = func(p string) (os.FileInfo, error) {
+			if p == f.T {
+				return nil, &os.PathError{Op: "stat", Path: p, Err: syscall.ENOENT}
+			}
+			return oldStat(p)
+		}
+		if got := statusFrame(t, f.W, f.T); got != statusClean {
+			t.Errorf("got  %s\nwant %s", got, statusClean)
+		}
+	})
+	// A missing name before the last name still answers isRepo false at the walk, before
+	// the excludes read. Mutation: in statusBaseWalkFails, return false on Windows (the
+	// excludes read runs).
+	t.Run("status-missing-middle-name", func(t *testing.T) {
+		requireGit(t)
+		f := newStatusFixture(t)
+		realGit, err := exec.LookPath("git")
+		if err != nil {
+			t.Fatal(err)
+		}
+		installGitSlowStub(t, realGit)
+		log := filepath.Join(t.TempDir(), "calls.log")
+		t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
+		resetUserExcludesCache(t)
+		junctionWalkLikeWindows(t)
+		base := filepath.Join(f.root, "missing", "T")
+		if got := statusFrame(t, f.W, base); got != statusNotRepo {
+			t.Errorf("got  %s\nwant %s", got, statusNotRepo)
+		}
+		if b, _ := os.ReadFile(log); len(b) != 0 {
+			t.Errorf("git calls = %q, want none", b)
 		}
 	})
 	// With the walk of Windows, ".." drops a missing name or a file before it untested,

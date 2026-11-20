@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -195,7 +196,9 @@ func TestGitStatusWindowsInsidePathRows(t *testing.T) {
 }
 
 // Measured: a baseRepo that is a dangling junction answers isRepo:false with no
-// git call after the read of the excludes.
+// git call after the read of the excludes. The first request makes that read, so
+// its one git call is the excludes read. Mutation: in statusBaseWalkFails, test the
+// last name with baseRepoWalkStat (no git call in "first request").
 func TestGitStatusWindowsDanglingJunctionBaseRepo(t *testing.T) {
 	f := newStatusFixture(t)
 	target := filepath.Join(f.root, "nothing")
@@ -212,13 +215,30 @@ func TestGitStatusWindowsDanglingJunctionBaseRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	installGitSlowStub(t, realGit)
-	globalExcludesPath() // the read of the excludes is not counted below
-	log := filepath.Join(t.TempDir(), "calls.log")
-	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-	if got := statusFrame(t, f.W, dl); got != statusNotRepo {
-		t.Errorf("git.status = %s\nwant %s", got, statusNotRepo)
+	calls := func(t *testing.T) []string {
+		t.Helper()
+		log := filepath.Join(t.TempDir(), "calls.log")
+		t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
+		if got := statusFrame(t, f.W, dl); got != statusNotRepo {
+			t.Errorf("git.status = %s\nwant %s", got, statusNotRepo)
+		}
+		b, _ := os.ReadFile(log)
+		if len(b) == 0 {
+			return nil
+		}
+		return strings.Split(strings.TrimSpace(string(b)), "\n")
 	}
-	if b, _ := os.ReadFile(log); len(b) != 0 {
-		t.Errorf("git calls = %q, want none", b)
-	}
+	t.Run("first request", func(t *testing.T) {
+		resetUserExcludesCache(t)
+		got := calls(t)
+		if len(got) != 1 || !slices.Contains(strings.Split(got[0], "\x1f"), "core.excludesFile") {
+			t.Errorf("git calls = %q, want the one excludes read", got)
+		}
+	})
+	t.Run("excludes read before", func(t *testing.T) {
+		globalExcludesPath() // the read of the excludes is not counted below
+		if got := calls(t); len(got) != 0 {
+			t.Errorf("git calls = %q, want none", got)
+		}
+	})
 }
