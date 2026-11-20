@@ -267,7 +267,7 @@ func gitInfo(req *gitCall) rpc.Response {
 		// of an existing git directory runs no test (measured). One in a missing
 		// repository runs it (measured on Linux). Not measured: the other methods
 		// there, a failed test there, and a host with no git. claustrum runs no test
-		// in those methods or with no git, except a Windows create in shadow
+		// in those methods or with no git, except a Windows create
 		// (gitWorktreeCreateLocked). A failed test answers its text.
 		if t.goneGitFile && gitLookupError() == nil {
 			if msg := req.shadow.gate(bool(p.ShadowDirOff)); msg != "" {

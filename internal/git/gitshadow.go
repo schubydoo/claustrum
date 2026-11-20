@@ -1200,12 +1200,12 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // The test runs for a trusted git directory. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (measured on
 // Linux). git.info and a Windows git.worktree_create on a `.git` file to a
-// missing path are the exceptions (gitInfo, gitWorktreeCreateLocked). Each method gives the text of a failed test the shape that it gives
-// a refused config: the error object on git.info, git.status and
-// git.list_branches, and the result object on git.worktree_create and
-// git.worktree_remove (measured on Linux). With worktreeRoot a remove gives it
-// as the reason of its work-tree refusal (externalWorkTreeRefusal): that shape
-// is not measured.
+// missing path are the exceptions (gitInfo, gitWorktreeCreateLocked). Each
+// method gives the text of a failed test the shape that it gives a refused
+// config: the error object on git.info, git.status and git.list_branches,
+// and the result object on git.worktree_create and git.worktree_remove
+// (measured on Linux). With worktreeRoot a remove gives it as the reason of
+// its work-tree refusal (externalWorkTreeRefusal): that shape is not measured.
 //
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
