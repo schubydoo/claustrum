@@ -845,8 +845,10 @@ func TestCreateWithALinkToACopyMadeAtTheAdd(t *testing.T) {
 // the rollback runs the branch step. git reads the branches of the git
 // directory of baseRepo there, not those of the clone, so w1 of the clone stays
 // and the new w1 of the repository goes (from the code and git 2.47, not
-// measured on a reference). Mutation: give the calls of the branch step
-// GIT_DIR=<the clone>, and w1 of the clone goes.
+// measured on a reference). Mutations: give the calls of the branch step
+// GIT_DIR=<the clone> (w1 of the clone goes, and w1 of the repository stays),
+// or drop the daemon GIT_COMMON_DIR arm of named in worktreeAdd (the text
+// differs, and w1 of the repository stays).
 func TestCreateWithADaemonCommonDirKeepsTheBranchOfTheClone(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	clone := filepath.Join(resolveTestRoot(t, t.TempDir()), "clone")
