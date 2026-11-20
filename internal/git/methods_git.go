@@ -150,8 +150,7 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // caller is base plus the caller's timeoutMs (4534d86 parity). The read-tree
 // checkout runs under caller, so the caller's deadline kills the checkout. The
 // daemon also tests caller after the add and after the copy step. When timeoutMs
-// is 0 or less, caller is base itself. The deadline counts from arrival, the time
-// when the create holds its lock. The stop of the settle call that follows from it
+// is 0 or less, caller is base itself. The deadline counts from arrival. The stop of the settle call that follows from it
 // is measured on Linux (683cc6a9). The other three tests of timeoutMs, before,
 // during and after the checkout, count from arrival too (claustrum's own, not
 // measured). A deadline that passed already gives a caller that is done.

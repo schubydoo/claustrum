@@ -17,7 +17,7 @@ import (
 // error to match the `mkdirat <leaf>` wording of 7d193f89. Windows has no such
 // wording pinned. The parents are there already (mkdirRepoWorktreeParents). A
 // leaf that is there fails, as on Linux and macOS: the create refused such a
-// leaf before, so only a second create of the same leaf that starts during the
+// leaf before, so a second create of the same leaf that starts during the
 // first gets the error, and that create makes no checkpoint of the leaf of the
 // first, and no rollback of it (claustrum's own, not measured).
 func mkdirWorktreeLeaf(worktreePath string) error {
