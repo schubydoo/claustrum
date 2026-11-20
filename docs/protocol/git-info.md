@@ -49,7 +49,7 @@ The daemon gives this response in these cases:
 - The repository has no work tree. Examples are a bare repository and a `path` inside a `.git` folder (measured on Linux and macOS).
 - The request has no `"shadowDirOff":true`, and the daemon finds no `git` on its `PATH`. It then starts no test of the settings copy (measured on Linux).
 - On Linux and macOS, `path` is a regular file. A file inside a repository goes through the checks and the settings copy of that repository. If those pass, the answer is the "no repository" body.
-- A `.git` file names a gone git directory that is no registration (measured on Linux and macOS with an older git). On Linux and macOS git 2.56 gives the same, with and without `"shadowDirOff":true` (`4c111e86`, measured on Linux and macOS with git 2.56.1).
+- A `.git` file names a gone git directory that is no registration (measured on Linux and macOS with an older git). git 2.56 gives the same, with and without `"shadowDirOff":true` (`4c111e86`, measured on Linux, macOS and Windows with git 2.56.1).
 - git itself does not accept the repository.
 
 ## Errors
