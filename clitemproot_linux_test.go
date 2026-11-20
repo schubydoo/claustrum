@@ -678,3 +678,73 @@ func TestCLITempRootLateGate(t *testing.T) {
 		t.Error("markGaveUp then keep: want the step to keep nothing")
 	}
 }
+
+// While the step of a temp dir goes on after its limit, a spawn with the same temp dir
+// gets the text of the limit at once, with no step of its own. Once the late step ends, a
+// spawn runs its step again (4c111e86, measured on Linux on a dead NFS mount).
+func TestCLITempRootLateStepSameTempDir(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	old := tempRootLimit
+	tempRootLimit = 300 * time.Millisecond
+	t.Cleanup(func() { tempRootLimit = old })
+	x, runDir := tempRootDir(t, true)
+	stuck, free := make(chan string, 2), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(free) }) }
+	t.Cleanup(unblock)
+	setAfterMkdir(t, func(dir, name string) {
+		stuck <- name
+		select {
+		case <-free:
+		case <-time.After(5 * time.Second):
+		}
+	})
+	in := []string{"TMPDIR=" + x}
+	_, res, release, _ := privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if res == nil || res.WhyNot != tempRootNoReply {
+		t.Fatalf("first answer %+v, want the text of the limit", res)
+	}
+	start := time.Now()
+	env, res, release, _ := privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d >= tempRootLimit/2 || !slices.Equal(env, in) {
+		t.Fatalf("second answer %+v after %v, env %q, want the text of the limit at once and the env as it was", res, d, env)
+	}
+	if n := len(stuck); n != 1 {
+		t.Fatalf("%d mkdirs, want only the one of the late step", n)
+	}
+	unblock()
+	deadline := time.Now().Add(5 * time.Second)
+	for tempDirStepIsLate(x) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if tempDirStepIsLate(x) {
+		t.Fatal("the late step ended, want its temp dir out of the late list")
+	}
+	setAfterMkdir(t, func(dir, name string) {})
+	_, res, release, _ = privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if res == nil || res.Name == "" {
+		t.Errorf("answer after the late step %+v, want a folder", res)
+	}
+}
+
+// A step that ended before the limit fired is no late step, and a late step leaves the
+// late list at its end.
+func TestCLITempRootLateDirMarks(t *testing.T) {
+	a := &tempRootLate{dir: "/late-a"}
+	a.stepEnded()
+	if !a.markGaveUp() || tempDirStepIsLate("/late-a") {
+		t.Error("end then give-up: want no late step")
+	}
+	b := &tempRootLate{dir: "/late-b"}
+	if !b.markGaveUp() || !tempDirStepIsLate("/late-b") {
+		t.Error("give-up: want a late step")
+	}
+	b.stepEnded()
+	if tempDirStepIsLate("/late-b") {
+		t.Error("give-up then end: want no late step")
+	}
+}
