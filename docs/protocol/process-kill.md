@@ -81,7 +81,7 @@ With no job, a process that the child started can hold its output pipes. Then th
 
 #### The start test of the jobs
 
-Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, as with the off switch, so a kill ends the direct child only. At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
+Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, so a kill ends the direct child only (from the code). At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
 From 5 s to that end the test is pending, and the socket opens.
 
