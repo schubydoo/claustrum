@@ -1211,7 +1211,9 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// On Linux and macOS a `worktrees` folder that went after the add is made
 	// again, and the create goes on. 4c111e86 succeeds after `worktrees` was
 	// renamed right after the add (measured on Linux and macOS). The mode is
-	// that of openAddStage (not measured). Windows keeps its rule.
+	// that of openAddStage (not measured). Windows keeps its rule. A failed
+	// mkdir gives its own error, where the rename gave one before (claustrum's
+	// own, not measured).
 	if !stagedAddWindowsSteps {
 		if err := st.git.Mkdir(worktreesSubdir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
 			return fail(err)
