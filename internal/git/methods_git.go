@@ -834,10 +834,9 @@ func gitStatus(req *gitCall) rpc.Response {
 	// of that repository and `.probe` for a file baseRepo, as 4c111e86 does
 	// (measured on Linux).
 	//
-	// A file link from that folder into another repository makes git find the other
-	// repository. 4c111e86 answers "no repository" there, not the "disagree" text
+	// 4c111e86 answers "no repository" for a file link into another repository
 	// (measured on Linux). macOS is claustrum's own. A regular file keeps the
-	// "disagree" text of askGit (linkOutOfFolder).
+	// "disagree" text of askGit.
 	//
 	// For a file link the folder of its target is judged, not the folder of the
 	// link. A link in a repository to a file outside any repository gets no gate,
