@@ -42,12 +42,13 @@ import (
 // end of its output does. The batch and each hash-object have the limit of one
 // call for the whole check.
 //
-// The long-running hash-object reads each object from a file named by its id,
-// mode 0600, in a folder `.readback-scratch-<n>` of mode 0700 beside the folder
-// of the objects. The folder is made at the first such object, and each file
-// goes right after the answer for it, so the folder holds at most one file. The
-// folder goes at the end of the check (4c111e86, measured on Linux, macOS and
-// Windows).
+// The long-running hash-object reads each object from a file named by its id
+// in a folder `.readback-scratch-<n>` beside the folder of the objects. The
+// folder is made at the first such object, after its git started. Each file
+// goes right after the answer for it, so the folder holds at most one file.
+// The folder goes at the end of the check (4c111e86, measured on Linux and
+// macOS. Windows shows the folder with one file during a check). The folder
+// has mode 0700 and a file mode 0600, and the start order is measured on Linux.
 //
 // After a stop c9125eb8 reads the trees of a level below the top with one
 // `cat-file --buffer --batch` and hashes them with a new long-running
