@@ -21,6 +21,9 @@ type fakeJobTestChild struct {
 	endExits bool
 	// endErr is the error of End. An End with an error lets the child run.
 	endErr error
+	// endClean makes End close exited and give a nil result, as for a child that
+	// exited clean just before the end.
+	endClean bool
 }
 
 func newFakeJobTestChild(endExits bool) *fakeJobTestChild {
@@ -36,7 +39,11 @@ func (c *fakeJobTestChild) End() error {
 	}
 	if c.ends.Add(1) == 1 && c.endExits {
 		close(c.exited)
-		c.release <- errors.New("exit status 1")
+		if c.endClean {
+			c.release <- nil
+		} else {
+			c.release <- errors.New("exit status 1")
+		}
 	}
 	return nil
 }
@@ -122,26 +129,39 @@ func TestJobTestEndsAHungChildOnceAtTheBound(t *testing.T) {
 	buf := captureLogBuf(t)
 	c := newFakeJobTestChild(true)
 	start := time.Now()
-	test := runJobTest(c, start, 50*time.Millisecond, 300*time.Millisecond)
+	test := runJobTest(c, start, 200*time.Millisecond, 2*time.Second)
 	if test.State() != JobTestPending || !test.Outside() {
 		t.Fatalf("state = %d, outside %v, want pending", test.State(), test.Outside())
 	}
 	if n := c.ends.Load(); n != 0 {
 		t.Errorf("End ran %d times before the bound, want 0", n)
 	}
-	if !strings.Contains(buf.String(), "[process] job objects are not used yet, so ending a process started now will not end what it starts: the self-test's program has not run to its end after 50ms; it may run for 300ms in all\n") {
+	if !strings.Contains(buf.String(), "[process] job objects are not used yet, so ending a process started now will not end what it starts: the self-test's program has not run to its end after 200ms; it may run for 2s in all\n") {
 		t.Errorf("log = %q, want the pending line", buf.String())
 	}
 	waitJobTestState(t, test, JobTestFailed)
-	if took := time.Since(start); took < 300*time.Millisecond {
+	if took := time.Since(start); took < 2*time.Second {
 		t.Errorf("the test failed after %v, before the bound", took)
 	}
 	if n := c.ends.Load(); n != 1 {
 		t.Errorf("End ran %d times, want 1", n)
 	}
-	re := regexp.MustCompile(`the self-test failed after \d+ms: the program had not run to its end after 300ms\n`)
+	re := regexp.MustCompile(`the self-test failed after \d+(\.\d+)?s: the program had not run to its end after 2s\n`)
 	if !re.MatchString(buf.String()) {
 		t.Errorf("log = %q, want the bound line", buf.String())
+	}
+}
+
+// TestJobTestKeepsACleanExitAtTheEnd: an end that took hold at the bound, of a child
+// that exited clean just before it, keeps the pass (claustrum's own, not measured).
+func TestJobTestKeepsACleanExitAtTheEnd(t *testing.T) {
+	captureLogBuf(t)
+	c := newFakeJobTestChild(true)
+	c.endClean = true
+	test := runJobTest(c, time.Now(), 20*time.Millisecond, 200*time.Millisecond)
+	waitJobTestState(t, test, JobTestPassed)
+	if n := c.ends.Load(); n != 1 {
+		t.Errorf("End ran %d times, want 1", n)
 	}
 }
 

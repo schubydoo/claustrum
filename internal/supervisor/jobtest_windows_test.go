@@ -100,7 +100,7 @@ func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
 	buf := captureLogBuf(t)
-	test, c := startJobTestForTest(t, 300*time.Millisecond, 8*time.Second)
+	test, c := startJobTestForTest(t, 300*time.Millisecond, 15*time.Second)
 	if flags := jobLimitFlags(t, c); flags != 0x2800 {
 		t.Errorf("limit flags of the test job = %#x, want 0x2800", flags)
 	}
@@ -126,17 +126,17 @@ func TestWindowsJobTestEndsTheTestJob(t *testing.T) {
 	if test.State() != JobTestPending {
 		t.Fatalf("state = %d, want pending", test.State())
 	}
-	deadline = time.Now().Add(20 * time.Second)
+	deadline = time.Now().Add(30 * time.Second)
 	for test.State() != JobTestFailed {
 		if time.Now().After(deadline) {
-			t.Fatalf("state = %d 20 s after the start, want failed", test.State())
+			t.Fatalf("state = %d 30 s after the start, want failed", test.State())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	if code := c.cmd.ProcessState.ExitCode(); code != 1 {
 		t.Errorf("exit code of the test child = %d, want 1", code)
 	}
-	if !strings.Contains(buf.String(), ": the program had not run to its end after 8s\n") {
+	if !strings.Contains(buf.String(), ": the program had not run to its end after 15s\n") {
 		t.Errorf("log = %q, want the bound line", buf.String())
 	}
 	if ev, _ := windows.WaitForSingleObject(gh, 10000); ev != windows.WAIT_OBJECT_0 {

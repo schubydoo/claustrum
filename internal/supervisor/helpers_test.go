@@ -209,7 +209,8 @@ func runHelper(mode string, args []string) int {
 	case "tree":
 		// Fixture for the whole-tree kill tests: wait for the parent's go-ahead on
 		// stdin, spawn a grandchild sleeper, record its PID in args[0], then linger
-		// so the tree stays alive until it is killed.
+		// so the tree stays alive until it is killed. The PID goes to a temp file
+		// first and then moves to args[0], so a reader never sees a part of it.
 		var b [1]byte
 		_, _ = os.Stdin.Read(b[:])
 		exe, err := os.Executable()
@@ -223,7 +224,12 @@ func runHelper(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+		tmp := args[0] + ".tmp"
+		if err := os.WriteFile(tmp, []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.Rename(tmp, args[0]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
