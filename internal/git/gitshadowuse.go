@@ -968,8 +968,9 @@ func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove 
 		// too. The remove through removeEntry then fails at the open of the
 		// folder. An empty folder then goes by one rmdir, and a folder with
 		// content stays (removeEmptyRequestDir). On 4c111e86 `.s<n>`,
-		// `.checkout-<n>` and `.readback-objects-<n>` stay (measured on Linux).
-		// macOS and the other prefixes are not measured.
+		// `.checkout-<n>` and `.readback-objects-<n>` stay, and an emptied
+		// `.readback-scratch-<n>` goes (measured on Linux). macOS and the other
+		// prefixes are not measured.
 		var pe *os.PathError
 		if stagedAddWindowsSteps || !errors.Is(err, fs.ErrPermission) || !errors.As(err, &pe) {
 			return "", func() {}, err

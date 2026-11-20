@@ -1,6 +1,6 @@
 # Settings copy of the git methods
 
-In the state `shadow`, when the start test passes, the daemon keeps its own copy of a repository's git settings. The state `fallback-git` and `"shadowDirOff":true` make no copy. This page gives its states, folders and git calls.
+In the state `shadow`, when the start test passes, the daemon keeps its own copy of a repository's git settings. The state `fallback-git` and `"shadowDirOff":true` make no copy.
 
 An untagged rule on this page was measured against build `5fd08069` on Linux. A rule that names a system was measured on that system.
 
@@ -176,11 +176,11 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   sweep](#the-sweep-of-git-shadow) (from the code). On Windows the `.checkout-<n>` folder of `4c111e86` holds no
   LFS object (measured).
 - In `shadow` a create keeps `.readback-objects-<n>` there for its
-  content check (`b3081b51`, measured on Linux).
+  content check (`b3081b51`, measured on Linux), and `.readback-scratch-<n>` (`4c111e86`, measured on all three systems).
 - On Windows, if the daemon's folder denies new folders, a create still works
   with the backup and restore privileges on, and with both off fails at `.s<n>`.
 - On Linux and macOS a daemon folder with mode `0300` still takes a create. An empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
-  `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
+  `.checkout-<n>` and `.readback-objects-<n>`, while an emptied `.readback-scratch-<n>` goes, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
   not measured). Modes `0100` and `0000` (`4c111e86`, measured on Linux and, in `shadow`,
   macOS): `0100` uses its entries and a create fails at `.s<n>`, `0000` gives the
   `mkdir` error of the folder or `.probe`.
