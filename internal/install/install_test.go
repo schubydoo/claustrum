@@ -272,7 +272,7 @@ func TestFetchCLIRemovesTempWhenOverCap(t *testing.T) {
 // and the cap-on control answers "download failed: response exceeds 536870912
 // bytes", proving the probe reaches the download limit at all.
 //
-// This asserts the default itself, because that constant IS the divergence;
+// This asserts the default itself, because that constant IS the option;
 // every other test here overrides it.
 func TestCLISizeCapDefaultsOff(t *testing.T) {
 	if MaxCLIBytes != 0 {

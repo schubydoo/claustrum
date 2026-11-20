@@ -277,8 +277,8 @@ them. Three of them carry rules of these docs:
   observed.
 - `libc` build selection. The driver uses the `libc` field of
   `__INSTALL_RESULT__` to pick the CLI build to download.
-- "Desktop owns the argv". An operator cannot change the daemon's argv, so a
-  divergence that only an argv flag reaches is unreachable on Desktop-driven
+- "Desktop owns the argv". An operator cannot change the daemon's argv, so an
+  entry that only an argv flag reaches is unreachable on Desktop-driven
   hosts. This premise lets CT-6, CT-7 and CT-8 be opt-in. It also defines the
   "(opt-in)" convention: a flag and a configuration key, because the key is the
   reachable knob.

@@ -68,8 +68,8 @@ or large. So an honest input trips it too. The test:
 
 Take an honest input that is reachable, and a guard that the caller cannot turn
 off. Then always-on is not justified, however the reference behaves on the
-hostile path. That is why each claustrum timeout or size cap that an honest input trips is an
-option, off by default (CT-6, CT-7, CT-8). D2 passes both
+hostile path. That is why CT-6, CT-7 and CT-8 are
+options, off by default. D2 passes both
 halves: the home wipe is unrecoverable data loss, and no honest caller has a use
 for it. A caller can still reach that path by accident, which is what the guard
 is for.
@@ -150,7 +150,7 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [CT-8](#ct-8) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 
 In the CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3
-have no flag and no key. With the default off, CT-6, CT-7 and CT-8 match the reference, so
+have no flag and no key. With the default off, CT-6, CT-7 and CT-8 are the parity position, so
 they are options, not divergences (the maintainer's decision of 2026-11-13).
 
 ## Entries

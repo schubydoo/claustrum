@@ -49,8 +49,8 @@ func TestExecutableDirUnresolvable(t *testing.T) {
 	}
 }
 
-// loadConfig must fall back to a zero config — stock behaviour, every divergence
-// off — when the executable path cannot be resolved. The pair of arms is what
+// loadConfig must fall back to a zero config — every setting at its
+// default — when the executable path cannot be resolved. The pair of arms is what
 // makes this discriminating: the SAME claustrum.conf, holding a version-override
 // that is unmistakable in the result, is read when the path resolves and ignored
 // when it does not.
