@@ -159,23 +159,23 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - `.probe` is the folder of [the repository
   call](#the-call-about-the-repository).
 - A request also keeps short-lived entries in the daemon's folder:
-  `.gitdir-<n>` for a `git.status`, and `.index-<n>` (`.checkout-<n>` on Linux and macOS) and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
+  `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` (claustrum: `.index-<n>` on Windows) and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In `fallback-git` the first three are there
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
-  `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
+  `claude-ssh-worktreeinclude-<n>`. That temporary index name is as on `4c111e86` (measured on
   Linux and macOS, not Windows).
 - `4c111e86` names a create's index folder
-  `.checkout-<n>` (measured on Linux and macOS). It is there at the reply and goes
+  `.checkout-<n>` (measured on all three systems). It is there at the reply and goes
   soon after, as does `claude-ssh-checkout-<n>` (measured on Linux). After an LFS space stop it goes before the reply ([the private LFS store](git-worktree-create.md#the-private-lfs-store)). claustrum
   removes either right after the write of the reply, or at the shutdown if that write
   has not ended (claustrum's own). A claustrum killed before
   that remove leaves it (claustrum's own). The next daemon removes it at its first request using the
   copy (measured on Linux and macOS).
   claustrum removes it with the old daemon's folder in [the
-  sweep](#the-sweep-of-git-shadow) (from the code). On Windows `4c111e86` makes no
-  `.checkout-<n>` folder (measured), and claustrum keeps `.index-<n>`.
+  sweep](#the-sweep-of-git-shadow) (from the code). On Windows the `.checkout-<n>` folder of `4c111e86` holds no
+  LFS object (measured).
 - In `shadow` a create keeps `.readback-objects-<n>` there for its
   content check (`b3081b51`, measured on Linux).
 - On Windows, if the daemon's folder denies new folders, a create still works
