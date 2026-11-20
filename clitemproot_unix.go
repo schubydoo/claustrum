@@ -949,7 +949,7 @@ func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks
 			}
 			switch p := probes[h]; {
 			case h.lost.Load():
-			case !h.given: // held after the copies were made: the next check looks at it
+			case !h.given: // held after the copies were made, or its handle could not be copied: the next check looks at it
 			case p != nil && p.lossWhy != "":
 				markTempRootLost(h, p.lossWhy, p.lossWord)
 			case p != nil:
