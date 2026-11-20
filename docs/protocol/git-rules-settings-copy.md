@@ -180,8 +180,8 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   content check (`b3081b51`, measured on Linux), and `.readback-scratch-<n>` (`4c111e86`, measured on all three systems).
 - On Windows, if the daemon's folder denies new folders, a create still works
   with the backup and restore privileges on, and with both off fails at `.s<n>`.
-- On Linux and macOS a daemon folder with mode `0300` still takes a create. An empty request folder goes by one rmdir (an emptied `.readback-scratch-<n>` too), and a folder with content stays (`.s<n>`,
-  `.checkout-<n>` and `.readback-objects-<n>`, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
+- On Linux and macOS a daemon folder with mode `0300` still takes a create. An empty request folder goes by one rmdir, and a folder with content stays (`.s<n>`,
+  `.checkout-<n>` and `.readback-objects-<n>`, while an emptied `.readback-scratch-<n>` goes, `4c111e86`, measured on Linux, claustrum's own on macOS). The other methods get the same steps (claustrum's own,
   not measured). Modes `0100` and `0000` (`4c111e86`, measured on Linux and, in `shadow`,
   macOS): `0100` uses its entries and a create fails at `.s<n>`, `0000` gives the
   `mkdir` error of the folder or `.probe`.

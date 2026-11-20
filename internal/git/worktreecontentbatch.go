@@ -275,6 +275,9 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 		return "", h, errNoHashHelper
 	}
 	if err := writeObjectBody(root, id, body); err != nil {
+		// A part of the file that the write left goes too, so the folder
+		// holds no file after a failed write (claustrum's own).
+		_ = removeObjectBody(root, id)
 		return "", h, errNoHashHelper
 	}
 	defer func() { _ = removeObjectBody(root, id) }()
@@ -285,7 +288,7 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 // scratchDir returns the root of the scratch folder of the check, which it
 // makes and opens at the first call (requestDir, openRootNoWait). Every write
 // and remove of a file goes through that one root, so a link put at the path
-// of the folder later is never followed. The remove of requestDir goes in
+// of the folder after the open is never followed. The remove of requestDir goes in
 // dropScratch. A folder that does not open goes at once.
 func (c *contentCheck) scratchDir() (*os.Root, error) {
 	if c.scratch != nil {
@@ -299,6 +302,15 @@ func (c *contentCheck) scratchDir() (*os.Root, error) {
 	if err != nil {
 		remove()
 		return nil, err
+	}
+	// The root must be the folder that the mkdir made. An entry put at its
+	// path between the mkdir and the open stays, and the check hashes with no
+	// file (claustrum's own).
+	made, lerr := os.Lstat(dir)
+	opened, serr := root.Stat(".")
+	if lerr != nil || serr != nil || !made.IsDir() || !os.SameFile(made, opened) {
+		_ = root.Close()
+		return nil, errors.New("the scratch folder changed after its mkdir")
 	}
 	c.scratch, c.dropScratch = root, remove
 	return root, nil
