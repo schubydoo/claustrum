@@ -70,23 +70,79 @@ func TestWindowsJobTestPassesWithAChildThatEndsClean(t *testing.T) {
 
 // TestWindowsJobTestFailsAtOnceAfterAResumeThatLeavesItAsleep: the seam adds 1 to the
 // count of the real resume, as one more suspend from outside does. The suspended start
-// gives the count 1, so the test fails at once with the count 2. The real child runs.
+// gives the count 1, so the test fails at once with the count 2. The test job then ends
+// at once: the child, which sleeps 60 s, and its conhost exit 1, as on 4c111e86
+// (measured on Windows). A child that shares the console of the test has no conhost.
 func TestWindowsJobTestFailsAtOnceAfterAResumeThatLeavesItAsleep(t *testing.T) {
-	useJobTestHelper(t, "echo", "hi")
+	useJobTestHelper(t, "sleep", "60")
 	buf := captureLogBuf(t)
 	old := resumeJobTestChild
 	t.Cleanup(func() { resumeJobTestChild = old })
+	var watched []windows.Handle
 	resumeJobTestChild = func(p *os.Process, attr *syscall.SysProcAttr) (uint32, error) {
+		watched = openChildAndConhosts(t, p.Pid)
 		n, err := resumeChildCount(p, attr)
 		return n + 1, err
 	}
-	test := startJobTest()
+	c, err := startJobTestChild()
+	if err != nil {
+		t.Fatalf("start of the test child: %v", err)
+	}
+	t.Cleanup(func() { _ = c.cmd.Process.Kill() })
+	test := beginJobTest(c, time.Now(), c.suspended, 5*time.Second, time.Minute)
 	if test.State() != JobTestFailed {
 		t.Fatalf("state = %d, want failed at once", test.State())
 	}
 	if want := ": starting it inside a Windows job object failed: a thread had been suspended 2 times, so it still sleeps\n"; !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want the line that ends %q", buf.String(), want)
 	}
+	if len(watched) == 1 {
+		t.Log("the test child has no conhost: it shares the console of the test")
+	}
+	for i, h := range watched {
+		if ev, _ := windows.WaitForSingleObject(h, 5000); ev != windows.WAIT_OBJECT_0 {
+			t.Errorf("process %d of the test job did not end within 5 s", i)
+			continue
+		}
+		var code uint32
+		if err := windows.GetExitCodeProcess(h, &code); err != nil || code != 1 {
+			t.Errorf("exit code of process %d of the test job = %d (%v), want 1", i, code, err)
+		}
+	}
+}
+
+// openChildAndConhosts opens a wait handle on the test child pid and on each conhost
+// that pid started. The first handle is the child. The cleanup closes them.
+func openChildAndConhosts(t *testing.T, pid int) []windows.Handle {
+	t.Helper()
+	const access = windows.SYNCHRONIZE | windows.PROCESS_QUERY_LIMITED_INFORMATION
+	h, err := windows.OpenProcess(access, false, uint32(pid))
+	if err != nil {
+		t.Fatalf("open of the test child %d: %v", pid, err)
+	}
+	hs := []windows.Handle{h}
+	t.Cleanup(func() {
+		for _, h := range hs {
+			_ = windows.CloseHandle(h)
+		}
+	})
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		t.Fatalf("process snapshot: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(snap) }()
+	pe := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
+	for err = windows.Process32First(snap, &pe); err == nil; err = windows.Process32Next(snap, &pe) {
+		if pe.ParentProcessID != uint32(pid) || !strings.EqualFold(windows.UTF16ToString(pe.ExeFile[:]), "conhost.exe") {
+			continue
+		}
+		ch, openErr := windows.OpenProcess(access, false, pe.ProcessID)
+		if openErr != nil {
+			t.Fatalf("open of the conhost %d: %v", pe.ProcessID, openErr)
+		}
+		hs = append(hs, ch)
+	}
+	return hs
 }
 
 // TestWindowsJobTestFailsWithTheExitStatus: a test child that exits 2 fails the test

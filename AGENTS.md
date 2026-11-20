@@ -299,9 +299,9 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   own). Send none after the `timeoutMs` stop or the LFS space stop.
 - **The bound stops of `-install` and `-probe-cli`** (`internal/install/groupstop.go`, `runCLIVersion`). Never widen: each
   sends its group `SIGKILL` only before the reap of its run (`sysproc.LeaderGate`).
-- **The job start test** (Windows, `4c111e86`, `awaitJobTest`, [rules](docs/protocol/process-kill.md#the-start-test-of-the-jobs)).
-  Never widen: end this test's job by `TerminateJobObject` once at 1 minute before its child's reap
-  (`sysproc.LeaderGate`), or close it at that reap or the daemon exit. End nothing else.
+- **The job start test** (Windows, [rules](docs/protocol/process-kill.md#the-start-test-of-the-jobs)).
+  Never widen: end its job by `TerminateJobObject` once, at 1 minute or an asleep failure, before the
+  child's reap (`sysproc.LeaderGate`), or close it at that reap or daemon exit. End nothing else.
 
 ## Gotchas — Part B: the live divergences
 

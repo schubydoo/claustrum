@@ -53,12 +53,13 @@ type winJobTestChild struct {
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
 // join error (claustrum's own, not measured). A resume that leaves a thread asleep fails
-// the test at once (beginJobTest). Other errors of the resume do not stop the test
+// the test and ends the test job at once (beginJobTest). Other errors of the resume do not stop the test
 // (claustrum's own, not measured). End at the bound reaches the child only with a job
 // and a wait handle. With no job End fails. If the wait handle does not open, the gate
 // closes at once and End never runs. In both cases the test fails jobTestReapGrace after the bound unless
 // the reap comes first (awaitJobTest), and the daemon leaves the child as it is
-// (claustrum's own, not measured).
+// (claustrum's own, not measured). With no wait handle, the end at an asleep failure
+// runs only if it comes before the close of the gate (claustrum's own, not measured).
 func startJobTestChild() (*winJobTestChild, error) {
 	cmd, err := newJobTestCmd()
 	if err != nil {
@@ -94,7 +95,8 @@ var openJobTestWait = func(pid int) (windows.Handle, error) {
 func (c *winJobTestChild) Exited() <-chan struct{} { return c.exited }
 
 // End ends the test job, with exit code 1. Measured on Windows against 4c111e86: at the
-// bound the test child and its conhost, both in the test job, exit 0x1 within 2 ms. End
+// bound the test child and its conhost, both in the test job, exit 0x1 within 2 ms. A
+// child that still sleeps after its resume exits 0x1 after about 8 ms. End
 // ends no other job and no process outside the test job. With no job it ends nothing and
 // gives an error, and awaitJobTest then fails the test (claustrum's own).
 func (c *winJobTestChild) End() error {

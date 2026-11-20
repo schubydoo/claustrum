@@ -81,13 +81,13 @@ With no job, a process that the child started can hold its output pipes. Then th
 
 #### The start test of the jobs
 
-Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a user who is no admin it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, so a kill ends the direct child only (from the code). At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
+Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a non-admin user it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, so a kill ends the direct child only (from the code). At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
 From 5 s to that end the test is pending, and the socket opens.
 
 claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code).
 
-A resume that leaves the child asleep fails the test at once (measured on Windows). Only `4c111e86` then ends the child.
+After a resume leaving the child asleep, the daemon fails the test and ends the job at once (measured on Windows: the child exits `0x1`).
 
 claustrum's own, not measured:
 
@@ -95,7 +95,7 @@ claustrum's own, not measured:
 - A failed start of the test child fails the test with its error.
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`.
 - A spawn in the pending time runs as after a failed test.
-- After a failed end, as with no job, or with no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
+- After a failed end, as with no job or no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
 - The line rounds the time to the nearest millisecond.
 - The end reaches nothing else.
 
