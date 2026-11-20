@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1509,6 +1510,74 @@ func TestCLITempRootGivenBackDuringItsCheckGetsNoWrite(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "made anew") {
 		t.Errorf("log %q, want no line that the folder is made anew", logs.String())
+	}
+}
+
+// onLogLine is a log sink that runs fn once, at the first line that holds sub, before
+// it writes that line.
+type onLogLine struct {
+	buf  syncBuffer
+	sub  string
+	once sync.Once
+	fn   func()
+}
+
+func (w *onLogLine) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), w.sub) {
+		w.once.Do(w.fn)
+	}
+	return w.buf.Write(p)
+}
+
+// A folder given back right after the write test of its check, while the check makes it
+// anew at its name, loses that flock when the check gives its result: a spawn of the same
+// temp dir right after gets that folder again (claustrum's own).
+func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	x, runDir := tempRootDir(t, true)
+	given := func() bool {
+		tempRoots.mu.Lock()
+		defer tempRoots.mu.Unlock()
+		return len(tempRoots.held) == 0 && len(tempRoots.given) == 1
+	}
+	// The line that the folder is made anew comes after the write test and before the
+	// mkdir, so the give-back lands in that window.
+	w := &onLogLine{sub: "made anew", fn: func() {
+		rel[0]()
+		for end := time.Now().Add(5 * time.Second); !given() && time.Now().Before(end); {
+			time.Sleep(time.Millisecond)
+		}
+	}}
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(w)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	var again *rpc.CLITempRoot
+	var againRel func()
+	var calls atomic.Int32
+	setAfterOneCheck(t, func() {
+		if calls.Add(1) == 1 {
+			var bind func(func())
+			_, again, againRel, bind = privateTempRoot([]string{"TMPDIR=" + x}, runDir)
+			bind(nil)
+		}
+	})
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	f := filepath.Join(x, a.Name)
+	if err := os.Rename(f, f+".away"); err != nil {
+		t.Fatal(err)
+	}
+	ticks.check(t)
+	if againRel != nil {
+		rel = append(rel, againRel)
+	}
+	if !strings.Contains(w.buf.String(), "made anew") {
+		t.Fatalf("log %q, want the line that the folder is made anew", w.buf.String())
+	}
+	if again == nil || again.Name != a.Name {
+		t.Errorf("the spawn right after the check got %+v, want the folder %s again", again, a.Name)
 	}
 }
 

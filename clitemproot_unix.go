@@ -1093,7 +1093,9 @@ func heldCopies() heldCheck {
 // takeCheck gives the folder h the result of the check of its copy c: the failed state,
 // the count of change lines, the handle of an own folder that the check held in its
 // place, and a loss, which ends each child that asked for that (markTempRootLost). A
-// folder given back during the check takes only the loss, and a folder that is lost or
+// folder given back during the check takes only the loss, and the handle of its copy
+// closes at once, so the flock of a folder that the check made anew or held at its name
+// goes before the check of the next folder (claustrum's own). A folder that is lost or
 // no longer checked takes nothing. The caller holds tempRoots.mu.
 func takeCheck(h, c *heldTempRoot) {
 	if h.lost.Load() || (tempRoots.held[filepath.Join(h.dir, h.name)] != h && !slices.Contains(tempRoots.given, h)) {
@@ -1105,6 +1107,9 @@ func takeCheck(h, c *heldTempRoot) {
 			_ = h.f.Close()
 			h.f, h.dev, h.ino, c.f = c.f, c.dev, c.ino, nil
 		}
+	} else {
+		_ = c.f.Close()
+		c.f = nil // closeProbes gets os.ErrInvalid from a nil handle
 	}
 	if c.lossWhy != "" {
 		markTempRootLost(h, c.lossWhy, c.lossWord)
@@ -1189,7 +1194,11 @@ func logTempRootChange(h *heldTempRoot, format string, args ...any) {
 
 // mayWrite reports whether a check of h may write to the folder or to its name: h is
 // held and was not given back since its copy was made (claustrum's own). A give-back
-// right after this test can still meet one write.
+// right after this test can still meet each write that follows it: the remake of a
+// missing folder (Mkdirat, then takeTempRootAt), the hold of an own folder at the name
+// (takeTempRootAt: fitTempRoot, Fchmod, UtimesNanoAt and the exclusive flock), or the
+// new t of a folder (fitTempRoot). takeCheck then closes the handle of the copy, so its
+// flock goes.
 func (h *heldTempRoot) mayWrite() bool {
 	return !h.given && (h.of == nil || !h.of.handedBack.Load())
 }
