@@ -8,7 +8,7 @@ that rule.
 
 Most of this work is wire-neutral. It changes tooling, tests, or OS-level
 behaviour, but it does not change a JSON-RPC frame. The deliberate divergences
-(the D series) and the client-driven extensions (CT-1..CT-5) live in
+(the D series) and claustrum's options (CT-1..CT-8) live in
 [DIVERGENCES.md](DIVERGENCES.md), with the rules that judge them.
 
 ## The shipped items

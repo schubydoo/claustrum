@@ -20,7 +20,7 @@ var installProgressInterval = time.Second
 // is a READ-IDLE bound (reset on every byte), NOT a total-download deadline, so a
 // slow-but-progressing download is never aborted. This is parity (the reference
 // does it), not a divergence, and it is separate from the opt-in total-download
-// bound D12 (DownloadTimeout), which no measurement of the reference has shown
+// bound CT-8 (DownloadTimeout), which no measurement of the reference has shown
 // within the window measured. var so tests can shrink it.
 var installIdleTimeout = 60 * time.Second
 
@@ -202,7 +202,7 @@ func (e *interruptedError) Error() string {
 	return fmt.Sprintf("download interrupted after %d bytes: %v", e.got, e.err)
 }
 
-// isDownloadDeadline reports whether a body read error is the opted-in D12
+// isDownloadDeadline reports whether a body read error is the opted-in CT-8
 // deadline (DownloadTimeout). That error keeps its documented text,
 // `download failed: context deadline exceeded (…)`. It is claustrum-only, so no
 // row measures it.

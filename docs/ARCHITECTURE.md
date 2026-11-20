@@ -277,9 +277,9 @@ them. Three of them carry rules of these docs:
   observed.
 - `libc` build selection. The driver uses the `libc` field of
   `__INSTALL_RESULT__` to pick the CLI build to download.
-- "Desktop owns the argv". An operator cannot change the daemon's argv, so a
-  divergence that only an argv flag reaches is unreachable on Desktop-driven
-  hosts. This premise lets D3, D10 and D12 be opt-in. It also defines the
+- "Desktop owns the argv". An operator cannot change the daemon's argv, so an
+  entry that only an argv flag reaches is unreachable on Desktop-driven
+  hosts. This premise lets CT-6, CT-7 and CT-8 be opt-in. It also defines the
   "(opt-in)" convention: a flag and a configuration key, because the key is the
   reachable knob.
 
@@ -299,7 +299,7 @@ The argv claim holds, by inspection of the shipped client. Desktop builds the
 daemon's argv from a fixed set of flags. Only the operands change: the download
 URL, its checksum and the uploaded blob path. The argv capture of 2026-08-10 (two cold starts and one `-cli-zst` call) shows these shapes ([REFERENCE-BUILDS.md](REFERENCE-BUILDS.md#7c2f88d13e5f269762dd4d463aa4eb3102214110-2026-07-02)).
 
-The `cliError` claim underpins D10.
+The `cliError` claim underpins CT-7.
 `libc` underpins no current entry. This list is kept by hand and is not
 complete. Each entry in [DIVERGENCES.md](DIVERGENCES.md) has its own reopen
 trigger.

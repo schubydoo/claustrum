@@ -13,7 +13,7 @@ One binary, six modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install` and
 ### Flags and config keys
 
 [DIVERGENCES.md → Conventions for opt-in
-divergences](../DIVERGENCES.md#conventions-for-opt-in-divergences) has the default,
+entries](../DIVERGENCES.md#conventions-for-opt-in-entries) has the default,
 the precedence of a flag and its key, and the bypass rule.
 
 | flag | config key | default | effect when set | mode |
@@ -25,12 +25,12 @@ the precedence of a flag and its key, and the bypass rule.
 | `-wire-log-max-string <n>` | `wire-log-max-string` | `512` | bytes kept per string value. `0` keeps whole payloads | -serve |
 | `-keep-children` | `keep-children` | off | survive restart (CT-2) | -serve |
 | `-listen-pipe` | `listen-pipe` | off | named-pipe transport, Windows-only (CT-5) | -serve |
-| `-max-extract-bytes <n>` | `max-extract-bytes` | `0` | cap `files.extract_tar` bytes (D3) | -serve |
+| `-max-extract-bytes <n>` | `max-extract-bytes` | `0` | cap `files.extract_tar` bytes (CT-6) | -serve |
 | `-git-timeout <dur>` | `git-timeout` | none | deprecated. It sets nothing and logs one warning. The git calls keep their time limits (retired D5) | -serve |
 | `-files-read-regular-only` | `files-read-regular-only` | none | deprecated. It sets nothing and logs one warning. `files.read` refuses a file that is not regular with or without it (retired D4) | -serve |
-| `-max-cli-bytes <n>` | `max-cli-bytes` | `0` | cap CLI decompress + download (D10) | -install |
+| `-max-cli-bytes <n>` | `max-cli-bytes` | `0` | cap CLI decompress + download (CT-7) | -install |
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
-| `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
+| `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (CT-8) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
 | `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on the prune after a good install, the new CLI among them ([other prunes](../INSTALL.md#the-prune-of-a-cache-miss)). The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
@@ -131,8 +131,8 @@ These flags are off the wire. `-keep-children` and `-listen-pipe` have an entry 
   transport](../PROTOCOL.md#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
 
-The opt-in divergence of this mode on the wire is `-max-extract-bytes`
-([D3](../DIVERGENCES.md#d3)). Off is parity. Its frame is in
+The opt-in flag of this mode on the wire is `-max-extract-bytes`
+([CT-6](../DIVERGENCES.md#ct-6)). Off is parity. Its frame is in
 [files.extract_tar](files-extract-tar.md).
 
 ### -bridge — stdio↔socket relay

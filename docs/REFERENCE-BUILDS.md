@@ -46,7 +46,7 @@ release.
 |---|---|---|---|
 | `c9125eb8…` | | D16 | |
 | `b3081b51…` | D28 | | |
-| `be1c1ca5…` | | | D2 and D24 cover the staged add. A D10 cap that fires before the disk fills skips the second prune |
+| `be1c1ca5…` | | | D2 and D24 cover the staged add. A CT-7 cap that fires before the disk fills skips the second prune |
 | `52d82f0a…` | | | CT-2 covers a pending farewell and a killed Windows daemon |
 | `5fd08069…` | D27 | D4, D5, D9, D13, D17, D18, D21, D25 | |
 | `89cb6289…` | D20, D21, D22, D23, D24 | D11 | D2 gained its `-install` refusal of a home folder |
@@ -371,7 +371,7 @@ Linux).
 systems named. A validation run on Linux, macOS and Windows compared claustrum with
 `be1c1ca5`.
 
-**Divergences.** D2 and D24 cover the staged add. A D10 cap that fires before the disk
+**Divergences.** D2 and D24 cover the staged add. A CT-7 cap that fires before the disk
 fills skips the second prune.
 
 These items stay open:
