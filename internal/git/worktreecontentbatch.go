@@ -298,7 +298,7 @@ func (c *contentCheck) scratchDir() (*os.Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := openRootNoWait(dir)
+	root, err := openScratchRoot(dir)
 	if err != nil {
 		remove()
 		return nil, err
@@ -315,6 +315,10 @@ func (c *contentCheck) scratchDir() (*os.Root, error) {
 	c.scratch, c.dropScratch = root, remove
 	return root, nil
 }
+
+// openScratchRoot opens the scratch folder that scratchDir just made. Tests
+// replace it, to change the folder between its mkdir and its open.
+var openScratchRoot = openRootNoWait
 
 // removeScratch closes the root of the scratch folder and removes the folder,
 // if it was made.

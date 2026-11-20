@@ -67,3 +67,35 @@ func TestObjectBatchRead(t *testing.T) {
 		t.Errorf("read of a huge false size = %v, want EOF", err)
 	}
 }
+
+// TestHashOnNoObjectID: an id that is no object id takes no file in the
+// scratch folder and gets no answer of the long-running hash-object. The
+// caller sends the object to a separate run, and the git that ran stays for
+// the next object. A nil git is not started (claustrum's own, not measured).
+func TestHashOnNoObjectID(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	old := writeObjectBody
+	t.Cleanup(func() { writeObjectBody = old })
+	var wrote []string
+	writeObjectBody = func(r *os.Root, name string, body []byte) error {
+		wrote = append(wrote, name)
+		return old(r, name, body)
+	}
+	c := &contentCheck{scratch: root}
+	h := fakeBatch(t, strings.Repeat("a", 40)+"\n")
+	for _, id := range []string{"not-an-id", strings.Repeat("g", 40), strings.Repeat("a", 39), ""} {
+		if got, ran, err := c.hashOn(h, "blob", id, []byte("x")); got != "" || ran != h || !errors.Is(err, errNoHashHelper) {
+			t.Errorf("hashOn(%q) = %q, %p, %v; want no answer, the same git %p and %v", id, got, ran, err, h, errNoHashHelper)
+		}
+	}
+	if got, ran, err := c.hashOn(nil, "blob", "not-an-id", []byte("x")); got != "" || ran != nil || !errors.Is(err, errNoHashHelper) {
+		t.Errorf("hashOn with no git = %q, %p, %v; want no git started and %v", got, ran, err, errNoHashHelper)
+	}
+	if len(wrote) != 0 {
+		t.Errorf("files written for %q, want none", wrote)
+	}
+}
