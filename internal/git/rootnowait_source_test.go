@@ -49,6 +49,7 @@ var plainOpenRootCalls = map[string]struct {
 	"methods_git.go gitWorktreeRemoveLocked root":                {1, rootKeepDelete},
 	"worktreecontent_linux.go leafLinkErr os":                    {1, rootKeepOutside},
 	"worktreecontentbatch.go writeObjectBody os":                 {1, rootKeepOutside},
+	"worktreecontentbatch.go removeObjectBody os":                {1, rootKeepDelete},
 	"worktreeexternal.go makeGoneWorktreeFolder os":              {1, rootKeepOutside},
 	"worktreeremove.go externalRootDenied os":                    {1, rootKeepDelete},
 	"worktreeremove.go openRemoveParent os":                      {1, rootKeepDelete},
