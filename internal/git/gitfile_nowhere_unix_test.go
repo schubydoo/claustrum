@@ -15,7 +15,7 @@ import (
 // every listing with the text of git 2.56 for a `.git` file that names no valid
 // repository. So no git 2.56 is needed. With worktreeRoot G answers git's text as for
 // "not a git repository", also for a subfolder and with "shadowDirOff":true (4c111e86,
-// measured on Linux with git 2.56.1, macOS claustrum's own). A request
+// measured on Linux and macOS with git 2.56.1). A request
 // without worktreeRoot for a gone worktree gets success with the branch kept on b3081b51, with and
 // without the member (measured on Linux). The branch step does not run,
 // and G keeps its entries. Mutations: invert the gitFileText test at any of the three

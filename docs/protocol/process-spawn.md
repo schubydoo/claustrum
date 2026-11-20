@@ -170,8 +170,14 @@ With no folder, `whyNot` takes the place of `name`. The log line then ends `(it 
 | `only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this` | The entry is a link or a file (`4c111e86`). A temp dir that cannot be searched (see [a failed test](#a-failed-test-of-the-temp-dir-build-4c111e86)). |
 | `no folder could be made in the temp dir: permission denied` | The mkdir of the new folder failed (see [a failed test](#a-failed-test-of-the-temp-dir-build-4c111e86)). |
 | `too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute` | The daemon holds 8 folders (`c9125eb8` and `4c111e86`, measured on macOS). Spawns that share a folder take one place (measured on Linux). Or the daemon made 8 new folders in the last minute (see [the cap of new folders](#the-cap-of-new-folders-build-4c111e86)). |
-| `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. `refused` is absent. A late step still logs its line and writes the record, and the next spawn gets its folder (`4c111e86`, measured on Linux). |
+| `the temp dir did not answer in time` | A temp dir on a stuck NFS mount. `b3081b51` replied after 2.13 s. The child gets its env as it was. `refused` is absent. On Linux `4c111e86` logs `[process.Manager] the temp dir has not answered in 2s: Claude Code starts anyway, and may refuse its folder there` once, for the spawn whose own step hits the limit, and claustrum logs it at WARN (see [while a step is late](#while-a-step-is-late-build-4c111e86)). A late step logs its own line and writes the record, and the next spawn gets its folder (`4c111e86`, measured on Linux). |
 | `the new folder was not this account's own with mode 0700, and was removed` | The new folder changed before the daemon held it. |
+
+#### While a step is late (build `4c111e86`)
+
+While the step of a temp dir goes on after the limit, a spawn with that temp dir gets `the temp dir did not answer in time` at once, with no step and no line (`4c111e86`, measured on Linux). These are claustrum's own: macOS, the end of that time when the late step returns, a step that starts within the limit of an earlier one, no such time for a step that only waits for the lock of the folders, whoever holds it, and the key, which is the path of the temp dir as given, so two spellings of one dir or a link each run their own step.
+
+In claustrum a spawn with another temp dir whose step waits past the limit for the lock gets this `whyNot` and logs the line of the limit, where `4c111e86` gave a folder at once (measured on Linux): a known difference that TASK-734 follows.
 
 #### A failed test of the temp dir (build `4c111e86`)
 
@@ -211,8 +217,9 @@ These are not measured:
 - Random hex, an age bound of 24 h, and the order of the `refused` tests. The link and file test comes after the account test.
 - The test of `t` and its `rmdir`. A `t` that is not an own folder of mode 0700 gives the `removed` text too. A later daemon takes again only a folder of mode 0500 with an own `t` of mode 0700.
 - The rest of the order of the four names. With none of them set, the temp dir is `/tmp`. A relative value of `CLAUDE_CODE_TMPDIR`, `TMP` or `TEMP` gives no member too, and the next name is not tried.
-- The limit is 2 s. After it the step goes on. A late step gives its folder back at once, with no hold. On macOS it also logs its line and writes the record. The limit also covers the wait for the step of another spawn, so a spawn can get this text for a temp dir that answers.
-- The reply of the time limit logs no line. A late step can log the refuse line of its own `whyNot`.
+- The limit is 2 s. After it the step goes on. The limit also covers a wait for the lock ([while a step is late](#while-a-step-is-late-build-4c111e86)).
+- A late step gives its folder back at once, with no hold. It logs its line and writes the record on Linux (measured) and macOS (not measured).
+- The WARN level of the line of the time limit, and that macOS logs that line too. A late step can log the refuse line of its own `whyNot`.
 - A failed stat of an entry that exists, other than `EACCES`, gives no member.
 - The account test: a group write bit refuses, a sticky bit passes, and links resolve first.
 - The owner test of the new folder.

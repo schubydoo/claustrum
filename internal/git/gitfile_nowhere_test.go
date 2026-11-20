@@ -51,8 +51,8 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // stub in place of git that fails each listing with one of the two texts. So no git
 // 2.56 is needed. On Linux and macOS (gitFileNowhereAsOlderGit) both texts keep the "no
 // repository" frames, also on a subfolder for git.info, also for the reply to the first
-// git request of a daemon and with "shadowDirOff":true (4c111e86, measured on Linux with
-// git 2.56.1, macOS claustrum's own). On Windows the text of git 2.56 gives the error of
+// git request of a daemon and with "shadowDirOff":true (4c111e86, measured on Linux and
+// macOS with git 2.56.1). On Windows the text of git 2.56 gives the error of
 // the call about the repository, also on a subfolder and as the first git request, and
 // with "shadowDirOff":true the listing refusal (5fd08069, measured on Linux and Windows, the
 // listing refusal on Linux). The older

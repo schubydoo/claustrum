@@ -7,9 +7,9 @@ import (
 	"os"
 )
 
-// storeInCheckout is false on Windows. 4c111e86 makes no `.checkout-<n>`
-// folder there, and the read-tree call keeps the store of the git directory
-// (measured on Windows).
+// storeInCheckout is false on Windows. The `.checkout-<n>` folder of 4c111e86
+// holds no LFS object there, and the read-tree call keeps the store of the git
+// directory (measured on Windows).
 const storeInCheckout = false
 
 // linkIntoRoot is not used on Windows.

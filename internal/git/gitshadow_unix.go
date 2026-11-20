@@ -217,7 +217,7 @@ var goneGitFileStartTest = false
 
 // gitFileNowhereAsOlderGit is true on Linux and macOS: the gitfile text of git 2.56
 // (saysGitFileNowhere) gets the answers of an older git (4c111e86, measured on Linux
-// with git 2.56.1, macOS claustrum's own). A variable, so that a test can run the
+// and macOS with git 2.56.1). A variable, so that a test can run the
 // Windows answers.
 var gitFileNowhereAsOlderGit = true
 
