@@ -970,8 +970,10 @@ var tempRootNameWait = 4 * time.Second
 // tempRootNameWait logs the line that the name of h does not answer. Once that check
 // returns with all well, it logs the line that all is well with h again (measured on
 // Linux, 4c111e86). These are claustrum's own, not measured: the line that the name does
-// not answer does not count toward tempRootChangeCap, and a check that returns with a
-// failure or a loss logs its own line in place of the second one.
+// not answer does not count toward tempRootChangeCap, and for a held folder a check that
+// returns with a failure or a loss logs its own line in place of the second one. For a held
+// folder the second line counts toward tempRootChangeCap (logTempRootChange). A given-back
+// folder is looked at through a new copy each pass, so its second line is not capped.
 func checkTempRootTimed(h *heldTempRoot) {
 	failedBefore := h.checkFailed
 	logged := make(chan struct{})
@@ -984,8 +986,12 @@ func checkTempRootTimed(h *heldTempRoot) {
 		return
 	}
 	<-logged
-	if !failedBefore && !h.checkFailed && !h.lost.Load() && h.lossWhy == "" && !h.gone {
+	switch {
+	case failedBefore || h.checkFailed || h.lost.Load() || h.lossWhy != "" || h.gone:
+	case h.probe:
 		logging.Infof(tempRootWellAgainLn, h.name)
+	default:
+		logTempRootChange(h, tempRootWellAgainLn, h.name)
 	}
 }
 

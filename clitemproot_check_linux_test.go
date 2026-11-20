@@ -1392,3 +1392,45 @@ func nameDoesNotAnswer(t *testing.T, given bool) {
 		t.Errorf("%d stuck lines, %d well lines and %d ends, want 1, 1 and 0", n, w, ends.Load())
 	}
 }
+
+// A held folder past the cap of the change lines logs no line that all is well after a
+// check that did not answer: that line counts toward tempRootChangeCap (claustrum's own).
+func TestCLITempRootNoAnswerWellLineKeepsTheCap(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	oldWait := tempRootNameWait
+	tempRootNameWait = 20 * time.Millisecond
+	t.Cleanup(func() { tempRootNameWait = oldWait })
+	x, runDir := tempRootDir(t, true)
+	a := runTempRootBound(t, x, runDir, &rel, nil)
+	h := heldRecordOf(x, a.Name)
+	tempRoots.mu.Lock()
+	h.changes = tempRootChangeCap
+	tempRoots.mu.Unlock()
+	free, answered := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	old := tempRootCheckDev
+	tempRootCheckDev = func(st *unix.Stat_t) uint64 {
+		if calls.Add(1) == 1 { // the first look does not answer until free
+			select {
+			case <-free:
+			case <-time.After(10 * time.Second):
+			}
+			defer close(answered)
+		}
+		return statDev(st)
+	}
+	t.Cleanup(func() { tempRootCheckDev = old })
+	go func() { ticks.ticks <- time.Now() }()
+	prefix := "[process.Manager] Claude Code's private temp folder " + a.Name + ": "
+	stuck := prefix + "its name does not answer; nobody is ended over that, and it is looked at again"
+	waitFor(t, "the line that the name does not answer", func() bool { return strings.Contains(logs.String(), stuck) })
+	close(free)
+	<-answered
+	<-ticks.done
+	if s := logs.String(); strings.Contains(s, prefix+"all is well with it again") {
+		t.Errorf("log = %q, want no line that all is well past the cap", s)
+	}
+}
