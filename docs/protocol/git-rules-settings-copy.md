@@ -161,7 +161,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
 - A request also keeps short-lived entries in the daemon's folder:
   `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` (claustrum: `.index-<n>` on Windows) and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In `fallback-git` the first three are there
-  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
+  too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows (claustrum's own, not measured), and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
   `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
@@ -175,7 +175,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   copy (measured on Linux and macOS).
   claustrum removes it with the old daemon's folder in [the
   sweep](#the-sweep-of-git-shadow) (from the code). On Windows it holds no
-  LFS object (measured). claustrum's own name there is `.index-<n>`.
+  LFS object (measured).
 - In `shadow` a create keeps `.readback-objects-<n>` there for its
   content check (`b3081b51`, measured on Linux).
 - On Windows, if the daemon's folder denies new folders, a create still works
