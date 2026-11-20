@@ -202,11 +202,16 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 func TestLFSKeepAfterTheSettleCall(t *testing.T) {
 	seamFreeSpace(t)
 	setAttrSource(t, true)
+	// No tick runs, so the one copy is the keep after the checkout.
+	setKeepTick(t, time.Hour)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
 	f.onServer(t, "a.bin")
 	prev := keepCopy
+	var mu sync.Mutex
 	copies, settled := 0, false
 	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		copies++
 		for _, c := range readEnvCalls(t, f.shadowFixture.log) {
 			settled = settled || slices.Contains(c.argv, "diff-files")
@@ -221,6 +226,8 @@ func TestLFSKeepAfterTheSettleCall(t *testing.T) {
 	if !slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "diff-files") }) {
 		t.Fatal("the create ran no settle call")
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if copies != 1 || !settled {
 		t.Errorf("the keep made %d copies, after the settle call: %v; want 1 copy after it", copies, settled)
 	}
