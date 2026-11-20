@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -126,7 +127,7 @@ func TestCLITempRootReusesItsName(t *testing.T) {
 	if fi, _ := os.Stat(filepath.Join(x, a.Name)); fi == nil || time.Since(fi.ModTime()) > time.Hour {
 		t.Errorf("write time %v, want now", fi)
 	}
-	// With nothing held, as in a new daemon, the registry gives the name again.
+	// With no live spawn, the registry gives the name again, through the given-back record.
 	for _, r := range rel {
 		r()
 	}
@@ -134,6 +135,25 @@ func TestCLITempRootReusesItsName(t *testing.T) {
 	_, c := runTempRoot(t, x, runDir, &rel)
 	if c == nil || c.Name != a.Name {
 		t.Fatalf("answer after the hold %+v, want the name %s", c, a.Name)
+	}
+	// With no given-back record, as in a new daemon, the registry gives the name again,
+	// and the spawn opens the folder and takes its flock afresh.
+	for _, r := range rel {
+		r()
+	}
+	rel = nil
+	stopTempRootChecks() // the given-back record ends, and its flock with it
+	_, d := runTempRoot(t, x, runDir, &rel)
+	if d == nil || d.Name != a.Name {
+		t.Fatalf("answer of a new daemon %+v, want the name %s", d, a.Name)
+	}
+	f, err := os.Open(filepath.Join(x, a.Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("flock of the folder: %v, want the new hold to have it", err)
 	}
 	if got := ccdFolders(t, x); len(got) != 1 {
 		t.Errorf("folders %v, want one", got)
@@ -182,6 +202,7 @@ func TestCLITempRootSkipsAFolderThatAnotherHolds(t *testing.T) {
 	x, runDir := tempRootDir(t, true)
 	_, a := runTempRoot(t, x, runDir, &rel)
 	rel[0]()
+	stopTempRootChecks() // the given-back record ends, and its flock with it
 	f, err := os.Open(filepath.Join(x, a.Name))
 	if err != nil {
 		t.Fatal(err)
@@ -609,8 +630,9 @@ func TestCLITempRootTempDirOrder(t *testing.T) {
 
 // After the time limit the reply says so and the child gets the env as it was. A
 // folder that the step made after the limit stays with its record and its line, and the
-// next spawn gets it (4c111e86, measured on Linux). The step gives it back at once: no
-// count and no hold (claustrum's own). The spawn whose own step hits the limit logs the
+// next spawn gets it (4c111e86, measured on Linux). The step gives it back at once, with
+// no count (claustrum's own), and the folder keeps its flock (4c111e86, measured on
+// Linux). The spawn whose own step hits the limit logs the
 // line of the limit once, and a second spawn of that temp dir while the step is late gets
 // the text at once with no second line (4c111e86, measured on Linux).
 func TestCLITempRootTimeLimit(t *testing.T) {
@@ -674,8 +696,8 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		t.Errorf("flock of the late folder: %v, want no hold", err)
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Errorf("flock of the late folder: %v, want the daemon to hold it", err)
 	}
 	_ = f.Close()
 	if b, err := os.ReadFile(filepath.Join(runDir, tempRootRegistryName(x))); err != nil || string(b) != name {
