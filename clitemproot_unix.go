@@ -231,8 +231,8 @@ var tempRootsLost struct {
 // limit. The step keeps its folder only if keep comes before markGaveUp. dir is the
 // temp dir of the step. While a step goes on after its limit, its dir is in
 // tempRootLateDirs, from markGaveUp to the end of the step (ended). A step that at
-// its limit only waits for tempRoots.mu (lockWait), held by a step or check of another
-// temp dir, is no late step: its temp dir answers, so the next spawn runs its own step.
+// its limit only waits for tempRoots.mu (lockWait), held by a step, a check or a refresh
+// of another folder, is no late step: its temp dir answers, so the next spawn runs its own step.
 type tempRootLate struct {
 	mu                            sync.Mutex
 	gaveUp, kept, ended, lockWait bool
