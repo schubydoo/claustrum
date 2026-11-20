@@ -433,6 +433,40 @@ func TestWorktreeCreateLeafReplaced(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateOffGitDirLinkAfterAdd pins a row of 4c111e86 (measured on
+// Linux and macOS). With "shadowDirOff":true the .git folder of baseRepo gets a
+// new name after the add, and a link .git to it takes its place. The create is
+// refused with no checkout, and the leaf, the registration and the branch stay.
+func TestWorktreeCreateOffGitDirLinkAfterAdd(t *testing.T) {
+	f, h := postAddFixture(t)
+	gitDir := filepath.Dir(f.regDir)
+	afterAddSteps(t, []string{"rename", gitDir, gitDir + ".real"}, []string{"symlink", ".git.real", gitDir})
+	raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"shadowDirOff": true})
+	wantError(t, raw, "refusing to create worktree: `"+namedLeaf(f.leaf())+
+		"` does not hold the .git file made for it", "unsafe_path")
+	gitFile := "gitdir: " + filepath.Join(f.realRoot(t), "T", ".git", "worktrees", "w1") + "\n"
+	f.wantNothingRolledBack(t, gitFile, filepath.Join(gitDir+".real", "worktrees", "w1"))
+}
+
+// TestWorktreeCreateOffGitDirLinkBeforeRequest pins that the test above refuses
+// no create whose .git was a link before the request. git answers the target
+// of the link as the git directory, so the create succeeds (claustrum's own,
+// not measured).
+func TestWorktreeCreateOffGitDirLinkBeforeRequest(t *testing.T) {
+	f, h := postAddFixture(t)
+	gitDir := filepath.Dir(f.regDir)
+	if err := os.Rename(gitDir, gitDir+".real"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(".git.real", gitDir); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"shadowDirOff": true})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+}
+
 // TestWorktreeCreateLeafReplacedBeforeAdd pins a measured case of c9125eb8 and
 // 4c111e86 on Linux. Right before the add the leaf is deleted and a new empty
 // folder is put at its path, and git writes its .git file there. The create answers
