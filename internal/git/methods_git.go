@@ -286,7 +286,7 @@ func gitInfo(req *gitCall) rpc.Response {
 			}
 		}
 		// A listing that fails here refuses (measured on Linux, macOS and Windows).
-		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
+		if msg := noRepoInfoCalls(t, req.stop, p.Path); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
 		return notRepo()
@@ -784,9 +784,7 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		if msg := statusGitFileNowhere(t, req.stop, p.BaseRepo, bool(p.ShadowDirOff)); msg != "" {
-			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
-		}
+		statusGitFileNowhere(t, req.stop, p.BaseRepo)
 		if msg := statusNoRepoCalls(req.stop, p.BaseRepo, t.noGit); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
@@ -1015,7 +1013,7 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (measured on Linux, macOS and
 		// Windows). One more call follows a listing that passed (noRepoInfoCalls).
-		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
+		if msg := noRepoInfoCalls(t, req.stop, p.Path); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
 		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
@@ -1259,7 +1257,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// A listing that fails here refuses, with and without worktreeRoot, and nothing
 		// is created (measured on Linux, macOS and Windows). One more call follows a
 		// listing that passed (noRepoCreateCalls).
-		if msg := noRepoCreateCalls(t, req.stop, !bool(p.ShadowDirOff) && req.shadow.active(), bool(p.ShadowDirOff), repo); msg != "" {
+		if msg := noRepoCreateCalls(t, req.stop, !bool(p.ShadowDirOff) && req.shadow.active(), repo); msg != "" {
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return notARepoResult(req.ID, repo)

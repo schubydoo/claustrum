@@ -205,7 +205,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 ??? note "A check that finds no repository"
     A config listing that fails gives the hooks refusal. If `git version` fails too, it gives the "cannot run" text of [Hardened git calls](git-rules-calls.md#hardened-git-calls).
 
-    A `.git` file can name a gone git directory that is no registration. If git 2.56 or newer says so, the answer is `git could not check this repository on the remote machine: at "<root>": …` (measured on Linux). With `"shadowDirOff":true` it is the hooks refusal (measured on Linux). An older git gives `"isRepo": false` (measured on Linux).
+    A `.git` file can name a gone git directory that is no registration. The answer is `"isRepo": false`, with and without `"shadowDirOff":true`, with git 2.56.1 and with an older git (`4c111e86`, measured on Linux).
 
 ??? note "A failed config listing"
     The first config listing refuses by [these classes](git-rules-trust.md#a-failed-configuration-listing). Later listings refuse any failure, in the git directory (measured on Linux) and in the temporary folder (from the code). Over a hook-pin limit the first listing refuses in a repository (from the code), and later ones do not (from the code). The empty-tree listing never refuses (from the code). A stopped listing of `config.worktree` gives `{"isRepo":false,"clean":false}` (measured on Linux).

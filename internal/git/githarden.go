@@ -1569,15 +1569,15 @@ type configVerdict struct {
 	// noRepo is true when the method answers as if dir held no repository.
 	noRepo bool
 	// noRepoText is git's stderr through worktreeGitText when the listing itself said
-	// "not a git repository". git.worktree_remove with worktreeRoot quotes it.
+	// "not a git repository", or gave the text of gitFileText. git.worktree_remove with
+	// worktreeRoot quotes it.
 	noRepoText string
 	// gitFileText is set beside refusal when the listing failed with the text of git
 	// 2.56 for a `.git` file that names no valid repository (saysGitFileNowhere). It is
-	// the error of a failed call about the repository, with git's lines.
-	// git.worktree_remove answers it in two measured cases, as 5fd08069 does (measured
-	// on Linux). The four other git methods answer it for a gone git dir that is no
-	// worktree entry (noRepoCalls, statusGitFileNowhere). With "shadowDirOff":true each
-	// of the five answers refusal there (measured for the four and for the remove).
+	// the error of a failed call about the repository, with git's lines. On Windows
+	// git.worktree_remove answers it for a gone worktree, as 5fd08069 does. The other
+	// methods answer as for "not a git repository", with and without
+	// "shadowDirOff":true (4c111e86, measured on Linux with git 2.56.1).
 	gitFileText string
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).
@@ -1716,6 +1716,7 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configVe
 			root = dir
 		}
 		c.gitFileText = repoCheckFailedText(root, shadowRun{stderr: r.stderr, err: r.err}.allLines())
+		c.noRepoText = worktreeGitText(r.stderr, nil)
 	}
 	return c
 }

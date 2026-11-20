@@ -100,11 +100,11 @@ var unusableRows = []unusableRow{
 	}},
 }
 
-// gitFileNowhereRows are the rows whose frame depends on the text of git. 4c111e86 is
-// measured there with git 2.55 on Windows only. With the text of git 2.56
-// (saysGitFileNowhere) git runs first. A missing path then follows the 5fd08069 rows of
-// TestGitFileNowhereFourMethodsStub. The frame of an empty folder there is from the
-// code, not measured. TestCreateUnusableGitFileStub pins both texts.
+// gitFileNowhereRows are the rows whose frame can depend on the text of git. 4c111e86 is
+// measured there with git 2.55 on Windows, and with git 2.56.1 on Linux. With the text
+// of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older text. The
+// frame of an empty folder there is from the code, not measured.
+// TestCreateUnusableGitFileStub pins both texts.
 var gitFileNowhereRows = map[string]bool{
 	".git file to a missing path":  true,
 	".git file to an empty folder": true,
@@ -192,11 +192,11 @@ func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
 
 // The rows of gitFileNowhereRows with a stub in place of git that fails each listing
 // with one of the two texts, so no git 2.56 is needed. With the older text the create
-// answers the 4c111e86 text (measured with git 2.55 on Windows). With the text of git
-// 2.56 git runs first: a missing path gets the error of the call about the repository,
-// and an empty folder gets the listing refusal (from the code, not measured). Mutation:
-// answer not_a_repo in
-// notARepoResult.
+// answers the 4c111e86 text (measured with git 2.55 on Windows). A missing path gets
+// that text with the text of git 2.56 too (4c111e86, measured on Linux with git 2.56.1).
+// An empty folder then gets the listing refusal (from the code, not measured).
+// Mutations: answer not_a_repo in notARepoResult, or answer the gitfile text in
+// noRepoCalls.
 func TestCreateUnusableGitFileStub(t *testing.T) {
 	for _, row := range unusableRows {
 		if !gitFileNowhereRows[row.name] {
@@ -218,10 +218,7 @@ func TestCreateUnusableGitFileStub(t *testing.T) {
 				want := resultOf(unusableCreate(t, holder))
 				if !newText {
 					text = "fatal: not a git repository: " + filepath.ToSlash(filepath.Join(rb, "nowhere-dir"))
-				} else if row.name == ".git file to a missing path" {
-					want = resultFrame(t, worktreeResult{Success: false, ErrorCode: "worktree_add_failed",
-						Error: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", rb, text)})
-				} else {
+				} else if row.name != ".git file to a missing path" {
 					want = resultFrame(t, worktreeResult{Success: false, ErrorCode: "worktree_add_failed",
 						Error: "config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: " + text})
 				}

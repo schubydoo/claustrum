@@ -541,8 +541,8 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 // this class.
 //
 // git 2.56 prints "fatal: gitfile does not point to a valid repository: <G>/.git"
-// there. 5fd08069 then answers the error of its call about the repository (measured on
-// Linux). The second request, through a symlinked level, is not measured with git
+// there. 4c111e86 then answers that text after the same prefix (measured on Linux with
+// git 2.56.1). The second request, through a symlinked level, is not measured with git
 // 2.56.
 func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	f := newWRFixture(t)
@@ -554,8 +554,7 @@ func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	}
 	want := wantFor(nowhere)
 	if gitSaysGitFileNowhere(t) {
-		want = refusalFrame(t, wtUnknown+`git could not check this repository on the remote machine: at "`+g+
-			`": fatal: gitfile does not point to a valid repository: `+filepath.Join(g, ".git"))
+		want = refusalFrame(t, wtUnknown+"git finds no repository here: fatal: gitfile does not point to a valid repository: "+filepath.Join(g, ".git"))
 	}
 	got := f.remove(t, g, f.p0, "")
 	if got == wantFor("(null)") {
