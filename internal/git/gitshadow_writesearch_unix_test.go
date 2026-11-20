@@ -38,7 +38,8 @@ func readableAgain(t *testing.T, dir string) []string {
 
 // TestCreateInAWriteSearchDaemonFolder: with the folder of the daemon at mode
 // 0300, 4c111e86 makes `.s<n>`, the leaf and the branch, and the create
-// succeeds. `.s<n>` and `.checkout-<n>` stay (measured on Linux). Without the mkdir of
+// succeeds. `.s<n>` and `.checkout-<n>` stay, and the emptied
+// `.readback-scratch-<n>` goes (measured on Linux). Without the mkdir of
 // requestDir by path, or without probeFolderBySearch, the create fails.
 func TestCreateInAWriteSearchDaemonFolder(t *testing.T) {
 	f := newSeededShadowFixture(t)
@@ -71,6 +72,9 @@ func TestCreateInAWriteSearchDaemonFolder(t *testing.T) {
 	}
 	if !slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, checkoutDirPrefix) }) {
 		t.Errorf("the folder of the daemon holds %q, want the .checkout-<n> that stays", names)
+	}
+	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, shadowScratchDirPrefix) }) {
+		t.Errorf("the folder of the daemon holds %q, want no %s<n>", names, shadowScratchDirPrefix)
 	}
 }
 

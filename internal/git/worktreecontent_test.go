@@ -113,7 +113,7 @@ func noReadbackFolder(t *testing.T, f checkoutRuleFixture) {
 	t.Helper()
 	root := filepath.Join(f.run, shadowRootName)
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err == nil && strings.HasPrefix(d.Name(), shadowReadbackDirPrefix) {
+		if err == nil && (strings.HasPrefix(d.Name(), shadowReadbackDirPrefix) || strings.HasPrefix(d.Name(), shadowScratchDirPrefix)) {
 			t.Errorf("%s stays after the create", p)
 		}
 		return nil
@@ -181,6 +181,58 @@ func TestContentCheckMatch(t *testing.T) {
 		if containsSeq(c.argv, "cat-file", "--batch") && canonicalPath(c.cwd) != canonicalPath(f.repo) {
 			t.Errorf("cat-file --batch runs in %s, want the base repository", c.cwd)
 		}
+	}
+}
+
+// TestContentCheckScratchFiles: the long-running hash-object reads each
+// object from a file named by its id, in a folder `.readback-scratch-<n>`
+// beside `.readback-objects-<n>`. Each file goes right after its answer, so the
+// folder holds at most one file, and the folder is gone after the reply
+// (4c111e86, measured on Linux, macOS and Windows).
+func TestContentCheckScratchFiles(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".claude/settings.json": "{}\n"})
+	type step struct{ op, dir, name string }
+	var steps []step
+	oldWrite, oldRemove := writeObjectBody, removeObjectBody
+	t.Cleanup(func() { writeObjectBody, removeObjectBody = oldWrite, oldRemove })
+	writeObjectBody = func(dir, name string, body []byte) error {
+		steps = append(steps, step{"write", dir, name})
+		return oldWrite(dir, name, body)
+	}
+	removeObjectBody = func(dir, name string) error {
+		steps = append(steps, step{"remove", dir, name})
+		return oldRemove(dir, name)
+	}
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	noReadbackFolder(t, f)
+	var objects string
+	for _, c := range calls {
+		if dir, _ := envValue(c.env, "GIT_OBJECT_DIRECTORY"); strings.HasPrefix(filepath.Base(dir), shadowReadbackDirPrefix) {
+			objects = dir
+		}
+	}
+	// The commit, the top tree and the tree of .claude.
+	if len(steps) != 6 {
+		t.Fatalf("steps %v, want a write and a remove for each of 3 objects", steps)
+	}
+	if steps[0].name != gitRevParse(t, f.repo, "HEAD") {
+		t.Errorf("the first file is %q, want the id of the commit", steps[0].name)
+	}
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(shadowScratchDirPrefix) + `[0-9]+$`)
+	for i, s := range steps {
+		want := "write"
+		if i%2 == 1 {
+			want = "remove"
+		}
+		if s.op != want || s.dir != steps[0].dir || s.name != steps[i-i%2].name || !isObjectID(s.name) {
+			t.Errorf("step %d = %v, want a %s of the file of the object before it in %s", i, s, want, steps[0].dir)
+		}
+	}
+	if !re.MatchString(filepath.Base(steps[0].dir)) || filepath.Dir(steps[0].dir) != filepath.Dir(objects) {
+		t.Errorf("the files are in %s, want a folder %s<n> beside %s", steps[0].dir, shadowScratchDirPrefix, objects)
 	}
 }
 
@@ -548,7 +600,7 @@ func TestContentCheckHashOfAnotherID(t *testing.T) {
 func TestContentCheckBodyNotWritten(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	old := writeObjectBody
-	writeObjectBody = func(string, []byte) error { return fs.ErrPermission }
+	writeObjectBody = func(string, string, []byte) error { return fs.ErrPermission }
 	t.Cleanup(func() { writeObjectBody = old })
 	logs := captureLogBuf(t)
 	raw, calls := f.create(t, nil)

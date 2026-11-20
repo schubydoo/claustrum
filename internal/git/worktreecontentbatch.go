@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/logging"
 )
 
@@ -39,8 +40,14 @@ import (
 // another kind is read again by a separate run, and the batch goes on. A
 // malformed answer, a failed start and a stop at the limit end the batch as an
 // end of its output does. The batch and each hash-object have the limit of one
-// call for the whole check. The long-running hash-object reads the object from
-// the file objectBodyName in the folder of the objects of the check.
+// call for the whole check.
+//
+// The long-running hash-object reads each object from a file named by its id,
+// mode 0600, in a folder `.readback-scratch-<n>` of mode 0700 beside the folder
+// of the objects. The folder is made at the first such object, and each file
+// goes right after the answer for it, so the folder holds at most one file. The
+// folder goes at the end of the check (4c111e86, measured on Linux, macOS and
+// Windows).
 //
 // After a stop c9125eb8 reads the trees of a level below the top with one
 // `cat-file --buffer --batch` and hashes them with a new long-running
@@ -86,11 +93,6 @@ var errBatchAnswer = errors.New("an answer that cannot be read")
 // opened. A separate run hashes that object, and the long-running gits go on
 // (claustrum's own, not measured).
 var errNoHashHelper = errors.New("no long-running hash-object for this object")
-
-// objectBodyName is the file that holds the object for the long-running
-// hash-object, in the folder of the objects of the check (claustrum's own,
-// not measured). The folder goes after the check with the file.
-const objectBodyName = "object-body"
 
 // objectBatch is one long-running git of the check: `cat-file --batch`, or a
 // hash-object with --stdin-paths.
@@ -232,48 +234,107 @@ func (c *contentCheck) stopBatch() {
 	}
 }
 
-// hashLong hashes body as an object of kind with the long-running hash-object
-// of that kind, which it starts at the first object of the kind.
-func (c *contentCheck) hashLong(kind string, body []byte) (string, error) {
-	id, h, err := c.hashOn(c.hashers[kind], kind, body)
+// hashLong hashes body, the object id of kind, with the long-running
+// hash-object of that kind, which it starts at the first object of the kind.
+func (c *contentCheck) hashLong(kind, id string, body []byte) (string, error) {
+	got, h, err := c.hashOn(c.hashers[kind], kind, id, body)
 	if h != nil && c.hashers[kind] == nil {
 		if c.hashers == nil {
 			c.hashers = map[string]*objectBatch{}
 		}
 		c.hashers[kind] = h
 	}
-	return id, err
+	return got, err
 }
 
-// hashOn hashes body as an object of kind with h, a long-running hash-object
-// of that kind. A nil h starts one. h is the one that ran, or nil.
-func (c *contentCheck) hashOn(h *objectBatch, kind string, body []byte) (string, *objectBatch, error) {
-	p := filepath.Join(c.objects, objectBodyName)
+// hashOn hashes body, the object id of kind, with h, a long-running
+// hash-object of that kind. A nil h starts one. h is the one that ran, or nil.
+// The object goes to the file id in the scratch folder, which goes after the
+// answer (removeObjectBody). An id that is no object id takes no file
+// (claustrum's own).
+func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (string, *objectBatch, error) {
+	if !isObjectID(id) {
+		return "", h, errNoHashHelper
+	}
+	dir, err := c.scratchDir()
+	if err != nil {
+		return "", h, errNoHashHelper
+	}
+	p := filepath.Join(dir, id)
 	if strings.ContainsAny(p, "\r\n") {
 		return "", h, errNoHashHelper
 	}
-	if err := writeObjectBody(c.objects, body); err != nil {
+	if err := writeObjectBody(dir, id, body); err != nil {
 		return "", h, errNoHashHelper
 	}
+	defer func() { _ = removeObjectBody(dir, id) }()
 	if h == nil {
 		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
 		if h == nil {
 			return "", nil, errNoHashHelper
 		}
 	}
-	id, err := h.hash(p)
-	return id, h, err
+	got, err := h.hash(p)
+	return got, h, err
 }
 
-// writeObjectBody writes body to objectBodyName in dir, through a root at dir.
+// scratchDir returns the scratch folder of the check, which it makes at the
+// first call (requestDir). The remove of requestDir goes in dropScratch.
+func (c *contentCheck) scratchDir() (string, error) {
+	if c.scratch != "" {
+		return c.scratch, nil
+	}
+	dir, remove, err := c.u.requestDir(shadowScratchDirPrefix, scratchTempPrefix)
+	if err != nil {
+		return "", err
+	}
+	c.scratch, c.dropScratch = dir, remove
+	return dir, nil
+}
+
+// removeScratch removes the scratch folder of the check, if it was made.
+func (c *contentCheck) removeScratch() {
+	if c.dropScratch != nil {
+		c.dropScratch()
+	}
+	c.scratch, c.dropScratch = "", nil
+}
+
+// writeObjectBody writes body to the file name in dir, through a root at dir.
 // Tests replace it.
-var writeObjectBody = func(dir string, body []byte) error {
+var writeObjectBody = func(dir, name string, body []byte) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	return root.WriteFile(objectBodyName, body, 0o600)
+	return root.WriteFile(name, body, 0o600)
+}
+
+// removeObjectBody removes name, the file of one object that writeObjectBody
+// wrote in dir, the scratch folder of the check. After homeguard.WipesHomeDir
+// it is one plain remove of a regular file by name through a root at dir,
+// never a tree and never a link target. A root at dir, as for the write, also
+// reaches a file under a folder of the daemon of mode 0300, which 4c111e86
+// empties there (measured on Linux). It is a variable so that a test can see
+// the call.
+var removeObjectBody = func(dir, name string) error {
+	if homeguard.WipesHomeDir(filepath.Join(dir, name)) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	fi, err := root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return errors.New("the object file is not a regular file")
+	}
+	return root.Remove(name)
 }
 
 // objectWriteEnv is the environment after the environment of a hash-object
@@ -348,7 +409,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	hashing := true
 	for i, t := range level {
 		if body := read[i]; body != nil && hashing {
-			got, ran, err := c.hashOn(h, "tree", body)
+			got, ran, err := c.hashOn(h, "tree", t.id, body)
 			h = ran
 			switch {
 			case err == nil:
