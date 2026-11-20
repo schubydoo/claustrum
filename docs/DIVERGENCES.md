@@ -68,8 +68,8 @@ or large. So an honest input trips it too. The test:
 
 Take an honest input that is reachable, and a guard that the caller cannot turn
 off. Then always-on is not justified, however the reference behaves on the
-hostile path. That is why each divergence that is a timeout or a size cap is
-opt-in (D3, D10, D12). D2 passes both
+hostile path. That is why each timeout or size cap is an option, off by default
+(CT-6, CT-7, CT-8). D2 passes both
 halves: the home wipe is unrecoverable data loss, and no honest caller has a use
 for it. A caller can still reach that path by accident, which is what the guard
 is for.
@@ -94,7 +94,7 @@ and the reopen trigger. A route to the argv would make a flag-only opt-in enough
 for Desktop-driven hosts. It would not moot the config key, which serves every
 other driver.
 
-## Conventions for opt-in divergences
+## Conventions for opt-in entries
 
 These hold for each opt-in entry:
 
@@ -130,11 +130,8 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | ID | Summary | Wire | Default | OS |
 |----|---------|------|---------|----|
 | [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | on-wire | always-on | all |
-| [D3](#d3) | Cap `files.extract_tar` output size | on-wire | off (`0`) | all |
 | [D6](#d6) | `-cli-version` is one path component | off-wire (`-install` output) | always-on | all |
 | [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
-| [D10](#d10) | Cap the `-install` CLI size | off-wire (`-install` output) | off (`0`) | all |
-| [D12](#d12) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
 | [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
@@ -148,9 +145,13 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [CT-3](#ct-3) | The `claustrum.conf` config file | off-wire | off (no file) | all |
 | [CT-4](#ct-4) | Hardened token persistence, a deferred idea | none | not built | none |
 | [CT-5](#ct-5) | `-listen-pipe` named-pipe transport | off-wire (same frames) | off | Windows |
+| [CT-6](#ct-6) | Cap `files.extract_tar` output size | on-wire | off (`0`) | all |
+| [CT-7](#ct-7) | Cap the `-install` CLI size | off-wire (`-install` output) | off (`0`) | all |
+| [CT-8](#ct-8) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 
 In the CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3
-have no flag and no key.
+have no flag and no key. Off, CT-6, CT-7 and CT-8 match the reference, so they are
+options, not divergences (the maintainer's decision of 2026-11-13).
 
 ## Entries
 
@@ -226,25 +227,6 @@ have no flag and no key.
   `internal/files/homeguard_test.go` (the `wipeDestDir` seam keeps the suite safe against an
   unfixed tree) and `internal/install/install.go` (`stageAndInstall`).
 
-### D3 · Make the `files.extract_tar` size cap opt-in { #d3 }
-
-- **Behavior.** `MaxExtractBytes` caps the extraction output. An over-cap
-  extraction returns
-  `{"success":false,"fileCount":0,"error":"extraction size limit exceeded"}`
-  and removes the truncated entry.
-- **Reference.** No cap. It completed a 629 MB extraction (measured on
-  `5db5e4a`).
-- **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
-  with `-max-extract-bytes <n>` or the `max-extract-bytes` key. Off bypasses
-  `io.LimitReader`.
-- **Cost.** A cap fails an honest extraction above it.
-- **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
-  Desktop owns the argv.
-- **Reopen trigger.** An operator's cap that refuses a legitimate extraction, or
-  the default that lets a size bomb through in normal use.
-- **Pointers.** [files.extract_tar](protocol/files-extract-tar.md#the-size-limit)
-  and `internal/files/methods_files.go`.
-
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 
 - **Behavior.** The install clears the CLI path, `<cli-dir>/<version>`, with an
@@ -307,52 +289,6 @@ have no flag and no key.
   no lock file through a link.
 - **Pointers.** `server.go` (`openDaemonLog`), `detach_unix.go`
   (`openHeldDaemonLog`) and `internal/git/gitshadowsweep.go` (`sweepLink`).
-
-### D10 · Make the `-install` CLI size cap opt-in { #d10 }
-
-- **Behavior.** `install.MaxCLIBytes` caps the decompressed CLI
-  (`decompressing: decompressed CLI exceeds <n> bytes`) and the download body
-  (`download failed: response exceeds <n> bytes`).
-- **Reference.** It takes a 600 MiB payload as far as the run test of the new
-  CLI, on both paths.
-- **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
-  with `-max-cli-bytes <n>` or the `max-cli-bytes` key. Off bypasses both
-  `LimitReader`s. claustrum streams the download into the staging file and
-  hashes it in the same pass, so "cap off" does not mean unbounded memory. The
-  memory of the streamed decode is not measured.
-- **Cost.** A cap below the free space replaces a disk-full report with the
-  cap's own message, so the user loses the free-space hint. That cost turns on
-  the `cliError` driver claim
-  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)). A cap that
-  fires before the disk fills also skips the second prune and `cliRemoved`.
-- **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
-  Desktop owns the argv.
-- **Reopen trigger.** Desktop stops treating a disk-full message as terminal,
-  which removes the cost.
-- **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
-  and `internal/install/install.go` (`fetchCLI`, `zstdDecompress`).
-
-### D12 · Make the `-install` CLI download bound opt-in { #d12 }
-
-- **Behavior.** `http.Client{Timeout: install.DownloadTimeout}` bounds the whole
-  download, the body read too. So a real body that needs six minutes trips it,
-  as a black hole does. With the bound off, the transport clocks of the
-  [conventions](#conventions-for-opt-in-divergences) still apply, so a
-  SYN-black-holed host fails at 30 s.
-- **Reference.** No bound on the total exchange in the measured window. A valid
-  blob that took about 324 s to arrive installed (measured on `5db5e4a`). Two
-  60 s limits are parity and always on: the wait for the response headers
-  (Linux and Windows), and a body that sends no byte for 60 s. A bound below
-  60 s fires first, and no measurement covers that pair.
-- **Systems and switch.** Linux, macOS and Windows. Default `0`, off:
-  `http.Client{Timeout: 0}` is the stdlib's own "no timeout". Turn it on with
-  `-cli-download-timeout <dur>` or the `cli-download-timeout` key.
-- **Cost.** An honest slow download fails under the bound.
-- **Rule.** Rule 4. Desktop owns the argv.
-- **Reopen trigger.** An operator with the bound set reports an honest slow
-  download that it failed.
-- **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
-  and `internal/install/install.go` (`fetchCLI`).
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 
@@ -734,6 +670,71 @@ have no flag and no key.
   transport](PROTOCOL.md#named-pipe-transport-windows-opt-in) has the name, the
   file rules and the DACL. Also `pipetransport.go` and
   `pipetransport_windows.go`.
+
+### CT-6 · Opt-in `files.extract_tar` size cap { #ct-6 }
+
+- **Behavior.** `MaxExtractBytes` caps the extraction output. An over-cap
+  extraction returns
+  `{"success":false,"fileCount":0,"error":"extraction size limit exceeded"}`
+  and removes the truncated entry.
+- **Reference.** No cap. It completed a 629 MB extraction (measured on
+  `5db5e4a`).
+- **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
+  with `-max-extract-bytes <n>` or the `max-extract-bytes` key. Off bypasses
+  `io.LimitReader`.
+- **Cost.** A cap fails an honest extraction above it.
+- **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
+  Desktop owns the argv.
+- **Reopen trigger.** An operator's cap that refuses a legitimate extraction, or
+  the default that lets a size bomb through in normal use.
+- **Pointers.** [files.extract_tar](protocol/files-extract-tar.md#the-size-limit)
+  and `internal/files/methods_files.go`.
+
+### CT-7 · Opt-in `-install` CLI size cap { #ct-7 }
+
+- **Behavior.** `install.MaxCLIBytes` caps the decompressed CLI
+  (`decompressing: decompressed CLI exceeds <n> bytes`) and the download body
+  (`download failed: response exceeds <n> bytes`).
+- **Reference.** It takes a 600 MiB payload as far as the run test of the new
+  CLI, on both paths.
+- **Systems and switch.** Linux, macOS and Windows. Default `0`, off. Turn it on
+  with `-max-cli-bytes <n>` or the `max-cli-bytes` key. Off bypasses both
+  `LimitReader`s. claustrum streams the download into the staging file and
+  hashes it in the same pass, so "cap off" does not mean unbounded memory. The
+  memory of the streamed decode is not measured.
+- **Cost.** A cap below the free space replaces a disk-full report with the
+  cap's own message, so the user loses the free-space hint. That cost turns on
+  the `cliError` driver claim
+  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)). A cap that
+  fires before the disk fills also skips the second prune and `cliRemoved`.
+- **Rule.** Rule 4. The reference answers a frame, not an unbounded wait, and
+  Desktop owns the argv.
+- **Reopen trigger.** Desktop stops treating a disk-full message as terminal,
+  which removes the cost.
+- **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
+  and `internal/install/install.go` (`fetchCLI`, `zstdDecompress`).
+
+### CT-8 · Opt-in `-install` CLI download bound { #ct-8 }
+
+- **Behavior.** `http.Client{Timeout: install.DownloadTimeout}` bounds the whole
+  download, the body read too. So a real body that needs six minutes trips it,
+  as a black hole does. With the bound off, the transport clocks of the
+  [conventions](#conventions-for-opt-in-entries) still apply, so a
+  SYN-black-holed host fails at 30 s.
+- **Reference.** No bound on the total exchange in the measured window. A valid
+  blob that took about 324 s to arrive installed (measured on `5db5e4a`). Two
+  60 s limits are parity and always on: the wait for the response headers
+  (Linux and Windows), and a body that sends no byte for 60 s. A bound below
+  60 s fires first, and no measurement covers that pair.
+- **Systems and switch.** Linux, macOS and Windows. Default `0`, off:
+  `http.Client{Timeout: 0}` is the stdlib's own "no timeout". Turn it on with
+  `-cli-download-timeout <dur>` or the `cli-download-timeout` key.
+- **Cost.** An honest slow download fails under the bound.
+- **Rule.** Rule 4. Desktop owns the argv.
+- **Reopen trigger.** An operator with the bound set reports an honest slow
+  download that it failed.
+- **Pointers.** [INSTALL.md → -install](INSTALL.md#-install-ensure-the-agent-cli)
+  and `internal/install/install.go` (`fetchCLI`).
 
 ## Retired entries
 

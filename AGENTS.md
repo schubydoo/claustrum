@@ -312,11 +312,8 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | ID | Summary | Default | System |
 |----|---------|---------|--------|
 | D2 | Refuse a destructive path that is or holds home | always-on | all |
-| D3 | Cap the output size of `files.extract_tar` | off | all |
 | D6 | `-cli-version` must be one path component | always-on | all |
 | D8 | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | always-on | all |
-| D10 | Cap the CLI size of `-install` | off | all |
-| D12 | Bound the download of `-install` | off | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D19 | Remove refuses a junction between `baseRepo` and the leaf | always-on | Windows |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
@@ -330,8 +327,11 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | CT-3 | The `claustrum.conf` config file | no file | all |
 | CT-4 | Hardened token persistence, a deferred idea | not built | none |
 | CT-5 | The `-listen-pipe` named-pipe transport | off | Windows |
+| CT-6 | Cap the output size of `files.extract_tar` | off | all |
+| CT-7 | Cap the CLI size of `-install` | off | all |
+| CT-8 | Bound the download of `-install` | off | all |
 
-D3, D10 and D12 default off, the parity position. The `claustrum.conf` key is the
+CT-6, CT-7 and CT-8 default off, the parity position. The `claustrum.conf` key is the
 reachable knob, because Claude Desktop owns the argv.
 
 ## Where detail lives

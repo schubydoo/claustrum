@@ -50,7 +50,7 @@ downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 - `-cli-checksum <sha256>` (default none): The SHA-256 of the archive.
 - `-cli-zst <p>` (default none): Read the zstd archive from this file, the blob.
 
-`-cli-keep`, `-max-cli-bytes` ([D10](DIVERGENCES.md#d10)), `-cli-download-timeout` and the deprecated
+`-cli-keep`, `-max-cli-bytes` ([CT-7](DIVERGENCES.md#ct-7)), `-cli-download-timeout` and the deprecated
 `-cli-probe-timeout` and `-libc-probe-timeout` are in
 [Flags and config keys](protocol/flags.md#flags-and-config-keys). `-install` reaches the network only
 with `-cli-url`.
@@ -76,15 +76,15 @@ form a driver sees:
 - `checksum mismatch: expected=<x>, actual=<y>`: `-cli-checksum` verify failed (see [Checksum and verify ordering](#checksum-and-verify-ordering))
 - `opening input: <err>`: `-cli-zst` open error
 - `decompressing: <err>`: bad zstd blob or body, for example `invalid input: magic number mismatch`. A `-cli-zst` folder gives `read <p>: is a directory` (Linux). A full disk gives `write <cli-dir>/.fetch-<n>: <text>` (`\` on Windows). The text is `no space left on device` (Linux, macOS) or `There is not enough space on the disk.` (Windows)
-- `decompressing: decompressed CLI exceeds <n> bytes`: D10 cap, opt-in
+- `decompressing: decompressed CLI exceeds <n> bytes`: CT-7 cap, opt-in
 - `staging cli: <err>`: no staging file can be made in the cli-dir (claustrum's own, not measured)
 - `download failed with status <n>`: the server answered a status other than 200. The text has no URL and no reason phrase
-- `download failed: response exceeds <n> bytes`: D10 cap on the download body, opt-in
+- `download failed: response exceeds <n> bytes`: CT-7 cap on the download body, opt-in
 - `download failed: <transport err>`: a transport error before the body, for example a refused connection. The prefix `download failed: ` also wraps every other download error that has no bare form in this table
 - `download failed: Get "<url>": net/http: timeout awaiting response headers`: no response headers for 60 s (always-on, parity)
 - `download interrupted after <got>/<total> bytes: <transport err>`: a body read with a `Content-Length` that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, measured on Linux)
 - `download interrupted after <got> bytes: <transport err>`: the same for a body with no length. The chunked cut (`unexpected EOF`) is `b3081b51`, measured on Linux. A reset there is claustrum's own, not measured
-- `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)`: D12 download deadline, opt-in
+- `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)`: CT-8 download deadline, opt-in
 - `download stalled: no data for 60s after <got>/<total> bytes`: the read-idle abort below (always-on, parity)
 - `mkdir cli dir: <err>`: cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup)
 - `cli version "…" must be a single path component`: D6 hardening
@@ -104,7 +104,7 @@ Go error.
 
 These strings are not free-form diagnostics: the driver reads them. A change to a
 row's wording can change what a user sees. No JSON-RPC frame has to move. A
-new guard whose error pre-empts a row can do the same. D10's opt-in cap is the
+new guard whose error pre-empts a row can do the same. CT-7's opt-in cap is the
 worked example. How the driver classifies them is a third-binary claim. See
 [Driver claims and their provenance](ARCHITECTURE.md#driver-claims-and-their-provenance).
 
@@ -272,14 +272,14 @@ On the `-cli-url` path:
 - The body has an always-on 60 s read-idle abort, reset on every byte. It fails
   the install with the `download stalled: …` text above. It is no total deadline,
   so a slow download that keeps sending completes. The total deadline is the
-  opt-in [D12](DIVERGENCES.md#d12). When armed, it bounds the
+  opt-in [CT-8](DIVERGENCES.md#ct-8). When armed, it bounds the
   whole exchange, so an honest download that is too slow fails with
   its text above.
 
 The other clocks: each `-install` clock on this page is a clock of the reference and is
-always on. The opt-in D12 deadline is one exception. The 2 s output wait of a
+always on. The opt-in CT-8 deadline is one exception. The 2 s output wait of a
 stopped launcher run and the 0.2 s rename retry are the others (claustrum's own).
-[Conventions for opt-in divergences](DIVERGENCES.md#conventions-for-opt-in-divergences)
+[Conventions for opt-in entries](DIVERGENCES.md#conventions-for-opt-in-entries)
 has the stdlib transport clocks of `-cli-url`.
 
 ### Checksum and verify ordering

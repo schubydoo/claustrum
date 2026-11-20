@@ -432,7 +432,7 @@ func setCLIDownloadTimeout(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { DownloadTimeout = old })
 }
 
-// D12: the download bound is opt-in and OFF by default, so an honest-but-slow
+// CT-8: the download bound is opt-in and OFF by default, so an honest-but-slow
 // download completes — which is what the reference does (measured at 5db5e4a: it
 // was still downloading at 400 s against a server that never sends a body).
 //

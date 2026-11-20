@@ -486,7 +486,7 @@ func stageDownload(url, checksum, dir string) (string, error) {
 // downloadError gives an error of fetchCLI its cliError form. Five kinds are
 // fully worded and go out bare. They are a status failure, a read-idle stall, a
 // broken body read, a refused archive and a staging failure. Every other
-// download error (a transport failure, the D10 cap, the D12 deadline) takes the
+// download error (a transport failure, the CT-7 cap, the CT-8 deadline) takes the
 // "download failed: " prefix. The reference's cliError is "download failed with
 // status N" for a non-200 and the bare "download stalled: …" for a stall (see
 // httpStatusError, stalledError). A body read that ended with a transport error
@@ -1110,13 +1110,13 @@ func (e *httpStatusError) Error() string {
 // ⚠️ `http.Client.Timeout` bounds the ENTIRE exchange including the body read, so
 // it is a deadline, not a stall detector: a real body arriving over a link that
 // needs six minutes trips it exactly as a black hole does, and one that finishes
-// in 4:59 does not. That is the same threshold-not-intent problem D3 and D10 were
+// in 4:59 does not. That is the same threshold-not-intent problem CT-6 and CT-7 were
 // flipped for, and Claude Desktop owns the argv on `-install`, so the caller who
 // pays cannot decline.
 //
 // Zero is the stdlib's own "no timeout" sentinel, so assigning it straight through
 // IS the bypass — no huge-but-finite value stands in for "off", which is the same
-// property D3 and D10 get by skipping their `io.LimitReader`s.
+// property CT-6 and CT-7 get by skipping their `io.LimitReader`s.
 //
 // ⚠️ That disables the bound on the BODY READ, not every clock on the path.
 // fetchCLI uses a clone of http.DefaultTransport, which carries
@@ -1127,7 +1127,7 @@ func (e *httpStatusError) Error() string {
 // (HeaderTimeout), which is reference behavior.
 // Opt in with
 // -cli-download-timeout or the cli-download-timeout key in claustrum.conf. Also
-// set directly by tests. Divergence D12.
+// set directly by tests. Option CT-8.
 var DownloadTimeout time.Duration
 
 // closeFetchTemp is (*os.File).Close behind a seam over the close of the
