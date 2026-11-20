@@ -1010,15 +1010,11 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 		// The `status` call names the lfs folder of the temporary git folder.
 		// b3081b51 does so where be1c1ca5 names none (measured on Linux, macOS
 		// and Windows). The other calls get no such item (measured on Linux
-		// and macOS). On Windows 4c111e86 puts it right after --work-tree
-		// (statusLFSAfterWorkTree, measured). Its place before the other items
-		// on Linux and macOS, and the same item where the user config sets
-		// lfs.storage, are claustrum's own (not measured).
+		// and macOS). 4c111e86 puts it right after --work-tree (measured on
+		// Linux and Windows, macOS claustrum's own). The same item where the
+		// user config sets lfs.storage is claustrum's own (not measured).
 		if args[0] == "status" {
 			lfs = []string{"-c", "lfs.storage=" + filepath.Join(r.tmp, "lfs")}
-			if !statusLFSAfterWorkTree {
-				front, lfs = append(lfs, front...), nil
-			}
 		}
 	}
 	var attr []string

@@ -158,13 +158,8 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 	t.Helper()
 	argv := c.argv
 	attr := ""
-	// The status call of b3081b51 starts with the lfs folder of its temporary
-	// git folder (gitstatus.go).
-	if len(argv) > 2 && argv[0] == "-c" && strings.HasPrefix(argv[1], "lfs.storage=") && strings.HasPrefix(argv[2], "--attr-source=") {
-		attr, argv = "LFS+", argv[2:]
-	}
 	if len(argv) > 0 && strings.HasPrefix(argv[0], "--attr-source=") && len(argv) > 1 && argv[1] == "-c" {
-		attr, argv = attr+"ATTR+", argv[1:]
+		attr, argv = "ATTR+", argv[1:]
 	}
 	var items []string
 	for len(argv) > 1 && argv[0] == "-c" {
@@ -335,10 +330,12 @@ func statusRows() []shapeRow {
 		)
 		if strings.HasPrefix(verb.argv, "status ") {
 			// In the state shadow the status call names the lfs folder of the
-			// temporary git folder (b3081b51).
+			// temporary git folder (b3081b51), right after --work-tree (4c111e86,
+			// measured on Linux and Windows).
 			last := len(out) - 1
 			shadow := out[last]
-			shadow.list, shadow.off, shadow.fallback = "LFS+ATTR+P28", "", ""
+			shadow.argv = "--git-dir=%[1]s --work-tree=<wt> -c lfs.storage=%[1]s/lfs " + verb.argv
+			shadow.off, shadow.fallback = "", ""
 			out[last].shadow = ""
 			out = append(out, shadow)
 		}
@@ -354,7 +351,7 @@ func statusRowsFor(state shapeState) []shapeRow {
 	}
 	out := statusRows()
 	for i := range out {
-		if strings.Contains(out[i].argv, "%s") {
+		if strings.Contains(out[i].argv, "%s") || strings.Contains(out[i].argv, "%[1]s") {
 			out[i].argv = fmt.Sprintf(out[i].argv, dir)
 		}
 	}

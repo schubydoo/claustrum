@@ -10,11 +10,6 @@ import (
 	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
-// statusLFSAfterWorkTree is true on Windows. The `status` call of git.status
-// has `-c lfs.storage=<temp>\lfs` after --work-tree and right before `status`.
-// 4c111e86 does so (measured on Windows).
-const statusLFSAfterWorkTree = true
-
 // statusProbeDir is the --work-tree value of the `rev-parse --show-toplevel`
 // call for a `path` outside baseRepo. A `path` through a junction gets the
 // folder as the file system reports it (pathcanon.FinalDir). Every other

@@ -85,12 +85,6 @@ const statusFollowsPrintedGitDir = true
 // git-directory test follows a good answer there.
 const probeConfigFreeRun = false
 
-// checkoutDirPrefix starts the name of the folder of the checkout of one create
-// in the folder of the daemon (runWorktreeCheckout). On Windows 4c111e86 makes
-// a `.checkout-<n>` folder there too, with no LFS object in it (measured on
-// Windows). claustrum names that folder `.index-<n>` (claustrum's own).
-const checkoutDirPrefix = shadowIndexDirPrefix
-
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // folder, the folder of the daemon (requestDir). On Windows it is a plain
 // mkdir by its full path through requestDirMkdir, not through root. With a
@@ -98,7 +92,7 @@ const checkoutDirPrefix = shadowIndexDirPrefix
 // privileges enabled, the create of 5fd08069 succeeds, and the root
 // mkdir of claustrum fails (measured on Windows). By path the create of claustrum
 // succeeds there (measured). With both privileges disabled both builds fail alike
-// (measured). Those cells reach .s<n> and .index-<n>. The folders .config-<n>,
+// (measured). Those cells reach .s<n> and the checkout folder. The folders .config-<n>,
 // .worktreeinclude-<n> and the .gitdir-<n> of git.status are not measured (claustrum's
 // own).
 func makeRequestDir(_ *os.Root, folder, name string) error {
@@ -236,11 +230,6 @@ func openNoShare(path string, access uint32) (*os.File, error) {
 // (removeGoneWorktree). A variable, so that a test on another system can run
 // that step.
 var goneNotARepoKeepsAll = true
-
-// goneGitFileStartTest is true on Windows: a create on a `.git` file to a
-// missing path runs the start test and the call about the repository
-// (gitWorktreeCreateLocked). A variable, so that a test can run that step.
-var goneGitFileStartTest = true
 
 // gitFileNowhereAsOlderGit is false on Windows: the gitfile text of git 2.56
 // (saysGitFileNowhere) keeps the answers of 5fd08069 (measured on Linux and Windows, the

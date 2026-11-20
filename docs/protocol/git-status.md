@@ -136,7 +136,7 @@ If `HEAD` names no commit, `diff-index` compares with the empty tree.
 
 - The calls ignore the `.gitattributes` files, so no clean filter runs, but before git 2.40 the attributes apply.
 - The calls read no replace objects from `refs/replace`.
-- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). On Windows the item follows `--work-tree` (`4c111e86`). Elsewhere it comes first, also where the user config sets `lfs.storage` (claustrum's own, not measured).
+- In the state `shadow` the `status` call carries `-c lfs.storage=<temporary git folder>/lfs` (`b3081b51`, measured on Linux, macOS and Windows). The other calls carry none (measured on Linux and macOS). It follows `--work-tree` (`4c111e86`, measured on Linux and Windows, macOS claustrum's own), also where the user config sets `lfs.storage` (claustrum's own, not measured).
 - `status`, `ls-files` and `diff-index` carry `GIT_OPTIONAL_LOCKS=0`. All calls run as [hardened git calls](git-rules-calls.md#hardened-git-calls).
 - If the user has a global excludes file, the status uses it.
 
