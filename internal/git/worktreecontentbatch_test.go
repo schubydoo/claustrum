@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -97,5 +98,14 @@ func TestHashOnNoObjectID(t *testing.T) {
 	}
 	if len(wrote) != 0 {
 		t.Errorf("files written for %q, want none", wrote)
+	}
+}
+
+// TestOpenScratchRootDefaultsToNoWait keeps the scratch folder under the guard of
+// TestFoldersOfTheDaemonOpenWithNoWait: that scan sees calls of OpenRoot only, and the
+// seam hides the default open from it.
+func TestOpenScratchRootDefaultsToNoWait(t *testing.T) {
+	if reflect.ValueOf(openScratchRoot).Pointer() != reflect.ValueOf(openRootNoWait).Pointer() {
+		t.Fatal("openScratchRoot must default to openRootNoWait, so the scratch folder opens with no wait on a FIFO")
 	}
 }
