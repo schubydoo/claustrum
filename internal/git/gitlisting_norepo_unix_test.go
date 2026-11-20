@@ -3,7 +3,6 @@
 package git
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -112,13 +111,11 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 // TestGitFileNowhereFourMethodsStub covers it there. The empty key is not measured on Windows,
 // so this test does not run there.
 //
-// git 2.56 fails the listing there with its gitfile text. In the state shadow the four
-// methods then answer the error of the call about the repository, as 5fd08069 does
-// (measured on Linux). With git 2.43 the four "no repository" frames stay (measured).
-// So the requests run on a daemon in that state. With git 2.56 the first git request
-// of a daemon gets the same error, and "shadowDirOff":true gets the listing refusal
-// (measured on Linux). The empty key is not measured with git 2.56. The test decides
-// by the text of the git on PATH.
+// git 2.56 fails the listing there with its gitfile text. The four "no repository"
+// frames stay then too, also for the reply to the first git request of a
+// daemon and with "shadowDirOff":true (4c111e86, measured on Linux with git 2.56.1).
+// The empty key is not measured with git 2.56. The test decides by the text of the git
+// on PATH.
 func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 	newGit := gitSaysGitFileNowhere(t)
 	for _, ph := range []struct {
@@ -135,33 +132,19 @@ func TestGitFileToNowhereKeepsFrame(t *testing.T) {
 			writeFile(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(filepath.Dir(f.n), "nowhere", "gitdir")+"\n", 0o644)
 			plantEnv(t, ph.env...)
 			want := gitFileNowhereFrames(t, g, "", false)
-			var off []methodFrame
-			check := ""
-			if newGit {
-				// git names the .git file by its resolved path (macOS /var is a link).
-				rg, err := filepath.EvalSymlinks(g)
-				if err != nil {
-					t.Fatal(err)
-				}
-				text := "fatal: gitfile does not point to a valid repository: " + filepath.Join(rg, ".git")
-				check = fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", rg, text)
-				want = gitFileNowhereFrames(t, g, check, false)
-				off = gitFileNowhereFrames(t, g, "config-defined hooks could not be pinned off; git not run: "+
-					"listing the configuration in force: exit status 128: "+text, true)
-			}
 			if newGit && ph.env == nil {
 				first, _ := newShadowDeps(t)
 				if got, w := gitDispatch(t, first, rpcLine(t, "git.info", map[string]any{"path": g})), noRepoShadow; got != w {
 					t.Errorf("first git.info = %s\nwant %s", got, w)
 				}
-				want = append(want, off...)
+				want = append(want, gitFileNowhereFrames(t, g, "", true)...)
 			}
 			// git.info runs the call about the repository and its second run. With the
 			// empty key the second run fails, and the answer is the error with the text
 			// of the first call (claustrum's own, not measured).
 			if ph.env == nil {
 				want[0].frame = noRepoShadow
-			} else if !newGit {
+			} else {
 				got := f.frame(t, "git.info", map[string]any{"path": g})
 				if prefix := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"git could not check this repository on the remote machine: at `; !strings.HasPrefix(got, prefix) {
 					t.Errorf("git.info = %s\nwant the error of the call about the repository", got)

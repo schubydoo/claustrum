@@ -549,10 +549,10 @@ func TestWorktreeRemoveNoRepositoryCallsCarryNullGitDir(t *testing.T) {
 // dir>. With worktreeRoot the one listing carries it too.
 //
 // With git 2.56 the listing fails with its gitfile text. b3081b51 then answers
-// success with the branch kept (measured on Linux), and with worktreeRoot 5fd08069
-// refuses with the error of its call about the repository (measured on Linux).
-// Its calls differ from those of claustrum there, so that branch compares the
-// frames and the disk only.
+// success with the branch kept (measured on Linux), and with worktreeRoot 4c111e86
+// refuses with git's text after "git finds no repository here: " (measured on Linux
+// with git 2.56.1). The calls are not measured with git 2.56, so that branch compares
+// the frames and the disk only.
 func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	f := newRegFixture(t)
 	r := filepath.Join(f.root, "R")
@@ -567,8 +567,7 @@ func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": r,
 		"worktreePath": wp, "branchName": "w1"})
 	if newGit {
-		check := `git could not check this repository on the remote machine: at "` + r +
-			`": fatal: gitfile does not point to a valid repository: ` + filepath.Join(r, ".git")
+		check := noRepositoryHerePrefix + "fatal: gitfile does not point to a valid repository: " + filepath.Join(r, ".git")
 		if raw != removeKept {
 			t.Errorf("frame = %s\nwant %s", raw, removeKept)
 		}

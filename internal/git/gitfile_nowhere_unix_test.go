@@ -13,14 +13,13 @@ import (
 
 // The three call sites of gitFileText in git.worktree_remove, with a stub that fails
 // every listing with the text of git 2.56 for a `.git` file that names no valid
-// repository. So no git 2.56 is needed. The frames of G are those of 5fd08069
-// (measured on Linux). The subfolder case is not measured. With "shadowDirOff":true
-// the listing refusal takes the place of that text (measured on Linux). A request
+// repository. So no git 2.56 is needed. With worktreeRoot G answers git's text as for
+// "not a git repository", also for a subfolder and with "shadowDirOff":true (4c111e86,
+// measured on Linux with git 2.56.1, macOS claustrum's own). A request
 // without worktreeRoot for a gone worktree gets success with the branch kept on b3081b51, with and
 // without the member (measured on Linux). The branch step does not run,
 // and G keeps its entries. Mutations: invert the gitFileText test at any of the three
-// sites, name dir in place of the folder that holds `.git`, or ignore the member at
-// the site of G.
+// sites, or answer the gitfile text at the site of G.
 func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	f := newWRFixture(t)
 	realGit, err := exec.LookPath("git")
@@ -36,8 +35,7 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 	stub := func(holder string) {
 		stubListing(t, 128, "fatal: gitfile does not point to a valid repository: "+filepath.Join(holder, ".git")+"\n")
 	}
-	check := `git could not check this repository on the remote machine: at "` + g +
-		`": fatal: gitfile does not point to a valid repository: ` + filepath.Join(g, ".git")
+	check := noRepositoryHerePrefix + "fatal: gitfile does not point to a valid repository: " + filepath.Join(g, ".git")
 
 	t.Run("linked base with its entry removed", func(t *testing.T) {
 		if err := os.RemoveAll(f.eTW); err != nil {
@@ -83,14 +81,12 @@ func TestWorktreeRemoveGitFileNowhereStub(t *testing.T) {
 		}
 		goneKept(t, steps)
 	})
-	hooks := "config-defined hooks could not be pinned off; git not run: listing the configuration in force: " +
-		"exit status 128: fatal: gitfile does not point to a valid repository: " + filepath.Join(g, ".git")
 	t.Run("G shadowDirOff", func(t *testing.T) {
 		stub(g)
 		d, _ := newShadowDeps(t)
 		got := gitDispatch(t, d, rpcLine(t, "git.worktree_remove", map[string]any{
 			"baseRepo": g, "worktreePath": f.p0, "branchName": "", "worktreeRoot": f.R, "shadowDirOff": true}))
-		if want := refusalFrame(t, wtUnknown+hooks); got != want {
+		if want := refusalFrame(t, wtUnknown+check); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 		if _, err := os.Stat(filepath.Join(f.p0, "keep.txt")); err != nil {

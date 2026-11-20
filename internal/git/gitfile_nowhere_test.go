@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -50,23 +49,39 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 
 // The four methods on a `.git` file to nowhere, on a daemon in the state shadow, with a
 // stub in place of git that fails each listing with one of the two texts. So no git
-// 2.56 is needed. The text of git 2.56 gives the error of the call about the repository
-// (measured on Linux and Windows). On a subfolder that error names the folder that
-// holds `.git` (measured). The older text keeps the "no repository" frames (measured on
-// Linux). As the first git request of a daemon the text of git 2.56 gives the same
-// error (measured on Linux and Windows). With "shadowDirOff":true it gives the listing
-// refusal, and the older text keeps "no repository" (measured on Linux). On Windows git
-// spells its path with forward slashes, and the root in quotes keeps backslashes, as in
-// V-S2w. Mutations: answer the listing refusal in noRepoCalls, drop
-// statusGitFileNowhere, name dir in place of the folder that holds `.git` in
-// failedListingCheck, or key the rule on the state of the daemon. On Windows: answer
-// "no repository" after every answer of the call about the repository in
-// gitWorktreeCreateLocked.
+// 2.56 is needed. On Linux and macOS (gitFileNowhereAsOlderGit) both texts keep the "no
+// repository" frames, also on a subfolder for git.info, also for the reply to the first
+// git request of a daemon and with "shadowDirOff":true (4c111e86, measured on Linux with
+// git 2.56.1, macOS claustrum's own). On Windows the text of git 2.56 gives the error of
+// the call about the repository, also on a subfolder and as the first git request, and
+// with "shadowDirOff":true the listing refusal (5fd08069, measured on Linux and Windows, the
+// listing refusal on Linux). The older
+// text keeps "no repository" (measured on Linux). The test runs the answers of both
+// systems. On Windows git spells its path with forward slashes, and the root in quotes
+// keeps backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
+// refusal in noRepoCalls on Linux, drop statusGitFileNowhere, refuse the gitfile text in
+// statusNoRepoCalls, or key the rule on the state of the daemon. Where a create runs
+// the call about the repository first (goneGitFileStartTest), the stub gives its first
+// run the same text. Mutation there: answer "no repository" after every answer of the
+// call in gitWorktreeCreateLocked.
 //
 // Without "shadowDirOff":true git.info runs that call itself. Its exit 128 gets the
 // second run, which exits 0, so git.info answers "no repository" (measured on Linux
-// with an older git). With git 2.56 that answer is claustrum's own, not measured.
+// with an older git).
 func TestGitFileNowhereFourMethodsStub(t *testing.T) {
+	for _, older := range []bool{true, false} {
+		t.Run(fmt.Sprintf("as older git %v", older), func(t *testing.T) {
+			kept := gitFileNowhereAsOlderGit
+			gitFileNowhereAsOlderGit = older
+			t.Cleanup(func() { gitFileNowhereAsOlderGit = kept })
+			gitFileNowhereFourMethods(t, older)
+		})
+	}
+}
+
+// gitFileNowhereFourMethods is TestGitFileNowhereFourMethodsStub with the answers of
+// Linux and macOS (older) or of Windows.
+func gitFileNowhereFourMethods(t *testing.T, older bool) {
 	f := newNoRepoFixture(t)
 	f.d, _ = newSeededShadowDeps(t)
 	g := filepath.Join(filepath.Dir(f.n), "G")
@@ -83,6 +98,9 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 	text := "fatal: gitfile does not point to a valid repository: " + filepath.ToSlash(filepath.Join(rg, ".git"))
 	check := fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", rg, text)
 	hooks := "config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: " + text
+	if older {
+		check, hooks = "", ""
+	}
 	for _, tc := range []struct {
 		name, stderr, want string
 		off, first         bool
@@ -98,10 +116,10 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 			defer func() { f.d = kept }()
 			stubListing(t, 128, "")
 			stubStderr(t, tc.stderr, false)
-			if runtime.GOOS == "windows" && !tc.off && tc.want != "" {
-				// On Windows the create runs the call about the repository before the
-				// listing. Its first run in G gets the text of git 2.56, its second run
-				// exits 0, and the create goes on to the listing.
+			if goneGitFileStartTest && !tc.off && tc.want != "" {
+				// The create runs the call about the repository before the listing.
+				// Its first run in G gets the text of git 2.56, its second run exits
+				// 0, and the create goes on to the listing.
 				t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
 				t.Setenv("CLAUSTRUM_GITSTUB_DIR2", g)
 				t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "128")

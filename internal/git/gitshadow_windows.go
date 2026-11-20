@@ -242,6 +242,11 @@ var goneNotARepoKeepsAll = true
 // (gitWorktreeCreateLocked). A variable, so that a test can run that step.
 var goneGitFileStartTest = true
 
+// gitFileNowhereAsOlderGit is false on Windows: the gitfile text of git 2.56
+// (saysGitFileNowhere) keeps the answers of 5fd08069 (measured on Linux and Windows, the
+// refusal on Linux). A variable, so that a test on another system can run those answers.
+var gitFileNowhereAsOlderGit = false
+
 // printedPathAsIs is true on Windows: the "disagree" text shows an absolute
 // answer of git as git printed it, also when it is not clean (askGit).
 // b3081b51 does so (measured on Windows).
