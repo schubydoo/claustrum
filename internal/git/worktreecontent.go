@@ -54,10 +54,10 @@ type contentCheck struct {
 	commit string
 	// objects is the folder of the objects that the hash-object calls write.
 	objects string
-	// scratch is the folder of the files that the long-running hash-object
-	// calls read (scratchDir), or "" before the first one. dropScratch
-	// removes it.
-	scratch     string
+	// scratch is the root of the folder of the files that the long-running
+	// hash-object calls read (scratchDir), or nil before the first one.
+	// dropScratch removes the folder.
+	scratch     *os.Root
 	dropScratch func()
 	// read is the count of objects that the check read: the commit, each tree
 	// and each blob of the compare step.

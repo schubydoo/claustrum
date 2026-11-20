@@ -47,7 +47,8 @@ import (
 // folder is made at the first such object, after its git started. Each file
 // goes right after the answer for it, so the folder holds at most one file.
 // The folder goes at the end of the check (4c111e86, measured on Linux and
-// macOS. Windows shows the folder with one file during a check). The folder
+// macOS. Windows shows the folder with a file named by an object id during a
+// check). The folder
 // has mode 0700 and a file mode 0600, and the start order is measured on Linux.
 //
 // After a stop c9125eb8 reads the trees of a level below the top with one
@@ -252,10 +253,9 @@ func (c *contentCheck) hashLong(kind, id string, body []byte) (string, error) {
 // hash-object of that kind. A nil h starts one. h is the one that ran, or nil.
 // The object goes to the file id in the scratch folder, which goes after the
 // answer (removeObjectBody). The git starts before the folder and the file
-// (4c111e86, measured on Linux). On Windows a daemon killed at the first sight
-// of the folder leaves the same objects on both builds (measured). An id that is no object id takes
-// no file, and a git started for an object with no file stays for the next
-// one (claustrum's own).
+// (4c111e86, measured on Linux). An id that is no object id takes no file,
+// and a git started for an object with no file stays for the next one
+// (claustrum's own).
 func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (string, *objectBatch, error) {
 	if !isObjectID(id) {
 		return "", h, errNoHashHelper
@@ -266,71 +266,74 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 			return "", nil, errNoHashHelper
 		}
 	}
-	dir, err := c.scratchDir()
+	root, err := c.scratchDir()
 	if err != nil {
 		return "", h, errNoHashHelper
 	}
-	p := filepath.Join(dir, id)
+	p := filepath.Join(root.Name(), id)
 	if strings.ContainsAny(p, "\r\n") {
 		return "", h, errNoHashHelper
 	}
-	if err := writeObjectBody(dir, id, body); err != nil {
+	if err := writeObjectBody(root, id, body); err != nil {
 		return "", h, errNoHashHelper
 	}
-	defer func() { _ = removeObjectBody(dir, id) }()
+	defer func() { _ = removeObjectBody(root, id) }()
 	got, err := h.hash(p)
 	return got, h, err
 }
 
-// scratchDir returns the scratch folder of the check, which it makes at the
-// first call (requestDir). The remove of requestDir goes in dropScratch.
-func (c *contentCheck) scratchDir() (string, error) {
-	if c.scratch != "" {
+// scratchDir returns the root of the scratch folder of the check, which it
+// makes and opens at the first call (requestDir, openRootNoWait). Every write
+// and remove of a file goes through that one root, so a link put at the path
+// of the folder later is never followed. The remove of requestDir goes in
+// dropScratch. A folder that does not open goes at once.
+func (c *contentCheck) scratchDir() (*os.Root, error) {
+	if c.scratch != nil {
 		return c.scratch, nil
 	}
 	dir, remove, err := c.u.requestDir(shadowScratchDirPrefix, scratchTempPrefix)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	c.scratch, c.dropScratch = dir, remove
-	return dir, nil
+	root, err := openRootNoWait(dir)
+	if err != nil {
+		remove()
+		return nil, err
+	}
+	c.scratch, c.dropScratch = root, remove
+	return root, nil
 }
 
-// removeScratch removes the scratch folder of the check, if it was made.
+// removeScratch closes the root of the scratch folder and removes the folder,
+// if it was made.
 func (c *contentCheck) removeScratch() {
+	if c.scratch != nil {
+		_ = c.scratch.Close()
+	}
 	if c.dropScratch != nil {
 		c.dropScratch()
 	}
-	c.scratch, c.dropScratch = "", nil
+	c.scratch, c.dropScratch = nil, nil
 }
 
-// writeObjectBody writes body to the file name in dir, through a root at dir.
-// Tests replace it.
-var writeObjectBody = func(dir, name string, body []byte) error {
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = root.Close() }()
+// writeObjectBody writes body to the file name through root, the scratch
+// folder of the check. Tests replace it.
+var writeObjectBody = func(root *os.Root, name string, body []byte) error {
 	return root.WriteFile(name, body, 0o600)
 }
 
 // removeObjectBody removes name, the file of one object that writeObjectBody
-// wrote in dir, the scratch folder of the check. After homeguard.WipesHomeDir
-// it is one plain remove of a regular file by name through a root at dir,
-// never a tree and never a link target. A root at dir, as for the write, also
-// reaches a file under a folder of the daemon of mode 0300, which 4c111e86
-// empties there (measured on Linux). It is a variable so that a test can see
-// the call.
-var removeObjectBody = func(dir, name string) error {
-	if homeguard.WipesHomeDir(filepath.Join(dir, name)) {
+// wrote through root, the scratch folder of the check. After
+// homeguard.WipesHomeDir it is one plain remove of a regular file by name
+// through that root, never a tree and never a link target. An entry put in
+// its place between the test of its kind and the remove goes by that one
+// remove too. The root, as for the write, also reaches a file under a folder
+// of the daemon of mode 0300, which 4c111e86 empties there (measured on
+// Linux). It is a variable so that a test can see the call.
+var removeObjectBody = func(root *os.Root, name string) error {
+	if homeguard.WipesHomeDir(filepath.Join(root.Name(), name)) {
 		return errors.New("refusing to delete a path that holds the home folder")
 	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = root.Close() }()
 	fi, err := root.Lstat(name)
 	if err != nil {
 		return err
