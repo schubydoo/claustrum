@@ -22,7 +22,7 @@ var newJobTestCmd = func() (*exec.Cmd, error) {
 	return exec.Command(exe, "--version"), nil
 }
 
-// startJobTest starts the test child and runs the test (runJobTest). A failed start
+// startJobTest starts the test child and begins the test (beginJobTest). A failed start
 // fails the test with its error (claustrum's own, not measured).
 func startJobTest() *JobTest {
 	start := time.Now()
