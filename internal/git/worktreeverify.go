@@ -381,6 +381,14 @@ func gitFileGoneText(worktreePath string) string {
 	return "refusing to create worktree: " + tickPath(worktreePath) + " does not hold the .git file made for it"
 }
 
+// gitDirIsLinkNow reports whether gitDir, the git directory that git answered
+// before the add, is a symbolic link now. The Lstat follows no link and opens
+// nothing, so the test takes no hold.
+func gitDirIsLinkNow(gitDir string) bool {
+	fi, err := os.Lstat(filepath.Clean(gitDir))
+	return err == nil && fi.Mode()&fs.ModeSymlink != 0
+}
+
 // leafReplacedText is the refusal of a create whose leaf is no longer the folder
 // that the create made, with the path in the form of tickPath (4c111e86, measured
 // on Linux and macOS).
