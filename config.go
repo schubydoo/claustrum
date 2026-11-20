@@ -17,7 +17,7 @@ import (
 // configFileName is an optional key=value file read from the directory that holds
 // the executable. When it is absent (or unreadable, non-regular, or malformed),
 // claustrum behaves as a stock replica of the reference daemon: every setting it
-// carries gates an opt-in divergence that is off by default. Keys mirror the CLI
+// carries gates an opt-in option that is off by default. Keys mirror the CLI
 // flag names; unknown keys and invalid values are ignored, so the file is
 // forward-compatible. A wire-log path that cannot be opened stops the -serve
 // boot (newServerOnSocket). max-extract-bytes, max-cli-bytes and

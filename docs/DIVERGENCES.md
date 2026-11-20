@@ -150,8 +150,8 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [CT-8](#ct-8) | Bound the `-install` download | off-wire (`-install` output) | off (`0`) | all |
 
 In the CT headings "opt-in" means "off unless somebody asks for it": CT-1 and CT-3
-have no flag and no key. Off, CT-6, CT-7 and CT-8 match the reference, so they are
-options, not divergences (the maintainer's decision of 2026-11-13).
+have no flag and no key. With the default off, CT-6, CT-7 and CT-8 match the reference, so
+they are options, not divergences (the maintainer's decision of 2026-11-13).
 
 ## Entries
 
