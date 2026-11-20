@@ -52,6 +52,9 @@ const (
 	tempRootTooMany = "too many sessions of yours on this host have a private temp folder of their own; end one, or try again in a minute"
 	tempRootRemoved = "the new folder was not this account's own with mode 0700, and was removed"
 	tempRootNoReply = "the temp dir did not answer in time"
+	// tempRootNoReplyLine is the log line of that reply, for the spawn whose own step
+	// hits the limit (4c111e86, measured on Linux).
+	tempRootNoReplyLine = "[process.Manager] the temp dir has not answered in %v: Claude Code starts anyway, and may refuse its folder there"
 	// tempRootSteppedAround answers a link or a file at the entry (4c111e86, measured
 	// on Linux and macOS).
 	tempRootSteppedAround = "only a folder of root's or of this account's own that others cannot write is stepped around: another account may have laid this"
@@ -310,7 +313,11 @@ func (l *tempRootLate) markGaveUp() bool {
 // The step runs in its own goroutine on a copy of the env. After tempRootLimit the
 // spawn goes on with the env as it was. A folder that a late step made stays, with
 // no registry write and no hold (b3081b51, measured on Linux). A late step closes
-// a folder that it took (claustrum's own, not measured).
+// a folder that it took (claustrum's own, not measured). A spawn whose own step hits
+// the limit logs tempRootNoReplyLine (4c111e86, measured on Linux; on macOS claustrum's
+// own). A spawn of a temp dir with a late step returns before it, with no line. A spawn
+// whose step waits past the limit for the lock logs it too, a known difference that
+// TASK-734 follows.
 func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, func(), func(end func())) {
 	type answer struct {
 		env     []string
@@ -337,6 +344,7 @@ func privateTempRoot(env []string, runDir string) ([]string, *rpc.CLITempRoot, f
 	case a = <-done:
 	case <-t.C:
 		if late.markGaveUp() {
+			logging.Warnf(tempRootNoReplyLine, tempRootLimit)
 			a = answer{env, &rpc.CLITempRoot{WhyNot: tempRootNoReply}, func() {}, func(func()) {}}
 		} else {
 			a = <-done // the step kept its folder right before the limit

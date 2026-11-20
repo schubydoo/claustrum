@@ -609,7 +609,9 @@ func TestCLITempRootTempDirOrder(t *testing.T) {
 
 // After the time limit the reply says so and the child gets the env as it was. A
 // folder that the step made after the limit stays, with no registry, no hold and
-// no count.
+// no count. The spawn whose own step hits the limit logs the line of the limit once, and a
+// second spawn of that temp dir gets the text at once with no second line (4c111e86,
+// measured on Linux).
 func TestCLITempRootTimeLimit(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
@@ -629,6 +631,7 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 		}
 	})
 	in := []string{"TMPDIR=" + x}
+	logs := captureLogBuf(t)
 	start := time.Now()
 	env, res, release, _ := privateTempRoot(in, runDir)
 	rel = append(rel, release)
@@ -636,12 +639,24 @@ func TestCLITempRootTimeLimit(t *testing.T) {
 	if want := `{"whyNot":"the temp dir did not answer in time"}`; string(b) != want {
 		t.Fatalf("answer %s, want %s", b, want)
 	}
+	if want := "[process.Manager] the temp dir has not answered in 100ms: Claude Code starts anyway, and may refuse its folder there"; strings.Count(logs.String(), want) != 1 {
+		t.Errorf("log %q, want the line of the limit once", logs.String())
+	}
 	if time.Since(start) < tempRootLimit || !slices.Equal(env, in) {
 		t.Errorf("after %v env %q, want the limit and the env as it was", time.Since(start), env)
 	}
 	name := <-stuck
 	if got := ccdFolders(t, x); len(got) != 1 || got[0] != name {
 		t.Fatalf("folders %v, want the one that the step made", got)
+	}
+	start = time.Now()
+	_, res, release, _ = privateTempRoot(in, runDir)
+	rel = append(rel, release)
+	if d := time.Since(start); res == nil || res.WhyNot != tempRootNoReply || d >= tempRootLimit {
+		t.Errorf("second answer %+v after %v, want the text of the limit at once", res, d)
+	}
+	if want := "the temp dir has not answered in"; strings.Count(logs.String(), want) != 1 {
+		t.Errorf("log %q, want no second line of the limit", logs.String())
 	}
 	unblock()
 	// The step holds tempRoots.mu until it ends, so this lock waits for its end.
