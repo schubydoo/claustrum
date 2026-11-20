@@ -734,9 +734,12 @@ func (e *addIncomplete) Error() string { return e.text }
 // removes the leaf and the branch and no registration. failedAdd marks a
 // refusal that the create answers as addIncomplete does, with
 // completingAddPrefix and worktree_add_failed. The rollback stays the same.
+// leafDeleted marks a leaf deleted right after a staged add. The rollback then
+// removes an empty folder at the path too (undoMovedAwayLeaf).
 type addRefused struct {
-	text      string
-	failedAdd bool
+	text        string
+	failedAdd   bool
+	leafDeleted bool
 }
 
 func (e *addRefused) Error() string { return e.text }
@@ -1132,12 +1135,12 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// movedAway is true on Linux and macOS when another folder took the path
 	// of the leaf after the add, and the held leaf has no `.git` entry. The
 	// move then completes through the held leaf, and the create is refused
-	// (leafMovedAfterAdd). A deleted leaf keeps errLeafMoved (claustrum's
-	// own, not measured). On Linux it gets no staging folder. On macOS the
-	// failed write of its `.git` file removes the moved folder again.
+	// (leafMovedAfterAdd). A deleted leaf gets the move too, and the failed
+	// write of its `.git` file removes the moved folder again (4c111e86,
+	// measured on Linux). macOS is claustrum's own, not measured.
 	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
-		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) || heldLeafUnlinked(cp) {
+		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
 			return err
 		}
 		movedAway = true
@@ -1252,11 +1255,11 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	if err := writeGitFile(); err != nil {
 		st.removeMoved(target, heldInfo)
 		if movedAway && errors.Is(err, fs.ErrNotExist) {
-			// The held leaf was deleted after the add. On macOS its link
-			// count stays above 0 (measured on the macOS CI leg), so
-			// heldLeafUnlinked cannot see it. The reply stays errLeafMoved
-			// (claustrum's own, not measured).
-			return errLeafMoved
+			// The held leaf was deleted after the add. 4c111e86 answers the
+			// error of the write with worktree_add_failed, and an empty folder
+			// at the path goes (measured on Linux). macOS is claustrum's own,
+			// not measured.
+			return &addRefused{text: err.Error(), failedAdd: true, leafDeleted: true}
 		}
 		if errors.Is(err, fs.ErrExist) {
 			return &addRefused{text: plantedGitFileText(leaf)}
