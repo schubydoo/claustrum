@@ -670,8 +670,8 @@ func priorBootSameHost(recHost, recNode, ownHost, ownNode string) bool {
 // the groups that got SIGTERM and splits them into the grace and escalate
 // buckets. A group still alive after the escalate is counted survived and its record is KEPT,
 // so a later daemon can still find a group that this one did not end. It updates counts. (The
-// survivor line and its count in the summary are measured on 4c111e86, Linux, with a leader in
-// an uninterruptible sleep. The kept record is claustrum's own, not measured.)
+// survivor line, its count in the summary and the kept record are measured on 4c111e86, Linux,
+// with a leader in an uninterruptible sleep.)
 //
 // The records of the groups that got SIGTERM go together, when the last group is done,
 // and not one by one as each group ends. Measured on Linux against 89cb6289: of five
@@ -766,6 +766,7 @@ func reapTargets(c *reapCtx, targets []doomedChild, counts *reapCounts) {
 		// uninterruptible sleep). Its level is claustrum's own.
 		logging.Warnf("[process.Registry] WARNING group %d survived SIGKILL; keeping its record for the next start", t.pid)
 		// The record is KEPT so a later daemon can find a group this one could not end.
+		// 4c111e86 keeps it too (measured on Linux).
 	}
 }
 
