@@ -1366,6 +1366,16 @@ func nameDoesNotAnswer(t *testing.T, given bool) {
 		}
 		return statDev(st)
 	}
+	t.Cleanup(func() {
+		// The seam goes back only once the look at a given-back folder has answered too.
+		tempRoots.mu.Lock()
+		pass := tempRoots.givenPass
+		tempRoots.mu.Unlock()
+		if pass != nil {
+			<-pass.done
+		}
+		tempRootCheckDev = old
+	})
 	go func() { ticks.ticks <- time.Now() }()
 	prefix := "[process.Manager] Claude Code's private temp folder " + a.Name + ": "
 	stuck := prefix + "its name does not answer; nobody is ended over that, and it is looked at again"
@@ -1381,11 +1391,4 @@ func nameDoesNotAnswer(t *testing.T, given bool) {
 	if n, w := strings.Count(logs.String(), stuck), strings.Count(logs.String(), well); n != 1 || w != 1 || ends.Load() != 0 {
 		t.Errorf("%d stuck lines, %d well lines and %d ends, want 1, 1 and 0", n, w, ends.Load())
 	}
-	tempRoots.mu.Lock()
-	pass := tempRoots.givenPass
-	tempRoots.mu.Unlock()
-	if pass != nil {
-		<-pass.done
-	}
-	tempRootCheckDev = old
 }

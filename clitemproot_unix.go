@@ -780,7 +780,8 @@ func dropGivenTempRoots(end func(*heldTempRoot) bool) {
 // These are claustrum's own, not measured: the order of the hold within one check
 // (4c111e86 gave an order that changed from check to check), the checks of a given-back
 // folder past 8 s and their end, the end of the loop, and no flock, no write and no
-// line but a loss line and the lines of checkTempRootTimed for a given-back folder. The caller gives the ticks
+// line but a loss line and the lines of checkTempRootTimed (those measured on Linux) for
+// a given-back folder. The caller gives the ticks
 // (tempRootCheckTicks), the call after each check and the call after each folder of a
 // check, so a test can set them.
 func checkTempRoots(stop, ended chan struct{}, ticks <-chan time.Time, stopTicks, after, afterOne func()) {
