@@ -1056,6 +1056,79 @@ func TestCLITempRootLossesOfOneCheckComeTogether(t *testing.T) {
 	}
 }
 
+// A held folder and a folder given back before it, lost at one check, come in the order
+// of the hold: the folder held first comes first in the loss lines and in the lost list
+// (claustrum's own).
+func TestCLITempRootGivenBackAndHeldLossesKeepTheOrderOfTheHold(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x1, runDir1 := tempRootDir(t, true)
+	x2, runDir2 := tempRootDir(t, true)
+	a := runTempRootBound(t, x1, runDir1, &rel, nil)
+	rel[0]()
+	b := runTempRootBound(t, x2, runDir2, &rel, nil)
+	if a == nil || b == nil || givenCount() != 1 {
+		t.Fatalf("answers %+v and %+v with %d given-back folders, want two folders and 1", a, b, givenCount())
+	}
+	linkAtName(t, x1, a.Name)
+	linkAtName(t, x2, b.Name)
+	ticks.check(t)
+	line := func(n string) string {
+		return "[process.Manager] Claude Code's private temp folder " + n + " counts as lost: it is a link"
+	}
+	wantLinesInOrder(t, logs.String(), line(a.Name), line(b.Name))
+	x3, runDir3 := tempRootDir(t, true)
+	c := runTempRootBound(t, x3, runDir3, &rel, nil)
+	var got []string
+	if c != nil {
+		for _, g := range c.Gone {
+			got = append(got, g.Name)
+		}
+	}
+	if want := []string{a.Name, b.Name}; !slices.Equal(got, want) {
+		t.Errorf("lost list %v, want %v", got, want)
+	}
+}
+
+// A held folder whose handle cannot be copied for a check logs the failed-check line,
+// and a later good check logs that all is well again. Nobody is ended (claustrum's own).
+func TestCLITempRootHandleThatCannotBeCopiedLogsTheFailedCheck(t *testing.T) {
+	var rel []func()
+	cleanTempRoots(t, &rel)
+	ticks := fakeCheckTicks(t)
+	logs := captureLogBuf(t)
+	x, runDir := tempRootDir(t, true)
+	var ends atomic.Int32
+	a := runTempRootBound(t, x, runDir, &rel, func() { ends.Add(1) })
+	h := heldRecordOf(x, a.Name)
+	if h == nil {
+		t.Fatal("no held record")
+	}
+	closed, err := os.Open(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = closed.Close()
+	tempRoots.mu.Lock()
+	f := h.f
+	h.f = closed // a copy of a closed handle fails with EBADF
+	tempRoots.mu.Unlock()
+	ticks.check(t)
+	tempRoots.mu.Lock()
+	h.f = f
+	tempRoots.mu.Unlock()
+	ticks.check(t)
+	pre := "[process.Manager] Claude Code's private temp folder " + a.Name
+	wantLinesInOrder(t, logs.String(),
+		pre+": the temp dir could not be looked at: "+unix.EBADF.Error()+"; nobody is ended over that, and it is looked at again",
+		pre+": all is well with it again")
+	if ends.Load() != 0 {
+		t.Errorf("%d ends, want none", ends.Load())
+	}
+}
+
 // A new hold of a given-back folder ends its old record and closes the old handle, so
 // a later loss gives one line and one entry of the list (claustrum's own).
 func TestCLITempRootHeldAgainEndsTheGivenRecord(t *testing.T) {
