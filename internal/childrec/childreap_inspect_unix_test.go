@@ -151,7 +151,7 @@ func TestDaemonAliveCannotInspect(t *testing.T) {
 // the reference's (4c111e86, measured on Linux with a leader in an uninterruptible
 // sleep). Control: a group that ends on the SIGKILL logs no such line.
 func TestReapGroupThatOutlivesSIGKILL(t *testing.T) {
-	const line = "[process.Registry] WARNING group 1073742825 survived SIGKILL; keeping its record for the next start\n"
+	const line = "WARN  [process.Registry] WARNING group 1073742825 survived SIGKILL; keeping its record for the next start\n"
 	for _, tc := range []struct {
 		name     string
 		survives bool

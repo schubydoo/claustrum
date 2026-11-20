@@ -764,7 +764,7 @@ func reapTargets(c *reapCtx, targets []doomedChild, counts *reapCounts) {
 		counts.survived++ // outlived SIGKILL (a zombie or an uninterruptible sleep)
 		// The line is the reference's (4c111e86, measured on Linux with a leader in an
 		// uninterruptible sleep). Its level is claustrum's own.
-		logging.Infof("[process.Registry] WARNING group %d survived SIGKILL; keeping its record for the next start", t.pid)
+		logging.Warnf("[process.Registry] WARNING group %d survived SIGKILL; keeping its record for the next start", t.pid)
 		// The record is KEPT so a later daemon can find a group this one could not end.
 	}
 }
