@@ -25,7 +25,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
   no member. A path that does not exist gets the same, but starts no test itself. On
-  a folder with no repository the other methods answer at once.
+  a folder with no repository the other methods answer at once, except a Windows create on such a `.git` file.
 - As the first git request of a daemon, a `git.info` on a folder whose `.git` file
   names a missing path runs the test and gives that reply. A missing entry under
   `worktrees` of an existing git directory runs no test, and the reply has no member
@@ -68,9 +68,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 ### The start test
 
-The first request without the member that reaches a repository runs the test. On a `.git` file that names a
-missing path a macOS create differs from `5fd08069` after the test (measured), with equal frames
-([UPSTREAM-TRACKING.md](../UPSTREAM-TRACKING.md#triage-gotchas-when-a-probe-result-is-misleading)). The
+The first request without the member that reaches a repository runs the test. The
 test makes a small repository and a copy of it in a folder `.check-<n>` of the
 daemon, and runs git calls there. One of them is the read of the test repository's
 config. It runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).

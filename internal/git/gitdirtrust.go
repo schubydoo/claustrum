@@ -88,8 +88,9 @@ type gitDirTrust struct {
 	noGit bool
 	// goneGitFile is true when verdict is gitDirNoRepo for a `.git` file that the
 	// walk found and that names a missing path, which is not an entry under
-	// `worktrees` of an existing git directory (isWorktreeEntry). git.info runs the
-	// start test there (gitInfo).
+	// `worktrees` of an existing git directory (isWorktreeEntry). git.info and a
+	// Windows git.worktree_create run the start test there (gitInfo,
+	// gitWorktreeCreateLocked).
 	goneGitFile bool
 	// fileGitDir is true when verdict is gitDirNoRepo for a `.git` file that the walk
 	// found and that names a regular file (Linux and macOS). With a refused

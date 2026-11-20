@@ -390,7 +390,7 @@ After a good add in the state `shadow`, a create removes old staging entries of 
     - A `baseRepo` through a link to a network or device path gives `worktree_add_failed`, and no git call runs. [A link to a network or device path](git-rules-windows-paths.md#a-link-to-a-network-or-device-path).
     - A `\\?\UNC\` `baseRepo` or a refused share gives `worktree_add_failed`. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
     - A `.git` with `IO_REPARSE_TAG_WIM` gives `worktree_add_failed`, and no git call runs (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
-    - In the state `shadow` a `.git` file to a missing path runs the [start test](git-rules-settings-copy.md#the-start-test) and the call about the repository before the reply (`4c111e86`, measured on Windows). An answer other than "not a git repository" keeps the listing, and with `"shadowDirOff":true` no test runs (claustrum's own). Linux and macOS keep the listing (not measured).
+    - In the state `shadow` a `.git` file to a missing path runs the [start test](git-rules-settings-copy.md#the-start-test) and the call about the repository before the reply (`4c111e86`, measured on Windows). A failed call answers its text. Another answer with no error, other than "not a git repository", keeps the listing, and with `"shadowDirOff":true` no test runs (claustrum's own). Linux and macOS keep the listing (not measured).
 
 ## Rare states
 
