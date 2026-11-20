@@ -1566,9 +1566,10 @@ func (w *onLogLine) Write(p []byte) (int, error) {
 }
 
 // A folder given back right after the write test of its check, while the check makes it
-// anew at its name, loses that flock when the check gives its result: a spawn of the same
-// temp dir right after gets that folder again (claustrum's own).
-func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
+// anew at its name, keeps that flock when the check gives its result, as a given-back
+// folder keeps its flock (4c111e86, measured on Linux; the give-back during the check is
+// claustrum's own). A spawn of the same temp dir right after gets that folder again.
+func TestCLITempRootGivenBackDuringItsRemakeKeepsTheFlock(t *testing.T) {
 	var rel []func()
 	cleanTempRoots(t, &rel)
 	ticks := fakeCheckTicks(t)
@@ -1593,14 +1594,23 @@ func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
 	var again *rpc.CLITempRoot
 	var againRel func()
 	var calls atomic.Int32
+	var flockErr error
+	var name string // set before the check
 	setAfterOneCheck(t, func() {
 		if calls.Add(1) == 1 {
+			if o, err := os.Open(filepath.Join(x, name)); err != nil {
+				flockErr = err
+			} else {
+				flockErr = unix.Flock(int(o.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+				_ = o.Close()
+			}
 			var bind func(func())
 			_, again, againRel, bind = privateTempRoot([]string{"TMPDIR=" + x}, runDir)
 			bind(nil)
 		}
 	})
 	a := runTempRootBound(t, x, runDir, &rel, nil)
+	name = a.Name
 	f := filepath.Join(x, a.Name)
 	if err := os.Rename(f, f+".away"); err != nil {
 		t.Fatal(err)
@@ -1611,6 +1621,9 @@ func TestCLITempRootGivenBackDuringItsRemakeLosesTheFlock(t *testing.T) {
 	}
 	if !strings.Contains(w.buf.String(), "made anew") {
 		t.Fatalf("log %q, want the line that the folder is made anew", w.buf.String())
+	}
+	if !errors.Is(flockErr, unix.EWOULDBLOCK) {
+		t.Errorf("flock of the remade folder after the check: %v, want the given-back folder to hold it", flockErr)
 	}
 	if again == nil || again.Name != a.Name {
 		t.Errorf("the spawn right after the check got %+v, want the folder %s again", again, a.Name)
