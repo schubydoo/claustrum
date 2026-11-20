@@ -164,7 +164,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   too (`.gitdir-<n>` on Linux and macOS, `.index-<n>` on Windows, and
   `.worktreeinclude-<n>` from the code). With `"shadowDirOff":true` the first three
   are in the temporary folder, as `claude-ssh-gitdir-<n>`, `claude-ssh-checkout-<n>` and
-  `claude-ssh-worktreeinclude-<n>`. The index name is as on `4c111e86` (measured on
+  `claude-ssh-worktreeinclude-<n>`. That temporary index name is as on `4c111e86` (measured on
   Linux and macOS, not Windows).
 - `4c111e86` names a create's index folder
   `.checkout-<n>` (measured on all three systems). It is there at the reply and goes
