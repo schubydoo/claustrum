@@ -1137,7 +1137,8 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// move then completes through the held leaf, and the create is refused
 	// (leafMovedAfterAdd). A deleted leaf gets the move too, and the failed
 	// write of its `.git` file removes the moved folder again (4c111e86,
-	// measured on Linux and macOS).
+	// measured on Linux). On macOS the reply is the same and no registration
+	// stays (measured).
 	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
 		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
