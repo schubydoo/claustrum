@@ -60,7 +60,10 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 // systems. On Windows git spells its path with forward slashes, and the root in quotes
 // keeps backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
 // refusal in noRepoCalls on Linux, drop statusGitFileNowhere, refuse the gitfile text in
-// statusNoRepoCalls, or key the rule on the state of the daemon.
+// statusNoRepoCalls, or key the rule on the state of the daemon. Where a create runs
+// the call about the repository first (goneGitFileStartTest), the stub gives its first
+// run the same text. Mutation there: answer "no repository" after every answer of the
+// call in gitWorktreeCreateLocked.
 //
 // Without "shadowDirOff":true git.info runs that call itself. Its exit 128 gets the
 // second run, which exits 0, so git.info answers "no repository" (measured on Linux
@@ -113,6 +116,15 @@ func gitFileNowhereFourMethods(t *testing.T, older bool) {
 			defer func() { f.d = kept }()
 			stubListing(t, 128, "")
 			stubStderr(t, tc.stderr, false)
+			if goneGitFileStartTest && !tc.off && tc.want != "" {
+				// The create runs the call about the repository before the listing.
+				// Its first run in G gets the text of git 2.56, its second run exits
+				// 0, and the create goes on to the listing.
+				t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "rev-parse,--git-dir")
+				t.Setenv("CLAUSTRUM_GITSTUB_DIR2", g)
+				t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "128")
+				t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", tc.stderr)
+			}
 			if tc.first {
 				// git.info runs the start test here. Its call 7 lists the test config
 				// from standard input, and a real git answers that call.

@@ -233,7 +233,8 @@ func (h *ShadowHost) folderUse() gitUse {
 }
 
 // gate runs before the first git call of a method in a repository that the trust
-// check accepted, or for git.info on a `.git` file to a missing path (gitInfo).
+// check accepted, or on a `.git` file to a missing path for git.info (gitInfo)
+// and a Windows git.worktree_create (gitWorktreeCreateLocked).
 // It returns the text of a failed start test, or "".
 //
 // A request with the member runs no test and makes no folder (measured on
@@ -1198,13 +1199,13 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 //
 // The test runs for a trusted git directory. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (measured on
-// Linux). git.info on a `.git` file to a missing path is the exception
-// (gitInfo). Each method gives the text of a failed test the shape that it gives
-// a refused config: the error object on git.info, git.status and
-// git.list_branches, and the result object on git.worktree_create and
-// git.worktree_remove (measured on Linux). With worktreeRoot a remove gives it
-// as the reason of its work-tree refusal (externalWorkTreeRefusal): that shape
-// is not measured.
+// Linux). git.info and a Windows git.worktree_create on a `.git` file to a
+// missing path are the exceptions (gitInfo, gitWorktreeCreateLocked). Each
+// method gives the text of a failed test the shape that it gives a refused
+// config: the error object on git.info, git.status and git.list_branches,
+// and the result object on git.worktree_create and git.worktree_remove
+// (measured on Linux). With worktreeRoot a remove gives it as the reason of
+// its work-tree refusal (externalWorkTreeRefusal): that shape is not measured.
 //
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own

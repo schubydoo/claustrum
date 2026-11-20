@@ -267,7 +267,8 @@ func gitInfo(req *gitCall) rpc.Response {
 		// of an existing git directory runs no test (measured). One in a missing
 		// repository runs it (measured on Linux). Not measured: the other methods
 		// there, a failed test there, and a host with no git. claustrum runs no test
-		// in those methods or with no git. A failed test answers its text.
+		// in those methods or with no git, except a Windows create
+		// (gitWorktreeCreateLocked). A failed test answers its text.
 		if t.goneGitFile && gitLookupError() == nil {
 			if msg := req.shadow.gate(bool(p.ShadowDirOff)); msg != "" {
 				return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
@@ -1256,6 +1257,25 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	if t.verdict == gitDirNoRepo {
+		// On Windows a `.git` file to a missing path runs the start test, and in the
+		// state shadow the call about the repository, as in gitInfo. After the reply
+		// 4c111e86 has the folder of the daemon with its lock and `.probe` there
+		// (measured on Windows). A failed call answers its text. Another answer
+		// with no error, other than "not a git repository", keeps the listing
+		// below (claustrum's own, not measured). Linux and macOS keep the listing (not
+		// measured).
+		if goneGitFileStartTest && t.goneGitFile {
+			if msg := req.shadow.gate(bool(p.ShadowDirOff)); msg != "" {
+				return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+			}
+			if !bool(p.ShadowDirOff) && req.shadow.control(false) == controlShadow {
+				if a := req.shadow.askGit(t, repo); a.text != "" {
+					return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: a.text, ErrorCode: "worktree_add_failed"})
+				} else if a.notARepo {
+					return notARepoResult(req.ID, repo)
+				}
+			}
+		}
 		// A listing that fails here refuses, with and without worktreeRoot, and nothing
 		// is created (measured on Linux, macOS and Windows). One more call follows a
 		// listing that passed (noRepoCreateCalls).

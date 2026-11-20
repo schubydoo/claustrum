@@ -396,9 +396,7 @@ the linked pages.
   refuses gets a normal answer where the copy leaves it out. Against `5fd08069`
   the config reads above differ. Two reply texts differ too, for a Windows
   create whose `.git` becomes a file `gitdir: <X>` while it runs (measured on
-  Windows). After the start test on a `.git` file that names a missing path,
-  claustrum runs a config listing and makes no `.probe`, where `5fd08069` runs a
-  `rev-parse` against `.probe` (measured on macOS and Windows), with equal frames.
+  Windows).
   See [The settings copy](protocol/git-rules-settings-copy.md#the-settings-copy).
 - A remove with a worktree folder that exists lists again after a failed
   listing, as on `5fd08069` (measured on Linux, macOS and Windows). `f6010b97`
