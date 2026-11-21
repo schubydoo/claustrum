@@ -400,8 +400,8 @@ func probeArgs() []string {
 //   - Exit 0 and the git directory of the repository: good. Git prints `.git`,
 //     and the full path is good too. A path that is not absolute is taken from
 //     the root.
-//   - Exit 128 with any text: the second run of c8e2f083 (secondProbe), and on
-//     Linux and macOS the third run of 52d82f0a (configFreeProbe). They
+//   - Exit 128 with any text: the second run of c8e2f083 (secondProbe), and the
+//     third run of 52d82f0a (configFreeProbe). They
 //     replace the rules of 5fd08069 for exit 128 below.
 //   - Every other failure that probeCallBound did not stop: the error `git could not check this
 //     repository on the remote machine: at "<root>": exit status <n>`, after
@@ -553,16 +553,17 @@ func exitedWith128(r shadowRun) bool {
 // version` call answers its own text, as after a failed first call
 // (cannotRunText, the rule of 5fd08069).
 //
-// On Linux and macOS a second run that exits 0 is followed by the third run
-// of 52d82f0a (configFreeProbe), unless inGitDir: the call runs in the git
-// directory itself. The third run ends probeSecondBound after the start of
+// A second run that exits 0 is followed by the third run (configFreeProbe),
+// unless inGitDir: the call runs in the git directory itself. 52d82f0a does so
+// on Linux and macOS, and 4c111e86 on Windows (measured for a repository on a
+// network share, where git refuses the first call). The third run ends probeSecondBound after the start of
 // the second run (claustrum's own, not measured).
 func secondProbe(folder, root string, env []string, first shadowRun, inGitDir bool) repoAnswer {
 	probe := filepath.Join(folder, shadowProbeName)
 	deadline := time.Now().Add(probeSecondBound)
 	second := exitedInTime(boundedGit(probeSecondBound, probe, slices.Concat(env, []string{"GIT_DIR=" + probe}), probeArgs()...))
 	if second.err == nil {
-		if probeConfigFreeRun && !inGitDir {
+		if !inGitDir {
 			return configFreeProbe(root, env, first, deadline)
 		}
 		return repoAnswer{noRepo: true}
@@ -578,7 +579,7 @@ func secondProbe(folder, root string, env []string, first shadowRun, inGitDir bo
 // names do not go to it.
 var configFreeNames = []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"}
 
-// configFreeProbe is the third run of the call on Linux and macOS: the argv
+// configFreeProbe is the third run of the call: the argv
 // and the environment env of the first call, in root, with GIT_CONFIG_COUNT=0,
 // GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1. first is the first
 // call, which exited 128. The run ends at deadline. Its output is not read.
@@ -599,8 +600,11 @@ var configFreeNames = []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CON
 // process alone. The held process of the measured row was the git process
 // itself, so the stop of a child of the third run is not measured. Not
 // measured either: a third run that exits non-zero, which answers "no
-// repository", the place of the three variables in the environment, and
-// Windows.
+// repository", on Linux and macOS, and the place of the three variables in
+// the environment. On Windows 4c111e86 runs it in root with these three
+// values, also GIT_CONFIG_GLOBAL=/dev/null, and a third run that exits 128
+// there answers "no repository" (measured for a repository on a network
+// share).
 func configFreeProbe(root string, env []string, first shadowRun, deadline time.Time) repoAnswer {
 	env = slices.DeleteFunc(slices.Clone(env), func(kv string) bool { return slices.Contains(configFreeNames, envName(kv)) })
 	env = append(env, "GIT_CONFIG_COUNT=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")

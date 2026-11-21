@@ -79,10 +79,9 @@ var gitDirMustBeReal = true
 // statusPrintedRootSpelling). 5fd08069 does so on Windows (measured).
 const statusFollowsPrintedGitDir = true
 
-// probeConfigFreeRun is false on Windows: the call about the repository keeps
-// the two runs of c8e2f083 there (secondProbe). The third run of Linux and
-// macOS is not measured on Windows (claustrum's own, not measured). No
-// git-directory test follows a good answer there.
+// probeConfigFreeRun is false on Windows: no git-directory test follows a good
+// answer of the call about the repository there (askGit). The third run of the
+// call (configFreeProbe) does not depend on it.
 const probeConfigFreeRun = false
 
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in

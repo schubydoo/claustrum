@@ -11,8 +11,8 @@ import (
 // TestCreateGoneGitFileStartTestStep with the text of git 2.56. The first run of
 // the call about the repository exits 128 with that text and its second run exits
 // 0, so the create keeps the listing (claustrum's own, not measured). Its reply
-// depends on the git of the host, so the row does not check it. Linux and macOS
-// run a third run there (configFreeProbe), so the row is for Windows only.
+// depends on the git of the host, so the row does not check it. The row runs on
+// Windows only, where git 2.56 writes that text.
 // Mutation: answer "no repository" after every answer of the call in
 // gitWorktreeCreateLocked.
 func TestCreateGoneGitFileRunsTheStartTest(t *testing.T) {

@@ -20,15 +20,11 @@ func lowerSecondProbeBound(t *testing.T, bound, drain time.Duration) {
 }
 
 // exit128Runs is the count of calls about the repository after a first call
-// that exited 128 and a second run that exited 0: three on Linux and macOS
-// (probeConfigFreeRun), two on Windows. The third run of these tests matches
-// the stub rule of the first call, so it exits 128 too.
-func exit128Runs() int {
-	if probeConfigFreeRun {
-		return 3
-	}
-	return 2
-}
+// that exited 128 and a second run that exited 0: three on every system (52d82f0a
+// on Linux and macOS, 4c111e86 on Windows). The third run of these tests matches
+// the stub rule of the first call, so it exits 128 too. Mutation: the third run
+// on Linux and macOS only; the Windows rows then count two.
+func exit128Runs() int { return 3 }
 
 // secondProbeCall is the call about the repository with a GIT_DIR, or false.
 func secondProbeCall(calls []envCall) (envCall, bool) {
