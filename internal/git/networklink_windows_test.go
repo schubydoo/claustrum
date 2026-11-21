@@ -117,9 +117,9 @@ func TestUnlookablePathFramesWindows(t *testing.T) {
 // read that code as fs.ErrPermission. Mutation: drop networkAccessDenied from
 // the denied arm of unlookablePathRefusal.
 func TestUnlookableShareNetworkAccessDenied(t *testing.T) {
-	path := `\\127.0.0.1\cldeny\sub\repo`
-	fakeLstat(t, map[string]error{path: windows.ERROR_NETWORK_ACCESS_DENIED})
-	if got, want := unlookablePathRefusal(path), deniedShareText(path); got != want {
+	path, sub := `\\127.0.0.1\cldeny\sub\repo`, `\\127.0.0.1\cldeny\sub`
+	fakeLstat(t, map[string]error{path: windows.ERROR_NETWORK_ACCESS_DENIED, sub: windows.ERROR_NETWORK_ACCESS_DENIED})
+	if got, want := unlookablePathRefusal(path), deniedShareText(path, sub); got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 }
