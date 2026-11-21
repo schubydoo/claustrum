@@ -21,8 +21,8 @@ var tempFolderNames = []string{"CLAUDE_CODE_TMPDIR", "TMPDIR", "TMP", "TEMP"}
 // tempProbeWait is the longest time that a spawn waits for one test, counted from
 // the start of that test. After it the name stays. A test of 683cc6a9 held the
 // remove 3 s, and the replies came at 2.17 s with the name kept. 4c111e86 logs its
-// line after 2 s, and it waits 2 s for each of two folders (measured on Linux). A
-// variable for the tests.
+// line after 2 s, and it replies after about 4 s for two such folders (measured
+// on Linux). On macOS the 2 s per test is claustrum's own. A variable for the tests.
 var tempProbeWait = 2 * time.Second
 
 // afterTempProbeCreate runs between the create and the remove of the test file. It
@@ -49,7 +49,8 @@ var tempProbes = struct {
 // The names are tested one after another. A spawn waits for each test until
 // tempProbeWait after the start of that test, and keeps the name after it, before
 // it tests the next name. So two folders that do not answer give a reply after
-// about 4 s (4c111e86, measured on Linux). A spawn that joins a test older than
+// about 4 s (4c111e86, measured on Linux). On macOS the order and the 2 s per test
+// are claustrum's own. A spawn that joins a test older than
 // tempProbeWait does not wait. A name whose folder an earlier name of the same spawn
 // named takes that test (claustrum's own). The spawn that started a test logs one
 // line when its wait ends first (claustrum's own). The text is that of 4c111e86,

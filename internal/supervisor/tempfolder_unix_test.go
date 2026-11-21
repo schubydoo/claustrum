@@ -338,6 +338,10 @@ func TestTempFolderTwoHeldFoldersAreTestedOneAfterAnother(t *testing.T) {
 			t.Errorf("%d lines %q, want 1, log:\n%s", got, line, buf.String())
 		}
 	}
+	// The second test makes its file in its own goroutine: poll for it with a limit.
+	for deadline := time.Now().Add(2 * time.Second); n.Load() < 2 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if got := n.Load(); got != 2 {
 		t.Errorf("%d test files made, want 2", got)
 	}
