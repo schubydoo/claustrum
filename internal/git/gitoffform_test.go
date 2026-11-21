@@ -272,9 +272,9 @@ func TestShadowCreateFollowsAHoldThatStartsAtTheAdd(t *testing.T) {
 
 // C2 by commit: under that hold the create resolves the branch to its commit
 // id in the form of the hold, the read-tree names the id, and the settle call
-// runs after it, as with no hold. 4c111e86 does so on macOS (measured, a create
-// whose add began before the hold). Linux and Windows are claustrum's own,
-// not measured. Mutation: drop heldNoMember from byCommit in
+// runs after it. 4c111e86 does so on macOS (measured, for a hold that ends
+// after the read-tree call). Here the hold is still live at the settle call:
+// that, Linux and Windows are claustrum's own, not measured. Mutation: drop heldNoMember from byCommit in
 // gitWorktreeCreateLocked. The read-tree then names refs/heads/<branch>, and no
 // diff-files call follows.
 func TestShadowCreateUnderAHoldFromTheAddChecksOutByCommit(t *testing.T) {
@@ -325,8 +325,8 @@ func TestShadowCreateFollowsAHoldThatEndsAtTheAdd(t *testing.T) {
 	if n := leafListings(calls, leaf, test, rt); n != 2 {
 		t.Errorf("C3: %d listings before the read-tree, want 2", n)
 	}
-	// On Linux and macOS the call after the add runs there (askAfterAdd), on
-	// macOS in the later gate (createGateAsksAfterAdd, 4c111e86, measured). On
+	// On Linux the call after the add runs there (askAfterAdd), on macOS in
+	// the later gate (createGateAsksAfterAdd, 4c111e86, measured). On
 	// Windows the recheck makes it (createRechecksAfterAdd). After a hold that
 	// ends at the add that is claustrum's own on Linux and Windows, not measured.
 	want := createAsksAfterAdd || createRechecksAfterAdd

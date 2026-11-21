@@ -2574,8 +2574,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// own, not measured. Under a hold of another request that is live at
 		// the checkout, a create with no member makes the commit call in the
 		// form of the hold and the settle step too (4c111e86, measured on macOS
-		// in a create whose add began before the hold, claustrum's own on
-		// Linux and Windows, not measured). In the state fallback-git a create
+		// for a hold that ends after the read-tree call). A hold still live at
+		// the settle call, Linux and Windows are claustrum's own, not measured.
+		// The settle step keeps the form of the hold, where 4c111e86 gives it
+		// the copy (the known gap above). In the state fallback-git a create
 		// without the member makes the commit call and the settle step too
 		// (c9125eb8 and 4c111e86, measured on Linux, claustrum's own on macOS and
 		// Windows). With the member it makes neither (claustrum's own, not

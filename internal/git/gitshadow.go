@@ -1216,7 +1216,8 @@ func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, d
 }
 
 // settingsGate is settingsGateRefusal. With ask false the gate makes no call
-// that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
+// that asks git about the repository (askGit), unless askInGate is set.
+// keepLiveForm and keepLiveCreate
 // pass ask false only for a later gate at a call with --git-dir=.
 func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.gitNotARepo, req.gitDisagreed, req.configRefused, req.goneCopyText = false, false, false, false, ""

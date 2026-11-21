@@ -41,6 +41,9 @@ func TestCreateAfterAHoldAtTheAddAsksBeforeTheConfigRead(t *testing.T) {
 		t.Fatalf("the add is call %d and the start test starts at call %d, want both", add, test)
 	}
 	testAdd := h.callAt(calls, test+1, "worktree,add")
+	if testAdd < 0 {
+		t.Fatalf("no worktree add of the start test after call %d", test)
+	}
 	read := slices.IndexFunc(calls[testAdd+1:], envCall.configRead)
 	probe := slices.IndexFunc(calls[testAdd+1:], envCall.isProbe)
 	if read < 0 || probe < 0 || probe > read {
