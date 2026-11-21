@@ -21,8 +21,9 @@ import (
 // LauncherCheck is the launcherCheck member of process.spawn and launcher.resolve. sha256
 // is a list of digests (a string gets Invalid params, measured on Windows). ownerUid
 // names one more uid that can own the launcher and its folders. A root-owned launcher
-// passes with it (measured on Linux). The lift for that uid is claustrum's own, not
-// measured. path is in the shape (measured on Windows). claustrum
+// passes with it (measured on Linux), and so does one of that uid. ownerUid never lifts
+// the uid of the account that signs in, and lifts uid 65534 only with a digest
+// (4c111e86, measured on Linux). path is in the shape (measured on Windows). claustrum
 // reads it for the shape only, and the check tests the launcher itself (claustrum's
 // own, not measured).
 type LauncherCheck struct {
@@ -104,11 +105,13 @@ var (
 //  4. A launcher that this account cannot run is missing. This test comes before the
 //     walk: a mode-0644 file under /tmp got missing, not writable for /tmp (measured).
 //
-//  5. The walk: "/", each folder down to the launcher, then the launcher. It walks the
-//     folders of p as written, then the folders of p after its links (claustrum's own,
-//     not measured). Each item runs the file system test, then the owner test, then the write
-//     test (that order is claustrum's own). A launcher under /tmp is refused for /tmp,
-//     before its own folders (measured).
+//  5. The walk: "/" and each folder down to the folder that holds a link on the way, for
+//     each such link, then "/", each folder of p after its links, and the launcher. A
+//     folder behind a link is named by its real path, not by the link (4c111e86,
+//     measured on Linux). The place of the link holders first is claustrum's own, not
+//     measured. Each item runs the file system test, then the write test, then the
+//     owner test (4c111e86, measured on Linux). A launcher under /tmp is refused for
+//     /tmp, before its own folders (measured).
 //
 //  6. With digests: the size limit, the read, and the compare. {} and an empty list
 //     pass (measured). Without digests the file is not read (claustrum's own, not
@@ -140,10 +143,9 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 	}
 	digests := len(chk.SHA256) > 0
 	seen := map[string]bool{}
-	items := launcherFolders(filepath.Dir(filepath.Clean(p)))
+	var items []string
 	// The folder that holds each link of the chain is tested too, so a link that sits
-	// in a folder another account can write is refused (claustrum's own, not measured:
-	// the measured link rows hold their links in a root-owned folder).
+	// in a folder of the login is refused (4c111e86, measured on Linux).
 	for _, d := range linkHolderFolders(p) {
 		items = append(items, launcherFolders(d)...)
 	}
@@ -218,9 +220,9 @@ func launcherFolders(dir string) []string {
 	return out
 }
 
-// checkLauncherItem tests one item of the walk. Root owns a good item, or the
-// ownerUid of the launcherCheck does. A group or other write bit refuses it, the
-// sticky folder 1777 too. On a file system that the walk does not trust, with no
+// checkLauncherItem tests one item of the walk. A group or other write bit refuses it,
+// the sticky folder 1777 too. Then root owns a good item, or the ownerUid of the
+// launcherCheck does (ownerLifts). On a file system that the walk does not trust, with no
 // digest, the item is refused, whatever its owner and mode. A FUSE mount of the uid of
 // the daemon gets writable there, also with that uid as ownerUid. With a digest the owner test still
 // runs, and that mount gets owner (both rules: 4c111e86, measured on Linux). The write test
@@ -252,25 +254,42 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 			return FaultWritable, fmt.Sprintf("%s is on a file system that reports a disk's kind (%#x) but has no disk behind it, so who can change it can't be checked. Keep the launcher and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.", shown, f.magic)
 		}
 	}
-	if f.uid != 0 && (ownerUID == nil || f.uid != *ownerUID) {
-		// The order of the three texts, for a daemon that runs as uid 65534, is
-		// claustrum's own, not measured. The first text follows 4c111e86 (measured on
-		// Linux, on a FUSE mount). The third follows 4c111e86 (measured on Linux, with a
-		// digest, on ext4 and on NFS).
+	if f.mode&0o022 != 0 {
+		// The text follows 4c111e86 (measured on Linux). It comes before the owner
+		// test of the item: a launcher of the login, of uid 4242 or of uid 65534 with a
+		// write bit is writable, and so is a folder of the login with mode 0777
+		// (4c111e86, measured on Linux).
+		return FaultWritable, fmt.Sprintf("%s can be changed by accounts other than its owner (mode %04o). Remove that write access.", shown, f.mode)
+	}
+	if f.uid != 0 && !ownerLifts(f.uid, ownerUID, digests) {
+		// The order of the texts, for a daemon that runs as uid 65534, is claustrum's
+		// own, not measured. The first text follows 4c111e86 (measured on Linux, on a
+		// FUSE mount, and with the uid of the login as ownerUid). The second and the
+		// fourth follow 4c111e86 (measured on Linux, the fourth with a digest, on ext4
+		// and on NFS).
 		switch {
 		case int64(f.uid) == int64(launcherOwnUID()):
 			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root must own the launcher and every folder above it.", shown, f.uid)
+		case f.uid == nobodyUID && ownerUID != nil && *ownerUID == nobodyUID:
+			return FaultOwner, shown + " shows as uid 65534 (nobody), which the policy names as ownerUid. That uid can stand for many accounts, so it counts only if the policy also lists the launcher's SHA-256 digest. Add sha256 to sshHostLauncher."
 		case f.uid == nobodyUID:
 			return FaultOwner, shown + " shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it."
 		default:
 			return FaultOwner, fmt.Sprintf("%s belongs to uid %d. Root must own the launcher and every folder above it.", shown, f.uid)
 		}
 	}
-	if f.mode&0o022 != 0 {
-		// The text follows 4c111e86 (measured on Linux).
-		return FaultWritable, fmt.Sprintf("%s can be changed by accounts other than its owner (mode %04o). Remove that write access.", shown, f.mode)
-	}
 	return "", ""
+}
+
+// ownerLifts reports whether the ownerUid of a launcherCheck lets uid own an item. It
+// never lets the uid of the account that signs in own one, and lets uid 65534 own one
+// only when the policy lists a digest: an empty sha256 list does not count (4c111e86,
+// measured on Linux, for a launcher and for a folder).
+func ownerLifts(uid uint32, ownerUID *uint32, digests bool) bool {
+	if ownerUID == nil || uid != *ownerUID || int64(uid) == int64(launcherOwnUID()) {
+		return false
+	}
+	return uid != nobodyUID || digests
 }
 
 // checkLauncherDigest reads the launcher at target and compares its SHA-256 with each
