@@ -311,8 +311,11 @@ func TestShareMissingSubfolderRemoveAfterOneBadAnswer(t *testing.T) {
 	const dubious = "fatal: detected dubious ownership in repository at '//127.0.0.1/s/repo'\n"
 	// run sends the remove and gives its reply, with the fixture paths masked,
 	// and its calls that ask no question about the repository.
-	run := func(t *testing.T, share bool, answer func(*testing.T)) (string, []string) {
+	run := func(t *testing.T, share bool, answer func(*testing.T), repo ...*string) (string, []string) {
 		f := newSeededShadowFixture(t)
+		for _, r := range repo {
+			*r = f.repo
+		}
 		base := filepath.Join(f.repo, "missing", "deeper")
 		old := repoOnShare
 		repoOnShare = func(repo string) bool { return share && repo == base }
@@ -331,8 +334,7 @@ func TestShareMissingSubfolderRemoveAfterOneBadAnswer(t *testing.T) {
 				other = append(other, c)
 			}
 		}
-		mask := strings.NewReplacer(f.repo, "REPO")
-		return mask.Replace(raw), shareCallLines(other)
+		return raw, shareCallLines(other)
 	}
 	// oneBad answers the first call about the repository with exit 128, and the
 	// later ones by the real git.
@@ -355,10 +357,13 @@ func TestShareMissingSubfolderRemoveAfterOneBadAnswer(t *testing.T) {
 		}
 	})
 	t.Run("two answers with a text", func(t *testing.T) {
-		raw, _ := run(t, true, func(t *testing.T) { answerProbe(t, 1, "", "boom\n") })
-		leaf := filepath.Join("REPO", "missing", "deeper", ".claude", "worktrees", "w1")
+		var repo string
+		raw, _ := run(t, true, func(t *testing.T) { answerProbe(t, 1, "", "boom\n") }, &repo)
+		// The want is built from the real paths: on Windows the frame holds them
+		// escaped, so a mask of the plain path would match nothing.
+		leaf := filepath.Join(repo, "missing", "deeper", ".claude", "worktrees", "w1")
 		text := "failed to remove worktree: could not check whether " + leaf + " is locked: " +
-			repoCheckFailedText("REPO", "boom")
+			repoCheckFailedText(repo, "boom")
 		if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonQuoted(t, text) + `}}`; raw != want {
 			t.Errorf("git.worktree_remove = %s\nwant %s", raw, want)
 		}
