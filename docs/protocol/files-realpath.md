@@ -18,7 +18,7 @@
 | `wouldBe` | The real name of the parent folder plus the missing last name. |
 | `dangling` | With `missingLeaf`, `true` for a link to a missing target. `wouldBe` is there only if the target's parent folder exists. |
 
-Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follows one link level and reads a relative target from the real folder of the link. For a link to a missing name in its own folder both answers are measured on Linux (`4c111e86`). The other forms are claustrum's own, not measured.
+Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follows one link level and reads a relative target from the real folder of the link. All are claustrum's own, not measured.
 
 The members come in the order of the table. A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this is claustrum's own, not measured. A path below a regular file gives `{"exists":false}` (`4c111e86`, measured on Linux, and for `<file>/a` with no `missingLeaf` on macOS). With `missingLeaf` it gives the same, and a link to it `dangling` and no `wouldBe` (`4c111e86`, measured on Linux). The other macOS forms and all of Windows are claustrum's own, not measured. On Windows, `<file>\.` and `<file>\..` are cleaned as text first, so they give `exists:true` and the `real` of the file or its folder (claustrum's own, not measured). On Windows, with `missingLeaf`, a missing name behind a link to a network place gives `{"exists":false}` (claustrum's own, not measured).
 
