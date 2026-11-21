@@ -195,6 +195,47 @@ func TestLFSKeepDownloadedObject(t *testing.T) {
 	// The modes of the folders are pinned by TestLFSKeepShardModeFollowsUmask.
 }
 
+// TestLFSKeepAfterTheSettleCall: after a good checkout the keep copies the
+// object only once the settle call (diff-files) has run, and the reply comes
+// after the keep (4c111e86, measured on macOS). Mutation: run the keep of
+// runWorktreeCheckout before settleCheckout (the copy sees no settle call).
+func TestLFSKeepAfterTheSettleCall(t *testing.T) {
+	seamFreeSpace(t)
+	setAttrSource(t, true)
+	// No tick runs, so the one copy is the keep after the checkout.
+	setKeepTick(t, time.Hour)
+	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object"})
+	f.onServer(t, "a.bin")
+	prev := keepCopy
+	var mu sync.Mutex
+	copies, settled := 0, false
+	keepCopy = func(w io.Writer, r io.Reader) (int64, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		copies++
+		for _, c := range readEnvCalls(t, f.shadowFixture.log) {
+			settled = settled || slices.Contains(c.argv, "diff-files")
+		}
+		return io.Copy(w, r)
+	}
+	t.Cleanup(func() { keepCopy = prev })
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if !slices.ContainsFunc(calls, func(c envCall) bool { return slices.Contains(c.argv, "diff-files") }) {
+		t.Fatal("the create ran no settle call")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if copies != 1 || !settled {
+		t.Errorf("the keep made %d copies, after the settle call: %v; want 1 copy after it", copies, settled)
+	}
+	if !exists(storeObjectPath(filepath.Join(f.gitDir, "lfs"), f.oids["a.bin"])) {
+		t.Error("a.bin is not in the store of the repository")
+	}
+}
+
 // TestLFSKeepShardModeFollowsUmask: 4c111e86 asks for mode 0777 for the two
 // shard levels (measured on Linux), so umask 0002 gives 0775. A missing `lfs`
 // and `lfs/objects` get 0755 less the umask (claustrum's own, not measured).

@@ -14,7 +14,7 @@ import (
 const (
 	rootKeepWindows = "Windows only: a folder there holds no FIFO"
 	rootKeepDelete  = "a delete step of AGENTS.md Part A: a change there waits for the maintainer"
-	rootKeepOutside = "not a folder of the daemon in TASK-587: not checked for a FIFO"
+	rootKeepOutside = "not a folder of the daemon: not checked for a FIFO"
 )
 
 // plainOpenRootCalls lists each OpenRoot call of internal/git that does not go
@@ -48,7 +48,6 @@ var plainOpenRootCalls = map[string]struct {
 	"gitworktreeconfig.go writeWorktreeConfigAt root":            {1, rootKeepOutside},
 	"methods_git.go gitWorktreeRemoveLocked root":                {1, rootKeepDelete},
 	"worktreecontent_linux.go leafLinkErr os":                    {1, rootKeepOutside},
-	"worktreecontentbatch.go writeObjectBody os":                 {1, rootKeepOutside},
 	"worktreeexternal.go makeGoneWorktreeFolder os":              {1, rootKeepOutside},
 	"worktreeremove.go externalRootDenied os":                    {1, rootKeepDelete},
 	"worktreeremove.go openRemoveParent os":                      {1, rootKeepDelete},

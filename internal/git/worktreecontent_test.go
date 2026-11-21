@@ -113,7 +113,7 @@ func noReadbackFolder(t *testing.T, f checkoutRuleFixture) {
 	t.Helper()
 	root := filepath.Join(f.run, shadowRootName)
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err == nil && strings.HasPrefix(d.Name(), shadowReadbackDirPrefix) {
+		if err == nil && (strings.HasPrefix(d.Name(), shadowReadbackDirPrefix) || strings.HasPrefix(d.Name(), shadowScratchDirPrefix)) {
 			t.Errorf("%s stays after the create", p)
 		}
 		return nil
@@ -181,6 +181,147 @@ func TestContentCheckMatch(t *testing.T) {
 		if containsSeq(c.argv, "cat-file", "--batch") && canonicalPath(c.cwd) != canonicalPath(f.repo) {
 			t.Errorf("cat-file --batch runs in %s, want the base repository", c.cwd)
 		}
+	}
+}
+
+// TestContentCheckScratchFiles: the long-running hash-object reads each
+// object from a file named by its id, in a folder `.readback-scratch-<n>`
+// beside `.readback-objects-<n>`. Each file goes right after its answer, so the
+// folder holds at most one file, and the folder is gone after the reply
+// (4c111e86, measured on Linux and macOS. On Windows the folder is gone after
+// the reply).
+func TestContentCheckScratchFiles(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".claude/settings.json": "{}\n"})
+	type step struct{ op, dir, name string }
+	var steps []step
+	oldWrite, oldRemove := writeObjectBody, removeObjectBody
+	t.Cleanup(func() { writeObjectBody, removeObjectBody = oldWrite, oldRemove })
+	writeObjectBody = func(root *os.Root, name string, body []byte) error {
+		steps = append(steps, step{"write", root.Name(), name})
+		return oldWrite(root, name, body)
+	}
+	removeObjectBody = func(root *os.Root, name string) error {
+		steps = append(steps, step{"remove", root.Name(), name})
+		return oldRemove(root, name)
+	}
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	noReadbackFolder(t, f)
+	var objects string
+	for _, c := range calls {
+		if dir, _ := envValue(c.env, "GIT_OBJECT_DIRECTORY"); strings.HasPrefix(filepath.Base(dir), shadowReadbackDirPrefix) {
+			objects = dir
+		}
+	}
+	// The commit, the top tree and the tree of .claude.
+	if len(steps) != 6 {
+		t.Fatalf("steps %v, want a write and a remove for each of 3 objects", steps)
+	}
+	if steps[0].name != gitRevParse(t, f.repo, "HEAD") {
+		t.Errorf("the first file is %q, want the id of the commit", steps[0].name)
+	}
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(shadowScratchDirPrefix) + `[0-9]+$`)
+	for i, s := range steps {
+		want := "write"
+		if i%2 == 1 {
+			want = "remove"
+		}
+		if s.op != want || s.dir != steps[0].dir || s.name != steps[i-i%2].name || !isObjectID(s.name) {
+			t.Errorf("step %d = %v, want a %s of the file of the object before it in %s", i, s, want, steps[0].dir)
+		}
+	}
+	if !re.MatchString(filepath.Base(steps[0].dir)) || filepath.Dir(steps[0].dir) != filepath.Dir(objects) {
+		t.Errorf("the files are in %s, want a folder %s<n> beside %s", steps[0].dir, shadowScratchDirPrefix, objects)
+	}
+}
+
+// TestContentCheckPartFileGoes: a write of a scratch file that fails after it
+// made the file is followed by the remove of that file, and the create
+// matches with separate hash-object runs (claustrum's own, not measured).
+func TestContentCheckPartFileGoes(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	oldWrite, oldRemove := writeObjectBody, removeObjectBody
+	t.Cleanup(func() { writeObjectBody, removeObjectBody = oldWrite, oldRemove })
+	var failed, removed []string
+	writeObjectBody = func(root *os.Root, name string, body []byte) error {
+		failed = append(failed, name)
+		_ = oldWrite(root, name, body[:len(body)/2])
+		return fs.ErrPermission
+	}
+	removeObjectBody = func(root *os.Root, name string) error {
+		removed = append(removed, name)
+		return oldRemove(root, name)
+	}
+	raw, _ := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if len(failed) == 0 || !slices.Equal(failed, removed) {
+		t.Errorf("failed writes %q, removes %q, want a remove of each", failed, removed)
+	}
+	noReadbackFolder(t, f)
+}
+
+// TestRemoveObjectBodyRemovesOnlyAFile: the remove of a scratch file takes
+// one regular file by name. A folder or a link at the name stays, and so does
+// the target of the link. A name at the path of the home folder is refused
+// before any remove (claustrum's own, the guard of each git-shadow delete).
+func TestRemoveObjectBodyRemovesOnlyAFile(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeObjectBody(root, "f"); err != nil {
+		t.Errorf("remove of a file: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "f")); !os.IsNotExist(err) {
+		t.Errorf("the file after its remove: %v, want it gone", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "d"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeObjectBody(root, "d"); err == nil {
+		t.Error("remove of an empty folder: nil, want an error")
+	}
+	if fi, err := os.Lstat(filepath.Join(dir, "d")); err != nil || !fi.IsDir() {
+		t.Errorf("the folder after the remove: %v, want it kept", err)
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	if err := os.WriteFile(target, []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "l")); err != nil {
+		t.Logf("no link: %v", err)
+	} else {
+		if err := removeObjectBody(root, "l"); err == nil {
+			t.Error("remove of a link: nil, want an error")
+		}
+		if _, err := os.Lstat(filepath.Join(dir, "l")); err != nil {
+			t.Errorf("the link after the remove: %v, want it kept", err)
+		}
+		if _, err := os.Stat(target); err != nil {
+			t.Errorf("the target of the link: %v, want it kept", err)
+		}
+	}
+	// A regular file at the path of home: only the guard keeps it.
+	home := filepath.Join(dir, "h")
+	if err := os.WriteFile(home, []byte("h"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := removeObjectBody(root, "h"); err == nil {
+		t.Error("remove at the path of home: nil, want the refusal")
+	}
+	if _, err := os.Lstat(home); err != nil {
+		t.Errorf("the file at the path of home after the refusal: %v, want it kept", err)
 	}
 }
 
@@ -544,11 +685,13 @@ func TestContentCheckHashOfAnotherID(t *testing.T) {
 
 // TestContentCheckBodyNotWritten: a file of the object that cannot be written
 // sends that object to a separate `hash-object --stdin -w`, with no log line,
-// and the create matches (claustrum's own, not measured).
+// and the create matches. The long-running hash-object of each kind starts
+// before the write, as in 4c111e86 (measured on Linux), and gets no object (claustrum's own, not
+// measured).
 func TestContentCheckBodyNotWritten(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	old := writeObjectBody
-	writeObjectBody = func(string, []byte) error { return fs.ErrPermission }
+	writeObjectBody = func(*os.Root, string, []byte) error { return fs.ErrPermission }
 	t.Cleanup(func() { writeObjectBody = old })
 	logs := captureLogBuf(t)
 	raw, calls := f.create(t, nil)
@@ -561,8 +704,8 @@ func TestContentCheckBodyNotWritten(t *testing.T) {
 	if want := checkedLine("1", "file", 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
-	if long, separate := hashObjectWrites(calls); long != 0 || separate != 2 {
-		t.Errorf("%d long-running and %d separate hash-object -w calls, want 0 and 2", long, separate)
+	if long, separate := hashObjectWrites(calls); long != 2 || separate != 2 {
+		t.Errorf("%d long-running and %d separate hash-object -w calls, want 2 and 2", long, separate)
 	}
 }
 

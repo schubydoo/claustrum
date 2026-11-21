@@ -121,7 +121,7 @@ func (f wtFixture) wantCreated(t *testing.T, raw, gitFile, reg string) {
 //     resolved path lies in a folder named WTREG or WORKTREES. The create is
 //     refused, and nothing is rolled back.
 //   - Measured on macOS: the resolved path lies in a folder named worktrees. The create
-//     succeeds. D-3 against D-4 straddles the name.
+//     succeeds. The worktrees and WORKTREES cases straddle the name.
 //   - Measured on Linux: the path through the link. The create succeeds, and the index is
 //     in the link target.
 func TestWorktreeCreateRegistrationName(t *testing.T) {
@@ -129,14 +129,14 @@ func TestWorktreeCreateRegistrationName(t *testing.T) {
 		name, target, link string
 		resolved, refused  bool
 	}{
-		{"D-1 resolved", "WTREG", "", true, true},
-		{"D-1 through the link", "WTREG", "", false, false},
-		{"D-3 resolved", "alt/worktrees", "", true, false},
-		{"D-3 through the link", "alt/worktrees", "", false, false},
-		{"D-4 resolved", "alt/WORKTREES", "", true, true},
-		{"D-4 through the link", "alt/WORKTREES", "", false, false},
-		{"D-5 resolved", "WTREG", "../../WTREG", true, true},
-		{"D-5 through the link", "WTREG", "../../WTREG", false, false},
+		{"WTREG resolved", "WTREG", "", true, true},
+		{"WTREG through the link", "WTREG", "", false, false},
+		{"worktrees resolved", "alt/worktrees", "", true, false},
+		{"worktrees through the link", "alt/worktrees", "", false, false},
+		{"WORKTREES resolved", "alt/WORKTREES", "", true, true},
+		{"WORKTREES through the link", "alt/WORKTREES", "", false, false},
+		{"relative link resolved", "WTREG", "../../WTREG", true, true},
+		{"relative link through the link", "WTREG", "../../WTREG", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, h := postAddFixture(t)
@@ -174,7 +174,7 @@ func TestWorktreeCreateRegistrationName(t *testing.T) {
 //     which does not exist. The create succeeds, the .git file stays as it is, and
 //     the registration that git made holds the index.
 func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
-	t.Run("D-13", func(t *testing.T) {
+	t.Run("commondir names another folder", func(t *testing.T) {
 		f, h := postAddFixture(t)
 		reg := filepath.Join(f.regDir, "w1")
 		afterAdd(t, filepath.Join(reg, "commondir"), "../../x\n", 0)
@@ -186,7 +186,7 @@ func TestWorktreeCreateRegistrationCommonDir(t *testing.T) {
 		}
 		f.wantNothingRolledBack(t, string(b), reg)
 	})
-	t.Run("D-12", func(t *testing.T) {
+	t.Run("git file names a missing entry", func(t *testing.T) {
 		f, h := postAddFixture(t)
 		const gitFile = "gitdir: /elsewhere/worktrees/w1\n"
 		afterAdd(t, filepath.Join(f.leaf(), ".git"), gitFile, 0)
@@ -214,13 +214,13 @@ func TestWorktreeCreateRegistrationTestOrder(t *testing.T) {
 		afterAdd(t, filepath.Join(f.leaf(), ".git"), gitFile, d)
 		return f, h, gitFile, filepath.Join(target, "w1")
 	}
-	t.Run("D-9", func(t *testing.T) {
+	t.Run("timeout during the add", func(t *testing.T) {
 		f, h, gitFile, reg := stage(t, 300*time.Millisecond)
 		raw, _ := f.create(t, h, "w1", "", 1)
 		wantError(t, raw, notOursText(f.leaf()), "unsafe_path")
 		f.wantNothingRolledBack(t, gitFile, reg)
 	})
-	t.Run("D-2", func(t *testing.T) {
+	t.Run("failing checkout", func(t *testing.T) {
 		f, h, gitFile, reg := stage(t, 0)
 		log := filepath.Join(t.TempDir(), "calls.log")
 		t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
@@ -245,7 +245,7 @@ func TestWorktreeCreateRegistrationTestOrder(t *testing.T) {
 // and macOS, 10 of 10 runs each). The daemon has GIT_COMMON_DIR of another repository X
 // in its environment, and T and X hold a commit with the same id. git then makes
 // the registration in X, and T has none. The create is refused with the "was not
-// populated" text, and nothing is rolled back. In B-E3, X also has a branch main.
+// populated" text, and nothing is rolled back. In the second case, X also has a branch main.
 //
 // The third case is not a measured cell. It is the state, and T holds a second
 // worktree, so T has a worktrees folder with an entry of another name and no entry
@@ -258,8 +258,8 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 		xBranch    string
 		otherEntry bool
 	}{
-		{"B-E1", "xonly", false},
-		{"B-E3", "main", false},
+		{"X has another branch", "xonly", false},
+		{"X has a branch main", "main", false},
 		{"an entry of another name in T (claustrum's rule, not measured)", "xonly", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -752,7 +752,7 @@ func TestCreatedRegistrationRefusalStates(t *testing.T) {
 		t.Errorf("no .git value: refusal %q, want none", got)
 	}
 	if got, want := refusalOf(reg), "refusing to create worktree: `"+namedLeaf(leaf)+"` does not hold the .git file made for it"; got != want {
-		t.Errorf("no registrations directory (B-E1, B-E3 and measured): refusal %q, want %q", got, want)
+		t.Errorf("no registrations directory (measured): refusal %q, want %q", got, want)
 	}
 	if err := os.Mkdir(registry, 0o755); err != nil {
 		t.Fatal(err)

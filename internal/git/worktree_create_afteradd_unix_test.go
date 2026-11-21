@@ -61,7 +61,7 @@ func (f wtFixture) wantKept(t *testing.T, leafWant, regsWant []string, branches 
 // the target of the link gets no new entry. In a measurement, the request has
 // an existingBranch that exists, and the frame has the text one time.
 func TestWorktreeCreateWorktreesIsLink(t *testing.T) {
-	for _, tc := range []struct{ name, existing string }{{"V1", ""}, {"E1", "eb"}} {
+	for _, tc := range []struct{ name, existing string }{{"new branch", ""}, {"existing branch", "eb"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			runGit(t, f.repo, "branch", "eb")
@@ -178,7 +178,7 @@ func TestWorktreeCreateLinkedWorktreesUnderAHold(t *testing.T) {
 	params, _ := h.createParams()
 	want := `{"success":false,"error":"git worktree add failed: cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place","errorCode":"worktree_add_failed"}`
 	if got := h.startsInA(t, "git.worktree_create", params); got != want {
-		t.Fatalf("C6b: create = %s\n  want %s", got, want)
+		t.Fatalf("create = %s\n  want %s", got, want)
 	}
 	calls := readEnvCalls(t, h.log)
 	i := h.wantForm(t, calls, 0, "rev-parse,--absolute-git-dir", true)
@@ -189,10 +189,10 @@ func TestWorktreeCreateLinkedWorktreesUnderAHold(t *testing.T) {
 		}
 	}
 	if len(after) != 1 || !after[0].listing() || !sameDir(after[0].cwd, h.repo) {
-		t.Fatalf("C6b: the calls after absolute-git-dir are %v, want one listing in %s", after, h.repo)
+		t.Fatalf("the calls after absolute-git-dir are %v, want one listing in %s", after, h.repo)
 	}
 	if v := callCommonDir(after[0]); !sameDir(v, h.gitDir) {
-		t.Errorf("C6b: the listing has GIT_COMMON_DIR=%q, want the git directory %s", v, h.gitDir)
+		t.Errorf("the listing has GIT_COMMON_DIR=%q, want the git directory %s", v, h.gitDir)
 	}
 }
 
@@ -222,11 +222,11 @@ func TestWorktreeCreateLeafGitFile(t *testing.T) {
 		text  func(leaf string) string
 		leaf  []string
 	}{
-		{"V3a", func(g, _ string) [][]string { return [][]string{{"rm", g}} },
+		{"no .git file", func(g, _ string) [][]string { return [][]string{{"rm", g}} },
 			func(l string) string { return l + " has no .git file" }, nil},
-		{"V3b", func(g, _ string) [][]string { return [][]string{{"rm", g}, {"mkdir", g}} },
+		{"folder at .git", func(g, _ string) [][]string { return [][]string{{"rm", g}, {"mkdir", g}} },
 			func(l string) string { return l + "/.git is not a regular file" }, []string{".git"}},
-		{"V3c", func(g, reg string) [][]string { return [][]string{{"write", g, "gitdir:" + reg + "\n"}} },
+		{"no blank after gitdir", func(g, reg string) [][]string { return [][]string{{"write", g, "gitdir:" + reg + "\n"}} },
 			func(l string) string { return l + "/.git does not name a git dir" }, []string{".git"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,7 +252,7 @@ func TestWorktreeCreateLeafGitFile(t *testing.T) {
 // and the record keeps its text.
 func TestWorktreeCreateRecordWithSlash(t *testing.T) {
 	for _, tc := range []struct{ name, tail string }{
-		{"V4", "/.git/\n"}, {"R1", "/.git \n"}, {"R2", "/./.git\n"}, {"R3", "//.git\n"},
+		{"slash at the end", "/.git/\n"}, {"blank at the end", "/.git \n"}, {"dot part", "/./.git\n"}, {"double slash", "//.git\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, h := postAddFixture(t)
@@ -890,10 +890,10 @@ func TestWorktreeCreateRefusalKeepsLeafGitFile(t *testing.T) {
 		step func(t *testing.T, regs, other string)
 		text func(leaf string) string
 	}{
-		{"V5c", func(t *testing.T, regs, other string) {
+		{"record names another path", func(t *testing.T, regs, other string) {
 			writeIn(t, filepath.Join(regs, "w1", "gitdir"), other+"\n")
 		}, differentWorktreeText},
-		{"V2", func(t *testing.T, regs, _ string) {
+		{"second new entry", func(t *testing.T, regs, _ string) {
 			if err := os.Mkdir(filepath.Join(regs, "w1b"), 0o755); err != nil {
 				t.Error(err)
 			}
