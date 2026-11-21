@@ -55,8 +55,8 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 // root. A `.git` file or link ends the walk with "", and so does a `.git` whose
 // Lstat fails with another error than "does not exist", such as access denied.
 // A mapped drive gets "". So they keep the answers of a local folder. Those cases
-// and the walk from a deeper folder are claustrum's own, not measured. The error
-// output of git there is not recorded.
+// and the walk from a deeper folder that exists are claustrum's own, not measured.
+// The error output of git there is not recorded.
 func shareGitDir(repo string) string {
 	if !repoOnShare(repo) {
 		return ""
@@ -74,6 +74,49 @@ func shareGitDir(repo string) string {
 		return g
 	}
 	return ""
+}
+
+// missingShareRepo is the folder that holds the `.git` of shareGitDir when path
+// does not exist. It is "" otherwise, so it is always "" on Linux and macOS.
+func missingShareRepo(path string) string {
+	g := shareGitDir(path)
+	if g == "" {
+		return ""
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
+	return filepath.Dir(g)
+}
+
+// askForMissingOnShare asks git about the repository of missingShareRepo(path),
+// in that folder, for a request on a path that does not exist. asked is false
+// when it makes no call. For `<repo>\missing\deeper` on a share 4c111e86 runs the
+// call and its later runs in `<repo>` for git.info and git.worktree_create, and
+// two times for git.worktree_remove, where git answers no repository in `<repo>`
+// (measured on Windows). The replies stay those of a missing path there.
+// Claustrum's own, not measured: the remove asks again only after a bad answer,
+// the start test runs first, as for a folder that exists, a good answer keeps the
+// old steps, and a bad one with a text answers it. A failed start test answers
+// its text. A root that the trust check does not trust, or trusts with no pin, gets no
+// start test and no call, and the request keeps the reply of a missing path.
+func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, asked bool) {
+	root := missingShareRepo(path)
+	if root == "" {
+		return repoAnswer{}, false
+	}
+	t := gitDirTrustFor(root)
+	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return repoAnswer{}, false
+	}
+	// The gate also makes the folder of the daemon that the call needs.
+	if msg := req.shadow.gate(off); msg != "" {
+		return repoAnswer{text: msg}, true
+	}
+	if !req.shadow.asksGit(t, off) {
+		return repoAnswer{}, false
+	}
+	return req.shadow.askGit(t, root), true
 }
 
 // unusableDotGit is the path of the first `.git` that git cannot use on the walk of
