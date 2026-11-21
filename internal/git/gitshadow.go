@@ -46,6 +46,7 @@ const (
 // The two log lines of the state. 5fd08069 writes one at the first decision of
 // the state and one more at a change (measured on Linux). It writes none for a
 // repeat test with the same result, and none for a failed test (measured).
+// 4c111e86 logs one per test until a state is kept (logStateLine).
 const (
 	shadowStateLine   = "[GitHandler] this host's git works on Claude's own copy of a repository's settings (a shadow directory): a repository's own git config and hooks are not read"
 	fallbackStateLine = "[GitHandler] this host's git does not work on Claude's own copy of a repository's settings (fallback-git; older than about 2.13?): a repository's own git config is read, and only the -c overrides limit it"
@@ -177,7 +178,7 @@ func (h *ShadowHost) active() bool {
 // A request with the member gets off-switch, also as the first request of a
 // daemon, in the "no repository" reply and while a failure is kept (measured on
 // Linux). A request without it gets the state of the daemon, and no member before
-// the first test passed (measured on Linux).
+// the first kept state (measured on Linux).
 func (h *ShadowHost) control(off bool) string {
 	if !h.active() {
 		return ""
@@ -250,7 +251,7 @@ func (h *ShadowHost) folderUse() gitUse {
 //
 // A request with the member runs no test and makes no folder (measured on
 // Linux). Without it, the first such request of a daemon runs the test. A
-// failure is kept for shadowFailureKeep. In the state shadow no second test runs
+// failure is kept for shadowFailureKeep. In a kept state shadow no second test runs
 // (measured: none at 590 s, 610 s and 720 s). In the state fallback-git the test
 // runs again after shadowRetestAfter.
 //

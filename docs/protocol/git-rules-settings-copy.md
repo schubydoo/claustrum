@@ -64,7 +64,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` no second test ran up to 720 s.
 - The daemon logs one `[GitHandler]` line per test until a state is kept, then
-  one per change.
+  one per change (`4c111e86`, measured on Linux). On macOS and Windows, and for a
+  kept `fallback-git` due for its retest, it is claustrum's own.
 
 ### The start test
 
@@ -111,7 +112,8 @@ does not fail the test (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure 10 seconds after the test, also with its cause
 gone. In that time a request gets the failure with no git call, but works with
-`"shadowDirOff":true`. A test under `"sessionFoldersOff":true` is not kept
+`"shadowDirOff":true`. A failed test under `"sessionFoldersOff":true` is not kept
+(`4c111e86`, measured on Linux). A test that passed is not kept either
 ([rule](git-info.md#settingscontrol)).
 
 ### The folders
