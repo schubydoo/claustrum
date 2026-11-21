@@ -15,11 +15,9 @@ import (
 // folder as the file system reports it (pathcanon.FinalDir). Every other
 // `path` gets resolvedDir, which keeps a junction.
 //
-// On 4c111e86 a `path` through a junction gave the `status` call with the path
-// as sent, and no `rev-parse` call with that spelling (measured on Windows).
-// The rows keep a set of the calls, so a `rev-parse` with the real path is not
-// told apart from no `rev-parse`. claustrum runs it with the real path (not
-// measured). A `subst` drive together with a junction is not measured either.
+// On 4c111e86 a `path` through a junction gives one `rev-parse --show-toplevel`
+// with the real path, and the `status` call with the path as sent (measured on
+// Windows). A `subst` drive together with a junction is not measured.
 func statusProbeDir(clean string) string {
 	if junctionInPath(clean) {
 		return pathcanon.FinalDir(clean)
