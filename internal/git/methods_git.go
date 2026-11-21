@@ -2494,7 +2494,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// own, not measured). The index goes into the registration through the
 		// held git directory, as before.
 		// On macOS a later gate here asks git about the repository after the start
-		// test and before the read of the config (createGateAsksAfterAdd).
+		// test and before the read of the config (createGateAsksAfterAdd), for a
+		// checkout of a branch. A commit id keeps the call of its content check
+		// after the read (claustrum's own, not measured).
 		req.askInGate = createGateAsksAfterAdd && !isObjectID(checkoutRev)
 		cu, offNow := req.use.fixedForm(false)
 		req.askInGate = false

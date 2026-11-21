@@ -326,7 +326,7 @@ func TestShadowCreateFollowsAHoldThatEndsAtTheAdd(t *testing.T) {
 		t.Errorf("C3: %d listings before the read-tree, want 2", n)
 	}
 	// On Linux the call after the add runs there (askAfterAdd), on macOS in
-	// the later gate (createGateAsksAfterAdd, 4c111e86, measured). On
+	// the later gate for a branch (createGateAsksAfterAdd, 4c111e86, measured). On
 	// Windows the recheck makes it (createRechecksAfterAdd). After a hold that
 	// ends at the add that is claustrum's own on Linux and Windows, not measured.
 	want := createAsksAfterAdd || createRechecksAfterAdd

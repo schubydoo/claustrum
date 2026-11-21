@@ -97,7 +97,7 @@ type gitUse struct {
 // its read of the config when the command that runs it is a call in the
 // repository with no --git-dir= (measured). After a later gate at a call with
 // --git-dir= no such call follows (measured), except on macOS at the checkout
-// of a create (createGateAsksAfterAdd). claustrum tells the two by the
+// of a create of a branch (createGateAsksAfterAdd). claustrum tells the two by the
 // kind of the call (formNow): the cells measure the outcome, not the cause.
 //
 // A create adopts its later gate until its first good `worktree add`

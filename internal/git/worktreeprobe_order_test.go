@@ -23,7 +23,7 @@ func switchMacCreateOrderOn(t *testing.T) {
 // TestCreateAfterAHoldAtTheAddAsksBeforeTheConfigRead: after a hold that ends at
 // the add, the later gate of the create asks git about the repository after the
 // start test and before the read of the config, and askAfterAdd makes no second
-// call. 4c111e86 does so (measured on macOS). Mutation: drop the askInGate arm of
+// call. 4c111e86 does so (measured on macOS, for a checkout of a branch). Mutation: drop the askInGate arm of
 // settingsGate. The call then comes after the read.
 func TestCreateAfterAHoldAtTheAddAsksBeforeTheConfigRead(t *testing.T) {
 	switchMacCreateOrderOn(t)
