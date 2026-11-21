@@ -231,10 +231,10 @@ func openNoShare(path string, access uint32) (*os.File, error) {
 // that step.
 var goneNotARepoKeepsAll = true
 
-// gitFileNowhereAsOlderGit is false on Windows: the gitfile text of git 2.56
-// (saysGitFileNowhere) keeps the answers of 5fd08069 (measured on Linux and Windows, the
-// refusal on Linux). A variable, so that a test on another system can run those answers.
-var gitFileNowhereAsOlderGit = false
+// gitFileNowhereAsOlderGit is true on Windows too: the gitfile text of git 2.56
+// (saysGitFileNowhere) gets the answers of an older git (4c111e86, measured on Windows
+// with git 2.56.1). A variable, so that a test can run the answers of 5fd08069.
+var gitFileNowhereAsOlderGit = true
 
 // printedPathAsIs is true on Windows: the "disagree" text shows an absolute
 // answer of git as git printed it, also when it is not clean (askGit).

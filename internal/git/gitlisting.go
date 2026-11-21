@@ -295,11 +295,11 @@ func listingEnvOf(daemon []string) []string {
 // answers "not a git repository" there, so the frame stays (measured on Linux and
 // macOS).
 //
-// git 2.56 answers its gitfile text there (saysGitFileNowhere). On Linux and macOS the
-// frame stays then too (gitFileNowhereAsOlderGit), with and without "shadowDirOff":true,
-// also for the reply to the first git request of a daemon, for a gone entry under
-// .git/worktrees and for a missing relative or absolute path (4c111e86, measured on
-// Linux and macOS with git 2.56.1). On Windows a gone entry gets "no
+// git 2.56 answers its gitfile text there (saysGitFileNowhere). The frame stays then
+// too (gitFileNowhereAsOlderGit), with and without "shadowDirOff":true, also for the
+// reply to the first git request of a daemon, for a gone entry under .git/worktrees and
+// for a missing relative or absolute path (4c111e86, measured on Linux, macOS and
+// Windows with git 2.56.1). Without gitFileNowhereAsOlderGit a gone entry gets "no
 // repository", and any other gone git dir the error of the call about the repository,
 // also as the first git request (5fd08069, measured on Linux and Windows), or with off
 // the listing refusal (5fd08069, measured on Linux).

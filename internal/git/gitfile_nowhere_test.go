@@ -49,17 +49,17 @@ func gitFileNowhereFrames(t *testing.T, g, text string, off bool) []methodFrame 
 
 // The four methods on a `.git` file to nowhere, on a daemon in the state shadow, with a
 // stub in place of git that fails each listing with one of the two texts. So no git
-// 2.56 is needed. On Linux and macOS (gitFileNowhereAsOlderGit) both texts keep the "no
+// 2.56 is needed. With gitFileNowhereAsOlderGit both texts keep the "no
 // repository" frames, also on a subfolder for git.info, also for the reply to the first
-// git request of a daemon and with "shadowDirOff":true (4c111e86, measured on Linux and
-// macOS with git 2.56.1). On Windows the text of git 2.56 gives the error of
+// git request of a daemon and with "shadowDirOff":true (4c111e86, measured on Linux,
+// macOS and Windows with git 2.56.1). Without it the text of git 2.56 gives the error of
 // the call about the repository, also on a subfolder and as the first git request, and
 // with "shadowDirOff":true the listing refusal (5fd08069, measured on Linux and Windows, the
 // listing refusal on Linux). The older
-// text keeps "no repository" (measured on Linux). The test runs the answers of both
-// systems. On Windows git spells its path with forward slashes, and the root in quotes
-// keeps backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
-// refusal in noRepoCalls on Linux, drop statusGitFileNowhere, refuse the gitfile text in
+// text keeps "no repository" (measured on Linux). The test runs both answers. On
+// Windows git spells its path with forward slashes, and the root in quotes keeps
+// backslashes, as in V-S2w. Mutations: answer the gitfile text or the listing
+// refusal in noRepoCalls, drop statusGitFileNowhere, refuse the gitfile text in
 // statusNoRepoCalls, or key the rule on the state of the daemon. A create runs the call
 // about the repository first (gitWorktreeCreateLocked), so the stub gives its first
 // run the same text. Mutation there: answer "no repository" after every answer of the
@@ -80,7 +80,7 @@ func TestGitFileNowhereFourMethodsStub(t *testing.T) {
 }
 
 // gitFileNowhereFourMethods is TestGitFileNowhereFourMethodsStub with the answers of
-// Linux and macOS (older) or of Windows.
+// 4c111e86 (older) or of 5fd08069.
 func gitFileNowhereFourMethods(t *testing.T, older bool) {
 	f := newNoRepoFixture(t)
 	f.d, _ = newSeededShadowDeps(t)
@@ -142,6 +142,24 @@ func gitFileNowhereFourMethods(t *testing.T, older bool) {
 				subRow.params["shadowDirOff"] = true
 			}
 			rows = append(rows, subRow)
+			if tc.stderr == text+"\n" {
+				// git.worktree_remove of a gone worktree without worktreeRoot: with
+				// the answers of an older git success, the branch kept (4c111e86,
+				// measured on Linux, macOS and Windows with git 2.56.1), else the
+				// lock-check refusal with the text of 5fd08069. The remove as the first
+				// git request of a daemon is claustrum's own, not measured.
+				gone := filepath.Join(g, ".claude", "worktrees", "w9")
+				remove := methodFrame{"git.worktree_remove", map[string]any{"baseRepo": g, "worktreePath": gone, "branchName": "w9"},
+					resultOf(`{"success":true,"branchKept":true}`)}
+				if tc.want != "" {
+					remove.frame = resultFrame(t, worktreeResult{Success: false,
+						Error: "failed to remove worktree: could not check whether " + gone + " is locked: " + tc.want})
+				}
+				if tc.off {
+					remove.params["shadowDirOff"] = true
+				}
+				rows = append(rows, remove)
+			}
 			for _, m := range rows {
 				if tc.first {
 					// A daemon with a run folder that has made no git request yet.

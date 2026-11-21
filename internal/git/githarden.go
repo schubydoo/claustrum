@@ -1579,12 +1579,12 @@ type configVerdict struct {
 	noRepoText string
 	// gitFileText is set beside refusal when the listing failed with the text of git
 	// 2.56 for a `.git` file that names no valid repository (saysGitFileNowhere). It is
-	// the error of a failed call about the repository, with git's lines. On Windows the
-	// git methods answer it, or the refusal with "shadowDirOff":true, as 5fd08069 does
-	// (measured on Linux and Windows, the refusal on Linux). On Linux and macOS they
+	// the error of a failed call about the repository, with git's lines. The git methods
 	// answer as for "not a git repository" (gitFileNowhereAsOlderGit), and a remove of a
-	// gone worktree without worktreeRoot gets success (4c111e86, measured on Linux and
-	// macOS with git 2.56.1).
+	// gone worktree without worktreeRoot gets success (4c111e86, measured on Linux, macOS
+	// and Windows with git 2.56.1). Without gitFileNowhereAsOlderGit they answer it, or
+	// the refusal with "shadowDirOff":true, as 5fd08069 does (measured on Linux and
+	// Windows, the refusal on Linux).
 	gitFileText string
 	// listing is the listing of a check that passed. The first hardened call after the
 	// check pins its hooks (hardenedGitFirst).

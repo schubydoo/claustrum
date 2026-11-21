@@ -103,8 +103,8 @@ var unusableRows = []unusableRow{
 
 // gitFileNowhereRows are the rows whose frame can depend on the text of git. 4c111e86 is
 // measured there with git 2.55 on Windows, and a missing path with git 2.56.1 on Linux
-// and macOS. With the text of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older
-// text on Linux and macOS. On Windows it follows the 5fd08069 rows of
+// and macOS, and with git 2.56.1 on Windows. With the text of git 2.56 (saysGitFileNowhere) a missing path keeps the frame of the older
+// text (gitFileNowhereAsOlderGit). Without it the frame follows the 5fd08069 rows of
 // TestGitFileNowhereFourMethodsStub. The frame of an empty folder there is from the
 // code, not measured. TestCreateUnusableGitFileStub pins both texts.
 var gitFileNowhereRows = map[string]bool{
@@ -194,12 +194,12 @@ func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
 
 // The rows of gitFileNowhereRows with a stub in place of git that fails each listing
 // with one of the two texts, so no git 2.56 is needed. With the older text the create
-// answers the 4c111e86 text (measured with git 2.55 on Windows). On Linux and macOS a
-// missing path gets that text with the text of git 2.56 too (4c111e86, measured on Linux
-// and macOS with git 2.56.1). On Windows it gets the error of the call about
-// the repository (5fd08069). An empty folder then gets the listing refusal (from the
-// code, not measured). The test runs the answers of both systems. Mutations: answer
-// not_a_repo in notARepoResult, or answer the gitfile text in noRepoCalls on Linux.
+// answers the 4c111e86 text (measured with git 2.55 on Windows). A missing path gets
+// that text with the text of git 2.56 too (4c111e86, measured on Linux, macOS and
+// Windows with git 2.56.1). Without gitFileNowhereAsOlderGit it gets the error of the
+// call about the repository (5fd08069). An empty folder then gets the listing refusal
+// (from the code, not measured). The test runs both answers. Mutations: answer
+// not_a_repo in notARepoResult, or answer the gitfile text in noRepoCalls.
 func TestCreateUnusableGitFileStub(t *testing.T) {
 	for _, row := range unusableRows {
 		if !gitFileNowhereRows[row.name] {

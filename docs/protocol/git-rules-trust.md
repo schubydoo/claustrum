@@ -300,16 +300,16 @@ The classes come in this order:
    `.git` file to a gone git dir, git 2.56 says `gitfile does not point to a valid
    repository` instead, and a gone entry under
    `.git/worktrees` answers "no repository" on each method but
-   `git.worktree_remove` (measured on Linux and Windows). On Windows another gone git dir
+   `git.worktree_remove` (measured on Linux and Windows). Another gone git dir
    answers the error of
    [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository) in the folder
    that holds `.git` (`5fd08069`, measured on Linux and Windows). `git.info` runs that call
    itself, and its later runs give "no repository" (`c8e2f083`, measured on
    Linux). With `"shadowDirOff":true`
    that git dir gets the hooks refusal on every method (`5fd08069`, measured on
-   Linux). Linux and macOS: see the method pages.
-   On Linux and macOS a remove of a gone worktree without `worktreeRoot` gets
-   success in both modes (`b3081b51`, measured on Linux).
+   Linux). `4c111e86` answers as with an older git: see the method pages.
+   A remove of a gone worktree without `worktreeRoot` gets
+   success in both modes (`b3081b51`, measured on Linux, `4c111e86` on each system).
 3. Any other failure, a failed start included. The daemon runs `git version`. It
    runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
    If that call fails too, it is the ["cannot run" text](#the-cannot-run-and-hooks-refusal-texts). Else it is the hooks refusal.
