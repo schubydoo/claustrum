@@ -498,13 +498,17 @@ func TestLoginPATHFailedReadAgainTriesAgain(t *testing.T) {
 // an adopt 61 s after the last read, then the line of the cap after the good line of
 // the 24th. That no 25th read follows, the window of 24 h from the start of the first
 // read, and a new window with its own cap from the first read after it, are
-// claustrum's own (not measured).
+// claustrum's own (not measured). The two times of the line are in the zone of the
+// clock with an RFC 3339 offset, as on 4c111e86 (measured on macOS).
 func TestLoginPATHReadAgainCap(t *testing.T) {
 	if !loginPATHFromShell {
 		t.Skip("no login shell runs here, so no read again starts")
 	}
 	buf := captureLogBuf(t)
 	f := installPathReadFake(t)
+	f.mu.Lock()
+	f.now = f.now.In(time.FixedZone("PST", -8*60*60))
+	f.mu.Unlock()
 	start := f.clock()
 	goodFirstRead(t, f, "/login/0")
 	for range loginPATHAgainCap {
@@ -516,9 +520,9 @@ func TestLoginPATHReadAgainCap(t *testing.T) {
 	againAfterAdopt(f, "/g", 61*time.Second)
 	noReadStarted(t, f, "the 25th read again")
 
-	capLine := "INFO  [shellenv] Since 1970-01-12T13:46:40Z the login shell's PATH has been read again 24 times, " +
+	capLine := "INFO  [shellenv] Since 1970-01-12T05:46:40-08:00 the login shell's PATH has been read again 24 times, " +
 		"each time because a new connection sent its environment. It is not read again before " +
-		"1970-01-13T13:46:40Z; until then programs keep the PATH just read\n"
+		"1970-01-13T05:46:40-08:00; until then programs keep the PATH just read\n"
 	want := "DEBUG [shellenv] Extracted shell PATH (8 chars) in 0s, after 0 failed read(s)\n" + capLine
 	got := shellenvLines(buf)
 	if !strings.HasSuffix(got, want) || strings.Count(got, "[shellenv] Since ") != 1 {
@@ -539,9 +543,9 @@ func TestLoginPATHReadAgainCap(t *testing.T) {
 	}
 	againAfterAdopt(f, "/g", 61*time.Second)
 	noReadStarted(t, f, "the 25th read again of the second window")
-	secondCap := "INFO  [shellenv] Since 1970-01-13T13:46:40Z the login shell's PATH has been read again 24 times, " +
+	secondCap := "INFO  [shellenv] Since 1970-01-13T05:46:40-08:00 the login shell's PATH has been read again 24 times, " +
 		"each time because a new connection sent its environment. It is not read again before " +
-		"1970-01-14T13:46:40Z; until then programs keep the PATH just read\n"
+		"1970-01-14T05:46:40-08:00; until then programs keep the PATH just read\n"
 	if got := shellenvLines(buf); !strings.HasSuffix(got, secondCap) || strings.Count(got, "[shellenv] Since ") != 2 {
 		t.Errorf("log =\n%s\nwant a second cap line at the end:\n%s", got, secondCap)
 	}
