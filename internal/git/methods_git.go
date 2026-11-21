@@ -1934,7 +1934,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// path goes (4c111e86, measured on Linux and macOS), after the
 			// branch step (measured on Linux). claustrum removes it by one rmdir.
 			// With nothing at the path, 4c111e86 adds the leaf text of a failed
-			// rmdir (measured on Linux). claustrum then runs no rmdir.
+			// rmdir (measured on Linux). claustrum's rmdir finds nothing there (from the code).
 			part := goneLeafUndoPart(p.WorktreePath)
 			undoMovedAwayLeaf(p.WorktreePath, checkpoint)
 			undo = withLeafUndoPart(p.WorktreePath, part, undo)
