@@ -49,7 +49,8 @@ type managedLauncherLog struct {
 // with the reason of the last answer writes no line. A usable answer in between
 // makes it log again (4c111e86, measured on Linux). On macOS an answer with no
 // launcherCheck does too (resetChecked), and a settings rewrite alone does not
-// (4c111e86, measured on macOS). On Windows 27 refusals in a row write one line
+// (4c111e86, measured on macOS). On Windows an answer with no launcherCheck does
+// too (4c111e86, measured on Windows). On Windows 27 refusals in a row write one line
 // (4c111e86, measured on Windows). claustrum's own, not measured: the key lives for
 // one daemon, apart from the key of note.
 func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckReply) {
@@ -133,7 +134,8 @@ var checkTakesAnyMembers = launcherCheckAnyMembers
 // page as any other, such as "path":5 or "orManagedFolder":"yes" (measured on
 // Windows). Other member values are claustrum's own, not measured. Elsewhere a member of another JSON type fails the decode (claustrum's
 // own, not measured). A value that is not an object and not null fails it on every
-// system, and null counts as absent (claustrum's own, not measured).
+// system, and null counts as absent (4c111e86, measured on Windows for a string, "",
+// a number, true, [] and an array of one object, and null as absent. Linux and macOS are claustrum's own, not measured).
 func (c *launcherCheckParam) UnmarshalJSON(data []byte) error {
 	if !checkTakesAnyMembers {
 		return json.Unmarshal(data, &c.check)

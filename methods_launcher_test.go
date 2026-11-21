@@ -30,9 +30,10 @@ func TestLauncherCheckLogRepeats(t *testing.T) {
 // answers the file check. "path":5 and "orManagedFolder":"yes" are measured on
 // Windows (4c111e86). Other member values, such as a string sha256, are claustrum's
 // own. Without it, as on Linux and macOS, such a member gets Invalid params
-// (claustrum's own, not measured). A
-// launcherCheck that is no object gets Invalid params either way, and null counts
-// as absent (claustrum's own, not measured).
+// (claustrum's own, not measured). A launcherCheck that is no object gets Invalid
+// params either way, and null counts as absent. On Windows that is measured for a
+// string, "", a number, true, [], an array of one object and null (4c111e86). The
+// other values, and Linux and macOS, are claustrum's own, not measured.
 func TestLauncherCheckAnyMembers(t *testing.T) {
 	const invalid = `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}`
 	const none = `{"jsonrpc":"2.0","id":1,"result":{"status":"none"}}`
