@@ -113,8 +113,9 @@ type managedLauncherParams struct {
 	CliPath string `json:"cliPath"`
 	// Path and LauncherCheck ask for the file check of the launcher at Path
 	// (c9125eb8, install.ResolveChecked). A member of another JSON type gets Invalid
-	// params (claustrum's own, not measured). An empty Path counts as absent
-	// (claustrum's own, not measured).
+	// params (claustrum's own, not measured). On Windows the members inside
+	// LauncherCheck can hold another type (launcherCheckParam). An empty Path counts
+	// as absent (claustrum's own, not measured).
 	Path          string             `json:"path"`
 	LauncherCheck launcherCheckParam `json:"launcherCheck"`
 }

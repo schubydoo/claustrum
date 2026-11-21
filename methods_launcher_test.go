@@ -34,6 +34,8 @@ func TestLauncherCheckLogRepeats(t *testing.T) {
 func TestLauncherCheckAnyMembers(t *testing.T) {
 	const invalid = `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}`
 	const none = `{"jsonrpc":"2.0","id":1,"result":{"status":"none"}}`
+	prev := checkTakesAnyMembers
+	t.Cleanup(func() { checkTakesAnyMembers = prev })
 	for _, row := range []struct {
 		anyMembers bool
 		check      string
@@ -47,11 +49,9 @@ func TestLauncherCheckAnyMembers(t *testing.T) {
 		{false, `"x"`, invalid},
 		{false, `null`, none},
 	} {
-		prev := checkTakesAnyMembers
 		checkTakesAnyMembers = row.anyMembers
 		s := newTestServer(t)
 		got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"x","launcherCheck":`+row.check+`}}`))
-		checkTakesAnyMembers = prev
 		if row.want == "unusable" {
 			if !strings.Contains(got, `"result":{"status":"unusable"`) {
 				t.Errorf("anyMembers %v, launcherCheck %s: %s, want an unusable answer", row.anyMembers, row.check, got)

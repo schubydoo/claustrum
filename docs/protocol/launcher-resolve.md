@@ -16,7 +16,7 @@ An untagged rule on this page matches build `89cb6289`, measured on Linux. A rul
 |---|---|---|
 | `cliPath` | yes | The path of the CLI that the launcher is to run. Any non-empty string is accepted, a relative one too. The daemon does not `~`-expand it (claustrum's own) (not measured). |
 | `path` | no | A launcher to check, with `launcherCheck` (`c9125eb8`). An empty `path` counts as absent (claustrum's own, not measured). |
-| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). |
+| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only (Linux and macOS) and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). |
 
 ## Response
 
@@ -216,7 +216,7 @@ An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of t
 
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`, with or without a `path`. Its members can hold any type, such as `"path":5` (`4c111e86`, measured on Windows). A `launcherCheck` that is no object gets `Invalid params` (claustrum's own, not measured).
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`, with or without a `path`. Its members can hold another type, such as `"path":5` (`4c111e86`, measured on Windows). A `launcherCheck` that is no object gets `Invalid params` (claustrum's own, not measured).
 
 ## Rare states
 
