@@ -198,8 +198,9 @@ func TestSocketFilesRealpathThroughAFile(t *testing.T) {
 // last name (4c111e86, measured on Linux; macOS is claustrum's own, not
 // measured). After a file, a link to a file or a FIFO it gives the plain
 // exists:false, with and without missingLeaf. A folder and a link to a folder
-// still give the folder as real. A dangling link and a missing name keep the
-// answers of their kind. Mutation: resolveRealpath
+// give the folder as real. A dangling link gives exists:false, and with
+// missingLeaf dangling and the wouldBe of its target. A missing name gives
+// exists:false, and with missingLeaf its wouldBe. Mutation: resolveRealpath
 // with no trailing-slash test (the old code). <file>/ then gives exists:true.
 func TestSocketFilesRealpathTrailingSlash(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
