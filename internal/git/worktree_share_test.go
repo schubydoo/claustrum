@@ -274,3 +274,40 @@ func shareCallLines(calls []envCall) []string {
 	}
 	return out
 }
+
+// TestShareMissingSubfolderFailedStartTest sends git.info and a create on a
+// missing path below a repository on a share, with a start test that fails. The
+// request answers the text of the failed test in the frame of its method
+// (claustrum's own, not measured). A missing path that is not on a share starts
+// no test and keeps the replies of a missing path.
+func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
+	text := failedTestText("this repository's git config cannot be used: boom")
+	q := jsonQuoted(t, text)
+	for _, row := range []struct {
+		method string
+		share  bool
+		want   string
+	}{
+		{"git.info", true, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` + q + `}}`},
+		{"git.worktree_create", true, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + q + `,"errorCode":"worktree_add_failed"}}`},
+		{"git.info", false, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`},
+		{"git.worktree_create", false, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`},
+	} {
+		t.Run(fmt.Sprintf("%s share=%v", row.method, row.share), func(t *testing.T) {
+			f := newShadowFixture(t)
+			base := filepath.Join(f.repo, "missing", "deeper")
+			old := repoOnShare
+			repoOnShare = func(repo string) bool { return row.share && repo == base }
+			t.Cleanup(func() { repoOnShare = old })
+			failCallSeven(t, "boom\n")
+			leaf := filepath.Join(base, ".claude", "worktrees", "w1")
+			raw, _ := f.call(t, row.method, map[string]any{"path": base, "baseRepo": base, "worktreePath": leaf, "branchName": "w1"})
+			if raw != row.want {
+				t.Errorf("%s = %s\nwant %s", row.method, raw, row.want)
+			}
+			if _, err := os.Lstat(base); !os.IsNotExist(err) {
+				t.Errorf("the missing path: %v, want none", err)
+			}
+		})
+	}
+}
