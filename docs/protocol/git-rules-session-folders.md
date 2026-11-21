@@ -193,6 +193,10 @@ A hold uses a stored value, else git runs once more after it (`4c111e86`, measur
 Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
 Claustrum's own, not measured: a hold keeps that read for later requests and none it
 interrupts, and requests sent together each read, the later winning.
+On Windows a `process.spawn` with `"sessionFoldersOff":1` gets `Invalid params` (`4c111e86`, measured on
+Windows). On Windows another type than a bool or `null` gets it too, and `null` starts the child
+(claustrum's own, not measured). The refusal comes before the `id`, launcher and `command` tests
+(claustrum's own, not measured). On Linux and macOS only `true` counts (claustrum's own, not measured).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
