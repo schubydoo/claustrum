@@ -7,7 +7,7 @@ An untagged rule on this page was measured against build `5fd08069` on Linux. A 
 ## The settings copy
 
 The copy is in a folder `git-shadow` beside the socket. The calls of the five git
-methods name it, so git reads it and not the repository config.
+methods name it, so git reads it, not the repository config.
 
 ### The states and `settingsControl`
 
@@ -46,7 +46,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   and a kind other than a FIFO and `/dev/null`.
 - A request with `"shadowDirOff":true` gets `"off-switch"` also as the first request
   of a daemon, in a "no repository" reply and while a failed test is kept.
-  [Turning the read off](git-rules-config.md#turning-the-read-off) has the values that count as the
+  [Turning the read off](git-rules-config.md#turning-the-read-off) lists the values of the
   switch.
 - During a hold, each later command that starts its own config listing names the
   git directory (Linux, macOS and Windows). The config check and the call after it
@@ -105,7 +105,7 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the daemon's lock file cannot be made. On Windows a lock file that cannot be made gives the reason alone. With a deny entry for writes on `git-shadow` and the backup and restore privileges on, that is `Access is denied.` (`b3081b51`, measured on Windows) |
 
 If git refuses the copy and the same call works without it, the state is
-`fallback-git` and not a failure. A test call that works and answers wrongly gives
+`fallback-git`, not a failure. A test call that works and answers wrongly gives
 it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
@@ -146,7 +146,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   worktree uses the folder of its main repository.
 - That folder holds `HEAD`, `config`, the empty folders `objects` and `refs`, and
   `info/exclude` where the repository has it. On Linux and macOS it holds a link
-  `worktrees` to the git directory's `worktrees` folder, and none on Windows.
+  `worktrees` to the git directory's `worktrees` folder (none on Windows).
 - More copies follow the repository state: `shallow`, `info/attributes`,
   `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`.
 - The daemon makes the folder at the first request that accepts the repository
@@ -196,7 +196,7 @@ three shapes of the start test:
 
 `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>`
 
-The cause is the `mkdir` error of the folder. The same request again gets the same
+The cause is the `mkdir` error of the folder. A repeat gets the same
 line with no git call. On Windows a held copy gets 2 s of retries, then `rename
 <temp file> <copy>: Access is denied.` with full paths.
 
@@ -216,8 +216,8 @@ held lock keeps the folder of a live daemon.
 - `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
   follows. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
-- The rows show 8 days removed and 1 hour kept. Linux measured another
-  host's name, and macOS this host's name form.
+- 8 days removed and 1 hour kept are measured (another host's name on Linux,
+  this host's form on macOS).
 - Another lock error keeps the entry, and so does a FIFO lock on Linux. A link whose
   target lock gives an error stays. All three are claustrum's own, not measured.
 - A folder with no lock file under 1 minute old stays and gets none
@@ -251,7 +251,7 @@ blocks of rewritten URLs. The file ends with
 `[lfs]\n\trepositoryformatversion = 0\n`.
 
 - 41 keys are carried, each with one rule of accepted values (`internal/git/gitshadowconfig.go`).
-  Only some of those rules are measured.
+  Only some rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
   `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
   rewritten URL is not measured.
@@ -283,17 +283,20 @@ folder or its `.git` entry makes the daemon ask again.
 
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
 `.probe` (`52d82f0a` on Linux and macOS, `c8e2f083` on Windows). Exit 0 there gives
-the "no repository" answer on Windows (`c8e2f083`). The daemon kills a second run 30
+"no repository" on Windows (`c8e2f083`). The daemon kills a second run 30
 seconds after its start, and the reply is the error of the rows below, with the text
-of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero exit
-gets the same (claustrum's own).
+of the first call or its exit status (`c8e2f083`, Linux and Windows). So does a non-zero
+exit (claustrum's own).
 
-On Linux and macOS a third run follows that exit 0, in the root, with no user or
-system config and no `GIT_DIR` (`52d82f0a`). Its exit 0 gives that error plus `;
-if that names a git setting or file, fix it, then try again`. A bare repository gets
-no third run (Linux). The third run ends 30 seconds after the second run started, and
-a failed one gives "no repository" (claustrum's own, not measured). The stop of a
-child of the third run is not measured. A `refs` made
+A third run follows that exit 0, in the root, without user or
+system config or `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share, statuses not logged). It ends
+at the second run's deadline (claustrum's own, not measured). Its child's stop
+is not measured. On Linux and macOS
+its exit 0 gives that error plus `; if that names a git setting or file, fix it, then try
+again`, its stop gives the last row (`52d82f0a`,
+Linux), and a failure "no repository" (claustrum's own). On Windows each gives "no
+repository" (seen on that share, else claustrum's own). A bare repository gets no third
+run (Linux). A `refs` made
 [unsearchable](git-rules-trust.md#how-the-daemon-finds-the-git-directory) right after a good
 answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 
@@ -327,13 +330,13 @@ add](git-worktree-create.md#the-staged-add)).
 ### `config.worktree`
 
 The copy has no `extensions.worktreeConfig` setting, so git reads no
-`config.worktree` file in the state `shadow`. The daemon does two things in its
-place, in a repository with that extension and a `config.worktree` file. The
+`config.worktree` file in the state `shadow`. In a repository with that extension and
+such a file, the daemon does two things instead. The
 `worktreeConfig` values `2` and `10` turn that extension on.
 
 - Each key of the copied settings file but the format version, `extensions.*` and
   `core.bare` goes before the option list of the git calls as one `-c` item, with the copy's value,
-  sorted by key. Six keys are measured. Other keys and a repeated key are not
-  measured. A call on a linked worktree gets the items of its own file.
+  sorted by key. Six keys are measured, other keys and a repeated key
+  not. A call on a linked worktree gets the items of its own file.
 - A new worktree of [git.worktree_create](git-worktree-create.md) gets its own
   `config.worktree` file.
