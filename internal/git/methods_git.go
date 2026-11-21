@@ -3706,7 +3706,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		// about that repository once, and again only after a bad answer, as
 		// removeGate does (askForMissingOnShare). After two bad answers it refuses
 		// or answers success with the branch kept, and deletes nothing. Otherwise
-		// the old steps run, as on main.
+		// the steps below run, as for a missing baseRepo off a share.
 		if a, asked := req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); asked && a.bad() {
 			if a, _ = req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); a.text != "" {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + a.text)
