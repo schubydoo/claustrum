@@ -42,8 +42,8 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 
 claustrum reads it only for these refusals. An accepted value does not end the child (claustrum's own).
 
-- A text, a float or `null`: `Invalid params` (measured on Linux and Windows, macOS for a text).
-- A negative value: `-32602` `unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence`, reason `other` (Linux, macOS and Windows).
+- A text, a float or `null`: `Invalid params` (measured on Linux and Windows, macOS for a text). Other forms that are no whole number in int64, such as `1e3`, `1.0` or a larger number, get it too (claustrum's own).
+- A negative value: `-32602` `unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence`, reason `other` (Linux, macOS and Windows). A refusal logs the failed-start line (Linux and macOS). `Invalid params` logs none (Linux).
 - A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux).
 - A `pty` error comes first (Linux and Windows, macOS for `true`). `0` and `1000000000000` pass (Linux, and `99999999999` on Windows), and `0` passes this test with each of these members (Linux).
 - The test comes after the `id` and `command` tests and before `linkBound` with a `launcher` (Linux). The place of the type test and of the test against the launcher members is claustrum's own.
