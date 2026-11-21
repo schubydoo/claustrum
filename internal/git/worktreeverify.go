@@ -127,6 +127,44 @@ func undoMovedAwayLeaf(worktreePath string, cp worktreeCheckpoint) {
 	undoFailedAddLeaf(worktreePath, cp, true)
 }
 
+// undoNotFinishedPrefix starts the undo text of a rollback that left something.
+const undoNotFinishedPrefix = "; and the undo could not finish for "
+
+// goneLeafUndoPart is the leaf part of the undo text of a leaf deleted right
+// after a staged add and not made again (addRefused.leafDeleted), or "" when
+// something is at the path. 4c111e86 answers "the worktree directory remains
+// (re-populated while undoing?); remove it by hand before retrying (removeat
+// <leaf base name>: no such file or directory)" there (measured on Linux). The
+// error in the parentheses is that of the lstat, in the form of a remove of the
+// base name. Nothing is removed.
+func goneLeafUndoPart(worktreePath string) string {
+	leaf := filepath.Clean(worktreePath)
+	_, err := os.Lstat(leaf)
+	var pe *fs.PathError
+	if !errors.Is(err, fs.ErrNotExist) || !errors.As(err, &pe) {
+		return ""
+	}
+	cause := &fs.PathError{Op: "removeat", Path: filepath.Base(leaf), Err: pe.Err}
+	return fmt.Sprintf("the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (%v)", cause)
+}
+
+// withLeafUndoPart puts the leaf part part into undo, the text of
+// undoFailedCheckout: first after its start, as undoFailedCheckout puts its own
+// leaf part, joined to the rest by "; ". An empty part leaves undo as it is.
+func withLeafUndoPart(worktreePath, part, undo string) string {
+	if part == "" {
+		return undo
+	}
+	start := undoNotFinishedPrefix + worktreePath + ": "
+	if undo == "" {
+		return start + part
+	}
+	if rest, ok := strings.CutPrefix(undo, start); ok {
+		return start + part + "; " + rest
+	}
+	return undo
+}
+
 // undoFailedAddLeaf is undoFailedAdd. folderOnly removes no file and no link.
 func undoFailedAddLeaf(worktreePath string, cp worktreeCheckpoint, folderOnly bool) {
 	cp.lock.retake()
