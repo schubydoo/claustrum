@@ -36,6 +36,11 @@ func realpathClean(p string) string {
 	return p
 }
 
+// realpathEndsInSep reports whether p ends in "/" after a name (resolveRealpath).
+func realpathEndsInSep(p string) bool {
+	return strings.HasSuffix(p, "/") && strings.TrimRight(p, "/") != ""
+}
+
 // realpathJoin reads a relative link target from the folder of the link.
 func realpathJoin(dir, target string) string { return dir + "/" + target }
 

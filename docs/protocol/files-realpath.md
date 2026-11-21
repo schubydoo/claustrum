@@ -22,7 +22,11 @@ Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follow
 
 ### A missing folder or a file on the way
 
-A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this is claustrum's own, not measured. On Windows the path first takes the `no_usable_name` or error 1921 failure of its nearest existing folder, or the error 1921 of a loop on the way, found by text, with and without `missingLeaf`. With a missing folder between, this is measured behind a network link with `missingLeaf` (`4c111e86`). On a mapped drive, behind a chain of 32 junctions, behind a network link without `missingLeaf` and for the walk by text it is claustrum's own, not measured. A path below a regular file gives `{"exists":false}` (`4c111e86`, measured on Linux, and for `<file>/a` with no `missingLeaf` on macOS). With `missingLeaf` it gives the same, and a link to it `dangling` and no `wouldBe` (`4c111e86`, measured on Linux). The other macOS forms and all of Windows are claustrum's own, not measured. On Windows, `<file>\.` and `<file>\..` are cleaned as text first, so they give `exists:true` and the `real` of the file or its folder (claustrum's own, not measured). A path that ends in `/` after a regular file, as `<file>/`, still gives `exists:true` and the `real` of the file, also with `missingLeaf`. `4c111e86` gives `{"exists":false}` (measured on Linux).
+A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this is claustrum's own, not measured. On Windows the path first takes the `no_usable_name` or error 1921 failure of its nearest existing folder, or the error 1921 of a loop on the way, found by text, with and without `missingLeaf`. With a missing folder between, this is measured behind a network link with `missingLeaf` (`4c111e86`). On a mapped drive, behind a chain of 32 junctions, behind a network link without `missingLeaf` and for the walk by text it is claustrum's own, not measured. A path below a regular file gives `{"exists":false}` (`4c111e86`, measured on Linux, and for `<file>/a` with no `missingLeaf` on macOS). With `missingLeaf` it gives the same, and a link to it `dangling` and no `wouldBe` (`4c111e86`, measured on Linux). The other macOS forms and all of Windows are claustrum's own, not measured. On Windows, `<file>\.` and `<file>\..` are cleaned as text first, so they give `exists:true` and the `real` of the file or its folder (claustrum's own, not measured).
+
+### A trailing slash
+
+A path that ends in `/` after a file, a link to a file or a FIFO gives `{"exists":false}`, also with `missingLeaf` and for `<file>//` (`4c111e86`, measured on Linux). With the `/`, a folder and a link to a folder give the folder as `real`. A dangling link gives `{"exists":false}`, and with `missingLeaf` `dangling` and the `wouldBe` of its target. A missing name gives `{"exists":false}`, and with `missingLeaf` its `wouldBe` (`4c111e86`, measured on Linux). On macOS this is claustrum's own, not measured. On Windows the `/` is cleaned as text first (claustrum's own, not measured).
 
 ## Errors
 
@@ -58,4 +62,4 @@ Claustrum's own, not measured: a colon in a folder name, a stream that exists, t
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies. The `<file>/` case above is a gap, not a divergence, and a later fix closes it.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies.
