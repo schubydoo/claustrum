@@ -38,10 +38,12 @@ func fakeLauncherFactsThroughLinks(t *testing.T, over map[string]launcherFacts) 
 	t.Helper()
 	fakeLauncherFacts(t, nil)
 	launcherPathFacts = func(p string) (launcherFacts, error) {
-		if r, err := filepath.EvalSymlinks(p); err == nil {
-			if f, ok := over[r]; ok {
-				return f, nil
-			}
+		r, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			return launcherFacts{}, err // as the real stat answers a path that does not exist
+		}
+		if f, ok := over[r]; ok {
+			return f, nil
 		}
 		return launcherFacts{uid: 0, mode: 0o755}, nil
 	}
@@ -442,7 +444,8 @@ func TestCheckLauncherFileDigestGrowth(t *testing.T) {
 
 // TestCheckLauncherFileLinkHolder pins the test of the folder that holds a middle link
 // of a chain: front, then w/mid, then the file in ok. w is on neither path, so only the
-// link walk reaches it (claustrum's own, not measured).
+// link walk reaches it. 4c111e86 refuses a link that a folder of the login holds (row
+// K8 of cell l_m24l1, measured on Linux).
 func TestCheckLauncherFileLinkHolder(t *testing.T) {
 	d := launcherDir(t)
 	ok := writeLauncher(t, filepath.Join(d, "ok", "launcher.sh"), "#!/bin/sh\n", 0o755)
