@@ -15,16 +15,30 @@ import (
 // folder as the file system reports it (pathcanon.FinalDir). Every other
 // `path` gets resolvedDir, which keeps a junction.
 //
-// On 4c111e86 a `path` through a junction gave the `status` call with the path
-// as sent, and no `rev-parse` call with that spelling (measured on Windows).
-// The rows keep a set of the calls, so a `rev-parse` with the real path is not
-// told apart from no `rev-parse`. claustrum runs it with the real path (not
-// measured). A `subst` drive together with a junction is not measured either.
+// On 4c111e86 a `path` through a junction gives one `rev-parse --show-toplevel`
+// with the real path, and the `status` call with the path as sent (measured on
+// Windows). A `subst` drive together with a junction is not measured.
 func statusProbeDir(clean string) string {
 	if junctionInPath(clean) {
 		return pathcanon.FinalDir(clean)
 	}
 	return resolvedDir(clean)
+}
+
+// statusPathOpenFails opens `path` as a folder and closes it at once. It reports
+// whether the open failed. A folder with the reparse tag 0x80000008 passes
+// os.Stat, and its open fails with error 1920. There 4c111e86 makes no
+// `config -z --list` and no `rev-parse --show-toplevel` in the git directory:
+// 15 git calls against 17 for a plain folder, and isRepo false (measured on
+// Windows). Every other open failure and the place of the test right before
+// statusWorkTreeProbe are claustrum's own, not measured.
+func statusPathOpenFails(clean string) bool {
+	f, err := os.Open(clean)
+	if err != nil {
+		return true
+	}
+	_ = f.Close()
+	return false
 }
 
 // junctionInPath reports whether a folder of p, the last one included, is a

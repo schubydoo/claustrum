@@ -74,7 +74,7 @@ Except at [two skips](#skips-that-keep-both-roots), the daemon goes through the 
 | `skipped: machines share this home (this daemon's run directory bears a host term), and another machine's sessions cannot be seen from here` | A [host term](#skips-that-keep-both-roots). |
 | `skipped: this daemon's socket is not under a run directory of an install, so it has no per-install plugin root to prune` | The daemon has no plugin roots. |
 
-The last three also put the text after `skipped: ` in `skipped`. `c9125eb8` gave the first and the last skip text on Linux, macOS and Windows.
+The last three also put the text after `skipped: ` in `skipped`. `c9125eb8` gave the first and the last skip text on Linux, macOS and Windows. `4c111e86` gave the second and the third on Windows (measured on Windows).
 
 ### The `<detail>` text
 
@@ -91,11 +91,11 @@ The daemon goes through the names under `<X>/run` in order. `<detail>` names the
 
 A run directory `<8 lowercase hex>-<8 lowercase hex>` bears a host term. Its root is `plugins/<the first 8 hex>`. This test comes first (`c9125eb8`, measured on Linux, macOS and Windows).
 
-`run/beef5678-<host name>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on Linux and macOS). On Windows: claustrum's own, not measured. claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
+`run/beef5678-<host name>/rpc.sock` answering gave the other skip (`c9125eb8`, measured on Linux and macOS). On Windows a live `run/weirdname`, `run/ABCD1234` or `run/a1b2c3d4x` gave it, with `<rel> answers` (`4c111e86`, measured on Windows). claustrum's own, not measured: the name test over each sibling, the sibling that the text names, the other `<detail>` forms.
 
 A sibling of the host-term shape with another `<clientId>`, `run/beef5678-<machine-id first 8>/rpc.sock`, gave no such skip. `c9125eb8` deleted the old directories of this root and gave the first sibling text (measured on Linux, macOS and Windows). There `young` counted only this root. On Linux, `beef5678-ffffffff` and a young directory in the shared root gave the same result. Another 8 hex after the dash: claustrum's own, not measured. A host-term sibling whose first 8 hex are the `<clientId>` of this daemon uses this same root. It kept both roots with `ffffffff` or the machine-id after the dash (`c9125eb8`, measured on Linux). Another 8 hex after the dash, and macOS and Windows: claustrum's own, not measured.
 
-Both skips delete nothing, and `young` counts each hash directory of this root that is not live, old ones too (`c9125eb8`, measured on Linux and macOS). How a live one counts: claustrum's own, not measured.
+Both skips delete nothing. `young` counts each hash directory of this root that is not live, old ones too. This was measured on Linux and macOS for `c9125eb8`, and on Windows for `4c111e86`. How a live one counts: claustrum's own, not measured.
 
 ## Differences by system
 

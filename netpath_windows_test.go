@@ -92,11 +92,13 @@ func TestFilesListWindowsMappedDriveLink(t *testing.T) {
 	}
 }
 
-// files.realpath through a link to a mapped network drive, and of the link
-// itself, gives the no_usable_name frame (build 683cc6a9, Windows).
+// files.realpath through a link on a mapped network drive, and of the link
+// itself, gives the no_usable_name frame (build 683cc6a9, Windows). A link on a
+// mapped network drive and a path below it give atLetter: the drive of the path
+// itself is the network drive (87375cc7, Windows).
 func TestFilesRealpathWindowsMappedDriveLink(t *testing.T) {
 	root := networkLinkRoot(t)
-	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name"}}}`
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name","atLetter":"share"}}}`
 	for _, p := range []string{filepath.Join(root, "lk", "lz", "f"), filepath.Join(root, "lk", "lz")} {
 		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", map[string]any{"path": p}))
 		if got != want {
@@ -106,8 +108,8 @@ func TestFilesRealpathWindowsMappedDriveLink(t *testing.T) {
 }
 
 // files.realpath through a link to a `\\?\UNC\` path gives the no_usable_name
-// frame (build 683cc6a9, Windows). It needs the administrative share of the
-// drive of the temp folder.
+// frame (build 683cc6a9, Windows; the member: 87375cc7). It needs the
+// administrative share of the drive of the temp folder.
 func TestFilesRealpathWindowsUNCLink(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "real", "f"), "x", 0o644)
@@ -121,7 +123,7 @@ func TestFilesRealpathWindowsUNCLink(t *testing.T) {
 		t.Skipf("the administrative share is not reachable: %v", err)
 	}
 	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", map[string]any{"path": filepath.Join(root, "lu", "f")}))
-	if !strings.Contains(got, `"data":{"reason":"no_usable_name"}`) {
+	if !strings.Contains(got, `"data":{"reason":"no_usable_name","stoppedShort":true}`) {
 		t.Errorf("files.realpath through %s = %s, want the no_usable_name frame", unc, got)
 	}
 }
@@ -146,6 +148,57 @@ func TestSocketFilesRealpathWindowsDotDotInTarget(t *testing.T) {
 	for i, w := range []string{`"result":{"exists":true,"real":"<DIR>/d/dir/f1"}`, `"result":{"exists":false}`} {
 		if !strings.Contains(string(got[i]), w) {
 			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
+		}
+	}
+}
+
+// files.realpath of a path on a mapped network drive gives the no_usable_name
+// frame: a file, the drive root, and a missing name with and without
+// missingLeaf (4c111e86, Windows; the member: 87375cc7). A name below a missing
+// folder there is claustrum's own, not measured.
+func TestFilesRealpathWindowsOnMappedDrive(t *testing.T) {
+	root := networkLinkRoot(t)
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name","atLetter":"share"}}}`
+	vol := filepath.VolumeName(root) + `\`
+	for _, p := range []map[string]any{
+		{"path": filepath.Join(root, "real", "f")},
+		{"path": vol},
+		{"path": filepath.Join(root, "real", "nope")},
+		{"path": filepath.Join(root, "real", "nope"), "missingLeaf": true},
+		{"path": filepath.Join(root, "nope", "x"), "missingLeaf": true},
+	} {
+		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", p))
+		if got != want {
+			t.Errorf("files.realpath %v = %s, want %s", p, got, want)
+		}
+	}
+}
+
+// A missing name behind a link to a `\\?\UNC\` path gives the no_usable_name
+// frame, with and without missingLeaf, also below a missing folder (4c111e86,
+// Windows; the member: 87375cc7). It needs the administrative share of the
+// drive of the temp folder.
+func TestFilesRealpathWindowsMissingBehindUNCLink(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "real", "f"), "x", 0o644)
+	vol := filepath.VolumeName(root)
+	if len(vol) != 2 {
+		t.Skipf("the temp folder %s is not on a drive letter", root)
+	}
+	unc := `\\?\UNC\localhost\` + vol[:1] + `$` + root[2:] + `\real`
+	lu := filepath.Join(root, "lu")
+	makeDirSymlink(t, lu, unc)
+	if _, err := os.Stat(filepath.Join(lu, "f")); err != nil {
+		t.Skipf("the administrative share is not reachable: %v", err)
+	}
+	for _, p := range []map[string]any{
+		{"path": filepath.Join(lu, "nope")},
+		{"path": filepath.Join(lu, "nope"), "missingLeaf": true},
+		{"path": filepath.Join(lu, "nope", "x"), "missingLeaf": true},
+	} {
+		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", p))
+		if !strings.Contains(got, `"data":{"reason":"no_usable_name","stoppedShort":true}`) {
+			t.Errorf("files.realpath %v = %s, want the no_usable_name frame", p, got)
 		}
 	}
 }

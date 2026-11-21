@@ -54,21 +54,47 @@ func networkLinkRefusal(path string) string {
 	return ""
 }
 
-// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal.
+// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal and
+// shareGitDir.
 var lstatPath = os.Lstat
 
-// unlookableShareText and longUNCText name the path cleaned, as networkLinkText
-// does. The rows send clean paths, so the cleaning is claustrum's own, not measured.
+// unlookableShareText names the folder it is given, cleaned. longUNCText names
+// the path cleaned, as networkLinkText does. The rows send clean paths, so the
+// cleaning is claustrum's own, not measured.
 func unlookableShareText(path string) string {
 	return "Claude couldn't look at `" + filepath.Clean(path) + "` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
 }
 
-// deniedShareText names the path cleaned and the folder above its last name, as
-// the row shows for a share that denies every account (measured on Windows).
-// The folder of a deeper path is claustrum's own, not measured.
-func deniedShareText(path string) string {
-	p := filepath.Clean(path)
-	return "Claude couldn't check `" + p + "` for links because Windows didn't let your account read `" + p[:strings.LastIndexAny(p, `\/`)] + "`, so git wasn't run. Ask for read access to that folder."
+// deniedShareText names the path and the folder whose look was denied, both
+// cleaned (firstFailedFolder, 4c111e86, measured on Windows).
+func deniedShareText(path, folder string) string {
+	return "Claude couldn't check `" + filepath.Clean(path) + "` for links because Windows didn't let your account read `" + filepath.Clean(folder) + "`, so git wasn't run. Ask for read access to that folder."
+}
+
+// firstFailedFolder returns the first folder of the share path, from the first
+// name below the share root down, whose look fails, and the error of that look.
+// When no folder above the last name fails, it returns path and err, the error
+// of the look at path. So the texts name `\\host\share\sub` for a share that
+// denies every account, the path itself for a path one name below the root of
+// a share that denies the account, and `\\host\share\a` for a deeper path on a
+// share that does not exist, and the log line quotes the error of that folder
+// (4c111e86, measured on Windows where every look on the share fails). The prefixes keep
+// the spelling of the request. A folder that passes above the first one that
+// fails is claustrum's own, not measured.
+func firstFailedFolder(path string, err error) (string, error) {
+	seps := 0
+	for i := 1; i < len(path); i++ {
+		if !isSlash(path[i]) || isSlash(path[i-1]) {
+			continue
+		}
+		if seps++; seps < 3 {
+			continue
+		}
+		if _, ferr := lstatPath(path[:i]); ferr != nil {
+			return path[:i], ferr
+		}
+	}
+	return path, err
 }
 
 // shareLinkText names the link on the share.
@@ -87,6 +113,7 @@ func longUNCText(path string) string {
 // git.worktree_create and git.worktree_remove (measured on Windows). A missing
 // folder on a share and a path on a missing drive pass (measured on Windows).
 //
+// A failed look names the first folder whose look failed (firstFailedFolder).
 // 4c111e86 logs one "looking for links" line for a share that does not exist.
 // It gives deniedShareText for a share that denies every account. It refuses a
 // directory symbolic link on a share that answers with shareLinkText. A host
@@ -116,10 +143,12 @@ func unlookablePathRefusal(path string) string {
 	case errors.Is(err, fs.ErrNotExist):
 		return ""
 	case errors.Is(err, fs.ErrPermission) || networkAccessDenied(err):
-		return deniedShareText(path)
+		folder, _ := firstFailedFolder(path, err)
+		return deniedShareText(path, folder)
 	case err != nil:
-		logging.Infof("[GitHandler] looking for links in %q: %q", path, err.Error())
-		return unlookableShareText(path)
+		folder, ferr := firstFailedFolder(path, err)
+		logging.Infof("[GitHandler] looking for links in %q: %q", path, ferr.Error())
+		return unlookableShareText(folder)
 	}
 	if link := linkOnShare(path); link != "" {
 		return shareLinkText(link)

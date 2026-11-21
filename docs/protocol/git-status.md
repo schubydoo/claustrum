@@ -101,6 +101,7 @@ Each of these gives `"isRepo": false`:
 - `path` is not a folder, or it does not exist.
 - `path` lies inside `baseRepo`, and a component below `baseRepo` is a symbolic link. That includes a link at `.claude`, and a link at the last component (measured on Linux).
 - `path` lies inside `baseRepo` and has a `..` component. A `.` component passes (measured on Linux). Outside `baseRepo` a `..` passes.
+- On Windows `path` cannot be opened, such as a folder with the reparse tag `IO_REPARSE_TAG_WIM`. The answer comes before the config listing and `rev-parse --show-toplevel` in the git directory (`4c111e86`, measured on Windows for that tag). Other open failures and the place of the test are claustrum's own, not measured.
 
 The `.git` file inside `path` plays no part. If it is missing, damaged or names another place, the answer is still the status. So is a locked worktree.
 
@@ -184,18 +185,18 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
 === "Windows"
 
-    - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8`, measured on Windows).
-    - A `baseRepo` with a junction before its last component gives the status (`4c111e86`, measured on Windows). A dangling junction gives `"isRepo": false` after the read of the user's excludes (measured on Windows). The names of `baseRepo` before its last component are walked as sent, so a `..` after a junction or a symbolic link does not stop the status. A dangling symbolic link as the last name gives `"isRepo": false` at once. Both are claustrum's own, not measured. A link to a network or device path is refused first ([network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
+    - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8` and `4c111e86`, measured on Windows).
+    - A `baseRepo` with a junction before its last component gives the status (`4c111e86`, measured on Windows). A dangling junction gives `"isRepo": false` after the read of the user's excludes (measured on Windows). A `..` drops the name before it first, whatever it is: a missing name, a file, a junction, or a live, dangling or looping link. So `<S>\missing\..\P\repo` and `<S>\P\..\P\repo`, where `P` is a junction, make the git calls of `<S>\P\repo` (`4c111e86`, measured on Windows). A dangling symbolic link as the last name gives `"isRepo": false` at once (claustrum's own, not measured). A link to a network or device path is refused first ([network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
     - The folder compare of the registration match ignores letter case. A `gitdir` value that ends in `.GIT` fails.
-    - A junction `path` outside `baseRepo` gets no `rev-parse --show-toplevel` with that spelling (`4c111e86`). claustrum uses the real path (not measured).
+    - A junction `path` outside `baseRepo` gets one `rev-parse --show-toplevel`. Its `--work-tree` is the real path, not the junction spelling (`4c111e86`, measured on Windows).
     - A subst drive, a junction, a `\\?\` path and 8.3 short names match `path` too. A `path` with short names inside a `baseRepo` in short names finds no registration.
     - A `commondir` value with forward or back slashes passes. Another letter case, a short name, a `\\?\` prefix and a value with no drive letter fail.
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.
     - A gitlink path that is a regular file gives no entry. A junction there gives ` (submodule; could not be inspected)`.
-    - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows).
+    - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. With `"shadowDirOff":true` the `GIT_ALTERNATE_OBJECT_DIRECTORIES` test does not run (`4c111e86`). [Object sources](git-rules-trust.md#the-object-sources-on-windows).
     - A `baseRepo` through a link to a network or device path gives `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path).
     - A `\\?\UNC\` `baseRepo` or a refused share gives `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
     - A `.git` with `IO_REPARSE_TAG_PROJFS` is no link, and a `baseRepo` below an `IO_REPARSE_TAG_WIM` folder gives `-32603` (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).

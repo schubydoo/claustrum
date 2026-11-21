@@ -16,7 +16,7 @@ An untagged rule on this page matches build `89cb6289`, measured on Linux. A rul
 |---|---|---|
 | `cliPath` | yes | The path of the CLI that the launcher is to run. Any non-empty string is accepted, a relative one too. The daemon does not `~`-expand it (claustrum's own) (not measured). |
 | `path` | no | A launcher to check, with `launcherCheck` (`c9125eb8`). An empty `path` counts as absent (claustrum's own, not measured). |
-| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). |
+| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only (Linux and macOS) and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). |
 
 ## Response
 
@@ -146,18 +146,19 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 |---|---|---|
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too (`4c111e86`, measured on Linux) | `` `<D>` can be changed by accounts other than its owner (mode <mode>). Remove that write access. `` |
 | `owner` | Owned by the uid of the daemon (`4c111e86`, measured on a FUSE mount) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
-| `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
+| `owner` | Owned by uid 65534, which `ownerUid` names, with no digest (`4c111e86`, measured on Linux) | `` `<D>` shows as uid 65534 (nobody), which the policy names as ownerUid. That uid can stand for many accounts, so it counts only if the policy also lists the launcher's SHA-256 digest. Add sha256 to sshHostLauncher. `` |
+| `owner` | Owned by uid 65534 that no `ownerUid` names | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
 | `owner` | Owned by another uid (`4c111e86`, measured with a digest) | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. `` |
 
 #### Rules of the check
 
 - `<mode>` has four octal digits. The group of the file is not tested.
-- A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them (claustrum's own, not measured). An `ownerUid` in the settings file lifts nothing.
+- A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them, but never the uid of the daemon, and uid 65534 only with a digest (`4c111e86`, measured on Linux). An `ownerUid` in the settings file lifts nothing.
 - With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
-- Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file. It tests the folders of the path as written, then those after the links (claustrum's own).
-- Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (claustrum's own, not measured).
+- Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file, after the links. So a folder behind a link has its real path in the text, and a `..` after a link goes to the parent of its target (`4c111e86`, measured on Linux).
+- Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (`4c111e86`, measured on Linux). They come first (claustrum's own, not measured).
 - A path that moves during the check is not refused for the move. A swapped file meets the digest test (`4c111e86`, measured on Linux).
-- A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The other order of the tests is claustrum's own.
+- A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The write test of an item comes before its owner test (`4c111e86`, measured on Linux). The other order of the tests is claustrum's own.
 
 #### File system kinds (Linux)
 
@@ -200,7 +201,7 @@ An unusable or unreadable answer writes one line, at WARN (claustrum's own). A u
 
 A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
-An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured on Linux). On macOS every answer to a `launcherCheck` is `macos_host`, and a repeat writes nothing too (`4c111e86`, measured on macOS). There a usable or managed-refused resolve with no `launcherCheck` comes between, and a rewrite of the managed settings alone does not (`4c111e86`, measured on macOS). A none or unreadable answer comes between too (claustrum's own, not measured). A -32602 reply to a `launcherCheck` does not (measured on macOS). On Windows each refusal writes it, a repeat too (claustrum's own, not measured):
+An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured on Linux). On macOS every answer to a `launcherCheck` is `macos_host`, and a repeat writes nothing too (`4c111e86`, measured on macOS). There a usable or managed-refused resolve with no `launcherCheck` comes between, and a rewrite of the managed settings alone does not (`4c111e86`, measured on macOS). A none or unreadable answer comes between too (claustrum's own, not measured). A -32602 reply to a `launcherCheck` does not (measured on macOS). On Windows a repeat writes nothing too (`4c111e86`, measured on Windows). A resolve with no `launcherCheck`, which answers `none` there, comes between, and a -32602 `launcherCheck is required with path` does not (`4c111e86`, measured on Windows):
 
 ```text
 [LauncherHandler] the launcher that the desktop names is refused: <reason>
@@ -216,7 +217,7 @@ An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of t
 
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. A `path` with a `launcherCheck` answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host` (claustrum's own, not measured). A `launcherCheck` with no `path` answers `none` (claustrum's own, not measured).
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`. `4c111e86` gives it for each shape that was measured on Windows: `{}`, a `path` that is missing, relative, a UNC path or the number `5`, `sha256` as a list, `ownerUid`, `orManagedFolder` as `true` or `"yes"`, and `rootsLink`, also with a top-level `path`. A string, `""`, a number, `true`, `[]` or an array of one object as `launcherCheck` gets `Invalid params`, and `null` counts as absent (`4c111e86`, measured on Windows). Another value that is not an object gets `Invalid params` too (claustrum's own, not measured).
 
 ## Rare states
 

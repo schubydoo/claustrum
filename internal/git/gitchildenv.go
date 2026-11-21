@@ -32,7 +32,8 @@ import (
 //   - On Windows an empty HOME, USERPROFILE, PROGRAMDATA or ALLUSERSPROFILE goes,
 //     and HOMEDRIVE and HOMEPATH have their own tests. A relative
 //     SSH_AUTH_SOCK goes, on Windows unless it starts with a slash.
-//   - An empty value stays for the names of gitChildEmptyKept.
+//   - An empty value stays for the names of gitChildEmptyKept, but not for
+//     GIT_ALTERNATE_OBJECT_DIRECTORIES on Windows.
 //   - A list name (gitChildListNames) keeps the entries that are absolute and
 //     hold no ';', no '"' and no newline. The entries keep their order and
 //     their duplicates. With none left, the name goes. On Windows the list
@@ -46,9 +47,11 @@ import (
 //     and Windows.
 //
 // Absolute is a leading '/' on Linux and macOS. On Windows it is a drive letter,
-// ':' and a slash, or a UNC path. The exact shape of a UNC path, an empty name on
-// Windows, a type of one multi-byte character in a Kerberos value and a value of
-// HOMEDRIVE with a volume name only in part are not measured.
+// ':' and a slash, or a UNC path. All but the LD_PRELOAD and LD_AUDIT pieces
+// also count two leading slashes and more text (absoluteValue). The exact shape
+// of a UNC path, an empty name on Windows, a type of one multi-byte character in
+// a Kerberos value and a value of HOMEDRIVE with a volume name only in part are
+// not measured.
 
 // gitEnvForm selects the rules of one system. Linux is the zero value.
 type gitEnvForm struct{ windows, darwin bool }
@@ -192,7 +195,9 @@ func cleanEntry(key, value string, f gitEnvForm) (string, bool) {
 			return "", false
 		}
 	}
-	if value == "" && slices.Contains(gitChildEmptyKept, key) {
+	// On Windows an empty GIT_ALTERNATE_OBJECT_DIRECTORIES goes (4c111e86, measured
+	// on Windows).
+	if value == "" && slices.Contains(gitChildEmptyKept, key) && (!windows || key != "GIT_ALTERNATE_OBJECT_DIRECTORIES") {
 		return value, true
 	}
 	var v string
@@ -208,7 +213,7 @@ func cleanEntry(key, value string, f gitEnvForm) (string, bool) {
 			return "", false
 		}
 		if key == "SSH_SK_PROVIDER" && (f.darwin || windows) &&
-			(value == "" || value != "internal" && !absoluteFor(value, windows)) {
+			(value == "" || value != "internal" && !absoluteValue(value, windows)) {
 			return "", false
 		}
 		return value, true
@@ -220,7 +225,7 @@ func cleanEntry(key, value string, f gitEnvForm) (string, bool) {
 // holds a slash or a backslash, and on Windows a volume name counts too. A bare
 // name and an empty value pass.
 func badProgram(value string, windows bool) bool {
-	if absoluteFor(value, windows) {
+	if absoluteValue(value, windows) {
 		return false
 	}
 	return strings.ContainsAny(value, `/\`) || windows && windowsVolumeLen(value) > 0
@@ -228,13 +233,18 @@ func badProgram(value string, windows bool) bool {
 
 // relativeFor reports whether value is relative by the rules of the cleaning. An
 // empty value is not. On Windows NUL in any letter case is not either, and a
-// value with a leading slash is.
+// value with one leading slash is. A value with two leading slashes and more
+// text is not, also with a third one: 4c111e86 keeps a GIT_SSL_CAINFO of \\\x,
+// and values \\?\UNC\..., \\?\C:\..., \\.\C:\..., //host/share/... and \\host alone
+// (measured on Windows). Another value with two leading slashes, a value that
+// starts with a mix of / and \, and the use for the Kerberos file part and in
+// xdgExcludesPath, are claustrum's own, not measured.
 func relativeFor(value string, windows bool) bool {
 	if value == "" {
 		return false
 	}
 	if windows {
-		return !absoluteFor(value, true) && !strings.EqualFold(value, "NUL")
+		return !absoluteValue(value, true) && !strings.EqualFold(value, "NUL")
 	}
 	return value[0] != '/'
 }
@@ -267,7 +277,7 @@ func cleanFolderList(value string, windows bool) string {
 	}
 	var kept []string
 	for _, e := range splitFolderList(value, windows) {
-		if absoluteFor(e, windows) && !strings.ContainsAny(e, ";\"\n") {
+		if absoluteValue(e, windows) && !strings.ContainsAny(e, ";\"\n") {
 			kept = append(kept, e)
 		}
 	}
@@ -317,6 +327,18 @@ func cleanLoaderList(value string, space, windows bool) string {
 		}
 	}
 	return strings.Join(kept, ":")
+}
+
+// absoluteValue is absoluteFor, and on Windows also true for two leading slashes
+// of either kind and more text. 4c111e86 keeps \\\x in SSL_CERT_DIR, NLSPATH,
+// KRB5_CONFIG and GIT_ASKPASS, ///x in LOCPATH and SSH_ASKPASS, \\\\x in
+// SSH_SK_HELPER and //\x in SSH_SK_PROVIDER (measured on Windows). The other names
+// and shapes follow them (claustrum's own, not measured).
+func absoluteValue(p string, windows bool) bool {
+	if windows && len(p) > 2 && strings.ContainsRune(`\/`, rune(p[0])) && strings.ContainsRune(`\/`, rune(p[1])) {
+		return true
+	}
+	return absoluteFor(p, windows)
 }
 
 // absoluteFor reports whether p is absolute by the rule of the cleaning.

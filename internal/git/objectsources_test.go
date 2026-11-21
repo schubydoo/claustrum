@@ -145,7 +145,7 @@ func TestAlternatesChecksOff(t *testing.T) {
 	common := filepath.Join(root, "R", ".git")
 	writeFile(t, alternatesOf(objectsDir(t, common)), "x\r\n", 0o644)
 	t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", root)
-	if got := statusSourceRefusal(common); got != "" {
+	if got := statusSourceRefusal(common, false); got != "" {
 		t.Errorf("checks off: got %q", got)
 	}
 	for _, all := range []bool{true, false} {
@@ -163,11 +163,11 @@ func TestStatusSourceEnvironment(t *testing.T) {
 	root := t.TempDir()
 	common := filepath.Join(root, ".git")
 	t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", filepath.Join(root, "O"))
-	if got := statusSourceRefusal(common); got != alternateEnvText {
+	if got := statusSourceRefusal(common, false); got != alternateEnvText {
 		t.Errorf("GIT_ALTERNATE_OBJECT_DIRECTORIES: got %q", got)
 	}
 	t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", "")
-	if got := statusSourceRefusal(common); got != "" {
+	if got := statusSourceRefusal(common, false); got != "" {
 		t.Errorf("an empty GIT_ALTERNATE_OBJECT_DIRECTORIES: got %q", got)
 	}
 
@@ -176,7 +176,7 @@ func TestStatusSourceEnvironment(t *testing.T) {
 	logs := captureLogBuf(t)
 	t.Setenv("GIT_OBJECT_DIRECTORY", filepath.Join(root, "O"))
 	for range 2 {
-		if got := statusSourceRefusal(common); got != "" {
+		if got := statusSourceRefusal(common, false); got != "" {
 			t.Errorf("GIT_OBJECT_DIRECTORY: got %q", got)
 		}
 	}

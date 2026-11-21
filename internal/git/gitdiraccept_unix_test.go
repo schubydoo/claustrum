@@ -928,14 +928,21 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 // moved registration, the branch and the empty folder go (4c111e86, measured
 // on Linux and macOS). Mutations: restore the
 // early return for a deleted leaf (the frame differs), or drop the
-// undoMovedAwayLeaf call of the refusal (the empty folder stays). An attach add of main
+// undoMovedAwayLeaf call of the refusal (the empty folder stays). A leaf that is
+// deleted and not made again gets the same text, and then the leaf text of a
+// failed rmdir with the error of a remove of w1 (4c111e86, measured on Linux).
+// Mutations: restore the early return for a gone leaf (the frame differs), or
+// drop the goneLeafUndoPart text (the frame differs). A dangling link put in
+// place of the deleted leaf keeps the raw error of the open of the leaf (from
+// the code, not measured). Mutation: drop the leafNameIsFree test (the frame
+// differs). An attach add of main
 // fails, since main is checked out, and its fallback add gets the same reply
 // (from the code, not measured). Mutation: drop the movedAwayReply call after
 // the fallback add (the frame differs).
 func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 	for _, row := range []struct {
 		name, kind, existing string
-	}{{"an empty folder", "empty", ""}, {"a folder with a file", "file", ""}, {"a link to a folder", "link", ""}, {"a deleted and replaced leaf", "deleted", ""}, {"an empty folder after the fallback add", "empty", "main"}} {
+	}{{"an empty folder", "empty", ""}, {"a folder with a file", "file", ""}, {"a link to a folder", "link", ""}, {"a deleted and replaced leaf", "deleted", ""}, {"a deleted leaf", "gone", ""}, {"a dangling link", "dangling", ""}, {"an empty folder after the fallback add", "empty", "main"}} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -948,13 +955,23 @@ func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 				t.Fatal(err)
 			}
 			atStep(t, "staged", func() {
-				if row.kind == "deleted" {
+				if row.kind == "deleted" || row.kind == "gone" {
 					if err := os.Remove(leaf); err != nil {
 						t.Errorf("the delete of the leaf: %v", err)
+					}
+					if row.kind == "gone" {
+						return
 					}
 					if err := os.Mkdir(leaf, 0o755); err != nil {
 						t.Errorf("the new folder: %v", err)
 					}
+					return
+				}
+				if row.kind == "dangling" {
+					if err := os.Remove(leaf); err != nil {
+						t.Errorf("the delete of the leaf: %v", err)
+					}
+					linkAt(t, leaf, filepath.Join(target, "none"))
 					return
 				}
 				if err := os.Rename(leaf, old); err != nil {
@@ -977,15 +994,29 @@ func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 				params["existingBranch"] = row.existing
 			}
 			raw, _ := f.call(t, "git.worktree_create", params)
-			if row.kind == "deleted" {
+			if row.kind == "dangling" {
 				want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
-					jsonString(t, completingAddPrefix+"openat .git: no such file or directory") +
+					jsonString(t, completingAddPrefix+"open "+leaf+": no such file or directory") +
+					`,"errorCode":"worktree_add_failed"}}`
+				if raw != want {
+					t.Errorf("reply = %s\nwant %s", raw, want)
+				}
+				return
+			}
+			if row.kind == "deleted" || row.kind == "gone" {
+				text := completingAddPrefix + "openat .git: no such file or directory"
+				if row.kind == "gone" {
+					text += "; and the undo could not finish for " + leaf + ": the worktree directory remains (re-populated while undoing?); " +
+						"remove it by hand before retrying (removeat w1: no such file or directory)"
+				}
+				want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+					jsonString(t, text) +
 					`,"errorCode":"worktree_add_failed"}}`
 				if raw != want {
 					t.Errorf("reply = %s\nwant %s", raw, want)
 				}
 				if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
-					t.Errorf("the empty folder at the path: %v, want it gone", err)
+					t.Errorf("the path of the leaf: %v, want nothing there", err)
 				}
 				if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); !os.IsNotExist(err) {
 					t.Errorf("the branch: %v, want it gone", err)

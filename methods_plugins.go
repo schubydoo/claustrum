@@ -177,7 +177,9 @@ var pluginClientIDRE = regexp.MustCompile(`^[0-9a-f]{8}$`)
 // id, such as `beef5678-<machine-id first 8>` (measured on Linux, macOS and
 // Windows) and `beef5678-ffffffff` (measured on Linux). An 8 lowercase hex name
 // and "" (a run dir that cannot be read) spare only the legacy root. The test of
-// the name shape alone is claustrum's own, not measured.
+// the name shape alone is claustrum's own, not measured. On Windows 4c111e86
+// spared both roots for answering siblings run/weirdname, run/ABCD1234 and
+// run/a1b2c3d4x (measured on Windows).
 //
 // A host-term sibling whose first 8 hex equal own (the client id of this root) uses
 // this same root, and its live plugins are not seen here. It spares both roots

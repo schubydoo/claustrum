@@ -1229,15 +1229,17 @@ func TestWorktreeConfigListingsBeforeAnExtensionRefusal(t *testing.T) {
 }
 
 // TestRepoVerdictsBound pins the bound of the kept verdicts: the oldest one goes
-// when one more than repoVerdictsMax is kept. Many requests at once are safe.
+// when one more than repoVerdictsMax is kept, and its stale mark goes with it.
+// Many requests at once are safe. Mutation: keep the stale mark at the eviction.
+// The test then finds it.
 func TestRepoVerdictsBound(t *testing.T) {
 	repoVerdicts.Lock()
-	savedKeys, savedOrder := repoVerdicts.byKey, repoVerdicts.order
-	repoVerdicts.byKey, repoVerdicts.order = nil, nil
+	savedKeys, savedOrder, savedStale := repoVerdicts.byKey, repoVerdicts.order, repoVerdicts.stale
+	repoVerdicts.byKey, repoVerdicts.order, repoVerdicts.stale = nil, nil, nil
 	repoVerdicts.Unlock()
 	t.Cleanup(func() {
 		repoVerdicts.Lock()
-		repoVerdicts.byKey, repoVerdicts.order = savedKeys, savedOrder
+		repoVerdicts.byKey, repoVerdicts.order, repoVerdicts.stale = savedKeys, savedOrder, savedStale
 		repoVerdicts.Unlock()
 	})
 	key := func(i int) repoVerdictKey { return repoVerdictKey{gitDir: "repo-" + strconv.Itoa(i)} }
@@ -1259,7 +1261,16 @@ func TestRepoVerdictsBound(t *testing.T) {
 	if got, ok := keptRepoVerdict(oldest); !ok || got.refusal != "again" {
 		t.Errorf("verdict kept again = %+v, %v, want again", got, ok)
 	}
+	repoVerdicts.Lock()
+	repoVerdicts.stale = map[repoVerdictKey]bool{oldest: true}
+	repoVerdicts.Unlock()
 	keepRepoVerdict(key(repoVerdictsMax), &repoVerdict{})
+	repoVerdicts.Lock()
+	staleLeft := repoVerdicts.stale[oldest]
+	repoVerdicts.Unlock()
+	if staleLeft {
+		t.Error("the stale mark of the oldest verdict stays after its eviction")
+	}
 	if _, ok := keptRepoVerdict(oldest); ok {
 		t.Errorf("the oldest verdict is still kept after %d more", repoVerdictsMax)
 	}
@@ -1271,6 +1282,32 @@ func TestRepoVerdictsBound(t *testing.T) {
 	repoVerdicts.Unlock()
 	if n != repoVerdictsMax || m != repoVerdictsMax {
 		t.Errorf("kept verdicts = %d, order = %d, want %d each", n, m, repoVerdictsMax)
+	}
+}
+
+// TestForgetRepoVerdictDropsItsStaleMark pins that a forgotten verdict leaves no
+// stale mark behind (forgetRepoVerdict). Mutation: keep the stale mark there. The
+// test then finds it.
+func TestForgetRepoVerdictDropsItsStaleMark(t *testing.T) {
+	repoVerdicts.Lock()
+	savedKeys, savedOrder, savedStale := repoVerdicts.byKey, repoVerdicts.order, repoVerdicts.stale
+	repoVerdicts.byKey, repoVerdicts.order, repoVerdicts.stale = nil, nil, nil
+	repoVerdicts.Unlock()
+	t.Cleanup(func() {
+		repoVerdicts.Lock()
+		repoVerdicts.byKey, repoVerdicts.order, repoVerdicts.stale = savedKeys, savedOrder, savedStale
+		repoVerdicts.Unlock()
+	})
+	home, _ := os.UserHomeDir()
+	k := repoVerdictKey{gitDir: "forgotten-repo", home: home}
+	keepRepoVerdict(k, &repoVerdict{})
+	staleRepoVerdict(k.gitDir)
+	forgetRepoVerdict(k.gitDir)
+	repoVerdicts.Lock()
+	n := len(repoVerdicts.stale)
+	repoVerdicts.Unlock()
+	if n != 0 {
+		t.Errorf("stale marks after the verdict is forgotten = %d, want 0", n)
 	}
 }
 

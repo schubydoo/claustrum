@@ -338,9 +338,13 @@ func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listin
 func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) *exec.Cmd {
 	var hooks []string
 	if pre == nil {
+		u.live.perCallGate()
 		u = u.atCommand()
 		hooks = hookPrecursor(ctx, u, dir, heavy).hooks()
 	} else {
+		if u.live != nil {
+			u.live.ran.Store(true)
+		}
 		hooks = pre.hooks
 	}
 	cmd := gitCommandContext(ctx, withFront(u.front(dir), hardenedProfileArgs(heavy, args...))...)
@@ -1414,9 +1418,10 @@ func attrSourceArgs() []string {
 }
 
 // probeAttrSource runs the probe. Exit 0 is "supported". A run that exits with a
-// code other than 0 runs `git version` (gitVersionPlain), and exit 0 there is "not
-// supported". Every other failure is "unknown": known is false. That covers a run
-// that did not start, a run that a signal ended and a failed `git version`.
+// code other than 0 runs `git version` with the folder and the environment of the
+// probe (4c111e86, measured on Linux), and exit 0 there is "not supported".
+// Every other failure is "unknown": known is false. That covers a run that did not
+// start, a run that a signal ended and a failed `git version`.
 func probeAttrSource() (supported, known bool) {
 	err := gitOutsideCmd(nil, "--attr-source="+gitEmptyTree, "version").Run()
 	if err == nil {
@@ -1425,7 +1430,7 @@ func probeAttrSource() (supported, known bool) {
 	if !exitedWithCode(err) {
 		return false, false
 	}
-	return false, gitVersionPlain().Run() == nil
+	return false, gitOutsideCmd(nil, "version").Run() == nil
 }
 
 var (
@@ -1445,6 +1450,18 @@ var (
 	offExcludesRun   uint64
 	offExcludesValue string
 )
+
+// excludesForCall reads the excludes again for one git call while no state is
+// kept (liveSwitch.perCallGate): the read of the time off does not serve it, and
+// the call after it uses the new read. A stored result still serves it.
+func excludesForCall() {
+	userExcludesMu.Lock()
+	if !userExcludesDone {
+		offExcludesRun = 0
+	}
+	userExcludesMu.Unlock()
+	globalExcludesPath()
+}
 
 // globalExcludesPath resolves the user's global git excludes file: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
@@ -1520,9 +1537,10 @@ func globalExcludesPath() string {
 
 // excludesFromGlobalConfig reads the configured core.excludesFile of the user: an
 // absolute value, or "" when there is none. The read has the filtered environment
-// of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in gitVersionDir
-// (claustrum's own, not measured). f6010b97 adds GIT_DIR=NUL on Windows and runs
-// it in the temporary directory on Linux and Windows.
+// of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in
+// gitVersionDir (claustrum's own, not measured). On Windows it drops the names
+// of excludesReadDropped (measured, see there). f6010b97 adds GIT_DIR=NUL on
+// Windows and runs it in the temporary directory on Linux and Windows.
 //
 // `config --includes --path` follows includes and expands a leading ~, matching the
 // reference. It runs WITHOUT the hardening profile so git reports the real global
@@ -1535,14 +1553,21 @@ func globalExcludesPath() string {
 // start.
 func excludesFromGlobalConfig() (v string, started bool) {
 	windows := gitEnvHere.windows
-	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
-	out, err := cmd.Output()
+	out, err := excludesReadCmd().Output()
 	if err == nil {
 		if p := strings.TrimSpace(string(out)); absoluteFor(p, windows) {
 			return p, true
 		}
 	}
 	return "", err == nil || errors.As(err, new(*exec.ExitError))
+}
+
+// excludesReadCmd is the command of the excludes read, with the environment of
+// excludesReadEnv (excludesReadDropped).
+func excludesReadCmd() *exec.Cmd {
+	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
+	cmd.Env = excludesReadEnv(cmd.Env, gitEnvHere)
+	return cmd
 }
 
 // xdgExcludesPath looks up the default excludes file on each call. A regular

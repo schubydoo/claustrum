@@ -48,12 +48,15 @@ func openHeldGitDir(path string) (*os.Root, error) {
 // one folder (measured on macOS).
 const statusFollowsPrintedGitDir = false
 
-// probeConfigFreeRun is true on Linux and macOS. After a first call about the
-// repository that exited 128 and a second run that exited 0, the call runs a
-// third time with no config of the user or of the system (configFreeProbe).
-// 52d82f0a does so on Linux and macOS. It also turns on the git-directory
-// test after a good answer (askGit).
+// probeConfigFreeRun is true on Linux and macOS: it turns on the git-directory
+// test after a good answer of the call about the repository (askGit). The
+// third run of the call (configFreeProbe) does not depend on it.
 const probeConfigFreeRun = true
+
+// configFreeRunAnswers is true on Linux and macOS: the exit status of the
+// third run of the call sets the reply (configFreeProbe, 52d82f0a). It is a
+// variable so that a test can run the Windows reply.
+var configFreeRunAnswers = true
 
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // the folder of the daemon. On Linux and macOS it goes through root, the root

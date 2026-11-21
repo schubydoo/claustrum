@@ -127,9 +127,10 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 `settingsControl` is always the last member. Its values are `"shadow"`, `"fallback-git"` and `"off-switch"`. No other method sends it.
 
 - Before a start test of the daemon gave a state, the member is absent. So the first `git.info` of a daemon on a path that does not exist has no member (measured on Linux).
-- After a start test that passed, the "no repository" body has the member too (measured on Linux).
+- After a kept start test, the "no repository" body has the member too (measured on Linux).
 - A request with `"shadowDirOff":true` gets `"off-switch"`, also as the first request of a daemon (measured on Linux).
-- On Windows and macOS a repository answer to a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member (`b3081b51`, measured on Windows and macOS).
+- After a plain request, a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has the member too (`4c111e86`, measured on Linux, macOS and Windows).
+- Before such a plain request, a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member. Its start test is not kept, also one that passed, and the next request tests again (`4c111e86`, measured on Linux). After such a test that gave `"shadow"`, its git calls still use the settings copy (`4c111e86`, measured on Linux). On macOS and Windows the member of the first such request is measured too. The retest and the other orders are claustrum's own there. Before a kept state, such a request runs the test before each git call ([rule](git-rules-session-folders.md#before-a-kept-state)).
 - An error reply has no member.
 
 The section [States and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.
@@ -144,7 +145,7 @@ The settings copy can add files to the folder `git-shadow` beside the socket: th
 |---|---|---|
 | `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk does not resolve a junction. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
-| An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows). |
+| An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows). A daemon `GIT_ALTERNATE_OBJECT_DIRECTORIES`: [Object sources](git-rules-trust.md#the-object-sources-on-windows). |
 | A `path` behind 32 or more links | No link test (claustrum's own). | `-32603` with the link-chain text (measured on Windows). |
 | A `path` through a link to a network or device path | No link test (claustrum's own). | `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path). |
 | A `\\?\UNC\` or refused-share `path` | Does not apply. | `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals). |
