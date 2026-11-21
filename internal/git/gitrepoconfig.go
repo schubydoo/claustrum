@@ -823,9 +823,10 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
-			// A file with a syntax error is refused with the text of git,
-			// whatever the condition is: 4c111e86 answers it for `onbranch:`
-			// that matches or not and for `gitdir:` (measured on Linux).
+			// A file with a syntax error is refused with the text of git:
+			// 4c111e86 answers it for `onbranch:` that matches or not and for a
+			// `gitdir:` that matches (measured on Linux). Other conditions get
+			// the same refusal here (from the code, not measured).
 			_, settings, badLine, ok := listConfigFileText(r.ctx, target)
 			if badLine != "" {
 				versionAfterFailure()
@@ -938,8 +939,8 @@ func configFileTests(path string, log *repoReadLog) string {
 // names, or the detail of a refusal. A relative value counts from the folder of
 // file, also when it leaves the git directory (measured), and `~/` is the `HOME`
 // folder of the daemon. `~user` and `%(prefix)/` are refused (measured with
-// `~root/x` and `%(prefix)/x`). A `~/` value with an unset or relative `HOME` gets
-// the same refusal: the text says so, and no cell ran it. The Windows rules come
+// `~root/x` and `%(prefix)/x`). A `~/` value with a relative `HOME` gets the same
+// refusal (4c111e86, measured on Linux). The Windows rules come
 // first (includeValueDetail and includePlaceDetail). The Windows link test of the
 // folders comes after the place test (includeLinkDetail). The place and link
 // refusals come before the count of 16 files (claustrum's own, not measured).
@@ -965,10 +966,11 @@ func includeTarget(file, value, gitDir string) (target, detail string) {
 		", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full"
 	switch {
 	case value == "~" || strings.HasPrefix(value, "~/"):
-		// HOME is the home folder here, claustrum's own, not measured.
-		// An unset or relative HOME refuses. An empty HOME is not
-		// relative, so `~/x` becomes `/x`. A bare `~` with an empty HOME is not
-		// measured: it gives an empty path. The Unix form of relativeFor is right
+		// HOME is the home folder here, also when it differs from the home
+		// folder of the user, and a relative HOME refuses (4c111e86, measured
+		// on Linux). An unset or empty HOME reaches no request, because -serve
+		// exits first (main.go): this code keeps the refusal of an unset HOME
+		// and lets an empty HOME give `/x` for `~/x`. The Unix form of relativeFor is right
 		// here: includeValueDetail refuses every `~` path on Windows first.
 		home, set := os.LookupEnv("HOME")
 		if !set || relativeFor(home, false) {

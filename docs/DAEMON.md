@@ -414,8 +414,10 @@ against `89cb6289`, on the systems that each rule names.
 The launcher is the `-serve` process that the operator starts. It re-execs its own
 binary as the detached daemon and waits for it. On Linux a launcher that cannot
 read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
-any write. With `HOME` unset or empty it prints `claustrum: cannot resolve home directory: $HOME is not defined`
-and exits `2`, as the reference does with its own prefix (`4c111e86`, measured on Linux). macOS and Windows re-exec `os.Args[0]` instead (not measured). The
+any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). On Linux and macOS
+a launcher with `HOME` unset or empty prints `claustrum: cannot resolve home directory: $HOME is not defined`
+and exits `2`. The reference does the same with its own prefix (`4c111e86`, measured on Linux). On Windows an
+unset or empty `USERPROFILE` exits `2`, and the line names `%userprofile%` (from the code, not measured). The
 launcher creates a missing socket folder with mode `0700`. Windows ignores that mode (from the code).
 
 ### The launcher wait
