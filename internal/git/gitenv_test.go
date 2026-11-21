@@ -912,7 +912,8 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 }
 
 // git.status answers a baseRepo that does not resolve with the bare shape, with no
-// git call, with nothing planted and with a refused count (measured). In every row
+// git call, with nothing planted and with a refused count (measured). On Windows a
+// spelling with a ".." folds first and resolves. In every row
 // but N1, path is a worktree of T. The control rows are spellings of T that
 // resolve.
 func TestStatusUnresolvableBaseRepo(t *testing.T) {
@@ -998,11 +999,10 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 					continue
 				}
 				raw, calls := run("git.status", map[string]any{"baseRepo": r.base, "path": r.path})
-				// On Windows the names of baseRepo are walked as sent, so the ".." after
-				// the live link L passes the walk and the request goes on as for T
-				// (claustrum's own, not measured for a link). 4c111e86 runs git for a
-				// junction P in S\P\..\P\repo (measured on Windows).
-				if runtime.GOOS == "windows" && r.row == "live link then .." {
+				// On Windows a ".." drops the name before it first, whatever it is,
+				// so each row with a ".." goes on as for T (4c111e86, measured on
+				// Windows).
+				if runtime.GOOS == "windows" && strings.Contains(r.base, "..") {
 					if raw != phase.control {
 						t.Errorf("%s\n got %s\nwant %s", r.row, raw, phase.control)
 					}

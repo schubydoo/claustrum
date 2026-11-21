@@ -119,10 +119,11 @@ var alternateEnvLogged atomic.Bool
 // folder that is gone, or with worktreeRoot, does not run this check (claustrum's
 // own, not measured).
 //
-// The daemon logs alternateEnvLine once, before the line of the start test, also
-// for an empty value (4c111e86, measured on Windows: one line for a daemon of
-// eight requests). That the line comes from this check, also with off, is
-// claustrum's own, not measured.
+// The daemon logs alternateEnvLine once, also for an empty value. On a request
+// that reaches this check it comes before the line of the start test (4c111e86,
+// measured on Windows: one line for a daemon of eight requests). That the line
+// comes from this check, also with off, and its place after a start test on a
+// path that returns before the check, are claustrum's own, not measured.
 func alternateEnvRefusal(off bool) string {
 	if !objectSourceChecks {
 		return ""

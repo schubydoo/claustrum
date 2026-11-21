@@ -22,9 +22,8 @@ the daemon walks up from the request folder:
   `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
   the pin of `<P>` too. A junction outside any repository gives "no repository",
   and each git call carries `GIT_DIR=NUL`.
-- On Windows any folder path that does not resolve, like `<P>\gone\..`, starts the walk as spelled.
-  `git.status` walks it as sent and answers on failure (all
-  from the code).
+- On Windows any folder path that does not resolve, like `<P>\gone\..`, starts the walk as spelled
+  (from the code).
 - On Windows a config refusal of `git.info` follows the spelled start too,
   except a junction `path`. In `shadow` without
   `"shadowDirOff":true`, it is the

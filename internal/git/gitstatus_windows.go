@@ -25,6 +25,22 @@ func statusProbeDir(clean string) string {
 	return resolvedDir(clean)
 }
 
+// statusPathOpenFails opens `path` as a folder and closes it at once. It reports
+// whether the open failed. A folder with the reparse tag 0x80000008 passes
+// os.Stat, and its open fails with error 1920. There 4c111e86 makes no
+// `config -z --list` and no `rev-parse --show-toplevel` in the git directory:
+// 15 git calls against 17 for a plain folder, and isRepo false (measured on
+// Windows). Every other open failure and the place of the test right before
+// statusWorkTreeProbe are claustrum's own, not measured.
+func statusPathOpenFails(clean string) bool {
+	f, err := os.Open(clean)
+	if err != nil {
+		return true
+	}
+	_ = f.Close()
+	return false
+}
+
 // junctionInPath reports whether a folder of p, the last one included, is a
 // junction or another irregular entry. Go reports a junction as an irregular
 // file.

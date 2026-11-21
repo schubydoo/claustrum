@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -447,43 +448,48 @@ func TestShadowExcludesReadStoredForALaterRequest(t *testing.T) {
 	}
 }
 
-// Requests sent in turn in one time off of the check of session folders make one read of the
-// user's excludes, and no request after it uses that read. The next request reads
-// again, and the request after it uses that stored result. 4c111e86 runs git once
-// more after the time off (measured on Linux). That it is this read is from the code.
-// The use of that read by a later request of the time off is claustrum's own, not
-// measured. Mutation: in
-// globalExcludesPath, drop the gen step of the off switch. The read under the
-// switch is then stored, and only 1 read runs. A second mutation drops the store
-// of the time off: the requests under the switch then read more than once.
+// While the check of session folders is off and no state is kept, a git.info reads
+// the user's excludes before each of its four git calls, and no request after the
+// time off uses those reads. The next request reads again, and the request after
+// it uses that stored result (4c111e86, measured on Linux). A second request of the
+// same time off uses the read of the time off for its first call and reads before
+// each later one (claustrum's own, not measured). The count of four is tested on
+// Linux only, where it is measured. Mutation: in globalExcludesPath,
+// drop the gen step of the off switch. The read under the switch is then stored,
+// and only 1 read runs. A second mutation drops the store of the time off: each
+// call then reads twice.
 func TestShadowExcludesReadUnderOffSwitchNotStored(t *testing.T) {
 	h := newLiveFixture(t)
 	release := sessiondirs.PauseCheck()
 	t.Cleanup(release) // a failed reply skips the release below. A second call does nothing
 	h.send(t, 1, "git.info", map[string]any{"path": h.repo, "sessionFoldersOff": true})
 	h.reply(t, 1)
-	if n := excludesReadsIn(t, h); n != 1 {
-		t.Errorf("%d reads of the excludes for a request under the off switch, want 1", n)
+	each := excludesReadsIn(t, h)
+	if each < 2 || (runtime.GOOS == "linux" && each != 4) {
+		t.Errorf("%d reads of the excludes for a request under the off switch, want 4 on Linux, more than 1 elsewhere", each)
 	}
 	h.send(t, 2, "git.info", map[string]any{"path": h.repo, "sessionFoldersOff": true})
 	h.reply(t, 2)
 	release()
-	if n := excludesReadsIn(t, h); n != 1 {
-		t.Errorf("%d reads of the excludes for two requests in one time off, want 1", n)
+	if n := excludesReadsIn(t, h); n != 2*each-1 {
+		t.Errorf("%d reads of the excludes for two requests in one time off, want %d", n, 2*each-1)
 	}
 	h.send(t, 3, "git.info", map[string]any{"path": h.repo})
 	h.reply(t, 3)
 	h.send(t, 4, "git.info", map[string]any{"path": h.repo})
 	h.reply(t, 4)
-	if n := excludesReadsIn(t, h); n != 2 {
-		t.Errorf("%d reads of the excludes for a time off and two requests after it, want 2", n)
+	if n := excludesReadsIn(t, h); n != 2*each {
+		t.Errorf("%d reads of the excludes for a time off and two requests after it, want %d", n, 2*each)
 	}
 }
 
 // Claustrum's own, not measured: a time off of the check of session folders that
 // starts while a read of the user's excludes runs keeps that read out of the store
-// of the daemon, and the next request reads again. The later calls of the
-// first request make one read of that time off, so 3 reads run. Mutation: in
+// of the daemon, and the next request reads again. The test of that request ran
+// in the time off, so no state is kept: the listing of its first call makes one
+// read of the time off, and its three later calls read once each. With the read
+// of the next request, 6 reads run. That count is tested on Linux only, where the
+// four calls are measured. Elsewhere more than 2 reads run. Mutation: in
 // globalExcludesPath, drop the second OffRun test before the store. The read is
 // then stored, and only 1 read runs.
 func TestShadowExcludesReadNotStoredWhenOffSwitchStartsDuringIt(t *testing.T) {
@@ -498,7 +504,7 @@ func TestShadowExcludesReadNotStoredWhenOffSwitchStartsDuringIt(t *testing.T) {
 	release()
 	h.send(t, 2, "git.info", map[string]any{"path": h.repo})
 	h.reply(t, 2)
-	if n := excludesReadsIn(t, h); n != 3 {
-		t.Errorf("%d reads of the excludes after a time off that began during the first read, want 3", n)
+	if n := excludesReadsIn(t, h); n < 3 || (runtime.GOOS == "linux" && n != 6) {
+		t.Errorf("%d reads of the excludes after a time off that began during the first read, want 6 on Linux, more than 2 elsewhere", n)
 	}
 }
