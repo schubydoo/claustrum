@@ -1216,8 +1216,9 @@ func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, d
 }
 
 // settingsGate is settingsGateRefusal. With ask false the gate makes no call
-// that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
-// pass ask false only for a later gate at a call with --git-dir=.
+// that asks git about the repository (askGit), unless askInGate is set.
+// keepLiveForm and keepLiveCreate pass ask false only for a later gate at a
+// call with --git-dir=.
 func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.gitNotARepo, req.gitDisagreed, req.configRefused, req.goneCopyText = false, false, false, false, ""
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
@@ -1252,6 +1253,10 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 			req.gitRefused, req.gitNotARepo, req.gitDisagreed = true, a.notARepo, a.disagree
 			return a.text, a.noRepo
 		}
+	} else if req.askInGate && req.shadow.asksGit(t, bool(off)) {
+		// A good answer is kept, so the step after the add makes no call. A bad
+		// one is not kept, and that step asks again (askAfterAdd).
+		_ = req.shadow.askGit(t, dir)
 	}
 	msg, read = repoConfigGate(t, off, req.stop)
 	req.configRefused = msg != ""
