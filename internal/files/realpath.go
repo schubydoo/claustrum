@@ -87,6 +87,12 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // A dangling link with missingLeaf gives dangling, and wouldBe only if the parent
 // of its target exists. A dangling link without missingLeaf gives the plain
 // exists:false (claustrum's own, not measured).
+//
+// A path through a regular file, as <file>/a, gives the plain exists:false, with
+// and without missingLeaf (4c111e86, measured on Linux, and for <file>/a with no
+// missingLeaf on macOS). A dangling link to such a path gives dangling with no
+// wouldBe (4c111e86, measured on Linux). The system answers ENOTDIR there, which
+// counts as a missing name.
 func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	path = realpathClean(path)
 	_, err := os.Stat(path)
@@ -97,7 +103,7 @@ func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	if err == nil {
 		return rpc.RealpathReply{Exists: true, Real: filepath.ToSlash(real)}, nil
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
+	if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
 		return rpc.RealpathReply{}, err
 	}
 	if !missingLeaf {
@@ -155,16 +161,20 @@ func resolveDangling(path string) rpc.RealpathReply {
 }
 
 // wouldBeUnder resolves the parent folder of path and adds the last name. ok is
-// false when the parent cannot be resolved. The caller tested the path first, so
-// only a missing parent (or a race) gets here. The last name is never "." or
-// "..": the path does not exist, and a path that ends in one of them names its
-// parent, so a parent that resolves would make the path exist. On Windows a
+// false when the parent cannot be resolved, or resolves to no folder, as a regular
+// file (4c111e86, measured on Linux). The caller tested the path first, so only a
+// missing parent, a parent that is a file (or a race) gets here. The last name is
+// "." or ".." only below a parent that is no folder, as <file>/., because below a
+// folder such a path exists. The folder test then gives ok false. On Windows a
 // parent behind a link to a network place gives ok false, so a missing name
 // there gets plain exists:false (claustrum's own, not measured).
 func wouldBeUnder(path string) (string, bool) {
 	parent, last := splitLast(path)
 	real, err := realpathEval(parent)
 	if err != nil {
+		return "", false
+	}
+	if fi, err := os.Stat(real); err != nil || !fi.IsDir() {
 		return "", false
 	}
 	return filepath.ToSlash(filepath.Join(real, last)), true
