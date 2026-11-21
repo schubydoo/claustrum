@@ -347,7 +347,7 @@ daemon runs `git version`, and the method goes on:
 On Windows a `git version` that fails gives the "cannot run" text too, for
 `git.info`, `git.list_branches`, `git.status` and `git.worktree_create` on a plain
 folder, and for `git.info` on a repository and on a regular file. `git.info` on a
-path that does not exist keeps its frame.
+path that does not exist keeps its frame, except [below a repository on a share](git-rules-windows-paths.md#a-missing-folder-in-a-repository-on-a-share).
 
 On Windows git cannot start in some paths that exist, and the listing fails by
 class 3 with the start error `fork/exec <git.exe path>: The directory name is
@@ -367,7 +367,7 @@ A `git version` that exits 1 and writes `boom` turns the `git.info` answer on a
 regular file into `{"error":{"code":-32603,"message":"git cannot run on this host;
 git not run: exit status 1: boom"}}`.
 
-Other Windows frames stay as they are:
+Other Windows frames stay:
 
 - `git.status` with the file as `path` and a repository as `baseRepo` answers
   `{"isRepo":false,"clean":false}`.
@@ -402,7 +402,7 @@ claustrum makes `<git text>` of both texts with the text rule of
 bytes. It drops invalid UTF-8, turns each non-printable rune into one space, and
 then trims spaces. If nothing is left, the text is the error of the git process,
 for example `exit status 128`. The cap comes before the trim, so leading white
-space counts toward the 512 bytes. For the hooks refusal
+space counts. For the hooks refusal
 this rule is measured on Windows. For the "cannot run" text it is claustrum's own.
 
 With the `GIT_COMMON_DIR` pin, git names a corrupt config by its absolute path

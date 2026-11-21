@@ -24,7 +24,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 - After a kept test the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
-  no member. A path that does not exist gets the same, but starts no test itself. On
+  no member. A path that does not exist gets the same, but starts no test, except [below a repository on a share](git-rules-windows-paths.md#a-missing-folder-in-a-repository-on-a-share). On
   a folder with no repository the other methods answer at once, except a create on a `.git` file to a missing path (`4c111e86`, measured on Linux and Windows).
 - As the first git request of a daemon, a `git.info` on a folder whose `.git` file
   names a missing path runs the test and gives that reply. A missing entry under
@@ -59,7 +59,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   the remove deletes nothing. On a config that only the daemon refuses, the remove
   deletes. macOS and Windows are not measured for these replies and removes.
 - A held request keeps no hold for later requests. A `worktree add` that started in
-  the hold is not stopped at 2 minutes during the hold. Nor is it after the holder answers, and a held call that starts
+  the hold is not stopped at 2 minutes during the hold or after the holder answers, and a held call that starts
   after that answer has the 2 minute limit (claustrum's own, not measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` no second test ran up to 720 s.
@@ -74,7 +74,7 @@ The first request without the member that reaches a repository runs the test. Th
 test makes a small repository and a copy of it in a folder `.check-<n>` of the
 daemon, and runs git calls there. One of them is the read of the test repository's
 config. It runs in the folder of [calls outside a repository](git-rules-calls.md#calls-outside-a-repository) (claustrum's own, not measured).
-The test folder is gone at the reply. If the test fails, the request gets this
+The test folder is gone at the reply. A failed test gives this
 text:
 
 `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.`
