@@ -7,7 +7,7 @@ An untagged rule on this page was measured against build `5fd08069` on Linux. A 
 ## The settings copy
 
 The copy is in a folder `git-shadow` beside the socket. The calls of the five git
-methods name it, so git reads it and not the repository config.
+methods name it, so git reads it, not the repository config.
 
 ### The states and `settingsControl`
 
@@ -46,7 +46,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   and a kind other than a FIFO and `/dev/null`.
 - A request with `"shadowDirOff":true` gets `"off-switch"` also as the first request
   of a daemon, in a "no repository" reply and while a failed test is kept.
-  [Turning the read off](git-rules-config.md#turning-the-read-off) has the values that count as the
+  [Turning the read off](git-rules-config.md#turning-the-read-off) lists the values of the
   switch.
 - During a hold, each later command that starts its own config listing names the
   git directory (Linux, macOS and Windows). The config check and the call after it
@@ -126,7 +126,8 @@ folder and each folder of a copy have mode `0700`, and their files
 `0600`. The daemon makes the folder at the first request that runs the test. It holds
 an exclusive lock on its file `lock` for life. On Windows the hold is
 an unshared open handle. On a mount whose `flock` answers `ENOLCK`, `c9125eb8`
-goes on with no lock, and each git request succeeds (measured on Linux). Any other `flock` error fails the request (claustrum's own, not measured).
+goes on with no lock, and each git request succeeds (measured on Linux). claustrum
+follows. Any other `flock` error fails the request (claustrum's own, not measured).
 
 - At `-stop` and `server.shutdown` the daemon removes its folder. The empty
   `git-shadow` stays (Linux, macOS and Windows).
@@ -212,7 +213,8 @@ held lock keeps the folder of a live daemon.
   days goes.
 - On Windows that lock also keeps it from a remove by hand, so no later request
   sweeps again.
-- `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS. After such an error a folder of either name goes past 7 days. The 7 days
+- `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
+  follows. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
 - 8 days removed and 1 hour kept are measured (another host's name on Linux,
   this host's form on macOS).
@@ -288,10 +290,10 @@ exit (claustrum's own).
 
 A third run follows that exit 0, in the root, without user or
 system config or `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share, statuses not logged). It ends
-30 seconds after the second run started (claustrum's own, not measured). Its child's stop
+at the second run's deadline (claustrum's own, not measured). Its child's stop
 is not measured. On Linux and macOS
 its exit 0 gives that error plus `; if that names a git setting or file, fix it, then try
-again`, a stop the last row (`52d82f0a`,
+again`, its stop gives the last row (`52d82f0a`,
 Linux), and a failure "no repository" (claustrum's own). On Windows each gives "no
 repository" (seen on that share, else claustrum's own). A bare repository gets no third
 run (Linux). A `refs` made
@@ -328,8 +330,8 @@ add](git-worktree-create.md#the-staged-add)).
 ### `config.worktree`
 
 The copy has no `extensions.worktreeConfig` setting, so git reads no
-`config.worktree` file in the state `shadow`. The daemon does two things in its
-place, in a repository with that extension and a `config.worktree` file. The
+`config.worktree` file in the state `shadow`. In a repository with that extension and
+such a file, the daemon does two things instead. The
 `worktreeConfig` values `2` and `10` turn that extension on.
 
 - Each key of the copied settings file but the format version, `extensions.*` and
