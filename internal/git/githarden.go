@@ -1199,15 +1199,6 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		if u.swapped("index") {
 			return stderr, drained, 0, errGitDirNotReal, nil
 		}
-		// The keep of the objects that git-lfs downloaded into the private
-		// store (lfsstore.go). It runs after a checkout that exited 0, before the
-		// settle step. The moment is claustrum's own, not measured.
-		if err == nil && keep {
-			start := time.Now()
-			returnDownloads(u, lfs.path, keepAfterGood)
-			// The wait for the end of the ticks counts as a time of the keep too.
-			keepTook = tickWait + time.Since(start)
-		}
 		// The settle step runs after a checkout that exited 0 in time, when
 		// settle is set: in the state shadow, and with the member outside the
 		// state fallback-git (c9125eb8 and b3081b51, measured on Linux). In the
@@ -1224,12 +1215,26 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 				storage = lfs.path
 			}
 			settleCheckout(ctx, u, leaf, workTree, gitDir, idx, storage, pin, readEnd)
-			// The test of the held git directory runs again right before the
-			// placement, so a swap during the settle step gets the same answer
-			// (claustrum's own, not measured).
-			if u.swapped("settled") {
-				return stderr, drained, keepTook, errGitDirNotReal, nil
-			}
+		}
+		// The keep of the objects that git-lfs downloaded into the private
+		// store (lfsstore.go). It runs after a checkout that exited 0, after the
+		// settle step, and the reply waits for it. 4c111e86 starts its copy after
+		// the settle call ends, and answers right after the copy ends or is cut
+		// (measured on macOS). On Linux the object comes at the reply (measured),
+		// and this order is claustrum's own, not measured. An object that the
+		// settle call put into the private store is kept too (claustrum's own,
+		// not measured).
+		if err == nil && keep {
+			start := time.Now()
+			returnDownloads(u, lfs.path, keepAfterGood)
+			// The wait for the end of the ticks counts as a time of the keep too.
+			keepTook = tickWait + time.Since(start)
+		}
+		// The test of the held git directory runs again right before the
+		// placement, so a swap during the settle step or the keep gets the same
+		// answer (claustrum's own, not measured).
+		if err == nil && settle && u.swapped("settled") {
+			return stderr, drained, keepTook, errGitDirNotReal, nil
 		}
 		if u.accepted != nil && tested.path == "" {
 			// A create that holds its git directory, with no registration that

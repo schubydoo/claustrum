@@ -361,13 +361,13 @@ func TestInstallStopsAPresentCLIAtTheCacheHitBound(t *testing.T) {
 	stops := recordStopStep(t)
 
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: blob, cliKeep: 2})
-	stops.wantStopAt(t, "B04", 500*time.Millisecond)
+	stops.wantStopAt(t, "cache hit", 500*time.Millisecond)
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "B04/B10", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))...)
+	f.wantNames(t, "cache hit", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))...)
 	if !isRegularFile(blob) {
-		t.Error("B10: the -cli-zst blob was consumed. A stopped cache hit installs nothing")
+		t.Error("the -cli-zst blob was consumed. A stopped cache hit installs nothing")
 	}
 }
 
@@ -406,7 +406,7 @@ func TestInstallPresentCLIUnderTheBoundIsPresent(t *testing.T) {
 	if want := factsHead(t, f.cli) + "true}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "B03", append(oldVersionFiles(), ".fetch-12", ".fetch-11", "1.0.8.zst", "1.0.9.zst", filepath.Base(f.cli))...)
+	f.wantNames(t, "good cache hit", append(oldVersionFiles(), ".fetch-12", ".fetch-11", "1.0.8.zst", "1.0.9.zst", filepath.Base(f.cli))...)
 }
 
 // Measured. The two bounds are two values. A CLI that answers between them
@@ -419,10 +419,10 @@ func TestInstallFirstRunHasItsOwnBound(t *testing.T) {
 
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: f.stubBlob(t)})
 	if want := factsHead(t, f.cli) + "false}\n"; out != want {
-		t.Errorf("F04: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if !isRegularFile(f.cli) {
-		t.Fatal("F04: the CLI was not installed")
+		t.Fatal("the CLI was not installed")
 	}
 
 	out = captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
@@ -476,12 +476,12 @@ func TestInstallStopsANewCLIAtTheFirstRunBound(t *testing.T) {
 	if want := factsHead(t, f.cli) + stoppedTail + "}\n"; out != want {
 		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
-	f.wantNames(t, "F05", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))
+	f.wantNames(t, "new CLI stopped", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(f.cli))
 	if !isRegularFile(f.cli) {
-		t.Error("F05: the new CLI must stay at its final name")
+		t.Error("the new CLI must stay at its final name")
 	}
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
-		t.Errorf("F05: the blob must be consumed, Lstat err = %v", err)
+		t.Errorf("the blob must be consumed, Lstat err = %v", err)
 	}
 }
 
@@ -501,8 +501,8 @@ func newNoPolicyGateFixture(t *testing.T) *stubFixture {
 // direct bounds and with the direct text. launcherStatus none is the last key,
 // and the CLI keeps the gate variable.
 func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
-	// Each row is a subtest, so the stop hold of L02 ends with L02.
-	t.Run("L02", func(t *testing.T) {
+	// Each row is a subtest, so the stop hold of the first row ends with that row.
+	t.Run("present CLI stopped", func(t *testing.T) {
 		g := newNoPolicyGateFixture(t)
 		g.litter(t)
 		placeStub(t, g.cli)
@@ -512,30 +512,30 @@ func TestInstallGateWithoutPolicyUsesTheDirectBounds(t *testing.T) {
 
 		out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliKeep: 2})
 		if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
-			t.Errorf("L02: stdout\n got %q\nwant %q", out, want)
+			t.Errorf("stdout\n got %q\nwant %q", out, want)
 		}
 		if !ready.Load() {
-			t.Fatal("L02: the stub never became ready: it wrote no START line before the stop step, or no stop step ran")
+			t.Fatal("the stub never became ready: it wrote no START line before the stop step, or no stop step ran")
 		}
 		if line := mustLogLine(t, g, "START "); !strings.HasSuffix(line, " gate=1") {
-			t.Errorf("L02: stub START %q, want the gate variable with the value 1", line)
+			t.Errorf("stub START %q, want the gate variable with the value 1", line)
 		}
-		g.wantNames(t, "L02", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))...)
+		g.wantNames(t, "present CLI stopped", append(oldVersionFiles(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))...)
 	})
 
-	// L07: a new CLI that does not answer, stopped at the first-run bound.
-	t.Run("L07", func(t *testing.T) {
+	// A new CLI that does not answer, stopped at the first-run bound.
+	t.Run("new CLI stopped", func(t *testing.T) {
 		g := newNoPolicyGateFixture(t)
 		g.litter(t)
 		stubDelay(t, 20*time.Second)
 		setCLIRunBounds(t, time.Minute, 500*time.Millisecond)
 		stops := recordStopStep(t)
 		out := captureInstallOutput(t, installOpts{cliDir: g.cliDir, cliVersion: "9.9.9", cliZst: g.stubBlob(t), cliKeep: 2})
-		stops.wantStopAt(t, "L07", 500*time.Millisecond)
+		stops.wantStopAt(t, "new CLI stopped", 500*time.Millisecond)
 		if want := factsHead(t, g.cli) + stoppedTail + `,"launcherStatus":"none"}` + "\n"; out != want {
-			t.Errorf("L07: stdout\n got %q\nwant %q", out, want)
+			t.Errorf("stdout\n got %q\nwant %q", out, want)
 		}
-		g.wantNames(t, "L07", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))
+		g.wantNames(t, "new CLI stopped", newestOldVersion(), ".fetch-12", "1.0.8.zst", filepath.Base(g.cli))
 	})
 }
 
@@ -552,10 +552,10 @@ func TestInstallOverAFailingFileUsesTheFirstRunBound(t *testing.T) {
 
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: f.stubBlob(t)})
 	if want := factsHead(t, f.cli) + "false}\n"; out != want {
-		t.Errorf("F14: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if fi, err := os.Stat(f.cli); err != nil || fi.Size() < 1024 {
-		t.Errorf("F14: the new CLI did not replace the old file (err %v)", err)
+		t.Errorf("the new CLI did not replace the old file (err %v)", err)
 	}
 }
 
@@ -641,23 +641,22 @@ func TestInstallKeepsTheDownloadConnectionOpenDuringTheRun(t *testing.T) {
 // a folder at <cli-dir>/<version> as a tree, also when it is the home folder
 // or contains it (measured). claustrum refuses both: the folder is not removed,
 // the blob stays and no CLI runs. With the home folder elsewhere the same folder
-// is replaced, as before (measured). The cell names are the Linux ones. macOS and
-// Windows have their own cells.
+// is replaced, as before (measured).
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a fixture
 // folder there. Without the guard the test deletes only that fixture.
 func TestInstallRefusesToReplaceTheHomeFolder(t *testing.T) {
 	for _, tc := range []struct {
-		cell           string
+		name           string
 		version        string // the leaf name that -cli-version gives
 		homeIsElswhere bool
 		refused        bool
 	}{
-		{"H1: the final name is the home folder", "alice", false, true},
-		{"H5: the final name contains the home folder", "users", false, true},
-		{"H3: the home folder is elsewhere", "alice", true, false},
+		{"the final name is the home folder", "alice", false, true},
+		{"the final name contains the home folder", "users", false, true},
+		{"the home folder is elsewhere", "alice", true, false},
 	} {
-		t.Run(tc.cell, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			f := newStubFixture(t)
 			// On Windows the final name carries the suffix, so the fixture folder
 			// of that name carries it too.
@@ -758,7 +757,7 @@ func TestInstallDownloadTimeIsOutsideTheBound(t *testing.T) {
 	}
 	line := out[strings.LastIndex(out, "__INSTALL_RESULT__"):]
 	if !regexp.MustCompile(`"cliWasPresent":false,"fetch":\{"bytes":\d+,"ms":\d+,"longestPauseMs":\d+\}\}\n$`).MatchString(line) {
-		t.Errorf("F13: facts line %q, want no cliError", line)
+		t.Errorf("facts line %q, want no cliError", line)
 	}
 }
 
@@ -785,19 +784,19 @@ func TestInstallDoesNotWaitForAHolderOfTheCLIOutput(t *testing.T) {
 
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9"})
 	if w := time.Duration(stops.wait.Load()); stops.armed.Load() && w > 20*time.Second {
-		t.Errorf("B14: the stop step waits %v, want the 20s cache-hit bound or less", w)
+		t.Errorf("the stop step waits %v, want the 20s cache-hit bound or less", w)
 	}
 	// A run that waits for the holder of the output (30s) reaches the 20s bound first.
 	if stops.ran.Load() {
-		t.Error("B14: the stop step ran: the run took 20s, for example because it waited for the holder of the output")
+		t.Error("the stop step ran: the run took 20s, for example because it waited for the holder of the output")
 	}
 	if at := startedAt.Load(); at == nil {
-		t.Error("B14: the CLI never started")
+		t.Error("the CLI never started")
 	} else if d := time.Since(*at); d > 10*time.Second {
-		t.Errorf("B14: the run ended %v after the start call. It waited for the holder of the output (30s)", d)
+		t.Errorf("the run ended %v after the start call. It waited for the holder of the output (30s)", d)
 	}
 	if want := factsHead(t, f.cli) + "true}\n"; out != want {
-		t.Errorf("B14: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 }
 
@@ -874,15 +873,15 @@ func TestInstallRemovesANewCLIThatDoesNotRun(t *testing.T) {
 	out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: blob, cliKeep: 2})
 	want := factsHead(t, f.cli) + `false,"cliError":` + jsonString(t, "installed cli at "+f.cli+" is not runnable") + "}\n"
 	if out != want {
-		t.Errorf("F12: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	start, n := f.stubLogLine(t, "START ")
 	if n != 1 || !strings.HasPrefix(start, "START argv0="+f.cli+" ") {
 		t.Errorf("stub START lines: %d, first %q, want one run with argv[0] %s", n, start, f.cli)
 	}
-	f.wantNamesAfterFailedRun(t, "F12", newestOldVersion(), ".fetch-12", "1.0.8.zst")
+	f.wantNamesAfterFailedRun(t, "new CLI does not run", newestOldVersion(), ".fetch-12", "1.0.8.zst")
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
-		t.Errorf("F12: the blob must be consumed, Lstat err = %v", err)
+		t.Errorf("the blob must be consumed, Lstat err = %v", err)
 	}
 }
 
@@ -999,7 +998,7 @@ func TestInstallSweepsAfterAnAttemptWithNoSource(t *testing.T) {
 // is replaced. At its --version run the new CLI is at the final path: its
 // argv[0] is that path, and its folder holds the CLI file only.
 func TestInstallClearsTheFinalNameBeforeTheNewCLIRuns(t *testing.T) {
-	for _, shape := range []string{"a folder (E11)", "a file that does not run (F14)"} {
+	for _, shape := range []string{"a folder", "a file that does not run"} {
 		t.Run(shape, func(t *testing.T) {
 			f := newStubFixture(t)
 			if strings.HasPrefix(shape, "a folder") {
@@ -1165,12 +1164,12 @@ func TestInstallStoppedDownloadPutsFetchAfterCliUnresponsive(t *testing.T) {
 	line := out[strings.LastIndex(out, "__INSTALL_RESULT__"):]
 	head := factsHead(t, f.cli) + stoppedTail + `,"fetch":{"bytes":` + strconv.Itoa(len(zst)) + `,"ms":`
 	if !strings.HasPrefix(line, head) || !regexp.MustCompile(`"ms":\d+,"longestPauseMs":\d+\}\}\n$`).MatchString(line) {
-		t.Errorf("F08: facts line\n got %q\nwant the start %q and fetch as the last key", line, head)
+		t.Errorf("facts line\n got %q\nwant the start %q and fetch as the last key", line, head)
 	}
 	if dir, want := mustLogLine(t, f, "DIR "), "DIR "+filepath.Base(f.cli); dir != want {
 		t.Errorf("the folder at the --version run: %q, want %q (no download blob, no temp)", dir, want)
 	}
-	f.wantNames(t, "F08", filepath.Base(f.cli))
+	f.wantNames(t, "stopped download", filepath.Base(f.cli))
 }
 
 // mustLogLine is the first stub log line with the prefix. The stub writes its
@@ -1199,25 +1198,25 @@ func TestInstallDefaultCLIDir(t *testing.T) {
 	out := captureInstallOutput(t, installOpts{home: home, cliVersion: "9.9.9"})
 	want := factsHead(t, cli) + `false,"cliError":"cli 9.9.9 missing and no --cli-url or --cli-zst provided"}` + "\n"
 	if out != want {
-		t.Errorf("H01: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if ents, err := os.ReadDir(dir); err != nil || len(ents) != 0 {
-		t.Errorf("H01: the default folder after a \"missing\" answer: entries %v, err %v, want it made and empty", ents, err)
+		t.Errorf("the default folder after a \"missing\" answer: entries %v, err %v, want it made and empty", ents, err)
 	}
 
 	blob := f.stubBlob(t)
 	out = captureInstallOutput(t, installOpts{home: home, cliDir: "", cliVersion: "9.9.9", cliZst: blob})
 	if want := factsHead(t, cli) + "false}\n"; out != want {
-		t.Errorf("H03: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if !isRegularFile(cli) {
-		t.Error("H03: the CLI was not installed in the default folder")
+		t.Error("the CLI was not installed in the default folder")
 	}
 	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
-		t.Errorf("H03: the blob must be consumed, Lstat err = %v", err)
+		t.Errorf("the blob must be consumed, Lstat err = %v", err)
 	}
 	if start := mustLogLine(t, f, "START "); !strings.HasPrefix(start, "START argv0="+cli+" ") {
-		t.Errorf("H03: stub START %q, want argv[0] %s", start, cli)
+		t.Errorf("stub START %q, want argv[0] %s", start, cli)
 	}
 
 	// An explicit -cli-dir wins over the default.
@@ -1263,7 +1262,7 @@ func TestInstallWithoutVersionMakesNoFolder(t *testing.T) {
 	for _, o := range []installOpts{{home: home}, {home: home, cliDir: absent}} {
 		out := captureInstallOutput(t, o)
 		if want := factsHead(t, "") + "false}\n"; out != want {
-			t.Errorf("H06, cliDir %q: stdout\n got %q\nwant %q", o.cliDir, out, want)
+			t.Errorf("cliDir %q: stdout\n got %q\nwant %q", o.cliDir, out, want)
 		}
 	}
 	if ents, err := os.ReadDir(home); err != nil || len(ents) != 0 {
@@ -1289,13 +1288,13 @@ func TestInstallAnswersAnEmptyCliPathWhenTheFolderCannotBeMade(t *testing.T) {
 	out := captureInstallOutput(t, installOpts{cliDir: filepath.Join(p, "cli"), cliVersion: "9.9.9", cliZst: blob})
 	head := factsHead(t, "") + `false,"cliError":"mkdir cli dir: `
 	if !strings.HasPrefix(out, head) || strings.Count(out, "\n") != 1 {
-		t.Errorf("E10: stdout %q, want one line that starts %q", out, head)
+		t.Errorf("stdout %q, want one line that starts %q", out, head)
 	}
 	if want := factsHead(t, "") + `false,"cliError":"mkdir cli dir: mkdir ` + p + `: not a directory"}` + "\n"; runtime.GOOS == "linux" && out != want {
-		t.Errorf("E10: stdout\n got %q\nwant %q", out, want)
+		t.Errorf("stdout\n got %q\nwant %q", out, want)
 	}
 	if !isRegularFile(blob) {
-		t.Error("E10: the blob must stay")
+		t.Error("the blob must stay")
 	}
 }
 
@@ -1329,7 +1328,7 @@ func TestInstallExeNameRule(t *testing.T) {
 		return captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9", cliZst: zst})
 	}
 
-	t.Run("W02: only the .exe file is present", func(t *testing.T) {
+	t.Run("only the .exe file is present", func(t *testing.T) {
 		f := mk(t)
 		placeStub(t, f.cli)
 		if out, want := run(t, f, ""), factsHead(t, f.cli)+"true}\n"; out != want {
@@ -1339,7 +1338,7 @@ func TestInstallExeNameRule(t *testing.T) {
 			t.Errorf("stub START %q, want argv[0] %s", start, f.cli)
 		}
 	})
-	t.Run("W03: only the bare file counts for nothing", func(t *testing.T) {
+	t.Run("only the bare file counts for nothing", func(t *testing.T) {
 		f := mk(t)
 		placeStub(t, bare(f))
 		if out, want := run(t, f, ""), factsHead(t, f.cli)+missing; out != want {
@@ -1349,7 +1348,7 @@ func TestInstallExeNameRule(t *testing.T) {
 			t.Errorf("the bare file ran %d times, want 0", n)
 		}
 	})
-	t.Run("W04: a failing bare file beside a good .exe file", func(t *testing.T) {
+	t.Run("a failing bare file beside a good .exe file", func(t *testing.T) {
 		f := mk(t)
 		placeStub(t, f.cli)
 		notACLI(t, bare(f))
@@ -1357,7 +1356,7 @@ func TestInstallExeNameRule(t *testing.T) {
 			t.Errorf("stdout\n got %q\nwant %q", out, want)
 		}
 	})
-	t.Run("W05: a failing .exe file beside a good bare file", func(t *testing.T) {
+	t.Run("a failing .exe file beside a good bare file", func(t *testing.T) {
 		f := mk(t)
 		notACLI(t, f.cli)
 		placeStub(t, bare(f))
@@ -1368,16 +1367,16 @@ func TestInstallExeNameRule(t *testing.T) {
 			t.Errorf("the bare file ran %d times, want 0", n)
 		}
 	})
-	t.Run("W06: a version that ends in .exe", func(t *testing.T) {
+	t.Run("a version that ends in .exe", func(t *testing.T) {
 		f := mk(t)
 		cli := filepath.Join(f.cliDir, "9.9.9.exe.exe")
 		out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9.exe", cliZst: f.stubBlob(t)})
 		if want := factsHead(t, cli) + "false}\n"; out != want {
 			t.Errorf("stdout\n got %q\nwant %q", out, want)
 		}
-		f.wantNames(t, "W06", "9.9.9.exe.exe")
+		f.wantNames(t, "version that ends in .exe", "9.9.9.exe.exe")
 	})
-	t.Run("W3: the prune counts only <version>.exe files", func(t *testing.T) {
+	t.Run("the prune counts only <version>.exe files", func(t *testing.T) {
 		f := mk(t)
 		now := time.Now()
 		for i, name := range []string{"1.0.0.exe", "1.1.0.exe", "1.2.0.exe", "1.0.0", "1.1.0"} {
@@ -1395,9 +1394,9 @@ func TestInstallExeNameRule(t *testing.T) {
 		if dir, want := mustLogLine(t, f, "DIR "), "DIR 1.0.0,1.1.0,1.2.0.exe,9.9.9.exe"; dir != want {
 			t.Errorf("the folder at the --version run: %q, want %q", dir, want)
 		}
-		f.wantNames(t, "W3", "1.0.0", "1.1.0", "9.9.9.exe")
+		f.wantNames(t, "prune", "1.0.0", "1.1.0", "9.9.9.exe")
 	})
-	t.Run("E11a: a folder at the bare name stays", func(t *testing.T) {
+	t.Run("a folder at the bare name stays", func(t *testing.T) {
 		f := mk(t)
 		if err := os.Mkdir(bare(f), 0o755); err != nil {
 			t.Fatal(err)
@@ -1411,7 +1410,7 @@ func TestInstallExeNameRule(t *testing.T) {
 			t.Error("the folder at the bare name must stay, and the CLI must be at the .exe name")
 		}
 	})
-	t.Run("E11b: a folder at the .exe name is replaced", func(t *testing.T) {
+	t.Run("a folder at the .exe name is replaced", func(t *testing.T) {
 		f := mk(t)
 		if err := os.Mkdir(f.cli, 0o755); err != nil {
 			t.Fatal(err)
@@ -1423,6 +1422,6 @@ func TestInstallExeNameRule(t *testing.T) {
 		if !isRegularFile(f.cli) {
 			t.Error("the CLI file must replace the folder at the .exe name")
 		}
-		f.wantNames(t, "E11b", "9.9.9.exe")
+		f.wantNames(t, "folder at the .exe name", "9.9.9.exe")
 	})
 }

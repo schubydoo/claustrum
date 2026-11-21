@@ -460,7 +460,7 @@ func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 		args []string
 		want int
 	}{
-		{"version, no dir (H07)", []string{"-install", "-cli-version", "9.9.9"}, 2},
+		{"version, no dir", []string{"-install", "-cli-version", "9.9.9"}, 2},
 		{"version, empty dir", []string{"-install", "-cli-version", "9.9.9", "-cli-dir", ""}, 2},
 		{"version and dir", []string{"-install", "-cli-version", "9.9.9", "-cli-dir", t.TempDir()}, 1},
 		{"no version", []string{"-install"}, 1},

@@ -379,7 +379,7 @@ func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 	t.Run("FIFO and no outer repository", func(t *testing.T) {
 		tmp := realTempDir(t)
 		requireTempOutsideCheckout(t, tmp)
-		T := filepath.Join(tmp, "P5", "T")
+		T := filepath.Join(tmp, "fifo", "T")
 		mkfifo(t, filepath.Join(T, ".git"))
 		wt := filepath.Join(T, ".claude", "worktrees", "w1")
 		wantFifoFrame(t, "create(T)", frameWithin(t, "git.worktree_create", createParams(T, wt, "w1")), `{"jsonrpc":"2.0","id":1,"result":`+unusableCreate(t, T)+`}`)
