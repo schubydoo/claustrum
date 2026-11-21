@@ -98,7 +98,7 @@ func missingShareRepo(path string) string {
 // Claustrum's own, not measured: the remove asks again only after a bad answer,
 // the start test runs first, as for a folder that exists, a good answer keeps the
 // old steps, and a bad one with a text answers it. A failed start test answers
-// its text. A root that the trust check refuses, or trusts with no pin, gets no
+// its text. A root that the trust check does not trust, or trusts with no pin, gets no
 // start test and no call, and the request keeps the reply of a missing path.
 func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, asked bool) {
 	root := missingShareRepo(path)
