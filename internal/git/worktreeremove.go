@@ -953,9 +953,10 @@ var leafOpenedHook func()
 // (measured). The error names the entry only, for example "RemoveAll zz: permission
 // denied".
 //
-// A leaf that another folder or a link replaced after the open is not deleted. The
-// reply is "failed to remove worktree: `<leaf name>` was replaced while the daemon
-// was using it" (removeLeafReplacedText), as 4c111e86 answers it (measured on Linux).
+// A leaf that another folder or a link replaced between the open and the identity
+// check below is not deleted. The reply is "failed to remove worktree: `<leaf name>`
+// was replaced while the daemon was using it" (removeLeafReplacedText), as 4c111e86
+// answers it (measured on Linux).
 func deleteWorktreeDir(parent *os.Root, leaf, path string) error {
 	leafDir, err := parent.OpenRoot(leaf)
 	if err != nil {
