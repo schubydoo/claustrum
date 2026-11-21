@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"sync"
 
 	"github.com/schubydoo/claustrum/internal/install"
@@ -48,17 +49,17 @@ type managedLauncherLog struct {
 // with the reason of the last answer writes no line. A usable answer in between
 // makes it log again (4c111e86, measured on Linux). On macOS an answer with no
 // launcherCheck does too (resetChecked), and a settings rewrite alone does not
-// (4c111e86, measured on macOS). claustrum's
-// own, not measured: the key lives for one daemon, apart from the key of note. With
-// logsRepeats each refusal logs, a repeat too (Windows, claustrum's own).
-func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckReply, logsRepeats bool) {
+// (4c111e86, measured on macOS). On Windows 27 refusals in a row write one line
+// (4c111e86, measured on Windows). claustrum's own, not measured: the key lives for
+// one daemon, apart from the key of note.
+func (l *managedLauncherLog) noteChecked(res rpc.LauncherCheckReply) {
 	reason := ""
 	if res.Status == install.StatusUnusable {
 		reason = res.Reason
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if reason == l.lastChecked && !logsRepeats {
+	if reason == l.lastChecked {
 		return
 	}
 	l.lastChecked = reason
@@ -112,22 +113,44 @@ type managedLauncherParams struct {
 	CliPath string `json:"cliPath"`
 	// Path and LauncherCheck ask for the file check of the launcher at Path
 	// (c9125eb8, install.ResolveChecked). A member of another JSON type gets Invalid
-	// params (claustrum's own, not measured). An empty Path counts as absent
-	// (claustrum's own, not measured).
-	Path          string                 `json:"path"`
-	LauncherCheck *install.LauncherCheck `json:"launcherCheck"`
+	// params (claustrum's own, not measured). On Windows the members inside
+	// LauncherCheck can hold another type (launcherCheckParam). An empty Path counts
+	// as absent (claustrum's own, not measured).
+	Path          string             `json:"path"`
+	LauncherCheck launcherCheckParam `json:"launcherCheck"`
+}
+
+// launcherCheckParam is the launcherCheck member of launcher.resolve. check is nil
+// for an absent or null member.
+type launcherCheckParam struct{ check *install.LauncherCheck }
+
+// checkTakesAnyMembers is launcherCheckAnyMembers behind a seam, so a Linux test
+// drives the Windows arm of the decode. Production never reassigns it.
+var checkTakesAnyMembers = launcherCheckAnyMembers
+
+// UnmarshalJSON decodes the member. With checkTakesAnyMembers any object counts as
+// a launcherCheck. On Windows 4c111e86 answers the shapes on the launcher.resolve
+// page as any other, such as "path":5 or "orManagedFolder":"yes" (measured on
+// Windows). Other member values are claustrum's own, not measured. Elsewhere a member of another JSON type fails the decode (claustrum's
+// own, not measured). A value that is not an object and not null fails it on every
+// system, and null counts as absent (claustrum's own, not measured).
+func (c *launcherCheckParam) UnmarshalJSON(data []byte) error {
+	if !checkTakesAnyMembers {
+		return json.Unmarshal(data, &c.check)
+	}
+	var o map[string]json.RawMessage
+	if err := json.Unmarshal(data, &o); err != nil {
+		return err
+	}
+	if o != nil {
+		c.check = &install.LauncherCheck{}
+	}
+	return nil
 }
 
 // ExpandPaths is a no-op. claustrum's choice (not measured): cliPath is not
 // `~`-expanded, so the own-path check compares the caller's text.
 func (p *managedLauncherParams) ExpandPaths() {}
-
-// onWindowsHost is true on Windows, where a launcherCheck with no path keeps the
-// answer of a resolve with no launcherCheck (claustrum's own, not measured).
-func onWindowsHost() bool {
-	f, _ := install.LauncherCheckHostRefusal()
-	return f == install.FaultWindowsHost
-}
 
 // handleLauncher serves the launcher namespace. Its one method is launcher.resolve.
 // No params member, a non-object params or a non-string cliPath is -32602 "Invalid
@@ -137,8 +160,9 @@ func onWindowsHost() bool {
 // (install.ResolveChecked). A path with no launcherCheck is -32602 "launcherCheck is
 // required with path", after the cliPath test (measured on Linux). A launcherCheck
 // with no path checks "": on Linux it is unusable with not_absolute (c9125eb8,
-// measured), on macOS macos_host (measured). On Windows it answers as one with no
-// launcherCheck (claustrum's own, not measured).
+// measured), on macOS macos_host (measured). On Windows a launcherCheck, also one
+// with no path, is unusable with windows_host (4c111e86, measured on Windows for the
+// shapes on the launcher.resolve page, claustrum's own for other member values).
 func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
@@ -153,12 +177,12 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 	if p.CliPath == "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "cliPath is required")
 	}
-	if p.Path != "" && p.LauncherCheck == nil {
+	if p.Path != "" && p.LauncherCheck.check == nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "launcherCheck is required with path")
 	}
-	if p.LauncherCheck != nil && (p.Path != "" || !onWindowsHost()) {
-		res := install.ResolveChecked(p.Path, *p.LauncherCheck)
-		s.managedLog.noteChecked(res, launcherCheckLogsRepeats)
+	if p.LauncherCheck.check != nil {
+		res := install.ResolveChecked(p.Path, *p.LauncherCheck.check)
+		s.managedLog.noteChecked(res)
 		return rpc.OKResult(req.ID, res)
 	}
 	res, note := install.Resolve(p.CliPath)

@@ -1,8 +1,8 @@
 package main
 
-// launcherCheckLogsRepeats is false on macOS: a refusal with the reason of the last
-// answer to a launcherCheck logs no line (4c111e86, measured on macOS).
-const launcherCheckLogsRepeats = false
+// launcherCheckAnyMembers is false on macOS: a launcherCheck member of another JSON
+// type gets Invalid params (claustrum's own, not measured).
+const launcherCheckAnyMembers = false
 
 // launcherAnswerResetsCheck is true on macOS: an answer with no launcherCheck, usable
 // or unusable, makes the next refusal of a launcherCheck log again. A rewrite of the
