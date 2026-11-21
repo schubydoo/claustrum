@@ -65,10 +65,10 @@ func sessionFoldersOf(command string, args []string, cwd string, launched bool) 
 	if cwd == "" {
 		return nil
 	}
-	cliPath := launched || filepath.Base(filepath.Dir(command)) == "ccd-cli" || filepath.Base(command) == "ccd-cli"
-	if !cliPath && (bareGitName(command) || !streamJSONArgs(args)) {
+	if !claudeCodeShape(command, args, launched) {
 		return nil
 	}
+	cliPath := cliPathShape(command, launched)
 	folders := []string{cwd}
 	if !cliPath {
 		return folders
@@ -99,6 +99,19 @@ func sessionFoldersOf(command string, args []string, cwd string, launched bool) 
 		}
 	}
 	return folders
+}
+
+// cliPathShape is true for the CLI path of sessionFoldersOf: a launcher, or a
+// command named ccd-cli or in a folder named ccd-cli.
+func cliPathShape(command string, launched bool) bool {
+	return launched || filepath.Base(filepath.Dir(command)) == "ccd-cli" || filepath.Base(command) == "ccd-cli"
+}
+
+// claudeCodeShape is true for a spawn of a Claude Code shape, by the rule of
+// sessionFoldersOf: the CLI path, or a command other than a bare git with a
+// stream-json arg.
+func claudeCodeShape(command string, args []string, launched bool) bool {
+	return cliPathShape(command, launched) || (!bareGitName(command) && streamJSONArgs(args))
 }
 
 // streamJSONArgs reports whether args hold a stream-json arg, by the rule of

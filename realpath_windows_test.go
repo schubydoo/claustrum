@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,64 @@ func TestSocketFilesRealpathWindowsJunction(t *testing.T) {
 		`"result":{"exists":true,"real":"<DIR>/dir/f.txt"}`,
 		`"result":{"exists":true,"real":"<DIR>/dir"}`,
 	} {
+		if !strings.Contains(string(got[i]), w) {
+			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
+		}
+	}
+}
+
+// TestSocketFilesRealpathWindowsStream pins the -32602 frame of a path with a
+// colon after the drive letter, with and without missingLeaf, for a stream name
+// and for a stream name with its type (4c111e86, Windows).
+func TestSocketFilesRealpathWindowsStream(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "f.txt"), "x", 0o644)
+	want := `"error":{"code":-32602,"message":"files.realpath: the path has a colon after the drive letter's (alternate data streams are not supported)"}`
+	var params []map[string]any
+	for _, p := range []string{filepath.Join(root, "f.txt") + ":stream", filepath.Join(root, "f.txt") + ":nope:$DATA"} {
+		params = append(params, map[string]any{"path": p}, map[string]any{"path": p, "missingLeaf": true})
+	}
+	for i, got := range realpathCalls(t, root, params) {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("reply %d = %s, want %s", i+1, got, want)
+		}
+	}
+}
+
+// junctionChain makes dir\j1 to dir\j<n>, each a junction to the next, and
+// dir\j<n> a junction to real: a path below dir\j1 follows n links.
+func junctionChain(t *testing.T, dir, real string, n int) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prev := real
+	for k := n; k >= 1; k-- {
+		link := filepath.Join(dir, "j"+strconv.Itoa(k))
+		makeJunction(t, link, prev)
+		prev = link
+	}
+}
+
+// TestSocketFilesRealpathWindowsJunctionChain pins the link limit: a chain of
+// 31 junctions resolves, and a chain of 32 gives error 1921 for a file below
+// it, for the chain itself and for a missing name below it, with and without
+// missingLeaf (4c111e86, Windows; the member: 87375cc7).
+func TestSocketFilesRealpathWindowsJunctionChain(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "real", "inner", "x.txt"), "x", 0o644)
+	for _, n := range []int{31, 32} {
+		junctionChain(t, filepath.Join(root, "ch"+strconv.Itoa(n)), filepath.Join(root, "real"), n)
+	}
+	got := realpathCalls(t, root, []map[string]any{
+		{"path": filepath.Join(root, "ch31", "j1", "inner", "x.txt")},
+		{"path": filepath.Join(root, "ch32", "j1", "inner", "x.txt")},
+		{"path": filepath.Join(root, "ch32", "j1")},
+		{"path": filepath.Join(root, "ch32", "j1", "inner", "nope.txt")},
+		{"path": filepath.Join(root, "ch32", "j1", "inner", "nope.txt"), "missingLeaf": true},
+	})
+	tooMany := `"error":{"code":-32603,"message":"files.realpath: error 1921: The name of the file cannot be resolved by the system.","data":{"reason":"too_many_links","errno":1921,"stoppedShort":true}}`
+	for i, w := range []string{`"result":{"exists":true,"real":"<DIR>/real/inner/x.txt"}`, tooMany, tooMany, tooMany, tooMany} {
 		if !strings.Contains(string(got[i]), w) {
 			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
 		}
