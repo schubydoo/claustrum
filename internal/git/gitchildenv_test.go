@@ -324,6 +324,8 @@ func TestGitChildEnvTwoSlashValues(t *testing.T) {
 		{`SSH_SK_PROVIDER=//\cl_u\s.dll`, `SSH_SK_PROVIDER=//\cl_u\s.dll`},
 		// Two slashes alone are no such value (claustrum's own, not measured).
 		{`LOCPATH=\\`, ""}, {`SSH_ASKPASS=//`, ""},
+		// An LD_PRELOAD or LD_AUDIT piece keeps its old rule (claustrum's own).
+		{`LD_PRELOAD=//\cl_u/a.so`, ""}, {"LD_AUDIT=///cl_u/a.so", ""},
 	})
 	for _, f := range []gitEnvForm{linuxForm, macForm} {
 		checkRows(t, f, "Linux and macOS", [][2]string{

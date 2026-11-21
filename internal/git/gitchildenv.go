@@ -329,11 +329,10 @@ func cleanLoaderList(value string, space, windows bool) string {
 }
 
 // absoluteValue is absoluteFor, and on Windows also true for two leading slashes
-// of either kind and more text. 4c111e86 keeps such a list entry of SSL_CERT_DIR,
-// LOCPATH, NLSPATH and KRB5_CONFIG, and such a value of GIT_ASKPASS, SSH_ASKPASS,
-// SSH_SK_HELPER and SSH_SK_PROVIDER: \\\x, ///x, \\\\x and //\x (measured on
-// Windows). The other list and program names follow them (claustrum's own, not
-// measured).
+// of either kind and more text. 4c111e86 keeps \\\x in SSL_CERT_DIR, NLSPATH,
+// KRB5_CONFIG and GIT_ASKPASS, ///x in LOCPATH and SSH_ASKPASS, \\\\x in
+// SSH_SK_HELPER and //\x in SSH_SK_PROVIDER (measured on Windows). The other names
+// and shapes follow them (claustrum's own, not measured).
 func absoluteValue(p string, windows bool) bool {
 	if windows && len(p) > 2 && strings.ContainsRune(`\/`, rune(p[0])) && strings.ContainsRune(`\/`, rune(p[1])) {
 		return true

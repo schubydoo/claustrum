@@ -134,9 +134,9 @@ The repository calls are the configuration listings, the hardened calls,
       slash is (`4c111e86`, measured on Windows).
     - On Windows a UNC path is absolute, and so is a value with two leading slashes
       of either kind and more text, but not an `LD_PRELOAD` or `LD_AUDIT` piece. `4c111e86` keeps `\\\x`, `\\?\UNC\…`, `\\?\C:\…`,
-      `\\.\C:\…`, `//host/share/…` and `\\host` alone for a relative name, `\\\x` and
-      `///x` in four list names, and `\\\x`, `///x`, `\\\\x` and `//\x` in four program
-      names (measured on Windows). The other names and shapes are claustrum's own.
+      `\\.\C:\…`, `//host/share/…` and `\\host` alone for a relative name, and one of `\\\x`,
+      `///x`, `\\\\x` and `//\x` in each of four list and four program names (measured
+      on Windows). The other names and shapes are claustrum's own.
     - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
       when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
       `XCACHE` and `XCTEMP` have none.
