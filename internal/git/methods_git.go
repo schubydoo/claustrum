@@ -799,7 +799,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// On Windows the object sources are checked before the next git call
 	// (statusSourceRefusal).
-	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
+	if msg := statusSourceRefusal(t.pinCommonDir, bool(p.ShadowDirOff)); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
@@ -1019,6 +1019,12 @@ func gitListBranches(req *gitCall) rpc.Response {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
 		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
+	}
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment
+	// refuses before any git call (alternateEnvRefusal). Its place after the trust
+	// check and the count check is claustrum's own, not measured.
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate). The answer has the error object of git.info (measured).

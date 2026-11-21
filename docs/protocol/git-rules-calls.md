@@ -124,7 +124,9 @@ The repository calls are the configuration listings, the hardened calls,
       Windows a name matches in any letter case and keeps its spelling.
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
       Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
-      empty value is not relative. On Windows `NUL` in any case is not.
+      empty value is not relative. On Windows `NUL` in any case is not. Nor is a
+      value with two leading slashes, such as `\\\x`, while one slash is relative
+      (`4c111e86`, measured on Windows).
     - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
       when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
       `XCACHE` and `XCTEMP` have none.
@@ -133,8 +135,9 @@ The repository calls are the configuration listings, the hardened calls,
       shape. A relative `SSH_AUTH_SOCK` goes, but not one that starts with a slash
       on Windows.
     - 19 list names, such as `PATH`, `LOCPATH` and `SSL_CERT_DIR`, keep their
-      absolute entries. Five of them keep an empty value. The rest go when no
-      entry is left. On Windows a UNC path is absolute.
+      absolute entries. Five of them keep an empty value, but not
+      `GIT_ALTERNATE_OBJECT_DIRECTORIES` on Windows. The rest go when no entry is
+      left. On Windows a UNC path is absolute (`4c111e86`, measured on Windows).
     - `LD_PRELOAD` and `LD_AUDIT` keep an absolute piece or one with no `/`.
       `LD_PRELOAD` splits on white space too.
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
