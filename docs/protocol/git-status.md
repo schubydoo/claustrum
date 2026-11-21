@@ -195,7 +195,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
     - A `commondir` value with forward or back slashes passes. Another letter case, a short name, a `\\?\` prefix and a value with no drive letter fail.
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.
     - A gitlink path that is a regular file gives no entry. A junction there gives ` (submodule; could not be inspected)`.
-    - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows).
+    - An alternates file of a fault, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and a `baseRepo` through 32 or more links give `-32603`, and only the excludes read runs git. With `"shadowDirOff":true` the `GIT_ALTERNATE_OBJECT_DIRECTORIES` test does not run (`4c111e86`). [Object sources](git-rules-trust.md#the-object-sources-on-windows).
     - A `baseRepo` through a link to a network or device path gives `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path).
     - A `\\?\UNC\` `baseRepo` or a refused share gives `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
     - A `.git` with `IO_REPARSE_TAG_PROJFS` is no link, and a `baseRepo` below an `IO_REPARSE_TAG_WIM` folder gives `-32603` (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
