@@ -157,8 +157,8 @@ func (s *agentHandOff) failureNoteLocked() string {
 
 // stopForGoodLocked stops the hand-off for good after a dial that had not
 // returned within agentDialBound: the socket is dropped and the failure budget is spent, so no later
-// spawn dials it or runs the login shell again. The words "A check of" in the log
-// line are claustrum's own, not measured.
+// spawn dials it or runs the login shell again. For a stat that does not answer,
+// 4c111e86 logs the same line (measured on Linux).
 func (s *agentHandOff) stopForGoodLocked(sock string) {
 	s.sock = ""
 	s.failures = agentMaxFailures

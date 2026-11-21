@@ -131,8 +131,9 @@ The repository calls are the configuration listings, the hardened calls,
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
       Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
       empty value is not relative. On Windows `NUL` in any case is not. Nor is
-      `\\\x` (`4c111e86`, measured on Windows), or another value with two leading slashes and more
-      text (claustrum's own, not measured). One slash is relative (`4c111e86`, measured on Windows).
+      `\\\x`, `\\?\UNC\…`, `\\?\C:\…`, `\\.\C:\…`, `//host/share/…` or `\\host`
+      alone (`4c111e86`, measured on Windows). Nor is another value with two
+      leading slashes and more text (claustrum's own, not measured). One slash is relative (`4c111e86`, measured on Windows).
     - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
       when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
       `XCACHE` and `XCTEMP` have none.
@@ -251,7 +252,11 @@ and on Windows in `SystemRoot` if that is absolute. Else the folder of the daemo
   keeps either answer for the life of the host, and keeps nothing with no run
   folder. If git does not run or prints no version, the answer is "too old" for
   that call and nothing is kept.
-- The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
+- The excludes read adds `GIT_DIR=<null>`. On Windows it removes
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG_PARAMETERS`, `GIT_NO_REPLACE_OBJECTS`,
+  `GIT_REPLACE_REF_BASE` and `GIT_SHALLOW_FILE`, and keeps `GIT_CONFIG_COUNT` and its
+  items (`4c111e86`, measured with `git.status`). Another letter case there, the same read made first by another method, and Linux and macOS, are
+  claustrum's own, not measured. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
   (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git did
   not start keeps nothing (claustrum's own). A read under the [off switch](git-rules-session-folders.md#the-off-switch)
