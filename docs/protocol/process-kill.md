@@ -85,7 +85,7 @@ Since `4c111e86` the daemon first runs its program with `--version` in a job (me
 
 From 5 s to that end the test is pending, and the socket opens. A spawn then answers `{"success":true,"outsideJob":true}`, as after a failed test (`4c111e86`, measured on Windows).
 
-claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code). A stop of the daemon in the pending time ends the test child and its conhost with `0x0` (`4c111e86`, measured on Windows).
+claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit. There a stop of the daemon in the pending time ends the test child and its conhost with `0x0` (`4c111e86`, measured on Windows).
 
 The resume can leave a thread of the test child with a suspend count above 1. Then the test fails at once with `starting it inside a Windows job object failed: a thread had been suspended <n> times, so it still sleeps`. `4c111e86` then ends the job, and the child exits `0x1` (measured on Windows, only with n = 2).
 

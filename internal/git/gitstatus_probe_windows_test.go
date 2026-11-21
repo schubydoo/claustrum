@@ -11,9 +11,9 @@ import (
 
 // TestStatusProbeOfAJunctionPath: a `path` outside baseRepo through a junction
 // gets no `rev-parse --show-toplevel` call with the junction in its
-// --work-tree. On 4c111e86 the calls of such a request hold the `status` call
-// with the path as sent and no `rev-parse` with it (measured on Windows).
-// claustrum runs the `rev-parse` with the real path (not measured).
+// --work-tree. On 4c111e86 a `path` through a junction gives one
+// `rev-parse --show-toplevel` with the real path, and the `status` call with the
+// path as sent (measured on Windows).
 func TestStatusProbeOfAJunctionPath(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	jw := filepath.Join(t.TempDir(), "JW")
