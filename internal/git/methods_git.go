@@ -419,8 +419,10 @@ func gitInfo(req *gitCall) rpc.Response {
 			branch = "detached:" + sha
 		}
 	}
-	// A git.info with "sessionFoldersOff":true and no "shadowDirOff":true keeps the
-	// settingsControl member (4c111e86, measured on Linux, macOS and Windows).
+	// After a plain request, a git.info with "sessionFoldersOff":true and no
+	// "shadowDirOff":true keeps the settingsControl member (4c111e86, measured on
+	// Linux, macOS and Windows). The first request of a daemon differs on Linux, a
+	// known gap.
 	control := req.shadow.replyControl(req.offLive)
 	return rpc.OKResult(req.ID, rpc.GitInfoReply{
 		IsRepo:        true,
