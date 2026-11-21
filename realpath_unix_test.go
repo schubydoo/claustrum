@@ -149,3 +149,47 @@ func TestSocketFilesRealpathDanglingTargets(t *testing.T) {
 		}
 	}
 }
+
+// TestSocketFilesRealpathThroughAFile pins the plain exists:false of a path
+// through a regular file, with and without missingLeaf, and the dangling reply
+// with no wouldBe of a link to such a path (4c111e86, measured on Linux, and for
+// <file>/a with no missingLeaf on macOS). The system answers ENOTDIR there.
+// Mutations: resolveRealpath that does not count ENOTDIR as a missing name, or
+// wouldBeUnder with no folder test of the parent.
+func TestSocketFilesRealpathThroughAFile(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	f := filepath.Join(root, "t.txt")
+	writeFile(t, f, "x", 0o644)
+	if err := os.Symlink(filepath.Join(f, "x"), filepath.Join(root, "lnk")); err != nil {
+		t.Fatal(err)
+	}
+	plain := `"result":{"exists":false}}`
+	cases := []struct {
+		path string
+		want string
+	}{
+		{filepath.Join(f, "a"), plain},
+		{filepath.Join(f, "a", "b"), plain},
+		{f + "/.", plain},
+		{f + "/..", plain},
+		{filepath.Join(root, "lnk"), plain},
+		{filepath.Join(root, "lnk", "a"), plain},
+	}
+	var params []map[string]any
+	for _, c := range cases {
+		params = append(params, map[string]any{"path": c.path}, map[string]any{"path": c.path, "missingLeaf": true})
+	}
+	got := realpathCalls(t, root, params)
+	for i, c := range cases {
+		wantML := c.want
+		if c.path == filepath.Join(root, "lnk") {
+			wantML = `"result":{"exists":false,"dangling":true}}`
+		}
+		if !strings.HasSuffix(string(got[2*i]), c.want) {
+			t.Errorf("files.realpath %s = %s, want …%s", c.path, got[2*i], c.want)
+		}
+		if !strings.HasSuffix(string(got[2*i+1]), wantML) {
+			t.Errorf("files.realpath %s with missingLeaf = %s, want …%s", c.path, got[2*i+1], wantML)
+		}
+	}
+}
