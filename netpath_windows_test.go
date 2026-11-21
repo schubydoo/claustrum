@@ -152,7 +152,7 @@ func TestSocketFilesRealpathWindowsDotDotInTarget(t *testing.T) {
 
 // files.realpath of a path on a mapped network drive gives the no_usable_name
 // frame: a file, the drive root, and a missing name with and without
-// missingLeaf (4c111e86, Windows). The frame has no atLetter member. A name below
+// missingLeaf (4c111e86, Windows). A name below
 // a missing folder there is claustrum's own, not measured.
 func TestFilesRealpathWindowsOnMappedDrive(t *testing.T) {
 	root := networkLinkRoot(t)

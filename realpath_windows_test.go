@@ -95,7 +95,7 @@ func junctionChain(t *testing.T, dir, real string, n int) {
 // TestSocketFilesRealpathWindowsJunctionChain pins the link limit: a chain of
 // 31 junctions resolves, and a chain of 32 gives error 1921 for a file below
 // it, for the chain itself and for a missing name below it, with and without
-// missingLeaf (4c111e86, Windows). The frame has no stoppedShort member.
+// missingLeaf (4c111e86, Windows).
 func TestSocketFilesRealpathWindowsJunctionChain(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "real", "inner", "x.txt"), "x", 0o644)

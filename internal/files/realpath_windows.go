@@ -30,8 +30,10 @@ const realpathStreamText = "files.realpath: the path has a colon after the drive
 // realpathPathRefusal returns the -32602 text for a path that does not begin
 // with a drive letter, a colon and a slash, that has a colon after the drive
 // letter (4c111e86, Windows), or that has a component ending in a dot or a
-// space. A component "." or ".." passes (claustrum's own, not measured). The
-// colon test before the component test is claustrum's own order.
+// space. The measured colon rows are `f.txt:stream` and `f.txt:nope:$DATA`, a
+// missing stream of a file that exists. Claustrum's own, not measured: a colon in
+// a folder name, a stream that exists, a passing component "." or "..", and the
+// colon test before the component test.
 func realpathPathRefusal(path string) string {
 	if len(path) < 3 || !pathcanon.IsDriveLetter(path[0]) || path[1] != ':' || (path[2] != '\\' && path[2] != '/') {
 		return realpathNeedDrive
@@ -108,10 +110,11 @@ const maxEvalLinks = 31
 // realpathEval resolves every symbolic link of the clean absolute path p, one
 // name at a time. The target of a link joins the rest of the path and is
 // cleaned as text before the next name is followed. So a ".." inside a target
-// removes the name before it, also a link (build 683cc6a9, Windows). A link
-// whose target is on a mapped network drive or is a `\\?\UNC\` path gives
-// errNoUsableName (build 683cc6a9, Windows). So does a path on a mapped network
-// drive, also its root (4c111e86, Windows). Any other UNC target is claustrum's
+// removes the name before it, also a link (build 683cc6a9, Windows). A path on a
+// mapped network drive, also its root, gives errNoUsableName, and so does a link
+// whose target is on one or is a `\\host\share`, `\\?\UNC\` or `\\.\UNC\` path
+// (683cc6a9 and 4c111e86, Windows): the target becomes the next path, and the
+// test at the top of the loop answers it. Other network forms are claustrum's
 // own, not measured. A path or link target on a SUBST drive goes on from its
 // real path (4c111e86, Windows).
 // A junction to a drive path is followed as a link (4c111e86 and c9125eb8,
@@ -149,9 +152,6 @@ func realpathEval(p string) (string, error) {
 			target, err := os.Readlink(at)
 			if err != nil {
 				return "", err
-			}
-			if pathcanon.OnNetwork(target) {
-				return "", errNoUsableName
 			}
 			if !filepath.IsAbs(target) {
 				target = realpathJoin(cur, target)

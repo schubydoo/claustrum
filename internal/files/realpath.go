@@ -56,8 +56,7 @@ func uncleanTilde(p string) bool {
 }
 
 // filesRealpath answers files.realpath on build 683cc6a9. It makes no write and
-// no delete. The kernel decides the link limit, through os.Stat. The real name
-// comes from realpathEval (claustrum's own).
+// no delete. The real name comes from realpathEval (claustrum's own).
 func filesRealpath(req *rpc.Request) rpc.Response {
 	var p realpathParams
 	if bad := rpc.Bind(req, &p); bad != nil {
@@ -188,10 +187,10 @@ type realpathReasonData struct {
 	Reason string `json:"reason"`
 }
 
-// errNoUsableName is the answer of realpathEval on Windows for a link to a
-// mapped network drive or a `\\?\UNC\` path (build 683cc6a9), and for a path on
-// a mapped network drive (4c111e86). Other network targets are claustrum's own,
-// not measured.
+// errNoUsableName is the answer of realpathEval on Windows for a path on a
+// mapped network drive, and for a link to one or to a `\\host\share`, `\\?\UNC\`
+// or `\\.\UNC\` path (683cc6a9 and 4c111e86). Other network forms are
+// claustrum's own, not measured.
 var errNoUsableName = errors.New("no verified path for the target (it may be deleted or moved, or on Windows on a network share)")
 
 // realpathFailure maps a failed call to the -32603 reply. Windows no_permission
