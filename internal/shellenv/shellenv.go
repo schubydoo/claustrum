@@ -45,10 +45,11 @@ import (
 //   - A spawn 28 s to 31 s after the start of the last read starts none, and one
 //     61 s after it does.
 //   - On Linux, the login shell of the read gets the PATH of the adopt.
-//   - On Linux, a failed read logs the failure line, and the spawns keep the old
-//     PATH. The next good read logs "after 1 failed read(s)".
-//   - On Linux, after 24 reads again, the line of the cap follows the good line of
-//     the 24th read (loginPATHAgainLine).
+//   - On Linux and macOS (macOS against 4c111e86), a failed read logs the failure
+//     line, and the spawns keep the old PATH. On Linux the next good read logs
+//     "after 1 failed read(s)".
+//   - On Linux and macOS (macOS against 4c111e86), after 24 reads again, the line of
+//     the cap follows the good line of the 24th read (loginPATHAgainLine).
 //
 // claustrum's own, not measured:
 //
