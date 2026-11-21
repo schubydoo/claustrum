@@ -24,7 +24,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 - After a kept test the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
-  no member. A path that does not exist gets the same, but starts no test, except [below a repository on a share](git-rules-windows-paths.md#a-missing-folder-in-a-repository-on-a-share). On
+  no member. A path that does not exist gets the same, but starts no test, except on Windows [below a repository on a share](git-rules-windows-paths.md#a-missing-folder-in-a-repository-on-a-share). On
   a folder with no repository the other methods answer at once, except a create on a `.git` file to a missing path (`4c111e86`, measured on Linux and Windows).
 - As the first git request of a daemon, a `git.info` on a folder whose `.git` file
   names a missing path runs the test and gives that reply. A missing entry under
@@ -40,7 +40,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `/dev/null` outside any repository the first `git.info` or `git.status` starts no test, and the `git.info` reply has no member, also after
   such a `git.status` (`b3081b51`, measured on Linux). macOS is not measured. For
   `git.status` a regular file there is claustrum's own, not measured.
-  On Linux and macOS every file that is not a folder takes the steps of a regular file.
+  On Linux and macOS every file but a folder takes the steps of a regular file.
   These parts are claustrum's own, not measured: a FIFO or a device file inside a
   repository on `git.info`, the gate of `git.status` on a file inside a repository,
   and a kind other than a FIFO and `/dev/null`.
