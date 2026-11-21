@@ -6,7 +6,7 @@ An untagged rule on this page was measured against build `5fd08069` on Linux. A 
 
 ## The settings copy
 
-The copy is in `git-shadow` beside the socket. The calls of the five git
+The copy is in a folder `git-shadow` beside the socket. The calls of the five git
 methods name it, so git reads it, not the repository config.
 
 ### The states and `settingsControl`
@@ -225,7 +225,7 @@ held lock keeps the folder of a live daemon.
 - A planted link, or a junction on Windows, goes as a link, and claustrum makes no
   lock file in its target ([D8](../DIVERGENCES.md#d8)).
 
-The daemon's folder keeps 128 repository folders. A new repository removes the
+The folder of the daemon keeps 128 repository folders. A new repository removes the
 folder with the oldest use that no git call holds. A git call holds its folder until
 the wait for its pipes ends (claustrum's own, not measured). With all 128 held, a
 request gets this text and nothing goes:
@@ -278,8 +278,7 @@ unchanged one and replaces a folder at `HEAD` (measured on Linux). If `.probe` c
 (Linux). The call drops the daemon's `GIT_NAMESPACE`,
 `GIT_INDEX_FILE`, `GIT_DISCOVERY_ACROSS_FILESYSTEM` and
 `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and keeps its `GIT_CONFIG_COUNT` pairs (Linux,
-macOS and Windows, where `4c111e86` [refuses the last](git-rules-trust.md#the-object-sources-on-windows)
-first). A good answer is kept 5 seconds after the call. A change of the root
+macOS and Windows). A good answer is kept 5 seconds after the call ends. A change of the root
 folder or its `.git` entry makes the daemon ask again.
 
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
