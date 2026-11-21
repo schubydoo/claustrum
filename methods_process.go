@@ -103,7 +103,8 @@ type spawnParams struct {
 // sessionOffTypeRefused is true when the member sessionFoldersOff is present and
 // neither a bool nor null, while sessionOffTyped holds. On Windows 4c111e86 answers
 // "sessionFoldersOff":1 with Invalid params (measured on Windows). Other values and
-// null are claustrum's own, not measured.
+// null are claustrum's own, not measured. Its place before the id, launcher and
+// command tests is claustrum's own, not measured.
 func sessionOffTypeRefused(v json.RawMessage) bool {
 	switch string(bytes.TrimSpace(v)) {
 	case "", "true", "false", "null":

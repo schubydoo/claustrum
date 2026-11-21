@@ -195,6 +195,7 @@ Claustrum's own, not measured: a hold keeps that read for later requests and non
 interrupts, and requests sent together each read, the later winning.
 On Windows a `process.spawn` with `"sessionFoldersOff":1` gets `Invalid params` (`4c111e86`, measured on
 Windows). On Windows another type than a bool or `null` gets it too, and `null` starts the child
+(claustrum's own, not measured). The refusal comes before the `id`, launcher and `command` tests
 (claustrum's own, not measured). On Linux and macOS only `true` counts (claustrum's own, not measured).
 
 ```text
