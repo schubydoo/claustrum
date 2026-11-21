@@ -63,9 +63,10 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   after that answer has the 2 minute limit (claustrum's own, not measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` no second test ran up to 720 s.
-- The daemon logs one `[GitHandler]` line per test until a state is kept, then
-  one per change (`4c111e86`, measured on Linux). On macOS and Windows, and for a
-  kept `fallback-git` due for its retest, it is claustrum's own.
+- The daemon logs one `[GitHandler]` line per test that gives a state, until a
+  state is kept, then one per change (`4c111e86`, measured on Linux). A failed
+  test logs none (`5fd08069`, measured). On macOS and Windows, and for a kept
+  `fallback-git` due for its retest, it is claustrum's own.
 
 ### The start test
 

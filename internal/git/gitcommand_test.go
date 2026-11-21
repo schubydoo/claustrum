@@ -166,13 +166,8 @@ func TestStartTestPassUnderOffSwitchIsNotKept(t *testing.T) {
 	requireGit(t)
 	t.Cleanup(sessiondirs.UseForTest(""))
 	f := newShadowFixture(t)
-	offInfo := func() (string, []envCall) {
-		release := sessiondirs.PauseCheck()
-		defer release()
-		return f.info(t, f.repo, map[string]any{"sessionFoldersOff": true})
-	}
 	for i := 1; i <= 2; i++ {
-		raw, calls := offInfo()
+		raw, calls := offSwitchInfo(t, f)
 		if !strings.Contains(raw, `"isRepo":true`) || strings.Contains(raw, "settingsControl") {
 			t.Errorf("git.info %d with the off switch = %s\nwant a repository with no settingsControl", i, raw)
 		}
@@ -190,7 +185,7 @@ func TestStartTestPassUnderOffSwitchIsNotKept(t *testing.T) {
 	if !strings.Contains(raw, `"settingsControl":"shadow"`) || !startTestRan(calls) {
 		t.Errorf("git.info without the switch = %s (start test %v)\nwant \"shadow\" after a start test", raw, startTestRan(calls))
 	}
-	raw, calls = offInfo()
+	raw, calls = offSwitchInfo(t, f)
 	if !strings.Contains(raw, `"settingsControl":"shadow"`) || startTestRan(calls) {
 		t.Errorf("git.info with the off switch after a kept state = %s (start test %v)\nwant \"shadow\" with no start test", raw, startTestRan(calls))
 	}
