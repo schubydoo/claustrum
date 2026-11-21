@@ -147,10 +147,13 @@ func unattendedRefused(p *spawnParams, n int64) bool {
 }
 
 // sessionOffTypeRefused is true when the member sessionFoldersOff is present and
-// neither a bool nor null, while sessionOffTyped holds. On Windows 4c111e86 answers
-// "sessionFoldersOff":1 with Invalid params (measured on Windows). Other values and
-// null are claustrum's own, not measured. Its place before the id, launcher and
-// command tests is claustrum's own, not measured.
+// neither a bool nor null, while sessionOffTyped holds. 4c111e86 answers
+// "sessionFoldersOff":1 with Invalid params on Linux, macOS and Windows, and "x", 0
+// and {} on Linux and macOS. A gitRead spawn gets it for 1 and "x" there
+// (measured). On Linux and macOS true, false and null start the child
+// (measured). Other values, and those three and null on Windows, are claustrum's
+// own, not measured. Its place before the id, launcher and command tests is
+// claustrum's own, not measured.
 func sessionOffTypeRefused(v json.RawMessage) bool {
 	switch string(bytes.TrimSpace(v)) {
 	case "", "true", "false", "null":
