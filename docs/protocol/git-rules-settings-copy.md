@@ -105,7 +105,7 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the daemon's lock file cannot be made. On Windows a lock file that cannot be made gives the reason alone. With a deny entry for writes on `git-shadow` and the backup and restore privileges on, that is `Access is denied.` (`b3081b51`, measured on Windows) |
 
 If git refuses the copy and the same call works without it, the state is
-`fallback-git` and not a failure. A test call that works and answers wrongly gives
+`fallback-git`, not a failure. A test call that works and answers wrongly gives
 it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
@@ -126,8 +126,7 @@ folder and each folder of a copy have mode `0700`, and their files
 `0600`. The daemon makes the folder at the first request that runs the test. It holds
 an exclusive lock on its file `lock` for life. On Windows the hold is
 an unshared open handle. On a mount whose `flock` answers `ENOLCK`, `c9125eb8`
-goes on with no lock, and each git request succeeds (measured on Linux). claustrum
-follows. Any other `flock` error fails the request (claustrum's own, not measured).
+goes on with no lock, and each git request succeeds (measured on Linux). Any other `flock` error fails the request (claustrum's own, not measured).
 
 - At `-stop` and `server.shutdown` the daemon removes its folder. The empty
   `git-shadow` stays (Linux, macOS and Windows).
@@ -146,7 +145,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   worktree uses the folder of its main repository.
 - That folder holds `HEAD`, `config`, the empty folders `objects` and `refs`, and
   `info/exclude` where the repository has it. On Linux and macOS it holds a link
-  `worktrees` to the git directory's `worktrees` folder, and none on Windows.
+  `worktrees` to the git directory's `worktrees` folder (none on Windows).
 - More copies follow the repository state: `shallow`, `info/attributes`,
   `rebase-merge/head-name`, `rebase-apply/head-name` and `BISECT_START`.
 - The daemon makes the folder at the first request that accepts the repository
@@ -196,7 +195,7 @@ three shapes of the start test:
 
 `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>`
 
-The cause is the `mkdir` error of the folder. The same request again gets the same
+The cause is the `mkdir` error of the folder. A repeat gets the same
 line with no git call. On Windows a held copy gets 2 s of retries, then `rename
 <temp file> <copy>: Access is denied.` with full paths.
 
@@ -213,11 +212,10 @@ held lock keeps the folder of a live daemon.
   days goes.
 - On Windows that lock also keeps it from a remove by hand, so no later request
   sweeps again.
-- `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
-  follows. After such an error a folder of either name goes past 7 days. The 7 days
+- `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS. After such an error a folder of either name goes past 7 days. The 7 days
   are claustrum's own, not measured.
-- The rows show 8 days removed and 1 hour kept. Linux measured another
-  host's name, and macOS this host's name form.
+- 8 days removed and 1 hour kept are measured (another host's name on Linux,
+  this host's form on macOS).
 - Another lock error keeps the entry, and so does a FIFO lock on Linux. A link whose
   target lock gives an error stays. All three are claustrum's own, not measured.
 - A folder with no lock file under 1 minute old stays and gets none
@@ -251,7 +249,7 @@ blocks of rewritten URLs. The file ends with
 `[lfs]\n\trepositoryformatversion = 0\n`.
 
 - 41 keys are carried, each with one rule of accepted values (`internal/git/gitshadowconfig.go`).
-  Only some of those rules are measured.
+  Only some rules are measured.
 - `remote.<name>.url`, `.lfsurl`, `.promisor` and `.partialclonefilter`,
   `lfs.<url>.access` and `branch.<name>.remote` are carried too. The length of a
   rewritten URL is not measured.
@@ -289,9 +287,11 @@ of the first call or its exit status (`c8e2f083`, Linux and Windows). So does a 
 exit (claustrum's own).
 
 A third run follows that exit 0, in the root, without user or
-system config or `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share, statuses not logged). On Linux and macOS
+system config or `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share, statuses not logged). It ends
+30 seconds after the second run started (claustrum's own, not measured). Its child's stop
+is not measured. On Linux and macOS
 its exit 0 gives that error plus `; if that names a git setting or file, fix it, then try
-again`, a stop at that bound gives the last row (`52d82f0a`,
+again`, a stop the last row (`52d82f0a`,
 Linux), and a failure "no repository" (claustrum's own). On Windows each gives "no
 repository" (seen on that share, else claustrum's own). A bare repository gets no third
 run (Linux). A `refs` made
@@ -334,7 +334,7 @@ place, in a repository with that extension and a `config.worktree` file. The
 
 - Each key of the copied settings file but the format version, `extensions.*` and
   `core.bare` goes before the option list of the git calls as one `-c` item, with the copy's value,
-  sorted by key. Six keys are measured. Other keys and a repeated key are not
-  measured. A call on a linked worktree gets the items of its own file.
+  sorted by key. Six keys are measured, other keys and a repeated key
+  not. A call on a linked worktree gets the items of its own file.
 - A new worktree of [git.worktree_create](git-worktree-create.md) gets its own
   `config.worktree` file.
