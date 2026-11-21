@@ -1,0 +1,49 @@
+name: mmini smoke
+
+# Smoke test of the self-hosted macOS runner on the Mac mini (pool
+# `mmini-macos`, managed by runner-up). Each job runs in a fresh Tart macOS VM
+# that is deleted afterwards. This file is a trial: ci.yml stays on
+# GitHub-hosted runners until this job runs green, and no required check
+# depends on it.
+#
+# It runs on a pull request that changes this file, and by hand. A job from a
+# fork's pull request never reaches the Mac: the `if:` below skips it, and
+# runner-up's fork guard refuses it as a second line.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mmini-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mmini-smoke-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: mmini smoke
+    # A draft runs nothing, as in ci.yml. A fork's pull request is skipped.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft != true &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: mmini-macos
+    timeout-minutes: 30
+    steps:
+      - name: Show the runner host
+        run: |
+          sw_vers
+          uname -m
+          sysctl -n hw.ncpu hw.memsize
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Race tests of two small packages
+        run: go test -race -count=1 ./internal/runlock/... ./internal/shellenv/...
