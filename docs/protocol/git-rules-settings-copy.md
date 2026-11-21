@@ -17,7 +17,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 | `settingsControl` | When | What it changes |
 |---|---|---|
 | no member | No start test of the daemon gave a kept state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a create (`4c111e86`, measured on Linux and Windows), on a `.git` file to a missing repository starts it |
-| `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
+| `"shadow"` | A start test passed and was kept | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
 
@@ -64,8 +64,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` no second test ran up to 720 s.
 - The daemon logs one `[GitHandler]` line per test that gives a state, until a
-  state is kept, then one per change (`4c111e86`, measured on Linux). A failed
-  test logs none (`5fd08069`, measured). On macOS and Windows, and for a kept
+  state is kept (`4c111e86`, measured on Linux). After that it logs one per change
+  (`5fd08069`, measured). A failed test logs none (`5fd08069`, measured). On macOS and Windows, and for a kept
   `fallback-git` due for its retest, it is claustrum's own.
 
 ### The start test
