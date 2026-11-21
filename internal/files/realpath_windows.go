@@ -82,8 +82,8 @@ var substTarget = func(drive string) (string, bool) {
 // substReal puts the folder of a SUBST drive in place of the drive letter of the
 // clean path p: a path on a SUBST drive resolves to its real path on the drive
 // below (4c111e86, Windows). A SUBST drive of a SUBST drive is followed up to 26
-// times, and a SUBST folder on a share takes the `\\` form (claustrum's own, not
-// measured).
+// times, and a SUBST folder on a share takes the `\\` form, so realpathEval
+// gives errNoUsableName (claustrum's own, not measured).
 func substReal(p string) string {
 	for range 26 {
 		if len(p) < 2 || !pathcanon.IsDriveLetter(p[0]) || p[1] != ':' {
