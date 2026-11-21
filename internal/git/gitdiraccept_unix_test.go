@@ -923,11 +923,12 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 // differs), return no leafMovedAfterAdd (the frame differs), drop the
 // undoMovedAwayLeaf call (the empty folder stays), call undoFailedAdd in its
 // place (the link goes), or remove the folder with os.RemoveAll (the file goes).
-// A leaf that is deleted and replaced, not renamed, keeps the text of
-// errLeafMoved, and no registration or staging folder is left (claustrum's
-// own, not measured). Linux sees it by the link count, macOS at the failed
-// write of `.git`. Mutation: drop both tests (the text is that of the failed
-// write of `.git`). An attach add of main
+// A leaf that is deleted and replaced by an empty folder, not renamed, gets
+// the text of the failed write of `.git` with worktree_add_failed, and the
+// moved registration, the branch and the empty folder go (4c111e86, measured
+// on Linux and macOS). Mutations: restore the
+// early return for a deleted leaf (the frame differs), or drop the
+// undoMovedAwayLeaf call of the refusal (the empty folder stays). An attach add of main
 // fails, since main is checked out, and its fallback add gets the same reply
 // (from the code, not measured). Mutation: drop the movedAwayReply call after
 // the fallback add (the frame differs).
@@ -977,8 +978,17 @@ func TestCreateWithTheLeafReplacedAfterTheAdd(t *testing.T) {
 			}
 			raw, _ := f.call(t, "git.worktree_create", params)
 			if row.kind == "deleted" {
-				if got, want := createError(t, raw), completingAddPrefix+errLeafMoved.Error(); got != want {
-					t.Errorf("the error = %q, want %q", got, want)
+				want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+					jsonString(t, completingAddPrefix+"openat .git: no such file or directory") +
+					`,"errorCode":"worktree_add_failed"}}`
+				if raw != want {
+					t.Errorf("reply = %s\nwant %s", raw, want)
+				}
+				if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+					t.Errorf("the empty folder at the path: %v, want it gone", err)
+				}
+				if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); !os.IsNotExist(err) {
+					t.Errorf("the branch: %v, want it gone", err)
 				}
 				if _, err := os.Lstat(filepath.Join(f.gitDir, worktreesSubdir, "w1")); !os.IsNotExist(err) {
 					t.Errorf("the registration w1: %v, want none", err)

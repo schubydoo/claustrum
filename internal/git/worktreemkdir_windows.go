@@ -103,12 +103,6 @@ func heldLeafLacksGitFile(worktreeCheckpoint) bool {
 	return false
 }
 
-// heldLeafUnlinked is false on Windows, where the staged add does not take the
-// held leaf (stagedAddWindowsSteps).
-func heldLeafUnlinked(worktreeCheckpoint) bool {
-	return false
-}
-
 // writeHeldLeafGitFile has no Windows form: the staged add of Windows keeps
 // its own rule for a leaf that another folder replaced (addStage.move).
 func writeHeldLeafGitFile(worktreeCheckpoint, string) error {

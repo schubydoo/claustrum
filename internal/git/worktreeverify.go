@@ -117,7 +117,8 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 }
 
 // undoMovedAwayLeaf is undoFailedAdd for a leaf that another folder took right
-// after a staged add (leafMovedAfterAdd), with the same guards. It removes only
+// after a staged add (leafMovedAfterAdd), or for a leaf deleted and remade
+// then (addRefused.leafDeleted), with the same guards. It removes only
 // an empty folder, by one rmdir through the handle of the parent, and never a
 // tree. 4c111e86 removes an empty folder there (measured on Linux and macOS),
 // by the maintainer's decision of 2026-11-18. A link or a file at the path
