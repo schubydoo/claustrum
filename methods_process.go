@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -98,6 +99,51 @@ type spawnParams struct {
 	// SessionFoldersOff is read here only for its type (sessionOffTyped). The
 	// switch itself is read by route (sessiondirs.OffSwitchSet).
 	SessionFoldersOff json.RawMessage `json:"sessionFoldersOff"`
+	// UnattendedSeconds is read only for its tests (unattendedValue,
+	// unattendedRefused). An accepted value does not end the child (claustrum's
+	// own).
+	UnattendedSeconds json.RawMessage `json:"unattendedSeconds"`
+}
+
+// unattendedText is the refusal of an unattendedSeconds that 87375cc7 does not
+// take (measured on Linux, macOS and Windows).
+const unattendedText = "unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence"
+
+// unattendedValue reads the member unattendedSeconds v. set is false when it is
+// absent. ok is false for a value that is no JSON integer: 87375cc7 answers a text,
+// 1.5 and null with Invalid params (measured on Linux, Windows, and on macOS for a
+// text). Other forms, such as 1e3 or a number past int64, are claustrum's own.
+func unattendedValue(v json.RawMessage) (n int64, set, ok bool) {
+	s := bytes.TrimSpace(v)
+	if len(s) == 0 {
+		return 0, false, true
+	}
+	if string(s) == "null" || json.Unmarshal(s, &n) != nil {
+		return 0, true, false
+	}
+	return n, true, true
+}
+
+// unattendedRefused is true for an unattendedSeconds n that 87375cc7 refuses:
+// a negative value, or a positive value with a pty object, a linkBound object,
+// gitRead or cliTempRootEnd, or for a spawn of a Claude Code shape
+// (claudeCodeShape) without the arg --no-session-persistence. Measured on Linux:
+// each of these, a pty object with a key, a command named ccd-cli or in a folder
+// named ccd-cli, the bare and the two --...-format=stream-json args, and a bare git
+// with a stream-json arg passes. 0 passes, also with each of these members.
+// Windows measured the plain rows and the bare stream-json arg (there ccd-cli.exe
+// does not count), and macOS -1, cliTempRootEnd, gitRead and a ccd-cli with a
+// stream-json arg.
+// A launcher spawn counts as the CLI path (measured on Linux).
+func unattendedRefused(p *spawnParams, n int64) bool {
+	if n < 0 {
+		return true
+	}
+	if n == 0 {
+		return false
+	}
+	return ptyObject(p.Pty) || p.LinkBound != nil || p.GitRead || bool(p.CLITempRootEnd) ||
+		(claudeCodeShape(p.Command, p.Args, p.Launcher != nil) && !slices.Contains(p.Args, "--no-session-persistence"))
 }
 
 // sessionOffTypeRefused is true when the member sessionFoldersOff is present and
@@ -243,7 +289,10 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if ptyBare(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) {
+	// The place of the unattendedSeconds type test right after the decode is
+	// claustrum's own, not measured.
+	unattended, unattendedSet, unattendedOK := unattendedValue(p.UnattendedSeconds)
+	if ptyBare(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 	}
 	if p.ID == "" {
@@ -254,6 +303,17 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	}
 	if p.Command == "" && !p.LauncherSuppliesCli {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Command is required")
+	}
+	// A pty object with no valid key keeps its own text (87375cc7, measured on Linux
+	// and Windows). The refusal logs its failed-start line, comes after the id and
+	// command tests and before the linkBound test with a launcher (measured on
+	// Linux). Its place against the launcher shape test is claustrum's own.
+	if unattendedSet && unattendedRefused(&p, unattended) {
+		if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
+			return *bad
+		}
+		logging.Errorf("[process.Manager] Failed to start process %s: %s", supervisor.LogID(p.ID), unattendedText)
+		return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, unattendedText, supervisor.SpawnReason{Reason: "other"})
 	}
 	// 683cc6a9 refuses linkBound with a launcher by this text (measured on Linux).
 	// The place of the test after the id and command tests is claustrum's own, not

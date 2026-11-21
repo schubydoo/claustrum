@@ -25,6 +25,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `launcherSuppliesCli` | no | `true` with a `launcherCheck`: the launcher runs Claude Code itself (`c9125eb8`). See [A launcher check](#a-launcher-check-build-c9125eb8). `null` counts as absent for this member, `launcherCheck` and `envOnlyIfSent` (claustrum's own, not measured). |
 | `envOnlyIfSent` | no | A list of names, with `launcherSuppliesCli` (`c9125eb8`). Such names reach the child only from `env`, and an empty list counts as present (claustrum's own, not measured). |
 | `noLoginShell` | no | Accepted, and the spawn succeeds (`c9125eb8`, measured on Linux and Windows). It changes nothing, and a value of any type passes (claustrum's own, not measured). |
+| `unattendedSeconds` | no | A whole number of seconds (`87375cc7`). See [The unattendedSeconds member](#the-unattendedseconds-member-build-87375cc7). |
 
 ### Members that turn on a feature
 
@@ -36,6 +37,16 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `cliTempRoot` | no | `true` asks for [a private temp folder](#the-private-temp-folder-build-b3081b51). A text or an object gets `Invalid params` (Linux). Other cases are claustrum's own. |
 | `cliTempRootEnd` | no | `true` asks the daemon to end the child on Linux and macOS when [its private temp folder is lost](#a-lost-folder-build-4c111e86) (`4c111e86`). Any other value counts as absent (claustrum's own). |
 | `wantPid` | no | `true` adds `pid` and `startTime` to the result. An addition of claustrum, see [CT-1](../DIVERGENCES.md#ct-1). Any other value counts as absent. |
+
+### The unattendedSeconds member (build `87375cc7`)
+
+claustrum reads it only for these refusals. An accepted value does not end the child (claustrum's own).
+
+- A text, a float or `null`: `Invalid params` (measured on Linux and Windows, macOS for a text). Other forms that are no whole number in int64, such as `1e3`, `1.0` or a larger number, get it too (claustrum's own).
+- A negative value: `-32602` `unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence`, reason `other` (Linux, macOS and Windows). A refusal logs the failed-start line (Linux and macOS). `Invalid params` logs none (Linux).
+- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux).
+- A `pty` error comes first (Linux and Windows, macOS for `true`). `0` and `1000000000000` pass (Linux, and `99999999999` on Windows), and `0` passes this test with each of these members (Linux).
+- The test comes after the `id` and `command` tests and before `linkBound` with a `launcher` (Linux). The place of the type test, of this test after the test of the launcher members, and of this test before every step of [the managed launcher](#the-managed-launcher) is claustrum's own.
 
 ## Response
 
@@ -294,7 +305,7 @@ With `launcher`, the child runs as `<launcher...> <command> <args...>`. The laun
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
-1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`.
+1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. A refused `unattendedSeconds` comes first (claustrum's own).
 2. A relative `command` gets `-32602 command must be an absolute path when a launcher is given`.
 3. The checks of `launcher.resolve` run, with `command` in place of `cliPath`. A refusal gets `-32004 the managed launcher cannot be used: <reason>`, with a reason of [Unusable reasons](launcher-resolve.md#unusable-reasons). `[]` gets the text for no launcher.
 4. The `cwd` test, with its usual error.
