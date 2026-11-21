@@ -90,7 +90,7 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 //
 // A path through a regular file, as <file>/a, gives the plain exists:false, with
 // and without missingLeaf. A dangling link to such a path gives dangling with no
-// wouldBe (4c111e86, measured on Linux and macOS, missingLeaf on Linux). The
+// wouldBe (4c111e86, measured on Linux, and for <file>/a on macOS). The
 // system answers ENOTDIR there, which counts as a missing name.
 func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	path = realpathClean(path)
@@ -162,9 +162,9 @@ func resolveDangling(path string) rpc.RealpathReply {
 // wouldBeUnder resolves the parent folder of path and adds the last name. ok is
 // false when the parent cannot be resolved, or resolves to no folder, as a regular
 // file (4c111e86, measured on Linux). The caller tested the path first, so only a
-// missing parent, a parent that is a file (or a race) gets here. The last name is never "." or
-// "..": the path does not exist, and a path that ends in one of them names its
-// parent, so a parent that resolves would make the path exist. On Windows a
+// missing parent, a parent that is a file (or a race) gets here. The last name is
+// "." or ".." only below a parent that is no folder, as <file>/., because below a
+// folder such a path exists. The folder test then gives ok false. On Windows a
 // parent behind a link to a network place gives ok false, so a missing name
 // there gets plain exists:false (claustrum's own, not measured).
 func wouldBeUnder(path string) (string, bool) {
