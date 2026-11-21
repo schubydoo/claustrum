@@ -45,10 +45,11 @@ import (
 //   - A spawn 28 s to 31 s after the start of the last read starts none, and one
 //     61 s after it does.
 //   - On Linux, the login shell of the read gets the PATH of the adopt.
-//   - On Linux, a failed read logs the failure line, and the spawns keep the old
-//     PATH. The next good read logs "after 1 failed read(s)".
-//   - On Linux, after 24 reads again, the line of the cap follows the good line of
-//     the 24th read (loginPATHAgainLine).
+//   - On Linux and macOS (macOS against 4c111e86), a failed read logs the failure
+//     line, and the spawns keep the old PATH. On Linux the next good read logs
+//     "after 1 failed read(s)".
+//   - On Linux and macOS (macOS against 4c111e86), after 24 reads again, the line of
+//     the cap follows the good line of the 24th read (loginPATHAgainLine).
 //
 // claustrum's own, not measured:
 //
@@ -326,8 +327,10 @@ func (s *loginPATHState) read(ctx context.Context, r *loginPATHRun) {
 			// A read that ends after its window ends logs no line, because the next
 			// read again opens a new window (claustrum's own, not measured).
 			if s.againCount == loginPATHAgainCap && s.clock().Before(s.againSince.Add(loginPATHAgainWindow)) {
-				// The level of this line is claustrum's own (not measured).
-				logging.Infof(loginPATHAgainLine, rfc3339UTC(s.againSince), s.againCount, rfc3339UTC(s.againSince.Add(loginPATHAgainWindow)))
+				// The level of this line is claustrum's own (not measured). The two times
+				// are in the zone of the clock, which is the local zone, with an RFC 3339
+				// offset, as on 4c111e86 (measured on macOS).
+				logging.Infof(loginPATHAgainLine, s.againSince.Format(time.RFC3339), s.againCount, s.againSince.Add(loginPATHAgainWindow).Format(time.RFC3339))
 			}
 		}
 	default:
@@ -369,9 +372,6 @@ func (s *loginPATHState) failureNoteLocked() string {
 	s.nextTry = s.clock().Add(pause)
 	return fmt.Sprintf("failure %d; next try in %s at the earliest; until one works, programs keep the last PATH that was read, or sshd's if none was", s.failures, pause)
 }
-
-// rfc3339UTC renders t in UTC to the second, as the line of the cap does.
-func rfc3339UTC(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 // shellPATHKey is the context key of the PATH for the shell of a read.
 type shellPATHKey struct{}
