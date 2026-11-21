@@ -309,8 +309,8 @@ func wantNothingRemoved(t *testing.T, f shadowFixture) {
 // that text and deletes nothing (claustrum's own, not measured).
 func TestShareMissingSubfolderRemoveAfterOneBadAnswer(t *testing.T) {
 	const dubious = "fatal: detected dubious ownership in repository at '//127.0.0.1/s/repo'\n"
-	// run sends the remove and gives its reply, with the fixture paths masked,
-	// and its calls that ask no question about the repository.
+	// run sends the remove and gives its reply as it came, and its calls that ask
+	// no question about the repository. A repo pointer gets the fixture's repo.
 	run := func(t *testing.T, share bool, answer func(*testing.T), repo ...*string) (string, []string) {
 		f := newSeededShadowFixture(t)
 		for _, r := range repo {
