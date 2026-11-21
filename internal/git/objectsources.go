@@ -101,10 +101,10 @@ func statusSourceRefusal(common string, off bool) string {
 }
 
 // alternateEnvRefusal is the refusal of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
-// daemon's environment, or "". git.status and git.list_branches answer it with
-// no git call of the request, also with "ownGitConfigOff":true. With
-// "shadowDirOff":true (off) git runs (4c111e86, measured on Windows). An empty
-// value is no source of objects (claustrum's own, not measured).
+// daemon's environment, or "". git.status answers it after its excludes read
+// only, and git.list_branches with no git call, also with "ownGitConfigOff":true.
+// With "shadowDirOff":true (off) git runs. An empty value gives no refusal of
+// git.status (4c111e86, measured on Windows).
 func alternateEnvRefusal(off bool) string {
 	if objectSourceChecks && !off && os.Getenv("GIT_ALTERNATE_OBJECT_DIRECTORIES") != "" {
 		return alternateEnvText
