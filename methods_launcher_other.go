@@ -2,10 +2,9 @@
 
 package main
 
-// launcherCheckLogsRepeats is true on Windows: each refusal of a launcherCheck logs
-// its line, a repeat too (claustrum's own, not measured).
-const launcherCheckLogsRepeats = true
+// launcherCheckAnyMembers is true on Windows: any launcherCheck object is unusable
+// with windows_host, whatever its members hold (4c111e86, measured on Windows).
+const launcherCheckAnyMembers = true
 
-// launcherAnswerResetsCheck is false on Windows, where each refusal logs anyway
-// (claustrum's own, not measured).
+// launcherAnswerResetsCheck is false on Windows (claustrum's own, not measured).
 const launcherAnswerResetsCheck = false

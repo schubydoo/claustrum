@@ -200,7 +200,7 @@ An unusable or unreadable answer writes one line, at WARN (claustrum's own). A u
 
 A repeat of the same line writes nothing. A usable answer between two equal refusals makes the second one log again. A none answer does the same (claustrum's own). A `process.spawn` refusal writes no `[LauncherHandler]` line.
 
-An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured on Linux). On macOS every answer to a `launcherCheck` is `macos_host`, and a repeat writes nothing too (`4c111e86`, measured on macOS). There a usable or managed-refused resolve with no `launcherCheck` comes between, and a rewrite of the managed settings alone does not (`4c111e86`, measured on macOS). A none or unreadable answer comes between too (claustrum's own, not measured). A -32602 reply to a `launcherCheck` does not (measured on macOS). On Windows each refusal writes it, a repeat too (claustrum's own, not measured):
+An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of the last reason writes nothing, until a usable answer or another reason comes between (`4c111e86`, measured on Linux). On macOS every answer to a `launcherCheck` is `macos_host`, and a repeat writes nothing too (`4c111e86`, measured on macOS). There a usable or managed-refused resolve with no `launcherCheck` comes between, and a rewrite of the managed settings alone does not (`4c111e86`, measured on macOS). A none or unreadable answer comes between too (claustrum's own, not measured). A -32602 reply to a `launcherCheck` does not (measured on macOS). On Windows a repeat writes nothing too (`4c111e86`, measured on Windows). A resolve with no `launcherCheck` does not come between there (claustrum's own, not measured):
 
 ```text
 [LauncherHandler] the launcher that the desktop names is refused: <reason>
@@ -216,7 +216,7 @@ An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of t
 
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. A `path` with a `launcherCheck` answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host` (claustrum's own, not measured). A `launcherCheck` with no `path` answers `none` (claustrum's own, not measured).
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`, with or without a `path`. Its members can hold any type, such as `"path":5` (`4c111e86`, measured on Windows). A `launcherCheck` that is no object gets `Invalid params` (claustrum's own, not measured).
 
 ## Rare states
 
