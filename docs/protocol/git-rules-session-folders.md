@@ -195,8 +195,8 @@ Claustrum's own, not measured: a hold keeps that read for later requests and non
 interrupts, and requests sent together each read, the later winning.
 A `process.spawn` with `"sessionFoldersOff":1` gets `Invalid params` (`4c111e86`, measured on Linux,
 macOS and Windows). On Linux and macOS `"x"`, `0` and `{}` get it too, and a `gitRead` spawn gets it for
-`1` and `"x"`. There `null` starts the child (measured). On Windows another type than a bool or `null` gets it too, and `null` starts
-the child (claustrum's own, not measured). The refusal comes before the `id`, launcher and `command` tests
+`1` and `"x"`. There `null` starts the child (measured). Every other type than a bool or `null` gets it too on
+every system, and on Windows `null` starts the child (claustrum's own, not measured). The refusal comes before the `id`, launcher and `command` tests
 (claustrum's own, not measured).
 
 ```text
