@@ -202,6 +202,3 @@ Windows). On Windows another type than a bool or `null` gets it too, and `null` 
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
 [sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more
 ```
-
-A `git.info` with the switch and no `"shadowDirOff":true` answers a repository without
-`settingsControl` on Windows and macOS, and with it on Linux (measured).
