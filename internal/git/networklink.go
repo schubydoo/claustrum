@@ -54,7 +54,8 @@ func networkLinkRefusal(path string) string {
 	return ""
 }
 
-// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal.
+// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal and
+// shareGitDir.
 var lstatPath = os.Lstat
 
 // unlookableShareText names the folder it is given, cleaned. longUNCText names
