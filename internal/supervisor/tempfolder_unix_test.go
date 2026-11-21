@@ -215,11 +215,14 @@ func TestTempFolderSpawnsAtOnceShareOneTest(t *testing.T) {
 	}
 }
 
-// waitTempProbeEnd releases the held test of dir and polls until it ends, so that
-// the temp folder of the test is not removed under it.
+// waitTempProbeEnd releases the held test of dir (a nil release releases nothing)
+// and polls until it ends, so that the temp folder of the test is not removed under
+// it.
 func waitTempProbeEnd(t *testing.T, dir string, release chan struct{}) {
 	t.Helper()
-	close(release)
+	if release != nil {
+		close(release)
+	}
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		tempProbes.mu.Lock()
@@ -286,6 +289,57 @@ func TestTempFolderOneWaitForAllNames(t *testing.T) {
 		if !envHas(env, name) {
 			t.Errorf("the child env lost %s after the wait, want it kept", name)
 		}
+	}
+}
+
+// Two folders that do not answer are tested one after another, with the full wait
+// for each, and each logs its line. 4c111e86 replies after about 4 s there (measured
+// on Linux). TMP and TEMP name the same two folders and take their tests, so two
+// files are made. Mutation: start all tests first and then wait (the old order). The
+// spawn then waits about one limit.
+func TestTempFolderTwoHeldFoldersAreTestedOneAfterAnother(t *testing.T) {
+	root := t.TempDir()
+	a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
+	for _, d := range []string{a, b} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	isolateTempEnv(t)
+	t.Setenv("CLAUDE_CODE_TMPDIR", a)
+	t.Setenv("TMPDIR", b)
+	t.Setenv("TMP", a)
+	t.Setenv("TEMP", b)
+	release := make(chan struct{})
+	n := countTempProbes(t, "", func(string) { <-release })
+	old := tempProbeWait
+	tempProbeWait = 300 * time.Millisecond
+	t.Cleanup(func() { tempProbeWait = old })
+	defer func() {
+		waitTempProbeEnd(t, a, release)
+		waitTempProbeEnd(t, b, nil)
+	}()
+	buf := captureLogBuf(t)
+
+	start := time.Now()
+	env := spawnEnv()
+	if took := time.Since(start); took < 2*tempProbeWait {
+		t.Errorf("the spawn waited %v for two held folders, want one wait of %v for each", took, tempProbeWait)
+	}
+	for _, name := range tempFolderNames {
+		if !envHas(env, name) {
+			t.Errorf("the child env lost %s after the wait, want it kept", name)
+		}
+	}
+	for _, d := range []string{a, b} {
+		line := "WARN  [process.Manager] the temporary folder " + d + " has not answered in " +
+			tempProbeWait.String() + ": children keep it until it does\n"
+		if got := strings.Count(buf.String(), line); got != 1 {
+			t.Errorf("%d lines %q, want 1, log:\n%s", got, line, buf.String())
+		}
+	}
+	if got := n.Load(); got != 2 {
+		t.Errorf("%d test files made, want 2", got)
 	}
 }
 
