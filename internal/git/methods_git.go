@@ -335,9 +335,10 @@ func gitInfo(req *gitCall) rpc.Response {
 	}
 	// With no git in the PATH of the daemon, 5fd08069 answers "no repository"
 	// with no member, runs no test and logs no line about git. Its folder holds
-	// the lock file only (measured on Linux, 3 of 3 runs). The other git methods
-	// are not measured there: they keep the failed start test. A request with
-	// "shadowDirOff":true is not measured either, and it keeps its answer. The
+	// the lock file only (measured on Linux, 3 of 3 runs). git.list_branches takes
+	// the same step (gitListBranches, 4c111e86). git.status takes it on Linux and
+	// macOS, and keeps the failed start test on Windows (statusNoGitKeepsTest).
+	// A request with "shadowDirOff":true is not measured either, and it keeps its answer. The
 	// settingsControl member follows the state of the daemon: a daemon that
 	// passed its test before it lost git is not measured.
 	if gate && !bool(p.ShadowDirOff) && gitLookupError() != nil {
@@ -794,7 +795,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// On Windows the object sources are checked before the next git call
 	// (statusSourceRefusal).
-	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
+	if msg := statusSourceRefusal(t.pinCommonDir, bool(p.ShadowDirOff)); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
@@ -1013,6 +1014,21 @@ func gitListBranches(req *gitCall) rpc.Response {
 		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
+	}
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment
+	// refuses before any git call (alternateEnvRefusal). Its place after the trust
+	// check and the count check, and before the no-git step, is claustrum's own,
+	// not measured.
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
+	// With no git in the PATH of the daemon, a request with no "shadowDirOff":true
+	// answers the "no repository" shape, runs no start test and makes the folder of
+	// the daemon, as git.info does (4c111e86, measured on Linux and macOS, the folder
+	// on Linux). Windows is not measured.
+	if !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		req.shadow.folderWithNoTest()
 		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// The daemon's own read of the repository's config comes before the listing
@@ -1928,7 +1944,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// A leaf deleted right after a staged add: an empty folder at the
 			// path goes (4c111e86, measured on Linux and macOS), after the
 			// branch step (measured on Linux). claustrum removes it by one rmdir.
+			// With nothing at the path, 4c111e86 adds the leaf text of a failed
+			// rmdir (measured on Linux). claustrum's rmdir finds nothing there (from the code).
+			part := goneLeafUndoPart(p.WorktreePath)
 			undoMovedAwayLeaf(p.WorktreePath, checkpoint)
+			undo = withLeafUndoPart(p.WorktreePath, part, undo)
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
