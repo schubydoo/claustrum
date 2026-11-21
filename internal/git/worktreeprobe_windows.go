@@ -12,3 +12,10 @@ var createAsksAfterAdd = false
 // answer (recheck). That rule for a bad answer is claustrum's own, not
 // measured.
 var createRechecksAfterAdd = true
+
+// createGateAsksAfterAdd and attachAddListsTwice are false on Windows
+// (claustrum's own, not measured).
+var (
+	createGateAsksAfterAdd = false
+	attachAddListsTwice    = false
+)
