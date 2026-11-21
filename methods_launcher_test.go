@@ -27,7 +27,9 @@ func TestLauncherCheckLogRepeats(t *testing.T) {
 
 // TestLauncherCheckAnyMembers pins the decode of launcherCheck. With
 // checkTakesAnyMembers, as on Windows, a member of any type passes and the resolve
-// answers the file check (4c111e86, measured on Windows). Without it, as on Linux
+// answers the file check. "path":5 and "orManagedFolder":"yes" are measured on
+// Windows (4c111e86), and other member values, such as "sha256":"x", are
+// claustrum's own. Without it, as on Linux
 // and macOS, such a member gets Invalid params (claustrum's own, not measured). A
 // launcherCheck that is no object gets Invalid params either way, and null counts
 // as absent (claustrum's own, not measured).
