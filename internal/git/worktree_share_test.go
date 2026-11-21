@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -232,9 +232,18 @@ func TestShareMissingSubfolderAsksTheRepository(t *testing.T) {
 				mask := strings.NewReplacer(folder, "<folder>", f.repo, "<repo>", filepath.Dir(filepath.Dir(f.repo)), "<temp>")
 				for i := range calls {
 					calls[i].cwd = mask.Replace(calls[i].cwd)
-					for j := range calls[i].env {
-						calls[i].env[j] = mask.Replace(calls[i].env[j])
+					// PATH and the stub's own names carry the temp folders of the
+					// test as t.TempDir spells them. On macOS (/var against
+					// /private/var) and Windows (an 8.3 name) that is not the
+					// resolved spelling the mask knows, so they are left out.
+					env := calls[i].env[:0]
+					for _, kv := range calls[i].env {
+						if name := envName(kv); name == "PATH" || strings.HasPrefix(name, "CLAUSTRUM_GITSTUB_") {
+							continue
+						}
+						env = append(env, mask.Replace(kv))
 					}
+					calls[i].env = env
 				}
 				return raw, calls
 			}
@@ -263,12 +272,9 @@ func TestShareMissingSubfolderAsksTheRepository(t *testing.T) {
 			if len(probeCalls(want)) == 0 {
 				t.Fatalf("the existing subfolder makes no call about the repository: %v", shareCallLines(want))
 			}
-			// The rows measure each call's folder and argv. The full calls, env
-			// included, are compared off Windows only: on the Windows CI leg the
-			// env of the two fixtures differs, and no row measures the env.
-			if !reflect.DeepEqual(shareCallLines(calls), shareCallLines(want)) ||
-				(runtime.GOOS != "windows" && !reflect.DeepEqual(calls, want)) {
-				t.Errorf("calls = %v\nwant the calls of an existing subfolder %v", shareCallLines(calls), shareCallLines(want))
+			if !reflect.DeepEqual(calls, want) {
+				t.Errorf("calls = %v\nwant the calls of an existing subfolder %v\nenv entries that differ: %v",
+					shareCallLines(calls), shareCallLines(want), envDiff(calls, want))
 			}
 			for _, c := range calls {
 				if c.version() {
@@ -373,6 +379,25 @@ func TestShareMissingSubfolderRemoveAfterOneBadAnswer(t *testing.T) {
 			t.Errorf("git.worktree_remove = %s\nwant %s", raw, want)
 		}
 	})
+}
+
+// envDiff names the env entries that only one side of each pair of calls has.
+func envDiff(a, b []envCall) []string {
+	var out []string
+	for i := 0; i < len(a) && i < len(b); i++ {
+		in := func(kv string, env []string) bool { return slices.Contains(env, kv) }
+		for _, kv := range a[i].env {
+			if !in(kv, b[i].env) {
+				out = append(out, fmt.Sprintf("call %d only got: %s", i, kv))
+			}
+		}
+		for _, kv := range b[i].env {
+			if !in(kv, a[i].env) {
+				out = append(out, fmt.Sprintf("call %d only want: %s", i, kv))
+			}
+		}
+	}
+	return out
 }
 
 // shareCallLines gives each call as its folder and its argv.
