@@ -193,3 +193,55 @@ func TestSocketFilesRealpathThroughAFile(t *testing.T) {
 		}
 	}
 }
+
+// TestSocketFilesRealpathTrailingSlash pins a trailing "/" by the kind of the
+// last name (4c111e86, measured on Linux; macOS is claustrum's own, not
+// measured). After a file, a link to a file or a FIFO it gives the plain
+// exists:false, with and without missingLeaf. A folder, a link to a folder, a
+// dangling link and a missing name answer as without it. Mutation: resolveRealpath
+// with no trailing-slash test (the old code). <file>/ then gives exists:true.
+func TestSocketFilesRealpathTrailingSlash(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	f, d := filepath.Join(root, "t.txt"), filepath.Join(root, "d")
+	writeFile(t, f, "x", 0o644)
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(d, "t.txt"), "y", 0o644)
+	for name, target := range map[string]string{"lf": f, "ld": d, "dang": filepath.Join(root, "nothere")} {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := syscall.Mkfifo(filepath.Join(root, "fifo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plain := `"result":{"exists":false}}`
+	realOf := func(p string) string { return `"result":{"exists":true,"real":"` + p + `"}}` }
+	// realpathCalls writes the root as <DIR>.
+	cases := []struct{ path, want, wantML string }{
+		{f + "/", plain, plain},
+		{f + "//", plain, plain},
+		{root + "/lf/", plain, plain},
+		{root + "/fifo/", plain, plain},
+		{d + "/t.txt/", plain, plain},
+		{d + "/", realOf("<DIR>/d"), realOf("<DIR>/d")},
+		{root + "/ld/", realOf("<DIR>/d"), realOf("<DIR>/d")},
+		{root + "/dang/", plain, `"result":{"exists":false,"wouldBe":"<DIR>/nothere","dangling":true}}`},
+		{root + "/missing/", plain, `"result":{"exists":false,"wouldBe":"<DIR>/missing"}}`},
+		{f, realOf("<DIR>/t.txt"), realOf("<DIR>/t.txt")},
+	}
+	var params []map[string]any
+	for _, c := range cases {
+		params = append(params, map[string]any{"path": c.path}, map[string]any{"path": c.path, "missingLeaf": true})
+	}
+	got := realpathCalls(t, root, params)
+	for i, c := range cases {
+		if !strings.HasSuffix(string(got[2*i]), c.want) {
+			t.Errorf("files.realpath %s = %s, want …%s", c.path, got[2*i], c.want)
+		}
+		if !strings.HasSuffix(string(got[2*i+1]), c.wantML) {
+			t.Errorf("files.realpath %s with missingLeaf = %s, want …%s", c.path, got[2*i+1], c.wantML)
+		}
+	}
+}

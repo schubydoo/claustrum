@@ -45,6 +45,10 @@ func realpathPathRefusal(path string) string {
 // not measured.
 func realpathClean(p string) string { return filepath.Clean(p) }
 
+// realpathEndsInSep is false on Windows: a trailing separator is cleaned as text,
+// and a file with one keeps its real name (claustrum's own, not measured).
+func realpathEndsInSep(string) bool { return false }
+
 // maxEvalLinks is the most links that realpathEval follows, as in
 // filepath.EvalSymlinks (claustrum's own).
 const maxEvalLinks = 255
