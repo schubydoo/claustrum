@@ -2484,8 +2484,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// keeps it to its end (fixedForm, claustrum's own). A known gap: after a
 		// hold that ended right after the read-tree call, 4c111e86 gave the
 		// listing and the call of the settle step the copy (measured on macOS),
-		// where claustrum keeps the form of the hold. Under a live hold the index goes
-		// in a new folder `claude-ssh-checkout-<n>` of the temporary folder
+		// where claustrum keeps the form of the hold. Under a live hold the index
+		// goes in a new folder `claude-ssh-checkout-<n>` of the temporary folder
 		// (4c111e86, Linux and macOS, the name also on Windows. c9125eb8 used
 		// `claude-ssh-index-<n>`).
 		// 5fd08069 runs one listing there before the read-tree call. With no hold it
