@@ -130,8 +130,8 @@ The repository calls are the configuration listings, the hardened calls,
       Windows a name matches in any letter case and keeps its spelling.
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
       Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
-      empty value is not relative. On Windows `NUL` in any case is not, and one
-      slash is (`4c111e86`, measured on Windows).
+      empty value is not relative. On Windows `NUL` in any case is not.
+      One slash is relative (`4c111e86`, measured on Windows).
     - On Windows a UNC path is absolute, and so is a value with two leading slashes
       of either kind and more text, but not an `LD_PRELOAD` or `LD_AUDIT` piece. `4c111e86` keeps `\\\x`, `\\?\UNC\…`, `\\?\C:\…`,
       `\\.\C:\…`, `//host/share/…` and `\\host` alone for a relative name, and one of `\\\x`,
