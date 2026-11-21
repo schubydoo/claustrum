@@ -1427,6 +1427,7 @@ func forgetRepoVerdict(gitDir string) {
 	defer repoVerdicts.Unlock()
 	if _, ok := repoVerdicts.byKey[k]; ok {
 		delete(repoVerdicts.byKey, k)
+		delete(repoVerdicts.stale, k)
 		repoVerdicts.order = slices.DeleteFunc(repoVerdicts.order, func(o repoVerdictKey) bool { return o == k })
 	}
 }
@@ -1440,6 +1441,7 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 	if _, ok := repoVerdicts.byKey[k]; !ok {
 		if len(repoVerdicts.order) >= repoVerdictsMax {
 			delete(repoVerdicts.byKey, repoVerdicts.order[0])
+			delete(repoVerdicts.stale, repoVerdicts.order[0])
 			repoVerdicts.order = slices.Delete(repoVerdicts.order, 0, 1)
 		}
 		repoVerdicts.order = append(repoVerdicts.order, k)
