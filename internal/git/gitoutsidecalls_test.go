@@ -222,7 +222,7 @@ func TestAttrSourceProbeNotSupported(t *testing.T) {
 	}
 	got := calls()
 	if len(got) != 2 || !got[1].version() {
-		t.Fatalf("calls = %v, want the probe and one plain version run", got)
+		t.Fatalf("calls = %v, want the probe and one version run", got)
 	}
 	checkOutside(t, "the probe", got[0], false)
 	checkOutside(t, "the version run of the probe", got[1], false)

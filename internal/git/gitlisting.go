@@ -375,8 +375,7 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (measured). It has no -c option.
-// Its working directory is gitVersionDir. The daemon's own LC_ALL and LANGUAGE do not
-// come back: whether they do is not measured. heavy is the profile of the failed
+// Its working directory is gitVersionDir. heavy is the profile of the failed
 // listing. After the listing of unenterableBaseListing, this call gets the light
 // environment, as on 89cb6289 (measured on Linux). In the symlink-chain rows LNKb-g
 // and LNKr-g, 89cb6289 runs no `git version` (measured on Linux), and claustrum runs
