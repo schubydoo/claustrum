@@ -95,7 +95,7 @@ func junctionChain(t *testing.T, dir, real string, n int) {
 // TestSocketFilesRealpathWindowsJunctionChain pins the link limit: a chain of
 // 31 junctions resolves, and a chain of 32 gives error 1921 for a file below
 // it, for the chain itself and for a missing name below it, with and without
-// missingLeaf (4c111e86, Windows).
+// missingLeaf (4c111e86, Windows; the member: 87375cc7).
 func TestSocketFilesRealpathWindowsJunctionChain(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "real", "inner", "x.txt"), "x", 0o644)
@@ -109,7 +109,7 @@ func TestSocketFilesRealpathWindowsJunctionChain(t *testing.T) {
 		{"path": filepath.Join(root, "ch32", "j1", "inner", "nope.txt")},
 		{"path": filepath.Join(root, "ch32", "j1", "inner", "nope.txt"), "missingLeaf": true},
 	})
-	tooMany := `"error":{"code":-32603,"message":"files.realpath: error 1921: The name of the file cannot be resolved by the system.","data":{"reason":"too_many_links","errno":1921}}`
+	tooMany := `"error":{"code":-32603,"message":"files.realpath: error 1921: The name of the file cannot be resolved by the system.","data":{"reason":"too_many_links","errno":1921,"stoppedShort":true}}`
 	for i, w := range []string{`"result":{"exists":true,"real":"<DIR>/real/inner/x.txt"}`, tooMany, tooMany, tooMany, tooMany} {
 		if !strings.Contains(string(got[i]), w) {
 			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)
