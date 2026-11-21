@@ -434,7 +434,7 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 
 // TestDaemonGitEnvPerCallKind checks, per call kind, where the daemon's own GIT_CONFIG, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT set and
 // GIT_ALLOW_PROTOCOL reach git (measured). The excludes read, the --attr-source version probe and the read of config text keep them (claustrum's
-// own, not measured). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries the extended
+// own, not measured), except that on Windows the excludes read drops GIT_CONFIG_PARAMETERS (4c111e86, measured on Windows). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries the extended
 // count set. The light profile filters GIT_ALLOW_PROTOCOL, and the heavy one denies every protocol.
 func TestDaemonGitEnvPerCallKind(t *testing.T) {
 	run := installEnvStub(t)
@@ -476,7 +476,13 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 		case slices.Equal(c.argv, []string{"config", "--includes", "--path", "core.excludesFile"}),
 			c.argv[len(c.argv)-1] == "version":
 			kinds["unhardened"]++
-			if want := sorted(planted[:8]...); !slices.Equal(got, want) {
+			want := sorted(planted[:8]...)
+			if c.argv[0] == "config" && runtime.GOOS == "windows" {
+				// On Windows the excludes read drops GIT_CONFIG_PARAMETERS
+				// (excludesReadDropped, 4c111e86, measured on Windows).
+				want = slices.DeleteFunc(want, func(kv string) bool { return strings.HasPrefix(kv, "GIT_CONFIG_PARAMETERS=") })
+			}
+			if !slices.Equal(got, want) {
 				t.Errorf("unhardened call %d %q = %q\nwant %q", i, c.argv, got, want)
 			}
 			if proto != "ssh:https:git" {
