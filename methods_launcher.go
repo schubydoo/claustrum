@@ -132,8 +132,8 @@ var checkTakesAnyMembers = launcherCheckAnyMembers
 // a launcherCheck, whatever its members hold: on Windows 4c111e86 answers a
 // launcherCheck with "path":5 or "orManagedFolder":"yes" as any other (measured on
 // Windows). Elsewhere a member of another JSON type fails the decode (claustrum's
-// own, not measured). A value that is no object fails it on every system
-// (claustrum's own, not measured).
+// own, not measured). A value that is not an object and not null fails it on every
+// system, and null counts as absent (claustrum's own, not measured).
 func (c *launcherCheckParam) UnmarshalJSON(data []byte) error {
 	if !checkTakesAnyMembers {
 		return json.Unmarshal(data, &c.check)

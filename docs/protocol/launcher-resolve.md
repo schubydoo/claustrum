@@ -216,7 +216,7 @@ An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of t
 
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`. `4c111e86` measured it for `{}`, with no `path`, and for `{"path":5}` (measured on Windows). Other shapes are claustrum's own, not measured. A `launcherCheck` that is no object gets `Invalid params` (claustrum's own, not measured).
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`. `4c111e86` gives it for each shape that was measured on Windows: `{}`, a `path` that is missing, relative, a UNC path or no string, `sha256`, `ownerUid`, `orManagedFolder` of any value and `rootsLink`, also with a top-level `path`. A `launcherCheck` that is not an object and not `null` gets `Invalid params`, and a `null` one counts as absent (both claustrum's own, not measured).
 
 ## Rare states
 

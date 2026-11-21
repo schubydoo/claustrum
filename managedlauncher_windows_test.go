@@ -105,9 +105,9 @@ func TestLauncherResolveNoneOnWindows(t *testing.T) {
 }
 
 // TestLauncherResolveCheckOnWindows pins the Windows answer to a launcherCheck: an
-// object is unusable with windows_host. {}, one with no path and {"path":5} are
-// measured on Windows (4c111e86), the other shapes are claustrum's own. It sends 5
-// refusals and wants one line. 27 refusals log one line (4c111e86, measured on Windows).
+// object is unusable with windows_host, whatever its members hold, also with a
+// top-level path (4c111e86, measured on Windows). It sends 5 refusals and wants one
+// line. 27 refusals log one line (4c111e86, measured on Windows).
 func TestLauncherResolveCheckOnWindows(t *testing.T) {
 	managedWindowsFixture(t)
 	logs := captureLogBuf(t)
