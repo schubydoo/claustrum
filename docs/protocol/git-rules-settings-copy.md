@@ -280,17 +280,17 @@ folder or its `.git` entry makes the daemon ask again.
 
 An exit 128 with any text gets a second run of the call plus `GIT_DIR=<.probe>`, in
 `.probe` (`52d82f0a` on Linux and macOS, `c8e2f083` on Windows). Exit 0 there gives
-the "no repository" answer on Windows (`c8e2f083`). The daemon kills a second run 30
+"no repository" on Windows (`c8e2f083`). The daemon kills a second run 30
 seconds after its start, and the reply is the error of the rows below, with the text
 of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero exit
 gets the same (claustrum's own).
 
 A third run follows that exit 0, in the root, with no user or
-system config and no `GIT_DIR` (`52d82f0a`; `4c111e86` on Windows). Its exit 0 (Linux and macOS) gives that error plus `;
-if that names a git setting or file, fix it, then try again`. A bare repository gets
-no third run (Linux). A failed one gives "no repository" (`4c111e86` on Windows; claustrum's own elsewhere). Its end 30 seconds after
-the second run starts is claustrum's own. A stop of its
-child is not measured. A `refs` made
+system config and no `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share). Its exit 0 on
+Linux and macOS gives that error plus `; if that names a git setting or file, fix it, then try
+again`. Every other one gives "no repository" (`4c111e86` on a Windows share; else
+claustrum's own). A bare repository gets no third run (Linux). Its 30-second end, timed from
+the second run, and a stop of its child are claustrum's own. A `refs` made
 [unsearchable](git-rules-trust.md#how-the-daemon-finds-the-git-directory) right after a good
 answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 

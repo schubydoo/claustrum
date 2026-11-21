@@ -602,7 +602,7 @@ var configFreeNames = []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CON
 // measured either: a third run that exits non-zero, which answers "no
 // repository", on Linux and macOS, and the place of the three variables in
 // the environment. On Windows 4c111e86 runs it in root with these three
-// values, also GIT_CONFIG_GLOBAL=/dev/null. After that third run the reply
+// values. After that third run the reply
 // was "no repository" (measured for a repository on a network share). Where
 // configFreeRunAnswers is false (Windows) the reply after the third run stays
 // "no repository", the answer of c8e2f083 after a second run that exits 0
