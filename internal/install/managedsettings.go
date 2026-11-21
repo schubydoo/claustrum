@@ -194,7 +194,8 @@ func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLau
 	return rpc.ManagedLauncherReply{Status: managedStatusUsable, Argv: argv, Source: source}
 }
 
-// FaultOther is the fault of a launcher value that is not a string.
+// FaultOther is the fault of a launcher value that is not a string, and of the
+// own path in CheckFault.
 const FaultOther = "other"
 
 // shownResolveFault is the fault member of a refusal of the managed launcher. With
@@ -531,12 +532,17 @@ func Check(argv []string, ownPath string) string {
 
 // CheckFault is Check with the launcherFault that a process.spawn refusal carries
 // with no launcherCheck. c9125eb8 gave missing for a missing launcher and
-// not_absolute for an empty one (measured on Linux). The own path has no fault, as
-// with a launcherCheck. A relative argv[0] gets not_absolute and a script ending
-// script_suffix. Those three faults are claustrum's own, not measured. Off Linux the
-// fault is "" (checkFaultShown): no row shows one on macOS (not measured).
+// not_absolute for an empty one (measured on Linux). The own path gets other
+// (4c111e86 and 87375cc7, measured on Linux; with launcherSuppliesCli claustrum's
+// own). The managed-settings answer of the own path keeps no fault (checkFault). A
+// relative argv[0] gets not_absolute and a script ending script_suffix. Those two
+// faults are claustrum's own, not measured. Off Linux the fault is ""
+// (checkFaultShown): no row shows one on macOS (not measured).
 func CheckFault(argv []string, ownPath string) (fault, reason string) {
 	fault, reason = checkFault(argv, ownPath)
+	if len(argv) > 0 && argv[0] == ownPath {
+		fault = FaultOther
+	}
 	if !checkFaultShown {
 		fault = ""
 	}

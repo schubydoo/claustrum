@@ -777,9 +777,12 @@ func TestSpawnThroughLauncher(t *testing.T) {
 // no-element text; both come before the cwd check, and a good launcher meets the cwd check with the
 // plain frame. Each refusal logs one [process.Manager] line and no [LauncherHandler] line.
 // On Linux the launcherFault of an empty launcher (not_absolute) and of a missing launcher
-// (missing) follows c9125eb8 (measured on Linux). The faults of a relative launcher and of a
+// (missing) follows c9125eb8 (measured on Linux). The own path gets other, as 4c111e86 and
+// 87375cc7 give it (measured on Linux). The faults of a relative launcher and of a
 // script launcher are
 // claustrum's own. macOS keeps the frame with no launcherFault (not measured).
+// Mutation: give the own path no fault (the old CheckFault). Its row then has no
+// launcherFault on Linux.
 func TestSpawnLauncherRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
@@ -800,7 +803,7 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 		{"relative command, missing launcher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
 		{"empty launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnFaultFrame(cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "not_absolute")},
 		{"relative launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnFaultFrame(cannot+managedNotAbsolute, "not_absolute")},
-		{"own path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path", "launcher")},
+		{"own path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnFaultFrame(cannot+"launcher `"+exe+"` is Claude Code's own path", "other")},
 		{"script launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnFaultFrame(cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code", "script_suffix")},
 		{"missing launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
 		{"missing launcher, missing cwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
