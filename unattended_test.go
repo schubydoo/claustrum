@@ -20,11 +20,12 @@ func unattendedReq(t *testing.T, id int, params map[string]any) string {
 
 // TestSocketUnattendedSecondsRefusals pins the replies of 87375cc7 to the member
 // unattendedSeconds (each row measured on Linux, the plain rows also on Windows, and
-// on macOS -1, cliTempRootEnd, gitRead, a ccd-cli and a text): the refusal text with
-// the reason other, also before the linkBound text with a launcher, Invalid params
-// for a value that is no integer, the keyless pty text, and a start for 0, 600,
-// 10^12 and a stream-json start with --no-session-persistence. A refused spawn
-// starts no child, so its command need not exist.
+// on macOS -1, cliTempRootEnd, gitRead, a ccd-cli with a stream-json arg and a
+// text): the refusal text with the reason other, also before the linkBound text
+// with a launcher, Invalid params for a value that is no integer, the keyless pty
+// text, and a start for 0, 600, 10^12 and a stream-json start with
+// --no-session-persistence. A refused spawn starts no child, so its command need
+// not exist.
 func TestSocketUnattendedSecondsRefusals(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)

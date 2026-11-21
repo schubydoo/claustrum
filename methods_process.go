@@ -101,7 +101,7 @@ type spawnParams struct {
 	SessionFoldersOff json.RawMessage `json:"sessionFoldersOff"`
 	// UnattendedSeconds is read only for its tests (unattendedValue,
 	// unattendedRefused). An accepted value does not end the child (claustrum's
-	// own: 87375cc7 ends it once no connection is attached for that time).
+	// own).
 	UnattendedSeconds json.RawMessage `json:"unattendedSeconds"`
 }
 
@@ -130,9 +130,10 @@ func unattendedValue(v json.RawMessage) (n int64, set, ok bool) {
 // (claudeCodeShape) without the arg --no-session-persistence. Measured on Linux:
 // each of these, a pty object with a key, a command named ccd-cli or in a folder
 // named ccd-cli, the bare and the two --...-format=stream-json args, and a bare git
-// with a stream-json arg passes. 0 passes, also with gitRead, cliTempRootEnd or a
-// ccd-cli. Windows measured the plain rows and the bare stream-json arg (there
-// ccd-cli.exe does not count), and macOS -1, cliTempRootEnd, gitRead and a ccd-cli.
+// with a stream-json arg passes. 0 passes, also with each of these members.
+// Windows measured the plain rows and the bare stream-json arg (there ccd-cli.exe
+// does not count), and macOS -1, cliTempRootEnd, gitRead and a ccd-cli with a
+// stream-json arg.
 // A launcher spawn counts as the CLI path (measured on Linux).
 func unattendedRefused(p *spawnParams, n int64) bool {
 	if n < 0 {
