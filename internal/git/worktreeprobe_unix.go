@@ -26,7 +26,6 @@ var createGateAsksAfterAdd = runtime.GOOS == "darwin"
 // attachAddListsTwice is true on macOS: a create in attach mode runs one more
 // listing in the form of the add right before the listing of the add. 4c111e86
 // does so (measured on macOS, in a create after a git.info). Linux keeps one
-// listing: in a failed attach add with its fallback, 4c111e86 makes as many
-// `config -z` calls as claustrum (measured on Linux). It is a variable so that a
-// test can switch the step on.
+// listing (not measured on 4c111e86). It is a variable so that a test can
+// switch the step on.
 var attachAddListsTwice = runtime.GOOS == "darwin"
