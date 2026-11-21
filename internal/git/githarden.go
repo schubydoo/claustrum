@@ -1523,8 +1523,8 @@ func globalExcludesPath() string {
 // absolute value, or "" when there is none. The read has the filtered environment
 // of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in
 // gitVersionDir (claustrum's own, not measured). On Windows it drops the names
-// of excludesReadDropped (measured, see there). f6010b97 adds GIT_DIR=NUL on Windows and runs
-// it in the temporary directory on Linux and Windows.
+// of excludesReadDropped (measured, see there). f6010b97 adds GIT_DIR=NUL on
+// Windows and runs it in the temporary directory on Linux and Windows.
 //
 // `config --includes --path` follows includes and expands a leading ~, matching the
 // reference. It runs WITHOUT the hardening profile so git reports the real global
