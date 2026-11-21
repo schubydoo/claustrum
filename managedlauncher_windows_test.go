@@ -129,3 +129,32 @@ func TestLauncherResolveCheckOnWindows(t *testing.T) {
 		t.Errorf("%d refused lines, want 1:\n%s", n, logs.String())
 	}
 }
+
+// TestLauncherResolveNoCheckRearmsOnWindows pins the rows of 4c111e86 on Windows: a
+// refusal of a launcherCheck logs one line, the same again none. An answer with no
+// launcherCheck makes the next equal refusal log again. A -32602 "launcherCheck is
+// required with path" between them does not. The log counts are 1, 1, 1, 2, 2, 2
+// (measured on Windows).
+func TestLauncherResolveNoCheckRearmsOnWindows(t *testing.T) {
+	managedWindowsFixture(t)
+	logs := captureLogBuf(t)
+	s := newTestServer(t)
+	line := "[LauncherHandler] the launcher that the desktop names is refused: a launcher cannot be applied on a Windows host\n"
+	check := `{"cliPath":"x","launcherCheck":{"path":"C:\\l.exe"}}`
+	for i, row := range []struct {
+		params string
+		lines  int
+	}{
+		{check, 1},
+		{check, 1},
+		{`{"cliPath":"x"}`, 1},
+		{check, 2},
+		{`{"cliPath":"x","path":"C:\\l.exe"}`, 2},
+		{check, 2},
+	} {
+		_ = dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":`+row.params+`}`))
+		if n := strings.Count(logs.String(), line); n != row.lines {
+			t.Errorf("request %d %s: %d refused lines, want %d:\n%s", i+1, row.params, n, row.lines, logs.String())
+		}
+	}
+}
