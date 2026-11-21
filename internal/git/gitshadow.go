@@ -301,8 +301,8 @@ func (h *ShadowHost) gate(off bool) string {
 }
 
 // folderWithNoTest makes the folder of this daemon when it is not there, and
-// runs no test. It is the step of a git.info and a git.list_branches on a host
-// with no git (gitInfo, gitListBranches).
+// runs no test. It is the step of a git.info, a git.list_branches and (Linux,
+// macOS) a git.status on a host with no git (gitInfo, gitListBranches, gitStatus).
 // A folder that cannot be made is not measured: the request goes on.
 func (h *ShadowHost) folderWithNoTest() {
 	if !h.active() {
