@@ -24,7 +24,7 @@ The members come in the order of the table. A path below a missing folder gives 
 
 ### A trailing slash
 
-A path that ends in `/` after a name that is no folder gives `{"exists":false}`, also with `missingLeaf`. This holds for `<file>/`, `<file>//`, a link to a file and a FIFO (`4c111e86`, measured on Linux). A folder, a link to a folder, a dangling link and a missing name answer as without the `/` (measured on Linux). On macOS this is claustrum's own, not measured. On Windows the `/` is cleaned as text first (claustrum's own, not measured).
+A path that ends in `/` after a file, a link to a file or a FIFO gives `{"exists":false}`, also with `missingLeaf` and for `<file>//` (`4c111e86`, measured on Linux). With the `/`, a folder and a link to a folder still give the folder as `real`. A dangling link and a missing name keep the answers of their kind (measured on Linux). On macOS this is claustrum's own, not measured. On Windows the `/` is cleaned as text first (claustrum's own, not measured).
 
 ## Errors
 

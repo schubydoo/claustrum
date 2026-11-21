@@ -94,11 +94,11 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // wouldBe (4c111e86, measured on Linux). The system answers ENOTDIR there, which
 // counts as a missing name.
 //
-// A trailing "/" after a name that is no folder, as <file>/, <file>//, a link to a
-// file or a FIFO, gives the plain exists:false, with and without missingLeaf
-// (4c111e86, measured on Linux; macOS is claustrum's own, not measured). A folder,
-// a link to a folder, a dangling link and a missing name with it answer as without
-// it (measured on Linux).
+// A trailing "/" after a file, a link to a file or a FIFO, as in <file>/ and
+// <file>//, gives the plain exists:false, with and without missingLeaf
+// (4c111e86, measured on Linux; macOS is claustrum's own, not measured). With it,
+// a folder and a link to a folder still give the folder as real, and a dangling
+// link and a missing name keep the answers of their kind (measured on Linux).
 func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	slash := realpathEndsInSep(path)
 	path = realpathClean(path)
