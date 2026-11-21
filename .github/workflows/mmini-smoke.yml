@@ -12,6 +12,9 @@ name: mmini smoke
 
 on:
   pull_request:
+    # `ready_for_review` joins the default types, as in ci.yml, so a draft
+    # that is marked ready starts the job.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - .github/workflows/mmini-smoke.yml
   workflow_dispatch:
