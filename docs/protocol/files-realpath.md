@@ -34,12 +34,21 @@ The members come in the order of the table. A path below a missing folder gives 
 | `-32603` | `files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)` | `data` is `{"reason":"no_usable_name"}`. On Windows, a path on a mapped network drive, or a link on the way to one or to a `\\host\share`, `\\?\UNC\` or `\\.\UNC\` path (measured), also for a missing name below it (`4c111e86`, measured). Other network forms are claustrum's own, not measured. From the code, there is no other cause. |
 | `-32603` | `files.realpath: error <n>: <text>` | `data` is `{"reason","errno"}`. The reason is `too_many_links`, `no_permission` or `other`. `other` (any other errno) and `no_permission` on Windows are claustrum's own, not measured. |
 
+## Windows error members
+
+On Windows a `-32603` reply has one more `data` member (`87375cc7`, measured; `4c111e86` has neither):
+
+- `"atLetter":"share"` after `reason`, when the drive of the path itself is a mapped network drive, also through a SUBST drive.
+- `"stoppedShort":true` after `reason`, when a link on the way leads to a network place, and after `errno` on each `too_many_links` reply.
+
+Linux and macOS send neither member (claustrum's own, not measured on `87375cc7`).
+
 ## Platform notes
 
 === "Linux and macOS"
     A link loop gives errno 40 on Linux and 62 on macOS. A chain of 33 links on macOS (32 resolve) or 41 on Linux is over the limit. On macOS `/tmp` gives `/private/tmp`.
 === "Windows"
-    Replies use `/` and a drive letter. A `..` in a link target is removed by text before the next link is followed (measured). A junction and a name below it resolve as links (`4c111e86` and `c9125eb8`, measured). A relative or empty path or `\\srv\s` gives `files.realpath: the path must begin with a drive letter, a colon and a slash`. A component ending in a dot or a space gives `files.realpath: a path component ends in a dot or a space`. A path or link target on a SUBST drive resolves to its real path on the drive below (`4c111e86`, measured). A chain of 31 junctions resolves, and 32 to 34 give errno 1921, also for a missing name below the chain (`4c111e86`, measured). The measured colon paths are `f.txt:stream` and the missing stream `f.txt:nope:$DATA`. A link loop gives errno 1921. Claustrum's own, not measured: a colon in a folder name, a stream that exists, the same limit for symbolic links, that error for other forms, a passing `.` or `..` component, and a junction to a volume name acting as a folder. A `..` in a path is removed by text before the open (claustrum's own, not measured).
+    Replies use `/` and a drive letter. A `..` in a link target is removed by text before the next link is followed (measured). A junction and a name below it resolve as links (`4c111e86` and `c9125eb8`, measured). A relative or empty path or `\\srv\s` gives `files.realpath: the path must begin with a drive letter, a colon and a slash`. A component ending in a dot or a space gives `files.realpath: a path component ends in a dot or a space`. A path or link target on a SUBST drive resolves to its real path on the drive below (`4c111e86`, measured). A chain of 31 junctions resolves, and 32 to 34 give errno 1921, also for a missing name below the chain (`4c111e86`, measured). The measured colon paths are `f.txt:stream` and the missing stream `f.txt:nope:$DATA`. A link loop, also for a name below it, gives errno 1921. Claustrum's own, not measured: a colon in a folder name, a stream that exists, the same limit for symbolic links, that error for other forms, a passing `.` or `..` component, and a junction to a volume name acting as a folder. A `..` in a path is removed by text before the open (claustrum's own, not measured).
 
 ## Differences from the reference
 

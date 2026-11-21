@@ -96,7 +96,7 @@ func TestFilesListWindowsMappedDriveLink(t *testing.T) {
 // itself, gives the no_usable_name frame (build 683cc6a9, Windows).
 func TestFilesRealpathWindowsMappedDriveLink(t *testing.T) {
 	root := networkLinkRoot(t)
-	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name"}}}`
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name","atLetter":"share"}}}`
 	for _, p := range []string{filepath.Join(root, "lk", "lz", "f"), filepath.Join(root, "lk", "lz")} {
 		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", map[string]any{"path": p}))
 		if got != want {
@@ -121,7 +121,7 @@ func TestFilesRealpathWindowsUNCLink(t *testing.T) {
 		t.Skipf("the administrative share is not reachable: %v", err)
 	}
 	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", map[string]any{"path": filepath.Join(root, "lu", "f")}))
-	if !strings.Contains(got, `"data":{"reason":"no_usable_name"}`) {
+	if !strings.Contains(got, `"data":{"reason":"no_usable_name","stoppedShort":true}`) {
 		t.Errorf("files.realpath through %s = %s, want the no_usable_name frame", unc, got)
 	}
 }
@@ -156,7 +156,7 @@ func TestSocketFilesRealpathWindowsDotDotInTarget(t *testing.T) {
 // a missing folder there is claustrum's own, not measured.
 func TestFilesRealpathWindowsOnMappedDrive(t *testing.T) {
 	root := networkLinkRoot(t)
-	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name"}}}`
+	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)","data":{"reason":"no_usable_name","atLetter":"share"}}}`
 	vol := filepath.VolumeName(root) + `\`
 	for _, p := range []map[string]any{
 		{"path": filepath.Join(root, "real", "f")},
@@ -194,7 +194,7 @@ func TestFilesRealpathWindowsMissingBehindUNCLink(t *testing.T) {
 		{"path": filepath.Join(lu, "nope", "x"), "missingLeaf": true},
 	} {
 		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "files.realpath", p))
-		if !strings.Contains(got, `"data":{"reason":"no_usable_name"}`) {
+		if !strings.Contains(got, `"data":{"reason":"no_usable_name","stoppedShort":true}`) {
 			t.Errorf("files.realpath %v = %s, want the no_usable_name frame", p, got)
 		}
 	}

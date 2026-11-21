@@ -4,6 +4,7 @@ package files
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,10 +17,10 @@ import (
 	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
-// junctionToQ makes link an empty folder with the reparse data of a junction to
-// target, a path on the drive Q:, which does not exist here. mklink /J makes no
-// junction to a missing drive, so the data is written by FSCTL_SET_REPARSE_POINT.
-func junctionToQ(t *testing.T, link, target string) {
+// writeJunction makes link an empty folder with the reparse data of a junction
+// to target, which need not exist: mklink /J makes no junction to a missing
+// drive such as Q:, so the data is written by FSCTL_SET_REPARSE_POINT.
+func writeJunction(t *testing.T, link, target string) {
 	t.Helper()
 	if err := os.Mkdir(link, 0o755); err != nil {
 		t.Fatal(err)
@@ -96,7 +97,7 @@ func TestRealpathWindowsSubstDrive(t *testing.T) {
 		}
 	}
 	link := filepath.Join(root, "ls")
-	junctionToQ(t, link, `Q:\sub`)
+	writeJunction(t, link, `Q:\sub`)
 	got, err := realpathEval(filepath.Join(link, "f.txt"))
 	if err != nil || !strings.EqualFold(filepath.ToSlash(got), want+"/sub/f.txt") {
 		t.Errorf("realpathEval through a link to Q: = %q, %v; want %s/sub/f.txt", got, err, want)
@@ -132,10 +133,39 @@ func TestRealpathWindowsLinkToMappedDrive(t *testing.T) {
 	}
 	t.Cleanup(func() { pathcanon.DriveType = old })
 	link := filepath.Join(root, "lz")
-	junctionToQ(t, link, `Q:\real`)
+	writeJunction(t, link, `Q:\real`)
+	// The network drive is reached through a link, so the reply has
+	// stoppedShort and no atLetter (87375cc7, measured on Windows).
 	for _, p := range []string{filepath.Join(link, "f"), link} {
-		if _, err := realpathEval(p); !errors.Is(err, errNoUsableName) {
-			t.Errorf("realpathEval(%q) = %v, want errNoUsableName", p, err)
+		if _, err := realpathEval(p); !errors.Is(err, errNoUsableName) || errors.Is(err, errNoUsableNameAtLetter) {
+			t.Errorf("realpathEval(%q) = %v, want errNoUsableName after a link", p, err)
+		}
+	}
+	// The path on the network drive itself gives atLetter.
+	if _, err := realpathEval(`Q:\real\f`); !errors.Is(err, errNoUsableNameAtLetter) {
+		t.Errorf("realpathEval on Q: = %v, want errNoUsableNameAtLetter", err)
+	}
+}
+
+// A name below a junction loop and the loop itself give error 1921, with and
+// without missingLeaf, and the reply has stoppedShort true (4c111e86 gives the
+// error and 87375cc7 the member, measured on Windows).
+func TestRealpathWindowsJunctionLoop(t *testing.T) {
+	root := resolveTestRoot(t, t.TempDir())
+	writeJunction(t, filepath.Join(root, "j1"), filepath.Join(root, "j2"))
+	writeJunction(t, filepath.Join(root, "j2"), filepath.Join(root, "j1"))
+	const want = `"data":{"reason":"too_many_links","errno":1921,"stoppedShort":true}`
+	for _, p := range []string{filepath.Join(root, "j1", "x"), filepath.Join(root, "j1")} {
+		for _, ml := range []bool{false, true} {
+			res, err := resolveRealpath(p, ml)
+			if !errors.Is(err, errnoCantResolve) {
+				t.Errorf("resolveRealpath(%q, %t) = %+v, %v; want error 1921", p, ml, res, err)
+				continue
+			}
+			b, _ := json.Marshal(realpathFailure(json.RawMessage(`1`), err))
+			if !strings.Contains(string(b), want) {
+				t.Errorf("reply of %q = %s, want %s", p, b, want)
+			}
 		}
 	}
 }

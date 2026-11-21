@@ -109,7 +109,7 @@ func TestSocketFilesRealpathWindowsJunctionChain(t *testing.T) {
 		{"path": filepath.Join(root, "ch32", "j1", "inner", "nope.txt")},
 		{"path": filepath.Join(root, "ch32", "j1", "inner", "nope.txt"), "missingLeaf": true},
 	})
-	tooMany := `"error":{"code":-32603,"message":"files.realpath: error 1921: The name of the file cannot be resolved by the system.","data":{"reason":"too_many_links","errno":1921}}`
+	tooMany := `"error":{"code":-32603,"message":"files.realpath: error 1921: The name of the file cannot be resolved by the system.","data":{"reason":"too_many_links","errno":1921,"stoppedShort":true}}`
 	for i, w := range []string{`"result":{"exists":true,"real":"<DIR>/real/inner/x.txt"}`, tooMany, tooMany, tooMany, tooMany} {
 		if !strings.Contains(string(got[i]), w) {
 			t.Errorf("reply %d = %s, want %s", i+1, got[i], w)

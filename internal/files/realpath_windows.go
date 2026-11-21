@@ -21,6 +21,11 @@ const errnoCantResolve syscall.Errno = 1921
 
 func isLinkLoopErrno(en syscall.Errno) bool { return en == errnoCantResolve }
 
+// loopStopsShort is true on Windows: a too_many_links reply has stoppedShort
+// true, for a loop and for a chain over the link limit (87375cc7, measured on
+// Windows).
+const loopStopsShort = true
+
 const realpathNeedDrive = "files.realpath: the path must begin with a drive letter, a colon and a slash"
 
 // realpathStreamText is the -32602 text for a path with a colon after the drive
@@ -126,6 +131,11 @@ func realpathEval(p string) (string, error) {
 	for links := 0; ; {
 		p = substReal(p)
 		if pathcanon.OnNetwork(p) {
+			// The drive of the path itself gives atLetter, a link target
+			// stoppedShort (87375cc7, measured on Windows).
+			if links == 0 {
+				return "", errNoUsableNameAtLetter
+			}
 			return "", errNoUsableName
 		}
 		vol := filepath.VolumeName(p)
@@ -177,12 +187,18 @@ func realpathEval(p string) (string, error) {
 // own, not measured.
 func realpathMissingFailure(path string) error {
 	for p := filepath.Dir(path); ; p = filepath.Dir(p) {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			_, err = realpathEval(p)
 			if errors.Is(err, errNoUsableName) || errors.Is(err, errnoCantResolve) {
 				return err
 			}
 			return nil
+		}
+		// A folder in a link loop gives error 1921 for a name below it
+		// (4c111e86, measured on Windows).
+		if errors.Is(err, errnoCantResolve) {
+			return err
 		}
 		if filepath.Dir(p) == p {
 			return nil
