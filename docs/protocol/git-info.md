@@ -130,7 +130,7 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 - After a start test that passed, the "no repository" body has the member too (measured on Linux).
 - A request with `"shadowDirOff":true` gets `"off-switch"`, also as the first request of a daemon (measured on Linux).
 - After a plain request, a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has the member too (`4c111e86`, measured on Linux, macOS and Windows).
-- The first request of a daemon, with `"sessionFoldersOff":true` and no start test before it, has no member on `4c111e86`, and claustrum answers `"shadow"` (measured on Linux). This is a known gap, not a divergence.
+- Before such a plain request, a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member. Its start test is not kept, also one that passed. Its git calls still use the settings copy, and the next request tests again (`4c111e86`, measured on Linux). On macOS and Windows this is claustrum's own, not measured. In such a request on a repository, `4c111e86` runs the test before each of its four git calls (measured on Linux). claustrum runs it once, a known gap.
 - An error reply has no member.
 
 The section [States and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.

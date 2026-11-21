@@ -421,8 +421,8 @@ func gitInfo(req *gitCall) rpc.Response {
 	}
 	// After a plain request, a git.info with "sessionFoldersOff":true and no
 	// "shadowDirOff":true keeps the settingsControl member (4c111e86, measured on
-	// Linux, macOS and Windows). The first request of a daemon differs on Linux, a
-	// known gap.
+	// Linux, macOS and Windows). Before that, its start test is not kept, and the
+	// reply has no member (4c111e86, measured on Linux; replyControl).
 	control := req.shadow.replyControl(req.offLive)
 	return rpc.OKResult(req.ID, rpc.GitInfoReply{
 		IsRepo:        true,

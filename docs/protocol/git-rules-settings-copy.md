@@ -111,8 +111,8 @@ does not fail the test (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure 10 seconds after the test, also with its cause
 gone. In that time a request gets the failure with no git call, but works with
-`"shadowDirOff":true`. A failure under `"sessionFoldersOff":true` is not kept
-(`4c111e86`, measured on Linux).
+`"shadowDirOff":true`. A test under `"sessionFoldersOff":true`, passed or failed,
+is not kept ([rule](git-info.md#settingscontrol)).
 
 ### The folders
 

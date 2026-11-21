@@ -98,6 +98,10 @@ type ShadowHost struct {
 	// state is "" until the first test passed, then controlShadow or
 	// controlFallback.
 	state string
+	// unkept is true while state came from a test that passed while the check of
+	// session folders was off (gate). Such a state is not kept: a reply shows no
+	// member for it, and the next request tests again.
+	unkept bool
 	// tested is the end of the last test that gave a state.
 	tested time.Time
 	// failure is the kept text of a failed test, and failed is the end of that
@@ -208,7 +212,16 @@ func (h *ShadowHost) replyControl(off func() bool) string {
 	replyWaits.Add(1)
 	h.testMu.Lock()
 	h.testMu.Unlock() //nolint:staticcheck // the lock only waits for a running test
-	return h.control(off())
+	if off() {
+		return h.control(true)
+	}
+	// A state that is not kept gives no member (gate, 4c111e86, measured on Linux).
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.unkept {
+		return ""
+	}
+	return h.state
 }
 
 // readsRepoConfig reports whether a request makes the daemon's own read of the
@@ -288,16 +301,36 @@ func (h *ShadowHost) gate(off bool) string {
 		h.failed = end
 		return h.failure
 	}
-	h.tested = end
-	if state != h.state {
-		h.state = state
-		if state == controlShadow {
-			logging.Infof(shadowStateLine)
-		} else {
-			logging.Infof(fallbackStateLine)
+	if checkOff {
+		// A test that passed while the check of session folders was off is not
+		// kept either. Its request uses the state that it gave: its git calls name
+		// the copy. The reply has no member, the next request tests again, and the
+		// test logs its state line (4c111e86, measured on Linux; macOS and Windows
+		// are claustrum's own, not measured). In such a git.info on a repository
+		// 4c111e86 runs the test before each of its four git calls, and claustrum
+		// runs it once (a known gap). A kept state stays as it is (claustrum's own,
+		// not measured).
+		if h.state == "" || h.unkept {
+			h.state, h.unkept = state, true
 		}
+		logStateLine(state)
+		return ""
+	}
+	h.tested = end
+	if state != h.state || h.unkept {
+		h.state, h.unkept = state, false
+		logStateLine(state)
 	}
 	return ""
+}
+
+// logStateLine logs the line of a state that a start test gave.
+func logStateLine(state string) {
+	if state == controlShadow {
+		logging.Infof(shadowStateLine)
+	} else {
+		logging.Infof(fallbackStateLine)
+	}
 }
 
 // folderWithNoTest makes the folder of this daemon when it is not there, and
@@ -346,7 +379,7 @@ func (h *ShadowHost) decided() (kept string, done bool) {
 		}
 		h.failure = ""
 	}
-	if h.state == controlShadow || (h.state == controlFallback && now.Sub(h.tested) <= shadowRetestAfter) {
+	if !h.unkept && (h.state == controlShadow || (h.state == controlFallback && now.Sub(h.tested) <= shadowRetestAfter)) {
 		h.remakeFolder()
 		return "", true
 	}

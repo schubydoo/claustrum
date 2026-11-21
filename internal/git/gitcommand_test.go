@@ -152,3 +152,44 @@ func TestStartTestFailureUnderOffSwitchIsNotKept(t *testing.T) {
 		t.Errorf("git.info after the off switch = %s\nwant %s", raw, want)
 	}
 }
+
+// A start test that passed while a request with the off switch held the check of
+// session folders is not kept either (4c111e86, measured on Linux; macOS and
+// Windows are claustrum's own, not measured). That reply has no settingsControl
+// member, its own git calls name the copy, and the next request with the switch
+// tests again. A request without the switch then keeps the state, and a request
+// with the switch after it gets "shadow" with no test. Mutation: keep the state of
+// a test under the switch (the old gate). The first reply then has "shadow".
+func TestStartTestPassUnderOffSwitchIsNotKept(t *testing.T) {
+	requireGit(t)
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	offInfo := func() (string, []envCall) {
+		release := sessiondirs.PauseCheck()
+		defer release()
+		return f.info(t, f.repo, map[string]any{"sessionFoldersOff": true})
+	}
+	for i := 1; i <= 2; i++ {
+		raw, calls := offInfo()
+		if !strings.Contains(raw, `"isRepo":true`) || strings.Contains(raw, "settingsControl") {
+			t.Errorf("git.info %d with the off switch = %s\nwant a repository with no settingsControl", i, raw)
+		}
+		if !startTestRan(calls) {
+			t.Errorf("git.info %d with the off switch ran no start test", i)
+		}
+		if len(calls) == 0 {
+			t.Fatalf("git.info %d with the off switch made no git call", i)
+		}
+		if v, _ := envValue(calls[len(calls)-1].env, "GIT_COMMON_DIR"); !strings.Contains(v, shadowRootName) {
+			t.Errorf("git.info %d with the off switch: last call GIT_COMMON_DIR = %q, want the copy under %s", i, v, shadowRootName)
+		}
+	}
+	raw, calls := f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"settingsControl":"shadow"`) || !startTestRan(calls) {
+		t.Errorf("git.info without the switch = %s (start test %v)\nwant \"shadow\" after a start test", raw, startTestRan(calls))
+	}
+	raw, calls = offInfo()
+	if !strings.Contains(raw, `"settingsControl":"shadow"`) || startTestRan(calls) {
+		t.Errorf("git.info with the off switch after a kept state = %s (start test %v)\nwant \"shadow\" with no start test", raw, startTestRan(calls))
+	}
+}
