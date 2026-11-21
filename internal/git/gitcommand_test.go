@@ -335,6 +335,10 @@ func shadowCopyConfig(t *testing.T, f shadowFixture) os.FileInfo {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// On Windows os.SameFile reads the file id from the path when it first
+	// compares. This call reads it now, so a later compare sees this file and
+	// not a copy that replaced it at the same path.
+	_ = os.SameFile(fi, fi)
 	return fi
 }
 
