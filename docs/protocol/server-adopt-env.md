@@ -91,6 +91,7 @@ These rules of the new read are claustrum's own, not measured:
 - An adopt before the first good read counts too.
 - The cap line is at INFO level. A 24th read that ends after its window logs no cap line.
 - On macOS the shell gets the PATH of the adopt.
+- On Linux outside UTC, the local offset of the two times of the cap line.
 
 ## The frame of the bridge
 
