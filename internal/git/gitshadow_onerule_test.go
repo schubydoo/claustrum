@@ -510,10 +510,10 @@ func TestGitInfoWithNoGitInThePath(t *testing.T) {
 }
 
 // With no git in the PATH of the daemon, git.list_branches answers the "no
-// repository" shape and runs no test, also as the first git request of a daemon,
-// and with "sessionFoldersOff":true. The folder of the daemon holds the lock file
-// only. A first request with "shadowDirOff":true makes no folder. 4c111e86 answers
-// so (measured on Linux and macOS). Mutation: drop the no-git step of
+// repository" shape and runs no test, also after a first request with
+// "shadowDirOff":true, and with "sessionFoldersOff":true. The folder of the daemon
+// holds the lock file only. The first request makes no folder. 4c111e86 answers
+// so (measured on Linux, the reply on macOS). Mutation: drop the no-git step of
 // gitListBranches, and the start test answers its cannot-run text.
 func TestGitListBranchesWithNoGitInThePath(t *testing.T) {
 	f := newShadowFixture(t)
