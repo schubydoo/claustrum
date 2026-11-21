@@ -101,8 +101,8 @@ func statusSourceRefusal(common string, off bool) string {
 }
 
 // alternateEnvRefusal is the refusal of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
-// daemon's environment, or "". git.status answers it after its excludes read
-// only, and git.list_branches with no git call, also with "ownGitConfigOff":true.
+// daemon's environment, or "". git.status answers it after at most its excludes
+// read, and git.list_branches with no git call, also with "ownGitConfigOff":true.
 // With "shadowDirOff":true (off) git runs. An empty value gives no refusal of
 // git.status (4c111e86, measured on Windows).
 func alternateEnvRefusal(off bool) string {

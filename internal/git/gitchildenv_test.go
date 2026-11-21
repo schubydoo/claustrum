@@ -145,6 +145,8 @@ func TestGitChildEnvRelativeValues(t *testing.T) {
 		{"GIT_CONFIG_GLOBAL=nul", "GIT_CONFIG_GLOBAL=nul"},
 		{`GIT_CONFIG_GLOBAL=\\h\s\x`, `GIT_CONFIG_GLOBAL=\\h\s\x`},
 		{`GIT_SSL_CAINFO=\\\cl_u\x`, `GIT_SSL_CAINFO=\\\cl_u\x`},
+		{"GIT_SSL_CAINFO=//cl_u/x", "GIT_SSL_CAINFO=//cl_u/x"},
+		{"GIT_SSL_CAINFO=///cl_u/x", "GIT_SSL_CAINFO=///cl_u/x"},
 		{`SSLKEYLOGFILE=\cl_u\key.log`, ""},
 		{`HOME=\x`, ""},
 		{"HOME=/home/x", ""},
