@@ -30,18 +30,19 @@ func linkWalkFails(p string, foldFirst bool) bool {
 // "." is skipped. So a junction J in <out>\J\..\repo leads to <out>\repo. stat is os.Stat.
 //
 // With foldFirst a ".." drops the name before it before that name is tested, so only the
-// names that remain are walked. The baseRepo of git.worktree_create, git.worktree_remove
-// and git.status and the git.list_branches path take that order. b3081b51 judges
-// <T>\missing\.. and <T>\t.txt\.. as <T> there (measured on Windows), and 4c111e86 runs
-// git.status on <S>\missing\..\P\repo as on <S>\P\repo (measured on Windows). Without
-// foldFirst each name is tested first, so those two paths fail.
+// names that remain are walked. The baseRepo of git.worktree_create and
+// git.worktree_remove and the git.list_branches path take that order. b3081b51 judges
+// <T>\missing\.. and <T>\t.txt\.. as <T> there (measured on Windows). Without foldFirst
+// each name is tested first, so those two paths fail. The walk of statusBaseWalkFails
+// folds first too.
 func spelledWalkFails(p string, stat func(string) (fs.FileInfo, error), foldFirst bool) bool {
 	return walkSpelled(p, stat, stat, foldFirst)
 }
 
 // statusBaseWalkFails reports whether the walk of a git.status baseRepo fails. On Linux
 // and macOS it is the walk of evalSymlinks. On Windows the names before the last name
-// take spelledWalkFails with foldFirst, so a ".." after a missing name drops that name
+// take spelledWalkFails with foldFirst, so a ".." after a missing name or a junction
+// drops that name
 // (4c111e86, measured on Windows; <T>\t.txt\.. there is claustrum's own, not
 // measured). The last name only needs an entry, so a
 // dangling junction passes, and the later os.Stat in gitStatus answers it after the

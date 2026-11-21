@@ -101,6 +101,7 @@ Each of these gives `"isRepo": false`:
 - `path` is not a folder, or it does not exist.
 - `path` lies inside `baseRepo`, and a component below `baseRepo` is a symbolic link. That includes a link at `.claude`, and a link at the last component (measured on Linux).
 - `path` lies inside `baseRepo` and has a `..` component. A `.` component passes (measured on Linux). Outside `baseRepo` a `..` passes.
+- On Windows `path` cannot be opened, such as a folder with the reparse tag `IO_REPARSE_TAG_WIM`. The answer comes before the config listing and `rev-parse --show-toplevel` in the git directory (`4c111e86`, measured on Windows for that tag). Other open failures and the place of the test are claustrum's own, not measured.
 
 The `.git` file inside `path` plays no part. If it is missing, damaged or names another place, the answer is still the status. So is a locked worktree.
 
@@ -185,7 +186,7 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 === "Windows"
 
     - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8` and `4c111e86`, measured on Windows).
-    - A `baseRepo` with a junction before its last component gives the status (`4c111e86`, measured on Windows). A dangling junction gives `"isRepo": false` after the read of the user's excludes (measured on Windows). The names of `baseRepo` before its last component are walked as sent, so a `..` after a junction or a symbolic link does not stop the status. A `..` drops the name before it first, also a missing name: `<S>\missing\..\P\repo` makes the git calls of `<S>\P\repo` (`4c111e86`, measured on Windows). A dangling symbolic link as the last name gives `"isRepo": false` at once. Both are claustrum's own, not measured. A link to a network or device path is refused first ([network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
+    - A `baseRepo` with a junction before its last component gives the status (`4c111e86`, measured on Windows). A dangling junction gives `"isRepo": false` after the read of the user's excludes (measured on Windows). A `..` drops the name before it first, also a missing name or a junction: `<S>\missing\..\P\repo` and `<S>\P\..\P\repo` make the git calls of `<S>\P\repo` (`4c111e86`, measured on Windows). A dangling symbolic link as the last name gives `"isRepo": false` at once (claustrum's own, not measured). A link to a network or device path is refused first ([network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
