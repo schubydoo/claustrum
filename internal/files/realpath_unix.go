@@ -36,3 +36,7 @@ func realpathJoin(dir, target string) string { return dir + "/" + target }
 
 // realpathEval resolves every link of p.
 func realpathEval(p string) (string, error) { return filepath.EvalSymlinks(p) }
+
+// realpathMissingFailure gives nil: on Linux and macOS a missing path takes the
+// rules of resolveRealpath alone.
+func realpathMissingFailure(string) error { return nil }
