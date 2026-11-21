@@ -1994,6 +1994,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return refuseAdd(msg)
 		}
 	}
+	// On macOS an attach add runs one more listing in the form of the add before
+	// the listing of the add (attachAddListsTwice).
+	if attachAddListsTwice && attachBranch != "" {
+		offLinkListing(baseCtx, req.use, repo)
+	}
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
 	added = addErr == nil
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
@@ -2042,9 +2047,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if errors.As(addErr, &notPrepared) || checkNewLeafIdentity(p.WorktreePath, checkpoint) != "" {
 			// In attach mode 5fd08069 runs two listings after `rev-parse
 			// --absolute-git-dir` and answers the text one time (measured on
-			// Linux and macOS). claustrum runs the second one here. Under a
-			// hold in attach mode the second listing is not measured.
-			if notPrepared != nil && notPrepared.offLink {
+			// Linux and macOS). claustrum runs the second one here, or on macOS
+			// before the add (attachAddListsTwice). Under a hold in attach mode
+			// the second listing is not measured.
+			if notPrepared != nil && notPrepared.offLink && !attachAddListsTwice {
 				offLinkListing(baseCtx, req.use, repo)
 			}
 			undoFailedAdd(p.WorktreePath, checkpoint)
@@ -2468,7 +2474,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// (measured on Linux). The filter rule follows that form too (claustrum's
 		// own, not measured). The index goes into the registration through the
 		// held git directory, as before.
+		// On macOS a later gate here asks git about the repository after the start
+		// test and before the read of the config (createGateAsksAfterAdd).
+		req.askInGate = createGateAsksAfterAdd && !isObjectID(checkoutRev)
 		cu, offNow := req.use.fixedForm(false)
+		req.askInGate = false
 		offNow = offNow || (!cu.shadow() && bool(p.ShadowDirOff))
 		// In the state shadow the read-tree call names the commit id of the
 		// branch. b3081b51 does so where be1c1ca5 names refs/heads/<branch>

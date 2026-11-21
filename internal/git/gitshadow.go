@@ -1251,6 +1251,10 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 			req.gitRefused, req.gitNotARepo, req.gitDisagreed = true, a.notARepo, a.disagree
 			return a.text, a.noRepo
 		}
+	} else if req.askInGate && req.shadow.asksGit(t, bool(off)) {
+		// A good answer is kept, so the step after the add makes no call. A bad
+		// one is not kept, and that step asks again (askAfterAdd).
+		_ = req.shadow.askGit(t, dir)
 	}
 	msg, read = repoConfigGate(t, off, req.stop)
 	req.configRefused = msg != ""
