@@ -41,25 +41,38 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 	return rpc.OKResult(id, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 }
 
-// shareGitDir is the `.git` folder of repo when repo is on a network share
-// (repoOnShare) and holds a real `.git` folder. It is "" otherwise. The caller
+// shareGitDir is the `.git` folder of repo or of the nearest folder above it,
+// below the share root, when repo is on a network share (repoOnShare) and that
+// `.git` is a real folder. It is "" otherwise. The caller
 // uses it only where git found no repository in a folder that the trust check
 // accepted (askGit). 4c111e86 then answers a create with unusableGitText for
 // `<baseRepo>\.git`. It answers a remove of a gone worktree with success and a
 // kept branch, and it deletes nothing (measured on Windows, a share
-// `\\127.0.0.1\<share>\repo` with a good repository). The error output of git
-// there is not recorded. A baseRepo below the top folder of the repository, a
-// mapped drive, a `.git` file and a `.git` link keep the answers of a local
-// folder (claustrum's own, not measured).
+// `\\127.0.0.1\<share>\repo` with a good repository). A baseRepo one folder
+// below the top folder of the repository, `repo\sub`, gets the same answers,
+// and the create names `repo\.git` (4c111e86, measured on Windows). So the walk
+// goes up from repo to the first folder with a `.git`, and stops below the share
+// root. A `.git` file or link ends the walk with "", and a mapped drive gets "",
+// so they keep the answers of a local folder. Those cases and the walk from a
+// deeper folder are claustrum's own, not measured. The error output of git there
+// is not recorded.
 func shareGitDir(repo string) string {
 	if !repoOnShare(repo) {
 		return ""
 	}
-	g := filepath.Join(repo, ".git")
-	if fi, err := os.Lstat(g); err != nil || !fi.IsDir() {
-		return ""
+	vol := filepath.VolumeName(repo)
+	for d := filepath.Clean(repo); len(d) > len(vol)+1; d = filepath.Dir(d) {
+		g := filepath.Join(d, ".git")
+		fi, err := os.Lstat(g)
+		if err != nil {
+			continue
+		}
+		if !fi.IsDir() {
+			return ""
+		}
+		return g
 	}
-	return g
+	return ""
 }
 
 // unusableDotGit is the path of the first `.git` that git cannot use on the walk of
