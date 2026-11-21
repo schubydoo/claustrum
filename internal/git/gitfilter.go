@@ -211,6 +211,13 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 	}
 }
 
+// equalsNameNeedsNoItem lets a name with "=" that only the repository defines pass
+// in the state shadow with a settings copy, when its values pass and the read-tree
+// call gets no item for it. On Windows 4c111e86 succeeds with
+// `[filter "a=b"] smudge = cat` there (measured on Windows). Linux and macOS keep the
+// refusal (claustrum's own, not measured). The tests set it on every system.
+var equalsNameNeedsNoItem = gitEnvWindowsForm
+
 // planFilters turns the filters of two listings into the -c pairs of the
 // checkout. full is the listing that the checkout reads. outside is the listing
 // with no repository in view. The names go in sorted order (measured).
@@ -292,6 +299,7 @@ func planFilters(full, outside, own map[string]filterValues, lfsKey string, shad
 			v, o = own[name], filterValues{}
 		}
 		bare := own[name].hasBare()
+		eqNoItem := equalsNameNeedsNoItem && shadow && !bare && repositoryValuesPass(name, v, lfsKey != "", shadow)
 		switch {
 		case o.defined() && name == lfsFilterName && lfsKey != "":
 			// The repository names a program for git-lfs. The filter lfs of
@@ -325,7 +333,7 @@ func planFilters(full, outside, own map[string]filterValues, lfsKey string, shad
 			}
 			f.pairs(name, o.last, filterRequired, filterSmudge)
 		case !v.defined() && !bare:
-		case strings.Contains(name, "="):
+		case strings.Contains(name, "=") && !eqNoItem:
 			f.refusal = "this repository's git config cannot be used: the filter " + strconv.Quote(name) +
 				" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it"
 			return f
