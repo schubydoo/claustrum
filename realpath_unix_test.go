@@ -153,8 +153,9 @@ func TestSocketFilesRealpathDanglingTargets(t *testing.T) {
 // TestSocketFilesRealpathThroughAFile pins the plain exists:false of a path
 // through a regular file, with and without missingLeaf, and the dangling reply
 // with no wouldBe of a link to such a path (4c111e86, measured on Linux, and for
-// <file>/a with no missingLeaf on macOS). The system answers ENOTDIR there. Mutation: give ENOTDIR to
-// realpathFailure, or drop the folder test of wouldBeUnder.
+// <file>/a with no missingLeaf on macOS). The system answers ENOTDIR there.
+// Mutations: resolveRealpath that does not count ENOTDIR as a missing name, or
+// wouldBeUnder with no folder test of the parent.
 func TestSocketFilesRealpathThroughAFile(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	f := filepath.Join(root, "t.txt")

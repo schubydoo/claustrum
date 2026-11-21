@@ -89,9 +89,10 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // exists:false (claustrum's own, not measured).
 //
 // A path through a regular file, as <file>/a, gives the plain exists:false, with
-// and without missingLeaf. A dangling link to such a path gives dangling with no
-// wouldBe (4c111e86, measured on Linux, and for <file>/a on macOS). The
-// system answers ENOTDIR there, which counts as a missing name.
+// and without missingLeaf (4c111e86, measured on Linux, and for <file>/a on
+// macOS). A dangling link to such a path gives dangling with no wouldBe
+// (4c111e86, measured on Linux). The system answers ENOTDIR there, which counts
+// as a missing name.
 func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	path = realpathClean(path)
 	_, err := os.Stat(path)
