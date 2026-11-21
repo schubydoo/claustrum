@@ -936,6 +936,12 @@ func entryAlreadyGone(gitDir, commonDir string) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
+// removeLeafReplacedText is the cause of a remove whose leaf was replaced after
+// deleteWorktreeDir opened it. The reply puts "failed to remove worktree: " before it.
+func removeLeafReplacedText(leaf string) string {
+	return "`" + leaf + "` was replaced while the daemon was using it"
+}
+
 // leafOpenedHook is a test seam. It runs after the open of the leaf and before its
 // identity check in deleteWorktreeDir. Production never reassigns it.
 var leafOpenedHook func()
@@ -946,6 +952,10 @@ var leafOpenedHook func()
 // On a failure `.git` stays, and so does each entry after the one that failed
 // (measured). The error names the entry only, for example "RemoveAll zz: permission
 // denied".
+//
+// A leaf that another folder or a link replaced after the open is not deleted. The
+// reply is "failed to remove worktree: `<leaf name>` was replaced while the daemon
+// was using it" (removeLeafReplacedText), as 4c111e86 answers it (measured on Linux).
 func deleteWorktreeDir(parent *os.Root, leaf, path string) error {
 	leafDir, err := parent.OpenRoot(leaf)
 	if err != nil {
@@ -956,6 +966,10 @@ func deleteWorktreeDir(parent *os.Root, leaf, path string) error {
 	}
 	if err := checkLeafIdentity(parent, leaf, leafDir, path); err != nil {
 		_ = leafDir.Close()
+		var r *worktreeRefusal
+		if errors.As(err, &r) {
+			return errors.New(removeLeafReplacedText(leaf))
+		}
 		return err
 	}
 	entries, err := readRootDir(leafDir)
