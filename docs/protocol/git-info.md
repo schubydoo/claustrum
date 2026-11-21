@@ -129,7 +129,7 @@ The daemon fetches nothing for this member, also in a partial clone (measured on
 - Before a start test of the daemon gave a state, the member is absent. So the first `git.info` of a daemon on a path that does not exist has no member (measured on Linux).
 - After a start test that passed, the "no repository" body has the member too (measured on Linux).
 - A request with `"shadowDirOff":true` gets `"off-switch"`, also as the first request of a daemon (measured on Linux).
-- On Windows and macOS a repository answer to a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has no member (`b3081b51`, measured on Windows and macOS).
+- After a plain request, a request with `"sessionFoldersOff":true` and no `"shadowDirOff":true` has the member too (`4c111e86`, measured on Linux, macOS and Windows).
 - An error reply has no member.
 
 The section [States and `settingsControl`](git-rules-settings-copy.md#the-states-and-settingscontrol) has the effect of each state and the time of the next test.

@@ -418,14 +418,9 @@ func gitInfo(req *gitCall) rpc.Response {
 			branch = "detached:" + sha
 		}
 	}
+	// A git.info with "sessionFoldersOff":true and no "shadowDirOff":true keeps the
+	// settingsControl member (4c111e86, measured on Linux, macOS and Windows).
 	control := req.shadow.replyControl(req.offLive)
-	// On Windows and macOS a git.info with "sessionFoldersOff":true and no
-	// "shadowDirOff":true answers the repository with no settingsControl member
-	// (b3081b51, measured on Windows and macOS). Linux keeps the member (measured on
-	// Linux). The "no repository" answer is not measured, and keeps it.
-	if sessionOffDropsControl && !req.offOwn && sessiondirs.OffSwitchSet(req.Params) {
-		control = ""
-	}
 	return rpc.OKResult(req.ID, rpc.GitInfoReply{
 		IsRepo:        true,
 		Repo:          infoRepoName(top),

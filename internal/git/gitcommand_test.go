@@ -26,28 +26,24 @@ func TestGitChildEnvCutsSessionFolders(t *testing.T) {
 	}
 }
 
-// A git.info with "sessionFoldersOff":true alone answers with no settingsControl
-// member where sessionOffDropsControl holds (Windows), and keeps it elsewhere.
-// With "shadowDirOff":true too the member is "off-switch".
-func TestSessionOffAloneDropsTheControlMember(t *testing.T) {
+// A git.info with "sessionFoldersOff":true alone answers a repository with the
+// settingsControl member "shadow" on every system, as 4c111e86 does (measured on
+// Linux, macOS and Windows). With "shadowDirOff":true too the member is "off-switch".
+func TestSessionOffAloneKeepsTheControlMember(t *testing.T) {
 	requireGit(t)
 	t.Cleanup(sessiondirs.UseForTest(""))
 	f := newSeededShadowFixture(t)
-	old := sessionOffDropsControl
-	t.Cleanup(func() { sessionOffDropsControl = old })
-	for _, drops := range []bool{false, true} {
-		sessionOffDropsControl = drops
-		raw, _ := f.info(t, f.repo, map[string]any{"sessionFoldersOff": true})
-		if has := strings.Contains(raw, `"settingsControl"`); has == drops || !strings.Contains(raw, `"isRepo":true`) {
-			t.Errorf("drops=%v: git.info = %s", drops, raw)
-		}
-		raw, _ = f.info(t, f.repo, map[string]any{"sessionFoldersOff": true, "shadowDirOff": true})
-		if !strings.Contains(raw, `"settingsControl":"off-switch"`) {
-			t.Errorf("drops=%v: git.info with both = %s", drops, raw)
-		}
-		raw, _ = f.info(t, f.repo, nil)
-		if !strings.Contains(raw, `"settingsControl":"shadow"`) {
-			t.Errorf("drops=%v: plain git.info = %s", drops, raw)
+	for _, c := range []struct {
+		params map[string]any
+		want   string
+	}{
+		{map[string]any{"sessionFoldersOff": true}, `"settingsControl":"shadow"`},
+		{map[string]any{"sessionFoldersOff": true, "shadowDirOff": true}, `"settingsControl":"off-switch"`},
+		{nil, `"settingsControl":"shadow"`},
+	} {
+		raw, _ := f.info(t, f.repo, c.params)
+		if !strings.Contains(raw, c.want) || !strings.Contains(raw, `"isRepo":true`) {
+			t.Errorf("git.info %v = %s\nwant %s", c.params, raw, c.want)
 		}
 	}
 }
@@ -110,15 +106,6 @@ func TestGoneLockCheckText(t *testing.T) {
 	got = goneLockCheckText("/w", "boom")
 	if want := "failed to remove worktree: could not check whether /w is locked (boom); retry"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
-	}
-}
-
-// The settingsControl member goes under "sessionFoldersOff":true alone on macOS and
-// Windows, and stays on Linux.
-func TestSessionOffDropsControlPerSystem(t *testing.T) {
-	want := runtime.GOOS == "darwin" || runtime.GOOS == "windows"
-	if sessionOffDropsControl != want {
-		t.Errorf("sessionOffDropsControl = %v on %s, want %v", sessionOffDropsControl, runtime.GOOS, want)
 	}
 }
 
