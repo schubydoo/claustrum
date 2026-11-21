@@ -1152,10 +1152,12 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	// (leafMovedAfterAdd). A deleted leaf gets the move too, and the failed
 	// write of its `.git` file removes the moved folder again (4c111e86,
 	// measured on Linux). On macOS the reply is the same and no registration
-	// stays (measured).
+	// stays (measured). A leaf deleted and not made again gets the same steps:
+	// 4c111e86 answers the error of that write too (measured on Linux).
 	movedAway := false
 	if err := leafHoldsNoGitFile(leaf, cp); err != nil {
-		if !errors.Is(err, errLeafMoved) || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
+		moved := errors.Is(err, errLeafMoved) || (errors.Is(err, fs.ErrNotExist) && leafNameIsFree(leaf, cp))
+		if !moved || stagedAddWindowsSteps || !heldLeafLacksGitFile(cp) {
 			return err
 		}
 		movedAway = true
@@ -1472,6 +1474,22 @@ func leafHoldsNoGitFile(leaf string, cp worktreeCheckpoint) error {
 		return err
 	}
 	return nil
+}
+
+// leafNameIsFree is true when the parent of leaf at its path is still the held
+// parent of cp and holds nothing at the name of leaf. A link at leaf, or a
+// parent that moved or went, gives false and keeps the raw error of
+// leafHoldsNoGitFile (from the code, not measured).
+func leafNameIsFree(leaf string, cp worktreeCheckpoint) bool {
+	if cp.parentInfo == nil {
+		return false
+	}
+	clean := filepath.Clean(leaf)
+	if _, err := os.Lstat(clean); !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	now, err := os.Stat(filepath.Dir(clean))
+	return err == nil && os.SameFile(cp.parentInfo, now)
 }
 
 // addedNames are the names of after that are not in before.
