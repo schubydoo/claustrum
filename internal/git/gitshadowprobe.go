@@ -56,8 +56,8 @@ var (
 	// probeSecondBound ends the second run of the call (secondProbe), counted
 	// from its own start. c8e2f083 killed a second run that did not end 30 s
 	// after its start (measured on Linux and Windows). The wait for its pipes
-	// after the kill is shadowCallDrain. On Linux and macOS the third run ends
-	// at the same time (configFreeProbe, claustrum's own, not measured).
+	// after the kill is shadowCallDrain. The third run ends at the same time
+	// (configFreeProbe, claustrum's own, not measured).
 	probeSecondBound = 30 * time.Second
 	// probeClock is the clock of the kept answer.
 	probeClock = time.Now
@@ -602,13 +602,19 @@ var configFreeNames = []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CON
 // measured either: a third run that exits non-zero, which answers "no
 // repository", on Linux and macOS, and the place of the three variables in
 // the environment. On Windows 4c111e86 runs it in root with these three
-// values, also GIT_CONFIG_GLOBAL=/dev/null, and a third run that exits 128
-// there answers "no repository" (measured for a repository on a network
-// share).
+// values, also GIT_CONFIG_GLOBAL=/dev/null. After that third run the reply
+// was "no repository" (measured for a repository on a network share). Where
+// configFreeRunAnswers is false (Windows) the reply after the third run stays
+// "no repository", the answer of c8e2f083 after a second run that exits 0
+// (measured). The answer of the third run there is claustrum's own, not
+// measured.
 func configFreeProbe(root string, env []string, first shadowRun, deadline time.Time) repoAnswer {
 	env = slices.DeleteFunc(slices.Clone(env), func(kv string) bool { return slices.Contains(configFreeNames, envName(kv)) })
 	env = append(env, "GIT_CONFIG_COUNT=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 	third := exitedInTime(boundedGit(time.Until(deadline), root, env, probeArgs()...))
+	if !configFreeRunAnswers {
+		return repoAnswer{noRepo: true}
+	}
 	if third.ended {
 		return probeTimeoutAnswer(root)
 	}

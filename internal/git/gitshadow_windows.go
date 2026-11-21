@@ -84,6 +84,12 @@ const statusFollowsPrintedGitDir = true
 // call (configFreeProbe) does not depend on it.
 const probeConfigFreeRun = false
 
+// configFreeRunAnswers is false on Windows: the reply after the third run of
+// the call stays "no repository" (configFreeProbe). c8e2f083 answers so after
+// a second run that exits 0 (measured on Windows). The reply after a third run
+// that exits 0 or does not end is claustrum's own, not measured.
+var configFreeRunAnswers = false
+
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // folder, the folder of the daemon (requestDir). On Windows it is a plain
 // mkdir by its full path through requestDirMkdir, not through root. With a

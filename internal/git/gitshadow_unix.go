@@ -53,6 +53,11 @@ const statusFollowsPrintedGitDir = false
 // third run of the call (configFreeProbe) does not depend on it.
 const probeConfigFreeRun = true
 
+// configFreeRunAnswers is true on Linux and macOS: the exit status of the
+// third run of the call sets the reply (configFreeProbe, 52d82f0a). It is a
+// variable so that a test can run the Windows reply.
+var configFreeRunAnswers = true
+
 // makeRequestDir makes the short-lived folder name of a request (mode 0700) in
 // the folder of the daemon. On Linux and macOS it goes through root, the root
 // at folder (requestDir). No row has a deny entry with enabled privileges on
