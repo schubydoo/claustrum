@@ -70,8 +70,8 @@ On Linux and macOS, after a good read, a good adopt with no `"noLoginShell":true
 
 - A spawn 31 s after the start of the last read starts no read, and one 61 s after it does.
 - A spawn with `"disableShellAgentSocket":true` starts no read.
-- On Linux a failed read keeps the old PATH, and its log line says `until one works, programs keep the last PATH that was read, or sshd's if none was`.
-- After 24 reads again, Linux logs this line:
+- On Linux and macOS a failed read keeps the old PATH, and its log line says `until one works, programs keep the last PATH that was read, or sshd's if none was`.
+- After 24 reads again, Linux and macOS log this line. Its two times have the local RFC 3339 offset (measured on macOS, and on Linux in UTC, where it reads `Z`):
 
 ```text
 [shellenv] Since 2026-11-07T11:00:36Z the login shell's PATH has been read again 24 times, each time because a new connection sent its environment. It is not read again before 2026-11-08T11:00:36Z; until then programs keep the PATH just read
@@ -90,7 +90,8 @@ These rules of the new read are claustrum's own, not measured:
 - After a failed read a later spawn tries again, and the pause doubles. After 16 failures in a row no read starts, also after a new adopt.
 - An adopt before the first good read counts too.
 - The cap line is at INFO level. A 24th read that ends after its window logs no cap line.
-- On macOS the shell gets the PATH of the adopt, and the failure note and the cap line are those of Linux.
+- On macOS the shell gets the PATH of the adopt.
+- On Linux outside UTC, the two times of the cap line have the local offset, as on macOS.
 
 ## The frame of the bridge
 
