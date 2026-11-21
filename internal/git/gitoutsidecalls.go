@@ -72,8 +72,8 @@ func exitedWithCode(err error) bool {
 // 4c111e86 runs `config --includes --path core.excludesFile` without them and
 // keeps the other names of gitChildEnv, also GIT_CONFIG_COUNT and its items
 // (measured on Windows, in the read of git.status). On Windows the match
-// ignores the letter case, and Linux and macOS keep the names (claustrum's own,
-// not measured).
+// ignores the letter case, the same read made first by another method drops
+// them too, and Linux and macOS keep the names (claustrum's own, not measured).
 var excludesReadDropped = []string{
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG_PARAMETERS", "GIT_NO_REPLACE_OBJECTS",
 	"GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE",
