@@ -56,8 +56,7 @@ func uncleanTilde(p string) bool {
 }
 
 // filesRealpath answers files.realpath on build 683cc6a9. It makes no write and
-// no delete. The kernel decides the link limit, through os.Stat. The real name
-// comes from realpathEval (claustrum's own).
+// no delete. The real name comes from realpathEval (claustrum's own).
 func filesRealpath(req *rpc.Request) rpc.Response {
 	var p realpathParams
 	if bad := rpc.Bind(req, &p); bad != nil {
@@ -86,7 +85,8 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // not measured).
 // A dangling link with missingLeaf gives dangling, and wouldBe only if the parent
 // of its target exists. A dangling link without missingLeaf gives the plain
-// exists:false (claustrum's own, not measured).
+// exists:false (claustrum's own, not measured). On Windows a missing path first
+// takes the failure of its nearest existing folder (realpathMissingFailure).
 //
 // A path through a regular file, as <file>/a, gives the plain exists:false, with
 // and without missingLeaf (4c111e86, measured on Linux, and for <file>/a with no
@@ -116,6 +116,9 @@ func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 		return rpc.RealpathReply{Exists: true, Real: filepath.ToSlash(real)}, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+		return rpc.RealpathReply{}, err
+	}
+	if err := realpathMissingFailure(path); err != nil {
 		return rpc.RealpathReply{}, err
 	}
 	if !missingLeaf {
@@ -177,9 +180,7 @@ func resolveDangling(path string) rpc.RealpathReply {
 // file (4c111e86, measured on Linux). The caller tested the path first, so only a
 // missing parent, a parent that is a file (or a race) gets here. The last name is
 // "." or ".." only below a parent that is no folder, as <file>/., because below a
-// folder such a path exists. The folder test then gives ok false. On Windows a
-// parent behind a link to a network place gives ok false, so a missing name
-// there gets plain exists:false (claustrum's own, not measured).
+// folder such a path exists. The folder test then gives ok false.
 func wouldBeUnder(path string) (string, bool) {
 	parent, last := splitLast(path)
 	real, err := realpathEval(parent)
@@ -198,9 +199,10 @@ type realpathReasonData struct {
 	Reason string `json:"reason"`
 }
 
-// errNoUsableName is the answer of realpathEval on Windows for a link to a
-// mapped network drive or a `\\?\UNC\` path (build 683cc6a9). Other network
-// targets are claustrum's own, not measured.
+// errNoUsableName is the answer of realpathEval on Windows for a path on a
+// mapped network drive, and for a link to one or to a `\\host\share`, `\\?\UNC\`
+// or `\\.\UNC\` path (683cc6a9 and 4c111e86). Other network forms are
+// claustrum's own, not measured.
 var errNoUsableName = errors.New("no verified path for the target (it may be deleted or moved, or on Windows on a network share)")
 
 // realpathFailure maps a failed call to the -32603 reply. Windows no_permission
