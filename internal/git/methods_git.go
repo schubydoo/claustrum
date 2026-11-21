@@ -256,6 +256,11 @@ func gitInfo(req *gitCall) rpc.Response {
 	if p.Path != "" {
 		if _, err := os.Stat(p.Path); errors.Is(err, fs.ErrNotExist) {
 			_ = missingPathListing(p.Path)
+			// On Windows a missing path below a repository on a share asks git
+			// about that repository first (askForMissingOnShare).
+			if a, _ := req.askForMissingOnShare(p.Path, bool(p.ShadowDirOff)); a.text != "" {
+				return rpc.ErrResult(req.ID, rpc.CodeInternal, a.text)
+			}
 			return notRepo()
 		}
 	}
@@ -1308,6 +1313,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// makes one git call and a later one none (measured). The lack of a `git version`
 	// on Linux and macOS, and a request with "shadowDirOff":true, are claustrum's own.
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
+		// On Windows a missing baseRepo below a repository on a share asks git
+		// about that repository first (askForMissingOnShare).
+		if a, _ := req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); a.text != "" {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: a.text, ErrorCode: "worktree_add_failed"})
+		}
 		return notARepoResult(req.ID, repo)
 	}
 	// The daemon's own read of the repository's config comes before the listing
@@ -3668,6 +3678,16 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		// On Windows a missing baseRepo below a repository on a share asks git
+		// about that repository, and a bad answer asks again, as removeGate does
+		// (askForMissingOnShare). A bad answer deletes nothing.
+		if a, asked := req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); asked && a.bad() {
+			if a, _ = req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); a.text != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + a.text)
+			} else if a.noRepo {
+				return keptAll()
+			}
 		}
 		switch t.verdict {
 		case gitDirNoRepo:
