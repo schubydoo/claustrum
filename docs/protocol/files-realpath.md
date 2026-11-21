@@ -42,4 +42,4 @@ The members come in the order of the table. A path below a missing folder gives 
 
 ## Differences from the reference
 
-No entry of the [divergence catalog](../DIVERGENCES.md) applies.
+No entry of the [divergence catalog](../DIVERGENCES.md) applies. The `<file>/` row above is a gap, not a divergence, and a later fix closes it.
