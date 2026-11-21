@@ -204,28 +204,32 @@ func offSwitchInfo(t *testing.T, f shadowFixture) (string, []envCall) {
 // The state line of a passed start test is logged at each test that is not kept:
 // four in a git.info with the switch, one for each git call. A request without the
 // switch keeps the state with one more line, and none follows (4c111e86, measured
-// on Linux). Mutation: log the line only at a change of the state. The second
-// request with the switch then logs none.
+// on Linux). The count of four is tested on Linux only, where it is measured.
+// Mutation: log the line only at a change of the state. The second request with
+// the switch then logs none.
 func TestStartTestStateLineUnderOffSwitch(t *testing.T) {
 	requireGit(t)
 	t.Cleanup(sessiondirs.UseForTest(""))
 	f := newShadowFixture(t)
 	buf := captureLogBuf(t)
 	lines := func() int { return strings.Count(buf.String(), shadowStateLine) }
-	for i := 1; i <= 2; i++ {
-		offSwitchInfo(t, f)
-		if got := lines(); got != 4*i {
-			t.Errorf("after git.info %d with the off switch: %d state lines, want %d", i, got, 4*i)
-		}
+	offSwitchInfo(t, f)
+	each := lines()
+	if each < 2 || (runtime.GOOS == "linux" && each != 4) {
+		t.Errorf("after git.info 1 with the off switch: %d state lines, want 4 on Linux, more than 1 elsewhere", each)
+	}
+	offSwitchInfo(t, f)
+	if got := lines(); got != 2*each {
+		t.Errorf("after git.info 2 with the off switch: %d state lines, want %d", got, 2*each)
 	}
 	f.info(t, f.repo, nil)
-	if got := lines(); got != 9 {
-		t.Errorf("after the git.info that keeps the state: %d state lines, want 9", got)
+	if got := lines(); got != 2*each+1 {
+		t.Errorf("after the git.info that keeps the state: %d state lines, want %d", got, 2*each+1)
 	}
 	offSwitchInfo(t, f)
 	f.info(t, f.repo, nil)
-	if got := lines(); got != 9 {
-		t.Errorf("after two requests with a kept state: %d state lines, want 9, log:\n%s", got, buf.String())
+	if got := lines(); got != 2*each+1 {
+		t.Errorf("after two requests with a kept state: %d state lines, want %d, log:\n%s", got, 2*each+1, buf.String())
 	}
 }
 
@@ -252,8 +256,8 @@ func perCallCounts(calls []envCall) (tests, excludes, gitDir, configReads int) {
 // about the repository and reads its config again: 4 rounds in git.info and 2 in
 // git.list_branches. With "shadowDirOff":true too a git.info reads the excludes 4
 // times and runs no test. After a kept state a request with the switch runs none of
-// it. These are the counts of 4c111e86 (measured on Linux, cell l_t846). Mutations:
-// drop the per-call step (liveSwitch.perCallGate): git.info gives 1 round and 1
+// it. These are the counts of 4c111e86 (measured on Linux). The totals of the calls
+// are tested on Linux only, where they are measured. Mutations: drop the per-call step (liveSwitch.perCallGate): git.info gives 1 round and 1
 // read. Drop forgetRepoAnswers: the plain request after an unkept test makes 1
 // rev-parse --git-dir and 1 config read in place of 2.
 func TestPerCallRoundsBeforeAKeptState(t *testing.T) {
@@ -306,8 +310,8 @@ func TestPerCallRoundsBeforeAKeptState(t *testing.T) {
 	} {
 		calls := held(c.method, c.extra)
 		tests, excl, _, _ := perCallCounts(calls)
-		if tests != c.tests || excl != c.excl || len(calls) != c.total {
-			t.Errorf("%s: %d test rounds, %d excludes reads, %d calls, want %d, %d, %d", c.name, tests, excl, len(calls), c.tests, c.excl, c.total)
+		if tests != c.tests || excl != c.excl || (runtime.GOOS == "linux" && len(calls) != c.total) {
+			t.Errorf("%s: %d test rounds, %d excludes reads, %d calls, want %d, %d, %d (the calls on Linux)", c.name, tests, excl, len(calls), c.tests, c.excl, c.total)
 		}
 		if c.name == "git.info with the switch" {
 			before = copyConfig()
@@ -317,16 +321,16 @@ func TestPerCallRoundsBeforeAKeptState(t *testing.T) {
 		t.Error("the config of the copy was written again after the reads of a later request")
 	}
 	_, calls := f.info(t, f.repo, nil)
-	if tests, _, gitDir, reads := perCallCounts(calls); tests != 1 || gitDir != 2 || reads != 2 || len(calls) != 21 {
-		t.Errorf("the git.info that keeps the state: %d rounds, %d rev-parse --git-dir, %d config reads, %d calls, want 1, 2, 2, 21", tests, gitDir, reads, len(calls))
+	if tests, _, gitDir, reads := perCallCounts(calls); tests != 1 || gitDir != 2 || reads != 2 || (runtime.GOOS == "linux" && len(calls) != 21) {
+		t.Errorf("the git.info that keeps the state: %d rounds, %d rev-parse --git-dir, %d config reads, %d calls, want 1, 2, 2, 21 (the calls on Linux)", tests, gitDir, reads, len(calls))
 	}
 	for _, c := range []struct {
 		method string
 		total  int
 	}{{"git.info", 8}, {"git.list_branches", 4}} {
 		calls := held(c.method, off)
-		if tests, excl, _, _ := perCallCounts(calls); tests != 0 || excl != 0 || len(calls) != c.total {
-			t.Errorf("%s with the switch after a kept state: %d rounds, %d excludes reads, %d calls, want 0, 0, %d", c.method, tests, excl, len(calls), c.total)
+		if tests, excl, _, _ := perCallCounts(calls); tests != 0 || excl != 0 || (runtime.GOOS == "linux" && len(calls) != c.total) {
+			t.Errorf("%s with the switch after a kept state: %d rounds, %d excludes reads, %d calls, want 0, 0, %d (the calls on Linux)", c.method, tests, excl, len(calls), c.total)
 		}
 	}
 }

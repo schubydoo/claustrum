@@ -206,7 +206,9 @@ every system, and on Windows `null` starts the child (claustrum's own, not measu
 
 ### Before a kept state
 
-While no start-test state is kept, each git call in the hold reads the excludes again.
-Without `"shadowDirOff":true` it also runs the [start test](git-rules-settings-copy.md#the-start-test).
-Git is then asked about the repository, and its settings are read again (`4c111e86`,
-measured on Linux). Creates, removes, macOS and Windows: claustrum's own.
+While no start-test state is kept, each git call in the hold with no stored value
+reads the excludes again. Without `"shadowDirOff":true` it also runs the
+[start test](git-rules-settings-copy.md#the-start-test). Git is then asked about the
+repository, and its settings are read again. This holds also in the plain request
+that keeps the state (`4c111e86`, measured on Linux). With `"shadowDirOff":true` only
+`git.info` is measured. Creates, removes, macOS and Windows: claustrum's own.

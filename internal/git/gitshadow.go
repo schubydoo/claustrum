@@ -366,7 +366,8 @@ func (h *ShadowHost) noKeptState() bool {
 // forgetRepoAnswers drops the kept answer of git about the repository of t at
 // dir (askGit) and marks the kept read of its config as stale (repoReadVerdict),
 // so the next gate asks git and reads the config again. 4c111e86 does both after
-// each start test that runs (measured on Linux). It deletes no file.
+// a start test before a kept state, and in the plain request that keeps it
+// (measured on Linux). It deletes no file.
 func (h *ShadowHost) forgetRepoAnswers(t gitDirTrust, dir string) {
 	root, _ := gitWalkRoot(dir)
 	if root == "" {
