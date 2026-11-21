@@ -336,8 +336,8 @@ func gitInfo(req *gitCall) rpc.Response {
 	// With no git in the PATH of the daemon, 5fd08069 answers "no repository"
 	// with no member, runs no test and logs no line about git. Its folder holds
 	// the lock file only (measured on Linux, 3 of 3 runs). git.list_branches takes
-	// the same step (gitListBranches). The other git methods are not measured
-	// there: they keep the failed start test. A request with
+	// the same step (gitListBranches, 4c111e86). git.status and the other git
+	// methods are not measured there: they keep the failed start test. A request with
 	// "shadowDirOff":true is not measured either, and it keeps its answer. The
 	// settingsControl member follows the state of the daemon: a daemon that
 	// passed its test before it lost git is not measured.
