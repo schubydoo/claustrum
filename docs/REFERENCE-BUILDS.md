@@ -898,8 +898,7 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
 **Missed at first.** This build also bounds the `ldd` libc probe at 5 s. That
 change was reconciled later, under issue 408.
 
-**How it was bounded.** The static drift check passes for `19f30c46`. The 19 methods,
-the CLI flags, the `-version` format, and the tracked strings all match. The new
+**How it was bounded.** The static drift check passes for `19f30c46`. The new
 `-probe-cli` flag appears in both binaries. The two wire changes went through the
 frame battery. Claustrum reconciled each off-wire subsystem 1:1. A throwaway VM
 checked the destructive paths on linux, darwin, and windows.

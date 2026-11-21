@@ -89,7 +89,7 @@ and `-version`.
 
 ## Step 3 — authoritative byte-for-byte recheck (on a VM)
 
-The static check catches only drift in the items of Step 2.
+The static check catches only drift in the checked items of Step 2.
 Frame-level byte-identity covers result field order, stream framing, error bodies,
 and `reattach` semantics. To check it, run one frame battery against the new
 reference and against claustrum, and diff the results:
