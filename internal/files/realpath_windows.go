@@ -15,11 +15,18 @@ import (
 	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
-// errnoCantResolve is error 1921, the answer of a link loop or a chain over the
-// limit (build 683cc6a9, Windows).
+// errnoCantResolve is error 1921, the answer of a link loop and of a chain over
+// the link limit (4c111e86, measured on Windows).
 const errnoCantResolve syscall.Errno = 1921
 
 func isLinkLoopErrno(en syscall.Errno) bool { return en == errnoCantResolve }
+
+// loopStopsShort is true on Windows: a too_many_links reply has stoppedShort
+// true for a loop of symbolic links, a chain of 32 symbolic links or of 32 to
+// 34 junctions, also split over two names, and a name below a loop or a chain
+// (87375cc7, measured on Windows). A junction loop itself and other forms are
+// claustrum's own, not measured.
+const loopStopsShort = true
 
 const realpathNeedDrive = "files.realpath: the path must begin with a drive letter, a colon and a slash"
 
@@ -130,6 +137,11 @@ func realpathEval(p string) (string, error) {
 	for links := 0; ; {
 		p = substReal(p)
 		if pathcanon.OnNetwork(p) {
+			// The drive of the path itself gives atLetter, a link target
+			// stoppedShort (87375cc7, measured on Windows).
+			if links == 0 {
+				return "", errNoUsableNameAtLetter
+			}
 			return "", errNoUsableName
 		}
 		vol := filepath.VolumeName(p)
@@ -170,23 +182,29 @@ func realpathEval(p string) (string, error) {
 	}
 }
 
-// realpathMissingFailure is the answer for the missing clean path: the
-// failure of the nearest existing folder above it, when that folder gives
-// errNoUsableName or error 1921, or nil. So a missing name on a mapped network
-// drive, behind a link to a network place or behind a chain of 32 junctions
-// fails as the folder does, with and without missingLeaf (4c111e86, Windows).
-// Behind a network link it does so with missingLeaf also when the folder between
-// is missing (4c111e86, Windows); the other cases of a missing folder between,
-// the walk up by text and nil for other failures of the folder are claustrum's
-// own, not measured.
+// realpathMissingFailure is the answer for the missing clean path: the failure
+// of the nearest existing folder above it, when that folder gives
+// errNoUsableName or error 1921, or the error 1921 of a folder on the way, or
+// nil. So a missing name on a mapped network drive, behind a link to a network
+// place or behind a chain of 32 junctions fails as the folder does, with and
+// without missingLeaf (4c111e86, Windows). Behind a network link it does so
+// with missingLeaf also when the folder between is missing (4c111e86,
+// Windows). The other cases of a missing folder between, the walk up by text
+// and nil for other failures of the folder are claustrum's own, not measured.
 func realpathMissingFailure(path string) error {
 	for p := filepath.Dir(path); ; p = filepath.Dir(p) {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			_, err = realpathEval(p)
 			if errors.Is(err, errNoUsableName) || errors.Is(err, errnoCantResolve) {
 				return err
 			}
 			return nil
+		}
+		// A folder in a loop of symbolic links or junctions gives error 1921
+		// for a name below it (4c111e86, measured on Windows).
+		if errors.Is(err, errnoCantResolve) {
+			return err
 		}
 		if filepath.Dir(p) == p {
 			return nil
