@@ -270,6 +270,36 @@ func TestShadowCreateFollowsAHoldThatStartsAtTheAdd(t *testing.T) {
 	}
 }
 
+// C2 by commit: under that hold the create resolves the branch to its commit
+// id in the form of the hold, the read-tree names the id, and the settle call
+// runs after it, as with no hold. 4c111e86 does so on macOS (measured, a create
+// whose add began before the hold). Linux and Windows are claustrum's own,
+// not measured. Mutation: drop heldNoMember from byCommit in
+// gitWorktreeCreateLocked. The read-tree then names refs/heads/<branch>, and no
+// diff-files call follows.
+func TestShadowCreateUnderAHoldFromTheAddChecksOutByCommit(t *testing.T) {
+	if attrSourceArgs() == nil {
+		t.Skip("this git takes no --attr-source, so no settle call runs")
+	}
+	h := newLiveFixture(t)
+	h.warm(t)
+	holdA(t, "worktree,add")
+	params, leaf := h.createParams()
+	if got, want := h.startsInA(t, "git.worktree_create", params), h.createdText(t, leaf); got != want {
+		t.Fatalf("create = %s\n  want %s", got, want)
+	}
+	calls := readEnvCalls(t, h.log)
+	add := h.wantForm(t, calls, 0, "worktree,add", true)
+	verify := h.wantForm(t, calls, add+1, "rev-parse,--verify,--quiet", false)
+	rt := h.wantForm(t, calls, verify+1, "read-tree", false)
+	if rev := calls[rt].argv[len(calls[rt].argv)-1]; !isObjectID(rev) {
+		t.Errorf("the read-tree names %q, want a commit id", rev)
+	}
+	if h.callAt(calls, rt+1, "diff-files,--quiet") < 0 {
+		t.Error("no settle call (diff-files) after the read-tree")
+	}
+}
+
 // C3: a hold that ends while the `worktree add` of a create is held, on a
 // daemon with no start test. The add uses the git directory itself. Then the
 // start test runs with no call that asks git about the repository, and the

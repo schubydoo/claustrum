@@ -2481,8 +2481,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return resp
 		}
 		// The checkout takes the form of the off switch at its first listing and
-		// keeps it to its end (fixedForm, claustrum's own, not measured: no cell
-		// changes the hold inside the checkout). Under a live hold the index goes
+		// keeps it to its end (fixedForm, claustrum's own). A known gap: after a
+		// hold that ended right after the read-tree call, 4c111e86 gave the
+		// listing and the call of the settle step the copy (measured on macOS),
+		// where claustrum keeps the form of the hold. Under a live hold the index goes
 		// in a new folder `claude-ssh-checkout-<n>` of the temporary folder
 		// (4c111e86, Linux and macOS, the name also on Windows. c9125eb8 used
 		// `claude-ssh-index-<n>`).
@@ -2502,8 +2504,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// (measured on Linux and macOS). The id comes from one `rev-parse
 		// --verify --quiet <ref>^{commit}`. b3081b51 runs that call in a create
 		// on Windows (measured). Its place and its `-c` items are claustrum's
-		// own. So is the ref under a live hold with no member (not
-		// measured). The member and the state fallback-git are below. A call
+		// own. A live hold with no member, the member and the state
+		// fallback-git are below. A call
 		// that fails leaves the ref, and then no content check runs
 		// (claustrum's own, not measured).
 		//
@@ -2569,14 +2571,18 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// With the member the read-tree call names the commit id too, from the
 		// same call, with no question about the repository first (c9125eb8 and
 		// b3081b51, measured on Linux). On macOS and Windows it is claustrum's
-		// own, not measured. A live hold with no member keeps the ref
-		// (claustrum's own, not measured). In the state fallback-git a create
+		// own, not measured. Under a hold of another request that is live at
+		// the checkout, a create with no member makes the commit call in the
+		// form of the hold and the settle step too (4c111e86, measured on macOS
+		// in a create whose add began before the hold, claustrum's own on
+		// Linux and Windows, not measured). In the state fallback-git a create
 		// without the member makes the commit call and the settle step too
 		// (c9125eb8 and 4c111e86, measured on Linux, claustrum's own on macOS and
 		// Windows). With the member it makes neither (claustrum's own, not
 		// measured).
 		member := bool(p.ShadowDirOff) && !cu.shadow() && req.shadow.readsRepoConfig()
-		byCommit := member || (!bool(p.ShadowDirOff) && !req.shadow.readsRepoConfig())
+		heldNoMember := offNow && !bool(p.ShadowDirOff) && req.shadow.readsRepoConfig()
+		byCommit := member || heldNoMember || (!bool(p.ShadowDirOff) && !req.shadow.readsRepoConfig())
 		if byCommit && !isObjectID(checkoutRev) {
 			if id := resolveCommit(quiet, repo, checkoutRev); id != "" {
 				checkoutRev = id
