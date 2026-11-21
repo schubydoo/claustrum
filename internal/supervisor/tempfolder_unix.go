@@ -49,7 +49,8 @@ var tempProbes = struct {
 // The names are tested one after another. A spawn waits for each test until
 // tempProbeWait after the start of that test, and keeps the name after it, before
 // it tests the next name. So two folders that do not answer give a reply after
-// about 4 s (4c111e86, measured on Linux). On macOS the order and the 2 s per test
+// about 4 s, and the file of the second folder is made about 2 s after the first
+// (4c111e86, measured on Linux by the times of the trace). On macOS the order and the 2 s per test
 // are claustrum's own. A spawn that joins a test older than
 // tempProbeWait does not wait. A name whose folder an earlier name of the same spawn
 // named takes that test (claustrum's own). The spawn that started a test logs one

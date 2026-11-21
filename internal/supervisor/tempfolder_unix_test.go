@@ -100,6 +100,25 @@ func TestTempFolderMissingUnderAFolderThatTakesNoFileIsNotHandedOn(t *testing.T)
 	}
 }
 
+// A later name of a spawn that names the folder of an earlier name takes the test of
+// that name, also when that test already ended: one file is made (claustrum's own, not
+// measured). Mutation: drop the map of the tests of the spawn. The second name then
+// starts a second test and makes a second file.
+func TestTempFolderLaterNameOfAFolderTakesItsEndedTest(t *testing.T) {
+	dir := t.TempDir()
+	isolateTempEnv(t)
+	t.Setenv("CLAUDE_CODE_TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	n := countTempProbes(t, dir, nil)
+	env := spawnEnv()
+	if !envHas(env, "CLAUDE_CODE_TMPDIR") || !envHas(env, "TMP") {
+		t.Error("the child env lost a name of a folder that takes a file, want both kept")
+	}
+	if got := n.Load(); got != 1 {
+		t.Errorf("%d test files made in %s, want 1: the second name takes the ended test", got, dir)
+	}
+}
+
 func TestTempFolderThatTakesAFileStaysAndKeepsNoFile(t *testing.T) {
 	dir := t.TempDir()
 	isolateTempEnv(t)
@@ -294,9 +313,9 @@ func TestTempFolderOneWaitForAllNames(t *testing.T) {
 
 // Two folders that do not answer are tested one after another, with the full wait
 // for each, and each logs its line. 4c111e86 replies after about 4 s there (measured
-// on Linux). TMP and TEMP name the same two folders and take their tests, so two
-// files are made. Mutation: start all tests first and then wait (the old order). The
-// spawn then waits about one limit.
+// on Linux). TMP and TEMP name the same two folders while their tests still run, so
+// they join them and two files are made. Mutation: start all tests first and then wait
+// (the old order). The spawn then waits about one limit.
 func TestTempFolderTwoHeldFoldersAreTestedOneAfterAnother(t *testing.T) {
 	root := t.TempDir()
 	a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
