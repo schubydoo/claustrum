@@ -218,7 +218,7 @@ each daemon process is claustrum's own. On Linux and macOS the second listing ge
 
 ### Calls outside a repository
 
-These rules are claustrum's own (not measured). Six calls run outside any
+These rules are claustrum's own (not measured), except where marked. Six calls run outside any
 repository: the `git version` run after a failed listing, the `--attr-source`
 probe, the version gate of the include scan, the excludes read, the read of config
 text and the `git version` of the start test. Each one starts from the cleaned
