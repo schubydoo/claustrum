@@ -59,6 +59,10 @@ func realpathPathRefusal(path string) string {
 // (substReal).
 func realpathClean(p string) string { return substReal(filepath.Clean(p)) }
 
+// realpathEndsInSep is false on Windows: a trailing separator is cleaned as text,
+// and a file with one keeps its real name (claustrum's own, not measured).
+func realpathEndsInSep(string) bool { return false }
+
 // substTarget gives the folder that the SUBST drive of drive (as `X:`) names, as
 // QueryDosDevice gives it, or false for a drive that is no SUBST drive. It is a
 // seam for the tests.
