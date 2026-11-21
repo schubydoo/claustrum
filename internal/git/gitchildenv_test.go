@@ -308,6 +308,30 @@ func TestGitChildEnvPrograms(t *testing.T) {
 	})
 }
 
+// On Windows two leading slashes of either kind and more text count as absolute in
+// a list entry and a program value. The values are those of the rows (4c111e86,
+// measured on Windows). On Linux and macOS the same values go.
+func TestGitChildEnvTwoSlashValues(t *testing.T) {
+	const u3 = `\\\cl_u\x`
+	checkRows(t, windowsForm, "Windows", [][2]string{
+		{"SSL_CERT_DIR=" + u3, "SSL_CERT_DIR=" + u3},
+		{"LOCPATH=///cl_u/x", "LOCPATH=///cl_u/x"},
+		{`NLSPATH=C:\cl_u\n;` + u3, `NLSPATH=C:\cl_u\n;` + u3},
+		{"KRB5_CONFIG=" + u3 + `;C:\cl_u\k`, "KRB5_CONFIG=" + u3 + `;C:\cl_u\k`},
+		{"GIT_ASKPASS=" + u3 + ".exe", "GIT_ASKPASS=" + u3 + ".exe"},
+		{"SSH_ASKPASS=///cl_u/a.exe", "SSH_ASKPASS=///cl_u/a.exe"},
+		{`SSH_SK_HELPER=\\\\cl_u\h.exe`, `SSH_SK_HELPER=\\\\cl_u\h.exe`},
+		{`SSH_SK_PROVIDER=//\cl_u\s.dll`, `SSH_SK_PROVIDER=//\cl_u\s.dll`},
+		// Two slashes alone are no such value (claustrum's own, not measured).
+		{`LOCPATH=\\`, ""}, {`SSH_ASKPASS=//`, ""},
+	})
+	for _, f := range []gitEnvForm{linuxForm, macForm} {
+		checkRows(t, f, "Linux and macOS", [][2]string{
+			{"SSL_CERT_DIR=" + u3, ""}, {"SSH_ASKPASS=" + u3, ""}, {"SSH_ASKPASS=///cl_u/a.exe", "SSH_ASKPASS=///cl_u/a.exe"},
+		})
+	}
+}
+
 // An entry that no test touches stays as it is. An empty name on
 // Windows is not measured.
 func TestGitChildEnvOthersStay(t *testing.T) {

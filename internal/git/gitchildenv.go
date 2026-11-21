@@ -47,7 +47,8 @@ import (
 //     and Windows.
 //
 // Absolute is a leading '/' on Linux and macOS. On Windows it is a drive letter,
-// ':' and a slash, or a UNC path. The exact shape of a UNC path, an empty name on
+// ':' and a slash, or a UNC path. All but the LD_PRELOAD and LD_AUDIT pieces
+// also count two leading slashes and more text (absoluteValue). The exact shape of a UNC path, an empty name on
 // Windows, a type of one multi-byte character in a Kerberos value and a value of
 // HOMEDRIVE with a volume name only in part are not measured.
 
@@ -211,7 +212,7 @@ func cleanEntry(key, value string, f gitEnvForm) (string, bool) {
 			return "", false
 		}
 		if key == "SSH_SK_PROVIDER" && (f.darwin || windows) &&
-			(value == "" || value != "internal" && !absoluteFor(value, windows)) {
+			(value == "" || value != "internal" && !absoluteValue(value, windows)) {
 			return "", false
 		}
 		return value, true
@@ -223,7 +224,7 @@ func cleanEntry(key, value string, f gitEnvForm) (string, bool) {
 // holds a slash or a backslash, and on Windows a volume name counts too. A bare
 // name and an empty value pass.
 func badProgram(value string, windows bool) bool {
-	if absoluteFor(value, windows) {
+	if absoluteValue(value, windows) {
 		return false
 	}
 	return strings.ContainsAny(value, `/\`) || windows && windowsVolumeLen(value) > 0
@@ -242,8 +243,7 @@ func relativeFor(value string, windows bool) bool {
 		return false
 	}
 	if windows {
-		twoSlashes := len(value) > 2 && strings.ContainsRune(`\/`, rune(value[0])) && strings.ContainsRune(`\/`, rune(value[1]))
-		return !absoluteFor(value, true) && !twoSlashes && !strings.EqualFold(value, "NUL")
+		return !absoluteValue(value, true) && !strings.EqualFold(value, "NUL")
 	}
 	return value[0] != '/'
 }
@@ -276,7 +276,7 @@ func cleanFolderList(value string, windows bool) string {
 	}
 	var kept []string
 	for _, e := range splitFolderList(value, windows) {
-		if absoluteFor(e, windows) && !strings.ContainsAny(e, ";\"\n") {
+		if absoluteValue(e, windows) && !strings.ContainsAny(e, ";\"\n") {
 			kept = append(kept, e)
 		}
 	}
@@ -326,6 +326,19 @@ func cleanLoaderList(value string, space, windows bool) string {
 		}
 	}
 	return strings.Join(kept, ":")
+}
+
+// absoluteValue is absoluteFor, and on Windows also true for two leading slashes
+// of either kind and more text. 4c111e86 keeps such a list entry of SSL_CERT_DIR,
+// LOCPATH, NLSPATH and KRB5_CONFIG, and such a value of GIT_ASKPASS, SSH_ASKPASS,
+// SSH_SK_HELPER and SSH_SK_PROVIDER: \\\x, ///x, \\\\x and //\x (measured on
+// Windows). The other list and program names follow them (claustrum's own, not
+// measured).
+func absoluteValue(p string, windows bool) bool {
+	if windows && len(p) > 2 && strings.ContainsRune(`\/`, rune(p[0])) && strings.ContainsRune(`\/`, rune(p[1])) {
+		return true
+	}
+	return absoluteFor(p, windows)
 }
 
 // absoluteFor reports whether p is absolute by the rule of the cleaning.
