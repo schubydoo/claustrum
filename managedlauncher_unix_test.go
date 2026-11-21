@@ -160,18 +160,18 @@ func checkResolve(t *testing.T, s *server, row, cliPath, want string) {
 	}
 }
 
-// TestLauncherResolveNoneShapes pins R4 (measured): an absent or empty folder, and a
+// TestLauncherResolveNoneShapes pins a measured rule: an absent or empty folder, and a
 // base file of {}, of zero bytes or of white space only, answer none with no log.
 func TestLauncherResolveNoneShapes(t *testing.T) {
 	logs := captureLogBuf(t)
 	s := newTestServer(t)
 	dir := tempManagedSettingsDir(t)
 	t.Setenv(managedSettingsDirEnv, filepath.Join(dir, "absent"))
-	checkResolve(t, s, "R4-absent", "/opt/claude/cli", noneFrame)
+	checkResolve(t, s, "absent folder", "/opt/claude/cli", noneFrame)
 	t.Setenv(managedSettingsDirEnv, dir)
-	checkResolve(t, s, "R4-emptyfolder", "/opt/claude/cli", noneFrame)
+	checkResolve(t, s, "empty folder", "/opt/claude/cli", noneFrame)
 	base := filepath.Join(dir, managedSettingsBase)
-	for row, text := range map[string]string{"R4-base{}": "{}", "R4-baseempty": "", "R4-basews": "  \n\t \n"} {
+	for row, text := range map[string]string{"base file {}": "{}", "empty base file": "", "white-space base file": "  \n\t \n"} {
 		writeFileMode(t, base, []byte(text), 0o644)
 		checkResolve(t, s, row, "/opt/claude/cli", noneFrame)
 	}
@@ -180,7 +180,7 @@ func TestLauncherResolveNoneShapes(t *testing.T) {
 	}
 }
 
-// TestLauncherResolveKeysAndPrecedence pins R5, R6b, R6c and R6d: the env key beats
+// TestLauncherResolveKeysAndPrecedence pins these rules: the env key beats
 // processWrapper in one file, in both key orders; an env value of "" counts as
 // unset; three spaces count as set with no launcher (measured), with a log line.
 func TestLauncherResolveKeysAndPrecedence(t *testing.T) {
@@ -191,23 +191,23 @@ func TestLauncherResolveKeysAndPrecedence(t *testing.T) {
 	base := filepath.Join(dir, managedSettingsBase)
 
 	writeFileMode(t, base, []byte(envSettings(t, w+` --x "a b"`)), 0o644)
-	checkResolve(t, s, "R5", "/opt/claude/cli", usableFrame(base, w, "--x", "a b"))
+	checkResolve(t, s, "env key", "/opt/claude/cli", usableFrame(base, w, "--x", "a b"))
 	writeFileMode(t, base, []byte(pwSettings(t, w+` --x "a b"`)), 0o644)
-	checkResolve(t, s, "R5 (processWrapper)", "/opt/claude/cli", usableFrame(base, w, "--x", "a b"))
+	checkResolve(t, s, "processWrapper key", "/opt/claude/cli", usableFrame(base, w, "--x", "a b"))
 
 	writeFileMode(t, base, []byte(`{"processWrapper":`+jsonText(t, w+" p")+`,"env":{"CLAUDE_CODE_PROCESS_WRAPPER":`+jsonText(t, w+" e")+`}}`), 0o644)
-	checkResolve(t, s, "R6b-pw-first", "/opt/claude/cli", usableFrame(base, w, "e"))
+	checkResolve(t, s, "env after processWrapper", "/opt/claude/cli", usableFrame(base, w, "e"))
 	writeFileMode(t, base, []byte(`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":`+jsonText(t, w+" e")+`},"processWrapper":`+jsonText(t, w+" p")+`}`), 0o644)
-	checkResolve(t, s, "R6b-env-first", "/opt/claude/cli", usableFrame(base, w, "e"))
+	checkResolve(t, s, "env before processWrapper", "/opt/claude/cli", usableFrame(base, w, "e"))
 
 	writeFileMode(t, base, []byte(`{"processWrapper":`+jsonText(t, w)+`,"env":{"CLAUDE_CODE_PROCESS_WRAPPER":""}}`), 0o644)
-	checkResolve(t, s, "R6c", "/opt/claude/cli", usableFrame(base, w))
+	checkResolve(t, s, "empty env value", "/opt/claude/cli", usableFrame(base, w))
 
 	t1 := managedNoLauncher
 	writeFileMode(t, base, []byte(envSettings(t, "   ")), 0o644)
-	checkResolve(t, s, "R6d-env3sp", "/opt/claude/cli", unusableFrame(base, t1))
+	checkResolve(t, s, "env of three spaces", "/opt/claude/cli", unusableFrame(base, t1))
 	writeFileMode(t, base, []byte(`{"processWrapper":`+jsonText(t, w)+`,"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"   "}}`), 0o644)
-	checkResolve(t, s, "R6d-env3sp+pw", "/opt/claude/cli", unusableFrame(base, t1))
+	checkResolve(t, s, "env of three spaces beside processWrapper", "/opt/claude/cli", unusableFrame(base, t1))
 	if want := "[LauncherHandler] managed launcher from " + base + " refused: " + t1 + "\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("no refusal line %q in:\n%s", want, logs.String())
 	}
@@ -322,7 +322,7 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	writeFileMode(t, base, []byte(pwSettings(t, w+" a")), 0o644)
 	writeFileMode(t, filepath.Join(dropDir, "10.json"), []byte(pwSettings(t, w+" b")), 0o644)
 	writeFileMode(t, filepath.Join(dropDir, "20.json"), []byte(pwSettings(t, w+" c")), 0o644)
-	checkResolve(t, s, "R7a", "/opt/claude/cli", usableFrame(filepath.Join(dropDir, "20.json"), w, "c"))
+	checkResolve(t, s, "drop-ins in name order", "/opt/claude/cli", usableFrame(filepath.Join(dropDir, "20.json"), w, "c"))
 
 	reset()
 	writeFileMode(t, filepath.Join(dropDir, ".hidden.json"), []byte(pwSettings(t, w+" h")), 0o644)
@@ -336,7 +336,7 @@ func TestLauncherResolveDropIns(t *testing.T) {
 		t.Fatal(err)
 	}
 	check := fifoWatchdog(t, filepath.Join(dropDir, "p.json"))
-	checkResolve(t, s, "R7b-all-five", "/opt/claude/cli", noneFrame)
+	checkResolve(t, s, "skipped drop-in names", "/opt/claude/cli", noneFrame)
 	check()
 
 	reset()
@@ -345,15 +345,15 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(dropDir, "s.json")); err != nil {
 		t.Fatal(err)
 	}
-	checkResolve(t, s, "R7c-s-only", "/opt/claude/cli", usableFrame(filepath.Join(dropDir, "s.json"), w, "s"))
+	checkResolve(t, s, "drop-in link", "/opt/claude/cli", usableFrame(filepath.Join(dropDir, "s.json"), w, "s"))
 	if err := os.Symlink(filepath.Join(dir, "nosuch.json"), filepath.Join(dropDir, "z.json")); err != nil {
 		t.Fatal(err)
 	}
-	checkResolve(t, s, "R7c-both", "/opt/claude/cli", usableFrame(filepath.Join(dropDir, "s.json"), w, "s"))
+	checkResolve(t, s, "drop-in link beside a dangling link", "/opt/claude/cli", usableFrame(filepath.Join(dropDir, "s.json"), w, "s"))
 	if err := os.Remove(filepath.Join(dropDir, "s.json")); err != nil {
 		t.Fatal(err)
 	}
-	checkResolve(t, s, "R7c-z-only", "/opt/claude/cli", noneFrame)
+	checkResolve(t, s, "dangling drop-in link", "/opt/claude/cli", noneFrame)
 
 	reset()
 	somedir := filepath.Join(dir, "somedir")
@@ -363,17 +363,17 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	if err := os.Symlink(somedir, filepath.Join(dropDir, "l.json")); err != nil {
 		t.Fatal(err)
 	}
-	checkResolve(t, s, "R7d", "/opt/claude/cli", unreadableFrame(filepath.Join(dropDir, "l.json"), "is a directory"))
+	checkResolve(t, s, "drop-in link to a folder", "/opt/claude/cli", unreadableFrame(filepath.Join(dropDir, "l.json"), "is a directory"))
 
 	reset()
 	writeFileMode(t, base, []byte(pwSettings(t, w+" a")), 0o644)
 	writeFileMode(t, filepath.Join(dropDir, "20.json"), []byte("{"), 0o644)
-	checkResolve(t, s, "R7e", "/opt/claude/cli", unreadableFrame(filepath.Join(dropDir, "20.json"), "not valid JSON"))
+	checkResolve(t, s, "invalid drop-in", "/opt/claude/cli", unreadableFrame(filepath.Join(dropDir, "20.json"), "not valid JSON"))
 
 	for row, later := range map[string]string{
-		"R8-pw5":         `{"processWrapper":5}`,
-		"R8-env-x":       `{"env":"x"}`,
-		"R8-envval-true": `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`,
+		"later processWrapper number": `{"processWrapper":5}`,
+		"later env text":              `{"env":"x"}`,
+		"later env value true":        `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`,
 	} {
 		reset()
 		writeFileMode(t, filepath.Join(dropDir, "10.json"), []byte(pwSettings(t, w)), 0o644)
@@ -387,7 +387,7 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	restore := install.SetReadDropInDirForTest(func(d string) ([]fs.DirEntry, error) {
 		return nil, &fs.PathError{Op: "open", Path: d, Err: syscall.EACCES}
 	})
-	checkResolve(t, s, "R12f", "/opt/claude/cli", unreadableFrame(dropDir, "the drop-in directory could not be listed: permission denied"))
+	checkResolve(t, s, "drop-in listing fails", "/opt/claude/cli", unreadableFrame(dropDir, "the drop-in directory could not be listed: permission denied"))
 	restore()
 
 	reset()
@@ -396,11 +396,11 @@ func TestLauncherResolveDropIns(t *testing.T) {
 	}
 	writeFileMode(t, base, []byte(pwSettings(t, w+" a")), 0o644)
 	writeFileMode(t, dropDir, []byte(pwSettings(t, w+" d")), 0o644)
-	checkResolve(t, s, "R12g", "/opt/claude/cli", usableFrame(base, w, "a"))
+	checkResolve(t, s, "drop-in folder is a file", "/opt/claude/cli", usableFrame(base, w, "a"))
 }
 
 // TestLauncherResolveEscapesAndRawBytes pins a measured rule on the wire: the reply escapes `<`, `&`, `>` and
-// U+2028; R10i keeps U+FFFD raw (ef bf bd); R10g-0085 keeps U+0085 raw (c2 85) inside the
+// U+2028; U+FFFD stays raw (ef bf bd); U+0085 stays raw (c2 85) inside the
 // managedNotExecutable reason of internal/install, and the em dash of a measured case stays raw.
 func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 	s := newTestServer(t)
@@ -410,27 +410,27 @@ func TestLauncherResolveEscapesAndRawBytes(t *testing.T) {
 
 	// The array text holds the JSON escape \u2028, so the settings file holds \\u2028.
 	writeFileMode(t, base, []byte(`{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":"[\"`+w+`\",\"<a&b>\",\"x\\u2028y\"]"}}`), 0o644)
-	checkResolve(t, s, "R9g", "/opt/claude/cli",
+	checkResolve(t, s, "escaped characters", "/opt/claude/cli",
 		`{"jsonrpc":"2.0","id":1,"result":{"status":"usable","argv":["`+w+`","\u003ca\u0026b\u003e","x\u2028y"],"source":"`+base+`"}}`)
 
 	writeFileMode(t, base, []byte(`{"processWrapper":"`+w+" a\xff\"}"), 0o644)
-	checkResolve(t, s, "R10i", "/opt/claude/cli",
+	checkResolve(t, s, "raw U+FFFD", "/opt/claude/cli",
 		`{"jsonrpc":"2.0","id":1,"result":{"status":"usable","argv":["`+w+`","a`+"\xef\xbf\xbd"+`"],"source":"`+base+`"}}`)
 
 	writeFileMode(t, base, []byte(`{"processWrapper":"`+w+"\xc2\x85"+`a"}`), 0o644)
-	checkResolve(t, s, "R10g-0085", "/opt/claude/cli",
+	checkResolve(t, s, "raw U+0085", "/opt/claude/cli",
 		unusableFaultFrame(base, "launcher `"+w+"\xc2\x85"+"a` does not exist or is not an executable regular file", install.FaultMissing))
 
 	writeFileMode(t, base, []byte(envSettings(t, `["`+w+`",""]`)), 0o644)
-	checkResolve(t, s, "R9c", "/opt/claude/cli",
+	checkResolve(t, s, "empty array element", "/opt/claude/cli",
 		unusableFrame(base, "the JSON array contains an empty element \xe2\x80\x94 remove it, or fill in the value it was a placeholder for"))
 
 	writeFileMode(t, base, []byte(envSettings(t, w+" a;")), 0o644)
-	checkResolve(t, s, "R10a", "/opt/claude/cli",
+	checkResolve(t, s, "shell metacharacter", "/opt/claude/cli",
 		unusableFrame(base, "the value contains an unquoted shell metacharacter (one of ; | \\u0026 $ ( ) ` \\u003c \\u003e) \xe2\x80\x94 it is an argv list, not a shell command"))
 
 	writeFileMode(t, base, []byte(envSettings(t, w+` ""`)), 0o644)
-	checkResolve(t, s, "R10h-1", "/opt/claude/cli",
+	checkResolve(t, s, "empty quoted token", "/opt/claude/cli",
 		unusableFrame(base, "the value contains an empty `\\\"\\\"` token \xe2\x80\x94 remove it, or fill in the value it was a placeholder for"))
 }
 
@@ -446,24 +446,24 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	set := func(v string) { t.Helper(); writeFileMode(t, base, []byte(envSettings(t, v)), 0o644) }
 
 	set("wrap")
-	checkResolve(t, s, "R11a", "/opt/claude/cli", unusableFaultFrame(base, managedNotAbsolute, install.FaultNotAbsolute))
+	checkResolve(t, s, "relative launcher", "/opt/claude/cli", unusableFaultFrame(base, managedNotAbsolute, install.FaultNotAbsolute))
 
 	cli := mkExec(t, filepath.Join(bin, "cli"))
 	set(cli)
-	checkResolve(t, s, "R11b-1", cli, unusableFrame(base, "launcher `"+cli+"` is Claude Code's own path"))
+	checkResolve(t, s, "own path", cli, unusableFrame(base, "launcher `"+cli+"` is Claude Code's own path"))
 	set("/opt/claude/cli")
-	checkResolve(t, s, "R11b-2", "/opt/claude/cli", unusableFrame(base, "launcher `/opt/claude/cli` is Claude Code's own path"))
+	checkResolve(t, s, "own default path", "/opt/claude/cli", unusableFrame(base, "launcher `/opt/claude/cli` is Claude Code's own path"))
 	set("c")
-	checkResolve(t, s, "R11b-3", "c", unusableFrame(base, "launcher `c` is Claude Code's own path"))
+	checkResolve(t, s, "own relative path", "c", unusableFrame(base, "launcher `c` is Claude Code's own path"))
 
 	for _, name := range []string{"x.js", "x.mjs", "x.ts", "x.tsx", "x.jsx"} {
 		p := mkExec(t, filepath.Join(bin, name))
 		set(p)
-		checkResolve(t, s, "R11c-"+name, "/opt/claude/cli", unusableFrame(base, "launcher `"+p+"` is a script the SDK would run in place of Claude Code"))
+		checkResolve(t, s, "script "+name, "/opt/claude/cli", unusableFrame(base, "launcher `"+p+"` is a script the SDK would run in place of Claude Code"))
 	}
 	upper := mkExec(t, filepath.Join(bin, "X.JS"))
 	set(upper)
-	checkResolve(t, s, "R11c-X.JS", "/opt/claude/cli", usableFrame(base, upper))
+	checkResolve(t, s, "upper-case script name", "/opt/claude/cli", usableFrame(base, upper))
 
 	missing := filepath.Join(bin, "missing")
 	folder := filepath.Join(dir, "dir")
@@ -474,16 +474,16 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	writeFileMode(t, w644, []byte("#\n"), 0o644)
 	for _, p := range []string{missing, folder, w644} {
 		set(p)
-		checkResolve(t, s, "R11d "+filepath.Base(p), "/opt/claude/cli", unusableFaultFrame(base, "launcher `"+p+"` does not exist or is not an executable regular file", install.FaultMissing))
+		checkResolve(t, s, "not executable "+filepath.Base(p), "/opt/claude/cli", unusableFaultFrame(base, "launcher `"+p+"` does not exist or is not an executable regular file", install.FaultMissing))
 	}
 	link := filepath.Join(bin, "wlink")
 	if err := os.Symlink(w, link); err != nil {
 		t.Fatal(err)
 	}
 	set(link)
-	checkResolve(t, s, "R11d-symlink", "/opt/claude/cli", usableFrame(base, link))
+	checkResolve(t, s, "launcher symlink", "/opt/claude/cli", usableFrame(base, link))
 
-	// R11e: a 300-byte launcher path with a 3-byte character at bytes 254-256.
+	// A 300-byte launcher path with a 3-byte character at bytes 254-256.
 	prefix := filepath.Join(bin, "L") + "/"
 	fill := 254 - len(prefix)
 	var parts []string
@@ -506,9 +506,9 @@ func TestLauncherResolveLauncherChecks(t *testing.T) {
 	}
 	mkExec(t, exists)
 	set(exists)
-	checkResolve(t, s, "R11e-exists", "/opt/claude/cli", usableFrame(base, exists))
+	checkResolve(t, s, "long path exists", "/opt/claude/cli", usableFrame(base, exists))
 	set(exists[:len(exists)-1] + "z")
-	checkResolve(t, s, "R11e-missing", "/opt/claude/cli", unusableFaultFrame(base, "launcher `"+head+"\xe2\x80\xa6` does not exist or is not an executable regular file", install.FaultMissing))
+	checkResolve(t, s, "long path missing", "/opt/claude/cli", unusableFaultFrame(base, "launcher `"+head+"\xe2\x80\xa6` does not exist or is not an executable regular file", install.FaultMissing))
 }
 
 // TestLauncherResolveBaseFileChecks pins measured rules: permission denied (through the
@@ -525,30 +525,30 @@ func TestLauncherResolveBaseFileChecks(t *testing.T) {
 	restore := install.SetReadSettingsFileForTest(func(p string) ([]byte, error) {
 		return nil, &fs.PathError{Op: "open", Path: p, Err: syscall.EACCES}
 	})
-	checkResolve(t, s, "R12a", "/opt/claude/cli", unreadableFrame(base, "permission denied"))
+	checkResolve(t, s, "base file permission denied", "/opt/claude/cli", unreadableFrame(base, "permission denied"))
 	restore()
 
 	_ = os.Remove(base)
 	if err := os.Mkdir(base, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	checkResolve(t, s, "R12b-folder", "/opt/claude/cli", unreadableFrame(base, "is a directory"))
+	checkResolve(t, s, "base file is a folder", "/opt/claude/cli", unreadableFrame(base, "is a directory"))
 	_ = os.Remove(base)
 	if err := syscall.Mkfifo(base, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	check := fifoWatchdog(t, base)
-	checkResolve(t, s, "R12b-fifo", "/opt/claude/cli", unreadableFrame(base, "not a regular file"))
+	checkResolve(t, s, "base file is a FIFO", "/opt/claude/cli", unreadableFrame(base, "not a regular file"))
 	check()
 	_ = os.Remove(base)
 
 	pad := func(n int) []byte { return []byte(doc + strings.Repeat(" ", n-len(doc))) }
 	writeFileMode(t, base, pad(2097153), 0o644)
-	checkResolve(t, s, "R12c-2097153", "/opt/claude/cli", unreadableFrame(base, "larger than 2 MiB"))
+	checkResolve(t, s, "base file over 2 MiB", "/opt/claude/cli", unreadableFrame(base, "larger than 2 MiB"))
 	writeFileMode(t, base, pad(2097152), 0o644)
-	checkResolve(t, s, "R12c-2097152", "/opt/claude/cli", usableFrame(base, w))
+	checkResolve(t, s, "base file at 2 MiB", "/opt/claude/cli", usableFrame(base, w))
 
-	for row, text := range map[string]string{"R12d-brace": "{", "R12d-array": "[]", "R12d-null": "null"} {
+	for row, text := range map[string]string{"open brace": "{", "array": "[]", "null": "null"} {
 		writeFileMode(t, base, []byte(text), 0o644)
 		want := "not a JSON object"
 		if text == "{" {
@@ -569,16 +569,16 @@ func TestLauncherResolveBaseFileChecks(t *testing.T) {
 		return b
 	}
 	writeFileMode(t, base, append([]byte{0xef, 0xbb, 0xbf}, doc...), 0o644)
-	checkResolve(t, s, "R12e-utf8bom", "/opt/claude/cli", usableFrame(base, w))
+	checkResolve(t, s, "UTF-8 byte order mark", "/opt/claude/cli", usableFrame(base, w))
 	writeFileMode(t, base, append([]byte{0xff, 0xfe}, utf16Of(true)...), 0o644)
-	checkResolve(t, s, "R12e-utf16le", "/opt/claude/cli", usableFrame(base, w))
+	checkResolve(t, s, "UTF-16 LE byte order mark", "/opt/claude/cli", usableFrame(base, w))
 	writeFileMode(t, base, append([]byte{0xfe, 0xff}, utf16Of(false)...), 0o644)
-	checkResolve(t, s, "R12e-utf16be", "/opt/claude/cli", unreadableFrame(base, "not valid JSON"))
+	checkResolve(t, s, "UTF-16 BE byte order mark", "/opt/claude/cli", unreadableFrame(base, "not valid JSON"))
 	writeFileMode(t, base, append([]byte{0xc2, 0xa0}, doc...), 0o644)
-	checkResolve(t, s, "R12e-nbsp", "/opt/claude/cli", unreadableFrame(base, "not valid JSON"))
+	checkResolve(t, s, "leading no-break space", "/opt/claude/cli", unreadableFrame(base, "not valid JSON"))
 }
 
-// TestLauncherResolveNoCacheRunsNothing pins R13 and R6a-lw: an edit shows on the
+// TestLauncherResolveNoCacheRunsNothing pins these rules: an edit shows on the
 // next ask, a removed folder answers none at once, and resolve never runs the
 // launcher.
 func TestLauncherResolveNoCacheRunsNothing(t *testing.T) {
@@ -602,16 +602,16 @@ func TestLauncherResolveNoCacheRunsNothing(t *testing.T) {
 
 	writeFileMode(t, base, []byte(envSettings(t, lw+` --x "a b"`)), 0o644)
 	for i := 0; i < 3; i++ {
-		checkResolve(t, s, "R13 ask", "/opt/claude/cli", usableFrame(base, lw, "--x", "a b"))
+		checkResolve(t, s, "ask", "/opt/claude/cli", usableFrame(base, lw, "--x", "a b"))
 	}
 	writeFileMode(t, base, []byte(pwSettings(t, lw+" changed")), 0o644)
-	checkResolve(t, s, "R13 after edit", "/opt/claude/cli", usableFrame(base, lw, "changed"))
+	checkResolve(t, s, "after edit", "/opt/claude/cli", usableFrame(base, lw, "changed"))
 	if err := os.Remove(base); err != nil {
 		t.Fatal(err)
 	}
-	checkResolve(t, s, "R13 after removal", "/opt/claude/cli", noneFrame)
+	checkResolve(t, s, "after removal", "/opt/claude/cli", noneFrame)
 	if _, err := os.Stat(marker); err == nil {
-		t.Error("resolve ran the launcher (R6a-lw: it must not)")
+		t.Error("resolve ran the launcher, want no run")
 	}
 }
 
@@ -624,7 +624,7 @@ func TestLauncherResolveLogDedup(t *testing.T) {
 	dir := tempManagedSettingsDir(t)
 	base := filepath.Join(dir, managedSettingsBase)
 	w := mkExec(t, filepath.Join(dir, "bin", "wrap"))
-	t8 := "[LauncherHandler] managed launcher from " + base + " refused: " + managedNotAbsolute
+	refusal := "[LauncherHandler] managed launcher from " + base + " refused: " + managedNotAbsolute
 	lines := func() int { return strings.Count(logs.String(), "[LauncherHandler]") }
 
 	steps := []struct {
@@ -651,8 +651,8 @@ func TestLauncherResolveLogDedup(t *testing.T) {
 		}
 	}
 	out := logs.String()
-	if strings.Count(out, t8+"\n") != 2 {
-		t.Errorf("want the T8 line twice (asks 1 and 5):\n%s", out)
+	if strings.Count(out, refusal+"\n") != 2 {
+		t.Errorf("want the refusal line twice (asks 1 and 5):\n%s", out)
 	}
 	for _, want := range []string{
 		"[LauncherHandler] managed settings unreadable: " + base + ": not valid JSON\n",
@@ -715,7 +715,7 @@ func exitCodeOf(frames []supervisor.ChildFrame) int {
 	return -999
 }
 
-// TestSpawnThroughLauncher pins S0, S1, S4 and S9 on a live socket: the child argv
+// TestSpawnThroughLauncher pins these rules on a live socket: the child argv
 // is the launcher argv, then the command, then the args; the launcher's streams
 // are the process's own; a null or absent launcher spawns the command itself; a
 // null element is an empty arg. It also pins the "via launcher" log line.
@@ -727,17 +727,17 @@ func TestSpawnThroughLauncher(t *testing.T) {
 	env := map[string]string{"CLAUSTRUM_TEST_HELPER": "wrap", "CLAUSTRUM_TEST_WRAP_NEXT": "echo"}
 
 	if got := string(cl.call(launchedSpawnReq(t, map[string]any{"id": "p0", "command": exe, "args": []string{"hi"}, "env": env, "launcher": []string{wrap}}))); got != `{"jsonrpc":"2.0","id":1,"result":{"success":true}}` {
-		t.Fatalf("S0 reply %s", got)
+		t.Fatalf("launched spawn reply %s", got)
 	}
 	fr := cl.waitExit("p0")
 	if got, want := streamBytes(t, fr, "stderr"), "WRAP:"+exe+" hi\n"; got != want {
-		t.Errorf("S0 stderr %q, want %q", got, want)
+		t.Errorf("launched stderr %q, want %q", got, want)
 	}
 	if got := streamBytes(t, fr, "stdout"); got != "hi\n" {
-		t.Errorf("S0 stdout %q, want %q", got, "hi\n")
+		t.Errorf("launched stdout %q, want %q", got, "hi\n")
 	}
 	if c := exitCodeOf(fr); c != 0 {
-		t.Errorf("S0 exit %d, want 0", c)
+		t.Errorf("launched exit %d, want 0", c)
 	}
 	if want := ", command=" + exe + " via launcher " + wrap + "\n"; !strings.Contains(logs.String(), "[process.Manager] Process p0 started, PID=") || !strings.Contains(logs.String(), want) {
 		t.Errorf("no started line ending %q in:\n%s", want, logs.String())
@@ -745,12 +745,12 @@ func TestSpawnThroughLauncher(t *testing.T) {
 
 	cl.call(launchedSpawnReq(t, map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "env": env, "launcher": []string{wrap, "-a"}}))
 	if got, want := streamBytes(t, cl.waitExit("p1"), "stderr"), "WRAP:-a "+exe+" hi\n"; !strings.HasPrefix(got, want) {
-		t.Errorf("S1 stderr %q, want it to start %q", got, want)
+		t.Errorf("launcher with an arg: stderr %q, want it to start %q", got, want)
 	}
 
 	cl.call(launchedSpawnReq(t, map[string]any{"id": "p9", "command": exe, "args": []string{"hi"}, "env": env, "launcher": []any{wrap, nil, "-a"}}))
 	if got, want := streamBytes(t, cl.waitExit("p9"), "stderr"), "WRAP: -a "+exe+" hi\n"; !strings.HasPrefix(got, want) {
-		t.Errorf("S9 stderr %q, want it to start %q", got, want)
+		t.Errorf("null launcher element: stderr %q, want it to start %q", got, want)
 	}
 
 	echo, echoEnv := helperCommand(t, "echo")
@@ -762,22 +762,23 @@ func TestSpawnThroughLauncher(t *testing.T) {
 		cl.call(launchedSpawnReq(t, params))
 		fr := cl.waitExit(id)
 		if got := streamBytes(t, fr, "stdout") + "|" + streamBytes(t, fr, "stderr"); got != "hi\n|" {
-			t.Errorf("S4 %s: stdout|stderr %q, want %q", id, got, "hi\n|")
+			t.Errorf("%s: stdout|stderr %q, want %q", id, got, "hi\n|")
 		}
 	}
 	for _, line := range strings.Split(logs.String(), "\n") {
 		if strings.Contains(line, "Process p4null started") && !strings.HasSuffix(line, ", command="+echo) {
-			t.Errorf("S4: a null launcher logs the plain started line, got %q", line)
+			t.Errorf("a null launcher logs the plain started line, got %q", line)
 		}
 	}
 }
 
-// TestSpawnLauncherRefusals pins S2, S3, S5 and S11: the relative-command check (-32602) runs before
+// TestSpawnLauncherRefusals pins these rules: the relative-command check (-32602) runs before
 // any launcher check; the launcher checks answer -32004 with the launcher texts, an empty launcher the
 // no-element text; both come before the cwd check, and a good launcher meets the cwd check with the
 // plain frame. Each refusal logs one [process.Manager] line and no [LauncherHandler] line.
-// On Linux the launcherFault of S3 (not_absolute) and of a missing launcher (missing)
-// follows c9125eb8 (measured on Linux). The faults of S5-wrap and S5-x.js are
+// On Linux the launcherFault of an empty launcher (not_absolute) and of a missing launcher
+// (missing) follows c9125eb8 (measured on Linux). The faults of a relative launcher and of a
+// script launcher are
 // claustrum's own. macOS keeps the frame with no launcherFault (not measured).
 func TestSpawnLauncherRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
@@ -794,16 +795,16 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 		params map[string]any
 		want   string
 	}{
-		{"S2-echo-W", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
-		{"S2-echo-empty", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
-		{"S11-relcmd-badlauncher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
-		{"S3", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnFaultFrame(cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "not_absolute")},
-		{"S5-wrap", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnFaultFrame(cannot+managedNotAbsolute, "not_absolute")},
-		{"S5-own-path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path", "launcher")},
-		{"S5-x.js", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnFaultFrame(cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code", "script_suffix")},
-		{"S5-nope", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
-		{"S11-badlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
-		{"S11-goodlauncher-nocwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{wrap}}, spawnErrFrame("-32603", "chdir "+nocwd+": stat "+nocwd+": no such file or directory", "cwd_missing")},
+		{"relative command, launcher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{wrap}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
+		{"relative command, empty launcher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
+		{"relative command, missing launcher", map[string]any{"id": "p1", "command": "echo", "args": []string{"hi"}, "launcher": []string{nope}}, spawnErrFrame("-32602", supervisor.ManagedSpawnRelative, "other")},
+		{"empty launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{}}, spawnFaultFrame(cannot+"the value is set but contains no launcher \xe2\x80\x94 unset it to run without one, or set it to the absolute path of your launcher", "not_absolute")},
+		{"relative launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{"wrap"}}, spawnFaultFrame(cannot+managedNotAbsolute, "not_absolute")},
+		{"own path", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{exe}}, spawnErrFrame("-32004", cannot+"launcher `"+exe+"` is Claude Code's own path", "launcher")},
+		{"script launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{xjs}}, spawnFaultFrame(cannot+"launcher `"+xjs+"` is a script the SDK would run in place of Claude Code", "script_suffix")},
+		{"missing launcher", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
+		{"missing launcher, missing cwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{nope}}, spawnFaultFrame(cannot+"launcher `"+nope+"` does not exist or is not an executable regular file", "missing")},
+		{"good launcher, missing cwd", map[string]any{"id": "p1", "command": exe, "args": []string{"hi"}, "cwd": nocwd, "launcher": []string{wrap}}, spawnErrFrame("-32603", "chdir "+nocwd+": stat "+nocwd+": no such file or directory", "cwd_missing")},
 	}
 	for _, c := range cases {
 		if got := dispatchRaw(t, s, launchedSpawnReq(t, c.params)); got != c.want {
@@ -821,7 +822,7 @@ func TestSpawnLauncherRefusals(t *testing.T) {
 		}
 	}
 	if strings.Contains(out, "[LauncherHandler]") {
-		t.Errorf("a spawn refusal must not write a [LauncherHandler] line (RES-29b):\n%s", out)
+		t.Errorf("a spawn refusal must not write a [LauncherHandler] line:\n%s", out)
 	}
 }
 
@@ -869,7 +870,7 @@ func TestSpawnLauncherCannotStart(t *testing.T) {
 	}
 }
 
-// TestSpawnLauncherBadCommand pins S7: a command that does not run gives the same
+// TestSpawnLauncherBadCommand pins this rule: a command that does not run gives the same
 // -32603 frame as a spawn without a launcher, and the launcher does not run.
 func TestSpawnLauncherBadCommand(t *testing.T) {
 	s := newTestServer(t)
@@ -887,10 +888,10 @@ func TestSpawnLauncherBadCommand(t *testing.T) {
 	for cmd, c := range map[string][2]string{nope: {"no such file or directory", "not_found"}, folder: {"permission denied", "not_executable"}, c644: {"permission denied", "not_executable"}} {
 		want := spawnErrFrame("-32603", "fork/exec "+cmd+": "+c[0], c[1])
 		if got := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p1", "command": cmd, "args": []string{"hi"}, "env": env, "launcher": []string{wrap}})); got != want {
-			t.Errorf("S7 %s with launcher:\n got %s\nwant %s", filepath.Base(cmd), got, want)
+			t.Errorf("%s with launcher:\n got %s\nwant %s", filepath.Base(cmd), got, want)
 		}
 		if got := dispatchRaw(t, s, launchedSpawnReq(t, map[string]any{"id": "p1", "command": cmd, "args": []string{"hi"}})); got != want {
-			t.Errorf("S7 %s without launcher (the control):\n got %s\nwant %s", filepath.Base(cmd), got, want)
+			t.Errorf("%s without launcher (the control):\n got %s\nwant %s", filepath.Base(cmd), got, want)
 		}
 	}
 	if _, err := os.Stat(marker); err == nil {
@@ -898,7 +899,7 @@ func TestSpawnLauncherBadCommand(t *testing.T) {
 	}
 }
 
-// TestSpawnStripsLauncherEnv pins S8 (measured): every child loses the gate
+// TestSpawnStripsLauncherEnv pins a measured rule: every child loses the gate
 // and the E2E variable; a launched child also loses CLAUDE_CODE_PROCESS_WRAPPER;
 // the strip covers the daemon env and the spawn env param.
 func TestSpawnStripsLauncherEnv(t *testing.T) {
@@ -919,10 +920,10 @@ func TestSpawnStripsLauncherEnv(t *testing.T) {
 		env      map[string]string
 		want     string
 	}{
-		{"S8-nolauncher", false, nil, out("", "", "y")},
-		{"S8-launcher", true, nil, out("", "", "")},
-		{"S8-nolauncher-spawnenv", false, spawnEnv, out("", "", "s3")},
-		{"S8-launcher-spawnenv", true, spawnEnv, out("", "", "")},
+		{"nolauncher", false, nil, out("", "", "y")},
+		{"launcher", true, nil, out("", "", "")},
+		{"nolauncher-spawnenv", false, spawnEnv, out("", "", "s3")},
+		{"launcher-spawnenv", true, spawnEnv, out("", "", "")},
 	}
 	for _, c := range cases {
 		env := map[string]string{"CLAUSTRUM_TEST_HELPER": "printenvs"}

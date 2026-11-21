@@ -159,7 +159,7 @@ func errorFrame(t *testing.T, text string) string {
 // stopped call (measured on Linux, macOS and Windows, one case on Linux only). git.info is the case that needs gitStop.reply: its failed `rev-parse --git-dir`
 // answers "no repository" by itself.
 func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
-	t.Run("git.list_branches stops for-each-ref (T1)", func(t *testing.T) {
+	t.Run("git.list_branches stops for-each-ref", func(t *testing.T) {
 		f, log := limitFixture(t, "for-each-ref")
 		raw, took := dispatchTimed(t, newTestGitDeps(), "git.list_branches", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("for-each-ref")); raw != want {
@@ -170,7 +170,7 @@ func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 		}
 		wantLastCall(t, log, "for-each-ref")
 	})
-	t.Run("git.info stops the hardened rev-parse --git-dir (T3)", func(t *testing.T) {
+	t.Run("git.info stops the hardened rev-parse --git-dir", func(t *testing.T) {
 		f, log := limitFixture(t, "protocol.allow=never,rev-parse,--git-dir")
 		raw, _ := dispatchTimed(t, newTestGitDeps(), "git.info", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("rev-parse")); raw != want {
@@ -178,7 +178,7 @@ func TestGitReadMethodsStopAtTheCallLimit(t *testing.T) {
 		}
 		wantLastCall(t, log, "rev-parse", "--git-dir")
 	})
-	t.Run("git.status stops status --porcelain (T4)", func(t *testing.T) {
+	t.Run("git.status stops status --porcelain", func(t *testing.T) {
 		f := newStatusFixture(t)
 		installGitSlowStub(t, realGitPath(t))
 		log := stubLog(t)
@@ -204,9 +204,9 @@ func TestWorktreeCreateAddStopsAtTheCallLimit(t *testing.T) {
 		existing  string
 		timeoutMs int
 	}{
-		{"new branch (T5)", "", 0},
-		{"timeoutMs under the limit (T6)", "", 300},
-		{"attach mode (T7)", "ex", 0},
+		{"new branch", "", 0},
+		{"timeoutMs under the limit", "", 300},
+		{"attach mode", "ex", 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f, log := limitFixture(t, "worktree,add")
@@ -246,7 +246,7 @@ func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 	shortGitLimit(t, testCallLimit)
 	h := newTestGitDeps()
 	ok := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"branches":["ex","main"]}}`
-	t.Run("a request with the switch (T8)", func(t *testing.T) {
+	t.Run("a request with the switch", func(t *testing.T) {
 		raw, _ := dispatchTimed(t, h, "git.list_branches", map[string]any{"path": f.top, "shadowDirOff": true})
 		if raw != ok {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, ok)
@@ -255,7 +255,7 @@ func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 			t.Errorf("%d requests of the window after the answer, want 0", n)
 		}
 	})
-	t.Run("a request without it while one with it runs (T9 R2)", func(t *testing.T) {
+	t.Run("a request without it while one with it runs", func(t *testing.T) {
 		// The other request is in flight: its count is what Handle holds while it
 		// runs.
 		h.OffRequests.Add(1)
@@ -265,7 +265,7 @@ func TestGitWideLimitWhileAnOffRequestRuns(t *testing.T) {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, ok)
 		}
 	})
-	t.Run("a request without it after the window (T9 R3)", func(t *testing.T) {
+	t.Run("a request without it after the window", func(t *testing.T) {
 		raw, _ := dispatchTimed(t, h, "git.list_branches", map[string]any{"path": f.top})
 		if want := errorFrame(t, stopText("for-each-ref")); raw != want {
 			t.Fatalf("git.list_branches = %s\nwant %s", raw, want)
