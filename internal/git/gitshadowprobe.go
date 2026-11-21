@@ -555,9 +555,10 @@ func exitedWith128(r shadowRun) bool {
 //
 // A second run that exits 0 is followed by the third run (configFreeProbe),
 // unless inGitDir: the call runs in the git directory itself. 52d82f0a does so
-// on Linux and macOS, and 4c111e86 on Windows (measured for a repository on a
-// network share, where git refuses the first call). The third run ends probeSecondBound after the start of
-// the second run (claustrum's own, not measured).
+// on Linux and macOS. On Windows 4c111e86 makes the same three calls for a
+// repository on a network share (measured: their folders and variables; the exit
+// statuses were not logged). The third run ends probeSecondBound after the start
+// of the second run (claustrum's own, not measured).
 func secondProbe(folder, root string, env []string, first shadowRun, inGitDir bool) repoAnswer {
 	probe := filepath.Join(folder, shadowProbeName)
 	deadline := time.Now().Add(probeSecondBound)
