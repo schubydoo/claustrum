@@ -254,7 +254,7 @@ and on Windows in `SystemRoot` if that is absolute. Else the folder of the daemo
 - The excludes read adds `GIT_DIR=<null>`. On Windows it removes
   `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG_PARAMETERS`, `GIT_NO_REPLACE_OBJECTS`,
   `GIT_REPLACE_REF_BASE` and `GIT_SHALLOW_FILE`, and keeps `GIT_CONFIG_COUNT` and its
-  items (`4c111e86`, measured). Another letter case there, and Linux and macOS, are
+  items (`4c111e86`, measured with `git.status`). Another letter case there, and Linux and macOS, are
   claustrum's own, not measured. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
   (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git did

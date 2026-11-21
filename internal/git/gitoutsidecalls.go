@@ -12,7 +12,8 @@ import (
 // `--attr-source` probe, the version gate of the include scan, the excludes read
 // and the read of config text. The rules are claustrum's own, not
 // measured, except the environment of the two `git version` runs that
-// gitVersionRun and probeAttrSource mark as measured. Every one of them starts from the filtered
+// gitVersionRun and probeAttrSource mark as measured, and the Windows names of
+// excludesReadDropped. Every one of them starts from the filtered
 // environment of gitChildEnv and runs in gitVersionDir.
 
 // gitVersionDropped are the names that the `git version` run removes. The match is
@@ -69,8 +70,8 @@ func exitedWithCode(err error) bool {
 
 // excludesReadDropped are the names that the excludes read removes on Windows:
 // 4c111e86 runs `config --includes --path core.excludesFile` without them and
-// keeps the other names of the daemon, also GIT_CONFIG_COUNT and its items
-// (measured on Windows). On Windows the match ignores the letter case, and Linux
+// keeps the other names of gitChildEnv, also GIT_CONFIG_COUNT and its items
+// (measured on Windows, in the read of git.status). On Windows the match ignores the letter case, and Linux
 // and macOS keep the names (claustrum's own, not measured).
 var excludesReadDropped = []string{
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG_PARAMETERS", "GIT_NO_REPLACE_OBJECTS",
