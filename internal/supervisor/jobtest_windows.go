@@ -49,7 +49,8 @@ type winJobTestChild struct {
 // The job has the flags 0x2800 of JobsOn (measured on Windows against 4c111e86), also
 // with -keep-children. So the close of its handle at the reap, or at the exit of the
 // daemon, ends what is left in it. At the reap that end has code 0 (measured on Windows,
-// claustrum's own).
+// claustrum's own). At the daemon exit, 4c111e86 ends the test child with code 0
+// (measured on Windows).
 //
 // A failed join does not stop the test: the child runs to its end, and Reap gives the
 // join error (claustrum's own, not measured). A resume that leaves a thread asleep fails
