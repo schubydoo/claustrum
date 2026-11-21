@@ -462,3 +462,55 @@ func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 		})
 	}
 }
+
+// The exits of askForMissingOnShare that make no call: a path that exists after
+// all, a root that the trust check does not trust, and a state that asks git
+// nothing, such as "shadowDirOff":true (claustrum's own, not measured). Each row
+// makes no call about the repository.
+func TestShareMissingSubfolderNoAsk(t *testing.T) {
+	t.Run("a path that exists", func(t *testing.T) {
+		f := newSeededShadowFixture(t)
+		base := filepath.Join(f.repo, "sub")
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		old := repoOnShare
+		repoOnShare = func(string) bool { return true }
+		t.Cleanup(func() { repoOnShare = old })
+		if got := missingShareRepo(base); got != "" {
+			t.Errorf("missingShareRepo(%q) = %q, want none for a path that exists", base, got)
+		}
+		if got, want := missingShareRepo(filepath.Join(base, "missing")), f.repo; got != want {
+			t.Errorf("missingShareRepo of a missing path = %q, want %q", got, want)
+		}
+	})
+	for _, row := range []struct {
+		name   string
+		params func(f shadowFixture) map[string]any
+	}{
+		{"a root that the trust check does not trust", func(f shadowFixture) map[string]any {
+			// An empty .git folder is no git directory, so the verdict is "no
+			// repository".
+			root := filepath.Join(filepath.Dir(f.repo), "plain")
+			if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return map[string]any{"path": filepath.Join(root, "missing", "deeper")}
+		}},
+		{"shadowDirOff", func(f shadowFixture) map[string]any {
+			return map[string]any{"path": filepath.Join(f.repo, "missing", "deeper"), "shadowDirOff": true}
+		}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			p := row.params(f)
+			old := repoOnShare
+			repoOnShare = func(string) bool { return true }
+			t.Cleanup(func() { repoOnShare = old })
+			_, calls := f.call(t, "git.info", p)
+			if probes := probeCalls(calls); len(probes) != 0 {
+				t.Errorf("%d calls about the repository, want none: %v", len(probes), shareCallLines(calls))
+			}
+		})
+	}
+}
