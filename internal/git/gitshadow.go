@@ -312,9 +312,8 @@ func (h *ShadowHost) gate(off bool) string {
 		// next request tests again, and the test logs its state line (4c111e86,
 		// measured on Linux). On macOS and Windows the member of the first such
 		// request is measured too. The retest and the other orders are claustrum's
-		// own there. In such a git.info on a repository 4c111e86 runs the test
-		// before each of its four git calls, and claustrum runs it once (a known
-		// gap). A kept state, as a fallback-git due for its retest, stays as it is,
+		// own there. The test before each later git call is liveSwitch.perCallGate.
+		// A kept state, as a fallback-git due for its retest, stays as it is,
 		// and its request uses it. The line that its test logs is claustrum's own,
 		// not measured.
 		if h.state == "" || h.unkept {
