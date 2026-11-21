@@ -95,6 +95,22 @@ type spawnParams struct {
 	LauncherCheck       *install.LauncherCheck `json:"launcherCheck"`
 	LauncherSuppliesCli bool                   `json:"launcherSuppliesCli"`
 	EnvOnlyIfSent       *[]string              `json:"envOnlyIfSent"`
+	// SessionFoldersOff is read here only for its type (sessionOffTyped). The
+	// switch itself is read by route (sessiondirs.OffSwitchSet).
+	SessionFoldersOff json.RawMessage `json:"sessionFoldersOff"`
+}
+
+// sessionOffTypeRefused is true when the member sessionFoldersOff is present and
+// neither a bool nor null, while sessionOffTyped holds. On Windows 4c111e86 answers
+// "sessionFoldersOff":1 with Invalid params (measured on Windows). Other values and
+// null are claustrum's own, not measured. Its place before the id, launcher and
+// command tests is claustrum's own, not measured.
+func sessionOffTypeRefused(v json.RawMessage) bool {
+	switch string(bytes.TrimSpace(v)) {
+	case "", "true", "false", "null":
+		return false
+	}
+	return sessionOffTyped
 }
 
 // launcherShapeText is the refusal of a launcher member that lacks the member it
@@ -227,7 +243,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if ptyBare(p.Pty) {
+	if ptyBare(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 	}
 	if p.ID == "" {

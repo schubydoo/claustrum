@@ -4,13 +4,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 // A leaf that something swaps for a new directory after its open and before the
-// identity check is refused. Neither the new directory nor the moved leaf loses an
-// entry.
+// identity check is refused with the text of 4c111e86, "`wt` was replaced while the
+// daemon was using it" (measured on Linux). Neither the new directory nor the moved
+// leaf loses an entry.
 func TestDeleteWorktreeDirRefusesALeafSwappedAfterItsOpen(t *testing.T) {
 	dir := t.TempDir()
 	wt := filepath.Join(dir, "wt")
@@ -48,9 +48,9 @@ func TestDeleteWorktreeDirRefusesALeafSwappedAfterItsOpen(t *testing.T) {
 	if calls != 1 || setupErr != nil {
 		t.Fatalf("hook calls = %d, setup error = %v, want one call and no error", calls, setupErr)
 	}
-	var r *worktreeRefusal
-	if !errors.As(err, &r) || !strings.Contains(r.text, "changed while the removal was checking it") {
-		t.Errorf("deleteWorktreeDir = %v, want the replaced refusal", err)
+	want := "failed to remove worktree: `wt` was replaced while the daemon was using it"
+	if err == nil || worktreeRemoveText(err) != want {
+		t.Errorf("deleteWorktreeDir = %v, want %q", err, want)
 	}
 	if b, err := os.ReadFile(filepath.Join(wt, "keep.txt")); err != nil || string(b) != "keep\n" {
 		t.Errorf("new leaf keep.txt = (%q, %v), want it kept", b, err)

@@ -127,7 +127,7 @@ func TestDaemonGitDirToMissingPathRemoveKeepsGuards(t *testing.T) {
 				writeFile(t, filepath.Join(live, "keep.txt"), "k\n", 0o644)
 			}
 			t.Cleanup(func() { leafOpenedHook = nil })
-			return moved, "refusing to remove worktree: " + live + " changed while the removal was checking it"
+			return moved, "failed to remove worktree: `" + filepath.Base(live) + "` was replaced while the daemon was using it"
 		}},
 	} {
 		t.Run(r.name, func(t *testing.T) {

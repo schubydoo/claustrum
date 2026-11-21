@@ -84,21 +84,32 @@ var objectDirLogged atomic.Bool
 
 // statusSourceRefusal is the refusal of git.status before its first git call
 // after the excludes read, or "". common is the git directory that the trust
-// check accepted. b3081b51 answers each text there (measured on Windows). The
-// order of the checks and their place after the trust check are claustrum's own,
-// not measured.
-func statusSourceRefusal(common string) string {
+// check accepted. off is the off switch (shadowDirOff). b3081b51 answers each
+// text there (measured on Windows). The order of the checks and their place after
+// the trust check are claustrum's own, not measured.
+func statusSourceRefusal(common string, off bool) string {
 	if !objectSourceChecks {
 		return ""
 	}
 	if os.Getenv("GIT_OBJECT_DIRECTORY") != "" && objectDirLogged.CompareAndSwap(false, true) {
 		logging.Infof(objectDirLine)
 	}
-	// An empty value is no source of objects (claustrum's own, not measured).
-	if os.Getenv("GIT_ALTERNATE_OBJECT_DIRECTORIES") != "" {
-		return alternateEnvText
+	if msg := alternateEnvRefusal(off); msg != "" {
+		return msg
 	}
 	return alternatesRefusal(common, true)
+}
+
+// alternateEnvRefusal is the refusal of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
+// daemon's environment, or "". git.status answers it after at most its excludes
+// read, and git.list_branches with no git call, also with "ownGitConfigOff":true.
+// With "shadowDirOff":true (off) git runs. An empty value gives no refusal of
+// git.status (4c111e86, measured on Windows).
+func alternateEnvRefusal(off bool) string {
+	if objectSourceChecks && !off && os.Getenv("GIT_ALTERNATE_OBJECT_DIRECTORIES") != "" {
+		return alternateEnvText
+	}
+	return ""
 }
 
 // statusLinkChainRefusal is the refusal of a baseRepo that resolves through
