@@ -191,15 +191,22 @@ without the switch gets no check meanwhile (measured on Linux). Only the first s
 request logs the OFF line, and the first check after the hold the on-again line.
 A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
 Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
-While no state is kept, each git call in the hold reads again ([rule](git-rules-settings-copy.md#the-states-and-settingscontrol)).
 Claustrum's own, not measured: a hold keeps that read for later requests and none it
 interrupts, and requests sent together each read, the later winning.
-On Windows a `process.spawn` with `"sessionFoldersOff":1` gets `Invalid params` (`4c111e86`, measured on
-Windows). On Windows another type than a bool or `null` gets it too, and `null` starts the child
-(claustrum's own, not measured). The refusal comes before the `id`, launcher and `command` tests
-(claustrum's own, not measured). On Linux and macOS only `true` counts (claustrum's own, not measured).
+A `process.spawn` with `"sessionFoldersOff":1` gets `Invalid params` (`4c111e86`, measured on Linux,
+macOS and Windows). On Linux and macOS `"x"`, `0` and `{}` get it too, and a `gitRead` spawn gets it for
+`1` and `"x"`. There `null` starts the child (measured). Every other type than a bool or `null` gets it too on
+every system, and on Windows `null` starts the child (claustrum's own, not measured). The refusal comes before the `id`, launcher and `command` tests
+(claustrum's own, not measured).
 
 ```text
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
 [sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more
 ```
+
+### Before a kept state
+
+While no start-test state is kept, each git call in the hold reads the excludes again.
+Without `"shadowDirOff":true` it also runs the [start test](git-rules-settings-copy.md#the-start-test).
+Git is then asked about the repository, and its settings are read again (`4c111e86`,
+measured on Linux). Creates, removes, macOS and Windows: claustrum's own.
