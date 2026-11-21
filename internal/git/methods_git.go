@@ -2780,7 +2780,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if p.WorktreeRoot != "" {
 			recheckLocation(*checkUse, repo)
 		}
-		if r := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit, checkAsk); r != nil {
+		// At the timeoutMs deadline the check stops, and the deadline test
+		// below answers (4c111e86, measured on Linux). The time of the LFS keep
+		// does not count (keepWithinDeadline).
+		var checkDeadline context.Context
+		if p.TimeoutMs > 0 {
+			checkDeadline = callerCtx
+		}
+		if r := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit, checkAsk, checkDeadline, keepTook); r != nil {
 			u := req.use
 			if r.asked {
 				u.branchGate = checkAsk

@@ -567,8 +567,11 @@ func twoFolderFixture(t *testing.T) checkoutRuleFixture {
 // once, and every later git works. Each level below the top tree then goes to
 // one `cat-file --buffer --batch` and one long-running tree hash-object, with
 // no separate read. The second read gets the ids of the level in the order of
-// the walk, and the checked line counts all 5 objects and 2 separate runs. The
-// form follows c9125eb8 (measured on Linux). The order is claustrum's own.
+// the walk, and the checked line counts all 5 objects. The form follows c9125eb8
+// (measured on Linux). The order is claustrum's own. Each tree of a read per
+// folder depth counts as a separate run, so the count is 5: 4c111e86 counts
+// 4 for the top tree and three levels of one tree each (measured on Linux).
+// Mutation: count no tree of those reads (the count is 2).
 func TestContentCheckLevelReadsByDepth(t *testing.T) {
 	f := twoFolderFixture(t)
 	slowGit(t, "cat-file,--batch", "fail", 0, "", "")
@@ -581,7 +584,7 @@ func TestContentCheckLevelReadsByDepth(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s, want success", raw)
 	}
-	if want := checkedLineSep("2", "files", 5, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+	if want := checkedLineSep("2", "files", 5, 5, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	got, _ := objectCalls(calls)
@@ -1102,5 +1105,38 @@ func TestContentUndoText(t *testing.T) {
 	}
 	if got := contentUndoText(""); got != "" {
 		t.Errorf("contentUndoText of no text = %q, want none", got)
+	}
+}
+
+// TestContentCheckStopsAtTheDeadline: a `cat-file --batch` that answers nothing
+// for 30 s, and the timeoutMs deadline of 8 s ends while the check waits for
+// it. The check stops at once with no separate read, logs the checked line
+// with "stopped at the deadline", and the create answers the timeout of a good
+// checkout (4c111e86, measured on Linux with the same times). The deadline is
+// real: the marker of deadlineAt comes before the time of the timer, which the
+// LFS keep of the create then counts as its own. Mutations: no wait on the
+// deadline (the reply comes after 30 s), or separate reads after it (a
+// separate cat-file runs).
+func TestContentCheckStopsAtTheDeadline(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
+	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o644) })
+	logs := captureLogBuf(t)
+	begin := time.Now()
+	raw, calls := f.create(t, map[string]any{"timeoutMs": 8000})
+	if took := time.Since(begin); took > 20*time.Second {
+		t.Errorf("the create took %v, want an answer at the deadline", took)
+	}
+	if !strings.Contains(raw, `"errorCode":"timeout"`) || !strings.Contains(raw, "deadline expired after the checkout finished") {
+		t.Fatalf("git.worktree_create = %s, want the timeout of a good checkout", raw)
+	}
+	if want := checkedLineSep("0", "files", 0, 0, gitRevParse(t, f.repo, "HEAD"), "stopped at the deadline"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if strings.Contains(logs.String(), "stopped using the long-running git") {
+		t.Errorf("log:\n%s\nwant no stop line of the batch", logs)
+	}
+	if batch, separate := catFileCalls(calls); batch != 1 || separate != 0 {
+		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 0", batch, separate)
 	}
 }

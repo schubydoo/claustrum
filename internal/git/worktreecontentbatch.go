@@ -98,12 +98,27 @@ var errNoHashHelper = errors.New("no long-running hash-object for this object")
 
 // objectBatch is one long-running git of the check: `cat-file --batch`, or a
 // hash-object with --stdin-paths.
+//
+// The daemon keeps its copy of the read end of the stdin pipe until the first
+// answer of git, which shows that git started (answered). So a write to a git
+// that ended after an answer fails with "write |1: broken pipe". 4c111e86 logs
+// that cause when the batch ends after its first answer, and an end of the
+// output for a batch that ends before its first answer (measured on Linux).
 type objectBatch struct {
 	in   *os.File // our end of the stdin of git
-	inR  *os.File // the end of git, closed after git ended
+	inR  *os.File // the end of git, closed at the first answer or after git ended
 	outR *io.PipeReader
 	out  *bufio.Reader
 	done chan struct{}
+}
+
+// answered closes the copy of the daemon of the read end of the stdin pipe, at
+// the first answer of git.
+func (b *objectBatch) answered() {
+	if b.inR != nil {
+		_ = b.inR.Close()
+		b.inR = nil
+	}
 }
 
 // startBatch starts the batch of the check in the base repository, with the
@@ -173,6 +188,7 @@ func (b *objectBatch) answer(kind, id string) (body []byte, ok bool, err error) 
 	if err != nil {
 		return nil, false, err
 	}
+	b.answered()
 	f := strings.Fields(line)
 	if len(f) == 2 && f[0] == id && (f[1] == "missing" || f[1] == "ambiguous") {
 		return nil, false, nil
@@ -204,10 +220,17 @@ func (b *objectBatch) answer(kind, id string) (body []byte, ok bool, err error) 
 // close ends the batch: git reads the end of its stdin and exits. The wait
 // ends with git, at the latest at the limit of the call.
 func (b *objectBatch) close() {
+	b.drop()
+	<-b.done
+	b.answered()
+}
+
+// drop closes the pipes of the batch and does not wait for git. A read that
+// waits for an answer then ends with an error. git ends at the end of its
+// stdin, or at the limit of the call (claustrum's own).
+func (b *objectBatch) drop() {
 	_ = b.in.Close()
 	_ = b.outR.Close()
-	<-b.done
-	_ = b.inR.Close()
 }
 
 // hash asks a long-running hash-object for the id of the file at path. err
@@ -220,18 +243,23 @@ func (b *objectBatch) hash(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	b.answered()
 	return strings.TrimSpace(line), nil
 }
 
 // stopBatch ends the batch and the long-running hash-object calls of the
-// check, if they run.
+// check, if they run. After the deadline it does not wait for them.
 func (c *contentCheck) stopBatch() {
+	end := (*objectBatch).close
+	if c.atDeadline {
+		end = (*objectBatch).drop
+	}
 	if c.batch != nil {
-		c.batch.close()
+		end(c.batch)
 		c.batch = nil
 	}
 	for kind, h := range c.hashers {
-		h.close()
+		end(h)
 		delete(c.hashers, kind)
 	}
 }
@@ -374,9 +402,14 @@ func objectWriteEnv(dir string) []string {
 // repository before a separate run (askRepo) is the error, with its text, and
 // the run does not start (c9125eb8, measured on macOS for the commit).
 func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
+	if c.pastDeadline() {
+		return nil, "", errContentDeadline
+	}
 	if c.batch != nil && !c.stopped {
-		body, ok, err := c.batch.read(kind, id)
+		body, ok, err := c.readAtDeadline(c.batch, kind, id)
 		switch {
+		case c.pastDeadline():
+			return nil, "", errContentDeadline
 		case err != nil:
 			logging.Infof(longStoppedLine, "cat-file", stopCause(err))
 			c.stopBatch()
@@ -410,13 +443,18 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 // --buffer --batch` in a tree of three levels below the top then, and separate
 // runs read the other levels (measured on Linux, for both faults).
 //
+// A tree of that read counts in c.separate: 4c111e86 counts 4 separate runs
+// for the top tree and three levels of one tree each (measured on Linux).
+//
 // Claustrum's own, not measured: the trees of one level go to the read in the
-// order of the walk, a tree of that read does not count in c.separate, the
-// hash-object of the level ends with the level, no second one starts in a level
+// order of the walk, the hash-object of the level ends with the level, no second one starts in a level
 // after a stop, and a tree whose body cannot be written for it is hashed by a
 // separate run. With no fault each level gets its own read.
 func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	read := make([][]byte, len(level))
+	if c.pastDeadline() {
+		return nil, errContentDeadline.Error()
+	}
 	if c.stopped && !c.depthEnded && !level[0].top {
 		var faulted bool
 		read, faulted = c.readByDepth(level)
@@ -440,6 +478,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 					return nil, text
 				}
 				c.read++
+				c.separate++
 				bodies[i] = body
 				continue
 			case errors.Is(err, errNoHashHelper):
@@ -447,6 +486,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 					return nil, text
 				}
 				c.read++
+				c.separate++
 				bodies[i] = body
 				continue
 			}
