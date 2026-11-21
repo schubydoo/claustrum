@@ -10,7 +10,7 @@ import (
 // and keeps the others, also GIT_CONFIG_COUNT and its items (4c111e86, measured on
 // Windows). A lower-case spelling goes too, and Linux and macOS keep all five
 // (claustrum's own, not measured). Mutation: excludesReadCmd without
-// excludesReadEnv.
+// excludesReadEnv, or a name taken out of excludesReadDropped.
 func TestExcludesReadDropsFiveNamesOnWindows(t *testing.T) {
 	names := func(env []string) []string {
 		var out []string
@@ -38,7 +38,9 @@ func TestExcludesReadDropsFiveNamesOnWindows(t *testing.T) {
 		}
 		gitEnvHere = gitEnvForm{windows: windows}
 		got := names(excludesReadCmd().Env)
-		for _, n := range excludesReadDropped {
+		// A literal list, not excludesReadDropped, so that a name taken out of the
+		// drop list fails the test.
+		for _, n := range []string{"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG_PARAMETERS", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE"} {
 			if has := slices.Contains(got, n); has == windows {
 				t.Errorf("windows %t: %s present = %t, want %t", windows, n, has, !windows)
 			}
