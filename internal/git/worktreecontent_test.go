@@ -1112,13 +1112,14 @@ func TestContentUndoText(t *testing.T) {
 // for 30 s, and the timeoutMs deadline of 8 s ends while the check waits for
 // it. The check stops at once with no separate read, logs the checked line
 // with "stopped at the deadline", and the create answers the timeout of a good
-// checkout (4c111e86, measured on Linux with the same times). The deadline is
+// checkout with no `ls-files` call of the copy step (4c111e86, measured on
+// Linux with the same times). The deadline is
 // real: the marker of deadlineAt comes before the time of the timer, which the
 // LFS keep of the create then counts as its own. Mutations: no wait on the
-// deadline (the reply comes after 30 s), or separate reads after it (a
-// separate cat-file runs).
+// deadline (the reply comes after 30 s), separate reads after it (a separate
+// cat-file runs), or the copy step after it (its ls-files call runs).
 func TestContentCheckStopsAtTheDeadline(t *testing.T) {
-	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n", ".claude/settings.json": "{}\n"})
 	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
 	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o644) })
 	logs := captureLogBuf(t)
@@ -1138,5 +1139,10 @@ func TestContentCheckStopsAtTheDeadline(t *testing.T) {
 	}
 	if batch, separate := catFileCalls(calls); batch != 1 || separate != 0 {
 		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 0", batch, separate)
+	}
+	for _, c := range calls {
+		if containsSeq(c.argv, "ls-files", "--others") {
+			t.Errorf("the copy step ran after the deadline: %q", c.argv)
+		}
 	}
 }

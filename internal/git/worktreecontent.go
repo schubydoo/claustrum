@@ -196,9 +196,11 @@ type contentFile struct {
 // checkWorktreeContent runs the content check of a new worktree at leaf,
 // whose checkout read commit. It logs one line and returns nil on a match. ask
 // is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
-// check that stops at the deadline returns nil too: the caller then answers the
-// timeout.
-func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) *contentRefusal {
+// check that stops at the deadline returns nil and atDeadline: the caller then
+// answers the timeout with no copy step. 4c111e86 runs no `ls-files` call of that
+// step there (measured on Linux). The skip of its config listing is claustrum's
+// own.
+func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
 	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}
 	files, refusal := c.run()
@@ -220,14 +222,14 @@ func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string
 		len(files), word, c.read, short, c.separate, time.Since(start).Round(time.Millisecond))
 	if c.atDeadline {
 		logging.Infof("%sstopped at the deadline", line)
-		return nil
+		return nil, true
 	}
 	if refusal != nil {
 		logging.Infof("%srefused: %q", line, loggedHint(refusal.hint))
-		return refusal
+		return refusal, false
 	}
 	logging.Infof("%smatch", line)
-	return nil
+	return nil, false
 }
 
 // loggedHint is the refusal text as the log line of the check quotes it. It has no

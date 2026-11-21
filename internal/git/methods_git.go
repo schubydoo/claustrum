@@ -2774,6 +2774,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// macOS and Windows). The check runs in the state shadow only. The place
 	// before the copy step, and no check with "shadowDirOff":true or in the
 	// state fallback-git, are claustrum's own (not measured).
+	checkStopped := false
 	if checkUse != nil {
 		// With a worktreeRoot the location calls run again before the check
 		// (recheckLocation).
@@ -2787,7 +2788,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if p.TimeoutMs > 0 {
 			checkDeadline = callerCtx
 		}
-		if r := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit, checkAsk, checkDeadline, keepTook); r != nil {
+		r, stopped := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit, checkAsk, checkDeadline, keepTook)
+		checkStopped = stopped
+		if r != nil {
 			u := req.use
 			if r.asked {
 				u.branchGate = checkAsk
@@ -2813,7 +2816,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// which the pass lists nothing.
 	//
 	// Best-effort: the worktree exists, so a copy failure does not fail the request.
-	populateWorktree(req.use, req.shadow, repo, p.WorktreePath)
+	// After a content check that stopped at the deadline no copy step runs.
+	if !checkStopped {
+		populateWorktree(req.use, req.shadow, repo, p.WorktreePath)
+	}
 	// The caller's deadline does not kill the copy step. The daemon lets the step
 	// finish and then tests the deadline. If the deadline expired, the request answers
 	// timeout "after the checkout finished" and rolls back. Measured against f6010b97
