@@ -212,10 +212,9 @@ all four answer so, and the remove refuses and deletes nothing (`683cc6a9`, meas
 The create answers `not_a_repo` there, with and without `worktreeRoot`. A daemon `GIT_DIR` on
 `git.list_branches` and the create, a linked-worktree entry, macOS and Windows are claustrum's own,
 not measured.
-On Linux and macOS a `.git` folder that the daemon cannot search gets the [unusable-git
-refusal](git-worktree-create.md#request-path-folder-and-post-add-refusals) of the create instead
-(`4c111e86`, measured on macOS for mode 0000, claustrum's own on Linux), unless its folder belongs to
-another account.
+On Linux and macOS a `.git` folder that the daemon cannot search has [a create
+rule](git-worktree-create.md#request-path-folder-and-post-add-refusals), unless another account owns
+its folder.
 
 ### Frames
 
@@ -319,8 +318,7 @@ The `git version` call of class 3 has the [profile](git-rules-calls.md#hardened-
 `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon.
 claustrum matches these names by their exact upper-case letters, so on Windows a
 lower-case name stays on the call (from the code). The call drops the daemon's
-`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM`. It does not give the call the
-daemon's own `LC_ALL` and `LANGUAGE` back (both claustrum's own, not measured).
+`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM` (both claustrum's own, not measured).
 
 ### Where git cannot start
 
@@ -433,7 +431,7 @@ The repack advice is `To stop depending on that file, run "git repack -a -d" in 
 
 `git.status` has three more tests (measured on Windows):
 
-- `GIT_ALTERNATE_OBJECT_DIRECTORIES` in the daemon's environment gives `The remote machine's environment sets GIT_ALTERNATE_OBJECT_DIRECTORIES, which Claude can't use on a Windows host, so git wasn't run. Remove it from the environment, then restart the machine.`
+- `GIT_ALTERNATE_OBJECT_DIRECTORIES` in the daemon's environment gives `The remote machine's environment sets GIT_ALTERNATE_OBJECT_DIRECTORIES, which Claude can't use on a Windows host, so git wasn't run. Remove it from the environment, then restart the machine.` `git.list_branches` gives it with no git call, also with `"ownGitConfigOff":true`. `"shadowDirOff":true` skips it for both (`4c111e86`).
 - `GIT_OBJECT_DIRECTORY` there is no refusal. The log gets `[GitHandler] GIT_OBJECT_DIRECTORY from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`. claustrum logs it once (claustrum's own, not measured).
 - A `baseRepo` that resolves through a chain of 31 links passes. One of 32 or more gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.`` `git.info` runs this test on `path` too. The text names the path cleaned, so `C:/x/L32` reads as `C:\x\L32` (measured on Windows).
 

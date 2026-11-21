@@ -11,7 +11,8 @@ import (
 // The git calls that run outside any repository: the `git version` run, the
 // `--attr-source` probe, the version gate of the include scan, the excludes read
 // and the read of config text. The rules are claustrum's own, not
-// measured. Every one of them starts from the filtered
+// measured, except the environment of the two `git version` runs that
+// gitVersionRun and probeAttrSource mark as measured. Every one of them starts from the filtered
 // environment of gitChildEnv and runs in gitVersionDir.
 
 // gitVersionDropped are the names that the `git version` run removes. The match is
@@ -72,14 +73,5 @@ func gitOutsideCmd(add []string, args ...string) *exec.Cmd {
 	cmd := gitCommand(args...)
 	cmd.Dir = gitVersionDir
 	cmd.Env = append(gitChildEnv(), add...)
-	return cmd
-}
-
-// gitVersionPlain runs `git version` as the `git version` run does: the folder of
-// gitVersionDir and the environment of gitVersionEnv(nil).
-func gitVersionPlain() *exec.Cmd {
-	cmd := gitCommand("version")
-	cmd.Dir = gitVersionDir
-	cmd.Env = gitVersionEnv(nil)
 	return cmd
 }
