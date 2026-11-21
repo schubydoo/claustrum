@@ -760,7 +760,8 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// A baseRepo whose walk fails, such as a missing name, answers isRepo false with no
 	// git call. On Windows the walk goes by the names as sent, so a junction before the
-	// last name passes (4c111e86, measured on Windows). See statusBaseWalkFails.
+	// last name passes, and a ".." drops the name before it first, also a missing one
+	// (4c111e86, measured on Windows). See statusBaseWalkFails.
 	if statusBaseWalkFails(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
