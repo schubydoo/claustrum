@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 )
@@ -124,8 +125,10 @@ type liveSwitch struct {
 	stop *gitStop
 	// perCall reports that the check of session folders is off and no state is
 	// kept (perCallGate). ran is true once a git call of the request started.
+	// It is atomic: the parallel calls of a create with a listing set it at
+	// once (commitPointers).
 	perCall func() bool
-	ran     bool
+	ran     atomic.Bool
 }
 
 // perCallGate runs before each hardened git call of a request (hardenedGitCmd).
@@ -141,8 +144,7 @@ func (l *liveSwitch) perCallGate() {
 	if l == nil {
 		return
 	}
-	again := l.ran && l.perCall != nil && l.perCall()
-	l.ran = true
+	again := l.ran.Swap(true) && l.perCall != nil && l.perCall()
 	if !again {
 		return
 	}

@@ -343,7 +343,7 @@ func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *
 		hooks = hookPrecursor(ctx, u, dir, heavy).hooks()
 	} else {
 		if u.live != nil {
-			u.live.ran = true
+			u.live.ran.Store(true)
 		}
 		hooks = pre.hooks
 	}
