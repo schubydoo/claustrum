@@ -75,11 +75,11 @@ func deniedShareText(path, folder string) string {
 // name below the share root down, whose look fails, and the error of that look.
 // When no folder above the last name fails, it returns path and err, the error
 // of the look at path. So the texts name `\\host\share\sub` for a share that
-// denies every account, the folder itself for a folder that denies the account,
-// and `\\host\share\a` for a deeper path on a share that does not exist, and
-// the log line quotes the error of that folder (4c111e86, measured on Windows).
-// The prefixes keep the spelling of the request; a folder that fails in another
-// way than path is claustrum's own, not measured.
+// denies every account and `\\host\share\a` for a deeper path on a share that
+// does not exist, and the log line quotes the error of that folder (4c111e86,
+// measured on Windows where every look on the share fails). The prefixes keep
+// the spelling of the request. A folder that passes above the first one that
+// fails is claustrum's own, not measured.
 func firstFailedFolder(path string, err error) (string, error) {
 	seps := 0
 	for i := 1; i < len(path); i++ {

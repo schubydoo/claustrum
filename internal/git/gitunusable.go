@@ -41,8 +41,9 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 	return rpc.OKResult(id, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 }
 
-// shareGitDir is the `.git` folder of repo when repo is on a network share
-// (repoOnShare) and holds a real `.git` folder. It is "" otherwise. The caller
+// shareGitDir is the `.git` folder of repo or of the nearest folder above it,
+// below the share root, when repo is on a network share (repoOnShare) and that
+// `.git` is a real folder. It is "" otherwise. The caller
 // uses it only where git found no repository in a folder that the trust check
 // accepted (askGit). 4c111e86 then answers a create with unusableGitText for
 // `<baseRepo>\.git`. It answers a remove of a gone worktree with success and a

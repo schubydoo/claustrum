@@ -18,7 +18,8 @@ import (
 // the resolved path or the sent path. On Windows the link is a junction. A
 // worktree that exists keeps the lock-check refusal. A baseRepo one folder below
 // the top folder gets the same create and remove answers, and the create names
-// the `.git` of the top folder (4c111e86, measured on Windows). A `.git` file keeps the
+// the `.git` of the top folder (4c111e86, measured on Windows). A `.git` file,
+// also one above baseRepo that ends the walk below a `.git` folder, keeps the
 // answers of a local folder (claustrum's own, not measured). A folder that is
 // not on a share keeps not_a_repo and the lock-check refusal.
 func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
@@ -38,6 +39,17 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 	// A folder one level below the top folder of the repository.
 	subBase := func(t *testing.T, f shadowFixture) string {
 		sub := filepath.Join(f.repo, "sub")
+		if err := os.Mkdir(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return sub
+	}
+	// A folder below a folder whose `.git` is a file, inside the repository: the
+	// `.git` file ends the walk before the `.git` folder of the top folder.
+	belowGitFileBase := func(t *testing.T, f shadowFixture) string {
+		g := filepath.Join(f.repo, "G")
+		writeFile(t, filepath.Join(g, ".git"), "gitdir: "+f.gitDir+"\n", 0o644)
+		sub := filepath.Join(g, "sub")
 		if err := os.Mkdir(sub, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -68,6 +80,7 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(filepath.Dir(base), ".git"))) + `,"errorCode":"worktree_add_failed"}}`
 		}},
+		{"create from below a .git file on a share", belowGitFileBase, true, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
 		{"create on a local folder", repoBase, false, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
 		{"create from a .git file on a share", gitFileBase, true, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
 		{"remove of a gone worktree on a share", repoBase, true, true, false, false, false, "git.worktree_remove", func(string, string) string {
@@ -92,6 +105,9 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 			return refused(lockCheckRefusal(leaf))
 		}},
 		{"remove of a gone worktree on a local folder", repoBase, false, true, false, false, false, "git.worktree_remove", func(_, leaf string) string {
+			return refused(lockCheckRefusal(leaf))
+		}},
+		{"remove from below a .git file on a share", belowGitFileBase, true, true, false, false, false, "git.worktree_remove", func(_, leaf string) string {
 			return refused(lockCheckRefusal(leaf))
 		}},
 		{"remove from a .git file on a share", gitFileBase, true, true, false, false, false, "git.worktree_remove", func(_, leaf string) string {
