@@ -466,7 +466,9 @@ func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 // The exits of askForMissingOnShare that make no call: a path that exists after
 // all, a root that the trust check does not trust, and a state that asks git
 // nothing, such as "shadowDirOff":true (claustrum's own, not measured). Each row
-// makes no call about the repository.
+// makes no call about the repository. The positive control, the same git.info on
+// a missing path below the repository with one call, is the git.info share=true
+// row of TestShareMissingSubfolderAsksTheRepository.
 func TestShareMissingSubfolderNoAsk(t *testing.T) {
 	t.Run("a path that exists", func(t *testing.T) {
 		f := newSeededShadowFixture(t)
