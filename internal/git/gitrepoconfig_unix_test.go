@@ -446,6 +446,17 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 	if got, want := configDetail(t, gitDir), notRegularDetail(home); got != want {
 		t.Errorf("include ~: detail = %q, want %q", got, want)
 	}
+	// A `~/` value keeps the rest as written, with no clean (4c111e86, measured on
+	// Linux). Mutation: join and clean it (both rows differ).
+	if err := os.Mkdir(filepath.Join(home, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for value, want := range map[string]string{"~/sub/../x": markerDetail(home + "/sub/../x"), "~/": notRegularDetail(home + "/")} {
+		setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+value+"\n")
+		if got := configDetail(t, gitDir); got != want {
+			t.Errorf("include %s: detail = %q, want %q", value, got, want)
+		}
+	}
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+filepath.Join(home, "missing")+"\n")
 	if got := configDetail(t, gitDir); got != "" {
 		t.Errorf("absolute include of a missing file: detail = %q, want none", got)

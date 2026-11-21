@@ -671,8 +671,9 @@ type repoConfigRead struct {
 // the 16 (measured on Linux, macOS and Windows). 5fd08069 lists such a file with
 // one more git call, with or without a match, and carries no setting of it
 // (measured on Linux and macOS). claustrum makes that call. It keeps its answer
-// only for the filter rule (repoConfigRead.conditional). A file there that git
-// cannot list is not measured.
+// only for the filter rule (repoConfigRead.conditional). A file there with a
+// syntax error is refused with the text of git (4c111e86, measured on Linux). A
+// file there that git cannot list for another reason is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	if d := r.log.noteLinkTest(path); d != "" {
 		return d
@@ -822,7 +823,15 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
-			if settings, ok := listConfigFile(r.ctx, target); ok {
+			// A file with a syntax error is refused with the text of git,
+			// whatever the condition is: 4c111e86 answers it for `onbranch:`
+			// that matches or not and for `gitdir:` (measured on Linux).
+			_, settings, badLine, ok := listConfigFileText(r.ctx, target)
+			if badLine != "" {
+				versionAfterFailure()
+				return badLine
+			}
+			if ok {
 				r.conditional = append(r.conditional, lastLinePerFile(settings)...)
 			}
 		}
@@ -944,8 +953,9 @@ func configFileTests(path string, log *repoReadLog) string {
 // dir>\<dir>/inc.cfg` in a text (measured). No cell on Linux or macOS has a value that a
 // clean changes. The folder of file stays as written too: `include.path = a/../b/inc.cfg`,
 // and in that file `path = x.cfg`, gives `<git dir>/a/../b/x.cfg` in a text (measured on
-// Linux and macOS). The `~/` form is joined and cleaned as before (not measured).
-// `include.path = ~` names the home folder itself, and gets the "not a regular file" text
+// Linux and macOS). The `~/` form is the HOME value and the rest of the value as
+// written, with no clean: `~/sub/../inc.cfg` gives `<home>/sub/../inc.cfg`, and `~/`
+// gives `<home>/` (4c111e86, measured on Linux). `include.path = ~` names the home folder itself, and gets the "not a regular file" text
 // (measured on Linux).
 func includeTarget(file, value, gitDir string) (target, detail string) {
 	if d := includeValueDetail(file, value); d != "" {
@@ -964,7 +974,7 @@ func includeTarget(file, value, gitDir string) (target, detail string) {
 		if !set || relativeFor(home, false) {
 			return "", unexpanded
 		}
-		target = filepath.Join(home, value[1:])
+		target = home + value[1:]
 	case strings.HasPrefix(value, "~") || strings.HasPrefix(value, "%(prefix)/"):
 		return "", unexpanded
 	case filepath.IsAbs(value):

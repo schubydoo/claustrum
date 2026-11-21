@@ -450,8 +450,10 @@ func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 // `-install -cli-version <v>` with no -cli-dir needs the home folder for its
 // default cli folder. With no home folder it exits 2, prints the reason on stderr
 // and prints nothing on stdout. Measured on Linux against f6010b97 and 89cb6289
-// (HOME not in the environment). The stderr prefix is claustrum's own. Every
-// other case keeps exit 1, and no row measures those.
+// (HOME not in the environment). The stderr prefix is claustrum's own. `-serve`
+// exits 2 too (4c111e86, measured on Linux with HOME unset or empty). Every other
+// case keeps exit 1, and no row measures those. Mutation: drop the serve case of
+// homeFailureExitCode (the serve row exits 1).
 func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
@@ -465,6 +467,9 @@ func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
 		{"version and dir", []string{"-install", "-cli-version", "9.9.9", "-cli-dir", t.TempDir()}, 1},
 		{"no version", []string{"-install"}, 1},
 		{"bridge", []string{"-bridge", "-cli-version", "9.9.9"}, 1},
+		{"serve", []string{"-serve", "-socket", filepath.Join(t.TempDir(), "x.sock")}, 2},
+		{"bridge and serve", []string{"-bridge", "-serve"}, 1},
+		{"install and serve", []string{"-install", "-serve"}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oldErr := os.Stderr

@@ -392,6 +392,29 @@ func TestRepoConfigIncludeIfFileTests(t *testing.T) {
 	}
 }
 
+// TestRepoConfigIncludeIfBadLine pins that the file of an `includeIf` section
+// with a syntax error is refused with the text of git, whatever the condition
+// is: `onbranch:` that matches or not and `gitdir:` (4c111e86, measured on
+// Linux). A good file there is no refusal. Mutation: drop the bad-line refusal
+// of the includeIf file (every bad row gives no refusal).
+func TestRepoConfigIncludeIfBadLine(t *testing.T) {
+	repo, gitDir := configRepo(t)
+	setIncludeFile(t, gitDir, "bad.cfg", "[core\nbroken\n")
+	setIncludeFile(t, gitDir, "ok.cfg", "[core]\n\tfilemode = true\n")
+	bad := "fatal: bad config line 1 in " + strconv.Quote(filepath.Join(gitDir, "bad.cfg"))
+	for _, c := range []struct{ cond, file, want string }{
+		{"onbranch:main", "bad.cfg", bad},
+		{"onbranch:nomatch", "bad.cfg", bad},
+		{"gitdir:" + filepath.ToSlash(repo) + "/", "bad.cfg", bad},
+		{"onbranch:main", "ok.cfg", ""},
+	} {
+		setRepoConfig(t, gitDir, version0+"[includeIf \""+c.cond+"\"]\n\tpath = "+c.file+"\n")
+		if got := configDetail(t, gitDir); got != c.want {
+			t.Errorf("includeIf %s, %s: detail = %q, want %q", c.cond, c.file, got, c.want)
+		}
+	}
+}
+
 // keyNameDetail is the refusal of a setting name over the bound.
 func keyNameDetail(gitDir, section string) string {
 	return strconv.Quote(filepath.Join(gitDir, "config")) + " has a setting in section " + strconv.Quote(section) +
