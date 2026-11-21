@@ -8,7 +8,7 @@ import (
 )
 
 // The home guard of the worktree leaf deletes compares folders by identity too
-// (D2, TASK-044). Each test sets HOME to a folder inside a t.TempDir() and reaches
+// (D2). Each test sets HOME to a folder inside a t.TempDir() and reaches
 // it by a spelling that the text test lets pass. Against the tree without the
 // identity test, the deletes hit that temporary folder only, never a real home.
 

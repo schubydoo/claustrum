@@ -171,7 +171,7 @@ func TestShadowNoRepoInfoWaitsForARunningStartTest(t *testing.T) {
 			h := newLiveFixture(t)
 			h.send(t, 1, "git.info", map[string]any{"path": h.none})
 			if got := liveResult(t, h.reply(t, 1)); got != `{"isRepo":false,"repoSlug":"","defaultBranch":""}` {
-				t.Errorf("T1: before any test = %s, want no member", got)
+				t.Errorf("before any test = %s, want no member", got)
 			}
 			holdSecond(t, "init,-q,--template=", "", row.fail)
 			h.send(t, 2, "git.info", map[string]any{"path": h.repo})
@@ -185,11 +185,11 @@ func TestShadowNoRepoInfoWaitsForARunningStartTest(t *testing.T) {
 			h.send(t, 4, "git.list_branches", map[string]any{"path": h.none})
 			h.reply(t, 4)
 			if r := h.raw(t, 3); r != "" {
-				t.Fatalf("T2: git.info answered %s while the start test ran, want a wait", r)
+				t.Fatalf("git.info answered %s while the start test ran, want a wait", r)
 			}
 			h.open(h.gate2)
 			if got := liveResult(t, h.reply(t, 3)); got != row.want {
-				t.Errorf("T2/T3: after the test = %s\n  want %s", got, row.want)
+				t.Errorf("after the test = %s\n  want %s", got, row.want)
 			}
 		})
 	}
@@ -208,10 +208,10 @@ func TestShadowNoRepoStatusAndBranchesDoNotWait(t *testing.T) {
 	h.send(t, 2, "git.status", map[string]any{"path": h.none, "baseRepo": h.none})
 	h.send(t, 3, "git.list_branches", map[string]any{"path": h.none})
 	if got := liveResult(t, h.reply(t, 2)); got != `{"isRepo":false,"clean":false}` {
-		t.Errorf("T5: git.status = %s", got)
+		t.Errorf("git.status = %s", got)
 	}
 	if got := liveResult(t, h.reply(t, 3)); got != `{"isRepo":false,"branches":[]}` {
-		t.Errorf("T5b: git.list_branches = %s", got)
+		t.Errorf("git.list_branches = %s", got)
 	}
 	if r := h.raw(t, 1); r != "" {
 		t.Fatalf("git.info answered %s before the gate opened: the test did not hold", r)
@@ -310,11 +310,11 @@ func TestShadowMissingPathInfoWaitsForARunningStartTest(t *testing.T) {
 	h.send(t, 3, "git.list_branches", map[string]any{"path": h.none})
 	h.reply(t, 3)
 	if r := h.raw(t, 2); r != "" {
-		t.Fatalf("T7: git.info answered %s while the start test ran, want a wait", r)
+		t.Fatalf("git.info answered %s while the start test ran, want a wait", r)
 	}
 	h.open(h.gate2)
 	if got := liveResult(t, h.reply(t, 2)); got != `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}` {
-		t.Errorf("T7: after the test = %s, want the member \"shadow\"", got)
+		t.Errorf("after the test = %s, want the member \"shadow\"", got)
 	}
 }
 

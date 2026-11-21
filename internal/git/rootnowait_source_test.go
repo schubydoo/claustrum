@@ -14,7 +14,7 @@ import (
 const (
 	rootKeepWindows = "Windows only: a folder there holds no FIFO"
 	rootKeepDelete  = "a delete step of AGENTS.md Part A: a change there waits for the maintainer"
-	rootKeepOutside = "not a folder of the daemon in TASK-587: not checked for a FIFO"
+	rootKeepOutside = "not a folder of the daemon: not checked for a FIFO"
 )
 
 // plainOpenRootCalls lists each OpenRoot call of internal/git that does not go
