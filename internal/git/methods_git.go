@@ -291,8 +291,13 @@ func gitInfo(req *gitCall) rpc.Response {
 		}
 		return notRepo()
 	}
-	// On Windows the alternates file is checked before the next git call
-	// (alternatesRefusal).
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+	// then the alternates file are checked before the next git call
+	// (alternateEnvRefusal, alternatesRefusal). The order of the two is claustrum's
+	// own, not measured.
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -1297,8 +1302,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		return notARepoResult(req.ID, repo)
 	}
-	// On Windows the alternates file is checked before any git call, and
-	// nothing is created (alternatesRefusal).
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+	// then the alternates file are checked before any git call, and nothing is
+	// created (alternateEnvRefusal, alternatesRefusal).
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
@@ -3260,9 +3269,14 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
-		// On Windows the alternates file is checked before any git call and any
-		// delete (alternatesRefusal).
+		// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+		// then the alternates file are checked before any git call and any delete
+		// (alternateEnvRefusal, alternatesRefusal). The worktree, its entry and its
+		// branch stay.
 		if verdict == gitDirTrusted {
+			if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
