@@ -318,8 +318,7 @@ The `git version` call of class 3 has the [profile](git-rules-calls.md#hardened-
 `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>` or `GIT_CONFIG_GLOBAL` of the daemon.
 claustrum matches these names by their exact upper-case letters, so on Windows a
 lower-case name stays on the call (from the code). The call drops the daemon's
-`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM`. It does not give the call the
-daemon's own `LC_ALL` and `LANGUAGE` back (both claustrum's own, not measured).
+`GIT_CONFIG_SYSTEM` and keeps `GIT_CONFIG_NOSYSTEM` (both claustrum's own, not measured).
 
 ### Where git cannot start
 
