@@ -375,8 +375,7 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (measured). It has no -c option.
-// Its working directory is gitVersionDir. The daemon's own LC_ALL and LANGUAGE do not
-// come back: whether they do is not measured. heavy is the profile of the failed
+// Its working directory is gitVersionDir. heavy is the profile of the failed
 // listing. After the listing of unenterableBaseListing, this call gets the light
 // environment, as on 89cb6289 (measured on Linux). In the symlink-chain rows LNKb-g
 // and LNKr-g, 89cb6289 runs no `git version` (measured on Linux), and claustrum runs
@@ -395,7 +394,11 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 //
 // The names that go are those of gitVersionEnv (claustrum's own, not
 // measured). They include GIT_CONFIG_SYSTEM. GIT_CONFIG_NOSYSTEM of the daemon stays.
-// The base is the filtered environment of the daemon (gitChildEnv), then the profile.
+// The base is the filtered environment of the daemon (gitChildEnv) without
+// GIT_CONFIG and GIT_CONFIG_PARAMETERS, then the profile. The LC_ALL and LANGUAGE
+// of the daemon stay, which the listing drops: 4c111e86 keeps both on this run
+// after a failed listing of git.info (measured on Linux). The run for any other
+// method, and on macOS and Windows, is claustrum's own, not measured.
 // The names match by exact letter case, also on Windows, where the names of the
 // environment have no case. So a lower-case git_config_count or git_config_global
 // of the daemon stays on the call there.
@@ -403,7 +406,7 @@ func gitVersionRun(u gitUse, heavy bool) listingRun {
 	cmd := gitCommand("version")
 	cmd.Dir = gitVersionDir
 	profile := u.profileEnv(heavy)
-	cmd.Env = gitVersionEnv(append(withoutDaemonSSH(listingEnvBase(), profile), profile...))
+	cmd.Env = gitVersionEnv(append(withoutDaemonSSH(dropConfigOverrides(gitChildEnv()), profile), profile...))
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := gitRun(u.stop.context(), cmd)
