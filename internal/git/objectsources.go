@@ -100,13 +100,40 @@ func statusSourceRefusal(common string, off bool) string {
 	return alternatesRefusal(common, true)
 }
 
+// alternateEnvLine is the log line of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
+// daemon's environment (measured on Windows).
+const alternateEnvLine = "[GitHandler] GIT_ALTERNATE_OBJECT_DIRECTORIES from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+
+// alternateEnvLogged is true once the daemon logged alternateEnvLine.
+var alternateEnvLogged atomic.Bool
+
 // alternateEnvRefusal is the refusal of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
-// daemon's environment, or "". git.status answers it after at most its excludes
-// read, and git.list_branches with no git call, also with "ownGitConfigOff":true.
-// With "shadowDirOff":true (off) git runs. An empty value gives no refusal of
-// git.status (4c111e86, measured on Windows).
+// daemon's environment, or "". git.status and git.info answer it after at most
+// their excludes read, and git.list_branches, git.worktree_create and
+// git.worktree_remove with no git call. A create makes nothing, and a remove keeps
+// the worktree, its entry and its branch. git.status, git.info and
+// git.list_branches answer it also with "ownGitConfigOff":true, and with
+// "shadowDirOff":true (off) git runs. An empty value gives no refusal of
+// git.status and git.info (4c111e86, measured on Windows). Both switches on a
+// create and a remove are claustrum's own, not measured. A remove of a worktree
+// folder that is gone, or with worktreeRoot, does not run this check (claustrum's
+// own, not measured).
+//
+// The daemon logs alternateEnvLine once, also for an empty value (4c111e86,
+// measured on Windows: one line for a daemon of eight requests). On a request
+// that reaches this check it comes before the line of the start test (measured
+// on Windows). That the line
+// comes from this check, also with off, and its place after a start test on a
+// path that returns before the check, are claustrum's own, not measured.
 func alternateEnvRefusal(off bool) string {
-	if objectSourceChecks && !off && os.Getenv("GIT_ALTERNATE_OBJECT_DIRECTORIES") != "" {
+	if !objectSourceChecks {
+		return ""
+	}
+	value, set := os.LookupEnv("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+	if set && alternateEnvLogged.CompareAndSwap(false, true) {
+		logging.Infof(alternateEnvLine)
+	}
+	if !off && value != "" {
 		return alternateEnvText
 	}
 	return ""

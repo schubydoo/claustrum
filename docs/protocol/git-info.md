@@ -145,7 +145,7 @@ The settings copy can add files to the folder `git-shadow` beside the socket: th
 |---|---|---|
 | `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk does not resolve a junction. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
-| An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows). |
+| An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows). A daemon `GIT_ALTERNATE_OBJECT_DIRECTORIES`: [Object sources](git-rules-trust.md#the-object-sources-on-windows). |
 | A `path` behind 32 or more links | No link test (claustrum's own). | `-32603` with the link-chain text (measured on Windows). |
 | A `path` through a link to a network or device path | No link test (claustrum's own). | `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path). |
 | A `\\?\UNC\` or refused-share `path` | Does not apply. | `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals). |
