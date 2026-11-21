@@ -32,6 +32,21 @@ func fakeLauncherFacts(t *testing.T, over map[string]launcherFacts) {
 	t.Cleanup(func() { launcherPathFacts, launcherOwnUID = oldFacts, oldOwn })
 }
 
+// fakeLauncherFactsThroughLinks is fakeLauncherFacts with the facts of a path read
+// after its links, as a stat reads them.
+func fakeLauncherFactsThroughLinks(t *testing.T, over map[string]launcherFacts) {
+	t.Helper()
+	fakeLauncherFacts(t, nil)
+	launcherPathFacts = func(p string) (launcherFacts, error) {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			if f, ok := over[r]; ok {
+				return f, nil
+			}
+		}
+		return launcherFacts{uid: 0, mode: 0o755}, nil
+	}
+}
+
 // launcherDir is a temp folder after its links, so a fact override names the path
 // that the walk tests (on macOS the temp folder sits behind /var).
 func launcherDir(t *testing.T) string {
@@ -132,11 +147,114 @@ func TestCheckLauncherFileOwner(t *testing.T) {
 	uid := uint32(1000)
 	fakeLauncherFacts(t, nil)
 	checkFile(t, "ownerUid, root file", L, LauncherCheck{OwnerUID: &uid}, "", "")
-	// The lift for a non-root owner is claustrum's own, not measured.
-	fakeLauncherFacts(t, map[string]launcherFacts{L: {uid: 1000, mode: 0o755}})
-	checkFile(t, "ownerUid, own file", L, LauncherCheck{OwnerUID: &uid}, "", "")
 	fakeLauncherFacts(t, map[string]launcherFacts{L: {uid: 1234, mode: 0o755}})
 	checkFile(t, "ownerUid, other uid", L, LauncherCheck{OwnerUID: &uid}, FaultOwner, cases[2].want)
+	// ownerUid lifts another uid (4c111e86, measured on Linux).
+	other := uint32(1234)
+	checkFile(t, "ownerUid 1234, file 1234", L, LauncherCheck{OwnerUID: &other}, "", "")
+}
+
+// TestCheckLauncherFileOwnerUidOfTheLogin pins that ownerUid never lets the uid of
+// the account that signs in own the launcher or a folder above it, also with the
+// right digest (4c111e86, measured on Linux). Mutation: drop the own-uid test of
+// ownerLifts.
+func TestCheckLauncherFileOwnerUidOfTheLogin(t *testing.T) {
+	d := launcherDir(t)
+	L := writeLauncher(t, filepath.Join(d, "x", "launcher.sh"), "#!/bin/sh\n", 0o755)
+	x := filepath.Join(d, "x")
+	own := func(item string) string {
+		return "`" + item + "` belongs to the account that signs in (uid 1000). Root must own the launcher and every folder above it."
+	}
+	uid := uint32(1000)
+	for _, item := range []string{L, x} {
+		fakeLauncherFacts(t, map[string]launcherFacts{item: {uid: 1000, mode: 0o755}})
+		checkFile(t, "ownerUid of the login, "+item, L, LauncherCheck{OwnerUID: &uid}, FaultOwner, own(item))
+		checkFile(t, "ownerUid of the login and a digest, "+item, L, LauncherCheck{OwnerUID: &uid, SHA256: []string{digestOf(t, L)}}, FaultOwner, own(item))
+	}
+}
+
+// TestCheckLauncherFileNobodyOwnerUid pins that ownerUid 65534 lets uid 65534 own an
+// item only when the policy lists a digest. With no digest, or an empty list, the
+// owner fault has its own text. A wrong digest gets the digest fault (4c111e86,
+// measured on Linux, for a launcher and for a folder). Mutation: drop the digest test
+// of ownerLifts.
+func TestCheckLauncherFileNobodyOwnerUid(t *testing.T) {
+	d := launcherDir(t)
+	L := writeLauncher(t, filepath.Join(d, "x", "launcher.sh"), "#!/bin/sh\n", 0o755)
+	x := filepath.Join(d, "x")
+	text := func(item string) string {
+		return "`" + item + "` shows as uid 65534 (nobody), which the policy names as ownerUid. That uid can stand for many accounts, so it counts only if the policy also lists the launcher's SHA-256 digest. Add sha256 to sshHostLauncher."
+	}
+	uid := uint32(65534)
+	for _, item := range []string{L, x} {
+		fakeLauncherFacts(t, map[string]launcherFacts{item: {uid: 65534, mode: 0o755}})
+		checkFile(t, "no digest, "+item, L, LauncherCheck{OwnerUID: &uid}, FaultOwner, text(item))
+		checkFile(t, "empty list, "+item, L, LauncherCheck{OwnerUID: &uid, SHA256: []string{}}, FaultOwner, text(item))
+		checkFile(t, "right digest, "+item, L, LauncherCheck{OwnerUID: &uid, SHA256: []string{digestOf(t, L)}}, "", "")
+		checkFile(t, "wrong digest, "+item, L, LauncherCheck{OwnerUID: &uid, SHA256: []string{zeroDigest}}, FaultDigest,
+			"launcher `"+L+"` matches none of the SHA-256 digests in the policy. Run sha256sum on the host to see its digest.")
+	}
+}
+
+// TestCheckLauncherFileWriteBeforeOwner pins the order of the two tests of one item:
+// a launcher of the login, of uid 1234 or of uid 65534 with a write bit is writable,
+// and so is a folder of the login with mode 0777. A folder of the login with mode
+// 0755 above a launcher with mode 0777 is owner: the walk tests the folder first
+// (4c111e86, measured on Linux). Mutation: run the owner test first.
+func TestCheckLauncherFileWriteBeforeOwner(t *testing.T) {
+	d := launcherDir(t)
+	L := writeLauncher(t, filepath.Join(d, "x", "launcher.sh"), "#!/bin/sh\n", 0o755)
+	x := filepath.Join(d, "x")
+	for _, uid := range []uint32{1000, 1234, 65534} {
+		fakeLauncherFacts(t, map[string]launcherFacts{L: {uid: uid, mode: 0o777}})
+		checkFile(t, "launcher 0777", L, LauncherCheck{SHA256: []string{digestOf(t, L)}}, FaultWritable, writableText(L, "0777"))
+	}
+	fakeLauncherFacts(t, map[string]launcherFacts{x: {uid: 1000, mode: 0o777}})
+	checkFile(t, "folder of the login 0777", L, LauncherCheck{}, FaultWritable, writableText(x, "0777"))
+	fakeLauncherFacts(t, map[string]launcherFacts{x: {uid: 1000, mode: 0o755}, L: {mode: 0o777}})
+	checkFile(t, "folder of the login above a 0777 launcher", L, LauncherCheck{}, FaultOwner,
+		"`"+x+"` belongs to the account that signs in (uid 1000). Root must own the launcher and every folder above it.")
+}
+
+// TestCheckLauncherFileFolderBehindALink pins the name of a folder behind a link: the
+// walk names its real path, not the link or a path through the link. Rows: a link to a
+// folder of the login, a link and then a folder of the login, a link to a 0777 folder,
+// a relative link, and a ".." after a link, which the system applies to the target of
+// the link (4c111e86, measured on Linux). Mutation: walk the folders of the path as
+// written first.
+func TestCheckLauncherFileFolderBehindALink(t *testing.T) {
+	d := launcherDir(t)
+	link := func(target, at string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	udir := filepath.Join(d, "udir")
+	writeLauncher(t, filepath.Join(udir, "launcher.sh"), "#!/bin/sh\n", 0o755)
+	sub := filepath.Join(d, "kd", "sub")
+	writeLauncher(t, filepath.Join(sub, "launcher.sh"), "#!/bin/sh\n", 0o755)
+	link(udir, filepath.Join(d, "k4", "ul"))
+	link(filepath.Join(d, "kd"), filepath.Join(d, "k7", "ul"))
+	link("../udir", filepath.Join(d, "k11", "rel"))
+	link(sub, filepath.Join(d, "k12", "sl"))
+	own := func(item string) string {
+		return "`" + item + "` belongs to the account that signs in (uid 1000). Root must own the launcher and every folder above it."
+	}
+	fakeLauncherFactsThroughLinks(t, map[string]launcherFacts{udir: {uid: 1000, mode: 0o755}, sub: {uid: 1000, mode: 0o755}})
+	for _, c := range []struct{ row, p, item string }{
+		{"link to a folder of the login", filepath.Join(d, "k4", "ul", "launcher.sh"), udir},
+		{"link, then a folder of the login", filepath.Join(d, "k7", "ul", "sub", "launcher.sh"), sub},
+		{"relative link", filepath.Join(d, "k11", "rel", "launcher.sh"), udir},
+		{"dot-dot after a link", filepath.Join(d, "k12", "sl") + "/../sub/launcher.sh", sub},
+	} {
+		checkFile(t, c.row, c.p, LauncherCheck{}, FaultOwner, own(c.item))
+	}
+	fakeLauncherFactsThroughLinks(t, map[string]launcherFacts{udir: {mode: 0o777}})
+	checkFile(t, "link to a 0777 folder", filepath.Join(d, "k4", "ul", "launcher.sh"), LauncherCheck{}, FaultWritable, writableText(udir, "0777"))
 }
 
 // TestCheckLauncherFileNames pins not_absolute, script_suffix and missing.
@@ -290,7 +408,7 @@ func TestCheckLauncherFileOwnFUSE(t *testing.T) {
 
 // TestCheckLauncherFileLinks pins that a link to a good launcher and a chain of five
 // links pass. The walk also tests the folders after the links: a writable folder of
-// the target refuses a link to it (claustrum's own, not measured).
+// the target refuses a link to it (4c111e86, measured on Linux).
 func TestCheckLauncherFileLinks(t *testing.T) {
 	d := launcherDir(t)
 	ok := writeLauncher(t, filepath.Join(d, "ok", "launcher.sh"), "#!/bin/sh\n", 0o755)
