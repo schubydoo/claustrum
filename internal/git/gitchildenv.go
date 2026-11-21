@@ -32,7 +32,8 @@ import (
 //   - On Windows an empty HOME, USERPROFILE, PROGRAMDATA or ALLUSERSPROFILE goes,
 //     and HOMEDRIVE and HOMEPATH have their own tests. A relative
 //     SSH_AUTH_SOCK goes, on Windows unless it starts with a slash.
-//   - An empty value stays for the names of gitChildEmptyKept.
+//   - An empty value stays for the names of gitChildEmptyKept, but not for
+//     GIT_ALTERNATE_OBJECT_DIRECTORIES on Windows.
 //   - A list name (gitChildListNames) keeps the entries that are absolute and
 //     hold no ';', no '"' and no newline. The entries keep their order and
 //     their duplicates. With none left, the name goes. On Windows the list
@@ -192,7 +193,9 @@ func cleanEntry(key, value string, f gitEnvForm) (string, bool) {
 			return "", false
 		}
 	}
-	if value == "" && slices.Contains(gitChildEmptyKept, key) {
+	// On Windows an empty GIT_ALTERNATE_OBJECT_DIRECTORIES goes (4c111e86, measured
+	// on Windows).
+	if value == "" && slices.Contains(gitChildEmptyKept, key) && (!windows || key != "GIT_ALTERNATE_OBJECT_DIRECTORIES") {
 		return value, true
 	}
 	var v string
@@ -228,13 +231,19 @@ func badProgram(value string, windows bool) bool {
 
 // relativeFor reports whether value is relative by the rules of the cleaning. An
 // empty value is not. On Windows NUL in any letter case is not either, and a
-// value with a leading slash is.
+// value with one leading slash is. A value with two leading slashes and more
+// text is not, also
+// with a third one: 4c111e86 keeps a GIT_SSL_CAINFO of \\\x (measured on
+// Windows). A value that starts with // or with a mix of / and \, and the use
+// for the Kerberos file part and in xdgExcludesPath, are claustrum's own, not
+// measured.
 func relativeFor(value string, windows bool) bool {
 	if value == "" {
 		return false
 	}
 	if windows {
-		return !absoluteFor(value, true) && !strings.EqualFold(value, "NUL")
+		twoSlashes := len(value) > 2 && strings.ContainsRune(`\/`, rune(value[0])) && strings.ContainsRune(`\/`, rune(value[1]))
+		return !absoluteFor(value, true) && !twoSlashes && !strings.EqualFold(value, "NUL")
 	}
 	return value[0] != '/'
 }

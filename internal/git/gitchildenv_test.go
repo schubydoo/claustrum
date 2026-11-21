@@ -144,6 +144,11 @@ func TestGitChildEnvRelativeValues(t *testing.T) {
 		{"GIT_CONFIG_GLOBAL=/DEV/NULL", ""},
 		{"GIT_CONFIG_GLOBAL=nul", "GIT_CONFIG_GLOBAL=nul"},
 		{`GIT_CONFIG_GLOBAL=\\h\s\x`, `GIT_CONFIG_GLOBAL=\\h\s\x`},
+		{`GIT_SSL_CAINFO=\\\cl_u\x`, `GIT_SSL_CAINFO=\\\cl_u\x`},
+		{"GIT_SSL_CAINFO=//cl_u/x", "GIT_SSL_CAINFO=//cl_u/x"},
+		{"GIT_SSL_CAINFO=///cl_u/x", "GIT_SSL_CAINFO=///cl_u/x"},
+		{`GIT_SSL_CAINFO=\\`, ""}, // two slashes and no more text stay relative (claustrum's own)
+		{`SSLKEYLOGFILE=\cl_u\key.log`, ""},
 		{`HOME=\x`, ""},
 		{"HOME=/home/x", ""},
 		{`HOME=C:\u`, `HOME=C:\u`},
@@ -227,13 +232,19 @@ func TestGitChildEnvHomeAndSocket(t *testing.T) {
 }
 
 // Five names keep an empty value, and the 19 list names
-// follow the list rule.
+// follow the list rule. On Windows an empty GIT_ALTERNATE_OBJECT_DIRECTORIES goes
+// (4c111e86, measured on Windows).
 func TestGitChildEnvLists(t *testing.T) {
 	for _, n := range []string{"SSL_CERT_DIR", "GIT_SSL_CAPATH", "KRB5_CONFIG", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "SASL_PATH"} {
 		for _, f := range []gitEnvForm{linuxForm, macForm, windowsForm} {
-			checkRows(t, f, "empty value", [][2]string{{n + "=", n + "="}, {n + "=rel", ""}})
+			want := n + "="
+			if f.windows && n == "GIT_ALTERNATE_OBJECT_DIRECTORIES" {
+				want = ""
+			}
+			checkRows(t, f, "empty value", [][2]string{{n + "=", want}, {n + "=rel", ""}})
 		}
 	}
+	checkRows(t, windowsForm, "Windows", [][2]string{{"git_alternate_object_directories=", ""}})
 	for _, n := range []string{
 		"PATH", "LOCPATH", "NLSPATH", "GCONV_PATH", "LD_LIBRARY_PATH", "SASL_PATH", "SASL_CONF_PATH",
 		"KRB5_CONFIG", "SSL_CERT_DIR", "GIT_EXEC_PATH", "GIT_SSL_CAPATH", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
