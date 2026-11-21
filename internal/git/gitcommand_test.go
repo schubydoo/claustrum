@@ -26,9 +26,10 @@ func TestGitChildEnvCutsSessionFolders(t *testing.T) {
 	}
 }
 
-// A git.info with "sessionFoldersOff":true alone answers a repository with the
-// settingsControl member "shadow" on every system, as 4c111e86 does (measured on
-// Linux, macOS and Windows). With "shadowDirOff":true too the member is "off-switch".
+// After a start test gave a state, a git.info with "sessionFoldersOff":true alone
+// answers a repository with the settingsControl member "shadow", as 4c111e86 does
+// (measured on Linux, macOS and Windows). With "shadowDirOff":true too the member
+// is "off-switch".
 func TestSessionOffAloneKeepsTheControlMember(t *testing.T) {
 	requireGit(t)
 	t.Cleanup(sessiondirs.UseForTest(""))
