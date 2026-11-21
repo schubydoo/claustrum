@@ -1244,9 +1244,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// before the count check, also with a worktreeRoot. Nothing is made (measured
 	// on Linux and macOS, and on Windows for a missing baseRepo). On Windows an
 	// existing baseRepo gets it too (claustrum's own, not measured). The order
-	// against a trust refusal is not measured.
+	// against a trust refusal is not measured. 87375cc7 answers the code
+	// git_not_found there, with the same text, also with a git of the login-shell
+	// PATH that it does not use (measured on Linux and macOS). Windows is
+	// claustrum's own, not measured.
 	if gitLookupError() != nil {
-		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "git_not_found"})
 	}
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).

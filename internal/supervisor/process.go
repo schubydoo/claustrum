@@ -817,6 +817,12 @@ type gitReadStart struct {
 	step    GitReadStep
 }
 
+// GitReadLoginGit gives the git of the login-shell PATH that the pane's git of a
+// "gitRead":true spawn runs when the PATH of the daemon holds no git, or "". The
+// git methods set it (git.LoginGit). 87375cc7 runs that git there (measured on
+// Linux). The log line keeps the command git.
+var GitReadLoginGit = func() string { return "" }
+
 // SpawnGitRead starts the pane's git of a "gitRead":true spawn: the command git
 // with args in cwd. refusal is the shape refusal of args, or nil. It comes right
 // after the cwd test, so a missing cwd gets the cwd refusal of every spawn before
@@ -895,6 +901,11 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		return nil, errGivenUpID
 	}
 	cmd := exec.Command(path, argv...)
+	if gitRead != nil && errors.Is(cmd.Err, exec.ErrNotFound) {
+		if p := GitReadLoginGit(); p != "" {
+			cmd.Path, cmd.Err = p, nil
+		}
+	}
 	if cwd != "" {
 		// Stat the cwd before exec so an unusable one names the directory at
 		// fault, as the reference does, instead of Go's `fork/exec <command>:
