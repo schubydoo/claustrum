@@ -110,10 +110,12 @@ var alternateEnvLogged atomic.Bool
 // alternateEnvRefusal is the refusal of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
 // daemon's environment, or "". git.status and git.info answer it after at most
 // their excludes read, and git.list_branches, git.worktree_create and
-// git.worktree_remove with no git call, also with "ownGitConfigOff":true. A create
-// makes nothing, and a remove keeps the worktree, its entry and its branch. With
+// git.worktree_remove with no git call. A create makes nothing, and a remove keeps
+// the worktree, its entry and its branch. git.status, git.info and
+// git.list_branches answer it also with "ownGitConfigOff":true, and with
 // "shadowDirOff":true (off) git runs. An empty value gives no refusal of
-// git.status and git.info (4c111e86, measured on Windows). A remove of a worktree
+// git.status and git.info (4c111e86, measured on Windows). Both switches on a
+// create and a remove are claustrum's own, not measured. A remove of a worktree
 // folder that is gone does not run this check (claustrum's own, not measured).
 //
 // The daemon logs alternateEnvLine once, before the line of the start test, also

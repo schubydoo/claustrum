@@ -53,7 +53,7 @@ the daemon walks up from the request folder:
 
 The git-directory test has three parts. `objects` and `refs` exist, of any type on
 Windows, searchable on Linux and macOS. `refs` 0600 is measured on `git.info`,
-`git.list_branches`, a create and a remove (build `52d82f0a`). `objects` as a file is
+`git.list_branches`, a create and a remove (`52d82f0a`). `objects` as a file is
 measured on `git.info` (Linux, macOS and Windows). A root daemon and the rest are
 claustrum's own, not measured. `HEAD`
 passes. A regular `HEAD` passes when its first 255 bytes start with `ref:`,
@@ -83,7 +83,7 @@ The daemon judges the git directory G:
   `objects` or `refs` as a file, gets M3 (claustrum's own, not measured).
 - G is not an entry and holds a `commondir`: the rules of a stray `commondir`
   judge it. If only the grandparent test fails, a `commondir` that names it gets
-  M6 (build `52d82f0a`, Linux, `refs` moved away, the rest
+  M6 (`52d82f0a`, Linux, `refs` moved away, the rest
   claustrum's own, not measured).
 - G is an entry without `commondir`: M3.
 - G is an entry whose `commondir` is not a regular file of at most 1048576 bytes:
@@ -243,7 +243,7 @@ below gives the "refused" column. A `.git` file to a gone entry under the
 `worktrees` folder of a repository gets `GIT_DIR=<null>` too (measured on Linux, and
 on macOS for `git.worktree_remove` with `worktreeRoot`).
 
-A daemon `GIT_DIR` that names a regular file differs by system. On Linux and macOS
+For a daemon `GIT_DIR` that names a regular file, on Linux and macOS
 no listing runs, and the "no repository" column answers, also with an empty
 `GIT_CONFIG_KEY_0` (measured for `git.info` on Linux and macOS). On Windows a file with no `gitdir:` line gets the refusal of a
 config on the five methods: `this repository's git config cannot be used: open
@@ -255,7 +255,7 @@ Two states, measured on Linux and macOS: a daemon `GIT_COMMON_DIR`, whose
 listing gets no `GIT_DIR=<null>`, and on Linux and macOS a `.git` file that names
 a regular file.
 In both, `git.worktree_create` runs no listing where the trust check finds no
-repository, and it keeps the "no repository" column.
+repository, and keeps the "no repository" column.
 `git.worktree_remove` keeps that column unless its listing fails.
 For the `.git` file, `git.info` and `git.list_branches` run no listing either.
 The listing of `git.status` still carries `GIT_DIR=<null>`, and
@@ -367,7 +367,7 @@ A `git version` that exits 1 and writes `boom` turns the `git.info` answer on a
 regular file into `{"error":{"code":-32603,"message":"git cannot run on this host;
 git not run: exit status 1: boom"}}`.
 
-Other Windows frames stay as they are:
+Other Windows frames stay:
 
 - `git.status` with the file as `path` and a repository as `baseRepo` answers
   `{"isRepo":false,"clean":false}`.
@@ -381,8 +381,8 @@ Other Windows frames stay as they are:
 On Windows, if the listing does not start in a path that `stat` reads as not a
 folder, claustrum refuses (from the code).
 
-A Windows folder can have an access entry that denies read data and traverse to
-the user of the daemon. It keeps the `git.info` frame of a plain folder. With a
+A Windows folder whose access entry denies read data and traverse to
+the user of the daemon keeps the `git.info` frame of a plain folder. With a
 daemon token that has no privilege, the daemon refuses there with the hooks
 refusal and `exit status 128: fatal: unable to access 'NUL/config': Permission
 denied`. A folder with no deny entry keeps its frame under that token.
@@ -402,8 +402,8 @@ claustrum makes `<git text>` of both texts with the text rule of
 bytes. It drops invalid UTF-8, turns each non-printable rune into one space, and
 then trims spaces. If nothing is left, the text is the error of the git process,
 for example `exit status 128`. The cap comes before the trim, so leading white
-space counts toward the 512 bytes. For the hooks refusal
-this rule is measured on Windows. For the "cannot run" text it is claustrum's own.
+space counts toward the 512 bytes. This rule is measured on Windows for the hooks refusal
+and claustrum's own for the "cannot run" text.
 
 With the `GIT_COMMON_DIR` pin, git names a corrupt config by its absolute path
 (measured on Linux and macOS). On claustrum a syntax error in a config file of the
@@ -412,7 +412,7 @@ repository gets the
 
 ## The object sources on Windows
 
-On Windows `b3081b51` checks the object sources of a trusted repository before its git calls (measured on Windows). On Linux and macOS the same shapes are no refusal (measured). `git.status` and `git.info` answer `-32603`, a create `"errorCode":"worktree_add_failed"`. A remove answers `failed to remove worktree: could not check whether <worktreePath> is locked: ` and the text. A create and a remove run no git call. A remove deletes nothing, also for a worktree folder that is gone (measured on Windows). A create makes nothing (from the code).
+`b3081b51` checks the object sources of a trusted repository before its git calls (measured on Windows). On Linux and macOS the same shapes are no refusal (measured on Linux and macOS). `git.status` and `git.info` answer `-32603`, a create `"errorCode":"worktree_add_failed"`. A remove answers `failed to remove worktree: could not check whether <worktreePath> is locked: ` and the text. A create and a remove run no git call. A remove deletes nothing, also for a worktree folder that is gone (measured on Windows). A create makes nothing (from the code).
 
 The daemon reads `<git dir>\objects\info\alternates` and the same file of each folder that it lists. `<file>` is the file with the fault. For a chain of folders it is the file 6 levels below the repository's own file.
 
@@ -425,24 +425,24 @@ The daemon reads `<git dir>\objects\info\alternates` and the same file of each f
 | Over 1 MiB, or a folder | `` `<file>` couldn't be read as a regular file of at most 1 MiB, so git wasn't run. Check that file and its permissions. `` |
 | 1000 lines, a chain of 20 folders | `` `<file>` lists more object directories than Claude checks (at most 64 in total, nested at most 6 deep), so git wasn't run. `` and the repack advice |
 
-The repack advice is `To stop depending on that file, run "git repack -a -d" in the repository it belongs to, then delete that file.` A valid line gives the frame of `be1c1ca5`. These checks run with `"shadowDirOff":true` too (claustrum's own).
+The repack advice is `To stop depending on that file, run "git repack -a -d" in the repository it belongs to, then delete that file.` A valid line gives the frame of `be1c1ca5`. These checks run with `"shadowDirOff":true` too (claustrum's own, not measured).
 
-`git.info`, a create and a remove are measured with Windows line endings and 1000 lines only. They run only those two tests (claustrum's own).
+`git.info`, a create and a remove are measured with Windows line endings and 1000 lines only. They run no other test of this table (claustrum's own, not measured).
 
-`git.status` has three more tests (measured on Windows):
+Three more tests (measured on Windows):
 
-- `GIT_ALTERNATE_OBJECT_DIRECTORIES` in the daemon's environment gives `The remote machine's environment sets GIT_ALTERNATE_OBJECT_DIRECTORIES, which Claude can't use on a Windows host, so git wasn't run. Remove it from the environment, then restart the machine.` So do `git.info`, `git.list_branches`, a create and a remove of an existing folder, with no git call but the excludes read, also with `"ownGitConfigOff":true`. `"shadowDirOff":true` skips it (`4c111e86`).
-- `GIT_OBJECT_DIRECTORY` there is no refusal. The log gets `[GitHandler] <name> from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names` for each name, once. That is claustrum's own for `GIT_OBJECT_DIRECTORY`, and `4c111e86` for the other, also when it is empty.
+- `GIT_ALTERNATE_OBJECT_DIRECTORIES` in the daemon's environment gives `The remote machine's environment sets GIT_ALTERNATE_OBJECT_DIRECTORIES, which Claude can't use on a Windows host, so git wasn't run. Remove it from the environment, then restart the machine.` So do `git.info` after at most the excludes read, and `git.list_branches`, a create and a remove of an existing folder with no git call. It comes also with `"ownGitConfigOff":true`, and `"shadowDirOff":true` skips it (`4c111e86`, claustrum's own, not measured, for a create and a remove).
+- `GIT_OBJECT_DIRECTORY` there is no refusal. The log gets `[GitHandler] <name> from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names` for each name, once. Logging it once is claustrum's own, not measured, for `GIT_OBJECT_DIRECTORY`. For the other it is `4c111e86`, also when empty.
 - A `baseRepo` that resolves through a chain of 31 links passes. One of 32 or more gives ``Claude couldn't check that `<baseRepo>` stays on a local drive (too many links, or a loop of links), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to.`` `git.info` runs this test on `path` too. The text names the path cleaned, so `C:/x/L32` reads as `C:\x\L32` (measured on Windows).
 
-The Windows rules of a link to a network or device path, of a reparse tag and of a UNC path are on [Windows link and share paths](git-rules-windows-paths.md).
+Links to a network or device path, reparse tags and UNC paths: [Windows link and share paths](git-rules-windows-paths.md).
 
 ## A FIFO where the daemon reads a git file
 
 On Linux and macOS the daemon opens three files of its own reads without
 blocking: a `.git` file, the `commondir` file of a worktree entry and the `gitdir`
-record of a worktree entry. It reads a regular file only. Anything else there, a
-FIFO for example, is no usable file, and the read does not wait. Each rule below is measured on Linux and macOS, with a
+record of a worktree entry. It reads a regular file only. Anything else, such as a
+FIFO, is no usable file, and the read does not wait. Each rule below is measured on Linux and macOS, with a
 git that walks past a FIFO `.git`:
 
 - A `.git` that is a FIFO, a socket (measured on Linux only) or a symlink to a FIFO

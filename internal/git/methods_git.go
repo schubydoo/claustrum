@@ -1303,7 +1303,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		return notARepoResult(req.ID, repo)
 	}
 	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
-	// then the alternates file are checked before any git call, and nothing is
+	// the alternates file are checked before any git call, and nothing is
 	// created (alternateEnvRefusal, alternatesRefusal).
 	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
@@ -3270,7 +3270,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
-		// then the alternates file are checked before any git call and any delete
+		// the alternates file are checked before any git call and any delete
 		// (alternateEnvRefusal, alternatesRefusal). The worktree, its entry and its
 		// branch stay.
 		if verdict == gitDirTrusted {
