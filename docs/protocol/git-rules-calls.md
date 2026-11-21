@@ -16,7 +16,13 @@ Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
 listing, a request with no [kept value](git-rules-session-folders.md#the-off-switch) runs the excludes read, `git config
 --includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
-gives it and the `--attr-source` probe. There are two profiles:
+gives it and the `--attr-source` probe. On macOS a create in attach mode after a git.info runs one more
+listing in `baseRepo` right before the listing of its add. Without a git.info first it does the same (claustrum's own, not measured). On macOS, after a hold that ends at the
+add, the create runs [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository)
+after the start test and before the read of the config. With a good answer, it makes no
+such call after it (`4c111e86`, measured on macOS for a checkout of a branch). An add of a commit id from `sourceBranch` keeps the call of its content check, after the read (claustrum's own, not measured). Linux keeps the call after the read, and
+Windows does not ask there (claustrum's own, not measured). Its step after a bad answer there is
+claustrum's own, not measured. There are two profiles:
 
 - The heavy profile forbids every transport protocol
   (`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`). `git.info`, `git.list_branches` and
