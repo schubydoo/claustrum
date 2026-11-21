@@ -116,7 +116,8 @@ var alternateEnvLogged atomic.Bool
 // "shadowDirOff":true (off) git runs. An empty value gives no refusal of
 // git.status and git.info (4c111e86, measured on Windows). Both switches on a
 // create and a remove are claustrum's own, not measured. A remove of a worktree
-// folder that is gone does not run this check (claustrum's own, not measured).
+// folder that is gone, or with worktreeRoot, does not run this check (claustrum's
+// own, not measured).
 //
 // The daemon logs alternateEnvLine once, before the line of the start test, also
 // for an empty value (4c111e86, measured on Windows: one line for a daemon of
