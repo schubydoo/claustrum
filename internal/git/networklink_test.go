@@ -276,6 +276,8 @@ func TestUnlookableShareRow(t *testing.T) {
 	const missingDeepText = "Claude couldn't look at `\\\\127.0.0.1\\nosuchsharecl\\a` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
 	const missingDeepLine = `[GitHandler] looking for links in "\\\\127.0.0.1\\nosuchsharecl\\a\\b\\c": "CreateFile \\\\127.0.0.1\\nosuchsharecl\\a: The network name cannot be found."`
 	const deniedDeepText = "Claude couldn't check `\\\\127.0.0.1\\cldeny\\sub\\repo\\x\\y` for links because Windows didn't let your account read `\\\\127.0.0.1\\cldeny\\sub`, so git wasn't run. Ask for read access to that folder."
+	// A path one name below the root of a share that denies the account names
+	// the path twice (4c111e86, measured on Windows).
 	const denyMeText = "Claude couldn't check `\\\\127.0.0.1\\cldeny2\\repo` for links because Windows didn't let your account read `\\\\127.0.0.1\\cldeny2\\repo`, so git wasn't run. Ask for read access to that folder."
 	for _, c := range []struct{ path, want string }{
 		{missing, missingText},

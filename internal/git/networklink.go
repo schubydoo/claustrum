@@ -57,10 +57,9 @@ func networkLinkRefusal(path string) string {
 // lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal.
 var lstatPath = os.Lstat
 
-// unlookableShareText and longUNCText name the path cleaned, as networkLinkText
-// does. The rows send clean paths, so the cleaning is claustrum's own, not measured.
-// unlookablePathRefusal gives unlookableShareText the first folder whose look
-// failed (firstFailedFolder).
+// unlookableShareText names the folder it is given, cleaned. longUNCText names
+// the path cleaned, as networkLinkText does. The rows send clean paths, so the
+// cleaning is claustrum's own, not measured.
 func unlookableShareText(path string) string {
 	return "Claude couldn't look at `" + filepath.Clean(path) + "` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
 }
@@ -75,9 +74,10 @@ func deniedShareText(path, folder string) string {
 // name below the share root down, whose look fails, and the error of that look.
 // When no folder above the last name fails, it returns path and err, the error
 // of the look at path. So the texts name `\\host\share\sub` for a share that
-// denies every account and `\\host\share\a` for a deeper path on a share that
-// does not exist, and the log line quotes the error of that folder (4c111e86,
-// measured on Windows where every look on the share fails). The prefixes keep
+// denies every account, the path itself for a path one name below the root of
+// a share that denies the account, and `\\host\share\a` for a deeper path on a
+// share that does not exist, and the log line quotes the error of that folder
+// (4c111e86, measured on Windows where every look on the share fails). The prefixes keep
 // the spelling of the request. A folder that passes above the first one that
 // fails is claustrum's own, not measured.
 func firstFailedFolder(path string, err error) (string, error) {
@@ -112,6 +112,7 @@ func longUNCText(path string) string {
 // git.worktree_create and git.worktree_remove (measured on Windows). A missing
 // folder on a share and a path on a missing drive pass (measured on Windows).
 //
+// A failed look names the first folder whose look failed (firstFailedFolder).
 // 4c111e86 logs one "looking for links" line for a share that does not exist.
 // It gives deniedShareText for a share that denies every account. It refuses a
 // directory symbolic link on a share that answers with shareLinkText. A host
