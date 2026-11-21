@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -505,5 +506,34 @@ func TestGitInfoWithNoGitInThePath(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "[GitHandler]") {
 		t.Errorf("log lines of the git handler:\n%s", logs.String())
+	}
+}
+
+// With no git in the PATH of the daemon, git.list_branches answers the "no
+// repository" shape and runs no test, also as the first git request of a daemon,
+// and with "sessionFoldersOff":true. The folder of the daemon holds the lock file
+// only. A first request with "shadowDirOff":true makes no folder. 4c111e86 answers
+// so (measured on Linux and macOS). Mutation: drop the no-git step of
+// gitListBranches, and the start test answers its cannot-run text.
+func TestGitListBranchesWithNoGitInThePath(t *testing.T) {
+	f := newShadowFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`
+	if raw, _ := f.call(t, "git.list_branches", map[string]any{"path": f.repo, "shadowDirOff": true}); raw != want {
+		t.Errorf("git.list_branches with shadowDirOff = %s\nwant %s", raw, want)
+	}
+	if names := daemonFolders(t, f.run); names != nil {
+		t.Errorf("git-shadow after a request with shadowDirOff holds %v, want no folder", names)
+	}
+	for _, extra := range []map[string]any{nil, {"sessionFoldersOff": true}, nil} {
+		params := map[string]any{"path": f.repo}
+		maps.Copy(params, extra)
+		raw, calls := f.call(t, "git.list_branches", params)
+		if raw != want || len(calls) != 0 {
+			t.Errorf("git.list_branches %v = %s after %d git calls\nwant %s after none", extra, raw, len(calls), want)
+		}
+	}
+	if got := entryNames(t, daemonFolder(t, f.run)); !slices.Equal(got, []string{shadowLockName}) {
+		t.Errorf("folder of the daemon holds %v, want the lock file only", got)
 	}
 }

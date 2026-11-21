@@ -1020,6 +1020,14 @@ func gitListBranches(req *gitCall) rpc.Response {
 		}
 		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
+	// With no git in the PATH of the daemon, a request with no "shadowDirOff":true
+	// answers the "no repository" shape, runs no start test and makes the folder of
+	// the daemon, as git.info does (4c111e86, measured on Linux and macOS, the folder
+	// on Linux). Windows is not measured.
+	if !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		req.shadow.folderWithNoTest()
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
+	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGate). The answer has the error object of git.info (measured).
 	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path); msg != "" {
