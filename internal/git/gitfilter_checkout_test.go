@@ -548,9 +548,8 @@ func TestRepositoryFilterCount(t *testing.T) {
 
 // TestEqualsNameWithNoItem: in the state shadow with a settings copy, a name with
 // "=" that only the repository defines with "smudge = cat" gets no read-tree item.
-// With equalsNameNeedsNoItem, as on Windows, the create succeeds (4c111e86,
-// measured on Windows). Without it, as on Linux and macOS, it keeps the refusal
-// (claustrum's own, not measured). A smudge program keeps the refusal on every
+// With equalsNameNeedsNoItem the create succeeds (4c111e86, measured on Linux,
+// macOS and Windows). Without it the create keeps the refusal. A smudge program keeps the refusal on every
 // system (TestCheckoutRefusalOrder).
 func TestEqualsNameWithNoItem(t *testing.T) {
 	eqText := "this repository's git config cannot be used: the filter \"a=b\" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it"
@@ -579,10 +578,10 @@ func TestEqualsNameWithNoItem(t *testing.T) {
 	}
 }
 
-// TestEqualsNameRefusalStays: with equalsNameNeedsNoItem, as on Windows, a name with
-// "=" that only the repository defines keeps the refusal with no settings copy, with
-// a bare `smudge` line and with a `smudge` value that does not pass (claustrum's own,
-// not measured).
+// TestEqualsNameRefusalStays: with equalsNameNeedsNoItem, a name with
+// "=" that only the repository defines keeps the refusal with a bare `smudge` line
+// and with a `smudge` value that does not pass (4c111e86, measured with `tr a b`
+// on Linux and macOS with a settings copy), and with no settings copy (claustrum's own, not measured).
 func TestEqualsNameRefusalStays(t *testing.T) {
 	eqText := "this repository's git config cannot be used: the filter \"a=b\" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it"
 	prev := equalsNameNeedsNoItem
@@ -601,5 +600,15 @@ func TestEqualsNameRefusalStays(t *testing.T) {
 				t.Errorf("plan %q, refusal %q\nwant refusal %q", plan.args, plan.refusal, eqText)
 			}
 		})
+	}
+}
+
+// equalsNameNeedsNoItem holds on every system: 4c111e86 passes [filter "a=b"]
+// smudge = cat with a settings copy on Linux, macOS and Windows (measured).
+// Mutation: set equalsNameNeedsNoItem to false in gitfilter.go. The test then
+// fails.
+func TestEqualsNameNeedsNoItemOnEverySystem(t *testing.T) {
+	if !equalsNameNeedsNoItem {
+		t.Fatal("equalsNameNeedsNoItem is false, want true")
 	}
 }

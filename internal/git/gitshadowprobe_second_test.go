@@ -20,15 +20,11 @@ func lowerSecondProbeBound(t *testing.T, bound, drain time.Duration) {
 }
 
 // exit128Runs is the count of calls about the repository after a first call
-// that exited 128 and a second run that exited 0: three on Linux and macOS
-// (probeConfigFreeRun), two on Windows. The third run of these tests matches
-// the stub rule of the first call, so it exits 128 too.
-func exit128Runs() int {
-	if probeConfigFreeRun {
-		return 3
-	}
-	return 2
-}
+// that exited 128 and a second run that exited 0: three on every system (52d82f0a
+// on Linux and macOS, 4c111e86 on Windows). The third run of these tests matches
+// the stub rule of the first call, so it exits 128 too. Mutation: the third run
+// on Linux and macOS only; the Windows rows then count two.
+func exit128Runs() int { return 3 }
 
 // secondProbeCall is the call about the repository with a GIT_DIR, or false.
 func secondProbeCall(calls []envCall) (envCall, bool) {
@@ -42,8 +38,8 @@ func secondProbeCall(calls []envCall) (envCall, bool) {
 
 // TestSecondProbeAfterExit128 pins the second run of c8e2f083 on git.info. A
 // first call that exits 128 gets one more run with GIT_DIR=<.probe>, in the
-// folder `.probe` (measured on Linux and Windows). Exit 0 there is
-// the "no repository" answer. A failed second run gives the error with the
+// folder `.probe` (measured on Linux and Windows). Exit 0 there gets the third
+// run, which exits 128 here, and the answer is "no repository". A failed second run gives the error with the
 // text of the first call, or its exec error when it wrote none. Only the
 // Windows working folder and the exit 0 answer are measured. An exit 1 of the
 // first call makes no second run. Mutations: skip the branch of secondProbe in
