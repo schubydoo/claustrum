@@ -320,9 +320,10 @@ func gitDirUnsearchable(g string) bool {
 // four answer so (683cc6a9, measured on Linux). The create answers not_a_repo
 // there, with and without worktreeRoot. A daemon GIT_DIR on git.list_branches
 // and the create, a linked-worktree entry, macOS and Windows are claustrum's own,
-// not measured. With a daemon GIT_COMMON_DIR the verdict stays, because no git
-// call could carry the pin of noRepoPin then (noRepoPinned). The remove keeps the
-// refusal of the trust check and deletes nothing (683cc6a9, measured on Linux).
+// not measured. With a daemon GIT_COMMON_DIR the verdict stays (claustrum's own,
+// not measured), because no git call could carry the pin of noRepoPin then
+// (noRepoPinned). The remove keeps the refusal of the trust check and deletes
+// nothing (683cc6a9, measured on Linux).
 func readGitDirTrust(dir string, readMethod bool) gitDirTrust {
 	t := requestGitDirTrust(dir, readMethod)
 	if t.unsearchable && !daemonCommonDirSet() {

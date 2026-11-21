@@ -33,7 +33,7 @@ A refused remove deletes nothing (from the code).
 On Windows these refuse the repository path of all five methods with no git call: `"success":false` on a remove, `worktree_add_failed` on a create, else `-32603`.
 
 - `\\?\UNC\…`: `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. ``
-- Missing share, also any other failed look (claustrum's own, not measured): `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. ``, and the log gets `[GitHandler] looking for links in "<path>": "CreateFile <path>: The network name cannot be found."`
+- Missing share, also any other failed look (claustrum's own, not measured): `` Claude couldn't look at `<path>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. ``, and the log gets `[GitHandler] looking for links in "<path>": "<error text>"`
 - Share denying every account: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 

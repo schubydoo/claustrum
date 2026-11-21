@@ -205,12 +205,13 @@ are macOS and Windows).
 ### A git directory that the daemon cannot search
 
 `git.info`, `git.status`, `git.list_branches` and `git.worktree_create` first answer "no
-repository" for a G that the daemon cannot search, unless the daemon sets `GIT_COMMON_DIR`. For a
-daemon `GIT_DIR` that names a folder of mode 0600, `git.info` and `git.status` answer so (measured
-on Linux). For a `.git` file that names such a G, all four answer so (`683cc6a9`, measured on
-Linux). The create answers `not_a_repo` there, with and without `worktreeRoot`. The remove refuses
-it and deletes nothing (`683cc6a9`, measured on Linux). A daemon `GIT_DIR` on `git.list_branches`
-and the create, a linked-worktree entry, macOS and Windows are claustrum's own, not measured.
+repository" for a G that the daemon cannot search. A daemon `GIT_COMMON_DIR` stops that
+(claustrum's own, not measured). For a daemon `GIT_DIR` that names a folder of mode 0600,
+`git.info` and `git.status` answer so (measured on Linux). For a `.git` file that names such a G,
+all four answer so, and the remove refuses and deletes nothing (`683cc6a9`, measured on Linux).
+The create answers `not_a_repo` there, with and without `worktreeRoot`. A daemon `GIT_DIR` on
+`git.list_branches` and the create, a linked-worktree entry, macOS and Windows are claustrum's own,
+not measured.
 On Linux and macOS a `.git` folder that the daemon cannot search gets the [unusable-git
 refusal](git-worktree-create.md#request-path-folder-and-post-add-refusals) of the create instead
 (`4c111e86`, measured on macOS for mode 0000, claustrum's own on Linux), unless its folder belongs to

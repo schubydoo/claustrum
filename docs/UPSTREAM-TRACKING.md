@@ -74,13 +74,14 @@ The script needs network access. It does these steps:
    is itself the "new release" signal.
 2. Fetch the manifest. Download the `linux-amd64` `claude-ssh.zst`. Check it
    against the manifest checksum. Decompress it.
-3. Build claustrum. Then diff the two binaries on the items claustrum must match:
-   - method names (`server.*`/`files.*`/`git.*`/`process.*` literals),
-   - CLI flags (`-help` output),
-   - the `-version` format,
-   - the app-facing string set (errors, `[Server]`/`[process.Manager]`/
-     `[frameSink]`/`[shellenv]` log lines, flag help).
-4. With no drift in the checked surface, print `PASS`. With drift, print `DRIFT`
+3. Build claustrum. Then check the two binaries:
+   - 19 listed method names, which both must hold, and `server.version`, which
+     both must lack,
+   - CLI flags (`-help` output), both ways,
+   - 14 listed app-facing strings: a reference string that claustrum lacks is
+     drift.
+4. Print the `-version` shape of both binaries for a person to compare.
+5. With no drift in the checked items, print `PASS`. With drift, print `DRIFT`
    with the specifics, and exit with a non-zero status.
 
 This check starts no daemon. It runs the downloaded reference only with `-help`
@@ -88,7 +89,7 @@ and `-version`.
 
 ## Step 3 — authoritative byte-for-byte recheck (on a VM)
 
-The static check catches methods, flags, and strings that were added or removed.
+The static check catches only drift in the checked items of Step 2.
 Frame-level byte-identity covers result field order, stream framing, error bodies,
 and `reattach` semantics. To check it, run one frame battery against the new
 reference and against claustrum, and diff the results:
@@ -175,7 +176,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D28](DIVERGENCES.md#d28) | Always-on, Linux and macOS | No, off the wire | After a shutdown `SIGTERM`, the group of an ended child gets no `SIGKILL` |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
-| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the static check's `-version` diff | The `claustrum.conf` file |
+| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the `-version` shape that the static check prints | The `claustrum.conf` file |
 | [CT-4](DIVERGENCES.md#ct-4) | Not built | No | None |
 | [CT-5](DIVERGENCES.md#ct-5) | Opt-in, Windows | No | An extra named-pipe transport |
 | [CT-6](DIVERGENCES.md#ct-6) | Off | No | An opt-in size cap fails `files.extract_tar` |

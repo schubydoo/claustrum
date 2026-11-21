@@ -235,8 +235,7 @@ type liveSibling struct {
 // in order, or none when every sibling is provably gone (so the sweep runs). A run
 // dir that cannot be listed gives one entry. run/<clientId>/ dirs under base other than own
 // are examined in os.ReadDir (sorted) order. A name of any shape counts here, not
-// only 8 lowercase hex. The caller spares both roots for a sibling of another
-// shape (claustrum's own, not measured). claustrum stats each socket, THEN
+// only 8 lowercase hex. claustrum stats each socket, THEN
 // dials it, and only a genuinely absent or dead socket clears it. A
 // permission-denied stat, a slow (timed-out) dial, or any dial error other than
 // connection-refused / not-a-socket / not-found leaves the sibling's liveness in
