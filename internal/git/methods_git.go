@@ -759,8 +759,7 @@ func gitStatus(req *gitCall) rpc.Response {
 		}
 	}
 	// A baseRepo whose walk fails, such as a missing name, answers isRepo false with no
-	// git call. On Windows the walk goes by the names as sent, so a junction before the
-	// last name passes (4c111e86, measured on Windows). See statusBaseWalkFails.
+	// git call. See statusBaseWalkFails.
 	if statusBaseWalkFails(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -902,6 +901,11 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	sp, ok := statusPathOf(p.Path, p.BaseRepo)
 	if !ok {
+		return notRepo
+	}
+	// On Windows a `path` that cannot be opened as a folder answers here, with no
+	// call of statusWorkTreeProbe (statusPathOpenFails).
+	if statusPathOpenFails(filepath.Clean(p.Path)) {
 		return notRepo
 	}
 	probeUse := req.use.atGitDirCommand()
