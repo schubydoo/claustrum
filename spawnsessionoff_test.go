@@ -33,7 +33,7 @@ func TestSpawnSessionOffType(t *testing.T) {
 		want  string
 	}{
 		{true, `1`, invalid},
-		{true, `"yes"`, invalid},
+		{true, `"yes"`, invalid}, // claustrum's own, not measured
 		{true, `true`, ok},
 		{true, `false`, ok},
 		{true, `null`, ok},
