@@ -174,7 +174,8 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 // existing subfolder: once for git.info and a create, two times for a remove
 // (measured on Windows). Its replies stay those of a missing path. git.status and
 // git.list_branches make no call (measured). A missing path that is not on a
-// share keeps no call about the repository.
+// share keeps no call about the repository. A remove keeps the worktree, the
+// registration that names the gone leaf and the branch (claustrum's own).
 func TestShareMissingSubfolderAsksTheRepository(t *testing.T) {
 	const dubious = "fatal: detected dubious ownership in repository at '//127.0.0.1/s/repo'\n"
 	notRepoInfo := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}}`
@@ -213,7 +214,14 @@ func TestShareMissingSubfolderAsksTheRepository(t *testing.T) {
 				answerProbe(t, 128, "", dubious)
 				answerSecondProbe(t, 0, "")
 				leaf := filepath.Join(base, ".claude", "worktrees", "w1")
+				remove := row.method == "git.worktree_remove"
+				if remove {
+					seedGoneRegistration(t, f, leaf)
+				}
 				raw, calls := f.call(t, row.method, map[string]any{"path": base, "baseRepo": base, "worktreePath": leaf, "branchName": "w1"})
+				if remove {
+					wantNothingRemoved(t, f)
+				}
 				// The calls name the folders of this fixture: give them in the
 				// form of the fixture of the other row.
 				f.d.Shadow.mu.Lock()
@@ -266,6 +274,97 @@ func TestShareMissingSubfolderAsksTheRepository(t *testing.T) {
 	}
 }
 
+// seedGoneRegistration gives the fixture a branch w1 and a registration w1
+// whose record names the gone leaf, so a remove that deletes shows it.
+func seedGoneRegistration(t *testing.T, f shadowFixture, leaf string) {
+	t.Helper()
+	buildGit(t, f.repo, "branch", "w1")
+	entry := filepath.Join(f.gitDir, "worktrees", "w1")
+	writeFile(t, filepath.Join(entry, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+	writeFile(t, filepath.Join(entry, "commondir"), "../..\n", 0o644)
+	writeFile(t, filepath.Join(entry, "HEAD"), "ref: refs/heads/w1\n", 0o644)
+}
+
+// wantNothingRemoved fails the test unless the worktree wr, both registrations
+// and both branches of the fixture after seedGoneRegistration are there.
+func wantNothingRemoved(t *testing.T, f shadowFixture) {
+	t.Helper()
+	for _, p := range []string{f.wt, filepath.Join(f.gitDir, "worktrees", "wr"), filepath.Join(f.gitDir, "worktrees", "w1", "gitdir")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("after the remove: %v", err)
+		}
+	}
+	for _, b := range []string{"wr", "w1"} {
+		if !branchExists(t, f.repo, b) {
+			t.Errorf("after the remove the branch %s is gone", b)
+		}
+	}
+}
+
+// TestShareMissingSubfolderRemoveAfterOneBadAnswer sends git.worktree_remove on
+// a missing baseRepo below a repository on a share. After a first bad answer and
+// a second good one, the remove takes the old steps. Its reply and its other
+// calls equal those of the same remove that is not on a share, and it deletes
+// nothing. After two answers with a text it answers the lock-check refusal with
+// that text and deletes nothing (claustrum's own, not measured).
+func TestShareMissingSubfolderRemoveAfterOneBadAnswer(t *testing.T) {
+	const dubious = "fatal: detected dubious ownership in repository at '//127.0.0.1/s/repo'\n"
+	// run sends the remove and gives its reply, with the fixture paths masked,
+	// and its calls that ask no question about the repository.
+	run := func(t *testing.T, share bool, answer func(*testing.T)) (string, []string) {
+		f := newSeededShadowFixture(t)
+		base := filepath.Join(f.repo, "missing", "deeper")
+		old := repoOnShare
+		repoOnShare = func(repo string) bool { return share && repo == base }
+		t.Cleanup(func() { repoOnShare = old })
+		answer(t)
+		leaf := filepath.Join(base, ".claude", "worktrees", "w1")
+		seedGoneRegistration(t, f, leaf)
+		raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": leaf, "branchName": "w1"})
+		wantNothingRemoved(t, f)
+		if _, err := os.Lstat(base); !os.IsNotExist(err) {
+			t.Errorf("the missing path: %v, want none", err)
+		}
+		var other []envCall
+		for _, c := range calls {
+			if !c.isProbe() {
+				other = append(other, c)
+			}
+		}
+		mask := strings.NewReplacer(f.repo, "REPO")
+		return mask.Replace(raw), shareCallLines(other)
+	}
+	// oneBad answers the first call about the repository with exit 128, and the
+	// later ones by the real git.
+	oneBad := func(t *testing.T) {
+		answerProbe(t, 128, "", dubious)
+		answerSecondProbe(t, 0, "")
+		t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
+		t.Setenv("CLAUSTRUM_GITSTUB_NTH", "1")
+	}
+	t.Run("a bad and a good answer", func(t *testing.T) {
+		var raw, want string
+		var calls, wantCalls []string
+		t.Run("share", func(t *testing.T) { raw, calls = run(t, true, oneBad) })
+		t.Run("local", func(t *testing.T) { want, wantCalls = run(t, false, oneBad) })
+		if raw != want {
+			t.Errorf("git.worktree_remove = %s\nwant the reply off the share %s", raw, want)
+		}
+		if !reflect.DeepEqual(calls, wantCalls) || len(calls) == 0 {
+			t.Errorf("other calls = %v\nwant those off the share %v", calls, wantCalls)
+		}
+	})
+	t.Run("two answers with a text", func(t *testing.T) {
+		raw, _ := run(t, true, func(t *testing.T) { answerProbe(t, 1, "", "boom\n") })
+		leaf := filepath.Join("REPO", "missing", "deeper", ".claude", "worktrees", "w1")
+		text := "failed to remove worktree: could not check whether " + leaf + " is locked: " +
+			repoCheckFailedText("REPO", "boom")
+		if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonQuoted(t, text) + `}}`; raw != want {
+			t.Errorf("git.worktree_remove = %s\nwant %s", raw, want)
+		}
+	})
+}
+
 // shareCallLines gives each call as its folder and its argv.
 func shareCallLines(calls []envCall) []string {
 	var out []string
@@ -275,11 +374,13 @@ func shareCallLines(calls []envCall) []string {
 	return out
 }
 
-// TestShareMissingSubfolderFailedStartTest sends git.info and a create on a
-// missing path below a repository on a share, with a start test that fails. The
-// request answers the text of the failed test in the frame of its method
-// (claustrum's own, not measured). A missing path that is not on a share starts
-// no test and keeps the replies of a missing path.
+// TestShareMissingSubfolderFailedStartTest sends git.info, a create and a
+// remove on a missing path below a repository on a share, with a start test that
+// fails. The request answers the text of the failed test in the frame of its
+// method (claustrum's own, not measured). A missing path that is not on a share
+// starts no test for git.info and a create, and keeps the replies of a missing
+// path. A remove answers the text there too, as before. Each remove deletes
+// nothing.
 func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 	text := failedTestText("this repository's git config cannot be used: boom")
 	q := jsonQuoted(t, text)
@@ -292,6 +393,8 @@ func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 		{"git.worktree_create", true, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + q + `,"errorCode":"worktree_add_failed"}}`},
 		{"git.info", false, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`},
 		{"git.worktree_create", false, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`},
+		{"git.worktree_remove", true, ""},
+		{"git.worktree_remove", false, ""},
 	} {
 		t.Run(fmt.Sprintf("%s share=%v", row.method, row.share), func(t *testing.T) {
 			f := newShadowFixture(t)
@@ -301,9 +404,22 @@ func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 			t.Cleanup(func() { repoOnShare = old })
 			failCallSeven(t, "boom\n")
 			leaf := filepath.Join(base, ".claude", "worktrees", "w1")
+			remove := row.method == "git.worktree_remove"
+			if remove {
+				seedGoneRegistration(t, f, leaf)
+			}
 			raw, _ := f.call(t, row.method, map[string]any{"path": base, "baseRepo": base, "worktreePath": leaf, "branchName": "w1"})
-			if raw != row.want {
-				t.Errorf("%s = %s\nwant %s", row.method, raw, row.want)
+			// The want of a remove names the leaf of this fixture.
+			want := row.want
+			if want == "" {
+				want = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+					jsonQuoted(t, "failed to remove worktree: could not check whether "+leaf+" is locked: "+text) + `}}`
+			}
+			if raw != want {
+				t.Errorf("%s = %s\nwant %s", row.method, raw, want)
+			}
+			if remove {
+				wantNothingRemoved(t, f)
 			}
 			if _, err := os.Lstat(base); !os.IsNotExist(err) {
 				t.Errorf("the missing path: %v, want none", err)
