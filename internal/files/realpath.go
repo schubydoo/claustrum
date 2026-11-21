@@ -2,6 +2,7 @@ package files
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -25,9 +26,11 @@ type realpathParams struct {
 func (p *realpathParams) ExpandPaths() {}
 
 // realpathErrData is the data member of a -32603 reply of files.realpath.
+// StoppedShort is set for too_many_links on Windows (loopStopsShort).
 type realpathErrData struct {
-	Reason string `json:"reason"`
-	Errno  int    `json:"errno"`
+	Reason       string `json:"reason"`
+	Errno        int    `json:"errno"`
+	StoppedShort bool   `json:"stoppedShort,omitempty"`
 }
 
 const (
@@ -86,7 +89,8 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // A dangling link with missingLeaf gives dangling, and wouldBe only if the parent
 // of its target exists. A dangling link without missingLeaf gives the plain
 // exists:false (claustrum's own, not measured). On Windows a missing path first
-// takes the failure of its nearest existing folder (realpathMissingFailure).
+// takes the failure of its nearest existing folder, or the error 1921 of a
+// folder on the way (realpathMissingFailure).
 //
 // A path through a regular file, as <file>/a, gives the plain exists:false, with
 // and without missingLeaf (4c111e86, measured on Linux, and for <file>/a with no
@@ -194,9 +198,13 @@ func wouldBeUnder(path string) (string, bool) {
 }
 
 // realpathReasonData is the data member of the no_usable_name reply, which has
-// no errno.
+// no errno. On Windows it has atLetter "share" for a path whose own drive is a
+// network drive, and stoppedShort true for a path that reaches the network
+// through a link (87375cc7, measured on Windows).
 type realpathReasonData struct {
-	Reason string `json:"reason"`
+	Reason       string `json:"reason"`
+	AtLetter     string `json:"atLetter,omitempty"`
+	StoppedShort bool   `json:"stoppedShort,omitempty"`
 }
 
 // errNoUsableName is the answer of realpathEval on Windows for a path on a
@@ -205,13 +213,20 @@ type realpathReasonData struct {
 // claustrum's own, not measured.
 var errNoUsableName = errors.New("no verified path for the target (it may be deleted or moved, or on Windows on a network share)")
 
+// errNoUsableNameAtLetter is errNoUsableName for a path whose own drive letter
+// names a network drive, before any link is followed (realpathEval on Windows).
+var errNoUsableNameAtLetter = fmt.Errorf("%w", errNoUsableName)
+
 // realpathFailure maps a failed call to the -32603 reply. Windows no_permission
 // is not measured. An error with no errno gets reason other and errno 0
 // (claustrum's own, not measured).
 func realpathFailure(id interface{}, err error) rpc.Response {
 	if errors.Is(err, errNoUsableName) {
-		return rpc.ErrResultData(id, rpc.CodeInternal, "files.realpath: "+err.Error(),
-			realpathReasonData{Reason: "no_usable_name"})
+		data := realpathReasonData{Reason: "no_usable_name", StoppedShort: true}
+		if errors.Is(err, errNoUsableNameAtLetter) {
+			data = realpathReasonData{Reason: "no_usable_name", AtLetter: "share"}
+		}
+		return rpc.ErrResultData(id, rpc.CodeInternal, "files.realpath: "+err.Error(), data)
 	}
 	var en syscall.Errno
 	if !errors.As(err, &en) {
@@ -227,5 +242,5 @@ func realpathFailure(id interface{}, err error) rpc.Response {
 	}
 	return rpc.ErrResultData(id, rpc.CodeInternal,
 		"files.realpath: error "+strconv.Itoa(int(en))+": "+en.Error(),
-		realpathErrData{Reason: reason, Errno: int(en)})
+		realpathErrData{Reason: reason, Errno: int(en), StoppedShort: reason == "too_many_links" && loopStopsShort})
 }
