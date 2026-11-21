@@ -233,9 +233,8 @@ func TestGitReadCwdBeforeShape(t *testing.T) {
 }
 
 // TestGitReadCombineLogLine pins the failed-start line of the combine refusal
-// (4c111e86, measured on Linux, macOS and Windows: l_r15_c6 row d_with_env and its
-// peers). A cliTempRoot text with gitRead gets Invalid params and no line (l_r15_c6
-// row e3_cliTempRoot, measured on Linux).
+// (4c111e86, measured on Linux, macOS and Windows for env and its peers). A
+// cliTempRoot text with gitRead gets Invalid params and no line (measured on Linux).
 func TestGitReadCombineLogLine(t *testing.T) {
 	cwd := t.TempDir()
 	logs := captureLogBuf(t)

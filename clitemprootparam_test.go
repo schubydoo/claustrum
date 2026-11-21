@@ -4,9 +4,8 @@ import "testing"
 
 // TestSocketPlainSpawnCLITempRootShape pins a cliTempRoot text or object on a spawn
 // with no gitRead. 4c111e86 and c9125eb8 answer Invalid params and start no child
-// (l_r15_c6 rows m:cliTempRoot_str:nogitRead and m:cliTempRoot_obj:nogitRead,
-// measured on Linux). The other systems are claustrum's own, not measured. false
-// runs the child (b3081b51, measured on Windows).
+// (a text and an object, measured on Linux). The other systems are claustrum's
+// own, not measured. false runs the child (b3081b51, measured on Windows).
 func TestSocketPlainSpawnCLITempRootShape(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)

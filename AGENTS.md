@@ -64,6 +64,7 @@ modes and the OS splits is in
 | `internal/hostsweep/hostclean*.go` | the run-dir delete (`removeRunDir`) and the signals of the host cleaner |
 | `clitemproot_unix.go` | the two rmdirs of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
 | `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
+| `internal/childrec/childreap.go` | the signals and record removes of the startup reap |
 | `internal/git/gitcommand.go` | the start of every git call, which passes over a git in a session folder |
 
 Windows lacks two methods: `files.find` and `files.mkdir`.
@@ -249,6 +250,11 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **The temp-folder test** (Linux and macOS) removes its own `.claude-ssh-<n>` file by one plain `os.Remove`
   ([process.spawn](docs/protocol/process-spawn.md)). Never widen: Do not make or remove
   the file in any folder but the inherited folder or its nearest existing parent.
+- **The startup reap** (Linux and macOS) sends `SIGTERM`, then `SIGKILL`, to the group of a recorded pid after
+  the identity test (`reapTargets`, [the reap](docs/DAEMON.md#the-reap)). Each remove of `forget` and
+  `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
+  wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
+  Remove one bare name, never a tree.
 
 #### The private temp folder of a spawn
 
