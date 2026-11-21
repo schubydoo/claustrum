@@ -147,6 +147,7 @@ func TestGitChildEnvRelativeValues(t *testing.T) {
 		{`GIT_SSL_CAINFO=\\\cl_u\x`, `GIT_SSL_CAINFO=\\\cl_u\x`},
 		{"GIT_SSL_CAINFO=//cl_u/x", "GIT_SSL_CAINFO=//cl_u/x"},
 		{"GIT_SSL_CAINFO=///cl_u/x", "GIT_SSL_CAINFO=///cl_u/x"},
+		{`GIT_SSL_CAINFO=\\`, ""}, // two slashes and no more text stay relative (claustrum's own)
 		{`SSLKEYLOGFILE=\cl_u\key.log`, ""},
 		{`HOME=\x`, ""},
 		{"HOME=/home/x", ""},

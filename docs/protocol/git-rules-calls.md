@@ -125,8 +125,8 @@ The repository calls are the configuration listings, the hardened calls,
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
       Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
       empty value is not relative. On Windows `NUL` in any case is not. Nor is
-      `\\\x` (`4c111e86`, measured on Windows), or another value with two leading
-      slashes (claustrum's own, not measured). One slash is relative (`4c111e86`, measured on Windows).
+      `\\\x` (`4c111e86`, measured on Windows), or another value with two leading slashes and more
+      text (claustrum's own, not measured). One slash is relative (`4c111e86`, measured on Windows).
     - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
       when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
       `XCACHE` and `XCTEMP` have none.
