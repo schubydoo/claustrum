@@ -147,9 +147,10 @@ func TestRealpathWindowsLinkToMappedDrive(t *testing.T) {
 	}
 }
 
-// A name below a junction loop and the loop itself give error 1921, with and
-// without missingLeaf, and the reply has stoppedShort true (4c111e86 gives the
-// error and 87375cc7 the member, measured on Windows).
+// A name below a junction loop gives error 1921, with and without missingLeaf,
+// and the reply has stoppedShort true (4c111e86 gives the error and 87375cc7
+// the member, measured on Windows). The junction loop itself is claustrum's own,
+// not measured.
 func TestRealpathWindowsJunctionLoop(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	writeJunction(t, filepath.Join(root, "j1"), filepath.Join(root, "j2"))

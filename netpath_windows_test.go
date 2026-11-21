@@ -176,7 +176,8 @@ func TestFilesRealpathWindowsOnMappedDrive(t *testing.T) {
 
 // A missing name behind a link to a `\\?\UNC\` path gives the no_usable_name
 // frame, with and without missingLeaf, also below a missing folder (4c111e86,
-// Windows; the member: 87375cc7). It needs the administrative share of the drive of the temp folder.
+// Windows; the member: 87375cc7). It needs the administrative share of the
+// drive of the temp folder.
 func TestFilesRealpathWindowsMissingBehindUNCLink(t *testing.T) {
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "real", "f"), "x", 0o644)
