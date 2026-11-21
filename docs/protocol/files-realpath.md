@@ -41,7 +41,7 @@ A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this 
 On Windows a `no_usable_name` or `too_many_links` reply has one more `data` member (`87375cc7`, measured on Windows; `4c111e86` has neither):
 
 - `"atLetter":"share"` after `reason`, when the drive of the path itself is a mapped network drive, also through a SUBST drive of a folder on a mapped drive.
-- `"stoppedShort":true` after `reason`, when a link on the way leads to a network place, and after `errno` on a `too_many_links` reply for a loop of symbolic links or junctions, a chain of 32 symbolic links or of 32 to 34 junctions, also split over two names, and a name below them. Other forms are claustrum's own, not measured.
+- `"stoppedShort":true` after `reason`, when a link on the way leads to a network place, and after `errno` on a `too_many_links` reply for a loop of symbolic links, a chain of 32 symbolic links or of 32 to 34 junctions, also split over two names, and a name below a loop or a chain. A junction loop itself and other forms are claustrum's own, not measured.
 
 Linux sends neither member on a link loop (`87375cc7`, measured). macOS sends neither (claustrum's own, not measured).
 

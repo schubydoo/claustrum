@@ -22,10 +22,10 @@ const errnoCantResolve syscall.Errno = 1921
 func isLinkLoopErrno(en syscall.Errno) bool { return en == errnoCantResolve }
 
 // loopStopsShort is true on Windows: a too_many_links reply has stoppedShort
-// true for a loop of symbolic links or junctions, a chain of 32 symbolic links
-// or of 32 to 34 junctions, also split over two names, and a name below them
-// (87375cc7, measured on Windows). Other forms are claustrum's own, not
-// measured.
+// true for a loop of symbolic links, a chain of 32 symbolic links or of 32 to
+// 34 junctions, also split over two names, and a name below a loop or a chain
+// (87375cc7, measured on Windows). A junction loop itself and other forms are
+// claustrum's own, not measured.
 const loopStopsShort = true
 
 const realpathNeedDrive = "files.realpath: the path must begin with a drive letter, a colon and a slash"
