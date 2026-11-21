@@ -45,7 +45,7 @@ A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this 
 
 ### Windows cases that are claustrum's own
 
-Claustrum's own, not measured: a colon in a folder name, a stream that exists, the same limit for symbolic links, that error for other forms, a passing `.` or `..` component, a junction to a volume name acting as a folder, the colon test before the dot-and-space test, a SUBST drive of a SUBST drive (followed up to 26 times), and a SUBST drive on a share, which gives `no_usable_name`. A `..` in a path is removed by text before the open (claustrum's own, not measured).
+Claustrum's own, not measured: a colon in a folder name, a stream that exists, the limit of 31 links for symbolic links, errno 1921 for other forms, a passing `.` or `..` component, a junction to a volume name acting as a folder, the colon test before the dot-and-space test, a SUBST drive of a SUBST drive (followed up to 26 times), and a SUBST drive on a share, which gives `no_usable_name`. A `..` in a path is removed by text before the open (claustrum's own, not measured).
 
 ## Differences from the reference
 
