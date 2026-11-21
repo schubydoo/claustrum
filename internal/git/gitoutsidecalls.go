@@ -67,6 +67,27 @@ func exitedWithCode(err error) bool {
 	return errors.As(err, &ee) && ee.ExitCode() >= 0
 }
 
+// excludesReadDropped are the names that the excludes read removes on Windows:
+// 4c111e86 runs `config --includes --path core.excludesFile` without them and
+// keeps the other names of the daemon, also GIT_CONFIG_COUNT and its items
+// (measured on Windows). On Windows the match ignores the letter case, and Linux
+// and macOS keep the names (claustrum's own, not measured).
+var excludesReadDropped = []string{
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG_PARAMETERS", "GIT_NO_REPLACE_OBJECTS",
+	"GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE",
+}
+
+// excludesReadEnv is env without the names of excludesReadDropped when form is
+// Windows, and env itself otherwise. Every other entry stays in its place.
+func excludesReadEnv(env []string, form gitEnvForm) []string {
+	if !form.windows {
+		return env
+	}
+	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		return slices.Contains(excludesReadDropped, strings.ToUpper(envName(kv)))
+	})
+}
+
 // gitOutsideCmd is the command for a call outside a repository: the filtered
 // environment, then the entries add, in gitVersionDir.
 func gitOutsideCmd(add []string, args ...string) *exec.Cmd {
