@@ -117,6 +117,12 @@ gone. In that time a request gets the failure with no git call, but works with
 (`4c111e86`, measured on Linux). A test that passed is not kept either
 ([rule](git-info.md#settingscontrol)).
 
+While the check of session folders is off and no state is kept, each git call
+reads the user's excludes and runs the test again. Git is then asked about the
+repository again, and its config is read again. With `"shadowDirOff":true` a call
+only reads the excludes (`4c111e86`, measured on Linux). Creates, removes, macOS and
+Windows: claustrum's own.
+
 ### The folders
 
 The folder of one daemon is `<socket folder>/git-shadow/<host form>-<pid>-<16 hex>`.

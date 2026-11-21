@@ -103,6 +103,9 @@ type ShadowHost struct {
 	// session folders was off (gate). Such a state is not kept: a reply shows no
 	// member for it, and the next request tests again.
 	unkept bool
+	// tests counts the start tests that ran (gate). settingsGate reads it to know
+	// that its gate ran one.
+	tests uint64
 	// tested is the end of the last test that gave a state.
 	tested time.Time
 	// failure is the kept text of a failed test, and failed is the end of that
@@ -280,6 +283,7 @@ func (h *ShadowHost) gate(off bool) string {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.tests++
 	if cause != "" {
 		// The frame of every cause (measured on Linux, and in part on
 		// macOS and Windows). A cause with gitCannotRunPrefix is the
@@ -334,6 +338,48 @@ func logStateLine(state string) {
 	} else {
 		logging.Infof(fallbackStateLine)
 	}
+}
+
+// testRuns is the number of start tests that ran in this daemon (gate).
+func (h *ShadowHost) testRuns() uint64 {
+	if !h.active() {
+		return 0
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.tests
+}
+
+// noKeptState reports that no test gave a kept state yet: no state, or one that
+// a test under the switch gave (gate). While the check of session folders is
+// off, each git call of a request then reads the user's excludes, and without
+// "shadowDirOff":true runs the gate again (perCallGate).
+func (h *ShadowHost) noKeptState() bool {
+	if !h.active() {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state == "" || h.unkept
+}
+
+// forgetRepoAnswers drops the kept answer of git about the repository of t at
+// dir (askGit) and marks the kept read of its config as stale (repoReadVerdict),
+// so the next gate asks git and reads the config again. 4c111e86 does both after
+// each start test that runs (measured on Linux). It deletes no file.
+func (h *ShadowHost) forgetRepoAnswers(t gitDirTrust, dir string) {
+	root, _ := gitWalkRoot(dir)
+	if root == "" {
+		root = t.pinCommonDir
+	}
+	h.probeMu.Lock()
+	delete(h.probes, root)
+	h.probeMu.Unlock()
+	cfg := t.pinCommonDir
+	if t.configDir != "" {
+		cfg = t.configDir
+	}
+	staleRepoVerdict(cfg)
 }
 
 // folderWithNoTest makes the folder of this daemon when it is not there, and
@@ -1267,8 +1313,15 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 		}
 	}
 	if t.verdict == gitDirTrusted {
+		ran := req.shadow.testRuns()
 		if msg := req.shadow.gate(bool(off)); msg != "" {
 			return msg, false
+		}
+		// After a start test that ran, 4c111e86 asks git about the repository and
+		// reads its config again (measured on Linux, a test before a kept state).
+		// A test that another request ran meanwhile counts too (claustrum's own).
+		if req.shadow.testRuns() != ran {
+			req.shadow.forgetRepoAnswers(t, dir)
 		}
 	}
 	if !req.shadow.readsRepoConfig() {

@@ -201,11 +201,11 @@ func offSwitchInfo(t *testing.T, f shadowFixture) (string, []envCall) {
 	return f.info(t, f.repo, map[string]any{"sessionFoldersOff": true})
 }
 
-// The state line of a passed start test is logged at each test that is not kept,
-// once more when a request without the switch keeps the state, and not again after
-// that (4c111e86 logs one at each test until a state is kept, measured on Linux;
-// its count per request is the known gap). Mutation: log the line only at a change
-// of the state. The second request with the switch then logs none.
+// The state line of a passed start test is logged at each test that is not kept:
+// four in a git.info with the switch, one for each git call. A request without the
+// switch keeps the state with one more line, and none follows (4c111e86, measured
+// on Linux). Mutation: log the line only at a change of the state. The second
+// request with the switch then logs none.
 func TestStartTestStateLineUnderOffSwitch(t *testing.T) {
 	requireGit(t)
 	t.Cleanup(sessiondirs.UseForTest(""))
@@ -214,18 +214,120 @@ func TestStartTestStateLineUnderOffSwitch(t *testing.T) {
 	lines := func() int { return strings.Count(buf.String(), shadowStateLine) }
 	for i := 1; i <= 2; i++ {
 		offSwitchInfo(t, f)
-		if got := lines(); got != i {
-			t.Errorf("after git.info %d with the off switch: %d state lines, want %d", i, got, i)
+		if got := lines(); got != 4*i {
+			t.Errorf("after git.info %d with the off switch: %d state lines, want %d", i, got, 4*i)
 		}
 	}
 	f.info(t, f.repo, nil)
-	if got := lines(); got != 3 {
-		t.Errorf("after the git.info that keeps the state: %d state lines, want 3", got)
+	if got := lines(); got != 9 {
+		t.Errorf("after the git.info that keeps the state: %d state lines, want 9", got)
 	}
 	offSwitchInfo(t, f)
 	f.info(t, f.repo, nil)
-	if got := lines(); got != 3 {
-		t.Errorf("after two requests with a kept state: %d state lines, want 3, log:\n%s", got, buf.String())
+	if got := lines(); got != 9 {
+		t.Errorf("after two requests with a kept state: %d state lines, want 9, log:\n%s", got, buf.String())
+	}
+}
+
+// perCallCounts counts the start-test rounds, the reads of the user's excludes,
+// the calls that ask git about the repository and the reads of its config in calls.
+func perCallCounts(calls []envCall) (tests, excludes, gitDir, configReads int) {
+	for _, c := range calls {
+		switch {
+		case stubMatches(c.argv, "init,-q,--template="):
+			tests++
+		case c.excludesRead():
+			excludes++
+		case argvEndsWith(c.argv, []string{"rev-parse", "--git-dir"}):
+			gitDir++
+		case c.configRead():
+			configReads++
+		}
+	}
+	return
+}
+
+// While the check of session folders is off and no state is kept, each git call of
+// a request reads the user's excludes and runs the start test, and each test asks git
+// about the repository and reads its config again: 4 rounds in git.info and 2 in
+// git.list_branches. With "shadowDirOff":true too a git.info reads the excludes 4
+// times and runs no test. After a kept state a request with the switch runs none of
+// it. These are the counts of 4c111e86 (measured on Linux, cell l_t846). Mutations:
+// drop the per-call step (liveSwitch.perCallGate): git.info gives 1 round and 1
+// read. Drop forgetRepoAnswers: the plain request after an unkept test makes 1
+// rev-parse --git-dir and 1 config read in place of 2.
+func TestPerCallRoundsBeforeAKeptState(t *testing.T) {
+	requireGit(t)
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	held := func(method string, extra map[string]any) []envCall {
+		release := sessiondirs.PauseCheck()
+		defer release()
+		params := map[string]any{"path": f.repo}
+		for k, v := range extra {
+			params[k] = v
+		}
+		_, calls := f.call(t, method, params)
+		return calls
+	}
+	off := map[string]any{"sessionFoldersOff": true}
+	// The config of the copy of the settings stays the same file across the
+	// reads again after each test: a read with the same outcome gives the kept
+	// verdict back (reuseStaleVerdict). Mutation: drop that step. The copy is then
+	// written again as a new file.
+	copyConfig := func() os.FileInfo {
+		t.Helper()
+		all, _ := filepath.Glob(filepath.Join(f.run, shadowRootName, "*", "*", "config"))
+		var m []string
+		for _, p := range all {
+			if len(filepath.Base(filepath.Dir(p))) == 32 { // a copy is <S>/<32 hex>, not .probe
+				m = append(m, p)
+			}
+		}
+		if len(m) != 1 {
+			t.Fatalf("copies of the config: %v, want one", m)
+		}
+		fi, err := os.Stat(m[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi
+	}
+	var before os.FileInfo
+	for _, c := range []struct {
+		name               string
+		method             string
+		extra              map[string]any
+		tests, excl, total int
+	}{
+		{"git.info with the switch and shadowDirOff", "git.info", map[string]any{"sessionFoldersOff": true, "shadowDirOff": true}, 0, 4, 12},
+		{"git.info with the switch", "git.info", off, 4, 4, 60},
+		{"git.list_branches with the switch", "git.list_branches", off, 2, 2, 30},
+	} {
+		calls := held(c.method, c.extra)
+		tests, excl, _, _ := perCallCounts(calls)
+		if tests != c.tests || excl != c.excl || len(calls) != c.total {
+			t.Errorf("%s: %d test rounds, %d excludes reads, %d calls, want %d, %d, %d", c.name, tests, excl, len(calls), c.tests, c.excl, c.total)
+		}
+		if c.name == "git.info with the switch" {
+			before = copyConfig()
+		}
+	}
+	if after := copyConfig(); !os.SameFile(before, after) {
+		t.Error("the config of the copy was written again after the reads of a later request")
+	}
+	_, calls := f.info(t, f.repo, nil)
+	if tests, _, gitDir, reads := perCallCounts(calls); tests != 1 || gitDir != 2 || reads != 2 || len(calls) != 21 {
+		t.Errorf("the git.info that keeps the state: %d rounds, %d rev-parse --git-dir, %d config reads, %d calls, want 1, 2, 2, 21", tests, gitDir, reads, len(calls))
+	}
+	for _, c := range []struct {
+		method string
+		total  int
+	}{{"git.info", 8}, {"git.list_branches", 4}} {
+		calls := held(c.method, off)
+		if tests, excl, _, _ := perCallCounts(calls); tests != 0 || excl != 0 || len(calls) != c.total {
+			t.Errorf("%s with the switch after a kept state: %d rounds, %d excludes reads, %d calls, want 0, 0, %d", c.method, tests, excl, len(calls), c.total)
+		}
 	}
 }
 

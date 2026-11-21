@@ -531,6 +531,7 @@ func (req *gitCall) followSwitch(off bool, gate func(l *liveSwitch, ask bool) (g
 	}
 	l := &liveSwitch{off: req.offLive, pending: off && !req.offOwn, stop: req.stop}
 	l.gate = func(ask bool) (gitUse, bool) { return gate(l, ask) }
+	l.perCall = func() bool { return sessiondirs.CheckOff() && req.shadow.noKeptState() }
 	req.use.live = l
 }
 

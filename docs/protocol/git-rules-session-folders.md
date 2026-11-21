@@ -191,6 +191,7 @@ without the switch gets no check meanwhile (measured on Linux). Only the first s
 request logs the OFF line, and the first check after the hold the on-again line.
 A hold uses a stored value, else git runs once more after it (`4c111e86`, measured on
 Linux). The code makes it the [excludes read](git-rules-calls.md#calls-outside-a-repository).
+While no state is kept, each git call in the hold reads again ([rule](git-rules-settings-copy.md#the-states-and-settingscontrol)).
 Claustrum's own, not measured: a hold keeps that read for later requests and none it
 interrupts, and requests sent together each read, the later winning.
 On Windows a `process.spawn` with `"sessionFoldersOff":1` gets `Invalid params` (`4c111e86`, measured on

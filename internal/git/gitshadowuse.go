@@ -122,6 +122,34 @@ type liveSwitch struct {
 	adopted bool
 	// stop holds the time limits of the git calls of the request.
 	stop *gitStop
+	// perCall reports that the check of session folders is off and no state is
+	// kept (perCallGate). ran is true once a git call of the request started.
+	perCall func() bool
+	ran     bool
+}
+
+// perCallGate runs before each hardened git call of a request (hardenedGitCmd).
+// While the check of session folders is off and no state is kept, 4c111e86 reads
+// the user's excludes before each git call, and without "shadowDirOff":true runs
+// the start test and asks git about the repository again (measured on Linux:
+// 4 rounds in git.info, 2 in git.list_branches, 1 in git.status; with
+// "shadowDirOff":true 4 excludes reads in git.info). The first call of the request
+// takes the gate and the read of the request itself. The later gate runs at
+// formNow (pending). The other git calls of git.worktree_create and
+// git.worktree_remove follow the same rule (claustrum's own, not measured).
+func (l *liveSwitch) perCallGate() {
+	if l == nil {
+		return
+	}
+	again := l.ran && l.perCall != nil && l.perCall()
+	l.ran = true
+	if !again {
+		return
+	}
+	excludesForCall()
+	if !l.off() {
+		l.pending = true
+	}
 }
 
 // atCommand is the form of a git command in the repository that starts now

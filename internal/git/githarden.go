@@ -338,9 +338,13 @@ func hookPrecursor(ctx context.Context, u gitUse, dir string, heavy bool) listin
 func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *configListing, args ...string) *exec.Cmd {
 	var hooks []string
 	if pre == nil {
+		u.live.perCallGate()
 		u = u.atCommand()
 		hooks = hookPrecursor(ctx, u, dir, heavy).hooks()
 	} else {
+		if u.live != nil {
+			u.live.ran = true
+		}
 		hooks = pre.hooks
 	}
 	cmd := gitCommandContext(ctx, withFront(u.front(dir), hardenedProfileArgs(heavy, args...))...)
@@ -1446,6 +1450,18 @@ var (
 	offExcludesRun   uint64
 	offExcludesValue string
 )
+
+// excludesForCall reads the excludes again for one git call while no state is
+// kept (liveSwitch.perCallGate): the read of the time off does not serve it, and
+// the call after it uses the new read. A stored result still serves it.
+func excludesForCall() {
+	userExcludesMu.Lock()
+	if !userExcludesDone {
+		offExcludesRun = 0
+	}
+	userExcludesMu.Unlock()
+	globalExcludesPath()
+}
 
 // globalExcludesPath resolves the user's global git excludes file: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or

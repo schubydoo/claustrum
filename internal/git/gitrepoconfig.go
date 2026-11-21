@@ -1359,15 +1359,20 @@ var repoVerdicts struct {
 	sync.Mutex
 	byKey map[repoVerdictKey]*repoVerdict
 	order []repoVerdictKey
+	// stale has the keys whose kept verdict the next read must not use
+	// (staleRepoVerdict).
+	stale map[repoVerdictKey]bool
 }
 
 // keptRepoVerdict is the kept verdict of k, if every file of its read is in the
-// recorded state. A file that was missing must still be missing.
+// recorded state. A file that was missing must still be missing. A stale verdict
+// is not used.
 func keptRepoVerdict(k repoVerdictKey) (*repoVerdict, bool) {
 	repoVerdicts.Lock()
 	v, ok := repoVerdicts.byKey[k]
+	stale := repoVerdicts.stale[k]
 	repoVerdicts.Unlock()
-	if !ok {
+	if !ok || stale {
 		return nil, false
 	}
 	for _, s := range v.states {
@@ -1376,6 +1381,41 @@ func keptRepoVerdict(k repoVerdictKey) (*repoVerdict, bool) {
 		}
 	}
 	return v, true
+}
+
+// staleRepoVerdict makes the next read of the config of the git directory gitDir
+// run again, after a start test (forgetRepoAnswers). A read with the same outcome
+// then gives the kept verdict back (reuseStaleVerdict), so the copy of the
+// settings is not written again (syncRepo).
+func staleRepoVerdict(gitDir string) {
+	home, _ := os.UserHomeDir()
+	k := repoVerdictKey{gitDir: gitDir, home: home}
+	repoVerdicts.Lock()
+	defer repoVerdicts.Unlock()
+	if _, ok := repoVerdicts.byKey[k]; !ok {
+		return
+	}
+	if repoVerdicts.stale == nil {
+		repoVerdicts.stale = map[repoVerdictKey]bool{}
+	}
+	repoVerdicts.stale[k] = true
+}
+
+// reuseStaleVerdict is the kept verdict of k when it is stale and a new read v
+// gave the same outcome, or nil. The stale mark goes either way.
+func reuseStaleVerdict(k repoVerdictKey, v *repoVerdict) *repoVerdict {
+	repoVerdicts.Lock()
+	defer repoVerdicts.Unlock()
+	if !repoVerdicts.stale[k] {
+		return nil
+	}
+	delete(repoVerdicts.stale, k)
+	old := repoVerdicts.byKey[k]
+	if old == nil || old.refusal != v.refusal || old.worktreeConfig != v.worktreeConfig || old.shadowText != v.shadowText ||
+		!slices.Equal(old.worktreeItems, v.worktreeItems) || old.shared != v.shared || !bytes.Equal(old.ownConfig, v.ownConfig) {
+		return nil
+	}
+	return old
 }
 
 // forgetRepoVerdict drops the kept verdict of the git directory gitDir for
@@ -1473,6 +1513,9 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 	}
 	v.states = log.states
 	if !log.failed {
+		if old := reuseStaleVerdict(k, v); old != nil {
+			return old
+		}
 		keepRepoVerdict(k, v)
 	}
 	return v
