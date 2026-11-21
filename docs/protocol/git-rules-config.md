@@ -86,7 +86,7 @@ version and the extensions of an included file are not tested.
 | `"<file>" has more settings than Claude reads (8 MiB); remove repeated ones` | See "The count of settings" below |
 | `open <file>: <reason>` | The daemon cannot open the config, an included file or that `config.worktree`. A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on Linux. As the config, a socket gives `operation not supported on socket` on macOS |
 | `<error lines of git>` | The listing of the config exits non-zero while a child holds its stderr. The lines read until then are joined by one space (also macOS and Windows) |
-| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on. This text comes before an extension refusal. The text is that of git, with the path in quotes |
+| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. So does the `config.worktree` file of the git directory with `extensions.worktreeConfig` on, and the file of an `includeIf` section, whatever its condition is (`4c111e86`, measured on Linux). This text comes before an extension refusal. The text is that of git, with the path in quotes |
 | `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory. `NUL` and a stream such as `a/inc.cfg::$DATA` get it too (b3081b51, measured on Windows) |
 | `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it also in an `includeIf` section whose condition does not match. `<value>` is cut to its first 300 characters |
 | `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link. Windows: the git directory is a junction or a directory symbolic link, and `<file>` is `<git dir>\config`, except a junction `path` of `git.info` or `git.list_branches` ([4c111e86](git-rules-trust.md#how-the-daemon-finds-the-git-directory)). Windows: an include through a junction in the git directory, with `<file>` as written (b3081b51, measured on Windows on `git.info`, `git.list_branches` and `git.worktree_create`). An include below a folder with the reparse tag `0x9000001A` is followed (b3081b51, measured on Windows) |
@@ -195,7 +195,9 @@ These rules are from the code and are not measured on `5fd08069`:
 - An open error of the file of an `includeIf` section gives no refusal. An open
   error other than the measured ones gets the same `open <file>: <reason>` form.
 - On Linux and macOS a `~` include takes the value of `HOME` in place of the `~`,
-  when `HOME` is set and not relative (claustrum's own, not measured). An empty
+  when `HOME` is set and not relative (claustrum's own, not measured). The rest of
+  the value stays as written: `~/sub/../inc.cfg` gives `<home>/sub/../inc.cfg`, and
+  `~/` gives `<home>/` (`4c111e86`, measured on Linux). An empty
   `HOME` counts as set, so `~/x.inc` becomes `/x.inc`. An unset or relative `HOME`
   gets the "expands neither" refusal. On Windows a `%(prefix)/…` value gets the
   "expands neither" text, with the cut at 100 characters.
