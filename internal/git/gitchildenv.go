@@ -48,9 +48,10 @@ import (
 //
 // Absolute is a leading '/' on Linux and macOS. On Windows it is a drive letter,
 // ':' and a slash, or a UNC path. All but the LD_PRELOAD and LD_AUDIT pieces
-// also count two leading slashes and more text (absoluteValue). The exact shape of a UNC path, an empty name on
-// Windows, a type of one multi-byte character in a Kerberos value and a value of
-// HOMEDRIVE with a volume name only in part are not measured.
+// also count two leading slashes and more text (absoluteValue). The exact shape
+// of a UNC path, an empty name on Windows, a type of one multi-byte character in
+// a Kerberos value and a value of HOMEDRIVE with a volume name only in part are
+// not measured.
 
 // gitEnvForm selects the rules of one system. Linux is the zero value.
 type gitEnvForm struct{ windows, darwin bool }
