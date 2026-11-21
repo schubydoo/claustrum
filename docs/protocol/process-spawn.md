@@ -47,7 +47,7 @@ With `"wantPid": true` the result is `{"success":true,"pid":<int>,"startTime":<n
 
 `startTime` is an opaque token that detects a reused pid, not an OS start time.
 
-On Windows a failed (`4c111e86`, measured on Windows) or pending (claustrum's own) [start test](process-kill.md#the-start-test-of-the-jobs) adds `"outsideJob":true` after `success`.
+On Windows a failed or pending (`4c111e86`, measured on Windows) [start test](process-kill.md#the-start-test-of-the-jobs) adds `"outsideJob":true` after `success`.
 
 With `"cliTempRoot": true` on Linux and macOS the result can carry `cliTempRoot` after `success`. See [The private temp folder](#the-private-temp-folder-build-b3081b51).
 
@@ -375,7 +375,7 @@ Its `server.capabilities` feature is `process.spawn.shellAgentSocket`. A child w
 - An entry that is there wins, even an empty one (`"SSH_AUTH_SOCK":""` in `env`).
 - The daemon runs the same shell as the `PATH` read at the first spawn that needs a socket. The run has a 4 s limit, and the daemon gives up on a shell that the kill cannot end at 5 s.
 - Measured on Linux against `683cc6a9`: a plain file gets no connect call. A live answer holds with no connect at 60 s, for a dead agent, and is gone at 610 s. A new socket there is dialed again. claustrum's own: any other non-socket, the 600 s, and the key of path, device, inode and mtime.
-- A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, never after 3 failed runs in a row. A connect still open after 500 ms ends the hand-off for good, and so does a stat (claustrum's own). It logs `[shellenv] A check of SSH_AUTH_SOCK=<path> never returned (a hung filesystem?); not using it or asking the login shell again for this daemon's lifetime` (`A check of` not measured).
+- A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, never after 3 failed runs in a row. A connect still open after 500 ms ends the hand-off for good (claustrum's own). A stat that does not answer ends it too. The reply then comes after 0.5 to 1.5 s, also for a stat that answers at 1.5 s (`4c111e86`, measured on Linux). It logs `[shellenv] A check of SSH_AUTH_SOCK=<path> never returned (a hung filesystem?); not using it or asking the login shell again for this daemon's lifetime`, and no later spawn runs the shell (`4c111e86`, measured on Linux).
 - While the `PATH` read runs, the step runs no shell (measured against `52d82f0a`).
 - The step never fails a spawn. Each run and give-up writes a `[shellenv]` line.
 

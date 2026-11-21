@@ -83,9 +83,9 @@ With no job, a process that the child started can hold its output pipes. Then th
 
 Since `4c111e86` the daemon first runs its program with `--version` in a job (measured on Windows). As admin it passes. As a non-admin user it fails: the line ends `false (off switch: false)`, and each spawn answers `{"success":true,"outsideJob":true}`. Its child is in no job, so a kill ends the direct child only (from the code). At 1 minute the daemon ends the job (flags `0x2800`) of a hung test child, and the child and its conhost exit `0x1`.
 
-From 5 s to that end the test is pending, and the socket opens.
+From 5 s to that end the test is pending, and the socket opens. A spawn then answers `{"success":true,"outsideJob":true}`, as after a failed test (`4c111e86`, measured on Windows).
 
-claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code).
+claustrum's close of the test job ends the rest: at the reap with code 0 (measured on Windows, claustrum's own), and at the daemon exit (from the code). A stop of the daemon in the pending time ends the test child and its conhost with `0x0` (`4c111e86`, measured on Windows).
 
 The resume can leave a thread of the test child with a suspend count above 1. Then the test fails at once with `starting it inside a Windows job object failed: a thread had been suspended <n> times, so it still sleeps`. `4c111e86` then ends the job, and the child exits `0x1` (measured on Windows, only with n = 2).
 
@@ -94,7 +94,6 @@ The resume can leave a thread of the test child with a suspend count above 1. Th
 - A clean exit before the end turns the jobs on.
 - A failed start of the test child fails the test with its error.
 - A failed join fails the test with `starting it inside a Windows job object failed: <error>`. With a child left asleep, the asleep text wins.
-- A spawn in the pending time runs as after a failed test.
 - At the bound, after a failed end, as with no job or no wait handle, a reap within 5 s gives the result. Else the test fails with the bound reason.
 - At an asleep failure with no job the child stays asleep until the daemon exits. One with no wait handle can miss its end.
 - Another error of the resume does not stop the test.

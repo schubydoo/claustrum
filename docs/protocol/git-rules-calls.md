@@ -137,7 +137,9 @@ The repository calls are the configuration listings, the hardened calls,
     - 19 list names, such as `PATH`, `LOCPATH` and `SSL_CERT_DIR`, keep their
       absolute entries. Five of them keep an empty value, but not
       `GIT_ALTERNATE_OBJECT_DIRECTORIES` on Windows (`4c111e86`, measured on Windows).
-      The rest go when no entry is left. On Windows a UNC path is absolute.
+      The rest go when no entry is left. On Windows a UNC path is absolute, also
+      `\\?\UNC\…`, `\\?\C:\…`, `\\.\C:\…`, `//host/share/…` and `\\host` alone
+      (`4c111e86`, measured on Windows).
     - `LD_PRELOAD` and `LD_AUDIT` keep an absolute piece or one with no `/`.
       `LD_PRELOAD` splits on white space too.
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
