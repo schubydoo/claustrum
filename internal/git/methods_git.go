@@ -708,6 +708,10 @@ func gitDefaultBranch(u gitUse, dir string) string {
 // test (measured).
 var statusNoGitKeepsTest = runtime.GOOS == "windows"
 
+// statusOpenTest is statusPathOpenFails. Tests replace it to reach the refusal
+// on every system.
+var statusOpenTest = statusPathOpenFails
+
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
@@ -905,7 +909,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// On Windows a `path` that cannot be opened as a folder answers here, with no
 	// call of statusWorkTreeProbe (statusPathOpenFails).
-	if statusPathOpenFails(filepath.Clean(p.Path)) {
+	if statusOpenTest(filepath.Clean(p.Path)) {
 		return notRepo
 	}
 	probeUse := req.use.atGitDirCommand()
