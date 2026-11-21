@@ -461,8 +461,8 @@ func TestProbeAnswers(t *testing.T) {
 		{name: "N-f: exit 2 with a text", exit: 2, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3 with exit 2\n",
 			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3 with exit 2"},
 		// Exit 128 with any text gets the second run of c8e2f083 (measured on
-		// Linux and Windows). With secondOK it exits 0, and the answer is "no
-		// repository". Else it fails as the first call did. The answer is then the
+		// Linux and Windows). With secondOK it exits 0, the third run exits 128,
+		// and the answer is "no repository". Else it fails as the first call did. The answer is then the
 		// error with the text of the first call, after one `git version` call (not
 		// measured for an exit code, only for the kill). The texts are those of
 		// 5fd08069 (measured on Linux and Windows).

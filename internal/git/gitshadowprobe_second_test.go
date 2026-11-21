@@ -38,8 +38,8 @@ func secondProbeCall(calls []envCall) (envCall, bool) {
 
 // TestSecondProbeAfterExit128 pins the second run of c8e2f083 on git.info. A
 // first call that exits 128 gets one more run with GIT_DIR=<.probe>, in the
-// folder `.probe` (measured on Linux and Windows). Exit 0 there is
-// the "no repository" answer. A failed second run gives the error with the
+// folder `.probe` (measured on Linux and Windows). Exit 0 there gets the third
+// run, which exits 128 here, and the answer is "no repository". A failed second run gives the error with the
 // text of the first call, or its exec error when it wrote none. Only the
 // Windows working folder and the exit 0 answer are measured. An exit 1 of the
 // first call makes no second run. Mutations: skip the branch of secondProbe in
