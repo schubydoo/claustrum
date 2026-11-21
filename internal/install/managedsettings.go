@@ -194,7 +194,8 @@ func resolveManagedLauncherShown(dir, cliPath string, shown bool) rpc.ManagedLau
 	return rpc.ManagedLauncherReply{Status: managedStatusUsable, Argv: argv, Source: source}
 }
 
-// FaultOther is the fault of a launcher value that is not a string.
+// FaultOther is the fault of a launcher value that is not a string, and of the
+// own path in CheckFault.
 const FaultOther = "other"
 
 // shownResolveFault is the fault member of a refusal of the managed launcher. With

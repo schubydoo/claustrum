@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Linux, process.spawn with no launcherCheck refuses Claude Code's own path as a launcher with "launcherFault":"other" now. The reference does the same.
+On Linux, process.spawn with no launcherCheck refuses Claude Code's own path as a launcher with "launcherFault":"other" now.
