@@ -259,6 +259,13 @@ func TestGitStatusPathGate(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(f.T, "a", "b"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Measured: a baseRepo that does not resolve. On Windows a ".." drops the
+	// name before it first, so T/nosub/.. gets the reply of T (4c111e86,
+	// measured on Windows).
+	noSubWant := statusNotRepo
+	if runtime.GOOS == "windows" {
+		noSubWant = statusClean
+	}
 	cases := []struct{ name, path, base, want string }{
 		// Measured: path is a regular file. Measured: path is
 		// gone.
@@ -275,8 +282,7 @@ func TestGitStatusPathGate(t *testing.T) {
 		// Measured: baseRepo is the cwd as sent. Measured: a trailing separator.
 		{"n11c2 baseRepo T/sub/..", f.W, filepath.Join(f.T, "sub") + string(os.PathSeparator) + "..", statusClean},
 		{"n11c3 baseRepo T/", f.W, f.T + string(os.PathSeparator), statusClean},
-		// Measured: baseRepo does not resolve.
-		{"n11c1 baseRepo T/nosub/..", f.W, filepath.Join(f.T, "nosub") + string(os.PathSeparator) + "..", statusNotRepo},
+		{"n11c1 baseRepo T/nosub/..", f.W, filepath.Join(f.T, "nosub") + string(os.PathSeparator) + "..", noSubWant},
 		// Measured: baseRepo is a subfolder of the repository.
 		{"baseRepo is a subfolder", inside, filepath.Join(f.T, "a", "b"), statusClean},
 		// Measured.

@@ -203,3 +203,13 @@ every system, and on Windows `null` starts the child (claustrum's own, not measu
 [sessiondirs] the check of session folders is OFF: the app sends its off switch. While a request that carries it runs, git is found by its bare name and its search lists are cut by text alone
 [sessiondirs] the check of session folders is on again: no request that carries the app's off switch holds it any more
 ```
+
+### Before a kept state
+
+While no start-test state is kept, each git call in the hold reads the excludes
+again, if none is stored. Without `"shadowDirOff":true` each call also runs the
+[start test](git-rules-settings-copy.md#the-start-test). Git is then asked about the
+repository, and its settings are read again. This holds also in the plain request
+that keeps the state (`4c111e86`, measured on Linux, none stored). Claustrum's own,
+not measured: a stored value, `"shadowDirOff":true` outside `git.info`, creates,
+removes, macOS and Windows. A test of another request meanwhile counts too.

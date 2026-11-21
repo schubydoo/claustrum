@@ -8,3 +8,7 @@ package git
 func statusProbeDir(clean string) string {
 	return resolvedDir(clean)
 }
+
+// statusPathOpenFails is the Windows open test of `path`. On Linux and macOS
+// it never fails, so the request goes on as before.
+func statusPathOpenFails(string) bool { return false }
