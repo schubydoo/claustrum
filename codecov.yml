@@ -344,6 +344,8 @@ component_management:
         - internal/git/gitcommand.go
         # the git of the login shell's PATH (87375cc7).
         - internal/git/gitlogin.go
+        # the git_lfs_not_found answer for a git of the login shell's PATH (87375cc7).
+        - internal/git/gitlfsmissing.go
         - internal/git/gitoutsidecalls.go
         # the git-directory trust check every git.* method runs first (f6010b97).
         - internal/git/gitdirtrust.go

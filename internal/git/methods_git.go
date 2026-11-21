@@ -2729,6 +2729,19 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			}
 			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			// A git-lfs that the git of the login-shell PATH does not find: the
+			// same undo, then git_lfs_not_found with the text of no git and one
+			// log line (lfsNotFoundForLoginGit). The undo text after it is
+			// claustrum's own, not measured.
+			if code == "worktree_add_failed" && lfsNotFoundForLoginGit(rtStderr) {
+				logLFSNotFound(msg)
+				return rpc.OKResult(req.ID, rpc.WorktreeReply{
+					Success:    false,
+					Error:      "not a git repository" + undo,
+					ErrorCode:  "git_lfs_not_found",
+					BranchKept: kept,
+				})
+			}
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      msg + undo,
