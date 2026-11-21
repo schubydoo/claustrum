@@ -41,10 +41,9 @@ func spelledWalkFails(p string, stat func(string) (fs.FileInfo, error), foldFirs
 
 // statusBaseWalkFails reports whether the walk of a git.status baseRepo fails. On Linux
 // and macOS it is the walk of evalSymlinks. On Windows the names before the last name
-// take spelledWalkFails with foldFirst, so a ".." after a missing name or a junction
-// drops that name
-// (4c111e86, measured on Windows; <T>\t.txt\.. there is claustrum's own, not
-// measured). The last name only needs an entry, so a
+// take spelledWalkFails with foldFirst, so a ".." drops the name before it,
+// whatever it is: a missing name, a file, a junction or a live, dangling or looping
+// link (4c111e86, measured on Windows). The last name only needs an entry, so a
 // dangling junction passes, and the later os.Stat in gitStatus answers it after the
 // excludes read (measured on Windows). A link as the last name is followed, as the
 // filepath.EvalSymlinks gate before it did (from the code, not measured).
