@@ -398,7 +398,8 @@ func noRepoCreateCalls(t gitDirTrust, s *gitStop, six, off bool, dir string) str
 // The base is the filtered environment of the daemon (gitChildEnv) without
 // GIT_CONFIG and GIT_CONFIG_PARAMETERS, then the profile. The LC_ALL and LANGUAGE
 // of the daemon stay, which the listing drops: 4c111e86 keeps both on this run
-// after a failed listing of git.info (measured on Linux).
+// after a failed listing of git.info (measured on Linux). The run for any other
+// method, and on macOS and Windows, is claustrum's own, not measured.
 // The names match by exact letter case, also on Windows, where the names of the
 // environment have no case. So a lower-case git_config_count or git_config_global
 // of the daemon stays on the call there.

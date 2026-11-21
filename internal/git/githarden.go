@@ -1415,8 +1415,7 @@ func attrSourceArgs() []string {
 
 // probeAttrSource runs the probe. Exit 0 is "supported". A run that exits with a
 // code other than 0 runs `git version` with the folder and the environment of the
-// probe, and exit 0 there is "not supported". On 4c111e86 the run has the
-// environment of the probe (measured on Linux).
+// probe (4c111e86, measured on Linux), and exit 0 there is "not supported".
 // Every other failure is "unknown": known is false. That covers a run that did not
 // start, a run that a signal ended and a failed `git version`.
 func probeAttrSource() (supported, known bool) {
