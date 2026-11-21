@@ -74,12 +74,3 @@ func gitOutsideCmd(add []string, args ...string) *exec.Cmd {
 	cmd.Env = append(gitChildEnv(), add...)
 	return cmd
 }
-
-// gitVersionPlain runs `git version` as the `git version` run does: the folder of
-// gitVersionDir and the environment of gitVersionEnv(nil).
-func gitVersionPlain() *exec.Cmd {
-	cmd := gitCommand("version")
-	cmd.Dir = gitVersionDir
-	cmd.Env = gitVersionEnv(nil)
-	return cmd
-}

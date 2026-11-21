@@ -115,9 +115,13 @@ func TestGitVersionEnvNames(t *testing.T) {
 
 // the plain `git version` runs of the shadow code and of the failed
 // listing run in the folder of gitVersionDir with the filtered environment, and
-// drop the names of the version run.
+// drop the names of the version run. The run after a failed listing keeps the
+// LC_ALL and LANGUAGE of the daemon (4c111e86, measured on Linux). Mutation:
+// start that run from the environment of the listing (both names go).
 func TestGitVersionRunsFolderAndEnv(t *testing.T) {
 	calls := outsideStub(t)
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+	t.Setenv("LANGUAGE", "en")
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "a.b")
 	t.Setenv("GIT_CONFIG_VALUE_0", "c")
@@ -144,6 +148,13 @@ func TestGitVersionRunsFolderAndEnv(t *testing.T) {
 		for _, n := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CEILING_DIRECTORIES"} {
 			if v, ok := lookupExact(first.env, n); ok {
 				t.Errorf("%s keeps %s=%q", c.name, n, v)
+			}
+		}
+		if c.name == "gitVersionRun" {
+			for n, want := range map[string]string{"LC_ALL": "en_US.UTF-8", "LANGUAGE": "en"} {
+				if v, _ := lookupExact(first.env, n); v != want {
+					t.Errorf("%s has %s=%q, want %q", c.name, n, v, want)
+				}
 			}
 		}
 	}
@@ -193,9 +204,13 @@ func TestAttrSourceProbeSupported(t *testing.T) {
 }
 
 // the probe fails with a code and `git version` works. The answer is "not
-// supported" and is cached. The `git version` run is a plain version run.
+// supported" and is cached. The `git version` run has the folder and the
+// environment of the probe: 4c111e86 keeps the GIT_* names of the daemon there
+// (measured on Linux). Mutation: give that run the environment of the plain
+// version run (GIT_NAMESPACE and GIT_CONFIG_SYSTEM go).
 func TestAttrSourceProbeNotSupported(t *testing.T) {
 	calls := outsideStub(t)
+	t.Setenv("GIT_NAMESPACE", "ns")
 	t.Setenv("CLAUSTRUM_GITSTUB_ARGEND", gitEmptyTree)
 	stubAnswer(t, "version", 129, "")
 	resetAttrSourceForTest()
@@ -210,7 +225,10 @@ func TestAttrSourceProbeNotSupported(t *testing.T) {
 		t.Fatalf("calls = %v, want the probe and one plain version run", got)
 	}
 	checkOutside(t, "the probe", got[0], false)
-	checkOutside(t, "the version run of the probe", got[1], true)
+	checkOutside(t, "the version run of the probe", got[1], false)
+	if v, _ := lookupExact(got[1].env, "GIT_NAMESPACE"); v != "ns" {
+		t.Errorf("the version run of the probe has GIT_NAMESPACE=%q, want ns", v)
+	}
 }
 
 // both runs fail with a code. The answer is "unknown" and is not cached, so

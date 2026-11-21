@@ -1414,9 +1414,11 @@ func attrSourceArgs() []string {
 }
 
 // probeAttrSource runs the probe. Exit 0 is "supported". A run that exits with a
-// code other than 0 runs `git version` (gitVersionPlain), and exit 0 there is "not
-// supported". Every other failure is "unknown": known is false. That covers a run
-// that did not start, a run that a signal ended and a failed `git version`.
+// code other than 0 runs `git version` with the folder and the environment of the
+// probe, and exit 0 there is "not supported". 4c111e86 keeps the GIT_* names of
+// the daemon on that run, which the `git version` run drops (measured on Linux).
+// Every other failure is "unknown": known is false. That covers a run that did not
+// start, a run that a signal ended and a failed `git version`.
 func probeAttrSource() (supported, known bool) {
 	err := gitOutsideCmd(nil, "--attr-source="+gitEmptyTree, "version").Run()
 	if err == nil {
@@ -1425,7 +1427,7 @@ func probeAttrSource() (supported, known bool) {
 	if !exitedWithCode(err) {
 		return false, false
 	}
-	return false, gitVersionPlain().Run() == nil
+	return false, gitOutsideCmd(nil, "version").Run() == nil
 }
 
 var (

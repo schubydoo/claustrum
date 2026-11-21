@@ -231,10 +231,11 @@ and on Windows in `SystemRoot` if that is absolute. Else the folder of the daemo
   `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_PARAMETERS`, `GIT_CEILING_DIRECTORIES`,
   `GIT_DISCOVERY_ACROSS_FILESYSTEM` and every `GIT_CONFIG_KEY_` and
   `GIT_CONFIG_VALUE_` name. Letter case must match on every system.
-  `GIT_CONFIG_NOSYSTEM` stays.
+  `GIT_CONFIG_NOSYSTEM` stays. After a failed listing the run keeps the daemon's
+  `LC_ALL` and `LANGUAGE` (`4c111e86`, measured on Linux).
 - The probe runs `git --attr-source=<empty tree> version` with no
-  removal. Exit 0 is "supported". Another exit code runs the
-  `git version` run above, and its exit 0 is "not supported". Both last for the life of the daemon. Every other failure is "unknown" and is not stored.
+  removal. Exit 0 is "supported". Another exit code runs `git version` with the
+  environment of the probe (`4c111e86`, measured on Linux), and its exit 0 is "not supported". Both last for the life of the daemon. Every other failure is "unknown" and is not stored.
 - The version gate runs `git version` with no removal.
   Version 2.32 or later is "new enough", an older one is "too old", and the daemon
   keeps either answer for the life of the host, and keeps nothing with no run
