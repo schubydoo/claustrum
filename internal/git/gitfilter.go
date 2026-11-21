@@ -213,11 +213,10 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 
 // equalsNameNeedsNoItem lets a name with "=" that only the repository defines pass
 // in the state shadow with a settings copy, when its values pass and the read-tree
-// call gets no item for it. On Windows 4c111e86 succeeds with
-// `[filter "a=b"] smudge = cat` there (measured on Windows). Linux and macOS keep the
-// refusal for `smudge = cat` (claustrum's own, not measured). The tests set it on
-// every system.
-var equalsNameNeedsNoItem = gitEnvWindowsForm
+// call gets no item for it. 4c111e86 succeeds with `[filter "a=b"] smudge = cat`
+// there (measured on Linux, macOS and Windows, on Linux and macOS also with a
+// .gitattributes that names the filter). The tests set it on every system.
+var equalsNameNeedsNoItem = true
 
 // planFilters turns the filters of two listings into the -c pairs of the
 // checkout. full is the listing that the checkout reads. outside is the listing
@@ -248,7 +247,7 @@ var equalsNameNeedsNoItem = gitEnvWindowsForm
 //     `clean` item needs lfsClean.
 //   - A name with "=" is refused with no checkout (measured). git ends the key
 //     of a -c pair at the first "=". A measurement has a value that does not
-//     pass. On Windows such a name whose values all pass gets no item
+//     pass. Such a name whose values all pass gets no item
 //     (equalsNameNeedsNoItem).
 //
 // One filter that outside defines does not run: the filter lfs, when lfsKey is
