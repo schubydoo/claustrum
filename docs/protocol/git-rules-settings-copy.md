@@ -286,11 +286,12 @@ of the first call or its exit status (`c8e2f083`, Linux and Windows). A non-zero
 gets the same (claustrum's own).
 
 A third run follows that exit 0, in the root, with no user or
-system config and no `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share). Its exit 0 on
-Linux and macOS gives that error plus `; if that names a git setting or file, fix it, then try
-again`. Every other one gives "no repository" (`4c111e86` on a Windows share; else
-claustrum's own). A bare repository gets no third run (Linux). Its 30-second end, timed from
-the second run, and a stop of its child are claustrum's own. A `refs` made
+system config or `GIT_DIR` (`52d82f0a`; `4c111e86` on a Windows share). On Linux and macOS
+its exit 0 gives that error plus `; if that names a git setting or file, fix it, then try
+again`, a stop at the same bound gives the last row (`52d82f0a`,
+Linux), and a failure "no repository" (claustrum's own). On Windows each gives "no
+repository" (`4c111e86` on a share, else claustrum's own). A bare repository gets no third
+run (Linux). A `refs` made
 [unsearchable](git-rules-trust.md#how-the-daemon-finds-the-git-directory) right after a good
 answer gives "no repository" (`52d82f0a` on Linux, claustrum's own on macOS).
 
