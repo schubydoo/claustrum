@@ -15,7 +15,7 @@ with an empty value (claustrum's own).
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
 listing, a request with no [kept value](git-rules-session-folders.md#the-off-switch) runs the excludes read, `git config
---includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
+--includes --path core.excludesFile` ([before a kept state](git-rules-session-folders.md#before-a-kept-state)). [Calls outside a repository](#calls-outside-a-repository)
 gives it and the `--attr-source` probe. On macOS a create in attach mode after a git.info runs one more
 listing in `baseRepo` right before the listing of its add. Without a git.info first it does the same (claustrum's own, not measured). On macOS, after a hold that ends at the
 add, the create runs [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository)
@@ -130,10 +130,13 @@ The repository calls are the configuration listings, the hardened calls,
       Windows a name matches in any letter case and keeps its spelling.
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
       Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
-      empty value is not relative. On Windows `NUL` in any case is not. Nor is
-      `\\\x`, `\\?\UNC\…`, `\\?\C:\…`, `\\.\C:\…`, `//host/share/…` or `\\host`
-      alone (`4c111e86`, measured on Windows). Nor is another value with two
-      leading slashes and more text (claustrum's own, not measured). One slash is relative (`4c111e86`, measured on Windows).
+      empty value is not relative. On Windows `NUL` in any case is not.
+      One slash is relative (`4c111e86`, measured on Windows).
+    - On Windows a UNC path is absolute, and so is a value with two leading slashes
+      of either kind and more text, but not an `LD_PRELOAD` or `LD_AUDIT` piece. `4c111e86` keeps `\\\x`, `\\?\UNC\…`, `\\?\C:\…`,
+      `\\.\C:\…`, `//host/share/…` and `\\host` alone for a relative name, and one of `\\\x`,
+      `///x`, `\\\\x` and `//\x` in each of four list and four program names (measured
+      on Windows). The other names and shapes are claustrum's own.
     - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
       when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
       `XCACHE` and `XCTEMP` have none.
@@ -144,7 +147,7 @@ The repository calls are the configuration listings, the hardened calls,
     - 19 list names, such as `PATH`, `LOCPATH` and `SSL_CERT_DIR`, keep their
       absolute entries. Five of them keep an empty value, but not
       `GIT_ALTERNATE_OBJECT_DIRECTORIES` on Windows (`4c111e86`, measured on Windows).
-      The rest go when no entry is left. On Windows a UNC path is absolute.
+      The rest go when no entry is left.
     - `LD_PRELOAD` and `LD_AUDIT` keep an absolute piece or one with no `/`.
       `LD_PRELOAD` splits on white space too.
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
@@ -152,6 +155,9 @@ The repository calls are the configuration listings, the hardened calls,
       macOS and Windows.
     - Every other entry stays, except the entries named below and the cuts of
       [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child).
+
+#### The config, protocol, trace and ssh names
+
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The read of config text keeps them
   (claustrum's own, not measured). The names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.

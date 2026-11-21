@@ -291,8 +291,13 @@ func gitInfo(req *gitCall) rpc.Response {
 		}
 		return notRepo()
 	}
-	// On Windows the alternates file is checked before the next git call
-	// (alternatesRefusal).
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+	// then the alternates file are checked before the next git call
+	// (alternateEnvRefusal, alternatesRefusal). The order of the two is claustrum's
+	// own, not measured.
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -531,6 +536,7 @@ func (req *gitCall) followSwitch(off bool, gate func(l *liveSwitch, ask bool) (g
 	}
 	l := &liveSwitch{off: req.offLive, pending: off && !req.offOwn, stop: req.stop}
 	l.gate = func(ask bool) (gitUse, bool) { return gate(l, ask) }
+	l.perCall = func() bool { return sessiondirs.CheckOff() && req.shadow.noKeptState() }
 	req.use.live = l
 }
 
@@ -708,6 +714,10 @@ func gitDefaultBranch(u gitUse, dir string) string {
 // test (measured).
 var statusNoGitKeepsTest = runtime.GOOS == "windows"
 
+// statusOpenTest is statusPathOpenFails. Tests replace it to reach the refusal
+// on every system.
+var statusOpenTest = statusPathOpenFails
+
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
@@ -759,8 +769,7 @@ func gitStatus(req *gitCall) rpc.Response {
 		}
 	}
 	// A baseRepo whose walk fails, such as a missing name, answers isRepo false with no
-	// git call. On Windows the walk goes by the names as sent, so a junction before the
-	// last name passes (4c111e86, measured on Windows). See statusBaseWalkFails.
+	// git call. See statusBaseWalkFails.
 	if statusBaseWalkFails(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -902,6 +911,11 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	sp, ok := statusPathOf(p.Path, p.BaseRepo)
 	if !ok {
+		return notRepo
+	}
+	// On Windows a `path` that cannot be opened as a folder answers here, with no
+	// call of statusWorkTreeProbe (statusPathOpenFails).
+	if statusOpenTest(filepath.Clean(p.Path)) {
 		return notRepo
 	}
 	probeUse := req.use.atGitDirCommand()
@@ -1297,8 +1311,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		return notARepoResult(req.ID, repo)
 	}
-	// On Windows the alternates file is checked before any git call, and
-	// nothing is created (alternatesRefusal).
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+	// the alternates file are checked before any git call, and nothing is
+	// created (alternateEnvRefusal, alternatesRefusal).
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
@@ -3260,9 +3278,14 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
-		// On Windows the alternates file is checked before any git call and any
-		// delete (alternatesRefusal).
+		// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+		// the alternates file are checked before any git call and any delete
+		// (alternateEnvRefusal, alternatesRefusal). The worktree, its entry and its
+		// branch stay.
 		if verdict == gitDirTrusted {
+			if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}

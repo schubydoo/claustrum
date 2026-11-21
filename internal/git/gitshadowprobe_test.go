@@ -351,6 +351,12 @@ func TestProbeDropsFourNamesAndKeepsTheConfigCount(t *testing.T) {
 		"GIT_NAMESPACE=ns", "GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "index"),
 		"GIT_DISCOVERY_ACROSS_FILESYSTEM=1", "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + alt,
 	}
+	// On Windows 4c111e86 refuses git.info with a daemon
+	// GIT_ALTERNATE_OBJECT_DIRECTORIES before the call (measured on Windows), so
+	// the row keeps the other three names there.
+	if objectSourceChecks {
+		set = set[:3]
+	}
 	count := []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=claustrum.probetest", "GIT_CONFIG_VALUE_0=1"}
 	for _, kv := range append(slices.Clone(set), count...) {
 		k, v, _ := strings.Cut(kv, "=")
