@@ -89,7 +89,8 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // A dangling link with missingLeaf gives dangling, and wouldBe only if the parent
 // of its target exists. A dangling link without missingLeaf gives the plain
 // exists:false (claustrum's own, not measured). On Windows a missing path first
-// takes the failure of its nearest existing folder (realpathMissingFailure).
+// takes the failure of its nearest existing folder, or the error 1921 of a
+// folder on the way (realpathMissingFailure).
 //
 // A path through a regular file, as <file>/a, gives the plain exists:false, with
 // and without missingLeaf (4c111e86, measured on Linux, and for <file>/a with no

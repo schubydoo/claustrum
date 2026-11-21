@@ -178,7 +178,8 @@ func realpathEval(p string) (string, error) {
 
 // realpathMissingFailure is the answer for the missing clean path: the
 // failure of the nearest existing folder above it, when that folder gives
-// errNoUsableName or error 1921, or nil. So a missing name on a mapped network
+// errNoUsableName or error 1921, or the error 1921 of a folder on the way, or
+// nil. So a missing name on a mapped network
 // drive, behind a link to a network place or behind a chain of 32 junctions
 // fails as the folder does, with and without missingLeaf (4c111e86, Windows).
 // Behind a network link it does so with missingLeaf also when the folder between

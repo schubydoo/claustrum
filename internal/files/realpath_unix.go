@@ -13,7 +13,7 @@ import (
 func isLinkLoopErrno(en syscall.Errno) bool { return en == syscall.ELOOP }
 
 // loopStopsShort is false on Linux and macOS: a too_many_links reply has no
-// stoppedShort member there (claustrum's own, not measured on 87375cc7).
+// stoppedShort member there (87375cc7, measured for a Linux link loop).
 const loopStopsShort = false
 
 // realpathPathRefusal returns the -32602 text for a path that is not absolute.
