@@ -204,9 +204,9 @@ func offSwitchInfo(t *testing.T, f shadowFixture) (string, []envCall) {
 // The state line of a passed start test is logged at each test that is not kept:
 // four in a git.info with the switch, one for each git call. A request without the
 // switch keeps the state with one more line, and none follows (4c111e86, measured
-// on Linux). The count of four is tested on Linux only, where it is measured.
-// Mutation: log the line only at a change of the state. The second request with
-// the switch then logs none.
+// on Linux). The count is four on every system in the code: the Windows root pair
+// runs outside hardenedGitCmd, so it runs no test. Mutation: log the line only at a
+// change of the state. The second request with the switch then logs none.
 func TestStartTestStateLineUnderOffSwitch(t *testing.T) {
 	requireGit(t)
 	t.Cleanup(sessiondirs.UseForTest(""))
@@ -215,8 +215,8 @@ func TestStartTestStateLineUnderOffSwitch(t *testing.T) {
 	lines := func() int { return strings.Count(buf.String(), shadowStateLine) }
 	offSwitchInfo(t, f)
 	each := lines()
-	if each < 2 || (runtime.GOOS == "linux" && each != 4) {
-		t.Errorf("after git.info 1 with the off switch: %d state lines, want 4 on Linux, more than 1 elsewhere", each)
+	if each != 4 {
+		t.Errorf("after git.info 1 with the off switch: %d state lines, want 4", each)
 	}
 	offSwitchInfo(t, f)
 	if got := lines(); got != 2*each {
@@ -279,24 +279,7 @@ func TestPerCallRoundsBeforeAKeptState(t *testing.T) {
 	// reads again after each test: a read with the same outcome gives the kept
 	// verdict back (reuseStaleVerdict). Mutation: drop that step. The copy is then
 	// written again as a new file.
-	copyConfig := func() os.FileInfo {
-		t.Helper()
-		all, _ := filepath.Glob(filepath.Join(f.run, shadowRootName, "*", "*", "config"))
-		var m []string
-		for _, p := range all {
-			if len(filepath.Base(filepath.Dir(p))) == 32 { // a copy is <S>/<32 hex>, not .probe
-				m = append(m, p)
-			}
-		}
-		if len(m) != 1 {
-			t.Fatalf("copies of the config: %v, want one", m)
-		}
-		fi, err := os.Stat(m[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-		return fi
-	}
+	copyConfig := func() os.FileInfo { return shadowCopyConfig(t, f) }
 	var before os.FileInfo
 	for _, c := range []struct {
 		name               string
@@ -332,6 +315,58 @@ func TestPerCallRoundsBeforeAKeptState(t *testing.T) {
 		if tests, excl, _, _ := perCallCounts(calls); tests != 0 || excl != 0 || (runtime.GOOS == "linux" && len(calls) != c.total) {
 			t.Errorf("%s with the switch after a kept state: %d rounds, %d excludes reads, %d calls, want 0, 0, %d (the calls on Linux)", c.method, tests, excl, len(calls), c.total)
 		}
+	}
+}
+
+// shadowCopyConfig is the state of the config of the one copy of the settings of f.
+func shadowCopyConfig(t *testing.T, f shadowFixture) os.FileInfo {
+	t.Helper()
+	all, _ := filepath.Glob(filepath.Join(f.run, shadowRootName, "*", "*", "config"))
+	var m []string
+	for _, p := range all {
+		if len(filepath.Base(filepath.Dir(p))) == 32 { // a copy is <S>/<32 hex>, not .probe
+			m = append(m, p)
+		}
+	}
+	if len(m) != 1 {
+		t.Fatalf("copies of the config: %v, want one", m)
+	}
+	fi, err := os.Stat(m[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi
+}
+
+// A config written again with the same content before a read again after a test
+// gets a new verdict, so its request writes the copy again at once (claustrum's
+// own, not measured). Mutation: in reuseStaleVerdict, drop the compare of the
+// file states. The copy then stays the old file in that request.
+func TestStaleReadOfAConfigWrittenAgainWritesTheCopy(t *testing.T) {
+	requireGit(t)
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	offSwitchInfo(t, f)
+	before := shadowCopyConfig(t, f)
+	cfg := filepath.Join(f.repo, ".git", "config")
+	body, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := cfg + ".new"
+	if err := os.WriteFile(tmp, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(tmp, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, cfg); err != nil {
+		t.Fatal(err)
+	}
+	offSwitchInfo(t, f)
+	if after := shadowCopyConfig(t, f); os.SameFile(before, after) {
+		t.Error("the copy of a config written again stays the old file after the request")
 	}
 }
 

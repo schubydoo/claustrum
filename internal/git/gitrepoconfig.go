@@ -1402,7 +1402,8 @@ func staleRepoVerdict(gitDir string) {
 }
 
 // reuseStaleVerdict is the kept verdict of k when it is stale and a new read v
-// gave the same outcome, or nil. The stale mark goes either way.
+// gave the same outcome from files in the same states, or nil. The stale mark
+// goes either way.
 func reuseStaleVerdict(k repoVerdictKey, v *repoVerdict) *repoVerdict {
 	repoVerdicts.Lock()
 	defer repoVerdicts.Unlock()
@@ -1412,10 +1413,16 @@ func reuseStaleVerdict(k repoVerdictKey, v *repoVerdict) *repoVerdict {
 	delete(repoVerdicts.stale, k)
 	old := repoVerdicts.byKey[k]
 	if old == nil || old.refusal != v.refusal || old.worktreeConfig != v.worktreeConfig || old.shadowText != v.shadowText ||
-		!slices.Equal(old.worktreeItems, v.worktreeItems) || old.shared != v.shared || !bytes.Equal(old.ownConfig, v.ownConfig) {
+		!slices.Equal(old.worktreeItems, v.worktreeItems) || old.shared != v.shared || !bytes.Equal(old.ownConfig, v.ownConfig) ||
+		!slices.EqualFunc(old.states, v.states, sameRepoFileState) {
 		return nil
 	}
 	return old
+}
+
+// sameRepoFileState reports whether a and b record one path in the same state.
+func sameRepoFileState(a, b repoFileState) bool {
+	return a.path == b.path && a.follow == b.follow && sameFileState(a.link, b.link) && sameFileState(a.target, b.target)
 }
 
 // forgetRepoVerdict drops the kept verdict of the git directory gitDir for
