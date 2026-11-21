@@ -29,7 +29,7 @@ The members come in the order of the table. A path below a missing folder gives 
 | `-32602` | `Invalid params` | Wrong type. Not measured on Windows. |
 | `-32602` | `files.realpath: the path must be absolute` | The path is relative. |
 | `-32602` | `files.realpath: the path contains a NUL character` | A NUL in the path. |
-| `-32602` | `files.realpath: the path has a colon after the drive letter's (alternate data streams are not supported)` | Windows: a colon after the drive letter (`4c111e86`, measured). |
+| `-32602` | `files.realpath: the path has a colon after the drive letter's (alternate data streams are not supported)` | Windows: a colon after the drive letter, measured for `f.txt:stream` and `f.txt:nope:$DATA` (`4c111e86`). |
 | `-32602` | `files.realpath: a path that starts with "~/" must have no "." or ".." component, no "//" and no trailing slash` | A `..` after `~/`. A `.` or empty component and a bare `~/` are claustrum's own, not measured. |
 | `-32603` | `files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)` | `data` is `{"reason":"no_usable_name"}`. On Windows, a path on a mapped network drive, or a link on the way to one or to a `\\host\share`, `\\?\UNC\` or `\\.\UNC\` path (measured), also for a missing name below it (`4c111e86`, measured). Other network forms are claustrum's own, not measured. From the code, there is no other cause. |
 | `-32603` | `files.realpath: error <n>: <text>` | `data` is `{"reason","errno"}`. The reason is `too_many_links`, `no_permission` or `other`. `other` (any other errno) and `no_permission` on Windows are claustrum's own, not measured. |
