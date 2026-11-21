@@ -117,7 +117,9 @@ var alternateEnvLogged atomic.Bool
 // git.status and git.info (4c111e86, measured on Windows). Both switches on a
 // create and a remove are claustrum's own, not measured. A remove of a gone
 // worktree folder refuses too, after at most the excludes read. With worktreeRoot
-// a remove refuses before this check (both 4c111e86, measured on Windows).
+// a remove refuses before this check (both 4c111e86, measured on Windows). The
+// place of the gone-folder check before the share and no-repository answers of
+// removeGoneWorktree is claustrum's own, not measured.
 //
 // The daemon logs alternateEnvLine once, also for an empty value (4c111e86,
 // measured on Windows: one line for a daemon of eight requests). On a request
