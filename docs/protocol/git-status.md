@@ -184,13 +184,13 @@ A submodule entry is ` S `, the quoted name and one of three texts (measured on 
 
 === "Windows"
 
-    - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8`, measured on Windows).
+    - With no global excludes file of the user, the `status` call passes `-c core.excludesFile=NUL`. Git 2.55.0.windows.3 refuses it, and the reply is `-32603 "exit status 128"` (`c9125eb8` and `4c111e86`, measured on Windows).
     - A `baseRepo` with a junction before its last component gives the status (`4c111e86`, measured on Windows). A dangling junction gives `"isRepo": false` after the read of the user's excludes (measured on Windows). The names of `baseRepo` before its last component are walked as sent, so a `..` after a junction or a symbolic link does not stop the status. A dangling symbolic link as the last name gives `"isRepo": false` at once. Both are claustrum's own, not measured. A link to a network or device path is refused first ([network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path)).
     - A `baseRepo` that exists and in which git cannot start, such as a regular file, gives `-32603` with the start error of the listing. See [Git-directory trust check](git-rules-trust.md#git-directory-trust-check).
     - A junction below `baseRepo` in `path` gives `"isRepo": false`, as a symbolic link does.
     - A last component of a `path` inside `baseRepo` that ends in a dot or a space, or holds a colon, gives `"isRepo": false`. claustrum refuses such a name at any component (not measured). Outside `baseRepo` a trailing dot or space passes.
     - The folder compare of the registration match ignores letter case. A `gitdir` value that ends in `.GIT` fails.
-    - A junction `path` outside `baseRepo` gets no `rev-parse --show-toplevel` with that spelling (`4c111e86`). claustrum uses the real path (not measured).
+    - A junction `path` outside `baseRepo` gets one `rev-parse --show-toplevel`. Its `--work-tree` is the real path, not the junction spelling (`4c111e86`, measured on Windows).
     - A subst drive, a junction, a `\\?\` path and 8.3 short names match `path` too. A `path` with short names inside a `baseRepo` in short names finds no registration.
     - A `commondir` value with forward or back slashes passes. Another letter case, a short name, a `\\?\` prefix and a value with no drive letter fail.
     - A `baseRepo` that is a junction to the repository gives the status. The daemon goes on with the git directory that git prints.

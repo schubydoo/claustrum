@@ -23,7 +23,7 @@ import (
 //
 // The calls outside a repository (gitoutsidecalls.go) start from the cleaned
 // environment of the daemon (gitChildEnv). Only the `git version` run removes more
-// names (gitVersionEnv).
+// names (gitVersionEnv), and, on Windows, the excludes read (excludesReadEnv).
 //
 // GIT_CONFIG_COUNT and its pairs are read by their exact names from the environment
 // list, because os.LookupEnv ignores case on Windows. GIT_ALLOW_PROTOCOL is read

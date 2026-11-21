@@ -52,10 +52,11 @@ func notARepoResult(id interface{}, repo string) rpc.Response {
 // below the top folder of the repository, `repo\sub`, gets the same answers,
 // and the create names `repo\.git` (4c111e86, measured on Windows). So the walk
 // goes up from repo to the first folder with a `.git`, and stops below the share
-// root. A `.git` file or link ends the walk with "", and a mapped drive gets "",
-// so they keep the answers of a local folder. Those cases and the walk from a
-// deeper folder are claustrum's own, not measured. The error output of git there
-// is not recorded.
+// root. A `.git` file or link ends the walk with "", and so does a `.git` whose
+// Lstat fails with another error than "does not exist", such as access denied.
+// A mapped drive gets "". So they keep the answers of a local folder. Those cases
+// and the walk from a deeper folder are claustrum's own, not measured. The error
+// output of git there is not recorded.
 func shareGitDir(repo string) string {
 	if !repoOnShare(repo) {
 		return ""
@@ -63,11 +64,11 @@ func shareGitDir(repo string) string {
 	vol := filepath.VolumeName(repo)
 	for d := filepath.Clean(repo); len(d) > len(vol)+1; d = filepath.Dir(d) {
 		g := filepath.Join(d, ".git")
-		fi, err := os.Lstat(g)
-		if err != nil {
+		fi, err := lstatPath(g)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		if !fi.IsDir() {
+		if err != nil || !fi.IsDir() {
 			return ""
 		}
 		return g

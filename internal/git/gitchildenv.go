@@ -232,11 +232,11 @@ func badProgram(value string, windows bool) bool {
 // relativeFor reports whether value is relative by the rules of the cleaning. An
 // empty value is not. On Windows NUL in any letter case is not either, and a
 // value with one leading slash is. A value with two leading slashes and more
-// text is not, also
-// with a third one: 4c111e86 keeps a GIT_SSL_CAINFO of \\\x (measured on
-// Windows). A value that starts with // or with a mix of / and \, and the use
-// for the Kerberos file part and in xdgExcludesPath, are claustrum's own, not
-// measured.
+// text is not, also with a third one: 4c111e86 keeps a GIT_SSL_CAINFO of \\\x,
+// and values \\?\UNC\..., \\?\C:\..., \\.\C:\..., //host/share/... and \\host alone
+// (measured on Windows). Another value with two leading slashes, a value that
+// starts with a mix of / and \, and the use for the Kerberos file part and in
+// xdgExcludesPath, are claustrum's own, not measured.
 func relativeFor(value string, windows bool) bool {
 	if value == "" {
 		return false

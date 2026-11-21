@@ -1521,9 +1521,10 @@ func globalExcludesPath() string {
 
 // excludesFromGlobalConfig reads the configured core.excludesFile of the user: an
 // absolute value, or "" when there is none. The read has the filtered environment
-// of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in gitVersionDir
-// (claustrum's own, not measured). f6010b97 adds GIT_DIR=NUL on Windows and runs
-// it in the temporary directory on Linux and Windows.
+// of the daemon (gitChildEnv) and GIT_DIR=<null device>, and runs in
+// gitVersionDir (claustrum's own, not measured). On Windows it drops the names
+// of excludesReadDropped (measured, see there). f6010b97 adds GIT_DIR=NUL on
+// Windows and runs it in the temporary directory on Linux and Windows.
 //
 // `config --includes --path` follows includes and expands a leading ~, matching the
 // reference. It runs WITHOUT the hardening profile so git reports the real global
@@ -1536,14 +1537,21 @@ func globalExcludesPath() string {
 // start.
 func excludesFromGlobalConfig() (v string, started bool) {
 	windows := gitEnvHere.windows
-	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
-	out, err := cmd.Output()
+	out, err := excludesReadCmd().Output()
 	if err == nil {
 		if p := strings.TrimSpace(string(out)); absoluteFor(p, windows) {
 			return p, true
 		}
 	}
 	return "", err == nil || errors.As(err, new(*exec.ExitError))
+}
+
+// excludesReadCmd is the command of the excludes read, with the environment of
+// excludesReadEnv (excludesReadDropped).
+func excludesReadCmd() *exec.Cmd {
+	cmd := gitOutsideCmd([]string{"GIT_DIR=" + os.DevNull}, "config", "--includes", "--path", "core.excludesFile")
+	cmd.Env = excludesReadEnv(cmd.Env, gitEnvHere)
+	return cmd
 }
 
 // xdgExcludesPath looks up the default excludes file on each call. A regular
