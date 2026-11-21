@@ -98,6 +98,30 @@ func TestThirdProbeAfterABadUserConfig(t *testing.T) {
 	}
 }
 
+// TestThirdProbeWindowsReplyStaysNoRepo runs the rows of
+// TestThirdProbeAfterABadUserConfig with configFreeRunAnswers off, as on
+// Windows. The third run still runs and exits 0, and the reply stays "no
+// repository", the answer of c8e2f083 after a second run that exits 0
+// (measured on Windows). Mutation: drop the test of configFreeRunAnswers in
+// configFreeProbe (the reply is the error and the hint).
+func TestThirdProbeWindowsReplyStaysNoRepo(t *testing.T) {
+	old := configFreeRunAnswers
+	t.Cleanup(func() { configFreeRunAnswers = old })
+	configFreeRunAnswers = false
+	f := newSeededShadowFixture(t)
+	badIncludeConfig(t, f.repo)
+	raw, calls := f.info(t, f.repo, nil)
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}}`; raw != want {
+		t.Errorf("reply = %s\n  want %s", raw, want)
+	}
+	if n := len(probeCalls(calls)); n != 3 {
+		t.Errorf("%d calls about the repository, want 3", n)
+	}
+	if _, ok := thirdProbeCall(calls); !ok {
+		t.Errorf("no third run among %d calls about the repository", len(probeCalls(calls)))
+	}
+}
+
 // probeRunStart is the start of call n (from 1) about the repository in the
 // time log of the git stub. The three runs have one argv.
 func probeRunStart(t *testing.T, timeLog string, n int) time.Time {
