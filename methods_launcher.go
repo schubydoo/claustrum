@@ -160,8 +160,9 @@ func (p *managedLauncherParams) ExpandPaths() {}
 // (install.ResolveChecked). A path with no launcherCheck is -32602 "launcherCheck is
 // required with path", after the cliPath test (measured on Linux). A launcherCheck
 // with no path checks "": on Linux it is unusable with not_absolute (c9125eb8,
-// measured), on macOS macos_host (measured). On Windows every launcherCheck, also one
-// with no path, is unusable with windows_host (4c111e86, measured on Windows).
+// measured), on macOS macos_host (measured). On Windows a launcherCheck, also one
+// with no path, is unusable with windows_host (4c111e86, measured on Windows for the
+// shapes on the launcher.resolve page, claustrum's own for other member values).
 func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
