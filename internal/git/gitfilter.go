@@ -215,7 +215,8 @@ func (f *filterPlan) pairs(name string, values [len(filterKeys)]string, keys ...
 // in the state shadow with a settings copy, when its values pass and the read-tree
 // call gets no item for it. On Windows 4c111e86 succeeds with
 // `[filter "a=b"] smudge = cat` there (measured on Windows). Linux and macOS keep the
-// refusal (claustrum's own, not measured). The tests set it on every system.
+// refusal for `smudge = cat` (claustrum's own, not measured). The tests set it on
+// every system.
 var equalsNameNeedsNoItem = gitEnvWindowsForm
 
 // planFilters turns the filters of two listings into the -c pairs of the
