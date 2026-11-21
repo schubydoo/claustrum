@@ -147,7 +147,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 | `writable` | A group or other write bit on the file or a folder above it, 1777 too (`4c111e86`, measured on Linux) | `` `<D>` can be changed by accounts other than its owner (mode <mode>). Remove that write access. `` |
 | `owner` | Owned by the uid of the daemon (`4c111e86`, measured on a FUSE mount) | `` `<D>` belongs to the account that signs in (uid <n>). Root must own the launcher and every folder above it. `` |
 | `owner` | Owned by uid 65534, which `ownerUid` names, with no digest (`4c111e86`, measured on Linux) | `` `<D>` shows as uid 65534 (nobody), which the policy names as ownerUid. That uid can stand for many accounts, so it counts only if the policy also lists the launcher's SHA-256 digest. Add sha256 to sshHostLauncher. `` |
-| `owner` | Owned by uid 65534 | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
+| `owner` | Owned by uid 65534 that no `ownerUid` names | `` `<D>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the launcher and every folder above it. `` |
 | `owner` | Owned by another uid (`4c111e86`, measured with a digest) | `` `<D>` belongs to uid <n>. Root must own the launcher and every folder above it. `` |
 
 #### Rules of the check
@@ -155,7 +155,7 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - `<mode>` has four octal digits. The group of the file is not tested.
 - A root file passes with an `ownerUid` too. An `ownerUid` lets that uid own them, but never the uid of the daemon, and uid 65534 only with a digest (`4c111e86`, measured on Linux). An `ownerUid` in the settings file lifts nothing.
 - With no digest, `{}` or `"sha256":[]` passes (measured). The file is then not read (claustrum's own, not measured). A digest matches in any letter case. A short one matches nothing.
-- Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file, after the links. So a folder behind a link has its real path in the text (`4c111e86`, measured on Linux).
+- Links pass, a chain of 40 too. The walk tests `/`, each folder down to the file, and the file, after the links. So a folder behind a link has its real path in the text, and a `..` after a link goes to the parent of its target (`4c111e86`, measured on Linux).
 - Each link met on the way to the launcher has its holder folder and the folders above it tested like the others (`4c111e86`, measured on Linux). They come first (claustrum's own, not measured).
 - A path that moves during the check is not refused for the move. A swapped file meets the digest test (`4c111e86`, measured on Linux).
 - A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The write test of an item comes before its owner test (`4c111e86`, measured on Linux). The other order of the tests is claustrum's own.
