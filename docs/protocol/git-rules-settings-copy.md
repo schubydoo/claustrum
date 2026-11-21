@@ -16,12 +16,12 @@ sends it, and an error reply has none (Linux, macOS and Windows).
 
 | `settingsControl` | When | What it changes |
 |---|---|---|
-| no member | No start test of the daemon gave a state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a create (`4c111e86`, measured on Linux and Windows), on a `.git` file to a missing repository starts it |
+| no member | No start test of the daemon gave a kept state yet | Nothing. A folder with no repository, or a `HEAD` that is no ref, starts no test. A `git.info`, or a create (`4c111e86`, measured on Linux and Windows), on a `.git` file to a missing repository starts it |
 | `"shadow"` | The start test passed | The git calls name the copy. Before them the daemon asks git about the repository |
 | `"fallback-git"` | The git of the host does not work on such a copy, for example git 2.11.4 and 2.12.5 | The git calls name the git directory. The daemon reads no repository config, gives no config refusal, makes no copy and does not ask git about it |
 | `"off-switch"` | A request with `"shadowDirOff":true` runs (the hold) when the reply is made | A request that starts then names the git directory, with no test, folder or config read |
 
-- After the test the "no repository" reply has the member too:
+- After a kept test the "no repository" reply has the member too:
   `{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}`.
   That reply waits for a running test and has its state. After a failed test it has
   no member. A path that does not exist gets the same, but starts no test itself. On
@@ -63,8 +63,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   after that answer has the 2 minute limit (claustrum's own, not measured).
 - In the state `fallback-git` the test runs again on the first request more than 10
   minutes after the last test. In the state `shadow` no second test ran up to 720 s.
-- The daemon logs one `[GitHandler]` line at the first state decision and one
-  at a change.
+- The daemon logs one `[GitHandler]` line per test until a state is kept, then
+  one per change.
 
 ### The start test
 
@@ -111,8 +111,8 @@ does not fail the test (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure 10 seconds after the test, also with its cause
 gone. In that time a request gets the failure with no git call, but works with
-`"shadowDirOff":true`. A test under `"sessionFoldersOff":true`, passed or failed,
-is not kept ([rule](git-info.md#settingscontrol)).
+`"shadowDirOff":true`. A test under `"sessionFoldersOff":true` is not kept
+([rule](git-info.md#settingscontrol)).
 
 ### The folders
 

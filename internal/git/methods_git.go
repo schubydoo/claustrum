@@ -220,9 +220,9 @@ func gitInfo(req *gitCall) rpc.Response {
 		}
 	}
 	// notRepo is the "no repository" answer. It carries the settingsControl member
-	// that the request has at that moment (ShadowHost.replyControl): none in a daemon
-	// that has not passed its start test, as for a HEAD that is no ref as the first
-	// request (measured on Linux).
+	// that the request has at that moment (ShadowHost.replyControl): none before a
+	// kept start test, as for a HEAD that is no ref as the first request (measured
+	// on Linux).
 	notRepo := func() rpc.Response {
 		return rpc.OKResult(req.ID, rpc.NotRepoReply{SettingsControl: req.shadow.replyControl(req.offLive)})
 	}

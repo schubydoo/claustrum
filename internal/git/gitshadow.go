@@ -171,9 +171,8 @@ func (h *ShadowHost) active() bool {
 	return h != nil && h.runDir != ""
 }
 
-// control is the settingsControl value of a request, or "" for no member. It is
-// the one place that answers which state a request has. off is the shadowDirOff
-// member of the request.
+// control is the settingsControl value of a request, or "" for no member. off is
+// the shadowDirOff member of the request.
 //
 // A request with the member gets off-switch, also as the first request of a
 // daemon, in the "no repository" reply and while a failure is kept (measured on
@@ -303,13 +302,16 @@ func (h *ShadowHost) gate(off bool) string {
 	}
 	if checkOff {
 		// A test that passed while the check of session folders was off is not
-		// kept either. Its request uses the state that it gave: its git calls name
-		// the copy. The reply has no member, the next request tests again, and the
-		// test logs its state line (4c111e86, measured on Linux; macOS and Windows
-		// are claustrum's own, not measured). In such a git.info on a repository
-		// 4c111e86 runs the test before each of its four git calls, and claustrum
-		// runs it once (a known gap). A kept state stays as it is (claustrum's own,
-		// not measured).
+		// kept either. With no kept state, its request uses the state that it gave:
+		// after "shadow" its git calls name the copy. The reply has no member, the
+		// next request tests again, and the test logs its state line (4c111e86,
+		// measured on Linux). On macOS and Windows the member of the first such
+		// request is measured too. The retest and the other orders are claustrum's
+		// own there. In such a git.info on a repository 4c111e86 runs the test
+		// before each of its four git calls, and claustrum runs it once (a known
+		// gap). A kept state, as a fallback-git due for its retest, stays as it is,
+		// and its request uses it. The line that its test logs is claustrum's own,
+		// not measured.
 		if h.state == "" || h.unkept {
 			h.state, h.unkept = state, true
 		}
