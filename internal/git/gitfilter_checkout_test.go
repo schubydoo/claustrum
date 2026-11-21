@@ -578,3 +578,28 @@ func TestEqualsNameWithNoItem(t *testing.T) {
 		})
 	}
 }
+
+// TestEqualsNameRefusalStays: with equalsNameNeedsNoItem, as on Windows, a name with
+// "=" that only the repository defines keeps the refusal with no settings copy, with
+// a bare `smudge` line and with a `smudge` value that does not pass (claustrum's own,
+// not measured).
+func TestEqualsNameRefusalStays(t *testing.T) {
+	eqText := "this repository's git config cannot be used: the filter \"a=b\" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it"
+	prev := equalsNameNeedsNoItem
+	equalsNameNeedsNoItem = true
+	t.Cleanup(func() { equalsNameNeedsNoItem = prev })
+	for _, row := range []struct {
+		name, full string
+		shadow     bool
+	}{
+		{name: "no settings copy", full: "filter.a=b.smudge\ncat\x00"},
+		{name: "bare smudge", full: "filter.a=b.smudge\x00", shadow: true},
+		{name: "smudge false", full: "filter.a=b.smudge\nfalse\x00", shadow: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			if plan := planFromListings([]byte(row.full), nil, row.shadow); plan.refusal != eqText {
+				t.Errorf("plan %q, refusal %q\nwant refusal %q", plan.args, plan.refusal, eqText)
+			}
+		})
+	}
+}

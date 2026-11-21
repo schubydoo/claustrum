@@ -247,7 +247,8 @@ var equalsNameNeedsNoItem = gitEnvWindowsForm
 //     `clean` item needs lfsClean.
 //   - A name with "=" is refused with no checkout (measured). git ends the key
 //     of a -c pair at the first "=". A measurement has a value that does not
-//     pass. Such a name with a value that passes is not measured.
+//     pass. On Windows such a name whose values all pass gets no item
+//     (equalsNameNeedsNoItem).
 //
 // One filter that outside defines does not run: the filter lfs, when lfsKey is
 // set. That needs a rule with no settings copy. It gets the three pairs too. A failure at it answers lfsProgramText, not
