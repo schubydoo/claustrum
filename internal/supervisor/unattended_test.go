@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,21 +30,24 @@ func TestUnheldTTL(t *testing.T) {
 }
 
 // unheldTicks is a check of an armed child that the test drives. steps holds the step
-// that the check asked for. Each send on ticks is one step at that time.
+// that the check asked for. Each send on ticks is one step at that time. stopped
+// closes when the check stops its steps, at its return.
 type unheldTicks struct {
-	steps chan time.Duration
-	ticks chan time.Time
+	steps    chan time.Duration
+	ticks    chan time.Time
+	stopped  chan struct{}
+	stopOnce sync.Once
 }
 
 // fakeUnheldTicker puts unheldTicks in place of the ticker of the check until the test
 // ends.
 func fakeUnheldTicker(t *testing.T) *unheldTicks {
 	t.Helper()
-	f := &unheldTicks{steps: make(chan time.Duration, 4), ticks: make(chan time.Time)}
+	f := &unheldTicks{steps: make(chan time.Duration, 4), ticks: make(chan time.Time), stopped: make(chan struct{})}
 	old := unheldTicker
 	unheldTicker = func(d time.Duration) (<-chan time.Time, func()) {
 		f.steps <- d
-		return f.ticks, func() {}
+		return f.ticks, func() { f.stopOnce.Do(func() { close(f.stopped) }) }
 	}
 	t.Cleanup(func() { unheldTicker = old })
 	return f
@@ -65,6 +69,17 @@ func (f *unheldTicks) settle(t *testing.T, now time.Time) {
 	t.Helper()
 	f.step(t, now)
 	f.step(t, time.Time{})
+}
+
+// waitStopped waits until the check returned and stopped its steps. A signal of the
+// check comes before that return.
+func (f *unheldTicks) waitStopped(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.stopped:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the check did not return in 30 s")
+	}
 }
 
 // spawnUnheld starts a sleeping helper armed with ttl on c, and ends it with the test.
@@ -224,11 +239,7 @@ func TestUnheldNoEndAfterTheShutdownBegan(t *testing.T) {
 	signals := countSignalsTo(t, p)
 	m.RefuseStarts()
 	f.step(t, unheldSinceOf(p).Add(time.Hour))
-	select {
-	case f.ticks <- time.Now():
-		t.Fatal("the check took another step after the shutdown began")
-	case <-time.After(200 * time.Millisecond):
-	}
+	f.waitStopped(t)
 	if n := signals.Load(); n != 0 {
 		t.Errorf("%d signals after the shutdown began", n)
 	}
@@ -290,11 +301,7 @@ func TestUnheldNoTermWhenTheShutdownBeginsAtTheStep(t *testing.T) {
 	m.DetachConn(c)
 	signals := countSignalsTo(t, p)
 	f.step(t, unheldSinceOf(p).Add(time.Hour))
-	select {
-	case f.ticks <- time.Time{}:
-		t.Fatal("the check took another step after the shutdown began")
-	case <-time.After(200 * time.Millisecond):
-	}
+	f.waitStopped(t)
 	if n := signals.Load(); n != 0 {
 		t.Errorf("%d signals after the shutdown began", n)
 	}
@@ -331,11 +338,7 @@ func TestUnheldNoTermThroughAClosedGate(t *testing.T) {
 	p.unheldGate.Close()
 	signals := countSignalsTo(t, p)
 	f.step(t, unheldSinceOf(p).Add(time.Hour))
-	select {
-	case f.ticks <- time.Time{}:
-		t.Fatal("the check took another step after a closed gate")
-	case <-time.After(200 * time.Millisecond):
-	}
+	f.waitStopped(t)
 	if n := signals.Load(); n != 0 {
 		t.Errorf("%d signals through a closed gate", n)
 	}
