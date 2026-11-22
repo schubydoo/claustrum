@@ -145,7 +145,9 @@ func TestObjectBatchWriteAfterItsGitEnded(t *testing.T) {
 // TestObjectBatchDropClosesStdinReadEnd: a batch dropped before its first
 // answer closes the copy of the daemon of the read end of the stdin of git
 // once git ended (claustrum's own). Mutation: no close at the end of git (the
-// end stays open).
+// end stays open). A second Close of the os.File tells a closed file on every
+// system: Stat on Windows reads the handle with no test of the close, and so
+// gives "The handle is invalid" there (from the code of os).
 func TestObjectBatchDropClosesStdinReadEnd(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
@@ -157,7 +159,7 @@ func TestObjectBatchDropClosesStdinReadEnd(t *testing.T) {
 	b.drop()
 	_ = os.WriteFile(gate, nil, 0o644)
 	<-b.done
-	if _, err := b.inR.Stat(); !errors.Is(err, os.ErrClosed) {
+	if err := b.inR.Close(); !errors.Is(err, os.ErrClosed) {
 		t.Errorf("the read end of the stdin of git after the drop and the end of git: %v, want it closed", err)
 	}
 }
