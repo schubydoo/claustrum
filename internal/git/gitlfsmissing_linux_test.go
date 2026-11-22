@@ -8,8 +8,14 @@ import (
 )
 
 // lfsMissingStderr is the stderr of a checkout whose smudge filter finds no
-// git-lfs (measured on Linux).
+// git-lfs, on a host whose /bin/sh is dash (measured on Linux).
 const lfsMissingStderr = "git-lfs smudge -- 'a.bin': 1: git-lfs: not found\n" +
+	"error: external filter 'git-lfs smudge -- %f' failed 127\n" +
+	"error: external filter 'git-lfs smudge -- %f' failed\n" +
+	"fatal: a.bin: smudge filter lfs failed\n"
+
+// lfsMissingBashStderr is that stderr on a host whose /bin/sh is bash.
+const lfsMissingBashStderr = "git-lfs smudge -- 'a.bin': line 1: git-lfs: command not found\n" +
 	"error: external filter 'git-lfs smudge -- %f' failed 127\n" +
 	"error: external filter 'git-lfs smudge -- %f' failed\n" +
 	"fatal: a.bin: smudge filter lfs failed\n"
@@ -20,16 +26,24 @@ const lfsMissingStderr = "git-lfs smudge -- 'a.bin': 1: git-lfs: not found\n" +
 // the daemon, the create answers git_lfs_not_found with the text "not a git
 // repository" and one log line, after the undo of a failed checkout. With
 // git-lfs on no PATH it answers the failed checkout (87375cc7, measured on
-// Linux). Mutation: drop the git_lfs_not_found arm (the first row answers the
-// failed checkout).
+// Linux). The text of bash as /bin/sh keeps the failed checkout (claustrum's own,
+// not measured). Mutations: drop the git_lfs_not_found arm (the first row answers
+// the failed checkout), or match "not found" alone (the bash row answers
+// git_lfs_not_found).
 func TestCreateAnswersGitLFSNotFoundForTheShellPathGit(t *testing.T) {
 	for _, row := range []struct {
 		name       string
 		lfsOnLogin bool
-	}{{"git-lfs on the login PATH", true}, {"git-lfs on no PATH", false}} {
+		stderr     string
+		notFound   bool
+	}{
+		{"git-lfs on the login PATH", true, lfsMissingStderr, true},
+		{"git-lfs on no PATH", false, lfsMissingStderr, false},
+		{"bash as /bin/sh", true, lfsMissingBashStderr, false},
+	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newCheckoutRuleFixture(t)
-			failLfsCheckout(t, lfsMissingStderr)
+			failLfsCheckout(t, row.stderr)
 			prefix := filepath.Join(t.TempDir(), "pfx")
 			for _, d := range []string{"bin", filepath.Join("libexec", "git-core")} {
 				if err := os.MkdirAll(filepath.Join(prefix, d), 0o755); err != nil {
@@ -46,7 +60,7 @@ func TestCreateAnswersGitLFSNotFoundForTheShellPathGit(t *testing.T) {
 			shellPathGitFixture(t, filepath.Join(prefix, "bin"), lfsDir)
 			logs := captureLogBuf(t)
 			raw, _ := f.create(t, nil)
-			if row.lfsOnLogin {
+			if row.notFound {
 				if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"git_lfs_not_found"}}`; raw != want {
 					t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
 				}
