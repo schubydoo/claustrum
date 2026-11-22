@@ -5,6 +5,7 @@ import (
 
 	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // A process.spawn with a top-level unattendedSeconds above 0 is armed (87375cc7,
@@ -105,8 +106,9 @@ func (p *Proc) unheldFor(now time.Time) time.Duration {
 }
 
 // watchUnheld runs the check of an armed p until its exit, and starts the end at the
-// first step with no connection for p.unheldTTL. A step below 60 s, from a value
-// below 60, is claustrum's own, not measured: the step comes from the mapped time.
+// first step with no connection for p.unheldTTL. The steps count from the spawn, a
+// quarter of the time (87375cc7, measured). The cap of 60 s, and a step from the
+// mapped time for a value below 60, are claustrum's own, not measured.
 // A step short of the whole time skips the end. endUnheld tests the shutdown and the
 // clock again under p.mu, so a shutdown or a reattach before the SIGTERM ends nothing.
 func (m *Manager) watchUnheld(p *Proc, h unheldHooks) {
@@ -132,7 +134,8 @@ func (m *Manager) watchUnheld(p *Proc, h unheldHooks) {
 // endUnheld sends SIGTERM to the child of p only, through signalIfLiveLocked, and
 // waits for its exit, at most grace. A child that is still there then gets the group
 // SIGKILL. Both signals go through unheldGate. On Linux and macOS it closes once the
-// exit of the child is seen, before its reap, so no signal of the end reaches an
+// exit of the child is seen, before its reap. Before that, the SIGTERM goes only to a
+// child that sysproc.SurelyRuns finds running, so no signal of the end reaches an
 // exited child there. On Windows it closes after cmd.Wait returns. A child there that
 // exits by itself just before that can still get killedBy "unattended" and the left
 // line: a TerminateProcess on an exited child counts as a delivery. No signal leaves
@@ -155,6 +158,10 @@ func (m *Manager) endUnheld(p *Proc, now time.Time, grace time.Duration) (again 
 		}
 		if p.unheldSince.IsZero() || now.Sub(p.unheldSince) < p.unheldTTL {
 			again = true
+			return
+		}
+		// A child that left by itself gets no end, as for the temp_root takeover.
+		if exitSeenBeforeReap && p.cmd != nil && p.cmd.Process != nil && !sysproc.SurelyRuns(p.cmd.Process) {
 			return
 		}
 		live, err := p.signalIfLiveLocked("TERM", "unattended")

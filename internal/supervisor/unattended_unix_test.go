@@ -3,12 +3,17 @@
 package supervisor
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // spawnUnheldHelper starts the helper in mode with args, armed with one minute on a
@@ -131,5 +136,48 @@ func TestUnheldNoLineAfterAClientKill(t *testing.T) {
 	}
 	if !strings.Contains(logs, "[process.Manager] Process al-kill exited with code 0, asked to end by this daemon (client)\n") {
 		t.Errorf("no client exited line:\n%s", logs)
+	}
+}
+
+// TestUnheldNoTermToAChildThatLeft: a child that exited by itself and is not reaped
+// yet gets no SIGTERM of the end, also while the gate is still open (claustrum's own).
+// The child is the test's own, in a group of its own.
+func TestUnheldNoTermToAChildThatLeft(t *testing.T) {
+	if !exitSeenBeforeReap {
+		t.Skip("no exit is seen before the reap on this system")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe)
+	cmd.Env = BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "echo"})
+	cmd.SysProcAttr = sysproc.NewSysProcAttr()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Wait() })
+	for deadline := time.Now().Add(10 * time.Second); sysproc.SurelyRuns(cmd.Process); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the helper did not exit in 10 s")
+		}
+	}
+	p := &Proc{
+		id: "al-left2", cmd: cmd, group: &ProcGroup{}, running: true, done: make(chan struct{}),
+		unheldTTL: time.Minute, unheldSince: time.Now().Add(-time.Hour), stopsBegan: &atomic.Bool{},
+	}
+	signals := countSignalsTo(t, p)
+	m := newTestProcManager(t)
+	if again := m.endUnheld(p, time.Now(), time.Millisecond); again {
+		t.Error("endUnheld asks for another step for a child that left")
+	}
+	if n := signals.Load(); n != 0 {
+		t.Errorf("%d signals to a child that left", n)
+	}
+	p.mu.Lock()
+	termed, by := p.unheldTermed, p.killedBy
+	p.mu.Unlock()
+	if termed || by != "" {
+		t.Errorf("termed %v, killedBy %q for a child that left", termed, by)
 	}
 }
