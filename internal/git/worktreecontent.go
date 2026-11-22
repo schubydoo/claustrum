@@ -107,9 +107,9 @@ type contentCheck struct {
 // errContentDeadline ends the reads of a check whose deadline passed.
 var errContentDeadline = errors.New("the deadline of the request passed")
 
-// pastDeadline reports whether the deadline of the check has passed. From then
-// on the check reads no object, also by a separate run: 4c111e86 stops there
-// and logs the checked line with "stopped at the deadline" (measured on Linux).
+// pastDeadline reports whether the deadline passed. Then the check reads no object,
+// also by a separate run (4c111e86, measured on Linux for a batch that did not answer).
+// On Windows 4c111e86 logs "stopped at the deadline" after it read 2 objects (measured).
 func (c *contentCheck) pastDeadline() bool {
 	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
 		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {
@@ -199,8 +199,8 @@ type contentFile struct {
 // is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
 // check that stops at the deadline returns nil and atDeadline: the caller then
 // runs only the config listing of the copy step and answers the timeout
-// (4c111e86, measured on Linux with a batch that did not answer). After the
-// other stop points the same is claustrum's own (dotClaudeListingOnly).
+// (4c111e86, measured on Linux with a batch that did not answer). After the other
+// stop points, the Windows stop too, the same is claustrum's own (dotClaudeListingOnly).
 func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
 	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}

@@ -133,7 +133,7 @@ func unattendedValue(v json.RawMessage) (n int64, set, ok bool) {
 // Windows measured the plain rows and the bare stream-json arg (there ccd-cli.exe
 // does not count), and macOS -1, cliTempRootEnd, gitRead and a ccd-cli with a
 // stream-json arg.
-// A launcher spawn counts as the CLI path (measured on Linux).
+// A launcher spawn counts as the CLI path (measured on Linux, macOS and Windows).
 func unattendedRefused(p *spawnParams, n int64) bool {
 	if n < 0 {
 		return true
@@ -334,8 +334,8 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// An accepted value above 0 arms the end of the child once no connection holds it
 	// (87375cc7, measured on Linux, macOS and Windows). The test above refused it with
 	// pty, linkBound, gitRead and cliTempRootEnd, and for a launcher spawn without
-	// --no-session-persistence (measured on Linux). With that arg, also with a
-	// launcherCheck object, a launcher spawn is armed too (claustrum's own, not measured).
+	// --no-session-persistence (measured on Linux, for a launcher also on macOS and Windows).
+	// With that arg, also with a launcherCheck object, it is armed (claustrum's own, not measured).
 	var unheld time.Duration
 	if unattended > 0 {
 		unheld = supervisor.UnheldTTL(unattended)

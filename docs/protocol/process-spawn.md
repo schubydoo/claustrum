@@ -44,7 +44,7 @@ An accepted value above 0 arms [the unattended end](#the-unattended-end-build-87
 
 - A text, a float or `null`: `Invalid params` (measured on Linux and Windows, macOS for a text). Other forms that are no whole number in int64, such as `1e3`, `1.0` or a larger number, get it too (claustrum's own).
 - A negative value: `-32602` `unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence`, reason `other` (Linux, macOS and Windows). A refusal logs the failed-start line (Linux and macOS). `Invalid params` logs none (Linux).
-- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). A bare `ccd-cli` with no args counts, and `ccd-cli.exe`, `ccd-cli-x` and `claude` do not (Linux and macOS). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux).
+- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). A bare `ccd-cli` with no args counts, and `ccd-cli.exe`, `ccd-cli-x` and `claude` do not (Linux and macOS). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux, macOS and Windows).
 - A `pty` error comes first (Linux and Windows, macOS for `true`). `0` and `1000000000000` pass (Linux, and `99999999999` on Windows), and `0` passes this test with each of these members (Linux).
 - The test comes after the `id` and `command` tests and before `linkBound` with a `launcher` (Linux). The place of the type test, of this test after the test of the launcher members, and of this test before every step of [the managed launcher](#the-managed-launcher) is claustrum's own.
 
@@ -81,7 +81,7 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 
 These rules are not measured.
 
-- A value below 60 gets a check each 15 s, a quarter of its 60 s. A check comes at most each 60 s, and no row has a value above 240.
+- A value from 2 to 59, and 1 on Windows, gets a check each 15 s, a quarter of its 60 s. A check comes at most each 60 s, and no end row of this member has a value above 240.
 - An `<id>` of more than 8 bytes is [cut](../DAEMON.md#a-long-id-in-a-line) in these lines.
 - A refused `SIGTERM` stops the end, with no line and no `SIGKILL`. That child gets no later end, also after a reattach and a new detach.
 - A spawn or a reattach on a closed connection starts the clock.
@@ -90,7 +90,7 @@ These rules are not measured.
 - A child that survives a `process.kill` still gets the end. It keeps `"killedBy":"client"`, so its exited line ends in `(client)`.
 - On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
-A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux). With that arg, also with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
+A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux, macOS and Windows). With that arg, also with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
 
 ## Response
 
@@ -349,7 +349,7 @@ With `launcher`, the child runs as `<launcher...> <command> <args...>`. The laun
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
-1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. A refused `unattendedSeconds` comes first (claustrum's own).
+1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60, `87375cc7` answers the refusal of that member instead (measured on Windows). Other refused values here are claustrum's own.
 2. A relative `command` gets `-32602 command must be an absolute path when a launcher is given`.
 3. The checks of `launcher.resolve` run, with `command` in place of `cliPath`. A refusal gets `-32004 the managed launcher cannot be used: <reason>`, with a reason of [Unusable reasons](launcher-resolve.md#unusable-reasons). `[]` gets the text for no launcher.
 4. The `cwd` test, with its usual error.

@@ -2,4 +2,4 @@
 default: patch
 ---
 
-git.status with no git on the PATH of the daemon now answers `isRepo: false` for a linked worktree. A git that PATH finds later in a session folder gets its passing-over line.
+With no git on the daemon's PATH and none that it uses on the login shell's PATH, git.status now answers `isRepo: false` for a linked worktree. A git that PATH finds later in a session folder gets its passing-over line.

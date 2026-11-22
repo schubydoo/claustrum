@@ -42,8 +42,8 @@ func UnattendedTTL(n int64) time.Duration {
 // unattendedTick is the step of the unattended check: a quarter of the time, at
 // most 60 s. The ticker starts at the spawn. That is the smallest rule that fits
 // the measured end times on Linux: about 1 s after the time for 1 and 4, about
-// 15 s after for 60, 29 s after for 120 and 60 s after for 599 and 600. The rule
-// itself is claustrum's own, not measured.
+// 15 s after for 60, 29 s after for 120 and 60 s after for 599 and 600. For linkBound
+// the rule itself is claustrum's own, not measured. For the top-level member see watchUnheld.
 func unattendedTick(ttl time.Duration) time.Duration {
 	return min(ttl/4, time.Minute)
 }

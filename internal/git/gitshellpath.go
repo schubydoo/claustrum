@@ -39,7 +39,7 @@ import (
 const shellPathGitSkipLine = "[sessiondirs] not using %q from the login shell's PATH as Claude's git: %s: %s (exec path %q). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core"
 
 // shellPathGitExecPathBound is the limit of the `--exec-path` call (claustrum's own,
-// not measured: no row shows the bound of 87375cc7 or the kind of its stop).
+// not measured).
 var shellPathGitExecPathBound = 10 * time.Second
 
 // shellPathGitKill ends the `--exec-path` call at its bound, through the handle of
