@@ -298,7 +298,13 @@ func (h *ShadowHost) gate(off bool) string {
 		// (measured). A hold live at the start or the end of the test counts as off
 		// (claustrum's own, not measured). No test pins the start or the end read
 		// alone: the test holds the switch across the whole request.
-		if checkOff {
+		//
+		// A failure where no git can start is not kept either. The next request
+		// tests again (noGitStarts). 87375cc7 so runs a git under the switch after
+		// the refusal of a session-folder git (measured on Linux), and a git that
+		// appeared on PATH after a request with none (measured on Windows). macOS
+		// is claustrum's own, not measured.
+		if checkOff || noGitStarts() {
 			return failure
 		}
 		h.failure = failure

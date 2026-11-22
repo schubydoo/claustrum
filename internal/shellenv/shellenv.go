@@ -219,6 +219,25 @@ func AwaitLoginPATH(noShellAgent bool) {
 	}
 }
 
+// AwaitRunningLoginPATH waits for a read that runs, within the bounds of a spawn.
+// It starts no read and stops none. The git of the login-shell PATH uses it, so a
+// git call never starts a login shell (claustrum's own, not measured).
+func AwaitRunningLoginPATH() {
+	s := loginPATHs
+	s.mu.Lock()
+	if !s.armed || s.good || s.closed || s.run == nil {
+		s.mu.Unlock()
+		return
+	}
+	r, failures, age := s.run, s.failures, s.clock().Sub(s.run.started)
+	s.mu.Unlock()
+	if failures < loginPATHWaitFailures {
+		if wait := min(loginPATHSpawnWait, loginPATHSpawnHorizon-age); wait > 0 {
+			waitUpTo(r.end, wait)
+		}
+	}
+}
+
 // dueLocked reports whether a spawn starts a new read.
 func (s *loginPATHState) dueLocked(noShellAgent bool) bool {
 	if s.failures == 0 {

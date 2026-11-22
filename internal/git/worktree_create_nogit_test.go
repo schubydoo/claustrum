@@ -7,11 +7,17 @@ import (
 	"testing"
 )
 
-// With no git on PATH, a create answers not_a_repo after the marker test and before
-// the count check, and makes nothing (4c111e86, measured on Linux and macOS, and on
-// Windows for a missing baseRepo). On Windows the rows of an existing baseRepo are
-// claustrum's own, not measured. Mutation: drop the PATH test of
-// gitWorktreeCreateLocked, and each row but the marker row fails.
+// gitNotFoundCreate is the reply of a create with no git that the daemon runs
+// (87375cc7, measured on Linux and macOS, and on Windows for a missing baseRepo).
+const gitNotFoundCreate = `{"success":false,"error":"not a git repository","errorCode":"git_not_found"}`
+
+// With no git on PATH, a create answers after the marker test and before the count
+// check, and makes nothing (4c111e86, measured on Linux and macOS, and on Windows
+// for a missing baseRepo). On Windows the rows of an existing baseRepo are
+// claustrum's own, not measured. The code is git_not_found, as on 87375cc7
+// (measured on Linux and macOS, and on Windows for a missing baseRepo). Mutation: drop the
+// PATH test of gitWorktreeCreateLocked, and each row but the marker row fails, or
+// keep the code not_a_repo.
 func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {
 	f := newNoRepoFixture(t)
 	// The daemon state of -serve, with a settings control, as in the measurements.
@@ -31,13 +37,13 @@ func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {
 		want   string
 	}{
 		{"nogit_cnt_nokey_value.missing", []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.foo"},
-			map[string]any{"baseRepo": filepath.Join(marker, "missing"), "branchName": "w1", "worktreePath": f.leaf()}, notRepoCreate},
+			map[string]any{"baseRepo": filepath.Join(marker, "missing"), "branchName": "w1", "worktreePath": f.leaf()}, gitNotFoundCreate},
 		{"nogit_none.missing", nil,
-			map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": f.leaf()}, notRepoCreate},
+			map[string]any{"baseRepo": f.m, "branchName": "w1", "worktreePath": f.leaf()}, gitNotFoundCreate},
 		{"nogit_none.plain", nil,
-			map[string]any{"baseRepo": f.top, "branchName": "w1", "worktreePath": f.leaf()}, notRepoCreate},
+			map[string]any{"baseRepo": f.top, "branchName": "w1", "worktreePath": f.leaf()}, gitNotFoundCreate},
 		{"nogit_none.root_plain", nil,
-			map[string]any{"baseRepo": f.top, "branchName": "w1", "worktreePath": f.external(), "worktreeRoot": f.r}, notRepoCreate},
+			map[string]any{"baseRepo": f.top, "branchName": "w1", "worktreePath": f.external(), "worktreeRoot": f.r}, gitNotFoundCreate},
 		{"nogit_none.real below a marker", nil,
 			map[string]any{"baseRepo": filepath.Join(marker, "sub"), "branchName": "w1", "worktreePath": filepath.Join(marker, "sub", "w1")},
 			`{"success":false,"error":"` + managedWorktreesRefusal + `","errorCode":"nested_base_repo"}`},
