@@ -149,18 +149,28 @@ func loginGitTest(git string) (reason, state, execPath string) {
 // (sysproc.LeaderGate). The gate closes after its exit and before the wait reaps
 // it, so a late stop from the watch of the context of Go sends nothing (claustrum's
 // own, from the code).
+//
+// The wait for stdout ends shadowCallDrain after the exit or the bound, so a child
+// of git that holds stdout does not hold the call. A call that exited 0 then
+// counts as a success, with the output read so far. The kill of Go at the end of
+// that wait goes through the handle of the process, which sends nothing after the
+// reap (from the code of Go).
 func runExecPath(cmd *exec.Cmd) error {
 	gate := &sysproc.LeaderGate{}
 	cmd.Cancel = func() error {
 		gate.Do(func() { loginGitKill(cmd.Process) })
 		return nil
 	}
+	cmd.WaitDelay = shadowCallDrain
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	gate.CloseAfterExit(cmd.Process, sysproc.AwaitExit(cmd.Process.Pid))
 	err := cmd.Wait()
 	loginGitWaited(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return nil
+	}
 	return err
 }
 

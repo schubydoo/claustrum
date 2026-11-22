@@ -285,6 +285,25 @@ func TestLoginGitStartsNoLoginShellRead(t *testing.T) {
 	}
 }
 
+// TestLoginGitExecPathChildHoldingStdout: a child of git that holds stdout after
+// git exited holds the --exec-path call only for shadowCallDrain, and the exit 0
+// of git counts (claustrum's own, not measured). Mutation: drop the WaitDelay of
+// runExecPath, and the call waits for the child.
+func TestLoginGitExecPathChildHoldingStdout(t *testing.T) {
+	git := installedLoginGit(t, "PATH=/usr/bin:/bin\n(sleep 6 &)\necho /x")
+	prev := shadowCallDrain
+	t.Cleanup(func() { shadowCallDrain = prev })
+	shadowCallDrain = 200 * time.Millisecond
+	start := time.Now()
+	got := LoginGit()
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("the call took %v, want under 3 s", took)
+	}
+	if got != git {
+		t.Errorf("LoginGit = %q, want %q", got, git)
+	}
+}
+
 // requireRealGit is the path of the git of the host, or a skip.
 func requireRealGit(t *testing.T) string {
 	t.Helper()
