@@ -144,6 +144,11 @@ func TestGitChildEnvRelativeValues(t *testing.T) {
 		{"GIT_CONFIG_GLOBAL=/DEV/NULL", ""},
 		{"GIT_CONFIG_GLOBAL=nul", "GIT_CONFIG_GLOBAL=nul"},
 		{`GIT_CONFIG_GLOBAL=\\h\s\x`, `GIT_CONFIG_GLOBAL=\\h\s\x`},
+		{`GIT_SSL_CAINFO=\\\cl_u\x`, `GIT_SSL_CAINFO=\\\cl_u\x`},
+		{"GIT_SSL_CAINFO=//cl_u/x", "GIT_SSL_CAINFO=//cl_u/x"},
+		{"GIT_SSL_CAINFO=///cl_u/x", "GIT_SSL_CAINFO=///cl_u/x"},
+		{`GIT_SSL_CAINFO=\\`, ""}, // two slashes and no more text stay relative (claustrum's own)
+		{`SSLKEYLOGFILE=\cl_u\key.log`, ""},
 		{`HOME=\x`, ""},
 		{"HOME=/home/x", ""},
 		{`HOME=C:\u`, `HOME=C:\u`},
@@ -227,13 +232,19 @@ func TestGitChildEnvHomeAndSocket(t *testing.T) {
 }
 
 // Five names keep an empty value, and the 19 list names
-// follow the list rule.
+// follow the list rule. On Windows an empty GIT_ALTERNATE_OBJECT_DIRECTORIES goes
+// (4c111e86, measured on Windows).
 func TestGitChildEnvLists(t *testing.T) {
 	for _, n := range []string{"SSL_CERT_DIR", "GIT_SSL_CAPATH", "KRB5_CONFIG", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "SASL_PATH"} {
 		for _, f := range []gitEnvForm{linuxForm, macForm, windowsForm} {
-			checkRows(t, f, "empty value", [][2]string{{n + "=", n + "="}, {n + "=rel", ""}})
+			want := n + "="
+			if f.windows && n == "GIT_ALTERNATE_OBJECT_DIRECTORIES" {
+				want = ""
+			}
+			checkRows(t, f, "empty value", [][2]string{{n + "=", want}, {n + "=rel", ""}})
 		}
 	}
+	checkRows(t, windowsForm, "Windows", [][2]string{{"git_alternate_object_directories=", ""}})
 	for _, n := range []string{
 		"PATH", "LOCPATH", "NLSPATH", "GCONV_PATH", "LD_LIBRARY_PATH", "SASL_PATH", "SASL_CONF_PATH",
 		"KRB5_CONFIG", "SSL_CERT_DIR", "GIT_EXEC_PATH", "GIT_SSL_CAPATH", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -295,6 +306,32 @@ func TestGitChildEnvPrograms(t *testing.T) {
 		{"SSH_SK_PROVIDER=libsk.dll", ""},
 		{"SSH_SK_PROVIDER=", ""},
 	})
+}
+
+// On Windows two leading slashes of either kind and more text count as absolute in
+// a list entry and a program value. The values are those of the rows (4c111e86,
+// measured on Windows). On Linux and macOS the same values go.
+func TestGitChildEnvTwoSlashValues(t *testing.T) {
+	const u3 = `\\\cl_u\x`
+	checkRows(t, windowsForm, "Windows", [][2]string{
+		{"SSL_CERT_DIR=" + u3, "SSL_CERT_DIR=" + u3},
+		{"LOCPATH=///cl_u/x", "LOCPATH=///cl_u/x"},
+		{`NLSPATH=C:\cl_u\n;` + u3, `NLSPATH=C:\cl_u\n;` + u3},
+		{"KRB5_CONFIG=" + u3 + `;C:\cl_u\k`, "KRB5_CONFIG=" + u3 + `;C:\cl_u\k`},
+		{"GIT_ASKPASS=" + u3 + ".exe", "GIT_ASKPASS=" + u3 + ".exe"},
+		{"SSH_ASKPASS=///cl_u/a.exe", "SSH_ASKPASS=///cl_u/a.exe"},
+		{`SSH_SK_HELPER=\\\\cl_u\h.exe`, `SSH_SK_HELPER=\\\\cl_u\h.exe`},
+		{`SSH_SK_PROVIDER=//\cl_u\s.dll`, `SSH_SK_PROVIDER=//\cl_u\s.dll`},
+		// Two slashes alone are no such value (claustrum's own, not measured).
+		{`LOCPATH=\\`, ""}, {`SSH_ASKPASS=//`, ""},
+		// An LD_PRELOAD or LD_AUDIT piece keeps its old rule (claustrum's own).
+		{`LD_PRELOAD=//\cl_u/a.so`, ""}, {"LD_AUDIT=///cl_u/a.so", ""},
+	})
+	for _, f := range []gitEnvForm{linuxForm, macForm} {
+		checkRows(t, f, "Linux and macOS", [][2]string{
+			{"SSL_CERT_DIR=" + u3, ""}, {"SSH_ASKPASS=" + u3, ""}, {"SSH_ASKPASS=///cl_u/a.exe", "SSH_ASKPASS=///cl_u/a.exe"},
+		})
+	}
 }
 
 // An entry that no test touches stays as it is. An empty name on

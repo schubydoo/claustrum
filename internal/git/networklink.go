@@ -42,33 +42,67 @@ func networkLinkText(path string) string {
 // The tests of unlookablePathRefusal and pathLookRefusal come first (claustrum's
 // own, not measured).
 func networkLinkRefusal(path string) string {
-	if msg := unlookablePathRefusal(path); msg != "" {
-		return msg
-	}
-	if msg := pathLookRefusal(path); msg != "" {
-		return msg
-	}
-	if networkLinkChecks && throughNetworkLink(path) {
-		return networkLinkText(path)
-	}
-	return ""
+	msg, _ := networkLinkRefusalAt(path)
+	return msg
 }
 
-// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal.
+// networkLinkRefusalAt is networkLinkRefusal. lastJunction is true when the
+// refusal is shareLinkText for a junction that is the last name of path. It
+// takes the kind and the place from the looks of the walk, with no other look.
+func networkLinkRefusalAt(path string) (msg string, lastJunction bool) {
+	if msg, lastJunction := unlookableRefusalAt(path); msg != "" {
+		return msg, lastJunction
+	}
+	if msg := pathLookRefusal(path); msg != "" {
+		return msg, false
+	}
+	if networkLinkChecks && throughNetworkLink(path) {
+		return networkLinkText(path), false
+	}
+	return "", false
+}
+
+// lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal and
+// shareGitDir.
 var lstatPath = os.Lstat
 
-// unlookableShareText and longUNCText name the path cleaned, as networkLinkText
-// does. The rows send clean paths, so the cleaning is claustrum's own, not measured.
+// unlookableShareText names the folder it is given, cleaned. longUNCText names
+// the path cleaned, as networkLinkText does. The rows send clean paths, so the
+// cleaning is claustrum's own, not measured.
 func unlookableShareText(path string) string {
 	return "Claude couldn't look at `" + filepath.Clean(path) + "` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again."
 }
 
-// deniedShareText names the path cleaned and the folder above its last name, as
-// the row shows for a share that denies every account (measured on Windows).
-// The folder of a deeper path is claustrum's own, not measured.
-func deniedShareText(path string) string {
-	p := filepath.Clean(path)
-	return "Claude couldn't check `" + p + "` for links because Windows didn't let your account read `" + p[:strings.LastIndexAny(p, `\/`)] + "`, so git wasn't run. Ask for read access to that folder."
+// deniedShareText names the path and the folder whose look was denied, both
+// cleaned (firstFailedFolder, 4c111e86, measured on Windows).
+func deniedShareText(path, folder string) string {
+	return "Claude couldn't check `" + filepath.Clean(path) + "` for links because Windows didn't let your account read `" + filepath.Clean(folder) + "`, so git wasn't run. Ask for read access to that folder."
+}
+
+// firstFailedFolder returns the first folder of the share path, from the first
+// name below the share root down, whose look fails, and the error of that look.
+// When no folder above the last name fails, it returns path and err, the error
+// of the look at path. So the texts name `\\host\share\sub` for a share that
+// denies every account, the path itself for a path one name below the root of
+// a share that denies the account, and `\\host\share\a` for a deeper path on a
+// share that does not exist, and the log line quotes the error of that folder
+// (4c111e86, measured on Windows where every look on the share fails). The prefixes keep
+// the spelling of the request. A folder that passes above the first one that
+// fails is claustrum's own, not measured.
+func firstFailedFolder(path string, err error) (string, error) {
+	seps := 0
+	for i := 1; i < len(path); i++ {
+		if !isSlash(path[i]) || isSlash(path[i-1]) {
+			continue
+		}
+		if seps++; seps < 3 {
+			continue
+		}
+		if _, ferr := lstatPath(path[:i]); ferr != nil {
+			return path[:i], ferr
+		}
+	}
+	return path, err
 }
 
 // shareLinkText names the link on the share.
@@ -87,6 +121,7 @@ func longUNCText(path string) string {
 // git.worktree_create and git.worktree_remove (measured on Windows). A missing
 // folder on a share and a path on a missing drive pass (measured on Windows).
 //
+// A failed look names the first folder whose look failed (firstFailedFolder).
 // 4c111e86 logs one "looking for links" line for a share that does not exist.
 // It gives deniedShareText for a share that denies every account. It refuses a
 // directory symbolic link on a share that answers with shareLinkText. A host
@@ -99,51 +134,61 @@ func longUNCText(path string) string {
 // path passes. A junction counts as a link, and so does a link above the last
 // name. A path that is missing below a link passes.
 func unlookablePathRefusal(path string) string {
+	msg, _ := unlookableRefusalAt(path)
+	return msg
+}
+
+// unlookableRefusalAt is unlookablePathRefusal, with lastJunction as in
+// networkLinkRefusalAt.
+func unlookableRefusalAt(path string) (msg string, lastJunction bool) {
 	if !networkLinkChecks || len(path) < 4 || !isSlash(path[0]) || !isSlash(path[1]) {
-		return ""
+		return "", false
 	}
 	if (path[2] == '?' || path[2] == '.') && isSlash(path[3]) {
 		if path[2] == '?' && len(path) >= 8 && strings.EqualFold(path[4:7], "UNC") && isSlash(path[7]) {
-			return longUNCText(path)
+			return longUNCText(path), false
 		}
-		return ""
+		return "", false
 	}
 	if len(strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })) < 3 {
-		return ""
+		return "", false
 	}
 	_, err := lstatPath(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return ""
+		return "", false
 	case errors.Is(err, fs.ErrPermission) || networkAccessDenied(err):
-		return deniedShareText(path)
+		folder, _ := firstFailedFolder(path, err)
+		return deniedShareText(path, folder), false
 	case err != nil:
-		logging.Infof("[GitHandler] looking for links in %q: %q", path, err.Error())
-		return unlookableShareText(path)
+		folder, ferr := firstFailedFolder(path, err)
+		logging.Infof("[GitHandler] looking for links in %q: %q", path, ferr.Error())
+		return unlookableShareText(folder), false
 	}
-	if link := linkOnShare(path); link != "" {
-		return shareLinkText(link)
+	if link, lastJunction := linkOnShare(path); link != "" {
+		return shareLinkText(link), lastJunction
 	}
-	return ""
+	return "", false
 }
 
 // linkOnShare returns the first name below the share of the UNC path that is a
 // link (folderIsLink), as a path with backslashes, or "". A name that cannot be
-// read ends the walk with "" (claustrum's own, not measured).
-func linkOnShare(path string) string {
+// read ends the walk with "" (claustrum's own, not measured). lastJunction is
+// true when that link is a junction (no symbolic link bit) and the last name.
+func linkOnShare(path string) (link string, lastJunction bool) {
 	names := strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })
 	cur := `\\` + names[0] + `\` + names[1]
-	for _, name := range names[2:] {
+	for i, name := range names[2:] {
 		cur += `\` + name
 		fi, err := lstatPath(cur)
 		if err != nil {
-			return ""
+			return "", false
 		}
-		if folderIsLink(fi.Mode()) {
-			return cur
+		if m := fi.Mode(); folderIsLink(m) {
+			return cur, m&fs.ModeSymlink == 0 && i == len(names)-3
 		}
 	}
-	return ""
+	return "", false
 }
 
 // throughNetworkLink reports whether a name of the absolute path is a link whose

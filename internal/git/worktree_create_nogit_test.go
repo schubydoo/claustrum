@@ -8,14 +8,14 @@ import (
 )
 
 // gitNotFoundCreate is the reply of a create with no git that the daemon runs
-// (87375cc7, measured on Linux and macOS).
+// (87375cc7, measured on Linux and macOS, and on Windows for a missing baseRepo).
 const gitNotFoundCreate = `{"success":false,"error":"not a git repository","errorCode":"git_not_found"}`
 
 // With no git on PATH, a create answers after the marker test and before the count
 // check, and makes nothing (4c111e86, measured on Linux and macOS, and on Windows
 // for a missing baseRepo). On Windows the rows of an existing baseRepo are
 // claustrum's own, not measured. The code is git_not_found, as on 87375cc7
-// (measured on Linux and macOS, claustrum's own on Windows). Mutation: drop the
+// (measured on Linux and macOS, and on Windows for a missing baseRepo). Mutation: drop the
 // PATH test of gitWorktreeCreateLocked, and each row but the marker row fails, or
 // keep the code not_a_repo.
 func TestCreateWithNoGitOnPathAnswersNotARepo(t *testing.T) {

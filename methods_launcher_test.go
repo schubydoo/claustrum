@@ -8,25 +8,59 @@ import (
 	"github.com/schubydoo/claustrum/internal/rpc"
 )
 
-// TestLauncherCheckLogRepeatsArm pins both arms of noteChecked. With logsRepeats
-// each refusal logs, a repeat too, as on Windows (claustrum's own). Without it a
-// repeat logs no line until a usable answer comes between, as on Linux (4c111e86,
-// measured on Linux).
-func TestLauncherCheckLogRepeatsArm(t *testing.T) {
+// TestLauncherCheckLogRepeats pins noteChecked: a repeat of the last reason logs no
+// line until a usable answer comes between (4c111e86, measured on Linux). On
+// Windows 27 refusals in a row log one line (4c111e86, measured on Windows).
+func TestLauncherCheckLogRepeats(t *testing.T) {
 	refused := rpc.LauncherCheckReply{Status: install.StatusUnusable, Reason: "arm-test reason"}
 	usable := rpc.LauncherCheckReply{Status: "usable"}
 	line := "[LauncherHandler] the launcher that the desktop names is refused: arm-test reason\n"
-	for _, c := range []struct {
-		logsRepeats bool
-		want        int
-	}{{true, 3}, {false, 2}} {
-		logs := captureLogBuf(t)
-		var l managedLauncherLog
-		for _, res := range []rpc.LauncherCheckReply{refused, refused, usable, refused} {
-			l.noteChecked(res, c.logsRepeats)
-		}
-		if n := strings.Count(logs.String(), line); n != c.want {
-			t.Errorf("logsRepeats %v: %d lines, want %d:\n%s", c.logsRepeats, n, c.want, logs.String())
+	logs := captureLogBuf(t)
+	var l managedLauncherLog
+	for _, res := range []rpc.LauncherCheckReply{refused, refused, usable, refused} {
+		l.noteChecked(res)
+	}
+	if n := strings.Count(logs.String(), line); n != 2 {
+		t.Errorf("%d lines, want 2:\n%s", n, logs.String())
+	}
+}
+
+// TestLauncherCheckAnyMembers pins the decode of launcherCheck. With
+// checkTakesAnyMembers, as on Windows, a member of any type passes and the resolve
+// answers the file check. "path":5 and "orManagedFolder":"yes" are measured on
+// Windows (4c111e86). Other member values, such as a string sha256, are claustrum's
+// own. Without it, as on Linux and macOS, such a member gets Invalid params
+// (claustrum's own, not measured). A launcherCheck that is no object gets Invalid
+// params either way, and null counts as absent. On Windows that is measured for a
+// string, "", a number, true, [], an array of one object and null (4c111e86). The
+// other values, and Linux and macOS, are claustrum's own, not measured.
+func TestLauncherCheckAnyMembers(t *testing.T) {
+	const invalid = `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}`
+	const none = `{"jsonrpc":"2.0","id":1,"result":{"status":"none"}}`
+	prev := checkTakesAnyMembers
+	t.Cleanup(func() { checkTakesAnyMembers = prev })
+	for _, row := range []struct {
+		anyMembers bool
+		check      string
+		want       string
+	}{
+		{true, `{"path":5}`, "unusable"},
+		{true, `{"orManagedFolder":"yes","sha256":"x"}`, "unusable"},
+		{true, `"x"`, invalid},
+		{true, `null`, none},
+		{false, `{"path":5}`, invalid},
+		{false, `"x"`, invalid},
+		{false, `null`, none},
+	} {
+		checkTakesAnyMembers = row.anyMembers
+		s := newTestServer(t)
+		got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"x","launcherCheck":`+row.check+`}}`))
+		if row.want == "unusable" {
+			if !strings.Contains(got, `"result":{"status":"unusable"`) {
+				t.Errorf("anyMembers %v, launcherCheck %s: %s, want an unusable answer", row.anyMembers, row.check, got)
+			}
+		} else if got != row.want {
+			t.Errorf("anyMembers %v, launcherCheck %s: %s, want %s", row.anyMembers, row.check, got, row.want)
 		}
 	}
 }
@@ -38,10 +72,10 @@ func TestLauncherCheckResetArm(t *testing.T) {
 	refused := rpc.LauncherCheckReply{Status: install.StatusUnusable, Reason: "reset-test reason"}
 	line := "[LauncherHandler] the launcher that the desktop names is refused: reset-test reason\n"
 	var l managedLauncherLog
-	l.noteChecked(refused, false)
-	l.noteChecked(refused, false)
+	l.noteChecked(refused)
+	l.noteChecked(refused)
 	l.resetChecked()
-	l.noteChecked(refused, false)
+	l.noteChecked(refused)
 	if n := strings.Count(logs.String(), line); n != 2 {
 		t.Errorf("%d lines, want 2:\n%s", n, logs.String())
 	}

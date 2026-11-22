@@ -57,6 +57,10 @@ type gitCall struct {
 	// request (bindGitParams).
 	offHold *atomic.Int32
 	offOwn  bool
+	// askInGate is true while the later gate of a create at its checkout runs
+	// (createGateAsksAfterAdd). That gate asks git about the repository before
+	// the read of the config, and a bad answer there refuses nothing.
+	askInGate bool
 }
 
 // offLive reports whether the off switch holds the daemon now: this request

@@ -15,8 +15,14 @@ with an empty value (claustrum's own).
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
 listing (`git config -z --list`) with the profile of that call. Before its first
 listing, a request with no [kept value](git-rules-session-folders.md#the-off-switch) runs the excludes read, `git config
---includes --path core.excludesFile`. [Calls outside a repository](#calls-outside-a-repository)
-gives it and the `--attr-source` probe. There are two profiles:
+--includes --path core.excludesFile` ([before a kept state](git-rules-session-folders.md#before-a-kept-state)). [Calls outside a repository](#calls-outside-a-repository)
+gives it and the `--attr-source` probe. On macOS a create in attach mode after a git.info runs one more
+listing in `baseRepo` right before the listing of its add. Without a git.info first it does the same (claustrum's own, not measured). On macOS, after a hold that ends at the
+add, the create runs [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository)
+after the start test and before the read of the config. With a good answer, it makes no
+such call after it (`4c111e86`, measured on macOS for a checkout of a branch). An add of a commit id from `sourceBranch` keeps the call of its content check, after the read (claustrum's own, not measured). Linux keeps the call after the read, and
+Windows does not ask there (claustrum's own, not measured). Its step after a bad answer there is
+claustrum's own, not measured. There are two profiles:
 
 - The heavy profile forbids every transport protocol
   (`GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`). `git.info`, `git.list_branches` and
@@ -145,6 +151,12 @@ The repository calls are the configuration listings, the hardened calls,
     - A relative value drops 23 names, such as `HOME` and `GIT_INDEX_FILE`. On
       Windows `/dev/null` keeps `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`. An
       empty value is not relative. On Windows `NUL` in any case is not.
+      One slash is relative (`4c111e86`, measured on Windows).
+    - On Windows a UNC path is absolute, and so is a value with two leading slashes
+      of either kind and more text, but not an `LD_PRELOAD` or `LD_AUDIT` piece. `4c111e86` keeps `\\\x`, `\\?\UNC\…`, `\\?\C:\…`,
+      `\\.\C:\…`, `//host/share/…` and `\\host` alone for a relative name, and one of `\\\x`,
+      `///x`, `\\\\x` and `//\x` in each of four list and four program names (measured
+      on Windows). The other names and shapes are claustrum's own.
     - The Kerberos names `KRB5CCNAME`, `KRB5_KTNAME` and `KRB5_CLIENT_KTNAME` go
       when their file part is relative. `KEYRING`, `KCM`, `API`, `MEMORY`,
       `XCACHE` and `XCTEMP` have none.
@@ -153,8 +165,9 @@ The repository calls are the configuration listings, the hardened calls,
       shape. A relative `SSH_AUTH_SOCK` goes, but not one that starts with a slash
       on Windows.
     - 19 list names, such as `PATH`, `LOCPATH` and `SSL_CERT_DIR`, keep their
-      absolute entries. Five of them keep an empty value. The rest go when no
-      entry is left. On Windows a UNC path is absolute.
+      absolute entries. Five of them keep an empty value, but not
+      `GIT_ALTERNATE_OBJECT_DIRECTORIES` on Windows (`4c111e86`, measured on Windows).
+      The rest go when no entry is left.
     - `LD_PRELOAD` and `LD_AUDIT` keep an absolute piece or one with no `/`.
       `LD_PRELOAD` splits on white space too.
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
@@ -162,6 +175,9 @@ The repository calls are the configuration listings, the hardened calls,
       macOS and Windows.
     - Every other entry stays, except the entries named below and the cuts of
       [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child).
+
+#### The config, protocol, trace and ssh names
+
 - `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` do not reach a repository call. The read of config text keeps them
   (claustrum's own, not measured). The names match exactly, in upper case. So on Windows `git_config` and
   `Git_Config_Parameters` reach git.
@@ -238,7 +254,7 @@ each daemon process is claustrum's own. On Linux and macOS the second listing ge
 
 ### Calls outside a repository
 
-These rules are claustrum's own (not measured). Six calls run outside any
+These rules are claustrum's own (not measured), except where marked. Six calls run outside any
 repository: the `git version` run after a failed listing, the `--attr-source`
 probe, the version gate of the include scan, the excludes read, the read of config
 text and the `git version` of the start test. Each one starts from the cleaned
@@ -251,16 +267,22 @@ and on Windows in `SystemRoot` if that is absolute. Else the folder of the daemo
   `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_PARAMETERS`, `GIT_CEILING_DIRECTORIES`,
   `GIT_DISCOVERY_ACROSS_FILESYSTEM` and every `GIT_CONFIG_KEY_` and
   `GIT_CONFIG_VALUE_` name. Letter case must match on every system.
-  `GIT_CONFIG_NOSYSTEM` stays.
+  `GIT_CONFIG_NOSYSTEM` stays. After a failed listing of `git.info` the run keeps the daemon's
+  `LC_ALL` and `LANGUAGE` (`4c111e86`, measured on Linux). The run for any other
+  method, and on macOS and Windows, is claustrum's own, not measured.
 - The probe runs `git --attr-source=<empty tree> version` with no
-  removal. Exit 0 is "supported". Another exit code runs the
-  `git version` run above, and its exit 0 is "not supported". Both last for the life of the daemon. Every other failure is "unknown" and is not stored.
+  removal. Exit 0 is "supported". Another exit code runs `git version` with the
+  environment of the probe (`4c111e86`, measured on Linux, and claustrum's own on macOS and Windows), and its exit 0 is "not supported". Both last for the life of the daemon. Every other failure is "unknown" and is not stored.
 - The version gate runs `git version` with no removal.
   Version 2.32 or later is "new enough", an older one is "too old", and the daemon
   keeps either answer for the life of the host, and keeps nothing with no run
   folder. If git does not run or prints no version, the answer is "too old" for
   that call and nothing is kept.
-- The excludes read adds `GIT_DIR=<null>`. An absolute output is the result and
+- The excludes read adds `GIT_DIR=<null>`. On Windows it removes
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG_PARAMETERS`, `GIT_NO_REPLACE_OBJECTS`,
+  `GIT_REPLACE_REF_BASE` and `GIT_SHALLOW_FILE`, and keeps `GIT_CONFIG_COUNT` and its
+  items (`4c111e86`, measured with `git.status`). Another letter case there, the same read made first by another method, and Linux and macOS, are
+  claustrum's own, not measured. An absolute output is the result and
   the daemon keeps it. With none, each call looks up the file again
   (`683cc6a9`, measured with `git.status` on Linux and macOS). A read whose git did
   not start keeps nothing (claustrum's own). A read under the [off switch](git-rules-session-folders.md#the-off-switch)

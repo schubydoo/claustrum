@@ -2,6 +2,7 @@ package files
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -25,9 +26,11 @@ type realpathParams struct {
 func (p *realpathParams) ExpandPaths() {}
 
 // realpathErrData is the data member of a -32603 reply of files.realpath.
+// StoppedShort is set for too_many_links on Windows (loopStopsShort).
 type realpathErrData struct {
-	Reason string `json:"reason"`
-	Errno  int    `json:"errno"`
+	Reason       string `json:"reason"`
+	Errno        int    `json:"errno"`
+	StoppedShort bool   `json:"stoppedShort,omitempty"`
 }
 
 const (
@@ -56,8 +59,7 @@ func uncleanTilde(p string) bool {
 }
 
 // filesRealpath answers files.realpath on build 683cc6a9. It makes no write and
-// no delete. The kernel decides the link limit, through os.Stat. The real name
-// comes from realpathEval (claustrum's own).
+// no delete. The real name comes from realpathEval (claustrum's own).
 func filesRealpath(req *rpc.Request) rpc.Response {
 	var p realpathParams
 	if bad := rpc.Bind(req, &p); bad != nil {
@@ -86,10 +88,30 @@ func filesRealpath(req *rpc.Request) rpc.Response {
 // not measured).
 // A dangling link with missingLeaf gives dangling, and wouldBe only if the parent
 // of its target exists. A dangling link without missingLeaf gives the plain
-// exists:false (claustrum's own, not measured).
+// exists:false (claustrum's own, not measured). On Windows a missing path first
+// takes the failure of its nearest existing folder, or the error 1921 of a
+// folder on the way (realpathMissingFailure).
+//
+// A path through a regular file, as <file>/a, gives the plain exists:false, with
+// and without missingLeaf (4c111e86, measured on Linux, and for <file>/a with no
+// missingLeaf on macOS). A dangling link to such a path gives dangling with no
+// wouldBe (4c111e86, measured on Linux). The system answers ENOTDIR there, which
+// counts as a missing name.
+//
+// A trailing "/" after a file, a link to a file or a FIFO, as in <file>/ and
+// <file>//, gives the plain exists:false, with and without missingLeaf
+// (4c111e86, measured on Linux; macOS is claustrum's own, not measured). With it,
+// a folder and a link to a folder give the folder as real. A dangling link gives
+// exists:false, and with missingLeaf dangling and the wouldBe of its target. A
+// missing name gives exists:false, and with missingLeaf its wouldBe (4c111e86,
+// measured on Linux).
 func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
+	slash := realpathEndsInSep(path)
 	path = realpathClean(path)
-	_, err := os.Stat(path)
+	fi, err := os.Stat(path)
+	if err == nil && slash && !fi.IsDir() {
+		return rpc.RealpathReply{}, nil
+	}
 	var real string
 	if err == nil {
 		real, err = realpathEval(path)
@@ -97,7 +119,10 @@ func resolveRealpath(path string, missingLeaf bool) (rpc.RealpathReply, error) {
 	if err == nil {
 		return rpc.RealpathReply{Exists: true, Real: filepath.ToSlash(real)}, nil
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
+	if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+		return rpc.RealpathReply{}, err
+	}
+	if err := realpathMissingFailure(path); err != nil {
 		return rpc.RealpathReply{}, err
 	}
 	if !missingLeaf {
@@ -155,39 +180,53 @@ func resolveDangling(path string) rpc.RealpathReply {
 }
 
 // wouldBeUnder resolves the parent folder of path and adds the last name. ok is
-// false when the parent cannot be resolved. The caller tested the path first, so
-// only a missing parent (or a race) gets here. The last name is never "." or
-// "..": the path does not exist, and a path that ends in one of them names its
-// parent, so a parent that resolves would make the path exist. On Windows a
-// parent behind a link to a network place gives ok false, so a missing name
-// there gets plain exists:false (claustrum's own, not measured).
+// false when the parent cannot be resolved, or resolves to no folder, as a regular
+// file (4c111e86, measured on Linux). The caller tested the path first, so only a
+// missing parent, a parent that is a file (or a race) gets here. The last name is
+// "." or ".." only below a parent that is no folder, as <file>/., because below a
+// folder such a path exists. The folder test then gives ok false.
 func wouldBeUnder(path string) (string, bool) {
 	parent, last := splitLast(path)
 	real, err := realpathEval(parent)
 	if err != nil {
 		return "", false
 	}
+	if fi, err := os.Stat(real); err != nil || !fi.IsDir() {
+		return "", false
+	}
 	return filepath.ToSlash(filepath.Join(real, last)), true
 }
 
 // realpathReasonData is the data member of the no_usable_name reply, which has
-// no errno.
+// no errno. On Windows it has atLetter "share" for a path whose own drive is a
+// network drive, and stoppedShort true for a path that reaches the network
+// through a link (87375cc7, measured on Windows).
 type realpathReasonData struct {
-	Reason string `json:"reason"`
+	Reason       string `json:"reason"`
+	AtLetter     string `json:"atLetter,omitempty"`
+	StoppedShort bool   `json:"stoppedShort,omitempty"`
 }
 
-// errNoUsableName is the answer of realpathEval on Windows for a link to a
-// mapped network drive or a `\\?\UNC\` path (build 683cc6a9). Other network
-// targets are claustrum's own, not measured.
+// errNoUsableName is the answer of realpathEval on Windows for a path on a
+// mapped network drive, and for a link to one or to a `\\host\share`, `\\?\UNC\`
+// or `\\.\UNC\` path (683cc6a9 and 4c111e86). Other network forms are
+// claustrum's own, not measured.
 var errNoUsableName = errors.New("no verified path for the target (it may be deleted or moved, or on Windows on a network share)")
+
+// errNoUsableNameAtLetter is errNoUsableName for a path whose own drive letter
+// names a network drive, before any link is followed (realpathEval on Windows).
+var errNoUsableNameAtLetter = fmt.Errorf("%w", errNoUsableName)
 
 // realpathFailure maps a failed call to the -32603 reply. Windows no_permission
 // is not measured. An error with no errno gets reason other and errno 0
 // (claustrum's own, not measured).
 func realpathFailure(id interface{}, err error) rpc.Response {
 	if errors.Is(err, errNoUsableName) {
-		return rpc.ErrResultData(id, rpc.CodeInternal, "files.realpath: "+err.Error(),
-			realpathReasonData{Reason: "no_usable_name"})
+		data := realpathReasonData{Reason: "no_usable_name", StoppedShort: true}
+		if errors.Is(err, errNoUsableNameAtLetter) {
+			data = realpathReasonData{Reason: "no_usable_name", AtLetter: "share"}
+		}
+		return rpc.ErrResultData(id, rpc.CodeInternal, "files.realpath: "+err.Error(), data)
 	}
 	var en syscall.Errno
 	if !errors.As(err, &en) {
@@ -203,5 +242,5 @@ func realpathFailure(id interface{}, err error) rpc.Response {
 	}
 	return rpc.ErrResultData(id, rpc.CodeInternal,
 		"files.realpath: error "+strconv.Itoa(int(en))+": "+en.Error(),
-		realpathErrData{Reason: reason, Errno: int(en)})
+		realpathErrData{Reason: reason, Errno: int(en), StoppedShort: reason == "too_many_links" && loopStopsShort})
 }

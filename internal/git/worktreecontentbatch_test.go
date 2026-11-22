@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeBatch is an objectBatch whose git answers with out. The requests go to
-// a pipe that the test drops.
+// a pipe that the test drops at its end.
 func fakeBatch(t *testing.T, out string) *objectBatch {
 	t.Helper()
 	inR, inW, err := os.Pipe()
@@ -25,8 +27,9 @@ func fakeBatch(t *testing.T, out string) *objectBatch {
 	}()
 	done := make(chan struct{})
 	close(done)
-	b := &objectBatch{in: inW, inR: inR, outR: pr, out: bufio.NewReader(pr), done: done}
-	t.Cleanup(b.close)
+	// The test keeps the read end of the requests, as a git that runs would.
+	b := &objectBatch{in: inW, outR: pr, out: bufio.NewReader(pr), done: done}
+	t.Cleanup(func() { b.close(); _ = inR.Close() })
 	return b
 }
 
@@ -107,5 +110,56 @@ func TestHashOnNoObjectID(t *testing.T) {
 func TestOpenScratchRootDefaultsToNoWait(t *testing.T) {
 	if reflect.ValueOf(openScratchRoot).Pointer() != reflect.ValueOf(openRootNoWait).Pointer() {
 		t.Fatal("openScratchRoot must default to openRootNoWait, so the scratch folder opens with no wait on a FIFO")
+	}
+}
+
+// TestObjectBatchWriteAfterItsGitEnded: after the first answer of a
+// long-running git the daemon holds no read end of its stdin. So a request to a
+// batch whose git ended after one answer fails at its write with "write |1:
+// broken pipe", the cause that 4c111e86 logs there (measured on Linux).
+// Mutation: keep the read end of the pipe open in the daemon (the read gives
+// EOF).
+func TestObjectBatchWriteAfterItsGitEnded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the text of a broken pipe is that of Linux and macOS")
+	}
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	id := strings.Repeat("a", 40)
+	slowGit(t, "cat-file,--batch", "fail", 0, "", id+" commit 1\nx\n")
+	c := &contentCheck{repo: f.repo}
+	b := c.startLong(nil, "cat-file", "--batch")
+	if b == nil {
+		t.Fatal("no batch started")
+	}
+	if body, ok, err := b.read("commit", id); err != nil || !ok || string(body) != "x" {
+		t.Fatalf("first read = %q, %v, %v, want the answer x", body, ok, err)
+	}
+	<-b.done
+	_, _, err := b.read("commit", id)
+	if err == nil || stopCause(err) != "it stopped answering (write |1: broken pipe)" {
+		t.Errorf("read after the end of git = %v, want the broken pipe", err)
+	}
+	b.close()
+}
+
+// TestObjectBatchDropClosesStdinReadEnd: a batch dropped before its first
+// answer closes the copy of the daemon of the read end of the stdin of git
+// once git ended (claustrum's own). Mutation: no close at the end of git (the
+// end stays open). A second Close of the os.File tells a closed file on every
+// system: Stat on Windows reads the handle with no test of the close, and so
+// gives "The handle is invalid" there (from the code of os).
+func TestObjectBatchDropClosesStdinReadEnd(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
+	c := &contentCheck{repo: f.repo}
+	b := c.startLong(nil, "cat-file", "--batch")
+	if b == nil {
+		t.Fatal("no batch started")
+	}
+	b.drop()
+	_ = os.WriteFile(gate, nil, 0o644)
+	<-b.done
+	if err := b.inR.Close(); !errors.Is(err, os.ErrClosed) {
+		t.Errorf("the read end of the stdin of git after the drop and the end of git: %v, want it closed", err)
 	}
 }
