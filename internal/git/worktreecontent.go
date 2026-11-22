@@ -107,9 +107,9 @@ type contentCheck struct {
 // errContentDeadline ends the reads of a check whose deadline passed.
 var errContentDeadline = errors.New("the deadline of the request passed")
 
-// pastDeadline reports whether the deadline of the check has passed. From then
-// on the check reads no object, also by a separate run: 4c111e86 stops there
-// and logs the checked line with "stopped at the deadline" (measured on Linux).
+// pastDeadline reports whether the deadline passed. Then the check reads no object,
+// also by a separate run. 4c111e86 stops so and logs "stopped at the deadline" for a
+// batch that did not answer (measured on Linux). Other stop points are claustrum's own.
 func (c *contentCheck) pastDeadline() bool {
 	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
 		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {

@@ -113,8 +113,8 @@ func copyDotClaude(u gitUse, repo, worktree string) {
 // timeoutMs deadline, 4c111e86 runs that listing and no `ls-files` call
 // (measured on Linux with a batch that did not answer). Claustrum's own, not
 // measured: the same after a batch that answered or a stop seen at a read per
-// folder depth, no listing with no child of `.claude/`, and no change for a
-// `.worktreeinclude` manifest.
+// folder depth, no listing with no child of `.claude/`, and no
+// `.worktreeinclude` pass.
 func dotClaudeListingOnly(u gitUse, repo string) {
 	if len(claudeDirPassCalls(repo, gitArgvBudget)) == 0 {
 		return
