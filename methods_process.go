@@ -264,6 +264,10 @@ func ptyKeyOK(v json.RawMessage) bool {
 	return err == nil
 }
 
+// The pane's git of a gitRead spawn runs the git of the login-shell PATH, as
+// the git methods do, when the PATH of the daemon holds no git.
+func init() { supervisor.GitReadShellPathGit = git.ShellPathGit }
+
 // gitReadStep is the step of the start of a gitRead spawn in cwd with args
 // (git.PaneGitRun).
 func (s *server) gitReadStep(cwd string, args []string) supervisor.GitReadStep {

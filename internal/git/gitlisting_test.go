@@ -721,7 +721,8 @@ func TestListingNoGitOnPath(t *testing.T) {
 	wantResult(t, "list_branches", listBranches(t, f.top), notRepoList)
 	wantResult(t, "status", status(t, f.top, f.top), notRepoStatus)
 	c, wt := create(t, f.top)
-	wantResult(t, "create", c, notRepoCreate)
+	// 87375cc7 gives the code git_not_found (measured on Linux and macOS).
+	wantResult(t, "create", c, gitNotFoundCreate)
 	wantResult(t, "remove, worktree gone", remove(t, f.top, wt, "w1"), `{"success":true,"branchKept":true}`)
 	// Measured: a worktree folder that exists gets the lock-check refusal and stays.
 	// Mutation: skip the configuration check of the remove when PATH holds no git.

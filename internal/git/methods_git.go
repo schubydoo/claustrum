@@ -347,7 +347,7 @@ func gitInfo(req *gitCall) rpc.Response {
 	// with no member, runs no test and logs no line about git. Its folder holds
 	// the lock file only (measured on Linux, 3 of 3 runs). git.list_branches takes
 	// the same step (gitListBranches, 4c111e86). git.status takes it on Linux and
-	// macOS, and keeps the failed start test on Windows (statusNoGitKeepsTest).
+	// macOS. On Windows it runs a start test and keeps no failure (statusNoGitRunsTest).
 	// A request with "shadowDirOff":true is not measured either, and it keeps its answer. The
 	// settingsControl member follows the state of the daemon: a daemon that
 	// passed its test before it lost git is not measured.
@@ -709,15 +709,13 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
-// statusNoGitKeepsTest is true where git.status with no git on PATH also keeps the
-// failure of a start test. Each system answers isRepo:false there (4c111e86,
-// measured on Linux, macOS and Windows). On Windows 4c111e86 then answers the
-// later requests with the kept refusal "exec: \"git\": executable file not found
-// in %PATH%" after a git appears, and runs no test (measured). Only the no-git
-// request can fail so. So claustrum keeps the failed test of that request (from
-// the rows, not measured directly). On Linux and macOS a later request runs its own
-// test (measured).
-var statusNoGitKeepsTest = runtime.GOOS == "windows"
+// statusNoGitRunsTest is true where git.status with no git on PATH also runs a
+// start test. Each system answers isRepo:false there (4c111e86, measured on
+// Linux, macOS and Windows). On Windows 4c111e86 then kept the failure, and
+// 87375cc7 keeps none: after a git appears, the next request runs its own test
+// and the calls of the status (measured on Windows, noGitStarts in gate). On
+// Linux and macOS a later request runs its own test (measured).
+var statusNoGitRunsTest = runtime.GOOS == "windows"
 
 // statusOpenTest is statusPathOpenFails. Tests replace it to reach the refusal
 // on every system.
@@ -770,11 +768,11 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// On Windows a failed start test that is still kept answers first, also for a
-	// baseRepo through a junction that does not resolve. 4c111e86 answers the kept
-	// refusal there after the no-git request, after the excludes read of the first
-	// request with git (measured on Windows). Its place after the link refusals and
-	// a kept failure of another cause are claustrum's own.
-	if statusNoGitKeepsTest && !bool(p.ShadowDirOff) {
+	// baseRepo through a junction that does not resolve. 4c111e86 answered the kept
+	// refusal of the no-git request there (measured on Windows). 87375cc7 keeps no
+	// such failure (gate). Its place after the link refusals and a kept failure of
+	// another cause are claustrum's own.
+	if statusNoGitRunsTest && !bool(p.ShadowDirOff) {
 		if kept := req.shadow.keptFailure(); kept != "" {
 			globalExcludesPath()
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, kept)
@@ -822,11 +820,11 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
-	// (statusNoGitKeepsTest). Elsewhere than Windows no start test runs, so no failure
+	// (statusNoGitRunsTest). Elsewhere than Windows no start test runs, so no failure
 	// is kept, and as in git.info the folder of the daemon is made (not measured). A
 	// baseRepo that is no folder and the off switch are not measured: they keep the gate.
 	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
-		if statusNoGitKeepsTest {
+		if statusNoGitRunsTest {
 			_ = req.shadow.gate(false)
 		} else {
 			req.shadow.folderWithNoTest()
@@ -1283,9 +1281,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// before the count check, also with a worktreeRoot. Nothing is made (measured
 	// on Linux and macOS, and on Windows for a missing baseRepo). On Windows an
 	// existing baseRepo gets it too (claustrum's own, not measured). The order
-	// against a trust refusal is not measured.
+	// against a trust refusal is not measured. 87375cc7 answers the code
+	// git_not_found there, with the same text, also with a git of the login-shell
+	// PATH that it does not use (measured on Linux and macOS). On Windows it is
+	// measured for a missing baseRepo.
 	if gitLookupError() != nil {
-		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: "not a git repository", ErrorCode: "git_not_found"})
 	}
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
@@ -2798,6 +2799,19 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			}
 			hold.retake()
 			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			// A git-lfs that the git of the login-shell PATH does not find: the
+			// same undo, then git_lfs_not_found with the text of no git and one
+			// log line (lfsNotFoundForShellPathGit). The undo text after it is
+			// claustrum's own, not measured.
+			if code == "worktree_add_failed" && lfsNotFoundForShellPathGit(rtStderr) {
+				logLFSNotFound(msg)
+				return rpc.OKResult(req.ID, rpc.WorktreeReply{
+					Success:    false,
+					Error:      "not a git repository" + undo,
+					ErrorCode:  "git_lfs_not_found",
+					BranchKept: kept,
+				})
+			}
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{
 				Success:    false,
 				Error:      msg + undo,
