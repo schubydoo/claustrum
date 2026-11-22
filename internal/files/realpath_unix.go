@@ -12,6 +12,11 @@ import (
 // limit: 40 on Linux and 62 on macOS (build 683cc6a9).
 func isLinkLoopErrno(en syscall.Errno) bool { return en == syscall.ELOOP }
 
+// loopStopsShort is false: a too_many_links reply has no stoppedShort member on
+// Linux (87375cc7, measured for a link loop) and on macOS (claustrum's own, not
+// measured).
+const loopStopsShort = false
+
 // realpathPathRefusal returns the -32602 text for a path that is not absolute.
 func realpathPathRefusal(path string) string {
 	if !filepath.IsAbs(path) {
@@ -31,8 +36,18 @@ func realpathClean(p string) string {
 	return p
 }
 
+// realpathEndsInSep reports whether p ends in "/" after a name (resolveRealpath).
+func realpathEndsInSep(p string) bool {
+	return strings.HasSuffix(p, "/") && strings.TrimRight(p, "/") != ""
+}
+
 // realpathJoin reads a relative link target from the folder of the link.
 func realpathJoin(dir, target string) string { return dir + "/" + target }
 
 // realpathEval resolves every link of p.
 func realpathEval(p string) (string, error) { return filepath.EvalSymlinks(p) }
+
+// realpathMissingFailure gives nil: on Linux and macOS a missing path takes the
+// rules of resolveRealpath alone. It is a variable so that a test can give the
+// failure of the Windows walk.
+var realpathMissingFailure = func(string) error { return nil }

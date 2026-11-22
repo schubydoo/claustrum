@@ -3,6 +3,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -250,4 +251,40 @@ func TestUndoFailedCheckout(t *testing.T) {
 			t.Errorf("the rollback deleted a path that no longer matched the checkpoint: %v", err)
 		}
 	})
+}
+
+// TestGoneLeafUndoPart: a gone leaf gets the leaf text of a failed rmdir, with the
+// error of a remove of its base name, and a leaf that is there gets none.
+// withLeafUndoPart puts that text first, before the rest of the undo text.
+// Mutations: give the part for a leaf that is there (the second row differs), or
+// put the part after the rest (the join row differs).
+func TestGoneLeafUndoPart(t *testing.T) {
+	dir := t.TempDir()
+	gone := filepath.Join(dir, "w1")
+	part := "the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat w1: no such file or directory)"
+	if runtime.GOOS == "windows" {
+		// Windows gives its own text of a missing file.
+		part = strings.TrimSuffix(part, "no such file or directory)") + "The system cannot find the file specified.)"
+	}
+	if got := goneLeafUndoPart(gone); got != part {
+		t.Errorf("gone leaf = %q, want %q", got, part)
+	}
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := goneLeafUndoPart(gone); got != "" {
+		t.Errorf("leaf that is there = %q, want none", got)
+	}
+	start := "; and the undo could not finish for " + gone + ": "
+	for _, row := range []struct{ part, undo, want string }{
+		{"", "", ""},
+		{"", start + "B", start + "B"},
+		{"P", "", start + "P"},
+		{"P", start + "B", start + "P; B"},
+		{"P", "; other", "; other"},
+	} {
+		if got := withLeafUndoPart(gone, row.part, row.undo); got != row.want {
+			t.Errorf("withLeafUndoPart(%q, %q) = %q, want %q", row.part, row.undo, got, row.want)
+		}
+	}
 }

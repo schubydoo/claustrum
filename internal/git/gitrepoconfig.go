@@ -671,8 +671,9 @@ type repoConfigRead struct {
 // the 16 (measured on Linux, macOS and Windows). 5fd08069 lists such a file with
 // one more git call, with or without a match, and carries no setting of it
 // (measured on Linux and macOS). claustrum makes that call. It keeps its answer
-// only for the filter rule (repoConfigRead.conditional). A file there that git
-// cannot list is not measured.
+// only for the filter rule (repoConfigRead.conditional). A file there with a
+// syntax error is refused with the text of git (4c111e86, measured on Linux). A
+// file there that git cannot list for another reason is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	if d := r.log.noteLinkTest(path); d != "" {
 		return d
@@ -822,7 +823,16 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
-			if settings, ok := listConfigFile(r.ctx, target); ok {
+			// A file with a syntax error is refused with the text of git:
+			// 4c111e86 answers it for `onbranch:` that matches or not and for a
+			// `gitdir:` that matches (measured on Linux). Other conditions get
+			// the same refusal here (from the code, not measured).
+			_, settings, badLine, ok := listConfigFileText(r.ctx, target)
+			if badLine != "" {
+				versionAfterFailure()
+				return badLine
+			}
+			if ok {
 				r.conditional = append(r.conditional, lastLinePerFile(settings)...)
 			}
 		}
@@ -929,8 +939,8 @@ func configFileTests(path string, log *repoReadLog) string {
 // names, or the detail of a refusal. A relative value counts from the folder of
 // file, also when it leaves the git directory (measured), and `~/` is the `HOME`
 // folder of the daemon. `~user` and `%(prefix)/` are refused (measured with
-// `~root/x` and `%(prefix)/x`). A `~/` value with an unset or relative `HOME` gets
-// the same refusal: the text says so, and no cell ran it. The Windows rules come
+// `~root/x` and `%(prefix)/x`). A `~/` value with a relative `HOME` gets the same
+// refusal (4c111e86, measured on Linux). The Windows rules come
 // first (includeValueDetail and includePlaceDetail). The Windows link test of the
 // folders comes after the place test (includeLinkDetail). The place and link
 // refusals come before the count of 16 files (claustrum's own, not measured).
@@ -944,8 +954,9 @@ func configFileTests(path string, log *repoReadLog) string {
 // dir>\<dir>/inc.cfg` in a text (measured). No cell on Linux or macOS has a value that a
 // clean changes. The folder of file stays as written too: `include.path = a/../b/inc.cfg`,
 // and in that file `path = x.cfg`, gives `<git dir>/a/../b/x.cfg` in a text (measured on
-// Linux and macOS). The `~/` form is joined and cleaned as before (not measured).
-// `include.path = ~` names the home folder itself, and gets the "not a regular file" text
+// Linux and macOS). The `~/` form is the HOME value and the rest of the value as
+// written, with no clean: `~/sub/../inc.cfg` gives `<home>/sub/../inc.cfg`, and `~/`
+// gives `<home>/` (4c111e86, measured on Linux). `include.path = ~` names the home folder itself, and gets the "not a regular file" text
 // (measured on Linux).
 func includeTarget(file, value, gitDir string) (target, detail string) {
 	if d := includeValueDetail(file, value); d != "" {
@@ -955,16 +966,17 @@ func includeTarget(file, value, gitDir string) (target, detail string) {
 		", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full"
 	switch {
 	case value == "~" || strings.HasPrefix(value, "~/"):
-		// HOME is the home folder here, claustrum's own, not measured.
-		// An unset or relative HOME refuses. An empty HOME is not
-		// relative, so `~/x` becomes `/x`. A bare `~` with an empty HOME is not
-		// measured: it gives an empty path. The Unix form of relativeFor is right
+		// HOME is the home folder here, also when it differs from the home
+		// folder of the user, and a relative HOME refuses (4c111e86, measured
+		// on Linux). An unset or empty HOME reaches no request, because -serve
+		// exits first (main.go): this code keeps the refusal of an unset HOME
+		// and lets an empty HOME give `/x` for `~/x`. The Unix form of relativeFor is right
 		// here: includeValueDetail refuses every `~` path on Windows first.
 		home, set := os.LookupEnv("HOME")
 		if !set || relativeFor(home, false) {
 			return "", unexpanded
 		}
-		target = filepath.Join(home, value[1:])
+		target = home + value[1:]
 	case strings.HasPrefix(value, "~") || strings.HasPrefix(value, "%(prefix)/"):
 		return "", unexpanded
 	case filepath.IsAbs(value):
@@ -1359,15 +1371,20 @@ var repoVerdicts struct {
 	sync.Mutex
 	byKey map[repoVerdictKey]*repoVerdict
 	order []repoVerdictKey
+	// stale has the keys whose kept verdict the next read must not use
+	// (staleRepoVerdict).
+	stale map[repoVerdictKey]bool
 }
 
 // keptRepoVerdict is the kept verdict of k, if every file of its read is in the
-// recorded state. A file that was missing must still be missing.
+// recorded state. A file that was missing must still be missing. A stale verdict
+// is not used.
 func keptRepoVerdict(k repoVerdictKey) (*repoVerdict, bool) {
 	repoVerdicts.Lock()
 	v, ok := repoVerdicts.byKey[k]
+	stale := repoVerdicts.stale[k]
 	repoVerdicts.Unlock()
-	if !ok {
+	if !ok || stale {
 		return nil, false
 	}
 	for _, s := range v.states {
@@ -1376,6 +1393,48 @@ func keptRepoVerdict(k repoVerdictKey) (*repoVerdict, bool) {
 		}
 	}
 	return v, true
+}
+
+// staleRepoVerdict makes the next read of the config of the git directory gitDir
+// run again, after a start test (forgetRepoAnswers). A read with the same outcome
+// then gives the kept verdict back (reuseStaleVerdict), so the copy of the
+// settings is not written again (syncRepo).
+func staleRepoVerdict(gitDir string) {
+	home, _ := os.UserHomeDir()
+	k := repoVerdictKey{gitDir: gitDir, home: home}
+	repoVerdicts.Lock()
+	defer repoVerdicts.Unlock()
+	if _, ok := repoVerdicts.byKey[k]; !ok {
+		return
+	}
+	if repoVerdicts.stale == nil {
+		repoVerdicts.stale = map[repoVerdictKey]bool{}
+	}
+	repoVerdicts.stale[k] = true
+}
+
+// reuseStaleVerdict is the kept verdict of k when it is stale and a new read v
+// gave the same outcome from files in the same states, or nil. The stale mark
+// goes either way.
+func reuseStaleVerdict(k repoVerdictKey, v *repoVerdict) *repoVerdict {
+	repoVerdicts.Lock()
+	defer repoVerdicts.Unlock()
+	if !repoVerdicts.stale[k] {
+		return nil
+	}
+	delete(repoVerdicts.stale, k)
+	old := repoVerdicts.byKey[k]
+	if old == nil || old.refusal != v.refusal || old.worktreeConfig != v.worktreeConfig || old.shadowText != v.shadowText ||
+		!slices.Equal(old.worktreeItems, v.worktreeItems) || old.shared != v.shared || !bytes.Equal(old.ownConfig, v.ownConfig) ||
+		!slices.EqualFunc(old.states, v.states, sameRepoFileState) {
+		return nil
+	}
+	return old
+}
+
+// sameRepoFileState reports whether a and b record one path in the same state.
+func sameRepoFileState(a, b repoFileState) bool {
+	return a.path == b.path && a.follow == b.follow && sameFileState(a.link, b.link) && sameFileState(a.target, b.target)
 }
 
 // forgetRepoVerdict drops the kept verdict of the git directory gitDir for
@@ -1387,6 +1446,7 @@ func forgetRepoVerdict(gitDir string) {
 	defer repoVerdicts.Unlock()
 	if _, ok := repoVerdicts.byKey[k]; ok {
 		delete(repoVerdicts.byKey, k)
+		delete(repoVerdicts.stale, k)
 		repoVerdicts.order = slices.DeleteFunc(repoVerdicts.order, func(o repoVerdictKey) bool { return o == k })
 	}
 }
@@ -1400,6 +1460,7 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 	if _, ok := repoVerdicts.byKey[k]; !ok {
 		if len(repoVerdicts.order) >= repoVerdictsMax {
 			delete(repoVerdicts.byKey, repoVerdicts.order[0])
+			delete(repoVerdicts.stale, repoVerdicts.order[0])
 			repoVerdicts.order = slices.Delete(repoVerdicts.order, 0, 1)
 		}
 		repoVerdicts.order = append(repoVerdicts.order, k)
@@ -1473,6 +1534,9 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 	}
 	v.states = log.states
 	if !log.failed {
+		if old := reuseStaleVerdict(k, v); old != nil {
+			return old
+		}
 		keepRepoVerdict(k, v)
 	}
 	return v

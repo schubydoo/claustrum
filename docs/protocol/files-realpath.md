@@ -18,9 +18,15 @@
 | `wouldBe` | The real name of the parent folder plus the missing last name. |
 | `dangling` | With `missingLeaf`, `true` for a link to a missing target. `wouldBe` is there only if the target's parent folder exists. |
 
-Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follows one link level and reads a relative target from the real folder of the link. All are claustrum's own, not measured.
+Without `missingLeaf` a dangling link gives `{"exists":false}`. `wouldBe` follows one link level and reads a relative target from the real folder of the link. All are claustrum's own, not measured. The members come in the order of the table.
 
-The members come in the order of the table. A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this is claustrum's own, not measured. On Windows, with `missingLeaf`, a missing name behind a link to a network place gives `{"exists":false}` (claustrum's own, not measured).
+### A missing folder or a file on the way
+
+A path below a missing folder gives `{"exists":false}`. With `missingLeaf` this is claustrum's own, not measured. On Windows the path first takes the `no_usable_name` or error 1921 failure of its nearest existing folder, or the error 1921 of a loop on the way, found by text, with and without `missingLeaf`. With a missing folder between, this is measured behind a network link with `missingLeaf` (`4c111e86`). On a mapped drive, behind a chain of 32 junctions, behind a network link without `missingLeaf` and for the walk by text it is claustrum's own, not measured. A path below a regular file gives `{"exists":false}` (`4c111e86`, measured on Linux, and for `<file>/a` with no `missingLeaf` on macOS). With `missingLeaf` it gives the same, and a link to it `dangling` and no `wouldBe` (`4c111e86`, measured on Linux). The other macOS forms and all of Windows are claustrum's own, not measured. On Windows, `<file>\.` and `<file>\..` are cleaned as text first, so they give `exists:true` and the `real` of the file or its folder (claustrum's own, not measured).
+
+### A trailing slash
+
+A path that ends in `/` after a file, a link to a file or a FIFO gives `{"exists":false}`, also with `missingLeaf` and for `<file>//` (`4c111e86`, measured on Linux). With the `/`, a folder and a link to a folder give the folder as `real`. A dangling link gives `{"exists":false}`, and with `missingLeaf` `dangling` and the `wouldBe` of its target. A missing name gives `{"exists":false}`, and with `missingLeaf` its `wouldBe` (`4c111e86`, measured on Linux). On macOS this is claustrum's own, not measured. On Windows the `/` is cleaned as text first (claustrum's own, not measured).
 
 ## Errors
 
@@ -29,16 +35,30 @@ The members come in the order of the table. A path below a missing folder gives 
 | `-32602` | `Invalid params` | Wrong type. Not measured on Windows. |
 | `-32602` | `files.realpath: the path must be absolute` | The path is relative. |
 | `-32602` | `files.realpath: the path contains a NUL character` | A NUL in the path. |
+| `-32602` | `files.realpath: the path has a colon after the drive letter's (alternate data streams are not supported)` | Windows: a colon after the drive letter, measured for `f.txt:stream` and `f.txt:nope:$DATA` (`4c111e86`). |
 | `-32602` | `files.realpath: a path that starts with "~/" must have no "." or ".." component, no "//" and no trailing slash` | A `..` after `~/`. A `.` or empty component and a bare `~/` are claustrum's own, not measured. |
-| `-32603` | `files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)` | `data` is `{"reason":"no_usable_name"}`. On Windows, a link on the way to a mapped network drive or a `\\?\UNC\` path (measured). Other UNC forms are claustrum's own, not measured. From the code, there is no other cause. |
-| `-32603` | `files.realpath: error <n>: <text>` | `data` is `{"reason","errno"}`. The reason is `too_many_links`, `no_permission` or `other`. `other` (any other errno) and `no_permission` on Windows are claustrum's own, not measured. |
+| `-32603` | `files.realpath: no verified path for the target (it may be deleted or moved, or on Windows on a network share)` | `data` is `{"reason":"no_usable_name",…}`. On Windows, a path on a mapped network drive, or a link on the way to one or to a `\\host\share`, `\\?\UNC\` or `\\.\UNC\` path (measured), also for a missing name below it (`4c111e86`, measured). Other network forms are claustrum's own, not measured. From the code, there is no other cause. |
+| `-32603` | `files.realpath: error <n>: <text>` | `data` is `{"reason","errno",…}`. The reason is `too_many_links`, `no_permission` or `other`. `other` (any other errno) and `no_permission` on Windows are claustrum's own, not measured. |
+
+## Windows error members
+
+On Windows a `no_usable_name` or `too_many_links` reply has one more `data` member (`87375cc7`, measured on Windows; `4c111e86` has neither):
+
+- `"atLetter":"share"` after `reason`, when the drive of the path itself is a mapped network drive, also through a SUBST drive of a folder on a mapped drive.
+- `"stoppedShort":true` after `reason`, when a link on the way leads to a network place, and after `errno` on a `too_many_links` reply for a loop of symbolic links, a chain of 32 symbolic links or of 32 to 34 junctions, also split over two names, and a name below a loop or a chain. A junction loop itself and other forms are claustrum's own, not measured.
+
+Linux sends neither member on a link loop (`87375cc7`, measured). macOS sends neither (claustrum's own, not measured).
 
 ## Platform notes
 
 === "Linux and macOS"
     A link loop gives errno 40 on Linux and 62 on macOS. A chain of 33 links on macOS (32 resolve) or 41 on Linux is over the limit. On macOS `/tmp` gives `/private/tmp`.
 === "Windows"
-    Replies use `/` and a drive letter. A `..` in a link target is removed by text before the next link is followed (measured). A junction and a name below it resolve as links (`4c111e86` and `c9125eb8`, measured). A relative or empty path or `\\srv\s` gives `files.realpath: the path must begin with a drive letter, a colon and a slash`. A component ending in a dot or a space gives `files.realpath: a path component ends in a dot or a space`. A link loop gives errno 1921. Claustrum's own, not measured: that error for other forms, a passing `.` or `..` component, and a junction to a volume name acting as a folder. A `..` in a path is removed by text before the open (claustrum's own, not measured).
+    Replies use `/` and a drive letter. A `..` in a link target is removed by text before the next link is followed (measured). A junction and a name below it resolve as links (`4c111e86` and `c9125eb8`, measured). A relative or empty path or `\\srv\s` gives `files.realpath: the path must begin with a drive letter, a colon and a slash`. A component ending in a dot or a space gives `files.realpath: a path component ends in a dot or a space`. A path or link target on a SUBST drive resolves to its real path on the drive below (`4c111e86`, measured). A chain of 31 junctions resolves, and 32 to 34 give errno 1921, also for a missing name below the chain (`4c111e86`, measured). The measured colon paths are `f.txt:stream` and the missing stream `f.txt:nope:$DATA`. A loop of symbolic links, and a name below a loop of symbolic links or junctions, give errno 1921 (`4c111e86`, measured).
+
+### Windows cases that are claustrum's own
+
+Claustrum's own, not measured: a colon in a folder name, a stream that exists, the limit of 31 links for symbolic links and for links in more than one name of the path, errno 1921 for other forms, a passing `.` or `..` component, a junction to a volume name acting as a folder, the colon test before the dot-and-space test, a SUBST drive of a SUBST drive (followed up to 26 times), a SUBST drive on a share, which gives `no_usable_name` with `atLetter`, a link target with a root and no drive, such as `\gone`, which takes the drive of the folder of the link, and a missing name whose nearest existing folder fails in another way, which gives `{"exists":false}`. A `..` in a path is removed by text before the open (claustrum's own, not measured).
 
 ## Differences from the reference
 

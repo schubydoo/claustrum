@@ -220,9 +220,9 @@ func gitInfo(req *gitCall) rpc.Response {
 		}
 	}
 	// notRepo is the "no repository" answer. It carries the settingsControl member
-	// that the request has at that moment (ShadowHost.replyControl): none in a daemon
-	// that has not passed its start test, as for a HEAD that is no ref as the first
-	// request (measured on Linux).
+	// that the request has at that moment (ShadowHost.replyControl): none before a
+	// kept start test, as for a HEAD that is no ref as the first request (measured
+	// on Linux).
 	notRepo := func() rpc.Response {
 		return rpc.OKResult(req.ID, rpc.NotRepoReply{SettingsControl: req.shadow.replyControl(req.offLive)})
 	}
@@ -243,7 +243,7 @@ func gitInfo(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// A path that does not exist gets the "no repository" answer, with no start test and no git call beyond
-	// the excludes read of a first request. It first takes the steps of a folder with no repository up to
+	// the excludes read of a first request, except below a repository on a share (askForMissingOnShare). It first takes the steps of a folder with no repository up to
 	// the start of the config listing (missingPathListing). That start fails on the missing folder. These
 	// steps are claustrum's own and are not measured. The place of this test after the count refusal is not
 	// measured. On 5fd08069 such a git.info as the first git request of a daemon makes 1 call, the excludes
@@ -256,6 +256,11 @@ func gitInfo(req *gitCall) rpc.Response {
 	if p.Path != "" {
 		if _, err := os.Stat(p.Path); errors.Is(err, fs.ErrNotExist) {
 			_ = missingPathListing(p.Path)
+			// On Windows a missing path below a repository on a share asks git
+			// about that repository first (askForMissingOnShare).
+			if a, _ := req.askForMissingOnShare(p.Path, bool(p.ShadowDirOff)); a.text != "" {
+				return rpc.ErrResult(req.ID, rpc.CodeInternal, a.text)
+			}
 			return notRepo()
 		}
 	}
@@ -276,8 +281,8 @@ func gitInfo(req *gitCall) rpc.Response {
 			// that holds `.git`, in place of the listing. c8e2f083 runs it, then
 			// its second run with GIT_DIR=<.probe>, which exits 0, and answers "no
 			// repository" (measured on Linux). A failed second run answers its
-			// error. On Linux and macOS a second run that exits 0 gets the third
-			// run (configFreeProbe). Both are claustrum's own here, not measured.
+			// error. A second run that exits 0 gets the third run
+			// (configFreeProbe). Both are claustrum's own here, not measured.
 			if !bool(p.ShadowDirOff) && req.shadow.control(false) == controlShadow {
 				if a := req.shadow.askGit(t, p.Path); a.text != "" {
 					return rpc.ErrResult(req.ID, rpc.CodeInternal, a.text)
@@ -291,8 +296,13 @@ func gitInfo(req *gitCall) rpc.Response {
 		}
 		return notRepo()
 	}
-	// On Windows the alternates file is checked before the next git call
-	// (alternatesRefusal).
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+	// then the alternates file are checked before the next git call
+	// (alternateEnvRefusal, alternatesRefusal). The order of the two is claustrum's
+	// own, not measured.
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
@@ -335,9 +345,10 @@ func gitInfo(req *gitCall) rpc.Response {
 	}
 	// With no git in the PATH of the daemon, 5fd08069 answers "no repository"
 	// with no member, runs no test and logs no line about git. Its folder holds
-	// the lock file only (measured on Linux, 3 of 3 runs). The other git methods
-	// are not measured there: they keep the failed start test. A request with
-	// "shadowDirOff":true is not measured either, and it keeps its answer. The
+	// the lock file only (measured on Linux, 3 of 3 runs). git.list_branches takes
+	// the same step (gitListBranches, 4c111e86). git.status takes it on Linux and
+	// macOS, and keeps the failed start test on Windows (statusNoGitKeepsTest).
+	// A request with "shadowDirOff":true is not measured either, and it keeps its answer. The
 	// settingsControl member follows the state of the daemon: a daemon that
 	// passed its test before it lost git is not measured.
 	if gate && !bool(p.ShadowDirOff) && gitLookupError() != nil {
@@ -418,14 +429,11 @@ func gitInfo(req *gitCall) rpc.Response {
 			branch = "detached:" + sha
 		}
 	}
+	// After a plain request, a git.info with "sessionFoldersOff":true and no
+	// "shadowDirOff":true keeps the settingsControl member (4c111e86, measured on
+	// Linux, macOS and Windows). Before that, its start test is not kept, and the
+	// reply has no member (4c111e86, measured on Linux; replyControl).
 	control := req.shadow.replyControl(req.offLive)
-	// On Windows and macOS a git.info with "sessionFoldersOff":true and no
-	// "shadowDirOff":true answers the repository with no settingsControl member
-	// (b3081b51, measured on Windows and macOS). Linux keeps the member (measured on
-	// Linux). The "no repository" answer is not measured, and keeps it.
-	if sessionOffDropsControl && !req.offOwn && sessiondirs.OffSwitchSet(req.Params) {
-		control = ""
-	}
 	return rpc.OKResult(req.ID, rpc.GitInfoReply{
 		IsRepo:        true,
 		Repo:          infoRepoName(top),
@@ -533,6 +541,7 @@ func (req *gitCall) followSwitch(off bool, gate func(l *liveSwitch, ask bool) (g
 	}
 	l := &liveSwitch{off: req.offLive, pending: off && !req.offOwn, stop: req.stop}
 	l.gate = func(ask bool) (gitUse, bool) { return gate(l, ask) }
+	l.perCall = func() bool { return sessiondirs.CheckOff() && req.shadow.noKeptState() }
 	req.use.live = l
 }
 
@@ -710,6 +719,10 @@ func gitDefaultBranch(u gitUse, dir string) string {
 // test (measured).
 var statusNoGitKeepsTest = runtime.GOOS == "windows"
 
+// statusOpenTest is statusPathOpenFails. Tests replace it to reach the refusal
+// on every system.
+var statusOpenTest = statusPathOpenFails
+
 func gitStatus(req *gitCall) rpc.Response {
 	p, bad := bindGitParams(req, &statusViewParams{})
 	if bad != nil {
@@ -761,8 +774,7 @@ func gitStatus(req *gitCall) rpc.Response {
 		}
 	}
 	// A baseRepo whose walk fails, such as a missing name, answers isRepo false with no
-	// git call. On Windows the walk goes by the names as sent, so a junction before the
-	// last name passes (4c111e86, measured on Windows). See statusBaseWalkFails.
+	// git call. See statusBaseWalkFails.
 	if statusBaseWalkFails(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
 		return notRepo
 	}
@@ -799,7 +811,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	// On Windows the object sources are checked before the next git call
 	// (statusSourceRefusal).
-	if msg := statusSourceRefusal(t.pinCommonDir); msg != "" {
+	if msg := statusSourceRefusal(t.pinCommonDir, bool(p.ShadowDirOff)); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
@@ -904,6 +916,11 @@ func gitStatus(req *gitCall) rpc.Response {
 	}
 	sp, ok := statusPathOf(p.Path, p.BaseRepo)
 	if !ok {
+		return notRepo
+	}
+	// On Windows a `path` that cannot be opened as a folder answers here, with no
+	// call of statusWorkTreeProbe (statusPathOpenFails).
+	if statusOpenTest(filepath.Clean(p.Path)) {
 		return notRepo
 	}
 	probeUse := req.use.atGitDirCommand()
@@ -1018,6 +1035,21 @@ func gitListBranches(req *gitCall) rpc.Response {
 		if msg := noRepoInfoCalls(t, req.stop, p.Path, bool(p.ShadowDirOff)); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
+		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
+	}
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment
+	// refuses before any git call (alternateEnvRefusal). Its place after the trust
+	// check and the count check, and before the no-git step, is claustrum's own,
+	// not measured.
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
+	// With no git in the PATH of the daemon, a request with no "shadowDirOff":true
+	// answers the "no repository" shape, runs no start test and makes the folder of
+	// the daemon, as git.info does (4c111e86, measured on Linux and macOS, the folder
+	// on Linux). Windows is not measured.
+	if !bool(p.ShadowDirOff) && gitLookupError() != nil {
+		req.shadow.folderWithNoTest()
 		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// The daemon's own read of the repository's config comes before the listing
@@ -1284,17 +1316,26 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		}
 		return notARepoResult(req.ID, repo)
 	}
-	// On Windows the alternates file is checked before any git call, and
-	// nothing is created (alternatesRefusal).
+	// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+	// the alternates file are checked before any git call, and nothing is
+	// created (alternateEnvRefusal, alternatesRefusal).
+	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// A baseRepo that does not exist answers not_a_repo here, with no start test
-	// and no state line. 4c111e86 does so on Linux, macOS and Windows, and on Linux
+	// and no state line, except below a repository on a share (askForMissingOnShare). 4c111e86 does so on Linux, macOS and Windows, and on Linux
 	// it deletes nothing (measured). On Windows the first such request of a daemon
 	// makes one git call and a later one none (measured). The lack of a `git version`
 	// on Linux and macOS, and a request with "shadowDirOff":true, are claustrum's own.
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
+		// On Windows a missing baseRepo below a repository on a share asks git
+		// about that repository first (askForMissingOnShare).
+		if a, _ := req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); a.text != "" {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: a.text, ErrorCode: "worktree_add_failed"})
+		}
 		return notARepoResult(req.ID, repo)
 	}
 	// The daemon's own read of the repository's config comes before the listing
@@ -1933,7 +1974,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			// A leaf deleted right after a staged add: an empty folder at the
 			// path goes (4c111e86, measured on Linux and macOS), after the
 			// branch step (measured on Linux). claustrum removes it by one rmdir.
+			// With nothing at the path, 4c111e86 adds the leaf text of a failed
+			// rmdir (measured on Linux). claustrum's rmdir finds nothing there (from the code).
+			part := goneLeafUndoPart(p.WorktreePath)
 			undoMovedAwayLeaf(p.WorktreePath, checkpoint)
+			undo = withLeafUndoPart(p.WorktreePath, part, undo)
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:    false,
@@ -1994,6 +2039,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return refuseAdd(msg)
 		}
 	}
+	// On macOS an attach add runs one more listing in the form of the add before
+	// the listing of the add (attachAddListsTwice).
+	if attachAddListsTwice && attachBranch != "" {
+		offLinkListing(baseCtx, req.use, repo)
+	}
 	addStderr, addErr := worktreeAdd(baseCtx, req.use, repo, p.WorktreePath, checkpoint, offMember, afterAddListing, addArgs...)
 	added = addErr == nil
 	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
@@ -2042,9 +2092,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if errors.As(addErr, &notPrepared) || checkNewLeafIdentity(p.WorktreePath, checkpoint) != "" {
 			// In attach mode 5fd08069 runs two listings after `rev-parse
 			// --absolute-git-dir` and answers the text one time (measured on
-			// Linux and macOS). claustrum runs the second one here. Under a
-			// hold in attach mode the second listing is not measured.
-			if notPrepared != nil && notPrepared.offLink {
+			// Linux and macOS). claustrum runs the second one here, or on macOS
+			// before the add (attachAddListsTwice). Under a hold in attach mode
+			// the second listing is not measured.
+			if notPrepared != nil && notPrepared.offLink && !attachAddListsTwice {
 				offLinkListing(baseCtx, req.use, repo)
 			}
 			undoFailedAdd(p.WorktreePath, checkpoint)
@@ -2458,9 +2509,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return resp
 		}
 		// The checkout takes the form of the off switch at its first listing and
-		// keeps it to its end (fixedForm, claustrum's own, not measured: no cell
-		// changes the hold inside the checkout). Under a live hold the index goes
-		// in a new folder `claude-ssh-checkout-<n>` of the temporary folder
+		// keeps it to its end (fixedForm, claustrum's own). A known gap: after a
+		// hold that ended right after the read-tree call, 4c111e86 gave the
+		// listing and the call of the settle step the copy (measured on macOS),
+		// where claustrum keeps the form of the hold. Under a live hold the index
+		// goes in a new folder `claude-ssh-checkout-<n>` of the temporary folder
 		// (4c111e86, Linux and macOS, the name also on Windows. c9125eb8 used
 		// `claude-ssh-index-<n>`).
 		// 5fd08069 runs one listing there before the read-tree call. With no hold it
@@ -2468,15 +2521,21 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// (measured on Linux). The filter rule follows that form too (claustrum's
 		// own, not measured). The index goes into the registration through the
 		// held git directory, as before.
+		// On macOS a later gate here asks git about the repository after the start
+		// test and before the read of the config (createGateAsksAfterAdd), for a
+		// checkout of a branch. A commit id keeps the call of its content check
+		// after the read (claustrum's own, not measured).
+		req.askInGate = createGateAsksAfterAdd && !isObjectID(checkoutRev)
 		cu, offNow := req.use.fixedForm(false)
+		req.askInGate = false
 		offNow = offNow || (!cu.shadow() && bool(p.ShadowDirOff))
 		// In the state shadow the read-tree call names the commit id of the
 		// branch. b3081b51 does so where be1c1ca5 names refs/heads/<branch>
 		// (measured on Linux and macOS). The id comes from one `rev-parse
 		// --verify --quiet <ref>^{commit}`. b3081b51 runs that call in a create
 		// on Windows (measured). Its place and its `-c` items are claustrum's
-		// own. So is the ref under a live hold with no member (not
-		// measured). The member and the state fallback-git are below. A call
+		// own. A live hold with no member, the member and the state
+		// fallback-git are below. A call
 		// that fails leaves the ref, and then no content check runs
 		// (claustrum's own, not measured).
 		//
@@ -2542,14 +2601,20 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// With the member the read-tree call names the commit id too, from the
 		// same call, with no question about the repository first (c9125eb8 and
 		// b3081b51, measured on Linux). On macOS and Windows it is claustrum's
-		// own, not measured. A live hold with no member keeps the ref
-		// (claustrum's own, not measured). In the state fallback-git a create
+		// own, not measured. Under a hold of another request that is live at
+		// the checkout, a create with no member makes the commit call in the
+		// form of the hold and the settle step too (4c111e86, measured on macOS
+		// for a hold that ends after the read-tree call). A hold still live at
+		// the settle call, Linux and Windows are claustrum's own, not measured.
+		// The settle step keeps the form of the hold, where 4c111e86 gives it
+		// the copy (the known gap above). In the state fallback-git a create
 		// without the member makes the commit call and the settle step too
 		// (c9125eb8 and 4c111e86, measured on Linux, claustrum's own on macOS and
 		// Windows). With the member it makes neither (claustrum's own, not
 		// measured).
 		member := bool(p.ShadowDirOff) && !cu.shadow() && req.shadow.readsRepoConfig()
-		byCommit := member || (!bool(p.ShadowDirOff) && !req.shadow.readsRepoConfig())
+		heldNoMember := offNow && !bool(p.ShadowDirOff) && req.shadow.readsRepoConfig()
+		byCommit := member || heldNoMember || (!bool(p.ShadowDirOff) && !req.shadow.readsRepoConfig())
 		if byCommit && !isObjectID(checkoutRev) {
 			if id := resolveCommit(quiet, repo, checkoutRev); id != "" {
 				checkoutRev = id
@@ -3236,9 +3301,14 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
-		// On Windows the alternates file is checked before any git call and any
-		// delete (alternatesRefusal).
+		// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+		// the alternates file are checked before any git call and any delete
+		// (alternateEnvRefusal, alternatesRefusal). The worktree, its entry and its
+		// branch stay.
 		if verdict == gitDirTrusted {
+			if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
@@ -3602,12 +3672,38 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			}
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
-		// On Windows the alternates file is checked here too, and the registration
-		// and the branch stay (measured on Windows, alternatesRefusal).
+		// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+		// the alternates file are checked here too, and the registration and the
+		// branch stay (measured on Windows, alternateEnvRefusal, alternatesRefusal).
+		// The one git call before the env refusal is the excludes read of a new
+		// daemon (4c111e86, measured on Windows).
 		if t.verdict == gitDirTrusted {
+			if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
+		}
+		// A baseRepo that does not exist runs no start test and no `git version`
+		// (4c111e86, measured on Windows for a local baseRepo). Below a repository on a
+		// share the start test still runs, in removeGate below. So it does with a
+		// daemon GIT_DIR, as before (claustrum's own, not measured). The start test waits
+		// for the next request that needs it. Nothing is deleted. For a share host that
+		// does not resolve, the calls of 4c111e86 are measured: none, and the start test
+		// later. Linux and macOS share this path: claustrum's own, not measured there. So
+		// is a baseRepo below a local repository. Only the branch step runs, and git
+		// cannot start in the missing folder. The trust verdict of a missing baseRepo
+		// carries no pin of a daemon GIT_DIR, so the test reads the environment.
+		_, statErr := os.Stat(repo)
+		missing := errors.Is(statErr, fs.ErrNotExist) && os.Getenv("GIT_DIR") == ""
+		missingDone := func() rpc.Response {
+			defer lockWorktreeAddStep(repo)()
+			kept := runBranchStep(req.use, repo, p.BranchName).kept()
+			return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
+		}
+		if missing && missingShareRepo(repo) == "" {
+			return missingDone()
 		}
 		// The daemon's own read of the repository's config refuses here too
 		// (repoConfigGate), with the text of a worktree folder that exists. No
@@ -3644,6 +3740,24 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			return keptAll()
 		} else if noRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		// On Windows a missing baseRepo below a repository on a share asks git
+		// about that repository once, and again only after a bad answer, as
+		// removeGate does (askForMissingOnShare). After two bad answers it refuses
+		// or answers success with the branch kept, and deletes nothing. Otherwise
+		// the steps below run, as for a missing baseRepo off a share.
+		if a, asked := req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); asked && a.bad() {
+			if a, _ = req.askForMissingOnShare(repo, bool(p.ShadowDirOff)); a.text != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + a.text)
+			} else if a.noRepo {
+				return keptAll()
+			}
+		}
+		// Otherwise, after a good answer or with no call, the remove takes the steps of
+		// a missing baseRepo off a share, with no `git version` (claustrum's own, not
+		// measured).
+		if missing {
+			return missingDone()
 		}
 		switch t.verdict {
 		case gitDirNoRepo:

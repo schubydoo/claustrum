@@ -84,21 +84,61 @@ var objectDirLogged atomic.Bool
 
 // statusSourceRefusal is the refusal of git.status before its first git call
 // after the excludes read, or "". common is the git directory that the trust
-// check accepted. b3081b51 answers each text there (measured on Windows). The
-// order of the checks and their place after the trust check are claustrum's own,
-// not measured.
-func statusSourceRefusal(common string) string {
+// check accepted. off is the off switch (shadowDirOff). b3081b51 answers each
+// text there (measured on Windows). The order of the checks and their place after
+// the trust check are claustrum's own, not measured.
+func statusSourceRefusal(common string, off bool) string {
 	if !objectSourceChecks {
 		return ""
 	}
 	if os.Getenv("GIT_OBJECT_DIRECTORY") != "" && objectDirLogged.CompareAndSwap(false, true) {
 		logging.Infof(objectDirLine)
 	}
-	// An empty value is no source of objects (claustrum's own, not measured).
-	if os.Getenv("GIT_ALTERNATE_OBJECT_DIRECTORIES") != "" {
-		return alternateEnvText
+	if msg := alternateEnvRefusal(off); msg != "" {
+		return msg
 	}
 	return alternatesRefusal(common, true)
+}
+
+// alternateEnvLine is the log line of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
+// daemon's environment (measured on Windows).
+const alternateEnvLine = "[GitHandler] GIT_ALTERNATE_OBJECT_DIRECTORIES from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+
+// alternateEnvLogged is true once the daemon logged alternateEnvLine.
+var alternateEnvLogged atomic.Bool
+
+// alternateEnvRefusal is the refusal of GIT_ALTERNATE_OBJECT_DIRECTORIES in the
+// daemon's environment, or "". git.status and git.info answer it after at most
+// their excludes read, and git.list_branches, git.worktree_create and
+// git.worktree_remove with no git call. A create makes nothing, and a remove keeps
+// the worktree, its entry and its branch. git.status, git.info and
+// git.list_branches answer it also with "ownGitConfigOff":true, and with
+// "shadowDirOff":true (off) git runs. An empty value gives no refusal of
+// git.status and git.info (4c111e86, measured on Windows). Both switches on a
+// create and a remove are claustrum's own, not measured. A remove of a gone
+// worktree folder refuses too, after at most the excludes read. With worktreeRoot
+// a remove refuses before this check (both 4c111e86, measured on Windows). The
+// place of the gone-folder check before the share and no-repository answers of
+// removeGoneWorktree is claustrum's own, not measured.
+//
+// The daemon logs alternateEnvLine once, also for an empty value (4c111e86,
+// measured on Windows: one line for a daemon of eight requests). On a request
+// that reaches this check it comes before the line of the start test (measured
+// on Windows). That the line
+// comes from this check, also with off, and its place after a start test on a
+// path that returns before the check, are claustrum's own, not measured.
+func alternateEnvRefusal(off bool) string {
+	if !objectSourceChecks {
+		return ""
+	}
+	value, set := os.LookupEnv("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+	if set && alternateEnvLogged.CompareAndSwap(false, true) {
+		logging.Infof(alternateEnvLine)
+	}
+	if !off && value != "" {
+		return alternateEnvText
+	}
+	return ""
 }
 
 // statusLinkChainRefusal is the refusal of a baseRepo that resolves through

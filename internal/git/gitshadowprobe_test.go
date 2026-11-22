@@ -351,6 +351,12 @@ func TestProbeDropsFourNamesAndKeepsTheConfigCount(t *testing.T) {
 		"GIT_NAMESPACE=ns", "GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "index"),
 		"GIT_DISCOVERY_ACROSS_FILESYSTEM=1", "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + alt,
 	}
+	// On Windows 4c111e86 refuses git.info with a daemon
+	// GIT_ALTERNATE_OBJECT_DIRECTORIES before the call (measured on Windows), so
+	// the row keeps the other three names there.
+	if objectSourceChecks {
+		set = set[:3]
+	}
 	count := []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=claustrum.probetest", "GIT_CONFIG_VALUE_0=1"}
 	for _, kv := range append(slices.Clone(set), count...) {
 		k, v, _ := strings.Cut(kv, "=")
@@ -461,8 +467,8 @@ func TestProbeAnswers(t *testing.T) {
 		{name: "N-f: exit 2 with a text", exit: 2, calls: 1, version: true, stderr: "fatal: text of the wrapper for p3 with exit 2\n",
 			text: "git could not check this repository on the remote machine: at %[1]q: fatal: text of the wrapper for p3 with exit 2"},
 		// Exit 128 with any text gets the second run of c8e2f083 (measured on
-		// Linux and Windows). With secondOK it exits 0, and the answer is "no
-		// repository". Else it fails as the first call did. The answer is then the
+		// Linux and Windows). With secondOK it exits 0, the third run exits 128,
+		// and the answer is "no repository". Else it fails as the first call did. The answer is then the
 		// error with the text of the first call, after one `git version` call (not
 		// measured for an exit code, only for the kill). The texts are those of
 		// 5fd08069 (measured on Linux and Windows).

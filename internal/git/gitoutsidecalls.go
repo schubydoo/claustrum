@@ -11,7 +11,9 @@ import (
 // The git calls that run outside any repository: the `git version` run, the
 // `--attr-source` probe, the version gate of the include scan, the excludes read
 // and the read of config text. The rules are claustrum's own, not
-// measured. Every one of them starts from the filtered
+// measured, except the environment of the two `git version` runs that
+// gitVersionRun and probeAttrSource mark as measured, and the Windows names of
+// excludesReadDropped. Every one of them starts from the filtered
 // environment of gitChildEnv and runs in gitVersionDir.
 
 // gitVersionDropped are the names that the `git version` run removes. The match is
@@ -66,20 +68,33 @@ func exitedWithCode(err error) bool {
 	return errors.As(err, &ee) && ee.ExitCode() >= 0
 }
 
+// excludesReadDropped are the names that the excludes read removes on Windows:
+// 4c111e86 runs `config --includes --path core.excludesFile` without them and
+// keeps the other names of gitChildEnv, also GIT_CONFIG_COUNT and its items
+// (measured on Windows, in the read of git.status). On Windows the match
+// ignores the letter case, the same read made first by another method drops
+// them too, and Linux and macOS keep the names (claustrum's own, not measured).
+var excludesReadDropped = []string{
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG_PARAMETERS", "GIT_NO_REPLACE_OBJECTS",
+	"GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE",
+}
+
+// excludesReadEnv is env without the names of excludesReadDropped when form is
+// Windows, and env itself otherwise. Every other entry stays in its place.
+func excludesReadEnv(env []string, form gitEnvForm) []string {
+	if !form.windows {
+		return env
+	}
+	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		return slices.Contains(excludesReadDropped, strings.ToUpper(envName(kv)))
+	})
+}
+
 // gitOutsideCmd is the command for a call outside a repository: the filtered
 // environment, then the entries add, in gitVersionDir.
 func gitOutsideCmd(add []string, args ...string) *exec.Cmd {
 	cmd := gitCommand(args...)
 	cmd.Dir = gitVersionDir
 	cmd.Env = append(gitChildEnv(), add...)
-	return cmd
-}
-
-// gitVersionPlain runs `git version` as the `git version` run does: the folder of
-// gitVersionDir and the environment of gitVersionEnv(nil).
-func gitVersionPlain() *exec.Cmd {
-	cmd := gitCommand("version")
-	cmd.Dir = gitVersionDir
-	cmd.Env = gitVersionEnv(nil)
 	return cmd
 }

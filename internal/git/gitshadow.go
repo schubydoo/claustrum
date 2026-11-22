@@ -46,6 +46,7 @@ const (
 // The two log lines of the state. 5fd08069 writes one at the first decision of
 // the state and one more at a change (measured on Linux). It writes none for a
 // repeat test with the same result, and none for a failed test (measured).
+// 4c111e86 logs one per test until a state is kept (logStateLine).
 const (
 	shadowStateLine   = "[GitHandler] this host's git works on Claude's own copy of a repository's settings (a shadow directory): a repository's own git config and hooks are not read"
 	fallbackStateLine = "[GitHandler] this host's git does not work on Claude's own copy of a repository's settings (fallback-git; older than about 2.13?): a repository's own git config is read, and only the -c overrides limit it"
@@ -98,6 +99,13 @@ type ShadowHost struct {
 	// state is "" until the first test passed, then controlShadow or
 	// controlFallback.
 	state string
+	// unkept is true while state came from a test that passed while the check of
+	// session folders was off (gate). Such a state is not kept: a reply shows no
+	// member for it, and the next request tests again.
+	unkept bool
+	// tests counts the start tests that ran (gate). settingsGate reads it to know
+	// that its gate ran one.
+	tests uint64
 	// tested is the end of the last test that gave a state.
 	tested time.Time
 	// failure is the kept text of a failed test, and failed is the end of that
@@ -167,14 +175,13 @@ func (h *ShadowHost) active() bool {
 	return h != nil && h.runDir != ""
 }
 
-// control is the settingsControl value of a request, or "" for no member. It is
-// the one place that answers which state a request has. off is the shadowDirOff
-// member of the request.
+// control is the settingsControl value of a request, or "" for no member. off is
+// the shadowDirOff member of the request.
 //
 // A request with the member gets off-switch, also as the first request of a
 // daemon, in the "no repository" reply and while a failure is kept (measured on
 // Linux). A request without it gets the state of the daemon, and no member before
-// the first test passed (measured on Linux).
+// the first kept state (measured on Linux).
 func (h *ShadowHost) control(off bool) string {
 	if !h.active() {
 		return ""
@@ -208,7 +215,16 @@ func (h *ShadowHost) replyControl(off func() bool) string {
 	replyWaits.Add(1)
 	h.testMu.Lock()
 	h.testMu.Unlock() //nolint:staticcheck // the lock only waits for a running test
-	return h.control(off())
+	if off() {
+		return h.control(true)
+	}
+	// A state that is not kept gives no member (gate, 4c111e86, measured on Linux).
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.unkept {
+		return ""
+	}
+	return h.state
 }
 
 // readsRepoConfig reports whether a request makes the daemon's own read of the
@@ -238,7 +254,7 @@ func (h *ShadowHost) folderUse() gitUse {
 //
 // A request with the member runs no test and makes no folder (measured on
 // Linux). Without it, the first such request of a daemon runs the test. A
-// failure is kept for shadowFailureKeep. In the state shadow no second test runs
+// failure is kept for shadowFailureKeep. In a kept state shadow no second test runs
 // (measured: none at 590 s, 610 s and 720 s). In the state fallback-git the test
 // runs again after shadowRetestAfter.
 //
@@ -267,6 +283,7 @@ func (h *ShadowHost) gate(off bool) string {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.tests++
 	if cause != "" {
 		// The frame of every cause (measured on Linux, and in part on
 		// macOS and Windows). A cause with gitCannotRunPrefix is the
@@ -288,20 +305,86 @@ func (h *ShadowHost) gate(off bool) string {
 		h.failed = end
 		return h.failure
 	}
-	h.tested = end
-	if state != h.state {
-		h.state = state
-		if state == controlShadow {
-			logging.Infof(shadowStateLine)
-		} else {
-			logging.Infof(fallbackStateLine)
+	if checkOff {
+		// A test that passed while the check of session folders was off is not
+		// kept either. With no kept state, its request uses the state that it gave:
+		// after "shadow" its git calls name the copy. The reply has no member, the
+		// next request tests again, and the test logs its state line (4c111e86,
+		// measured on Linux). On macOS and Windows the member of the first such
+		// request is measured too. The retest and the other orders are claustrum's
+		// own there. The test before each later git call is liveSwitch.perCallGate.
+		// A kept state, as a fallback-git due for its retest, stays as it is,
+		// and its request uses it. The line that its test logs is claustrum's own,
+		// not measured.
+		if h.state == "" || h.unkept {
+			h.state, h.unkept = state, true
 		}
+		logStateLine(state)
+		return ""
+	}
+	h.tested = end
+	if state != h.state || h.unkept {
+		h.state, h.unkept = state, false
+		logStateLine(state)
 	}
 	return ""
 }
 
+// logStateLine logs the line of a state that a start test gave.
+func logStateLine(state string) {
+	if state == controlShadow {
+		logging.Infof(shadowStateLine)
+	} else {
+		logging.Infof(fallbackStateLine)
+	}
+}
+
+// testRuns is the number of start tests that ran in this daemon (gate).
+func (h *ShadowHost) testRuns() uint64 {
+	if !h.active() {
+		return 0
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.tests
+}
+
+// noKeptState reports that no test gave a kept state yet: no state, or one that
+// a test under the switch gave (gate). While the check of session folders is
+// off, each git call of a request then reads the user's excludes, and without
+// "shadowDirOff":true runs the gate again (perCallGate).
+func (h *ShadowHost) noKeptState() bool {
+	if !h.active() {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state == "" || h.unkept
+}
+
+// forgetRepoAnswers drops the kept answer of git about the repository of t at
+// dir (askGit) and marks the kept read of its config as stale (repoReadVerdict),
+// so the next gate asks git and reads the config again. 4c111e86 does both after
+// a start test before a kept state, and in the plain request that keeps it
+// (measured on Linux). It deletes no file.
+func (h *ShadowHost) forgetRepoAnswers(t gitDirTrust, dir string) {
+	root, _ := gitWalkRoot(dir)
+	if root == "" {
+		root = t.pinCommonDir
+	}
+	h.probeMu.Lock()
+	delete(h.probes, root)
+	h.probeMu.Unlock()
+	cfg := t.pinCommonDir
+	if t.configDir != "" {
+		cfg = t.configDir
+	}
+	staleRepoVerdict(cfg)
+}
+
 // folderWithNoTest makes the folder of this daemon when it is not there, and
-// runs no test. It is the step of a git.info on a host with no git (gitInfo).
+// runs no test. It is the step of a git.info, a git.list_branches and (Linux,
+// macOS) a git.status on a host with no git (gitInfo, gitListBranches, gitStatus).
 // A folder that cannot be made is not measured: the request goes on.
 func (h *ShadowHost) folderWithNoTest() {
 	if !h.active() {
@@ -345,7 +428,7 @@ func (h *ShadowHost) decided() (kept string, done bool) {
 		}
 		h.failure = ""
 	}
-	if h.state == controlShadow || (h.state == controlFallback && now.Sub(h.tested) <= shadowRetestAfter) {
+	if !h.unkept && (h.state == controlShadow || (h.state == controlFallback && now.Sub(h.tested) <= shadowRetestAfter)) {
 		h.remakeFolder()
 		return "", true
 	}
@@ -1215,8 +1298,9 @@ func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, d
 }
 
 // settingsGate is settingsGateRefusal. With ask false the gate makes no call
-// that asks git about the repository (askGit). keepLiveForm and keepLiveCreate
-// pass ask false only for a later gate at a call with --git-dir=.
+// that asks git about the repository (askGit), unless askInGate is set.
+// keepLiveForm and keepLiveCreate pass ask false only for a later gate at a
+// call with --git-dir=.
 func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.gitNotARepo, req.gitDisagreed, req.configRefused, req.goneCopyText = false, false, false, false, ""
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
@@ -1229,8 +1313,15 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 		}
 	}
 	if t.verdict == gitDirTrusted {
+		ran := req.shadow.testRuns()
 		if msg := req.shadow.gate(bool(off)); msg != "" {
 			return msg, false
+		}
+		// After a start test that ran, 4c111e86 asks git about the repository and
+		// reads its config again (measured on Linux, a test before a kept state).
+		// A test that another request ran meanwhile counts too (claustrum's own).
+		if req.shadow.testRuns() != ran {
+			req.shadow.forgetRepoAnswers(t, dir)
 		}
 	}
 	if !req.shadow.readsRepoConfig() {
@@ -1251,6 +1342,10 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 			req.gitRefused, req.gitNotARepo, req.gitDisagreed = true, a.notARepo, a.disagree
 			return a.text, a.noRepo
 		}
+	} else if req.askInGate && req.shadow.asksGit(t, bool(off)) {
+		// A good answer is kept, so the step after the add makes no call. A bad
+		// one is not kept, and that step asks again (askAfterAdd).
+		_ = req.shadow.askGit(t, dir)
 	}
 	msg, read = repoConfigGate(t, off, req.stop)
 	req.configRefused = msg != ""

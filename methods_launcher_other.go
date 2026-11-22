@@ -2,10 +2,13 @@
 
 package main
 
-// launcherCheckLogsRepeats is true on Windows: each refusal of a launcherCheck logs
-// its line, a repeat too (claustrum's own, not measured).
-const launcherCheckLogsRepeats = true
+// launcherCheckAnyMembers is true on Windows: any launcherCheck object is unusable
+// with windows_host. The shapes on the launcher.resolve page are measured on Windows
+// (4c111e86), such as "path":5. Other member values are claustrum's own, not measured.
+const launcherCheckAnyMembers = true
 
-// launcherAnswerResetsCheck is false on Windows, where each refusal logs anyway
-// (claustrum's own, not measured).
-const launcherAnswerResetsCheck = false
+// launcherAnswerResetsCheck is true on Windows: an answer with no launcherCheck, of
+// status none, makes the next equal refusal of a launcherCheck log again. A -32602
+// "launcherCheck is required with path" between them does not (4c111e86, measured
+// on Windows).
+const launcherAnswerResetsCheck = true

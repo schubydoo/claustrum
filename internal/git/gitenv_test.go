@@ -434,7 +434,7 @@ func installEnvStub(t *testing.T) func(method string, params map[string]any) (st
 
 // TestDaemonGitEnvPerCallKind checks, per call kind, where the daemon's own GIT_CONFIG, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT set and
 // GIT_ALLOW_PROTOCOL reach git (measured). The excludes read, the --attr-source version probe and the read of config text keep them (claustrum's
-// own, not measured). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries the extended
+// own, not measured), except that on Windows the excludes read drops GIT_CONFIG_PARAMETERS (4c111e86, measured on Windows). Every listing drops the first two and keeps the count set. Every hardened call drops the first two and carries the extended
 // count set. The light profile filters GIT_ALLOW_PROTOCOL, and the heavy one denies every protocol.
 func TestDaemonGitEnvPerCallKind(t *testing.T) {
 	run := installEnvStub(t)
@@ -476,7 +476,13 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 		case slices.Equal(c.argv, []string{"config", "--includes", "--path", "core.excludesFile"}),
 			c.argv[len(c.argv)-1] == "version":
 			kinds["unhardened"]++
-			if want := sorted(planted[:8]...); !slices.Equal(got, want) {
+			want := sorted(planted[:8]...)
+			if c.argv[0] == "config" && runtime.GOOS == "windows" {
+				// On Windows the excludes read drops GIT_CONFIG_PARAMETERS
+				// (excludesReadDropped, 4c111e86, measured on Windows).
+				want = slices.DeleteFunc(want, func(kv string) bool { return strings.HasPrefix(kv, "GIT_CONFIG_PARAMETERS=") })
+			}
+			if !slices.Equal(got, want) {
 				t.Errorf("unhardened call %d %q = %q\nwant %q", i, c.argv, got, want)
 			}
 			if proto != "ssh:https:git" {
@@ -906,7 +912,8 @@ func TestInheritedCountRefusalThroughDispatch(t *testing.T) {
 }
 
 // git.status answers a baseRepo that does not resolve with the bare shape, with no
-// git call, with nothing planted and with a refused count (measured). In every row
+// git call, with nothing planted and with a refused count (measured). On Windows a
+// spelling with a ".." folds first and resolves. In every row
 // but N1, path is a worktree of T. The control rows are spellings of T that
 // resolve.
 func TestStatusUnresolvableBaseRepo(t *testing.T) {
@@ -992,11 +999,10 @@ func TestStatusUnresolvableBaseRepo(t *testing.T) {
 					continue
 				}
 				raw, calls := run("git.status", map[string]any{"baseRepo": r.base, "path": r.path})
-				// On Windows the names of baseRepo are walked as sent, so the ".." after
-				// the live link L passes the walk and the request goes on as for T
-				// (claustrum's own, not measured for a link). 4c111e86 runs git for a
-				// junction P in S\P\..\P\repo (measured on Windows).
-				if runtime.GOOS == "windows" && r.row == "live link then .." {
+				// On Windows a ".." drops the name before it first, whatever it is,
+				// so each row with a ".." goes on as for T (4c111e86, measured on
+				// Windows).
+				if runtime.GOOS == "windows" && strings.Contains(r.base, "..") {
 					if raw != phase.control {
 						t.Errorf("%s\n got %s\nwant %s", r.row, raw, phase.control)
 					}
