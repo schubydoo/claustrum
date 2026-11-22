@@ -3666,11 +3666,12 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
 		}
-		// A baseRepo that does not exist runs no start test and no `git version`,
-		// except below a repository on a share (askForMissingOnShare). The start test
-		// waits for the next request that needs it. Nothing is deleted. 4c111e86 does so
-		// on Windows, also for a share host that does not resolve (measured). Linux and
-		// macOS share this path: claustrum's own, not measured there. So is a baseRepo
+		// A baseRepo that does not exist runs no start test and no `git version`.
+		// Below a repository on a share the start test still runs (askForMissingOnShare).
+		// The start test waits for the next request that needs it. Nothing is deleted.
+		// 4c111e86 does so on Windows (measured). For a share host that does not resolve,
+		// its calls are measured: none, and the start test later. Linux and macOS share
+		// this path: claustrum's own, not measured there. So is a baseRepo
 		// below a local repository. Only the branch step runs, and git cannot start in
 		// the missing folder.
 		_, statErr := os.Stat(repo)
@@ -3731,8 +3732,9 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 				return keptAll()
 			}
 		}
-		// After a good answer the remove takes the steps of a missing baseRepo off a
-		// share, with no `git version` (claustrum's own, not measured).
+		// Otherwise, after a good answer or with no call, the remove takes the steps of
+		// a missing baseRepo off a share, with no `git version` (claustrum's own, not
+		// measured).
 		if missing {
 			return missingDone()
 		}
