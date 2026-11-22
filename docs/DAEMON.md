@@ -416,7 +416,7 @@ binary as the detached daemon and waits for it. On Linux a launcher that cannot
 read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
 any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). On Linux and macOS
 a launcher with `HOME` unset or empty prints `claustrum: cannot resolve home directory: $HOME is not defined`
-and exits `2`. The reference does the same with its own prefix (`4c111e86`, measured on Linux). On Windows an
+and exits `2`. The reference does the same with its own prefix (`4c111e86`, measured on Linux; macOS from the code). On Windows an
 unset or empty `USERPROFILE` exits `2`, and the line names `%userprofile%` (from the code, not measured). The
 launcher creates a missing socket folder with mode `0700`. Windows ignores that mode (from the code).
 

@@ -432,7 +432,8 @@ func TestServeArmWiresExtractCapAndDeprecatedFlags(t *testing.T) {
 }
 
 // main resolves the home directory for the modes that need it (install/serve/bridge/
-// stop and the no-mode error path) and exits 1 when it cannot. -version and
+// stop and the no-mode error path) and exits when it cannot: 2 for -serve and for
+// -install -cli-version with no -cli-dir, 1 otherwise. -version and
 // -probe-cli dispatch BEFORE home resolution and are unaffected — see
 // TestProbeCLIDispatchSurvivesUnresolvableHome. os.UserHomeDir reads HOME on Unix and
 // USERPROFILE on Windows; clearing both makes it fail on every CI leg. A bare
