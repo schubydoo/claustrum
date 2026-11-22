@@ -201,9 +201,11 @@ func TestUnheldReattachClearsTheClock(t *testing.T) {
 	if n := signals.Load(); n != 0 {
 		t.Fatalf("%d signals while the reattached connection is attached", n)
 	}
+	// The clock was clear above, so a stamp here comes from the second detach. Two
+	// stamps can be equal on a coarse clock (Windows), so the test is "not before".
 	m.DetachConn(c2)
-	if s := unheldSinceOf(p); !s.After(first) {
-		t.Errorf("clock = %s after the second detach, want after %s", s, first)
+	if s := unheldSinceOf(p); s.IsZero() || s.Before(first) {
+		t.Errorf("clock = %s after the second detach, want a stamp not before %s", s, first)
 	}
 }
 
