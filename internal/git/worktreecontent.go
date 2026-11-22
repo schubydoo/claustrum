@@ -197,9 +197,8 @@ type contentFile struct {
 // whose checkout read commit. It logs one line and returns nil on a match. ask
 // is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
 // check that stops at the deadline returns nil and atDeadline: the caller then
-// answers the timeout with no copy step. 4c111e86 runs no `ls-files` call of that
-// step there (measured on Linux). The skip of its config listing is claustrum's
-// own.
+// runs only the config listing of the copy step and answers the timeout
+// (4c111e86, measured on Linux).
 func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
 	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}
@@ -255,8 +254,9 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	defer remove()
 	c.objects = dir
 	// The scratch folder goes before the folder of the objects (4c111e86,
-	// measured on Linux), after the gits of the check end, or at the deadline
-	// with no wait for them (claustrum's own).
+	// measured on Linux), after the gits of the check end (claustrum's own).
+	// At the deadline the check ends with no wait for its gits (4c111e86,
+	// measured on Linux), and the folder goes then.
 	defer c.removeScratch()
 	c.startBatch()
 	defer c.stopBatch()
