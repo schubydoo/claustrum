@@ -58,17 +58,23 @@ var unheldTicker = func(d time.Duration) (<-chan time.Time, func()) {
 // reassigns it.
 var unheldBeforeEnd = func(*Proc) {}
 
-// unheldHooks holds unheldTicker, unheldEndGrace and unheldBeforeEnd as spawnWith read
-// them, so a check that outlives its test reads none of the three.
+// unheldExitSeen runs in the exit goroutine of an armed child once its exit is seen,
+// before the gate closes and before the reap. A seam for a test that steps the check
+// there. Production never reassigns it.
+var unheldExitSeen = func(*Proc) {}
+
+// unheldHooks holds unheldTicker, unheldEndGrace, unheldBeforeEnd and unheldExitSeen as
+// spawnWith read them, so a check that outlives its test reads none of them.
 type unheldHooks struct {
 	ticker    func(time.Duration) (<-chan time.Time, func())
 	grace     time.Duration
 	beforeEnd func(*Proc)
+	exitSeen  func(*Proc)
 }
 
-// readUnheldHooks reads the three values of unheldHooks.
+// readUnheldHooks reads the four values of unheldHooks.
 func readUnheldHooks() unheldHooks {
-	return unheldHooks{ticker: unheldTicker, grace: unheldEndGrace, beforeEnd: unheldBeforeEnd}
+	return unheldHooks{ticker: unheldTicker, grace: unheldEndGrace, beforeEnd: unheldBeforeEnd, exitSeen: unheldExitSeen}
 }
 
 // markUnheldLocked starts the clock of an armed p once when unheld is true, and
@@ -219,6 +225,9 @@ func (p *Proc) killGroupOnUnheldExit() {
 			_ = signalGroup(p.group, p.cmd.Process, "KILL")
 			p.unheldKilled = true
 		})
+	}
+	if seen && p.unheldExitSeen != nil {
+		p.unheldExitSeen(p)
 	}
 	p.unheldGate.CloseAfterExit(p.cmd.Process, seen)
 }

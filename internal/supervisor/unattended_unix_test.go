@@ -111,7 +111,8 @@ func TestUnheldEndOfAChildThatStays(t *testing.T) {
 }
 
 // TestUnheldNoLineAfterAClientKill: a child that a process.kill ended gets no end line
-// and no signal of the check (87375cc7, measured on Linux, macOS and Windows).
+// and no signal of the check, and the check returns at its exit (87375cc7, measured on
+// Linux, macOS and Windows).
 func TestUnheldNoLineAfterAClientKill(t *testing.T) {
 	buf := captureLogBuf(t)
 	f := fakeUnheldTicker(t)
@@ -127,8 +128,9 @@ func TestUnheldNoLineAfterAClientKill(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("the child did not end at the kill")
 	}
+	f.waitStopped(t)
 	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
-		t.Errorf("signals = %q, want the TERM of the kill unheld", got)
+		t.Errorf("signals = %q, want only the TERM of the kill", got)
 	}
 	logs := buf.String()
 	if strings.Contains(logs, "Process al-kill: no connection attached") {
@@ -179,5 +181,55 @@ func TestUnheldNoTermToAChildThatLeft(t *testing.T) {
 	p.mu.Unlock()
 	if termed || by != "" {
 		t.Errorf("termed %v, killedBy %q for a child that left", termed, by)
+	}
+}
+
+// TestUnheldNoTermAtAStepAfterAClientKill: a check step that comes after a child that a
+// process.kill ended has exited, before its reap, sends nothing and logs no end line
+// (claustrum's own: the end tests that the child still runs). The seam sends the step
+// while the exit goroutine waits, so the check takes it before the exit frame.
+func TestUnheldNoTermAtAStepAfterAClientKill(t *testing.T) {
+	if !exitSeenBeforeReap {
+		t.Skip("no exit is seen before the reap on this system")
+	}
+	buf := captureLogBuf(t)
+	f := fakeUnheldTicker(t)
+	sent := recordSignalsByProc(t)
+	took := make(chan bool, 1)
+	old := unheldExitSeen
+	unheldExitSeen = func(p *Proc) {
+		select {
+		case f.ticks <- unheldSinceOf(p).Add(time.Hour):
+			took <- true
+		case <-time.After(30 * time.Second):
+			took <- false
+		}
+	}
+	t.Cleanup(func() { unheldExitSeen = old })
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "al-kst", "term-exit0")
+	<-f.steps
+	if err := m.Kill("al-kst", "TERM"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ok := <-took:
+		if !ok {
+			t.Fatal("the check took no step at the exit in 30 s")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the exit of the child was not seen in 30 s")
+	}
+	f.waitStopped(t)
+	select {
+	case <-p.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the child did not end at the kill")
+	}
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
+		t.Errorf("signals = %q, want only the TERM of the kill", got)
+	}
+	if strings.Contains(buf.String(), "Process al-kst: no connection attached") {
+		t.Errorf("an end line at a step after a client kill:\n%s", buf.String())
 	}
 }

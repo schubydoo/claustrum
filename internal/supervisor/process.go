@@ -263,6 +263,9 @@ type Proc struct {
 	unheldSince                              time.Time
 	unheldTermed, unheldKilled, unheldStayed bool
 	unheldGate                               sysproc.LeaderGate
+	// unheldExitSeen is the seam unheldExitSeen as spawnWith read it, set before the
+	// exit goroutine starts.
+	unheldExitSeen func(*Proc)
 
 	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
 	// releaseTemp gives that folder back after the exit frame (clitemproot_unix.go).
@@ -1370,6 +1373,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			p.markUnheldLocked(time.Now(), true)
 		}
 		p.mu.Unlock()
+		p.unheldExitSeen = unheldH.exitSeen
 		go m.watchUnheld(p, unheldH)
 	}
 
