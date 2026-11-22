@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeBatch is an objectBatch whose git answers with out. The requests go to
@@ -139,4 +140,24 @@ func TestObjectBatchWriteAfterItsGitEnded(t *testing.T) {
 		t.Errorf("read after the end of git = %v, want the broken pipe", err)
 	}
 	b.close()
+}
+
+// TestObjectBatchDropClosesStdinReadEnd: a batch dropped before its first
+// answer closes the copy of the daemon of the read end of the stdin of git
+// once git ended (claustrum's own). Mutation: no close at the end of git (the
+// end stays open, as after a deadline stop).
+func TestObjectBatchDropClosesStdinReadEnd(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
+	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
+	c := &contentCheck{repo: f.repo}
+	b := c.startLong(nil, "cat-file", "--batch")
+	if b == nil {
+		t.Fatal("no batch started")
+	}
+	b.drop()
+	_ = os.WriteFile(gate, nil, 0o644)
+	<-b.done
+	if _, err := b.inR.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Errorf("the read end of the stdin of git after the drop and the end of git: %v, want it closed", err)
+	}
 }

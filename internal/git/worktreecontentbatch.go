@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/schubydoo/claustrum/internal/homeguard"
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -106,18 +107,23 @@ var errNoHashHelper = errors.New("no long-running hash-object for this object")
 // output for a batch that ends before its first answer (measured on Linux).
 type objectBatch struct {
 	in   *os.File // our end of the stdin of git
-	inR  *os.File // the end of git, closed at the first answer or after git ended
+	inR  *os.File // the end of git, closed once at the first answer or after the drop and the end of git (closeInR)
 	outR *io.PipeReader
 	out  *bufio.Reader
 	done chan struct{}
+	// closeInR closes inR once. It is nil when the daemon holds no inR.
+	closeInR func()
+	// mu guards ended, the end of git, and dropped, the drop of the batch.
+	mu      sync.Mutex
+	ended   bool
+	dropped bool
 }
 
 // answered closes the copy of the daemon of the read end of the stdin pipe, at
 // the first answer of git.
 func (b *objectBatch) answered() {
-	if b.inR != nil {
-		_ = b.inR.Close()
-		b.inR = nil
+	if b.closeInR != nil {
+		b.closeInR()
 	}
 }
 
@@ -161,12 +167,14 @@ func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
 	cmd.Env = append(cmd.Env, env...)
 	outR, outW := io.Pipe()
 	cmd.Stdin, cmd.Stdout = inR, outW
-	b := &objectBatch{in: inW, inR: inR, outR: outR, out: bufio.NewReader(outR), done: make(chan struct{})}
+	b := &objectBatch{in: inW, inR: inR, outR: outR, out: bufio.NewReader(outR), done: make(chan struct{}),
+		closeInR: sync.OnceFunc(func() { _ = inR.Close() })}
 	go func() {
 		defer close(b.done)
 		_ = gitRun(ctx, cmd)
 		// Any end of git reads as an end of its output (io.EOF).
 		_ = outW.Close()
+		b.endedOrDropped(&b.ended)
 	}()
 	return b
 }
@@ -222,15 +230,30 @@ func (b *objectBatch) answer(kind, id string) (body []byte, ok bool, err error) 
 func (b *objectBatch) close() {
 	b.drop()
 	<-b.done
-	b.answered()
 }
 
 // drop closes the pipes of the batch and does not wait for git. A read that
 // waits for an answer then ends with an error. git ends at the end of its
-// stdin, or at the limit of the call (claustrum's own).
+// stdin, or at the limit of the call (claustrum's own). After that end the
+// copy of the daemon of the read end of the stdin pipe closes (endedOrDropped).
 func (b *objectBatch) drop() {
 	_ = b.in.Close()
 	_ = b.outR.Close()
+	b.endedOrDropped(&b.dropped)
+}
+
+// endedOrDropped sets flag, ended or dropped. Once both are set, the copy of
+// the daemon of the read end of the stdin pipe closes. Before the end of git
+// the start of git can still read it. Before the drop a write can still come,
+// which gives an end of the output, not a broken pipe, for a git that ended
+// before its first answer.
+func (b *objectBatch) endedOrDropped(flag *bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	*flag = true
+	if b.ended && b.dropped {
+		b.answered()
+	}
 }
 
 // hash asks a long-running hash-object for the id of the file at path. err

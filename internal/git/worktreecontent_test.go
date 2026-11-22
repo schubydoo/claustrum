@@ -1122,7 +1122,14 @@ func TestContentUndoText(t *testing.T) {
 func TestContentCheckStopsAtTheDeadline(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n", ".claude/settings.json": "{}\n"})
 	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
-	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o644) })
+	timeLog, pidFile := filepath.Join(t.TempDir(), "times"), filepath.Join(t.TempDir(), "pid")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+	t.Cleanup(func() {
+		_ = os.WriteFile(gate, nil, 0o644)
+		if runtime.GOOS != "windows" {
+			waitStubExit(t, timeLog, pidFile, "cat-file\x1f--batch")
+		}
+	})
 	firedDeadlineAt(t, func() bool { return exists(gate + ".in") })
 	logs := captureLogBuf(t)
 	begin := time.Now()
@@ -1170,6 +1177,31 @@ func TestContentCheckStopsAtTheDeadline(t *testing.T) {
 		t.Errorf("the calls after the batch end with %q, want %q", after, want)
 	}
 	noReadbackFolder(t, f)
+}
+
+// waitStubExit waits up to 30 s for the end of the stub call whose argv holds
+// match, by its start line in timeLog (CLAUSTRUM_GITSTUB_TIMELOG). So its exit
+// lands in no later test. It writes the pid to pidFile for stubExited, and it
+// is Unix-only, as stubExited is.
+func waitStubExit(t *testing.T, timeLog, pidFile, match string) {
+	t.Helper()
+	b, _ := os.ReadFile(timeLog)
+	pid := ""
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if f := strings.Split(line, "\x1f"); len(f) > 3 && f[0] == "start" && strings.Contains(line, match) {
+			pid = f[2]
+		}
+	}
+	if pid == "" {
+		return
+	}
+	mustWrite(t, pidFile, pid)
+	for end := time.Now().Add(30 * time.Second); !stubExited(pidFile); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Errorf("the stub call %s still runs 30 s after its gate opened", pid)
+			return
+		}
+	}
 }
 
 // firedDeadlineAt is deadlineAt, and the deadline of the context is the time
