@@ -96,10 +96,13 @@ func missingShareRepo(path string) string {
 // two times for git.worktree_remove, where git answers no repository in `<repo>`
 // (measured on Windows). The replies stay those of a missing path there.
 // Claustrum's own, not measured: the remove asks again only after a bad answer,
-// the start test runs first, as for a folder that exists, a good answer keeps the
-// old steps, and a bad one with a text answers it. A failed start test answers
+// the start test runs first, as for a folder that exists, and a bad one with a
+// text answers it. After a good answer git.info and a create keep the old steps,
+// and a remove takes the steps of a missing baseRepo off a share, with no listing
+// and no `git version`. A failed start test answers
 // its text. A root that the trust check does not trust, or trusts with no pin, gets no
-// start test and no call, and the request keeps the reply of a missing path.
+// call, and the request keeps the reply of a missing path. git.info and a create
+// then run no start test. A remove has run it already in its gate (removeGate).
 func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, asked bool) {
 	root := missingShareRepo(path)
 	if root == "" {

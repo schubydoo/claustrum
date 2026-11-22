@@ -3672,6 +3672,26 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
 		}
+		// A baseRepo that does not exist runs no start test and no `git version`
+		// (4c111e86, measured on Windows for a local baseRepo). Below a repository on a
+		// share the start test still runs, in removeGate below. So it does with a
+		// daemon GIT_DIR, as before (claustrum's own, not measured). The start test waits
+		// for the next request that needs it. Nothing is deleted. For a share host that
+		// does not resolve, the calls of 4c111e86 are measured: none, and the start test
+		// later. Linux and macOS share this path: claustrum's own, not measured there. So
+		// is a baseRepo below a local repository. Only the branch step runs, and git
+		// cannot start in the missing folder. The trust verdict of a missing baseRepo
+		// carries no pin of a daemon GIT_DIR, so the test reads the environment.
+		_, statErr := os.Stat(repo)
+		missing := errors.Is(statErr, fs.ErrNotExist) && os.Getenv("GIT_DIR") == ""
+		missingDone := func() rpc.Response {
+			defer lockWorktreeAddStep(repo)()
+			kept := runBranchStep(req.use, repo, p.BranchName).kept()
+			return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
+		}
+		if missing && missingShareRepo(repo) == "" {
+			return missingDone()
+		}
 		// The daemon's own read of the repository's config refuses here too
 		// (repoConfigGate), with the text of a worktree folder that exists. No
 		// registration and no branch is deleted. 5fd08069 answers so on Windows
@@ -3719,6 +3739,12 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			} else if a.noRepo {
 				return keptAll()
 			}
+		}
+		// Otherwise, after a good answer or with no call, the remove takes the steps of
+		// a missing baseRepo off a share, with no `git version` (claustrum's own, not
+		// measured).
+		if missing {
+			return missingDone()
 		}
 		switch t.verdict {
 		case gitDirNoRepo:
