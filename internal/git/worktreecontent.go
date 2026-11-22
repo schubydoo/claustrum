@@ -109,7 +109,7 @@ var errContentDeadline = errors.New("the deadline of the request passed")
 
 // pastDeadline reports whether the deadline passed. Then the check reads no object,
 // also by a separate run. 4c111e86 stops so and logs "stopped at the deadline" for a
-// batch that did not answer (measured on Linux). Other stop points are claustrum's own.
+// batch that did not answer (Linux) and after it read 2 objects (Windows), both measured.
 func (c *contentCheck) pastDeadline() bool {
 	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
 		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {
