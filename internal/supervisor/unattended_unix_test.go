@@ -187,25 +187,36 @@ func TestUnheldNoTermToAChildThatLeft(t *testing.T) {
 // TestUnheldNoTermAtAStepAfterAClientKill: a check step that comes after a child that a
 // process.kill ended has exited, before its reap, sends nothing and logs no end line
 // (claustrum's own: the end tests that the child still runs). The seam sends the step
-// while the exit goroutine waits, so the check takes it before the exit frame.
+// while the exit goroutine waits, and it returns only once the check returned from that
+// step. So the gate stays open for the whole step.
 func TestUnheldNoTermAtAStepAfterAClientKill(t *testing.T) {
 	if !exitSeenBeforeReap {
 		t.Skip("no exit is seen before the reap on this system")
 	}
+	old := unheldEndGrace
+	unheldEndGrace = 100 * time.Millisecond
+	t.Cleanup(func() { unheldEndGrace = old })
 	buf := captureLogBuf(t)
 	f := fakeUnheldTicker(t)
 	sent := recordSignalsByProc(t)
 	took := make(chan bool, 1)
-	old := unheldExitSeen
+	oldSeen := unheldExitSeen
 	unheldExitSeen = func(p *Proc) {
 		select {
 		case f.ticks <- unheldSinceOf(p).Add(time.Hour):
+		case <-time.After(30 * time.Second):
+			took <- false
+			return
+		}
+		// The gate stays open until the check returned from the step.
+		select {
+		case <-f.stopped:
 			took <- true
 		case <-time.After(30 * time.Second):
 			took <- false
 		}
 	}
-	t.Cleanup(func() { unheldExitSeen = old })
+	t.Cleanup(func() { unheldExitSeen = oldSeen })
 	m := newTestProcManager(t)
 	p, _ := spawnUnheldHelper(t, m, "al-kst", "term-exit0")
 	<-f.steps
@@ -215,7 +226,7 @@ func TestUnheldNoTermAtAStepAfterAClientKill(t *testing.T) {
 	select {
 	case ok := <-took:
 		if !ok {
-			t.Fatal("the check took no step at the exit in 30 s")
+			t.Fatal("the check took no step at the exit, or did not return from it, in 30 s")
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("the exit of the child was not seen in 30 s")
