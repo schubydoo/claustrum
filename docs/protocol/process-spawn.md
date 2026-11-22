@@ -68,9 +68,9 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 - A check runs each quarter of the time, at most 60 s, counted from the spawn. The end comes at the first check after the whole time.
 - Linux and macOS: `SIGTERM` to the child only. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
 - Windows: the `SIGTERM` is the end of the [job](process-kill.md#windows-child-trees). The child leaves at once with code 1.
-- One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`.
+- One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`. The stayed line is measured on Linux and macOS.
 - A later reattach gets the `exit` frame with `"killedBy":"unattended"`.
-- A `process.kill`, an own exit and `server.shutdown` give no end and no line. The shutdown ends the child as usual.
+- A child that a `process.kill` ended, an own exit and `server.shutdown` give no end and no line. The shutdown ends the child as usual.
 
 ```
 [process.Manager] Process <id>: no connection attached for <time>: it left at SIGTERM
@@ -87,6 +87,7 @@ These rules are not measured.
 - A spawn or a reattach on a closed connection starts the clock.
 - Once the shutdown began, no end starts and the end sends no more signals.
 - A reattach or a shutdown after the check and before the `SIGTERM` ends nothing.
+- A child that survives a `process.kill` still gets the end.
 - On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
 A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux). With that arg, also with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.

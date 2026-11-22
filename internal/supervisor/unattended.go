@@ -22,7 +22,9 @@ import (
 //   - The end, Linux and macOS (measured there): SIGTERM to the child only, and a wait until it
 //     leaves, at most 7 s. Then SIGKILL goes to its group, also after the child left.
 //   - The end, Windows (measured there): the SIGTERM ends the job, and the child leaves.
-//   - process.kill, an own exit and server.shutdown give no end and no line.
+//   - A child that a process.kill ended, an own exit and server.shutdown give no end
+//     and no line. A child that survives a process.kill still gets the end (claustrum's
+//     own, not measured).
 
 // UnheldTTL maps an accepted unattendedSeconds n above 0 to the time a child lives
 // with no connection. That is 60 s up to 60, then n s, and 168 h from 604800 on.
