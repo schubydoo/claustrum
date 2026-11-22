@@ -1,6 +1,7 @@
 package git
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,7 +49,8 @@ func TestAlternateEnvRefusalOfStatusAndBranches(t *testing.T) {
 // GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment refuses git.info
 // after at most its excludes read, also with "ownGitConfigOff":true, and
 // git.worktree_create and git.worktree_remove with no git call. The create makes
-// no leaf, and the remove keeps the worktree, its entry and its branch. git.info
+// no leaf, and the remove keeps the worktree, its entry and its branch, also for
+// a gone worktree folder. git.info
 // with "shadowDirOff":true runs git, and git.list_branches on a folder with no
 // repository answers that shape. The daemon logs one line (4c111e86, measured on
 // Windows). This test runs the checks of Windows on every system.
@@ -56,6 +58,11 @@ func TestAlternateEnvRefusalOfInfoCreateRemove(t *testing.T) {
 	f := newListingFixture(t)
 	wt2 := filepath.Join(f.top, ".claude", "worktrees", "w2")
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "w2", wt2)
+	wt3 := filepath.Join(f.top, ".claude", "worktrees", "w3")
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "w3", wt3)
+	if err := os.RemoveAll(wt3); err != nil {
+		t.Fatal(err)
+	}
 	noRepo := t.TempDir()
 	checksOn(t)
 	alternateEnvLogged.Store(false)
@@ -106,6 +113,22 @@ func TestAlternateEnvRefusalOfInfoCreateRemove(t *testing.T) {
 	if !exists(filepath.Join(wt2, ".git")) || !exists(filepath.Join(f.regDir, "w2")) || !branchExists(t, f.top, "w2") {
 		t.Errorf("git.worktree_remove deleted the leaf %v, the entry %v or the branch %v",
 			!exists(filepath.Join(wt2, ".git")), !exists(filepath.Join(f.regDir, "w2")), !branchExists(t, f.top, "w2"))
+	}
+
+	// A gone worktree folder refuses too, after one git call: the excludes read of a
+	// new daemon. Its entry and its branch stay.
+	resetUserExcludesCache(t)
+	raw, calls = f.call(t, "git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": wt3, "branchName": "w3"})
+	want = `{"success":false,"error":` + quotedJSON(t, "failed to remove worktree: could not check whether "+wt3+" is locked: "+alternateEnvText) + `}`
+	if replyPart(t, raw) != want {
+		t.Errorf("git.worktree_remove of a gone folder: %s, want %s", raw, want)
+	}
+	if len(calls) != 1 || !slicesHasExcludesRead(calls[0].argv) {
+		t.Errorf("git.worktree_remove of a gone folder: git calls %v, want the excludes read only", calls)
+	}
+	if !exists(filepath.Join(f.regDir, "w3")) || !branchExists(t, f.top, "w3") {
+		t.Errorf("git.worktree_remove of a gone folder deleted the entry %v or the branch %v",
+			!exists(filepath.Join(f.regDir, "w3")), !branchExists(t, f.top, "w3"))
 	}
 	if n := strings.Count(logs.String(), alternateEnvLine); n != 1 {
 		t.Errorf("%d lines of GIT_ALTERNATE_OBJECT_DIRECTORIES, want 1:\n%s", n, logs.String())
