@@ -77,7 +77,9 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 [process.Manager] Process <id>: no connection attached for <time>: it stayed at SIGTERM, and its group was killed
 ```
 
-claustrum's own, not measured:
+#### claustrum's own rules of the end
+
+These rules are not measured.
 
 - A value below 60 gets a check each 15 s, a quarter of its 60 s.
 - An `<id>` of more than 8 bytes is [cut](../DAEMON.md#a-long-id-in-a-line) in these lines.
@@ -85,6 +87,7 @@ claustrum's own, not measured:
 - A spawn or a reattach on a closed connection starts the clock.
 - Once the shutdown began, no end starts and the end sends no more signals.
 - A reattach or a shutdown after the check and before the `SIGTERM` ends nothing.
+- On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
 A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux). With that arg, or with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
 

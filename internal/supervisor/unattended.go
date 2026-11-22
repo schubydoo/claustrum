@@ -129,10 +129,14 @@ func (m *Manager) watchAlone(p *Proc, h aloneHooks) {
 
 // endAlone sends SIGTERM to the child of p alone, through signalIfLiveLocked, and
 // waits for its exit, at most grace. A child that is still there then gets the group
-// SIGKILL. Both signals go through aloneGate, which closes once the exit of the child
-// is seen, before its reap. So no signal of the end reaches an exited child. A closed
-// gate sends nothing and logs nothing. The group SIGKILL of a child that left comes
-// from killGroupOnAloneExit.
+// SIGKILL. Both signals go through aloneGate. On Linux and macOS it closes once the
+// exit of the child is seen, before its reap, so no signal of the end reaches an
+// exited child there. On Windows it closes after cmd.Wait returns. A child there that
+// exits by itself just before that can still get killedBy "unattended" and the left
+// line: a TerminateProcess on an exited child counts as a delivery. No signal leaves
+// the handle or the job of that child (claustrum's own, not measured). A closed gate
+// sends nothing and logs nothing. The group SIGKILL of a child that left comes from
+// killGroupOnAloneExit.
 //
 // Under p.mu, right before the SIGTERM, the end tests the shutdown and the clock at
 // now again. After the shutdown began it sends nothing. After a reattach it sends
