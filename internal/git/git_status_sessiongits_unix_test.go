@@ -14,7 +14,7 @@ import (
 
 // With only gits in session folders on PATH, git.status answers the refusal and
 // logs the passing-over line of each. A git that comes after the first request
-// gets its line at the next request, inside the time that keeps the failed test.
+// gets its line at the next request.
 func TestGitStatusLogsEachSessionFolderGit(t *testing.T) {
 	t.Cleanup(sessiondirs.UseForTest(""))
 	f := newShadowFixture(t)
@@ -54,5 +54,40 @@ func TestGitStatusLogsEachSessionFolderGit(t *testing.T) {
 	}
 	if !passed(second) {
 		t.Errorf("no line for the second git:\n%s", logs.String())
+	}
+}
+
+// The refusal of a git in a session folder is not kept. A git.info under the off
+// switch after it runs that git, and answers its exit (87375cc7, measured on
+// Linux). Mutation: drop noGitStarts in gate, and the kept refusal answers.
+func TestOffSwitchAfterSessionGitRefusalRunsThatGit(t *testing.T) {
+	t.Cleanup(sessiondirs.UseForTest(""))
+	f := newShadowFixture(t)
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\necho run >> \""+dir+"/runs\"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = sessiondirs.Remember(dir)
+	t.Setenv("PATH", bin)
+	params := map[string]any{"path": f.repo}
+	refusal := `"message":"git cannot run on this host; git not run: ` + sessiondirs.NoOtherGitError{}.Error() + `"`
+	if raw, _ := f.call(t, "git.info", params); !strings.Contains(raw, refusal) {
+		t.Fatalf("git.info = %s\nwant %s", raw, refusal)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runs")); err == nil {
+		t.Fatal("the session-folder git ran with the check on")
+	}
+	release := sessiondirs.PauseCheck()
+	raw, _ := f.call(t, "git.info", params)
+	release()
+	if want := `"message":"git cannot run on this host; git not run: exit status 1"`; !strings.Contains(raw, want) {
+		t.Errorf("git.info under the off switch = %s\nwant %s", raw, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runs")); err != nil {
+		t.Error("the session-folder git did not run under the off switch")
 	}
 }

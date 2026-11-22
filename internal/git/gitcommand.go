@@ -37,3 +37,12 @@ func useLoginGit(cmd *exec.Cmd) {
 		cmd.Path, cmd.Err = p, nil
 	}
 }
+
+// noGitStarts reports that a git call cannot start now: PATH finds no git that
+// the daemon runs, or each git on it lies in a session folder
+// (sessiondirs.NoOtherGitError). It starts no process but the `--exec-path`
+// call of LoginGit.
+func noGitStarts() bool {
+	err := gitCommand("version").Err
+	return errors.Is(err, exec.ErrNotFound) || errors.As(err, new(sessiondirs.NoOtherGitError))
+}

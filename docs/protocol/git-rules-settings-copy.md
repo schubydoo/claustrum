@@ -112,10 +112,10 @@ A first `config --get helper.check` on the copy that the daemon ended after 30 s
 does not fail the test (`b3081b51`, measured on Linux).
 
 The daemon keeps a failure 10 seconds after the test, also with its cause
-gone. In that time a request gets the failure with no git call, but works with
-`"shadowDirOff":true`. A failed test under `"sessionFoldersOff":true` is not kept
-(`4c111e86`, measured on Linux). A test that passed is not kept either
-([rule](git-info.md#settingscontrol)).
+gone. Meanwhile a request gets it with no git call, but works with
+`"shadowDirOff":true`. A failed test is not kept under `"sessionFoldersOff":true`
+(`4c111e86`, measured on Linux) or [with no git](git-rules-session-folders.md#with-no-other-git)
+(`87375cc7`). A passed test is not kept ([rule](git-info.md#settingscontrol)).
 
 ### The folders
 

@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -37,11 +36,11 @@ func TestGitStatusWithNoGitInThePath(t *testing.T) {
 	}
 }
 
-// The Windows sequence: with no git on PATH git.status answers isRepo:false and
-// keeps the failed start test. When git is back, the next request makes one git
-// call, the excludes read, and answers the kept refusal. The one after it makes no
-// call and answers the same.
-func TestGitStatusWithNoGitKeepsTheTestOnWindows(t *testing.T) {
+// The Windows sequence: with no git on PATH git.status answers isRepo:false
+// after a failed start test. That failure is not kept, so when git is back the
+// next request runs its own test and the calls of the status (87375cc7, measured
+// on Windows). Mutation: drop noGitStarts in gate, and the kept refusal answers.
+func TestGitStatusWithNoGitKeepsNoTestOnWindows(t *testing.T) {
 	setStatusNoGitKeepsTest(t, true)
 	f := newShadowFixture(t)
 	withGit := os.Getenv("PATH")
@@ -51,18 +50,14 @@ func TestGitStatusWithNoGitKeepsTheTestOnWindows(t *testing.T) {
 		t.Fatalf("git.status with no git = %s\nwant %s", raw, statusNotRepo)
 	}
 	t.Setenv("PATH", withGit)
-	want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"git cannot run on this host; git not run: exec: \"git\": executable file not found in `
-	for i, calls := range []int{1, 0} {
-		raw, made := f.call(t, "git.status", params)
-		if !strings.HasPrefix(raw, want) || len(made) != calls {
-			t.Errorf("git.status %d with git again = %s after %d git calls\nwant %s… after %d", i+1, raw, len(made), want, calls)
-		}
+	raw, made := f.call(t, "git.status", params)
+	if raw != statusNotRepo || len(made) < 2 {
+		t.Errorf("git.status with git again = %s after %d git calls\nwant %s after the test calls", raw, len(made), statusNotRepo)
 	}
-	// A baseRepo that does not resolve, as one through a junction, gets the kept
-	// refusal too.
+	// A baseRepo that does not resolve, as one through a junction, gets isRepo:false.
 	gone := filepath.Join(f.repo, "missing", "w")
-	if raw, made := f.call(t, "git.status", map[string]any{"path": gone, "baseRepo": gone}); !strings.HasPrefix(raw, want) || len(made) != 0 {
-		t.Errorf("git.status on a path that does not resolve = %s after %d git calls\nwant %s… after none", raw, len(made), want)
+	if raw, made := f.call(t, "git.status", map[string]any{"path": gone, "baseRepo": gone}); raw != statusNotRepo || len(made) != 0 {
+		t.Errorf("git.status on a path that does not resolve = %s after %d git calls\nwant %s after none", raw, len(made), statusNotRepo)
 	}
 }
 

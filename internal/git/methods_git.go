@@ -709,14 +709,12 @@ func gitDefaultBranch(u gitUse, dir string) string {
 	return name
 }
 
-// statusNoGitKeepsTest is true where git.status with no git on PATH also keeps the
-// failure of a start test. Each system answers isRepo:false there (4c111e86,
-// measured on Linux, macOS and Windows). On Windows 4c111e86 then answers the
-// later requests with the kept refusal "exec: \"git\": executable file not found
-// in %PATH%" after a git appears, and runs no test (measured). Only the no-git
-// request can fail so. So claustrum keeps the failed test of that request (from
-// the rows, not measured directly). On Linux and macOS a later request runs its own
-// test (measured).
+// statusNoGitKeepsTest is true where git.status with no git on PATH also runs a
+// start test. Each system answers isRepo:false there (4c111e86, measured on
+// Linux, macOS and Windows). On Windows 4c111e86 then kept the failure, and
+// 87375cc7 keeps none: after a git appears, the next request runs its own test
+// and the calls of the status (measured on Windows, noGitStarts in gate). On
+// Linux and macOS a later request runs its own test (measured).
 var statusNoGitKeepsTest = runtime.GOOS == "windows"
 
 // statusOpenTest is statusPathOpenFails. Tests replace it to reach the refusal
@@ -770,10 +768,10 @@ func gitStatus(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// On Windows a failed start test that is still kept answers first, also for a
-	// baseRepo through a junction that does not resolve. 4c111e86 answers the kept
-	// refusal there after the no-git request, after the excludes read of the first
-	// request with git (measured on Windows). Its place after the link refusals and
-	// a kept failure of another cause are claustrum's own.
+	// baseRepo through a junction that does not resolve. 4c111e86 answered the kept
+	// refusal of the no-git request there (measured on Windows). 87375cc7 keeps no
+	// such failure (gate). Its place after the link refusals and a kept failure of
+	// another cause are claustrum's own.
 	if statusNoGitKeepsTest && !bool(p.ShadowDirOff) {
 		if kept := req.shadow.keptFailure(); kept != "" {
 			globalExcludesPath()

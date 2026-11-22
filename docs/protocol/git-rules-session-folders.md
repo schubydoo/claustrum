@@ -179,6 +179,12 @@ A spawn of `git` answers:
 
 On Windows the text ends `such as C:\\Program Files\\Git` in both frames.
 
+`87375cc7` keeps no failed start test where no git can start, so the next request
+tests again. A request with the [off switch](#the-off-switch) after the refusal then
+runs that git and answers its exit (measured on Linux). `4c111e86` answered the kept refusal. After a `git.status` with
+no git on PATH, a git that appears runs at the next request (`87375cc7`, measured on
+Windows). macOS is claustrum's own, not measured.
+
 ## The off switch
 
 `"sessionFoldersOff":true` on a git method or `process.spawn` turns the check off
