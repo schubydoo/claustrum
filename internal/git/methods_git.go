@@ -2868,8 +2868,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			recheckLocation(*checkUse, repo)
 		}
 		// At a read of the check that sees the timeoutMs deadline, the check stops and the deadline
-		// test below answers (4c111e86, measured on Linux with a batch that did not answer and on Windows
-		// after 2 objects). The LFS keep time does not count (keepWithinDeadline, claustrum's own).
+		// test below answers (4c111e86, measured on Linux with a batch that did not answer). On Windows
+		// it logs the stop after 2 objects (measured). The LFS keep time does not count (keepWithinDeadline, claustrum's own).
 		var checkDeadline context.Context
 		if p.TimeoutMs > 0 {
 			checkDeadline = callerCtx
