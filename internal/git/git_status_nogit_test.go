@@ -7,20 +7,20 @@ import (
 	"testing"
 )
 
-// setStatusNoGitKeepsTest sets the Windows switch of a git.status with no git on
+// setStatusNoGitRunsTest sets the Windows switch of a git.status with no git on
 // PATH for one test.
-func setStatusNoGitKeepsTest(t *testing.T, on bool) {
+func setStatusNoGitRunsTest(t *testing.T, on bool) {
 	t.Helper()
-	old := statusNoGitKeepsTest
-	statusNoGitKeepsTest = on
-	t.Cleanup(func() { statusNoGitKeepsTest = old })
+	old := statusNoGitRunsTest
+	statusNoGitRunsTest = on
+	t.Cleanup(func() { statusNoGitRunsTest = old })
 }
 
 // With no git on the PATH of the daemon, git.status answers isRepo:false with no
 // start test, twice. When git is back, the next request runs the test and keeps no
 // failure from before (Linux and macOS).
 func TestGitStatusWithNoGitInThePath(t *testing.T) {
-	setStatusNoGitKeepsTest(t, false)
+	setStatusNoGitRunsTest(t, false)
 	f := newShadowFixture(t)
 	withGit := os.Getenv("PATH")
 	t.Setenv("PATH", t.TempDir())
@@ -41,7 +41,7 @@ func TestGitStatusWithNoGitInThePath(t *testing.T) {
 // next request runs its own test and the calls of the status (87375cc7, measured
 // on Windows). Mutation: drop noGitStarts in gate, and the kept refusal answers.
 func TestGitStatusWithNoGitKeepsNoTestOnWindows(t *testing.T) {
-	setStatusNoGitKeepsTest(t, true)
+	setStatusNoGitRunsTest(t, true)
 	f := newShadowFixture(t)
 	withGit := os.Getenv("PATH")
 	t.Setenv("PATH", t.TempDir())
@@ -62,8 +62,8 @@ func TestGitStatusWithNoGitKeepsNoTestOnWindows(t *testing.T) {
 }
 
 // The switch is on for Windows only.
-func TestStatusNoGitKeepsTestPerSystem(t *testing.T) {
-	if want := runtime.GOOS == "windows"; statusNoGitKeepsTest != want {
-		t.Errorf("statusNoGitKeepsTest = %v on %s, want %v", statusNoGitKeepsTest, runtime.GOOS, want)
+func TestStatusNoGitRunsTestPerSystem(t *testing.T) {
+	if want := runtime.GOOS == "windows"; statusNoGitRunsTest != want {
+		t.Errorf("statusNoGitRunsTest = %v on %s, want %v", statusNoGitRunsTest, runtime.GOOS, want)
 	}
 }

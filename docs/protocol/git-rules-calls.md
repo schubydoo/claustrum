@@ -125,15 +125,21 @@ not measured).
 [sessiondirs] not using "<git>" from the login shell's PATH as Claude's git: not laid out as an install: not started (exec path ""). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core
 ```
 
-Claustrum's own, not measured: the walk past the first git on Linux, the rest of macOS,
-and Windows reads no login shell.
-A git call waits for a read of that PATH that runs, as a spawn does, but never
-starts one. With no result there is no login git. The `--exec-path` call has a limit
-of 10 s. At the limit that one process gets a `SIGKILL`, and none after its reap.
-Its wait for stdout ends 1 s after the exit or the limit. A git in a session folder runs no call, with the check on,
-and the walk goes on. A failed call gives the line with `its --exec-path call failed: <error>`
-and ends the walk. The line comes once
-for each git, and the answer holds for one value of the PATH.
+Claustrum's own, not measured:
+
+- the walk past the first git on Linux, the rest of macOS, and no login shell on Windows
+- a git call waits for a read of that PATH that runs, as a spawn does, and never starts
+  one. With no result there is no login git
+- the `--exec-path` call has a limit of 10 s. At the limit that one process gets a
+  `SIGKILL`, and none after its reap. Its wait for stdout ends 1 s after the exit or the
+  limit
+- a git in a session folder runs no call, with the check on, and the walk goes on
+- a failed call gives the line with `its --exec-path call failed: <error>` and ends the
+  walk
+- the line comes once for each git
+- the answer holds for one value of the PATH. So a change of the off switch or of the
+  session folders shows only after the PATH changes. Each git call still passes over a
+  session-folder git at its start
 
 ## The daemon's own git environment
 

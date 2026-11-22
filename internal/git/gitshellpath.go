@@ -80,6 +80,10 @@ func ShellPathGit() string {
 	path := shellPathValue()
 	shellPathGitMu.Lock()
 	defer shellPathGitMu.Unlock()
+	// The answer holds for one value of the login-shell PATH, also its
+	// session-folder test. A change of the off switch or of the session folders
+	// shows only after the PATH changes. Each git call still runs
+	// sessiondirs.PickGit at its start (gitCommand). Claustrum's own, not measured.
 	if shellPathGitDone && shellPathGitFor == path {
 		return shellPathGitPath
 	}
