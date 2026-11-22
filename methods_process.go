@@ -133,7 +133,7 @@ func unattendedValue(v json.RawMessage) (n int64, set, ok bool) {
 // Windows measured the plain rows and the bare stream-json arg (there ccd-cli.exe
 // does not count), and macOS -1, cliTempRootEnd, gitRead and a ccd-cli with a
 // stream-json arg.
-// A launcher spawn counts as the CLI path (measured on Linux).
+// A launcher spawn counts as the CLI path (measured on Linux, macOS and Windows).
 func unattendedRefused(p *spawnParams, n int64) bool {
 	if n < 0 {
 		return true
