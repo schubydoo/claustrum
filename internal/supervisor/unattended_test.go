@@ -49,8 +49,8 @@ func fakeAloneTicker(t *testing.T) *aloneTicks {
 	return f
 }
 
-// tick hands the check one step at now, and waits until the check took it.
-func (f *aloneTicks) tick(t *testing.T, now time.Time) {
+// step hands the check one step at now, and waits until the check took it.
+func (f *aloneTicks) step(t *testing.T, now time.Time) {
 	t.Helper()
 	select {
 	case f.ticks <- now:
@@ -63,8 +63,8 @@ func (f *aloneTicks) tick(t *testing.T, now time.Time) {
 // nothing. The second send returns once the check is done with the first.
 func (f *aloneTicks) settle(t *testing.T, now time.Time) {
 	t.Helper()
-	f.tick(t, now)
-	f.tick(t, time.Time{})
+	f.step(t, now)
+	f.step(t, time.Time{})
 }
 
 // spawnAlone starts a sleeping helper armed with ttl on c, and ends it with the test.
@@ -153,7 +153,7 @@ func TestAloneClockStartsAtTheDetach(t *testing.T) {
 	if n := signals.Load(); n != 0 {
 		t.Fatalf("%d signals before the whole time", n)
 	}
-	f.tick(t, since.Add(ttl))
+	f.step(t, since.Add(ttl))
 	select {
 	case <-p.done:
 	case <-time.After(15 * time.Second):
@@ -223,7 +223,7 @@ func TestAloneNoEndAfterTheShutdownBegan(t *testing.T) {
 	m.DetachConn(c)
 	signals := countSignalsTo(t, p)
 	m.RefuseStarts()
-	f.tick(t, aloneSinceOf(p).Add(time.Hour))
+	f.step(t, aloneSinceOf(p).Add(time.Hour))
 	select {
 	case f.ticks <- time.Now():
 		t.Fatal("the check took another step after the shutdown began")

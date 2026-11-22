@@ -30,7 +30,7 @@ func spawnAloneHelper(t *testing.T, m *Manager, id, mode string, args ...string)
 // endAloneNow hands the check of p one step at the end of its time.
 func endAloneNow(t *testing.T, f *aloneTicks, p *Proc) {
 	t.Helper()
-	f.tick(t, aloneSinceOf(p).Add(p.aloneTTL))
+	f.step(t, aloneSinceOf(p).Add(p.aloneTTL))
 	select {
 	case <-p.done:
 	case <-time.After(15 * time.Second):
