@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Windows a first git.status refused for a share junction as baseRepo reads no excludes, and the next git.info reads them, as the reference does.
+On Windows a git.status refused for a share junction reads no excludes while none are stored, and git.info then reads them, as the reference does.
