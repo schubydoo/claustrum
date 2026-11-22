@@ -312,32 +312,48 @@ func TestUnlookableShareRow(t *testing.T) {
 
 // A git.status refused for a junction on a share is the first request: it makes
 // no excludes read, and the next git.info makes it. Both replies are the share
-// link text (4c111e86, measured on Windows).
+// link text (4c111e86, measured on Windows). A directory symbolic link and a
+// junction above the last name keep the read at the status (claustrum's own, not
+// measured).
 func TestShareLinkStatusLeavesTheExcludesRead(t *testing.T) {
 	run := installEnvStub(t)
-	jct := `\\127.0.0.1\clok\jct`
+	jct, lnk := `\\127.0.0.1\clok\jct`, `\\127.0.0.1\clok\lnk`
 	oldLstat, oldOn := lstatPath, networkLinkChecks
 	lstatPath = func(path string) (fs.FileInfo, error) {
-		if path == jct {
+		switch path {
+		case jct:
 			return linkInfo(fs.ModeIrregular), nil
+		case lnk:
+			return linkInfo(fs.ModeSymlink), nil
 		}
 		return linkInfo(fs.ModeDir), nil
 	}
 	networkLinkChecks = true
 	t.Cleanup(func() { lstatPath, networkLinkChecks = oldLstat, oldOn })
-	want := `"error":{"code":-32603,"message":` + jsonString(t, shareLinkText(jct)) + `}`
-	raw, calls := run("git.status", map[string]any{"path": jct, "baseRepo": jct})
-	if !strings.Contains(raw, want) {
-		t.Fatalf("status reply = %s\nwant %s", raw, want)
-	}
-	if len(calls) != 0 {
-		t.Errorf("status calls = %v, want none", calls)
-	}
-	raw, calls = run("git.info", map[string]any{"path": jct})
-	if !strings.Contains(raw, want) {
-		t.Fatalf("info reply = %s\nwant %s", raw, want)
-	}
-	if len(calls) != 1 || !slices.Equal(calls[0].argv, []string{"config", "--includes", "--path", "core.excludesFile"}) {
-		t.Errorf("info calls = %v, want only the excludes read", calls)
+	read := []string{"config", "--includes", "--path", "core.excludesFile"}
+	for _, c := range []struct {
+		base, link string
+		atStatus   bool
+	}{
+		{jct, jct, false},
+		{lnk, lnk, true},
+		{jct + `\sub`, jct, true},
+	} {
+		resetUserExcludesCache(t)
+		want := `"error":{"code":-32603,"message":` + jsonString(t, shareLinkText(c.link)) + `}`
+		raw, calls := run("git.status", map[string]any{"path": c.base, "baseRepo": c.base})
+		if !strings.Contains(raw, want) {
+			t.Fatalf("%s: status reply = %s\nwant %s", c.base, raw, want)
+		}
+		if got := len(calls) == 1 && slices.Equal(calls[0].argv, read); got != c.atStatus || len(calls) > 1 {
+			t.Errorf("%s: status calls = %v, want the excludes read %v", c.base, calls, c.atStatus)
+		}
+		raw, calls = run("git.info", map[string]any{"path": c.base})
+		if !strings.Contains(raw, want) {
+			t.Fatalf("%s: info reply = %s\nwant %s", c.base, raw, want)
+		}
+		if got := len(calls) == 1 && slices.Equal(calls[0].argv, read); got == c.atStatus || len(calls) > 1 {
+			t.Errorf("%s: info calls = %v, want the excludes read %v", c.base, calls, !c.atStatus)
+		}
 	}
 }

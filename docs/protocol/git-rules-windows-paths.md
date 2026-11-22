@@ -30,14 +30,14 @@ A refused remove deletes nothing (from the code).
 
 ## UNC refusals
 
-On Windows these refuse the repository path of all five methods with no git call: `"success":false` on a remove, `worktree_add_failed` on a create, else `-32603`.
+On Windows these refuse the repository path of all five methods with no git call on it: `"success":false` on a remove, `worktree_add_failed` on a create, else `-32603`.
 
 - `\\?\UNC\…`: `` Claude can't check where `<path>` leads because it doesn't start with a drive letter (C:\...) or a share (\\server\share\...), so git wasn't run. Open the folder again using a path that does. ``
 - Missing share (measured), also any other failed look (claustrum's own): `` Claude couldn't look at `<folder>` to check it for links, so git wasn't run. Check that the network share is reachable and that your account can open that folder, then try again. ``, and the log gets `[GitHandler] looking for links in "<path>": "<error text>"`
 - Denied share: `` Claude couldn't check `<path>` for links because Windows didn't let your account read `<folder>`, so git wasn't run. Ask for read access to that folder. ``
 - Directory link on a share: `` Claude doesn't follow links on a network share, and `<link>` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder. ``
 
-`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the first folder below the share root, or the path, whose look fails; the log quotes its error (`4c111e86`, measured where every look on the share fails). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured). A `git.status` refused for a junction on a share makes no excludes read, and the next `git.info` makes it (`4c111e86`, measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root, an unreachable host and a path missing below a link pass, a junction or link above the last name counts, but not one below a name that fails its look, a refused `"shadowDirOff":true` request, the test placed first, a forward slash as a separator, `UNC` in any case, the excludes read of `git.status` at the other refusals and `ERROR_NETWORK_ACCESS_DENIED` as denied.
+`b3081b51` gives the first two texts, `4c111e86` the rest and the log line. `<folder>` is the first folder below the share root, or the path, whose look fails; the log quotes its error (`4c111e86`, measured where every look on the share fails). A missing folder on a share that answers, a missing drive and an unresolved host name pass (measured). A `git.status` refused for a junction on a share as the last name makes no excludes read, and the next `git.info` makes it (`4c111e86`, measured on Windows). Claustrum's own, not measured: other `\\?\` and `\\.\` forms, a share root, an unreachable host and a path missing below a link pass, a junction or link above the last name counts, but not one below a name that fails its look, a refused `"shadowDirOff":true` request, the test placed first, a forward slash as a separator, `UNC` in any case, the excludes read of `git.status` at a symbolic link, at a link above the last name and at the other refusals and `ERROR_NETWORK_ACCESS_DENIED` as denied.
 
 ## A missing folder in a repository on a share
 

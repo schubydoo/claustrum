@@ -759,11 +759,12 @@ func gitStatus(req *gitCall) rpc.Response {
 	// sends both through the link, so the test of baseRepo alone and its place after
 	// the link chain test are claustrum's own, not measured.
 	//
-	// A link on a share (shareLinkText) makes no excludes read here. The next git.info
-	// makes it (4c111e86, measured on Windows). The read before each other refusal of
-	// this test is claustrum's own, not measured.
-	if msg := networkLinkRefusal(p.BaseRepo); msg != "" {
-		if !isShareLinkRefusal(msg) {
+	// A junction on a share as the last name of baseRepo makes no excludes read here.
+	// The next git.info makes it (4c111e86, measured on Windows). A symbolic link or a
+	// link above the last name keeps the read (claustrum's own, not measured). So does
+	// each other refusal of this test (claustrum's own, not measured).
+	if msg, lastJunction := networkLinkRefusalAt(p.BaseRepo); msg != "" {
+		if !lastJunction {
 			globalExcludesPath()
 		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
