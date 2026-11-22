@@ -125,9 +125,9 @@ on Linux and macOS):
 ```
 
 Claustrum's own, not measured: macOS follows Linux, and Windows reads no login shell.
-A git call waits for a read of that PATH that runs, as a spawn does. The
-`--exec-path` call has a limit of 10 s. At the limit that one process gets one
-`SIGKILL`, and none after its reap. A git in a session folder runs no call. A failed
+A git call waits for a read of that PATH that runs, as a spawn does, but never
+starts one. With no result there is no login git. The `--exec-path` call has a limit
+of 10 s. At the limit that one process gets one `SIGKILL`, and none after its reap. A git in a session folder runs no call. A failed
 call gives the line with `its --exec-path call failed: <error>`. The line comes once
 for each git, and the answer holds for one value of the PATH.
 

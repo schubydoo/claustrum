@@ -3,6 +3,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/sessiondirs"
+	"github.com/schubydoo/claustrum/internal/shellenv"
 )
 
 // loginGitFixture makes the PATH of the daemon hold no git, and the login-shell
@@ -242,6 +244,44 @@ func TestLoginGitInASessionFolderRunsNoCall(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "[sessiondirs] passing over") {
 		t.Errorf("log:\n%s\nwant the passing-over line", logs)
+	}
+}
+
+// TestLoginGitStartsNoLoginShellRead: with no git on the PATH of the daemon, a git
+// call reads the login-shell PATH that a read gave, and starts no read itself
+// (claustrum's own, not measured). The control at the end shows that the fake
+// counts the read of a spawn. Mutation: call shellenv.AwaitLoginPATH in
+// loginShellPATH, and the git call starts a read.
+func TestLoginGitStartsNoLoginShellRead(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	shellenv.ResetForTest()
+	resetLoginGitForTest()
+	t.Cleanup(func() {
+		shellenv.ResetForTest()
+		resetLoginGitForTest()
+	})
+	var starts atomic.Int32
+	prev := shellenv.LoginPATHExtractor
+	t.Cleanup(func() { shellenv.LoginPATHExtractor = prev })
+	empty := t.TempDir()
+	shellenv.LoginPATHExtractor = func(context.Context) (string, error) {
+		starts.Add(1)
+		return empty, nil
+	}
+	shellenv.UseClockForTest(time.Now)
+	shellenv.ArmForTest()
+	if cmd := gitCommand("version"); cmd.Err == nil {
+		t.Fatalf("gitCommand found %q, want no git", cmd.Path)
+	}
+	if !noGitStarts() {
+		t.Error("noGitStarts = false with no git")
+	}
+	if n := starts.Load(); n != 0 {
+		t.Errorf("login-shell reads started by git calls = %d, want 0", n)
+	}
+	shellenv.AwaitLoginPATH(false)
+	if n := starts.Load(); n != 1 {
+		t.Errorf("control: reads started by a spawn = %d, want 1", n)
 	}
 }
 

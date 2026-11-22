@@ -48,10 +48,12 @@ var loginGitKill = func(p *os.Process) { _ = p.Kill() }
 // sets it to run a stop late, as the watch of the context of Go can.
 var loginGitWaited = func(*exec.Cmd) {}
 
-// loginShellPATH is the PATH of the login shell, after the wait of a spawn for
-// a read that runs (shellenv.AwaitLoginPATH). A test replaces it.
+// loginShellPATH is the PATH of the login shell that a read already gave, after
+// a wait for a read that runs (shellenv.AwaitRunningLoginPATH). A git call never
+// starts a read. With no result there is no login git (claustrum's own, not
+// measured). A test replaces it.
 var loginShellPATH = func() string {
-	shellenv.AwaitLoginPATH(false)
+	shellenv.AwaitRunningLoginPATH()
 	return shellenv.CurrentLoginPATH()
 }
 
