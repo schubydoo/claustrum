@@ -389,8 +389,9 @@ func TestRepoConfigIncludeNotExpanded(t *testing.T) {
 	if got, want := configDetail(t, gitDir), unexpanded("inc.cfg", "~root/x"); got != want {
 		t.Errorf("include line in an included file: detail = %q, want %q", got, want)
 	}
-	// Claustrum's own, not measured: an unset or relative
-	// HOME refuses, and an empty HOME is not relative.
+	// A relative HOME refuses (4c111e86, measured on Linux).
+	// Claustrum's own, not measured: an unset HOME refuses,
+	// and an empty HOME is not relative.
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = ~/x\n")
 	t.Setenv("HOME", "rel/home")
 	if got, want := configDetail(t, gitDir), unexpanded("config", "~/x"); got != want {
