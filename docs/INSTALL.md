@@ -58,7 +58,7 @@ with `-cli-url`.
 `-install` exits `0` whenever it prints the facts line. It reports a failure inside
 the facts as `cliError`. Three cases print no facts
 line. A flag that does not parse exits `2`. `-cli-version` with no `-cli-dir` and
-no home folder exits `2`. Any other run with no home folder exits `1`. With no `HOME`
+no home folder exits `2`. Any other `-install` run with no home folder exits `1` (for `-serve`, see [DAEMON.md](DAEMON.md)). With no `HOME`
 the reference prints `claude-ssh: cannot resolve home directory: $HOME is not defined`
 on stderr (Linux). claustrum prints the same line with its own prefix,
 `claustrum: `. On Windows its line names `%userprofile%`. The exit `1` cases, macOS and a missing `USERPROFILE` are not

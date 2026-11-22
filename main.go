@@ -216,7 +216,7 @@ func main() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: cannot resolve home directory: %v\n", err)
-		osExit(homeFailureExitCode(*install, *cliVersion, *cliDir))
+		osExit(homeFailureExitCode(*install, *bridge, *serve, *cliVersion, *cliDir))
 	}
 	// When -socket is omitted, -bridge/-stop fall back to the reference's default
 	// daemon socket. (The deployment always passes -socket explicitly; this only
@@ -334,12 +334,17 @@ func warnDeprecatedCLIProbe(flagSet, keySeen bool) {
 // homeFailureExitCode is the exit code of a mode that cannot resolve the home folder.
 // `-install -cli-version <v>` with no -cli-dir needs the home folder for its default cli
 // folder, and it exits 2. That is measured on Linux against f6010b97 and 89cb6289, with
-// HOME not in the environment. Every other case keeps exit 1.
+// HOME not in the environment. `-serve` exits 2 too, with HOME unset or empty (4c111e86,
+// measured on Linux with -socket and -token-file). bridge and install come before serve,
+// as in the switch of the modes. Every other case keeps exit 1.
 //
 // Not measured: a missing home folder together with -cli-dir, without
 // -cli-version, in another mode, on macOS, and a missing USERPROFILE on Windows.
-func homeFailureExitCode(install bool, cliVersion, cliDir string) int {
+func homeFailureExitCode(install, bridge, serve bool, cliVersion, cliDir string) int {
 	if install && cliVersion != "" && cliDir == "" {
+		return 2
+	}
+	if serve && !install && !bridge {
 		return 2
 	}
 	return 1
