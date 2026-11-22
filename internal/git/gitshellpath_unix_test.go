@@ -228,7 +228,7 @@ func TestShellPathGitLateStopSendsNoKill(t *testing.T) {
 // TestShellPathGitInASessionFolderRunsNoCall: a git of the login-shell PATH in a
 // session folder is passed over before its --exec-path call, as at the start of
 // every git call. With no other git it runs no call, and the daemon uses none
-// (claustrum's own, not measured). Mutation: drop the PickGit of shellPathGitTest.
+// (claustrum's own, not measured). Mutation: skip the inSessionFolder test of the walk.
 func TestShellPathGitInASessionFolderRunsNoCall(t *testing.T) {
 	git := installedShellPathGit(t, "echo call >> \"$0.log\"\necho /x")
 	t.Cleanup(sessiondirs.UseForTest(""))
@@ -301,6 +301,46 @@ func TestShellPathGitExecPathChildHoldingStdout(t *testing.T) {
 	}
 	if got != git {
 		t.Errorf("ShellPathGit = %q, want %q", got, git)
+	}
+}
+
+// TestShellPathGitWalksEachGit: the daemon tests each git on the login-shell PATH
+// in order. A git not laid out as an install gets its line and the walk goes on.
+// Two such gits give two lines, and a later git laid out so is used (87375cc7,
+// measured on macOS with two gits). Mutation: end the walk after the first git
+// that is not laid out.
+func TestShellPathGitWalksEachGit(t *testing.T) {
+	realGit := requireRealGit(t)
+	first := filepath.Join(t.TempDir(), "lb", "git")
+	fakeShellPathGit(t, first, "/x", 0, realGit)
+	second := filepath.Join(t.TempDir(), "lb2", "git")
+	fakeShellPathGit(t, second, "/x", 0, realGit)
+	firstLine := fmtShellPathGitSkipLine(first, "not laid out as an install", "not started", "")
+
+	shellPathGitFixture(t, filepath.Dir(first), filepath.Dir(second))
+	logs := captureLogBuf(t)
+	if got := ShellPathGit(); got != "" {
+		t.Fatalf("two gits not laid out: ShellPathGit = %q, want none", got)
+	}
+	for _, line := range []string{firstLine, fmtShellPathGitSkipLine(second, "not laid out as an install", "not started", "")} {
+		if n := strings.Count(logs.String(), line+"\n"); n != 1 {
+			t.Errorf("log:\n%s\nwant the line %q once, got %d", logs, line, n)
+		}
+	}
+
+	prefix := filepath.Join(t.TempDir(), "pfx")
+	if err := os.MkdirAll(filepath.Join(prefix, "libexec", "git-core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inst := filepath.Join(prefix, "bin", "git")
+	fakeShellPathGit(t, inst, filepath.Join(prefix, "libexec", "git-core"), 0, realGit)
+	shellPathGitFixture(t, filepath.Dir(first), filepath.Dir(inst))
+	logs.Reset()
+	if got := ShellPathGit(); got != inst {
+		t.Fatalf("ShellPathGit = %q, want the laid-out second git %q", got, inst)
+	}
+	if n := strings.Count(logs.String(), "[sessiondirs] not using "); n != 1 || !strings.Contains(logs.String(), firstLine+"\n") {
+		t.Errorf("log:\n%s\nwant only the line of the first git", logs)
 	}
 }
 

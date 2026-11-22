@@ -19,17 +19,19 @@ import (
 )
 
 // The git of the login-shell PATH. When the PATH of the daemon holds no git,
-// 87375cc7 runs the first git on the PATH of the login shell, if it is laid out
-// as an install: <prefix>/bin/git with a folder <prefix>/libexec/git-core or
-// <prefix>/lib/git-core. Before it uses that git it runs `<git> --exec-path`.
-// git.info, git.list_branches, git.worktree_create and the pane's git of a
-// "gitRead":true spawn then run it (measured on Linux). A git that is not laid
-// out so runs no call, and one log line names it (shellPathGitSkipLine, measured on
-// Linux and macOS). Claustrum's own, not measured: the rest of macOS follows
-// Linux, Windows has no login shell here, the call has the limit of
-// shellPathGitExecPathBound, a git in a session folder runs no call, a call that
-// fails gives the line with its error, the line comes once for each git, and
-// the answer is kept for one value of the login-shell PATH.
+// 87375cc7 tests each git on the PATH of the login shell in order. A git that is
+// not laid out as an install (<prefix>/bin/git with a folder
+// <prefix>/libexec/git-core or <prefix>/lib/git-core) runs no call, one log line
+// names it, and the next git is tested (shellPathGitSkipLine, measured on macOS
+// with two gits, and on Linux with one). The first git laid out so gets the call
+// `<git> --exec-path`. git.info, git.list_branches, git.worktree_create and the
+// pane's git of a "gitRead":true spawn then run it (measured on Linux).
+// Claustrum's own, not measured: the walk past the first git on Linux, the rest
+// of macOS, Windows has no login shell here, the call has the limit of
+// shellPathGitExecPathBound, a git in a session folder runs no call and the walk
+// goes on, a failed call gives the line with its error and ends the walk, the
+// line comes once for each git, and the answer is kept for one value of the
+// login-shell PATH.
 
 // shellPathGitSkipLine is the line of a git of the login-shell PATH that the daemon
 // does not use. The first %q is the git, then the reason, the state of the
@@ -82,15 +84,28 @@ func ShellPathGit() string {
 		return shellPathGitPath
 	}
 	shellPathGitDone, shellPathGitFor, shellPathGitPath = true, path, ""
-	git := firstGitOn(path)
-	if git == "" {
+	for _, git := range gitsOn(path) {
+		if !laidOutAsInstall(git) {
+			logShellPathGitSkip(git, "not laid out as an install", "not started", "")
+			continue
+		}
+		if inSessionFolder(git) {
+			continue
+		}
+		reason, state, execPath := shellPathGitTest(git)
+		if reason == "" {
+			shellPathGitPath = git
+			return git
+		}
+		logShellPathGitSkip(git, reason, state, execPath)
 		return ""
 	}
-	reason, state, execPath := shellPathGitTest(git)
-	if reason == "" {
-		shellPathGitPath = git
-		return git
-	}
+	return ""
+}
+
+// logShellPathGitSkip logs shellPathGitSkipLine for git, once for each git.
+// The caller holds shellPathGitMu.
+func logShellPathGitSkip(git, reason, state, execPath string) {
 	if shellPathGitLogged == nil {
 		shellPathGitLogged = map[string]bool{}
 	}
@@ -98,40 +113,46 @@ func ShellPathGit() string {
 		shellPathGitLogged[git] = true
 		logging.Infof(shellPathGitSkipLine, git, reason, state, execPath)
 	}
-	return ""
 }
 
-// firstGitOn is the first executable git in the absolute folders of path, or "".
-func firstGitOn(path string) string {
+// gitsOn lists the executable gits in the absolute folders of path, in order.
+func gitsOn(path string) []string {
+	var gits []string
 	for _, dir := range filepath.SplitList(path) {
 		if !filepath.IsAbs(dir) {
 			continue
 		}
 		if p, err := exec.LookPath(filepath.Join(dir, "git")); err == nil {
-			return p
+			gits = append(gits, p)
 		}
 	}
-	return ""
+	return gits
 }
 
-// shellPathGitTest tests git, a git of the login-shell PATH. reason is "" for a git
-// that the daemon uses. Else it is the reason, state is the state of the
-// `--exec-path` call, and execPath is its output. A git that is not laid out as
-// an install runs no call: "not started" with no output (measured on Linux).
-func shellPathGitTest(git string) (reason, state, execPath string) {
+// laidOutAsInstall reports whether git is <prefix>/bin/git with a folder
+// <prefix>/libexec/git-core or <prefix>/lib/git-core. It runs no git.
+func laidOutAsInstall(git string) bool {
 	bin := filepath.Dir(git)
 	prefix := filepath.Dir(bin)
-	laidOut := filepath.Base(bin) == "bin" && (isFolder(filepath.Join(prefix, "libexec", "git-core")) || isFolder(filepath.Join(prefix, "lib", "git-core")))
-	if !laidOut {
-		return "not laid out as an install", "not started", ""
-	}
+	return filepath.Base(bin) == "bin" && (isFolder(filepath.Join(prefix, "libexec", "git-core")) || isFolder(filepath.Join(prefix, "lib", "git-core")))
+}
+
+// inSessionFolder reports whether the check of session folders passes over git,
+// as at the start of every git call (sessiondirs.PickGit). Such a git runs no
+// call, and the walk goes on (claustrum's own, not measured).
+func inSessionFolder(git string) bool {
+	cmd := exec.Command(git)
+	sessiondirs.PickGit(cmd)
+	return cmd.Err != nil || cmd.Path != git
+}
+
+// shellPathGitTest runs the `--exec-path` call of git, a git of the login-shell
+// PATH laid out as an install. reason is "" for a git that the daemon uses. Else
+// it is the reason, state is the state of the call, and execPath is its output.
+func shellPathGitTest(git string) (reason, state, execPath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), shellPathGitExecPathBound)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, git, "--exec-path")
-	// A git in a session folder is passed over, as at the start of every git
-	// call (gitCommand). With no other git the call does not start (claustrum's
-	// own, not measured).
-	sessiondirs.PickGit(cmd)
 	cmd.Dir = gitVersionDir
 	cmd.Env = gitChildEnv()
 	var out bytes.Buffer
@@ -145,7 +166,7 @@ func shellPathGitTest(git string) (reason, state, execPath string) {
 }
 
 // runExecPath starts cmd, the `--exec-path` call, and waits for it. At its bound
-// the call gets one kill of that process only, and only while it is not reaped
+// the call gets a kill of that process only, and only while it is not reaped
 // (sysproc.LeaderGate). The gate closes after its exit and before the wait reaps
 // it, so a late stop from the watch of the context of Go sends nothing (claustrum's
 // own, from the code).
