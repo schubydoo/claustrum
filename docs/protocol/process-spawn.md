@@ -40,13 +40,51 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 
 ### The unattendedSeconds member (build `87375cc7`)
 
-claustrum reads it only for these refusals. An accepted value does not end the child (claustrum's own).
+An accepted value above 0 arms [the unattended end](#the-unattended-end-build-87375cc7). The refusals:
 
 - A text, a float or `null`: `Invalid params` (measured on Linux and Windows, macOS for a text). Other forms that are no whole number in int64, such as `1e3`, `1.0` or a larger number, get it too (claustrum's own).
 - A negative value: `-32602` `unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence`, reason `other` (Linux, macOS and Windows). A refusal logs the failed-start line (Linux and macOS). `Invalid params` logs none (Linux).
-- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux).
+- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). A bare `ccd-cli` with no args counts, and `ccd-cli.exe`, `ccd-cli-x` and `claude` do not (macOS). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux).
 - A `pty` error comes first (Linux and Windows, macOS for `true`). `0` and `1000000000000` pass (Linux, and `99999999999` on Windows), and `0` passes this test with each of these members (Linux).
 - The test comes after the `id` and `command` tests and before `linkBound` with a `launcher` (Linux). The place of the type test, of this test after the test of the launcher members, and of this test before every step of [the managed launcher](#the-managed-launcher) is claustrum's own.
+
+### The unattended end (build `87375cc7`)
+
+The rules are measured on macOS and Windows. Linux follows macOS here, and its row is not in yet.
+
+The daemon ends an armed child that had no connection for a time. The spawn logs this line right after its started line. `<time>` is a Go duration text, such as `1m0s`.
+
+```
+[process.Manager] Process <id> is to be ended once no connection has been attached to it for <time>
+```
+
+| `unattendedSeconds` | Time |
+|---|---|
+| 1 to 60 | 60 s |
+| 61 to 604799 | That number of seconds |
+| 604800 or more | 168 h |
+
+- The close of the last connection starts the clock. A client that dies counts at once. A [reattach](process-reattach.md) clears the clock.
+- A check runs each quarter of the time, at most 60 s, counted from the spawn. The end comes at the first check after the whole time.
+- Linux and macOS: `SIGTERM` to the child alone. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
+- Windows: the `SIGTERM` is the end of the [job](process-kill.md#windows-child-trees). The child leaves at once with code 1.
+- One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`.
+- A later reattach gets the `exit` frame with `"killedBy":"unattended"`.
+- A `process.kill`, an own exit and `server.shutdown` give no end and no line. The shutdown ends the child as usual.
+
+```
+[process.Manager] Process <id>: no connection attached for <time>: it left at SIGTERM
+[process.Manager] Process <id>: no connection attached for <time>: it stayed at SIGTERM, and its group was killed
+```
+
+claustrum's own, not measured:
+
+- A value below 60 gets a check each 15 s, a quarter of its 60 s.
+- An `<id>` of more than 8 bytes is [cut](../DAEMON.md#a-long-id-in-a-line) in these lines.
+- A refused `SIGTERM` stops the end, with no line and no `SIGKILL`.
+- A spawn or a reattach on a closed connection starts the clock.
+- Once the shutdown began, no end starts and the end sends no more signals.
+- A spawn with a `launcherCheck` is armed too.
 
 ## Response
 

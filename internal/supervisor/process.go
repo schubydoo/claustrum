@@ -252,6 +252,18 @@ type Proc struct {
 	reattached map[*conn.Conn]struct{}
 	onExit     func()
 
+	// aloneTTL is the time of an armed spawn (unattended.go), set once at spawn. 0
+	// means not armed. stopsBegan is the startsStopped of the manager. aloneSince is
+	// the moment the last connection went, zero while one is attached. aloneTermed is
+	// set once the SIGTERM of the end went out. aloneKilled is set once a group SIGKILL
+	// of the end went out, and aloneStayed when the child still ran at that SIGKILL.
+	// These four change under p.mu. aloneGate closes before the reap of the child.
+	aloneTTL                              time.Duration
+	stopsBegan                            *atomic.Bool
+	aloneSince                            time.Time
+	aloneTermed, aloneKilled, aloneStayed bool
+	aloneGate                             sysproc.LeaderGate
+
 	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
 	// releaseTemp gives that folder back after the exit frame (clitemproot_unix.go).
 	cliTempRoot *rpc.CLITempRoot
@@ -762,7 +774,7 @@ func (p *Proc) emit(f ChildFrame) {
 		if err != nil {
 			logging.Warnf("[frameSink] write failed, detaching: %v", err)
 			p.mu.Lock()
-			delete(p.subs, c)
+			p.dropSubLocked(c, time.Now())
 			p.mu.Unlock()
 		}
 	}
@@ -782,7 +794,7 @@ func (m *Manager) Spawn(c *conn.Conn, id, command string, args []string, cwd str
 // launcher is then the process, and its stream frames are its own. A linkTTL above
 // 0 makes a link-bound process with that unattended time (linkbound.go).
 func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration) (*Proc, error) {
-	return m.SpawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, TempRootAsk{}, nil)
+	return m.SpawnWithTempRoot(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, TempRootAsk{}, nil, 0)
 }
 
 // TempRootAsk holds the two temp-folder members of a process.spawn request: Folder is
@@ -793,16 +805,18 @@ type TempRootAsk struct{ Folder, End bool }
 // SpawnWithTempRoot is spawnVia with the cliTempRoot params of process.spawn. When
 // tempRoot.Folder is true, the step of clitemproot_unix.go runs after the env is
 // built, and the process keeps its answer in cliTempRoot. folders are the session
-// folders of the spawn (sessionfolders.go), recorded before the start.
-func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string) (*Proc, error) {
-	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil, nil)
+// folders of the spawn (sessionfolders.go), recorded before the start. An alone time
+// above 0 arms the end of unattended.go.
+func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string, alone time.Duration) (*Proc, error) {
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, launcher, linkTTL, tempRoot, folders, nil, nil, alone)
 }
 
 // SpawnLaunched is the spawn of a launcher with the launcherCheck, launcherSuppliesCli
 // or envOnlyIfSent members (c9125eb8, LauncherOpts). A launched spawn takes no
-// link-bound time and no private temp folder, as in SpawnWithTempRoot.
-func (m *Manager) SpawnLaunched(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher []string, lo LauncherOpts, folders []string) (*Proc, error) {
-	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, &launcher, 0, TempRootAsk{}, folders, nil, &lo)
+// link-bound time and no private temp folder, as in SpawnWithTempRoot. Its alone time
+// arms the end as there (claustrum's own, not measured for a launcherCheck).
+func (m *Manager) SpawnLaunched(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher []string, lo LauncherOpts, folders []string, alone time.Duration) (*Proc, error) {
+	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, &launcher, 0, TempRootAsk{}, folders, nil, &lo, alone)
 }
 
 // GitReadStep builds the run of a "gitRead":true spawn. It gets the environment
@@ -825,12 +839,12 @@ type gitReadStart struct {
 // a spent id wins over the shape refusal (claustrum's own, not measured). step
 // runs after the env is built. A step error fails the spawn.
 func (m *Manager) SpawnGitRead(c *conn.Conn, id string, args []string, cwd string, refusal error, step GitReadStep) (*Proc, error) {
-	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, TempRootAsk{}, nil, &gitReadStart{refusal: refusal, step: step}, nil)
+	return m.spawnWith(c, id, "git", args, cwd, nil, false, nil, 0, TempRootAsk{}, nil, &gitReadStart{refusal: refusal, step: step}, nil, 0)
 }
 
 // spawnWith is SpawnWithTempRoot with the start of a gitRead spawn, or nil, and the
 // launcher members of SpawnLaunched, or nil.
-func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string, gitRead *gitReadStart, lo *LauncherOpts) (*Proc, error) {
+func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string, linkTTL time.Duration, tempRoot TempRootAsk, folders []string, gitRead *gitReadStart, lo *LauncherOpts, alone time.Duration) (*Proc, error) {
 	path, argv := command, args
 	supplies := lo != nil && lo.Supplies
 	if launcher != nil {
@@ -856,6 +870,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	endGrace := unattendedEndGrace
 	readLimit, readEndGrace := gitReadLimit, gitReadEndGrace
 	tempEndGrace := tempRootEndGrace
+	aloneTicks, aloneGrace := aloneTicker, aloneEndGrace
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
@@ -1246,6 +1261,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		cliTempRoot: tempAnswer,
 		releaseTemp: releaseTemp,
 		outsideJob:  outsideJob,
+
+		aloneTTL:   alone,
+		stopsBegan: &m.startsStopped,
 	}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c
@@ -1309,6 +1327,11 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	default:
 		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
 	}
+	// The arm line comes right after the start line (87375cc7, measured on macOS and
+	// Windows). The cut of a long id there is claustrum's own, not measured.
+	if alone > 0 {
+		logging.Infof("[process.Manager] Process %s is to be ended once no connection has been attached to it for %s", LogID(id), alone)
+	}
 	afterTableEntry(id)
 	// A link whose connection is already gone makes the process detached at once,
 	// so its clock starts at the spawn. DetachConn runs after the connection is
@@ -1326,6 +1349,17 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			p.mu.Unlock()
 		}
 		go m.watchUnattended(p, linkTTL, unattendedTick(linkTTL), endGrace)
+	}
+	// A connection that is gone already starts the clock of an armed process, as for a
+	// link. A connection that reattached p since then holds it (claustrum's own).
+	if alone > 0 {
+		gone := connGone(c)
+		p.mu.Lock()
+		if _, held := p.subs[c]; held && gone {
+			p.markAloneLocked(time.Now(), true)
+		}
+		p.mu.Unlock()
+		go m.watchAlone(p, aloneTicks, aloneGrace)
 	}
 
 	// Record the spawned child in the orphan registry, so a later daemon can reap it if
@@ -1368,6 +1402,9 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	if p.tempRootEnd {
 		p.killGroupOnTempRootExit()
 	}
+	if p.aloneTTL > 0 {
+		p.killGroupOnAloneExit()
+	}
 	// cmd.Wait returns the moment the process itself exits — it no longer
 	// waits on the pipes, because they are ours now.
 	err := p.cmd.Wait()
@@ -1385,6 +1422,9 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	p.mu.Lock()
 	p.reaped = true
 	p.mu.Unlock()
+	if p.aloneTTL > 0 {
+		p.logAloneEnd()
+	}
 	if p.afterWait != nil {
 		p.afterWait()
 	}
@@ -2027,6 +2067,10 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 		}
 		_, attached = p.subs[c]
 		p.subs = map[*conn.Conn]struct{}{c: {}}
+		// The reattach clears the clock of an armed process (87375cc7, measured on
+		// macOS and Windows). A connection that is closed already starts it (claustrum's
+		// own): its DetachConn can have run. The write lock of c is held here.
+		p.markAloneLocked(time.Now(), c == nil || c.ClosedLocked())
 	} else {
 		p.holdByReattachLocked(c)
 	}
@@ -2080,7 +2124,7 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 	if err != nil {
 		logging.Warnf("[frameSink] replay write failed, detaching: %v", err)
 		p.mu.Lock()
-		delete(p.subs, c)
+		p.dropSubLocked(c, time.Now())
 		p.mu.Unlock()
 	}
 	return p, true, running, firstSeq, lastSeq, stdinApplied
@@ -2101,7 +2145,7 @@ func (m *Manager) DetachConn(c *conn.Conn) {
 	now := time.Now()
 	for _, p := range procs {
 		p.mu.Lock()
-		delete(p.subs, c)
+		p.dropSubLocked(c, now)
 		p.dropAttachedLocked(c, now)
 		p.mu.Unlock()
 	}

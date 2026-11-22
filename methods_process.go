@@ -99,9 +99,8 @@ type spawnParams struct {
 	// SessionFoldersOff is read here only for its type (sessionOffTyped). The
 	// switch itself is read by route (sessiondirs.OffSwitchSet).
 	SessionFoldersOff json.RawMessage `json:"sessionFoldersOff"`
-	// UnattendedSeconds is read only for its tests (unattendedValue,
-	// unattendedRefused). An accepted value does not end the child (claustrum's
-	// own).
+	// UnattendedSeconds is read for its tests (unattendedValue, unattendedRefused).
+	// An accepted value above 0 arms the end of the child (supervisor.AloneTTL).
 	UnattendedSeconds json.RawMessage `json:"unattendedSeconds"`
 }
 
@@ -328,6 +327,13 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		}
 		linkTTL = supervisor.UnattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
+	// An accepted value above 0 arms the end of the child once no connection holds it
+	// (87375cc7, measured on macOS and Windows). The test above refused it with pty,
+	// linkBound, gitRead and cliTempRootEnd.
+	var alone time.Duration
+	if unattended > 0 {
+		alone = supervisor.AloneTTL(unattended)
+	}
 	var mp *supervisor.Proc
 	var err error
 	if p.GitRead {
@@ -353,9 +359,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			if p.EnvOnlyIfSent != nil {
 				lo.EnvOnlyIfSent = *p.EnvOnlyIfSent
 			}
-			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders)
+			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders, alone)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd)}, folders)
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd)}, folders, alone)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {
