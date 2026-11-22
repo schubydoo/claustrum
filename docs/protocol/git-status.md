@@ -43,7 +43,7 @@ That holds for:
 - a `path` that is the repository itself, a plain folder or a subfolder
 - a nested repository, a missing folder or a regular file
 - a worktree of another repository, or a right worktree with the wrong `baseRepo`
-- a linked worktree as `path` and `baseRepo` with no git on PATH (`4c111e86`, measured, other repositories claustrum's own). On Windows `4c111e86` keeps its failed start test, and `87375cc7` keeps none ([rule](git-rules-session-folders.md#with-no-other-git))
+- a linked worktree as `path` and `baseRepo` with no git on the daemon's PATH and none that it uses on the login shell's PATH (`4c111e86`, measured, other repositories claustrum's own). On Windows `4c111e86` keeps its failed start test, and `87375cc7` keeps none ([rule](git-rules-session-folders.md#with-no-other-git))
 
 [How the daemon finds the worktree](#how-the-daemon-finds-the-worktree) has the rules.
 

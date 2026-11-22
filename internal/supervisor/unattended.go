@@ -113,8 +113,8 @@ func (p *Proc) unheldFor(now time.Time) time.Duration {
 
 // watchUnheld runs the check of an armed p until its exit, and starts the end at the
 // first step with no connection for p.unheldTTL. The steps count from the spawn, a
-// quarter of the time (87375cc7, measured). The cap of 60 s, and on Windows a step from
-// the mapped time for a value below 60, are claustrum's own, not measured.
+// quarter of the time (87375cc7, measured). The cap of 60 s, and a step from the mapped
+// time for a value from 2 to 59 (on Windows also 1), are claustrum's own, not measured.
 // A step short of the whole time skips the end. endUnheld tests the shutdown and the
 // clock again under p.mu, so a shutdown or a reattach before the SIGTERM ends nothing.
 func (m *Manager) watchUnheld(p *Proc, h unheldHooks) {

@@ -334,8 +334,8 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// An accepted value above 0 arms the end of the child once no connection holds it
 	// (87375cc7, measured on Linux, macOS and Windows). The test above refused it with
 	// pty, linkBound, gitRead and cliTempRootEnd, and for a launcher spawn without
-	// --no-session-persistence (measured on Linux, macOS too for a launcher). With that
-	// arg, also with a launcherCheck object, it is armed too (claustrum's own, not measured).
+	// --no-session-persistence (measured on Linux, for a launcher also on macOS and Windows).
+	// With that arg, also with a launcherCheck object, it is armed (claustrum's own, not measured).
 	var unheld time.Duration
 	if unattended > 0 {
 		unheld = supervisor.UnheldTTL(unattended)
