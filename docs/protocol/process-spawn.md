@@ -65,7 +65,7 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 | 604800 or more | 168 h |
 
 - The close of the last connection starts the clock. A client that dies counts at once. A [reattach](process-reattach.md) clears the clock.
-- A check runs each quarter of the time, at most 60 s, counted from the spawn. The end comes at the first check after the whole time.
+- A check runs each quarter of the time, counted from the spawn. Closes at 1, 20 and 37 s end at 75, 90 and 105 s, and 61 ends at 76.25 s. The end comes at the first check after the whole time.
 - Linux and macOS: `SIGTERM` to the child only. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
 - Windows: the `SIGTERM` is the end of the [job](process-kill.md#windows-child-trees). The child leaves at once with code 1.
 - One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`. The stayed line is measured on Linux and macOS.
@@ -81,13 +81,13 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 
 These rules are not measured.
 
-- A value below 60 gets a check each 15 s, a quarter of its 60 s.
+- A value below 60 gets a check each 15 s, a quarter of its 60 s. A check comes at most each 60 s, and no row has a value above 240.
 - An `<id>` of more than 8 bytes is [cut](../DAEMON.md#a-long-id-in-a-line) in these lines.
 - A refused `SIGTERM` stops the end, with no line and no `SIGKILL`. That child gets no later end, also after a reattach and a new detach.
 - A spawn or a reattach on a closed connection starts the clock.
 - Once the shutdown began, no end starts and the end sends no more signals.
 - A reattach or a shutdown after the check and before the `SIGTERM` ends nothing.
-- A child that survives a `process.kill` still gets the end.
+- A child that survives a `process.kill` still gets the end. It keeps `"killedBy":"client"`, so its exited line ends in `(client)`.
 - On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
 A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux). With that arg, also with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
