@@ -101,7 +101,8 @@ func missingShareRepo(path string) string {
 // and a remove takes the steps of a missing baseRepo off a share, with no listing
 // and no `git version`. A failed start test answers
 // its text. A root that the trust check does not trust, or trusts with no pin, gets no
-// start test and no call, and the request keeps the reply of a missing path.
+// call, and the request keeps the reply of a missing path. git.info and a create
+// then run no start test. A remove has run it already in its gate (removeGate).
 func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, asked bool) {
 	root := missingShareRepo(path)
 	if root == "" {

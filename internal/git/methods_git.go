@@ -3668,7 +3668,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		}
 		// A baseRepo that does not exist runs no start test and no `git version`
 		// (4c111e86, measured on Windows for a local baseRepo). Below a repository on a
-		// share the start test still runs (askForMissingOnShare). So it does with a
+		// share the start test still runs, in removeGate below. So it does with a
 		// daemon GIT_DIR, as before (claustrum's own, not measured). The start test waits
 		// for the next request that needs it. Nothing is deleted. For a share host that
 		// does not resolve, the calls of 4c111e86 are measured: none, and the start test
