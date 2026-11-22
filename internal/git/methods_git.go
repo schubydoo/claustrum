@@ -2881,8 +2881,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// which the pass lists nothing.
 	//
 	// Best-effort: the worktree exists, so a copy failure does not fail the request.
-	// After a content check that stopped at the deadline no copy step runs.
-	if !checkStopped {
+	// After a content check that stopped at the deadline the copy step runs
+	// only the config listing of its `.claude/` pass (dotClaudeListingOnly).
+	if checkStopped {
+		dotClaudeListingOnly(req.use, repo)
+	} else {
 		populateWorktree(req.use, req.shadow, repo, p.WorktreePath)
 	}
 	// The caller's deadline does not kill the copy step. The daemon lets the step
