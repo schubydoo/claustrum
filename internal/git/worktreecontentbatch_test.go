@@ -145,7 +145,7 @@ func TestObjectBatchWriteAfterItsGitEnded(t *testing.T) {
 // TestObjectBatchDropClosesStdinReadEnd: a batch dropped before its first
 // answer closes the copy of the daemon of the read end of the stdin of git
 // once git ended (claustrum's own). Mutation: no close at the end of git (the
-// end stays open, as after a deadline stop).
+// end stays open).
 func TestObjectBatchDropClosesStdinReadEnd(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")

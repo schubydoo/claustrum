@@ -466,10 +466,11 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 // --buffer --batch` in a tree of three levels below the top then, and separate
 // runs read the other levels (measured on Linux, for both faults).
 //
-// A tree of that read counts in c.separate: 4c111e86 counts 4 separate runs
-// for the top tree and three levels of one tree each (measured on Linux).
+// A read of a level with one tree counts as one separate run: 4c111e86
+// counts 4 for the top tree and three such levels (measured on Linux).
 //
-// Claustrum's own, not measured: the trees of one level go to the read in the
+// Claustrum's own, not measured: each tree of that read counts in
+// c.separate, the trees of one level go to the read in the
 // order of the walk, the hash-object of the level ends with the level, no second one starts in a level
 // after a stop, and a tree whose body cannot be written for it is hashed by a
 // separate run. With no fault each level gets its own read.

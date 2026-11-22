@@ -569,9 +569,10 @@ func twoFolderFixture(t *testing.T) checkoutRuleFixture {
 // one `cat-file --buffer --batch` and one long-running tree hash-object, with
 // no separate read. The second read gets the ids of the level in the order of
 // the walk, and the checked line counts all 5 objects. The form follows c9125eb8
-// (measured on Linux). The order is claustrum's own. Each tree of a read per
-// folder depth counts as a separate run, so the count is 5: 4c111e86 counts
-// 4 for the top tree and three levels of one tree each (measured on Linux).
+// (measured on Linux). The order is claustrum's own. A read per folder depth
+// of a level with one tree counts as one separate run: 4c111e86 counts 4 for
+// the top tree and three such levels (measured on Linux). Each tree of such a
+// read counts (claustrum's own), so the count is 5.
 // Mutation: count no tree of those reads (the count is 2).
 func TestContentCheckLevelReadsByDepth(t *testing.T) {
 	f := twoFolderFixture(t)

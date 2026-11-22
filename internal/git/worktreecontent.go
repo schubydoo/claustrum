@@ -96,7 +96,8 @@ type contentCheck struct {
 	// before the first ask (lfsFiltered).
 	lfsFiles map[string]bool
 	// deadline is the context of the timeoutMs of the caller, or nil for none.
-	// The time of the LFS keep, keepTook, does not count (keepWithinDeadline).
+	// The time of the LFS keep, keepTook, does not count (keepWithinDeadline,
+	// claustrum's own).
 	// atDeadline is true once the check saw the deadline pass (pastDeadline).
 	deadline   context.Context
 	keepTook   time.Duration
@@ -254,9 +255,10 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	defer remove()
 	c.objects = dir
 	// The scratch folder goes before the folder of the objects (4c111e86,
-	// measured on Linux), after the gits of the check end (claustrum's own).
-	// At the deadline the check ends with no wait for its gits (4c111e86,
-	// measured on Linux), and the folder goes then.
+	// measured on Linux). Before the deadline it goes after the gits of the
+	// check end (claustrum's own). At the deadline the check ends with no wait
+	// for its `cat-file --batch` (4c111e86, measured on Linux), and the folder
+	// goes then (claustrum's own, not measured).
 	defer c.removeScratch()
 	c.startBatch()
 	defer c.stopBatch()
