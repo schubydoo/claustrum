@@ -413,9 +413,8 @@ func shareCallLines(calls []envCall) []string {
 // remove on a missing path below a repository on a share, with a start test that
 // fails. The request answers the text of the failed test in the frame of its
 // method (claustrum's own, not measured). A missing path that is not on a share
-// starts no test for git.info and a create, and keeps the replies of a missing
-// path. A remove answers the text there too, as before. Each remove deletes
-// nothing.
+// starts no test for git.info, a create and a remove, and keeps the replies of a
+// missing path. Each remove deletes nothing.
 func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 	text := failedTestText("this repository's git config cannot be used: boom")
 	q := jsonQuoted(t, text)
@@ -429,7 +428,7 @@ func TestShareMissingSubfolderFailedStartTest(t *testing.T) {
 		{"git.info", false, `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`},
 		{"git.worktree_create", false, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`},
 		{"git.worktree_remove", true, ""},
-		{"git.worktree_remove", false, ""},
+		{"git.worktree_remove", false, `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`},
 	} {
 		t.Run(fmt.Sprintf("%s share=%v", row.method, row.share), func(t *testing.T) {
 			f := newShadowFixture(t)

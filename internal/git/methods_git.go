@@ -3666,6 +3666,23 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
 		}
+		// A baseRepo that does not exist runs no start test and no `git version`,
+		// except below a repository on a share (askForMissingOnShare). The start test
+		// waits for the next request that needs it. Nothing is deleted. 4c111e86 does so
+		// on Windows, also for a share host that does not resolve (measured). Linux and
+		// macOS share this path: claustrum's own, not measured there. So is a baseRepo
+		// below a local repository. Only the branch step runs, and git cannot start in
+		// the missing folder.
+		_, statErr := os.Stat(repo)
+		missing := errors.Is(statErr, fs.ErrNotExist)
+		missingDone := func() rpc.Response {
+			defer lockWorktreeAddStep(repo)()
+			kept := runBranchStep(req.use, repo, p.BranchName).kept()
+			return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
+		}
+		if missing && missingShareRepo(repo) == "" {
+			return missingDone()
+		}
 		// The daemon's own read of the repository's config refuses here too
 		// (repoConfigGate), with the text of a worktree folder that exists. No
 		// registration and no branch is deleted. 5fd08069 answers so on Windows
@@ -3713,6 +3730,11 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			} else if a.noRepo {
 				return keptAll()
 			}
+		}
+		// After a good answer the remove takes the steps of a missing baseRepo off a
+		// share, with no `git version` (claustrum's own, not measured).
+		if missing {
+			return missingDone()
 		}
 		switch t.verdict {
 		case gitDirNoRepo:
