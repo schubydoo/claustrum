@@ -35,7 +35,7 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   folder, with the lock file only. The member follows the daemon's state (not measured).
 - A `git.info` on a regular file gets the gate of the repository of its folder.
   Outside any repository it starts no test. As the first git request of a daemon its
-  reply then has no member on Linux and macOS. On Windows it is the hooks refusal,
+  reply has no member on Linux and macOS. On Windows it is the hooks refusal,
   with `fork/exec <git.exe>: The directory name is invalid.` On a FIFO or
   `/dev/null` outside any repository the first `git.info` or `git.status` starts no test, and the `git.info` reply has no member, also after
   such a `git.status` (`b3081b51`, measured on Linux). macOS is not measured. For
@@ -104,18 +104,18 @@ nothing (`b3081b51`, measured on Linux). Other output goes to `commit-tree` with
 | `this repository's git config cannot be used: git did not finish reading "<config of the test repository>" within 30 seconds; try again` | The read of the test repository's config ran, or held its stdout, past 30 seconds. The reply comes near 31 s. With stderr alone held, a read that exits 1 gives the lines read before the cut (not measured) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the daemon's lock file cannot be made. On Windows a lock file that cannot be made gives the reason alone. With a deny entry for writes on `git-shadow` and the backup and restore privileges on, that is `Access is denied.` (`b3081b51`, measured on Windows) |
 
-If git refuses the copy and the same call works without it, the state is
+If git refuses the copy and the call works without it, the state is
 `fallback-git`, not a failure. A test call that works and answers wrongly gives
-it too. At the last call, which is a `worktree add`, a `No space left on device` error or an
+it too. At the last call, a `worktree add`, a `No space left on device` error or an
 end by a signal fails the test. If two calls fail, the cause names the first.
 A first `config --get helper.check` on the copy that the daemon ended after 30 seconds
 does not fail the test (`b3081b51`, measured on Linux).
 
-The daemon keeps a failure 10 seconds after the test, also with its cause
+A failure is kept 10 seconds after the test, also with its cause
 gone. Meanwhile a request gets it with no git call, but works with
 `"shadowDirOff":true`. A failed test is not kept under `"sessionFoldersOff":true`
 (`4c111e86`, measured on Linux) or [with no git](git-rules-session-folders.md#with-no-other-git)
-(`87375cc7`). A passed test is not kept ([rule](git-info.md#settingscontrol)).
+(`87375cc7`, measured on Linux and Windows, macOS claustrum's own, not measured). A passed test is not kept ([rule](git-info.md#settingscontrol)).
 
 ### The folders
 
@@ -160,7 +160,7 @@ follows. Any other `flock` error fails the request (claustrum's own, not measure
   (not measured). The other methods get the same rule (claustrum's own).
 - `.probe` is the folder of [the repository
   call](#the-call-about-the-repository).
-- A request also keeps short-lived entries in the daemon's folder:
+- A request keeps short-lived entries in the daemon's folder:
   `.gitdir-<n>` for a `git.status`, and `.checkout-<n>` and `.worktreeinclude-<n>` for a create. `.config-<n>` for a
   create in a repository with a `config.worktree` file, and `.s<n>`. In `fallback-git` the first three are there
   too (`.gitdir-<n>` on all three systems and `.checkout-<n>` on Windows, measured, and the rest
@@ -202,7 +202,7 @@ line with no git call. On Windows a held copy gets 2 s of retries, then `rename
 
 #### The sweep of git-shadow
 
-The request that makes the daemon's folder also sweeps `git-shadow` (measured
+The request that makes the daemon's folder sweeps `git-shadow` (measured
 on Linux and macOS, and in part on Windows). If an entry's lock file can be
 taken and its name has this host's `<host form>`, the entry goes. An entry with
 another name must also be more than 7 days old (the exact bound is not measured). A
@@ -211,7 +211,7 @@ held lock keeps the folder of a live daemon.
 - On Linux and macOS the age is read after the lock step, so a folder with no lock
   file gets one and stays. On Windows the age is read before, and such a folder of 8
   days goes.
-- On Windows that lock also keeps it from a remove by hand, so no later request
+- On Windows that lock keeps it from a remove by hand, so no later request
   sweeps again.
 - `c9125eb8` goes on after `ENOLCK` on Linux and a FIFO lock on macOS, and claustrum
   follows. After such an error a folder of either name goes past 7 days. The 7 days
@@ -322,7 +322,7 @@ by its output so far (measured on `git.status` only).
 In the state `shadow` each hardened call carries `GIT_COMMON_DIR=<copy>` and
 `GIT_OBJECT_DIRECTORY=<git directory>/objects`. A call with no `--git-dir=` in its
 arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows). The
-four come right after the profile values, in that order (order measured on Linux and
+four follow the profile values, in that order (order measured on Linux and
 macOS). The staged `worktree add` moves its `GIT_COMMON_DIR` to the end ([staged
 add](git-worktree-create.md#the-staged-add)).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
