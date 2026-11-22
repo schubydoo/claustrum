@@ -58,6 +58,7 @@
       "features": [
         "process.stdin.offset",
         "process.spawn.refuses_given_up_id",
+        "process.spawn.unattended_seconds",
         "process.kill.farewell",
         "files.extract_tar.execBit",
         "files.list.includeDotNames",

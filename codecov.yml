@@ -480,6 +480,8 @@ component_management:
         - internal/supervisor/farewell.go
         # 683cc6a9 link-bound processes: the link, the unattended end and the spent ids.
         - internal/supervisor/linkbound.go
+        # 87375cc7 the end of a spawn with a top-level unattendedSeconds.
+        - internal/supervisor/unattended.go
         # 4c111e86 the given-up ids of process.spawn.
         - internal/supervisor/givenup.go
         # c9125eb8 the time limit of the pane's git of a gitRead spawn.

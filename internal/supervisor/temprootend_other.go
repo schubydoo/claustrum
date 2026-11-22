@@ -7,3 +7,6 @@ package supervisor
 func exitSeenUnreaped(int) bool { return false }
 
 func groupMadeAtSpawn(int) bool { return false }
+
+// exitSeenBeforeReap is false: exitSeenUnreaped sees no exit here.
+const exitSeenBeforeReap = false

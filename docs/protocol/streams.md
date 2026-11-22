@@ -29,7 +29,7 @@ later replay.
   process: `client` for `process.kill` and `process.killAndWait`, `shutdown`
   for the shutdown and `KillAll` sweep, `limit` for
   [gitRead](process-git-read.md#the-time-limit), and `temp_root` for [a lost private temp
-  folder](process-spawn.md#a-lost-folder-build-4c111e86) (`4c111e86`). It is emitted on every OS. A refused signal sets none (`52d82f0a`, Linux and macOS). Signal names
+  folder](process-spawn.md#a-lost-folder-build-4c111e86) (`4c111e86`), and `unattended` for the unattended ends of [a link-bound process](process-link-bound.md#the-unattended-end) and of [a top-level `unattendedSeconds`](process-spawn.md#the-unattended-end-build-87375cc7). It is emitted on every OS. A refused signal sets none (`52d82f0a`, Linux and macOS). Signal names
   other than `SIGTERM` and `SIGKILL` are not measured. The shutdown sweep sets
   `shutdown` only on a `process.killAndWait` that still waits. Linux measured it in the log. A later `temp_root` end
   replaces `client` (`4c111e86`, macOS). Another kill keeps `client` (not measured).

@@ -25,3 +25,6 @@ func groupMadeAtSpawn(pid int) bool {
 	g, err := unix.Getpgid(pid)
 	return err == nil && g == pid
 }
+
+// exitSeenBeforeReap is true: exitSeenUnreaped sees the exit of a child before its reap here.
+const exitSeenBeforeReap = true

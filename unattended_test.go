@@ -123,10 +123,40 @@ func TestUnattendedRefusedRules(t *testing.T) {
 		{"launcher", spawnParams{Command: "/x/plain", Launcher: &[]string{"/x/l"}}, 600, true},
 		{"plain", spawnParams{Command: "/x/plain"}, 600, false},
 		{"negative", spawnParams{Command: "/x/plain"}, -1, true},
+		// 87375cc7, measured on Linux and macOS: a bare ccd-cli with no args is refused, and
+		// ccd-cli.exe, ccd-cli-x and claude with no args pass. Windows passes a
+		// ccd-cli.exe with no args.
+		{"bare ccd-cli", spawnParams{Command: "/x/ccd-cli"}, 60, true},
+		{"ccd-cli.exe", spawnParams{Command: "/x/ccd-cli.exe"}, 60, false},
+		{"ccd-cli-x", spawnParams{Command: "/x/ccd-cli-x"}, 60, false},
+		{"claude", spawnParams{Command: "/x/claude"}, 60, false},
 	}
 	for _, c := range cases {
 		if got := unattendedRefused(&c.p, c.n); got != c.want {
 			t.Errorf("%s: unattendedRefused = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestUnattendedSecondsArmLine: an accepted value above 0 arms the end, with the arm
+// line of its time. 0 arms nothing (87375cc7, measured on Linux, macOS and Windows).
+func TestUnattendedSecondsArmLine(t *testing.T) {
+	logs := captureLogBuf(t)
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	exe, env := helperCommand(t, "echo")
+	for i, n := range []int{5, 0} {
+		procID := "ua" + itoa(i+1)
+		got := string(cl.call(unattendedReq(t, i+1, map[string]any{"id": procID, "command": exe, "args": []string{"x"}, "env": env, "unattendedSeconds": n})))
+		if want := `{"jsonrpc":"2.0","id":` + itoa(i+1) + `,"result":{"success":true}}`; got != want {
+			t.Fatalf("spawn %s: reply = %s\nwant %s", procID, got, want)
+		}
+		cl.waitExit(procID)
+	}
+	if line := "[process.Manager] Process ua1 is to be ended once no connection has been attached to it for 1m0s\n"; !strings.Contains(logs.String(), line) {
+		t.Errorf("log lacks %q:\n%s", line, logs.String())
+	}
+	if strings.Contains(logs.String(), "Process ua2 is to be ended") {
+		t.Errorf("an arm line for 0:\n%s", logs.String())
 	}
 }

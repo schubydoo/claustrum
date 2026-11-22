@@ -39,7 +39,7 @@ func spawnHelperTempRootID(t *testing.T, m *Manager, c *conn.Conn, id string, as
 	}
 	t.Cleanup(func() { privateTempRoot = old })
 	exe, env := helperCommand(t, mode)
-	p, err := m.spawnWith(c, id, exe, args, "", env, false, nil, 0, ask, nil, nil, nil)
+	p, err := m.spawnWith(c, id, exe, args, "", env, false, nil, 0, ask, nil, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}

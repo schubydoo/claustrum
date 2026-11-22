@@ -75,11 +75,13 @@ var capabilityMethods = append(append([]string{
 // process.spawn.refuses_given_up_id after process.stdin.offset (measured on Linux,
 // macOS and Windows). 4c111e86 also lists server.peer_check.out_of_resources and
 // server.peer_check.absence_shown after server.peer_check (measured on Linux and
-// Windows). claustrum lists them on macOS too (not measured there). The array is
-// always emitted.
+// Windows). claustrum lists them on macOS too (not measured there). 87375cc7 inserted
+// process.spawn.unattended_seconds after process.spawn.refuses_given_up_id (measured on
+// Linux, macOS and Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.spawn.refuses_given_up_id",
+	"process.spawn.unattended_seconds",
 	"process.kill.farewell",
 	"files.extract_tar.execBit",
 	"files.list.includeDotNames",

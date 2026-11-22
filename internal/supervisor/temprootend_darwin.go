@@ -82,3 +82,6 @@ func groupMadeAtSpawn(pid int) bool {
 	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	return err == nil && int(kp.Eproc.Pgid) == pid
 }
+
+// exitSeenBeforeReap is true: exitSeenUnreaped sees the exit of a child before its reap here.
+const exitSeenBeforeReap = true
