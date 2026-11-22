@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -567,8 +568,13 @@ func twoFolderFixture(t *testing.T) checkoutRuleFixture {
 // once, and every later git works. Each level below the top tree then goes to
 // one `cat-file --buffer --batch` and one long-running tree hash-object, with
 // no separate read. The second read gets the ids of the level in the order of
-// the walk, and the checked line counts all 5 objects and 2 separate runs. The
-// form follows c9125eb8 (measured on Linux). The order is claustrum's own.
+// the walk, and the checked line counts all 5 objects. The form follows c9125eb8
+// (measured on Linux). The order is claustrum's own. The count of separate
+// runs is 5: the commit, the top tree, the read of `.claude` and the two trees
+// of the read of a and b. A read per folder depth of one tree counts as one
+// run (4c111e86, measured on Linux). A count per tree of a read of two trees
+// is claustrum's own.
+// Mutation: count no tree of those reads (the count is 2).
 func TestContentCheckLevelReadsByDepth(t *testing.T) {
 	f := twoFolderFixture(t)
 	slowGit(t, "cat-file,--batch", "fail", 0, "", "")
@@ -581,7 +587,7 @@ func TestContentCheckLevelReadsByDepth(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("git.worktree_create = %s, want success", raw)
 	}
-	if want := checkedLineSep("2", "files", 5, 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+	if want := checkedLineSep("2", "files", 5, 5, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
 		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
 	}
 	got, _ := objectCalls(calls)
@@ -1103,4 +1109,127 @@ func TestContentUndoText(t *testing.T) {
 	if got := contentUndoText(""); got != "" {
 		t.Errorf("contentUndoText of no text = %q, want none", got)
 	}
+}
+
+// TestContentCheckStopsAtTheDeadline: a `cat-file --batch` that answers nothing
+// for 30 s, and the timeoutMs deadline ends while the check waits for it
+// (deadlineAt at the gate of the batch). The check stops at once with no
+// separate read, logs the checked line with "stopped at the deadline", and the
+// create answers the timeout of a good checkout (4c111e86, measured on Linux).
+// The copy step then runs its config listing and no `ls-files` call
+// (4c111e86, measured on Linux). Mutations: no wait on the deadline (the reply
+// comes after 30 s), separate reads after it (a separate cat-file runs), the
+// whole copy step after it (its ls-files call runs), or no copy step (one
+// listing of baseRepo fewer before the rollback).
+func TestContentCheckStopsAtTheDeadline(t *testing.T) {
+	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n", ".claude/settings.json": "{}\n"})
+	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
+	timeLog, pidFile := filepath.Join(t.TempDir(), "times"), filepath.Join(t.TempDir(), "pid")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+	t.Cleanup(func() {
+		_ = os.WriteFile(gate, nil, 0o644)
+		if runtime.GOOS != "windows" {
+			waitStubExit(t, timeLog, pidFile, "cat-file\x1f--batch")
+		}
+	})
+	firedDeadlineAt(t, func() bool { return exists(gate + ".in") })
+	logs := captureLogBuf(t)
+	begin := time.Now()
+	raw, calls := f.create(t, map[string]any{"timeoutMs": markerTimeoutMs})
+	if took := time.Since(begin); took > 20*time.Second {
+		t.Errorf("the create took %v, want an answer at the deadline", took)
+	}
+	if !strings.Contains(raw, `"errorCode":"timeout"`) || !strings.Contains(raw, "deadline expired after the checkout finished") {
+		t.Fatalf("git.worktree_create = %s, want the timeout of a good checkout", raw)
+	}
+	if want := checkedLineSep("0", "files", 0, 0, gitRevParse(t, f.repo, "HEAD"), "stopped at the deadline"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if strings.Contains(logs.String(), "stopped using the long-running git") {
+		t.Errorf("log:\n%s\nwant no stop line of the batch", logs)
+	}
+	if batch, separate := catFileCalls(calls); batch != 1 || separate != 0 {
+		t.Errorf("%d cat-file --batch and %d separate cat-file calls, want 1 and 0", batch, separate)
+	}
+	// After the batch: the listing of the copy step, then the listing of the
+	// branch step of the rollback and its for-each-ref call. An ask about the
+	// repository after the 5 s of a kept answer (probeKeep) is left out.
+	var after []string
+	for i, c := range calls {
+		if containsSeq(c.argv, "ls-files", "--others") {
+			t.Errorf("the copy step ran after the deadline: %q", c.argv)
+		}
+		if !containsSeq(c.argv, "cat-file", "--batch") {
+			continue
+		}
+		for _, n := range calls[i+1:] {
+			switch {
+			case slices.Equal(n.argv, []string{"config", "-z", "--list"}):
+				after = append(after, "listing")
+			case containsSeq(n.argv, "rev-parse", "--git-dir"):
+			default:
+				after = append(after, n.argv[len(n.argv)-1])
+			}
+			if slices.Contains(n.argv, "for-each-ref") {
+				break
+			}
+		}
+	}
+	if want := []string{"listing", "listing", "refs/heads/"}; !slices.Equal(after, want) {
+		t.Errorf("the calls after the batch end with %q, want %q", after, want)
+	}
+	noReadbackFolder(t, f)
+}
+
+// waitStubExit waits up to 30 s for the end of the stub call whose argv holds
+// match, by its start line in timeLog (CLAUSTRUM_GITSTUB_TIMELOG). So its exit
+// lands in no later test. It writes the pid to pidFile for stubExited, and it
+// is Unix-only, as stubExited is.
+func waitStubExit(t *testing.T, timeLog, pidFile, match string) {
+	t.Helper()
+	b, _ := os.ReadFile(timeLog)
+	pid := ""
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if f := strings.Split(line, "\x1f"); len(f) > 3 && f[0] == "start" && strings.Contains(line, match) {
+			pid = f[2]
+		}
+	}
+	if pid == "" {
+		return
+	}
+	mustWrite(t, pidFile, pid)
+	for end := time.Now().Add(30 * time.Second); !stubExited(pidFile); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Errorf("the stub call %s still runs 30 s after its gate opened", pid)
+			return
+		}
+	}
+}
+
+// firedDeadlineAt is deadlineAt, and the deadline of the context is the time
+// at which it fired. So the time of the LFS keep of the create
+// (keepWithinDeadline) counts from that time, as it counts from the time of
+// the timer.
+func firedDeadlineAt(t *testing.T, ready func() bool) {
+	t.Helper()
+	fired := deadlineAt(t, ready, nil)
+	marked := callerDeadline
+	callerDeadline = func(base context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+		ctx, cancel := marked(base, d)
+		return firedDeadlineCtx{ctx, fired}, cancel
+	}
+}
+
+// firedDeadlineCtx is a context of deadlineAt whose Deadline is the time of
+// the fire, once it fired.
+type firedDeadlineCtx struct {
+	context.Context
+	fired func() time.Time
+}
+
+func (c firedDeadlineCtx) Deadline() (time.Time, bool) {
+	if at := c.fired(); !at.IsZero() {
+		return at, true
+	}
+	return c.Context.Deadline()
 }

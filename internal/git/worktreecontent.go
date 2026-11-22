@@ -95,6 +95,56 @@ type contentCheck struct {
 	// lfsFiles are the paths of differ whose filter attribute is lfs, or nil
 	// before the first ask (lfsFiltered).
 	lfsFiles map[string]bool
+	// deadline is the context of the timeoutMs of the caller, or nil for none.
+	// The time of the LFS keep, keepTook, does not count (keepWithinDeadline,
+	// claustrum's own).
+	// atDeadline is true once the check saw the deadline pass (pastDeadline).
+	deadline   context.Context
+	keepTook   time.Duration
+	atDeadline bool
+}
+
+// errContentDeadline ends the reads of a check whose deadline passed.
+var errContentDeadline = errors.New("the deadline of the request passed")
+
+// pastDeadline reports whether the deadline of the check has passed. From then
+// on the check reads no object, also by a separate run: 4c111e86 stops there
+// and logs the checked line with "stopped at the deadline" (measured on Linux).
+func (c *contentCheck) pastDeadline() bool {
+	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
+		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {
+		c.atDeadline = true
+	}
+	return c.atDeadline
+}
+
+// readAtDeadline is b.read, which the deadline ends: then the pipes of b
+// close, and the read gives an error (objectBatch.drop). A stop of the
+// context for another cause does not end it.
+func (c *contentCheck) readAtDeadline(b *objectBatch, kind, id string) ([]byte, bool, error) {
+	if c.deadline == nil {
+		return b.read(kind, id)
+	}
+	ctx, keep := c.deadline, c.keepTook
+	readDone := make(chan struct{})
+	defer close(readDone)
+	stop := context.AfterFunc(ctx, func() {
+		if !callerTimeoutFired(ctx) {
+			return
+		}
+		if dl, ok := ctx.Deadline(); ok && keep > 0 {
+			if wait := time.Until(dl.Add(keep)); wait > 0 {
+				select {
+				case <-time.After(wait):
+				case <-readDone:
+					return
+				}
+			}
+		}
+		b.drop()
+	})
+	defer stop()
+	return b.read(kind, id)
 }
 
 // contentRefusal is the code and the hint of a refused content check. asked is
@@ -146,10 +196,14 @@ type contentFile struct {
 
 // checkWorktreeContent runs the content check of a new worktree at leaf,
 // whose checkout read commit. It logs one line and returns nil on a match. ask
-// is contentCheck.ask.
-func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string) *contentRefusal {
+// is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
+// check that stops at the deadline returns nil and atDeadline: the caller then
+// runs only the config listing of the copy step and answers the timeout
+// (4c111e86, measured on Linux with a batch that did not answer). After the
+// other stop points the same is claustrum's own (dotClaudeListingOnly).
+func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
-	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask}
+	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}
 	files, refusal := c.run()
 	if refusal != nil {
 		refusal.asked = c.asked
@@ -167,12 +221,16 @@ func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string
 	// on Linux, macOS and Windows).
 	line := fmt.Sprintf("[GitHandler] worktree_create: checked %d %s under .claude, .mcp.json, CLAUDE.md (or CLAUDE.local.md) and AGENTS.md against %d objects of commit %s (%d of the commits and folder listings read by separate git runs) in %s: ",
 		len(files), word, c.read, short, c.separate, time.Since(start).Round(time.Millisecond))
+	if c.atDeadline {
+		logging.Infof("%sstopped at the deadline", line)
+		return nil, true
+	}
 	if refusal != nil {
 		logging.Infof("%srefused: %q", line, loggedHint(refusal.hint))
-		return refusal
+		return refusal, false
 	}
 	logging.Infof("%smatch", line)
-	return nil
+	return nil, false
 }
 
 // loggedHint is the refusal text as the log line of the check quotes it. It has no
@@ -198,7 +256,10 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	defer remove()
 	c.objects = dir
 	// The scratch folder goes before the folder of the objects (4c111e86,
-	// measured on Linux), after the gits of the check end (claustrum's own).
+	// measured on Linux). Before the deadline it goes after the gits of the
+	// check end (claustrum's own). At the deadline the check ends with no wait
+	// for its `cat-file --batch` (4c111e86, measured on Linux), and the folder
+	// goes then (claustrum's own, not measured).
 	defer c.removeScratch()
 	c.startBatch()
 	defer c.stopBatch()
