@@ -40,7 +40,7 @@ func endAloneNow(t *testing.T, f *aloneTicks, p *Proc) {
 
 // TestAloneEndOfAChildThatLeaves: a child that ends on the SIGTERM gets the SIGKILL of
 // its group after it left, and a process in its group ends with it. The left line
-// comes before the exited line (87375cc7, measured on macOS, on Linux not measured).
+// comes before the exited line (87375cc7, measured on Linux and macOS).
 // No SIGHUP goes out. The grandchild is the test's own.
 func TestAloneEndOfAChildThatLeaves(t *testing.T) {
 	buf := captureLogBuf(t)
@@ -75,8 +75,8 @@ func TestAloneEndOfAChildThatLeaves(t *testing.T) {
 
 // TestAloneEndOfAChildThatStays: a child that ignores the SIGTERM gets the group SIGKILL
 // at the end of the wait. The stayed line comes before the exited line. A reattach
-// gets the exit frame with the killedBy "unattended" (87375cc7, measured on macOS, on
-// Linux not measured). The wait is shrunk here.
+// gets the exit frame with the killedBy "unattended" (87375cc7, measured on Linux and
+// macOS). The wait is shrunk here.
 func TestAloneEndOfAChildThatStays(t *testing.T) {
 	old := aloneEndGrace
 	aloneEndGrace = 200 * time.Millisecond
@@ -106,7 +106,7 @@ func TestAloneEndOfAChildThatStays(t *testing.T) {
 }
 
 // TestAloneNoLineAfterAClientKill: a child that a process.kill ended gets no end line
-// and no signal of the check (87375cc7, measured on macOS and Windows).
+// and no signal of the check (87375cc7, measured on Linux, macOS and Windows).
 func TestAloneNoLineAfterAClientKill(t *testing.T) {
 	buf := captureLogBuf(t)
 	f := fakeAloneTicker(t)

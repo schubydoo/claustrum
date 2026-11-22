@@ -814,7 +814,7 @@ func (m *Manager) SpawnWithTempRoot(c *conn.Conn, id, command string, args []str
 // SpawnLaunched is the spawn of a launcher with the launcherCheck, launcherSuppliesCli
 // or envOnlyIfSent members (c9125eb8, LauncherOpts). A launched spawn takes no
 // link-bound time and no private temp folder, as in SpawnWithTempRoot. Its alone time
-// arms the end as there (claustrum's own, not measured for a launcherCheck).
+// arms the end as there (claustrum's own, not measured).
 func (m *Manager) SpawnLaunched(c *conn.Conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher []string, lo LauncherOpts, folders []string, alone time.Duration) (*Proc, error) {
 	return m.spawnWith(c, id, command, args, cwd, env, noShellAgent, &launcher, 0, TempRootAsk{}, folders, nil, &lo, alone)
 }
@@ -870,7 +870,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	endGrace := unattendedEndGrace
 	readLimit, readEndGrace := gitReadLimit, gitReadEndGrace
 	tempEndGrace := tempRootEndGrace
-	aloneTicks, aloneGrace := aloneTicker, aloneEndGrace
+	aloneH := readAloneHooks()
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
 	// spawn supersedes it). Before it starts its process, it ends the prior process
@@ -1327,8 +1327,8 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	default:
 		logging.Infof("[process.Manager] Process %s started, PID=%d, command=%s", LogID(id), cmd.Process.Pid, command)
 	}
-	// The arm line comes right after the start line (87375cc7, measured on macOS and
-	// Windows). The cut of a long id there is claustrum's own, not measured.
+	// The arm line comes right after the start line (87375cc7, measured on Linux,
+	// macOS and Windows). The cut of a long id there is claustrum's own, not measured.
 	if alone > 0 {
 		logging.Infof("[process.Manager] Process %s is to be ended once no connection has been attached to it for %s", LogID(id), alone)
 	}
@@ -1359,7 +1359,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			p.markAloneLocked(time.Now(), true)
 		}
 		p.mu.Unlock()
-		go m.watchAlone(p, aloneTicks, aloneGrace)
+		go m.watchAlone(p, aloneH)
 	}
 
 	// Record the spawned child in the orphan registry, so a later daemon can reap it if
@@ -1419,6 +1419,11 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	// The pid is now free for the kernel to reuse, and the pgid will be too
 	// once the last group member goes. Record that BEFORE the drain window
 	// opens, so no signal path can target a recycled id while we wait.
+	// The gate of the end closes before reaped turns true. On Linux and macOS it is
+	// closed already (killGroupOnAloneExit).
+	if p.aloneTTL > 0 {
+		p.aloneGate.Close()
+	}
 	p.mu.Lock()
 	p.reaped = true
 	p.mu.Unlock()
@@ -2068,7 +2073,7 @@ func (m *Manager) Reattach(c *conn.Conn, id string, fromSeq uint64) (p *Proc, fo
 		_, attached = p.subs[c]
 		p.subs = map[*conn.Conn]struct{}{c: {}}
 		// The reattach clears the clock of an armed process (87375cc7, measured on
-		// macOS and Windows). A connection that is closed already starts it (claustrum's
+		// Linux, macOS and Windows). A connection that is closed already starts it (claustrum's
 		// own): its DetachConn can have run. The write lock of c is held here.
 		p.markAloneLocked(time.Now(), c == nil || c.ClosedLocked())
 	} else {

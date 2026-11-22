@@ -244,9 +244,10 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
   the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.
 - **The unattended end of a spawn.** `SIGTERM` to the child, then the group `SIGKILL` after at most 7 s (Linux, macOS).
-  Windows ends the job (`endAlone`, `killGroupOnAloneExit`, [process.spawn](docs/protocol/process-spawn.md#the-unattended-end-build-87375cc7)).
-  Never widen: arm it only for an accepted top-level unattendedSeconds above 0. Signal only that child, its group or its
-  job, and the group only before the reap (`aloneGate`). Start no end after the shutdown began.
+  Windows ends the job, or a child with no job by `TerminateProcess` on that child only (`endAlone`, `killGroupOnAloneExit`,
+  [process.spawn](docs/protocol/process-spawn.md#the-unattended-end-build-87375cc7)). Never widen: arm it only for an
+  accepted top-level unattendedSeconds above 0. Signal only that child, its group or its job, and none to a group that
+  the spawn did not make. Send each signal through `aloneGate` before the reap. Start no end after the shutdown began.
 - **The extract marker.** `.synced` goes as a tree through the handle of `destDir` that
   `extractTarGz` tested (`writeSyncedMarker`, [the
   steps](docs/protocol/files-extract-tar.md#what-the-request-does)). Never widen: This step is approved by the maintainer. Do not

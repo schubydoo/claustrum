@@ -12,7 +12,7 @@ import (
 )
 
 // TestAloneTTL pins the times of an accepted unattendedSeconds (87375cc7, measured
-// on macOS and Windows): 60 s up to 60, then the value, and 168 h from 604800 on.
+// on Linux, macOS and Windows): 60 s up to 60, then the value, and 168 h from 604800 on.
 func TestAloneTTL(t *testing.T) {
 	cases := []struct {
 		n    int64
@@ -87,7 +87,7 @@ func aloneSinceOf(p *Proc) time.Time {
 }
 
 // TestAloneArmLine: the arm line comes right after the start line, with the mapped
-// time (87375cc7, measured on macOS and Windows). The step of the check is a quarter
+// time (87375cc7, measured on Linux, macOS and Windows). The step of the check is a quarter
 // of the time (measured: 61 ends at 76.25 s). The cut of the id is claustrum's own.
 func TestAloneArmLine(t *testing.T) {
 	buf := captureLogBuf(t)
@@ -131,7 +131,7 @@ func TestNoArmLineWithNoTime(t *testing.T) {
 
 // TestAloneClockStartsAtTheDetach: while the connection is attached no step ends the
 // child. Its detach starts the clock, and the end comes at the first step with the
-// whole time since then (87375cc7, measured on macOS and Windows).
+// whole time since then (87375cc7, measured on Linux, macOS and Windows).
 func TestAloneClockStartsAtTheDetach(t *testing.T) {
 	f := fakeAloneTicker(t)
 	m := newTestProcManager(t)
@@ -165,7 +165,7 @@ func TestAloneClockStartsAtTheDetach(t *testing.T) {
 }
 
 // TestAloneReattachClearsTheClock: a reattach from an open connection clears the clock,
-// and the next detach starts it again (87375cc7, measured on macOS and Windows).
+// and the next detach starts it again (87375cc7, measured on Linux, macOS and Windows).
 func TestAloneReattachClearsTheClock(t *testing.T) {
 	f := fakeAloneTicker(t)
 	m := newTestProcManager(t)
@@ -235,7 +235,7 @@ func TestAloneNoEndAfterTheShutdownBegan(t *testing.T) {
 }
 
 // TestAloneNoLineAfterAnOwnExit: an armed child that exits by itself gets no end line
-// (87375cc7, measured on macOS and Windows).
+// (87375cc7, measured on Linux, macOS and Windows).
 func TestAloneNoLineAfterAnOwnExit(t *testing.T) {
 	buf := captureLogBuf(t)
 	fakeAloneTicker(t)
@@ -266,5 +266,83 @@ func TestAloneClockAtAFailedWrite(t *testing.T) {
 	p.emit(ChildFrame{Stream: "stdout", Data: "a"})
 	if aloneSinceOf(p).IsZero() {
 		t.Error("a failed write started no clock")
+	}
+}
+
+// setAloneBeforeEnd puts f in the seam right before the end until the test ends. It is
+// set before the spawn, which reads it.
+func setAloneBeforeEnd(t *testing.T, f func(*Proc)) {
+	t.Helper()
+	old := aloneBeforeEnd
+	aloneBeforeEnd = f
+	t.Cleanup(func() { aloneBeforeEnd = old })
+}
+
+// TestAloneNoTermWhenTheShutdownBeginsAtTheStep: a shutdown that begins after the step
+// found the whole time, and before the SIGTERM, ends nothing (claustrum's own).
+func TestAloneNoTermWhenTheShutdownBeginsAtTheStep(t *testing.T) {
+	f := fakeAloneTicker(t)
+	m := newTestProcManager(t)
+	setAloneBeforeEnd(t, func(*Proc) { m.RefuseStarts() })
+	c, _ := pipeConn(t)
+	p := spawnAlone(t, m, c, "al-sd", time.Minute)
+	<-f.steps
+	m.DetachConn(c)
+	signals := countSignalsTo(t, p)
+	f.step(t, aloneSinceOf(p).Add(time.Hour))
+	select {
+	case f.ticks <- time.Time{}:
+		t.Fatal("the check took another step after the shutdown began")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if n := signals.Load(); n != 0 {
+		t.Errorf("%d signals after the shutdown began", n)
+	}
+}
+
+// TestAloneNoTermAfterAReattachAtTheStep: a reattach after the step found the whole
+// time, and before the SIGTERM, ends nothing, and the check goes on (claustrum's own).
+func TestAloneNoTermAfterAReattachAtTheStep(t *testing.T) {
+	f := fakeAloneTicker(t)
+	m := newTestProcManager(t)
+	c2, _ := pipeConn(t)
+	setAloneBeforeEnd(t, func(p *Proc) { m.Reattach(c2, p.id, 0) })
+	c, _ := pipeConn(t)
+	p := spawnAlone(t, m, c, "al-ra", time.Minute)
+	<-f.steps
+	m.DetachConn(c)
+	signals := countSignalsTo(t, p)
+	f.settle(t, aloneSinceOf(p).Add(time.Hour))
+	if n := signals.Load(); n != 0 {
+		t.Errorf("%d signals after a reattach at the step", n)
+	}
+}
+
+// TestAloneNoTermThroughAClosedGate: once the gate of the end is closed, as after the
+// exit of the child is seen, the end sends nothing and logs nothing (claustrum's own).
+func TestAloneNoTermThroughAClosedGate(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := fakeAloneTicker(t)
+	m := newTestProcManager(t)
+	c, _ := pipeConn(t)
+	p := spawnAlone(t, m, c, "al-gate", time.Minute)
+	<-f.steps
+	m.DetachConn(c)
+	p.aloneGate.Close()
+	signals := countSignalsTo(t, p)
+	f.step(t, aloneSinceOf(p).Add(time.Hour))
+	select {
+	case f.ticks <- time.Time{}:
+		t.Fatal("the check took another step after a closed gate")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if n := signals.Load(); n != 0 {
+		t.Errorf("%d signals through a closed gate", n)
+	}
+	p.mu.Lock()
+	termed := p.aloneTermed
+	p.mu.Unlock()
+	if termed || strings.Contains(buf.String(), "Process al-gate: no connection attached") {
+		t.Errorf("the end counts a SIGTERM through a closed gate:\n%s", buf.String())
 	}
 }

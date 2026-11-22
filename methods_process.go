@@ -328,8 +328,10 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		linkTTL = supervisor.UnattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
 	// An accepted value above 0 arms the end of the child once no connection holds it
-	// (87375cc7, measured on macOS and Windows). The test above refused it with pty,
-	// linkBound, gitRead and cliTempRootEnd.
+	// (87375cc7, measured on Linux, macOS and Windows). The test above refused it with
+	// pty, linkBound, gitRead and cliTempRootEnd, and for a launcher spawn without
+	// --no-session-persistence (measured on Linux). A launcher spawn with that arg, and
+	// one with a launcherCheck object, is armed too (claustrum's own, not measured).
 	var alone time.Duration
 	if unattended > 0 {
 		alone = supervisor.AloneTTL(unattended)

@@ -123,7 +123,7 @@ func TestUnattendedRefusedRules(t *testing.T) {
 		{"launcher", spawnParams{Command: "/x/plain", Launcher: &[]string{"/x/l"}}, 600, true},
 		{"plain", spawnParams{Command: "/x/plain"}, 600, false},
 		{"negative", spawnParams{Command: "/x/plain"}, -1, true},
-		// 87375cc7, measured on macOS: a bare ccd-cli with no args is refused, and
+		// 87375cc7, measured on Linux and macOS: a bare ccd-cli with no args is refused, and
 		// ccd-cli.exe, ccd-cli-x and claude with no args pass. Windows passes a
 		// ccd-cli.exe with no args.
 		{"bare ccd-cli", spawnParams{Command: "/x/ccd-cli"}, 60, true},
@@ -139,7 +139,7 @@ func TestUnattendedRefusedRules(t *testing.T) {
 }
 
 // TestUnattendedSecondsArmLine: an accepted value above 0 arms the end, with the arm
-// line of its time. 0 arms nothing (87375cc7, measured on macOS and Windows).
+// line of its time. 0 arms nothing (87375cc7, measured on Linux, macOS and Windows).
 func TestUnattendedSecondsArmLine(t *testing.T) {
 	logs := captureLogBuf(t)
 	sock := startSocketServer(t)
