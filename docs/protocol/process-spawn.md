@@ -66,7 +66,7 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 
 - The close of the last connection starts the clock. A client that dies counts at once. A [reattach](process-reattach.md) clears the clock.
 - A check runs each quarter of the time, at most 60 s, counted from the spawn. The end comes at the first check after the whole time.
-- Linux and macOS: `SIGTERM` to the child alone. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
+- Linux and macOS: `SIGTERM` to the child only. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
 - Windows: the `SIGTERM` is the end of the [job](process-kill.md#windows-child-trees). The child leaves at once with code 1.
 - One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`.
 - A later reattach gets the `exit` frame with `"killedBy":"unattended"`.
@@ -89,7 +89,7 @@ These rules are not measured.
 - A reattach or a shutdown after the check and before the `SIGTERM` ends nothing.
 - On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
-A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux). With that arg, or with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
+A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux). With that arg, also with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
 
 ## Response
 

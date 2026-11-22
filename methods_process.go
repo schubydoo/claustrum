@@ -100,7 +100,7 @@ type spawnParams struct {
 	// switch itself is read by route (sessiondirs.OffSwitchSet).
 	SessionFoldersOff json.RawMessage `json:"sessionFoldersOff"`
 	// UnattendedSeconds is read for its tests (unattendedValue, unattendedRefused).
-	// An accepted value above 0 arms the end of the child (supervisor.AloneTTL).
+	// An accepted value above 0 arms the end of the child (supervisor.UnheldTTL).
 	UnattendedSeconds json.RawMessage `json:"unattendedSeconds"`
 }
 
@@ -334,11 +334,11 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// An accepted value above 0 arms the end of the child once no connection holds it
 	// (87375cc7, measured on Linux, macOS and Windows). The test above refused it with
 	// pty, linkBound, gitRead and cliTempRootEnd, and for a launcher spawn without
-	// --no-session-persistence (measured on Linux). A launcher spawn with that arg, and
-	// one with a launcherCheck object, is armed too (claustrum's own, not measured).
-	var alone time.Duration
+	// --no-session-persistence (measured on Linux). With that arg, also with a
+	// launcherCheck object, a launcher spawn is armed too (claustrum's own, not measured).
+	var unheld time.Duration
 	if unattended > 0 {
-		alone = supervisor.AloneTTL(unattended)
+		unheld = supervisor.UnheldTTL(unattended)
 	}
 	var mp *supervisor.Proc
 	var err error
@@ -365,9 +365,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			if p.EnvOnlyIfSent != nil {
 				lo.EnvOnlyIfSent = *p.EnvOnlyIfSent
 			}
-			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders, alone)
+			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders, unheld)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd)}, folders, alone)
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd)}, folders, unheld)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {

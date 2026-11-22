@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// spawnAloneHelper starts the helper in mode with args, armed with one minute on a
+// spawnUnheldHelper starts the helper in mode with args, armed with one minute on a
 // raw line connection, and returns the process and its lines.
-func spawnAloneHelper(t *testing.T, m *Manager, id, mode string, args ...string) (*Proc, <-chan string) {
+func spawnUnheldHelper(t *testing.T, m *Manager, id, mode string, args ...string) (*Proc, <-chan string) {
 	t.Helper()
 	c, lines := rawLineConn(t)
 	exe, env := helperCommand(t, mode)
@@ -27,10 +27,10 @@ func spawnAloneHelper(t *testing.T, m *Manager, id, mode string, args ...string)
 	return p, lines
 }
 
-// endAloneNow hands the check of p one step at the end of its time.
-func endAloneNow(t *testing.T, f *aloneTicks, p *Proc) {
+// endUnheldNow hands the check of p one step at the end of its time.
+func endUnheldNow(t *testing.T, f *unheldTicks, p *Proc) {
 	t.Helper()
-	f.step(t, aloneSinceOf(p).Add(p.aloneTTL))
+	f.step(t, unheldSinceOf(p).Add(p.unheldTTL))
 	select {
 	case <-p.done:
 	case <-time.After(15 * time.Second):
@@ -38,17 +38,17 @@ func endAloneNow(t *testing.T, f *aloneTicks, p *Proc) {
 	}
 }
 
-// TestAloneEndOfAChildThatLeaves: a child that ends on the SIGTERM gets the SIGKILL of
+// TestUnheldEndOfAChildThatLeaves: a child that ends on the SIGTERM gets the SIGKILL of
 // its group after it left, and a process in its group ends with it. The left line
 // comes before the exited line (87375cc7, measured on Linux and macOS).
 // No SIGHUP goes out. The grandchild is the test's own.
-func TestAloneEndOfAChildThatLeaves(t *testing.T) {
+func TestUnheldEndOfAChildThatLeaves(t *testing.T) {
 	buf := captureLogBuf(t)
-	f := fakeAloneTicker(t)
+	f := fakeUnheldTicker(t)
 	sent := recordSignalsByProc(t)
 	m := newTestProcManager(t)
 	pidFile := filepath.Join(t.TempDir(), "kid")
-	p, _ := spawnAloneHelper(t, m, "al-left", "term-exit0-kid", pidFile)
+	p, _ := spawnUnheldHelper(t, m, "al-left", "term-exit0-kid", pidFile)
 	<-f.steps
 	kid := waitPIDFile(t, pidFile)
 	gone := false
@@ -57,7 +57,7 @@ func TestAloneEndOfAChildThatLeaves(t *testing.T) {
 			_ = syscall.Kill(kid, syscall.SIGKILL)
 		}
 	})
-	endAloneNow(t, f, p)
+	endUnheldNow(t, f, p)
 	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM", "KILL"}) {
 		t.Errorf("signals = %q, want TERM, then the group KILL", got)
 	}
@@ -73,21 +73,21 @@ func TestAloneEndOfAChildThatLeaves(t *testing.T) {
 	}
 }
 
-// TestAloneEndOfAChildThatStays: a child that ignores the SIGTERM gets the group SIGKILL
-// at the end of the wait. The stayed line comes before the exited line. A reattach
-// gets the exit frame with the killedBy "unattended" (87375cc7, measured on Linux and
-// macOS). The wait is shrunk here.
-func TestAloneEndOfAChildThatStays(t *testing.T) {
-	old := aloneEndGrace
-	aloneEndGrace = 200 * time.Millisecond
-	t.Cleanup(func() { aloneEndGrace = old })
+// TestUnheldEndOfAChildThatStays: a child that ignores the SIGTERM gets the group SIGKILL
+// at the end of the wait. The stayed line comes before the exited line (87375cc7,
+// measured on Linux and macOS). A reattach gets the exit frame with the killedBy
+// "unattended" (measured on Linux, macOS and Windows). The wait is shrunk here.
+func TestUnheldEndOfAChildThatStays(t *testing.T) {
+	old := unheldEndGrace
+	unheldEndGrace = 200 * time.Millisecond
+	t.Cleanup(func() { unheldEndGrace = old })
 	buf := captureLogBuf(t)
-	f := fakeAloneTicker(t)
+	f := fakeUnheldTicker(t)
 	sent := recordSignalsByProc(t)
 	m := newTestProcManager(t)
-	p, _ := spawnAloneHelper(t, m, "al-stay", "ignore-term")
+	p, _ := spawnUnheldHelper(t, m, "al-stay", "ignore-term")
 	<-f.steps
-	endAloneNow(t, f, p)
+	endUnheldNow(t, f, p)
 	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM", "KILL"}) {
 		t.Errorf("signals = %q, want TERM, then the group KILL", got)
 	}
@@ -105,14 +105,14 @@ func TestAloneEndOfAChildThatStays(t *testing.T) {
 	}
 }
 
-// TestAloneNoLineAfterAClientKill: a child that a process.kill ended gets no end line
+// TestUnheldNoLineAfterAClientKill: a child that a process.kill ended gets no end line
 // and no signal of the check (87375cc7, measured on Linux, macOS and Windows).
-func TestAloneNoLineAfterAClientKill(t *testing.T) {
+func TestUnheldNoLineAfterAClientKill(t *testing.T) {
 	buf := captureLogBuf(t)
-	f := fakeAloneTicker(t)
+	f := fakeUnheldTicker(t)
 	sent := recordSignalsByProc(t)
 	m := newTestProcManager(t)
-	p, _ := spawnAloneHelper(t, m, "al-kill", "term-exit0")
+	p, _ := spawnUnheldHelper(t, m, "al-kill", "term-exit0")
 	<-f.steps
 	if err := m.Kill("al-kill", "TERM"); err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestAloneNoLineAfterAClientKill(t *testing.T) {
 		t.Fatal("the child did not end at the kill")
 	}
 	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
-		t.Errorf("signals = %q, want the TERM of the kill alone", got)
+		t.Errorf("signals = %q, want the TERM of the kill unheld", got)
 	}
 	logs := buf.String()
 	if strings.Contains(logs, "Process al-kill: no connection attached") {

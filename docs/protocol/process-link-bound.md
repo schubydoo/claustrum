@@ -1,6 +1,6 @@
 # Link-bound processes
 
-`process.spawn` with `linkBound` binds the process to the connection of the spawn, its link. Once the link is gone, the process ends after a time. A top-level `unattendedSeconds` on a spawn with no `linkBound` has [its own end](process-spawn.md#the-unattended-end-build-87375cc7).
+`process.spawn` with `linkBound` binds the process to the connection of the spawn, its link. Once the link is gone, the process ends after a time. A top-level `unattendedSeconds` on a spawn with no `linkBound` has [its own end](process-spawn.md#the-unattended-end-build-87375cc7) (`87375cc7`).
 
 An untagged rule on this page is measured on Linux against build `683cc6a9`. macOS and Windows are not measured.
 

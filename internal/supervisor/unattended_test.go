@@ -11,9 +11,9 @@ import (
 	"github.com/schubydoo/claustrum/internal/conn"
 )
 
-// TestAloneTTL pins the times of an accepted unattendedSeconds (87375cc7, measured
+// TestUnheldTTL pins the times of an accepted unattendedSeconds (87375cc7, measured
 // on Linux, macOS and Windows): 60 s up to 60, then the value, and 168 h from 604800 on.
-func TestAloneTTL(t *testing.T) {
+func TestUnheldTTL(t *testing.T) {
 	cases := []struct {
 		n    int64
 		want string
@@ -22,35 +22,35 @@ func TestAloneTTL(t *testing.T) {
 		{604799, "167h59m59s"}, {604800, "168h0m0s"}, {1000000000000, "168h0m0s"},
 	}
 	for _, c := range cases {
-		if got := AloneTTL(c.n).String(); got != c.want {
-			t.Errorf("AloneTTL(%d) = %s, want %s", c.n, got, c.want)
+		if got := UnheldTTL(c.n).String(); got != c.want {
+			t.Errorf("UnheldTTL(%d) = %s, want %s", c.n, got, c.want)
 		}
 	}
 }
 
-// aloneTicks is a check of an armed child that the test drives. steps holds the step
+// unheldTicks is a check of an armed child that the test drives. steps holds the step
 // that the check asked for. Each send on ticks is one step at that time.
-type aloneTicks struct {
+type unheldTicks struct {
 	steps chan time.Duration
 	ticks chan time.Time
 }
 
-// fakeAloneTicker puts aloneTicks in place of the ticker of the check until the test
+// fakeUnheldTicker puts unheldTicks in place of the ticker of the check until the test
 // ends.
-func fakeAloneTicker(t *testing.T) *aloneTicks {
+func fakeUnheldTicker(t *testing.T) *unheldTicks {
 	t.Helper()
-	f := &aloneTicks{steps: make(chan time.Duration, 4), ticks: make(chan time.Time)}
-	old := aloneTicker
-	aloneTicker = func(d time.Duration) (<-chan time.Time, func()) {
+	f := &unheldTicks{steps: make(chan time.Duration, 4), ticks: make(chan time.Time)}
+	old := unheldTicker
+	unheldTicker = func(d time.Duration) (<-chan time.Time, func()) {
 		f.steps <- d
 		return f.ticks, func() {}
 	}
-	t.Cleanup(func() { aloneTicker = old })
+	t.Cleanup(func() { unheldTicker = old })
 	return f
 }
 
 // step hands the check one step at now, and waits until the check took it.
-func (f *aloneTicks) step(t *testing.T, now time.Time) {
+func (f *unheldTicks) step(t *testing.T, now time.Time) {
 	t.Helper()
 	select {
 	case f.ticks <- now:
@@ -61,14 +61,14 @@ func (f *aloneTicks) step(t *testing.T, now time.Time) {
 
 // settle hands the check one step at now, then a step at the zero time, which ends
 // nothing. The second send returns once the check is done with the first.
-func (f *aloneTicks) settle(t *testing.T, now time.Time) {
+func (f *unheldTicks) settle(t *testing.T, now time.Time) {
 	t.Helper()
 	f.step(t, now)
 	f.step(t, time.Time{})
 }
 
-// spawnAlone starts a sleeping helper armed with ttl on c, and ends it with the test.
-func spawnAlone(t *testing.T, m *Manager, c *conn.Conn, id string, ttl time.Duration) *Proc {
+// spawnUnheld starts a sleeping helper armed with ttl on c, and ends it with the test.
+func spawnUnheld(t *testing.T, m *Manager, c *conn.Conn, id string, ttl time.Duration) *Proc {
 	t.Helper()
 	exe, env := helperCommand(t, "sleep")
 	p, err := m.SpawnWithTempRoot(c, id, exe, []string{"60"}, "", env, false, nil, 0, TempRootAsk{}, nil, ttl)
@@ -79,29 +79,29 @@ func spawnAlone(t *testing.T, m *Manager, c *conn.Conn, id string, ttl time.Dura
 	return p
 }
 
-// aloneSinceOf is the clock start of p.
-func aloneSinceOf(p *Proc) time.Time {
+// unheldSinceOf is the clock start of p.
+func unheldSinceOf(p *Proc) time.Time {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.aloneSince
+	return p.unheldSince
 }
 
-// TestAloneArmLine: the arm line comes right after the start line, with the mapped
+// TestUnheldArmLine: the arm line comes right after the start line, with the mapped
 // time (87375cc7, measured on Linux, macOS and Windows). The step of the check is a quarter
 // of the time (measured: 61 ends at 76.25 s). The cut of the id is claustrum's own.
-func TestAloneArmLine(t *testing.T) {
+func TestUnheldArmLine(t *testing.T) {
 	buf := captureLogBuf(t)
-	f := fakeAloneTicker(t)
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, c, "alone-arm-1", AloneTTL(61))
+	p := spawnUnheld(t, m, c, "unheld-arm-1", UnheldTTL(61))
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantLinesInOrder(t, buf.String(),
-		fmt.Sprintf("[process.Manager] Process alone-ar… started, PID=%d, command=%s", p.pid, exe),
-		"[process.Manager] Process alone-ar… is to be ended once no connection has been attached to it for 1m1s")
+		fmt.Sprintf("[process.Manager] Process unheld-a… started, PID=%d, command=%s", p.pid, exe),
+		"[process.Manager] Process unheld-a… is to be ended once no connection has been attached to it for 1m1s")
 	select {
 	case d := <-f.steps:
 		if d != 15250*time.Millisecond {
@@ -115,11 +115,11 @@ func TestAloneArmLine(t *testing.T) {
 // TestNoArmLineWithNoTime: a spawn with no time logs no arm line and starts no check.
 func TestNoArmLineWithNoTime(t *testing.T) {
 	buf := captureLogBuf(t)
-	f := fakeAloneTicker(t)
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	spawnAlone(t, m, c, "alone-n0", 0)
-	if strings.Contains(buf.String(), "Process alone-n0 is to be ended") {
+	spawnUnheld(t, m, c, "unheld-n0", 0)
+	if strings.Contains(buf.String(), "Process unheld-n0 is to be ended") {
 		t.Errorf("arm line for a spawn with no time:\n%s", buf.String())
 	}
 	select {
@@ -129,15 +129,15 @@ func TestNoArmLineWithNoTime(t *testing.T) {
 	}
 }
 
-// TestAloneClockStartsAtTheDetach: while the connection is attached no step ends the
+// TestUnheldClockStartsAtTheDetach: while the connection is attached no step ends the
 // child. Its detach starts the clock, and the end comes at the first step with the
 // whole time since then (87375cc7, measured on Linux, macOS and Windows).
-func TestAloneClockStartsAtTheDetach(t *testing.T) {
-	f := fakeAloneTicker(t)
+func TestUnheldClockStartsAtTheDetach(t *testing.T) {
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
 	ttl := time.Minute
-	p := spawnAlone(t, m, c, "alone-c1", ttl)
+	p := spawnUnheld(t, m, c, "unheld-c1", ttl)
 	<-f.steps
 	signals := countSignalsTo(t, p)
 	f.settle(t, time.Now().Add(time.Hour))
@@ -145,7 +145,7 @@ func TestAloneClockStartsAtTheDetach(t *testing.T) {
 		t.Fatalf("%d signals while the connection is attached", n)
 	}
 	m.DetachConn(c)
-	since := aloneSinceOf(p)
+	since := unheldSinceOf(p)
 	if since.IsZero() {
 		t.Fatal("the detach started no clock")
 	}
@@ -164,21 +164,21 @@ func TestAloneClockStartsAtTheDetach(t *testing.T) {
 	}
 }
 
-// TestAloneReattachClearsTheClock: a reattach from an open connection clears the clock,
+// TestUnheldReattachClearsTheClock: a reattach from an open connection clears the clock,
 // and the next detach starts it again (87375cc7, measured on Linux, macOS and Windows).
-func TestAloneReattachClearsTheClock(t *testing.T) {
-	f := fakeAloneTicker(t)
+func TestUnheldReattachClearsTheClock(t *testing.T) {
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, c, "alone-r1", time.Minute)
+	p := spawnUnheld(t, m, c, "unheld-r1", time.Minute)
 	<-f.steps
 	m.DetachConn(c)
-	first := aloneSinceOf(p)
+	first := unheldSinceOf(p)
 	c2, _ := pipeConn(t)
-	if _, found, _, _, _, _ := m.Reattach(c2, "alone-r1", 0); !found {
+	if _, found, _, _, _, _ := m.Reattach(c2, "unheld-r1", 0); !found {
 		t.Fatal("reattach found nothing")
 	}
-	if s := aloneSinceOf(p); !s.IsZero() {
+	if s := unheldSinceOf(p); !s.IsZero() {
 		t.Fatalf("clock = %s after a reattach, want none", s)
 	}
 	signals := countSignalsTo(t, p)
@@ -187,43 +187,43 @@ func TestAloneReattachClearsTheClock(t *testing.T) {
 		t.Fatalf("%d signals while the reattached connection is attached", n)
 	}
 	m.DetachConn(c2)
-	if s := aloneSinceOf(p); !s.After(first) {
+	if s := unheldSinceOf(p); !s.After(first) {
 		t.Errorf("clock = %s after the second detach, want after %s", s, first)
 	}
 }
 
-// TestAloneClockOfAGoneConnection: a spawn on a connection that is closed already, and
+// TestUnheldClockOfAGoneConnection: a spawn on a connection that is closed already, and
 // a reattach on one, start the clock (claustrum's own: their DetachConn can have run).
-func TestAloneClockOfAGoneConnection(t *testing.T) {
-	f := fakeAloneTicker(t)
+func TestUnheldClockOfAGoneConnection(t *testing.T) {
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, closedConn(c), "alone-g1", time.Minute)
+	p := spawnUnheld(t, m, closedConn(c), "unheld-g1", time.Minute)
 	<-f.steps
-	if aloneSinceOf(p).IsZero() {
+	if unheldSinceOf(p).IsZero() {
 		t.Error("a spawn on a closed connection started no clock")
 	}
 	c2, _ := pipeConn(t)
-	m.Reattach(c2, "alone-g1", 0)
+	m.Reattach(c2, "unheld-g1", 0)
 	c3, _ := pipeConn(t)
-	m.Reattach(closedConn(c3), "alone-g1", 0)
-	if aloneSinceOf(p).IsZero() {
+	m.Reattach(closedConn(c3), "unheld-g1", 0)
+	if unheldSinceOf(p).IsZero() {
 		t.Error("a reattach on a closed connection started no clock")
 	}
 }
 
-// TestAloneNoEndAfterTheShutdownBegan: once the shutdown began, a step past the time
+// TestUnheldNoEndAfterTheShutdownBegan: once the shutdown began, a step past the time
 // ends nothing (claustrum's own: the shutdown sweep ends the child).
-func TestAloneNoEndAfterTheShutdownBegan(t *testing.T) {
-	f := fakeAloneTicker(t)
+func TestUnheldNoEndAfterTheShutdownBegan(t *testing.T) {
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, c, "alone-s1", time.Minute)
+	p := spawnUnheld(t, m, c, "unheld-s1", time.Minute)
 	<-f.steps
 	m.DetachConn(c)
 	signals := countSignalsTo(t, p)
 	m.RefuseStarts()
-	f.step(t, aloneSinceOf(p).Add(time.Hour))
+	f.step(t, unheldSinceOf(p).Add(time.Hour))
 	select {
 	case f.ticks <- time.Now():
 		t.Fatal("the check took another step after the shutdown began")
@@ -234,11 +234,11 @@ func TestAloneNoEndAfterTheShutdownBegan(t *testing.T) {
 	}
 }
 
-// TestAloneNoLineAfterAnOwnExit: an armed child that exits by itself gets no end line
+// TestUnheldNoLineAfterAnOwnExit: an armed child that exits by itself gets no end line
 // (87375cc7, measured on Linux, macOS and Windows).
-func TestAloneNoLineAfterAnOwnExit(t *testing.T) {
+func TestUnheldNoLineAfterAnOwnExit(t *testing.T) {
 	buf := captureLogBuf(t)
-	fakeAloneTicker(t)
+	fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	exe, env := helperCommand(t, "echo")
@@ -255,41 +255,41 @@ func TestAloneNoLineAfterAnOwnExit(t *testing.T) {
 	}
 }
 
-// TestAloneClockAtAFailedWrite: a frame that cannot reach the one connection takes it
+// TestUnheldClockAtAFailedWrite: a frame that cannot reach the one connection takes it
 // off, and that starts the clock of an armed process (claustrum's own).
-func TestAloneClockAtAFailedWrite(t *testing.T) {
+func TestUnheldClockAtAFailedWrite(t *testing.T) {
 	client, server := net.Pipe()
 	_ = server.Close()
 	_ = client.Close()
 	c := conn.New(client, nil, 0, nil, nil, nil)
-	p := &Proc{id: "al-w", subs: map[*conn.Conn]struct{}{c: {}}, aloneTTL: time.Minute}
+	p := &Proc{id: "al-w", subs: map[*conn.Conn]struct{}{c: {}}, unheldTTL: time.Minute}
 	p.emit(ChildFrame{Stream: "stdout", Data: "a"})
-	if aloneSinceOf(p).IsZero() {
+	if unheldSinceOf(p).IsZero() {
 		t.Error("a failed write started no clock")
 	}
 }
 
-// setAloneBeforeEnd puts f in the seam right before the end until the test ends. It is
+// setUnheldBeforeEnd puts f in the seam right before the end until the test ends. It is
 // set before the spawn, which reads it.
-func setAloneBeforeEnd(t *testing.T, f func(*Proc)) {
+func setUnheldBeforeEnd(t *testing.T, f func(*Proc)) {
 	t.Helper()
-	old := aloneBeforeEnd
-	aloneBeforeEnd = f
-	t.Cleanup(func() { aloneBeforeEnd = old })
+	old := unheldBeforeEnd
+	unheldBeforeEnd = f
+	t.Cleanup(func() { unheldBeforeEnd = old })
 }
 
-// TestAloneNoTermWhenTheShutdownBeginsAtTheStep: a shutdown that begins after the step
+// TestUnheldNoTermWhenTheShutdownBeginsAtTheStep: a shutdown that begins after the step
 // found the whole time, and before the SIGTERM, ends nothing (claustrum's own).
-func TestAloneNoTermWhenTheShutdownBeginsAtTheStep(t *testing.T) {
-	f := fakeAloneTicker(t)
+func TestUnheldNoTermWhenTheShutdownBeginsAtTheStep(t *testing.T) {
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
-	setAloneBeforeEnd(t, func(*Proc) { m.RefuseStarts() })
+	setUnheldBeforeEnd(t, func(*Proc) { m.RefuseStarts() })
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, c, "al-sd", time.Minute)
+	p := spawnUnheld(t, m, c, "al-sd", time.Minute)
 	<-f.steps
 	m.DetachConn(c)
 	signals := countSignalsTo(t, p)
-	f.step(t, aloneSinceOf(p).Add(time.Hour))
+	f.step(t, unheldSinceOf(p).Add(time.Hour))
 	select {
 	case f.ticks <- time.Time{}:
 		t.Fatal("the check took another step after the shutdown began")
@@ -300,37 +300,37 @@ func TestAloneNoTermWhenTheShutdownBeginsAtTheStep(t *testing.T) {
 	}
 }
 
-// TestAloneNoTermAfterAReattachAtTheStep: a reattach after the step found the whole
+// TestUnheldNoTermAfterAReattachAtTheStep: a reattach after the step found the whole
 // time, and before the SIGTERM, ends nothing, and the check goes on (claustrum's own).
-func TestAloneNoTermAfterAReattachAtTheStep(t *testing.T) {
-	f := fakeAloneTicker(t)
+func TestUnheldNoTermAfterAReattachAtTheStep(t *testing.T) {
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c2, _ := pipeConn(t)
-	setAloneBeforeEnd(t, func(p *Proc) { m.Reattach(c2, p.id, 0) })
+	setUnheldBeforeEnd(t, func(p *Proc) { m.Reattach(c2, p.id, 0) })
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, c, "al-ra", time.Minute)
+	p := spawnUnheld(t, m, c, "al-ra", time.Minute)
 	<-f.steps
 	m.DetachConn(c)
 	signals := countSignalsTo(t, p)
-	f.settle(t, aloneSinceOf(p).Add(time.Hour))
+	f.settle(t, unheldSinceOf(p).Add(time.Hour))
 	if n := signals.Load(); n != 0 {
 		t.Errorf("%d signals after a reattach at the step", n)
 	}
 }
 
-// TestAloneNoTermThroughAClosedGate: once the gate of the end is closed, as after the
+// TestUnheldNoTermThroughAClosedGate: once the gate of the end is closed, as after the
 // exit of the child is seen, the end sends nothing and logs nothing (claustrum's own).
-func TestAloneNoTermThroughAClosedGate(t *testing.T) {
+func TestUnheldNoTermThroughAClosedGate(t *testing.T) {
 	buf := captureLogBuf(t)
-	f := fakeAloneTicker(t)
+	f := fakeUnheldTicker(t)
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
-	p := spawnAlone(t, m, c, "al-gate", time.Minute)
+	p := spawnUnheld(t, m, c, "al-gate", time.Minute)
 	<-f.steps
 	m.DetachConn(c)
-	p.aloneGate.Close()
+	p.unheldGate.Close()
 	signals := countSignalsTo(t, p)
-	f.step(t, aloneSinceOf(p).Add(time.Hour))
+	f.step(t, unheldSinceOf(p).Add(time.Hour))
 	select {
 	case f.ticks <- time.Time{}:
 		t.Fatal("the check took another step after a closed gate")
@@ -340,7 +340,7 @@ func TestAloneNoTermThroughAClosedGate(t *testing.T) {
 		t.Errorf("%d signals through a closed gate", n)
 	}
 	p.mu.Lock()
-	termed := p.aloneTermed
+	termed := p.unheldTermed
 	p.mu.Unlock()
 	if termed || strings.Contains(buf.String(), "Process al-gate: no connection attached") {
 		t.Errorf("the end counts a SIGTERM through a closed gate:\n%s", buf.String())
