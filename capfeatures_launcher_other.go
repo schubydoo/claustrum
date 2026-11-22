@@ -2,6 +2,6 @@
 
 package main
 
-// launcherOSFeatures is empty off Linux. macOS runs no launcher file check, and the macOS
-// list of 4c111e86 is not measured. Windows lists neither launcher name.
+// launcherOSFeatures is empty off Linux. macOS runs no launcher file check. 4c111e86
+// lists neither launcher name on macOS or Windows (measured).
 var launcherOSFeatures []string

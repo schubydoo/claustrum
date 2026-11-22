@@ -74,8 +74,8 @@ var capabilityMethods = append(append([]string{
 // git.worktree_create.unusable_git_refused after git.outside_session_folders, and
 // process.spawn.refuses_given_up_id after process.stdin.offset (measured on Linux,
 // macOS and Windows). 4c111e86 also lists server.peer_check.out_of_resources and
-// server.peer_check.absence_shown after server.peer_check (measured on Linux and
-// Windows). claustrum lists them on macOS too (not measured there). 87375cc7 inserted
+// server.peer_check.absence_shown after server.peer_check (measured on Linux, macOS
+// and Windows). 87375cc7 inserted
 // process.spawn.unattended_seconds after process.spawn.refuses_given_up_id (measured on
 // Linux, macOS and Windows). It inserted git.worktree_create.not_found_codes after
 // git.worktree_create.unusable_git_refused (measured on Linux, macOS and Windows). On
