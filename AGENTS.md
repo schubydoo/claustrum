@@ -65,7 +65,8 @@ modes and the OS splits is in
 | `clitemproot_unix.go` | the two rmdirs of the new private temp folder (`removeMadeTempRoot`) and the registry remove |
 | `internal/sessiondirs/sessiondirs.go` | the record of session folders, its temp-file remove and its prune |
 | `internal/childrec/childreap.go` | the signals and record removes of the startup reap |
-| `internal/git/gitcommand.go`, `internal/git/gitshellpath.go` | the start of every git call, which passes over a git in a session folder |
+| `internal/git/gitcommand.go` | the start of every git call, which passes over a git in a session folder |
+| `internal/git/gitshellpath.go` | the git of the login shell's PATH and the stop of its `--exec-path` call |
 
 Windows lacks two methods: `files.find` and `files.mkdir`.
 
@@ -313,7 +314,7 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
 - **The bound stops of `-install` and `-probe-cli`** (`internal/install/groupstop.go`, `runCLIVersion`). Never widen: each
   sends its group `SIGKILL` only before the reap of its run (`sysproc.LeaderGate`).
 - **The `--exec-path` stop of the login git** (Linux and macOS, `internal/git/gitshellpath.go`, `runExecPath`). At its 10 s bound
-  (claustrum's own) the call gets one `SIGKILL` through its handle. Never widen: send it only to that one git, before its
+  (claustrum's own) the call gets a `SIGKILL` through its handle. Never widen: send it only to that one git, before its
   reap (`sysproc.LeaderGate`), and never to a group.
 - **The job start test** (Windows, `4c111e86`, `awaitJobTest`, `beginJobTest`, [rules](docs/protocol/process-kill.md#the-start-test-of-the-jobs)).
   Never widen: end this test's job by `TerminateJobObject` once, at 1 minute or an asleep failure, before the

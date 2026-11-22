@@ -19,9 +19,9 @@ const lfsNotFoundLine = "[GitHandler] worktree_create: the checkout needs git-lf
 // failed for a git-lfs that the git of the login-shell PATH does not find. That
 // git runs (ShellPathGit), git-lfs is on the login-shell PATH, and it lies neither
 // beside that git nor on the PATH of the daemon. 87375cc7 then answers
-// git_lfs_not_found with the text "not a git repository", after the undo of a
-// failed checkout. With git-lfs on no PATH the reply of a failed checkout stays
-// (measured on Linux). macOS answers the failed checkout in every build
+// git_lfs_not_found with the text "not a git repository". The undo of a failed
+// checkout first is claustrum's own. With git-lfs on no PATH the reply of a failed checkout stays
+// (measured on Linux). macOS answers the failed checkout
 // (measured), and Windows has no login shell here.
 func lfsNotFoundForShellPathGit(stderr string) bool {
 	if runtime.GOOS != "linux" || !strings.Contains(stderr, "git-lfs: not found") {
