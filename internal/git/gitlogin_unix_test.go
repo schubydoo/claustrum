@@ -10,7 +10,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 )
 
 // loginGitFixture makes the PATH of the daemon hold no git, and the login-shell
@@ -133,6 +137,111 @@ func TestLoginGitFailedExecPath(t *testing.T) {
 	line := fmtLoginGitSkipLine(git, "its --exec-path call failed", "exit status 1", "/x")
 	if !strings.Contains(logs.String(), line+"\n") {
 		t.Errorf("log:\n%s\nwant the line %q", logs, line)
+	}
+}
+
+// installedLoginGit writes script as <prefix>/bin/git with a folder
+// <prefix>/libexec/git-core, and makes it the git of the login-shell PATH.
+func installedLoginGit(t *testing.T, script string) string {
+	t.Helper()
+	prefix := filepath.Join(t.TempDir(), "pfx")
+	if err := os.MkdirAll(filepath.Join(prefix, "libexec", "git-core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := filepath.Join(prefix, "bin", "git")
+	if err := os.MkdirAll(filepath.Dir(git), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(git, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loginGitFixture(t, filepath.Dir(git))
+	return git
+}
+
+// countLoginGitKills replaces loginGitKill with a fake that counts its calls and
+// then kills the process of the test through its handle.
+func countLoginGitKills(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var kills atomic.Int32
+	prev := loginGitKill
+	t.Cleanup(func() { loginGitKill = prev })
+	loginGitKill = func(p *os.Process) {
+		kills.Add(1)
+		_ = p.Kill()
+	}
+	return &kills
+}
+
+// TestLoginGitExecPathBoundKillsOnce: an --exec-path call that runs past its
+// bound gets one kill through loginGitKill, and its git is not used (claustrum's
+// own, not measured). Mutation: drop the cmd.Cancel of runExecPath, and the kill
+// of Go does not go through loginGitKill.
+func TestLoginGitExecPathBoundKillsOnce(t *testing.T) {
+	git := installedLoginGit(t, "PATH=/usr/bin:/bin exec sleep 10")
+	kills := countLoginGitKills(t)
+	prev := loginGitExecPathBound
+	t.Cleanup(func() { loginGitExecPathBound = prev })
+	loginGitExecPathBound = time.Second
+	logs := captureLogBuf(t)
+	if got := LoginGit(); got != "" {
+		t.Fatalf("LoginGit = %q, want none", got)
+	}
+	if n := kills.Load(); n != 1 {
+		t.Errorf("kills = %d, want 1", n)
+	}
+	line := fmtLoginGitSkipLine(git, "its --exec-path call failed", "signal: killed", "")
+	if !strings.Contains(logs.String(), line+"\n") {
+		t.Errorf("log:\n%s\nwant the line %q", logs, line)
+	}
+}
+
+// TestLoginGitLateStopSendsNoKill: Go runs cmd.Cancel from its watch of the
+// context, which can come after the wait reaped the --exec-path call. That call
+// sends no kill (claustrum's own, from the code). The test makes the late call
+// itself, right after the wait. Mutation: call loginGitKill outside the gate.
+func TestLoginGitLateStopSendsNoKill(t *testing.T) {
+	installedLoginGit(t, "echo /x")
+	kills := countLoginGitKills(t)
+	var stops atomic.Int32
+	prev := loginGitWaited
+	t.Cleanup(func() { loginGitWaited = prev })
+	loginGitWaited = func(c *exec.Cmd) {
+		if c.Cancel != nil {
+			stops.Add(1)
+			_ = c.Cancel()
+		}
+	}
+	if got := LoginGit(); got == "" {
+		t.Fatal("LoginGit = none, want the login git")
+	}
+	if stops.Load() != 1 {
+		t.Fatalf("late stops = %d, want 1", stops.Load())
+	}
+	if n := kills.Load(); n != 0 {
+		t.Errorf("kills after the reap = %d, want 0", n)
+	}
+}
+
+// TestLoginGitInASessionFolderRunsNoCall: a git of the login-shell PATH in a
+// session folder is passed over before its --exec-path call, as at the start of
+// every git call. With no other git it runs no call, and the daemon uses none
+// (claustrum's own, not measured). Mutation: drop the PickGit of loginGitTest.
+func TestLoginGitInASessionFolderRunsNoCall(t *testing.T) {
+	git := installedLoginGit(t, "echo call >> \"$0.log\"\necho /x")
+	t.Cleanup(sessiondirs.UseForTest(""))
+	if err := sessiondirs.Remember(filepath.Dir(filepath.Dir(git))); err != nil {
+		t.Fatal(err)
+	}
+	logs := captureLogBuf(t)
+	if got := LoginGit(); got != "" {
+		t.Fatalf("LoginGit = %q, want none", got)
+	}
+	if log, err := os.ReadFile(git + ".log"); err == nil {
+		t.Errorf("calls of the login git = %q, want none", log)
+	}
+	if !strings.Contains(logs.String(), "[sessiondirs] passing over") {
+		t.Errorf("log:\n%s\nwant the passing-over line", logs)
 	}
 }
 

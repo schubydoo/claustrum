@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/logging"
+	"github.com/schubydoo/claustrum/internal/sessiondirs"
 	"github.com/schubydoo/claustrum/internal/shellenv"
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
 // The git of the login-shell PATH. When the PATH of the daemon holds no git,
@@ -23,8 +25,9 @@ import (
 // git.info, git.list_branches, git.worktree_create and the pane's git of a
 // "gitRead":true spawn then run it (measured on Linux). A git that is not laid
 // out so runs no call, and one log line names it (loginGitSkipLine, measured on
-// Linux). Claustrum's own, not measured: macOS follows Linux, Windows has no
-// login shell here, the call has the limit of loginGitExecPathBound, a call that
+// Linux and macOS). Claustrum's own, not measured: the rest of macOS follows
+// Linux, Windows has no login shell here, the call has the limit of
+// loginGitExecPathBound, a git in a session folder runs no call, a call that
 // fails gives the line with its error, the line comes once for each git, and
 // the answer is kept for one value of the login-shell PATH.
 
@@ -33,8 +36,17 @@ import (
 // `--exec-path` call and its output.
 const loginGitSkipLine = "[sessiondirs] not using %q from the login shell's PATH as Claude's git: %s: %s (exec path %q). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core"
 
-// loginGitExecPathBound is the limit of the `--exec-path` call (claustrum's own).
+// loginGitExecPathBound is the limit of the `--exec-path` call (claustrum's own,
+// not measured: no row shows the bound of 87375cc7 or the kind of its stop).
 var loginGitExecPathBound = 10 * time.Second
+
+// loginGitKill ends the `--exec-path` call at its bound, through the handle of
+// that one process. A test replaces it.
+var loginGitKill = func(p *os.Process) { _ = p.Kill() }
+
+// loginGitWaited runs right after the wait of the `--exec-path` call. A test
+// sets it to run a stop late, as the watch of the context of Go can.
+var loginGitWaited = func(*exec.Cmd) {}
 
 // loginShellPATH is the PATH of the login shell, after the wait of a spawn for
 // a read that runs (shellenv.AwaitLoginPATH). A test replaces it.
@@ -114,16 +126,40 @@ func loginGitTest(git string) (reason, state, execPath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), loginGitExecPathBound)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, git, "--exec-path")
+	// A git in a session folder is passed over, as at the start of every git
+	// call (gitCommand). With no other git the call does not start (claustrum's
+	// own, not measured).
+	sessiondirs.PickGit(cmd)
 	cmd.Dir = gitVersionDir
 	cmd.Env = gitChildEnv()
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	err := cmd.Run()
+	err := runExecPath(cmd)
 	execPath = strings.TrimSpace(out.String())
 	if err != nil {
 		return "its --exec-path call failed", err.Error(), execPath
 	}
 	return "", "", execPath
+}
+
+// runExecPath starts cmd, the `--exec-path` call, and waits for it. At its bound
+// the call gets one kill of that process only, and only while it is not reaped
+// (sysproc.LeaderGate). The gate closes after its exit and before the wait reaps
+// it, so a late stop from the watch of the context of Go sends nothing (claustrum's
+// own, from the code).
+func runExecPath(cmd *exec.Cmd) error {
+	gate := &sysproc.LeaderGate{}
+	cmd.Cancel = func() error {
+		gate.Do(func() { loginGitKill(cmd.Process) })
+		return nil
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	gate.CloseAfterExit(cmd.Process, sysproc.AwaitExit(cmd.Process.Pid))
+	err := cmd.Wait()
+	loginGitWaited(cmd)
+	return err
 }
 
 // isFolder reports whether p is a folder, a link to one included.

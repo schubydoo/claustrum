@@ -118,7 +118,7 @@ login shell, if it is laid out as an install: `<prefix>/bin/git` with a folder
 daemon runs `<git> --exec-path`. `git.info`, `git.list_branches`, `git.worktree_create`
 and the pane's git of a `"gitRead":true` spawn then run that git (`87375cc7`, measured
 on Linux). A git that is not laid out so runs no call, and one line names it (measured
-on Linux):
+on Linux and macOS):
 
 ```
 [sessiondirs] not using "<git>" from the login shell's PATH as Claude's git: not laid out as an install: not started (exec path ""). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core
@@ -126,9 +126,10 @@ on Linux):
 
 Claustrum's own, not measured: macOS follows Linux, and Windows reads no login shell.
 A git call waits for a read of that PATH that runs, as a spawn does. The
-`--exec-path` call has a limit of 10 s. A failed call gives the line with `its
---exec-path call failed: <error>`. The line comes once for each git, and the answer
-holds for one value of the PATH.
+`--exec-path` call has a limit of 10 s. At the limit that one process gets one
+`SIGKILL`, and none after its reap. A git in a session folder runs no call. A failed
+call gives the line with `its --exec-path call failed: <error>`. The line comes once
+for each git, and the answer holds for one value of the PATH.
 
 ## The daemon's own git environment
 
