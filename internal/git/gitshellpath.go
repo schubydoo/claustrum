@@ -64,6 +64,7 @@ var (
 	shellPathGitDone   bool
 	shellPathGitFor    string          // the login-shell PATH of the answer
 	shellPathGitPath   string          // the git that the answer accepts, or ""
+	shellPathGitAt     time.Time       // the end of the walk of the answer
 	shellPathGitLogged map[string]bool // the gits that the skip line named
 )
 
@@ -80,14 +81,24 @@ func ShellPathGit() string {
 	path := shellPathValue()
 	shellPathGitMu.Lock()
 	defer shellPathGitMu.Unlock()
-	// The answer holds for one value of the login-shell PATH, also its
-	// session-folder test. A change of the off switch or of the session folders
-	// shows only after the PATH changes. Each git call still runs
-	// sessiondirs.PickGit at its start (gitCommand). Claustrum's own, not measured.
-	if shellPathGitDone && shellPathGitFor == path {
+	// A git that the answer accepts holds for one value of the login-shell PATH,
+	// also its session-folder test. An answer with no git holds for
+	// shadowFailureKeep after its walk, as a failed start test does. A change of
+	// the off switch or of the session folders shows only after that. Each git
+	// call still runs sessiondirs.PickGit at its start (gitCommand). Claustrum's
+	// own, not measured.
+	if shellPathGitDone && shellPathGitFor == path && (shellPathGitPath != "" || shadowClock().Sub(shellPathGitAt) < shadowFailureKeep) {
 		return shellPathGitPath
 	}
-	shellPathGitDone, shellPathGitFor, shellPathGitPath = true, path, ""
+	shellPathGitDone, shellPathGitFor = true, path
+	shellPathGitPath = walkShellPath(path)
+	shellPathGitAt = shadowClock()
+	return shellPathGitPath
+}
+
+// walkShellPath tests each git on path in order and returns the first one that
+// the daemon uses, or "". The caller holds shellPathGitMu.
+func walkShellPath(path string) string {
 	for _, git := range gitsOn(path) {
 		if !laidOutAsInstall(git) {
 			logShellPathGitSkip(git, "not laid out as an install", "not started", "")
@@ -98,7 +109,6 @@ func ShellPathGit() string {
 		}
 		reason, state, execPath := shellPathGitTest(git)
 		if reason == "" {
-			shellPathGitPath = git
 			return git
 		}
 		logShellPathGitSkip(git, reason, state, execPath)

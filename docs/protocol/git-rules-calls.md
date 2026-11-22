@@ -137,9 +137,10 @@ Claustrum's own, not measured:
 - a failed call gives the line with `its --exec-path call failed: <error>` and ends the
   walk
 - the line comes once for each git
-- the answer holds for one value of the PATH. So a change of the off switch or of the
-  session folders shows only after the PATH changes. Each git call still passes over a
-  session-folder git at its start
+- a git that the answer uses holds for one value of the PATH. An answer with no git,
+  as after a failed or stopped call, holds 10 s, as a failed start test does. A change
+  of the off switch or of the session folders shows only after that. Each git call
+  still passes over a session-folder git at its start
 
 ## The daemon's own git environment
 

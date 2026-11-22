@@ -344,6 +344,41 @@ func TestShellPathGitWalksEachGit(t *testing.T) {
 	}
 }
 
+// TestShellPathGitFailedAnswerHoldsTenSeconds: an answer with no git is used
+// again within shadowFailureKeep after its walk, and the walk runs again after
+// it (claustrum's own, not measured). Mutation: keep a failed answer for the
+// PATH value with no time bound, and the --exec-path call runs once only.
+func TestShellPathGitFailedAnswerHoldsTenSeconds(t *testing.T) {
+	realGit := requireRealGit(t)
+	prefix := filepath.Join(t.TempDir(), "pfx")
+	if err := os.MkdirAll(filepath.Join(prefix, "libexec", "git-core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := filepath.Join(prefix, "bin", "git")
+	fakeShellPathGit(t, git, "/x", 1, realGit)
+	shellPathGitFixture(t, filepath.Dir(git))
+	now := time.Unix(1_700_000_000, 0)
+	oldClock := shadowClock
+	shadowClock = func() time.Time { return now }
+	t.Cleanup(func() { shadowClock = oldClock })
+	calls := func() int {
+		log, _ := os.ReadFile(git + ".log")
+		return strings.Count(string(log), "call: --exec-path\n")
+	}
+	for _, step := range []struct {
+		after time.Duration
+		want  int
+	}{{0, 1}, {shadowFailureKeep - time.Second, 1}, {shadowFailureKeep, 2}} {
+		now = time.Unix(1_700_000_000, 0).Add(step.after)
+		if got := ShellPathGit(); got != "" {
+			t.Fatalf("ShellPathGit = %q, want none", got)
+		}
+		if n := calls(); n != step.want {
+			t.Errorf("after %v: --exec-path calls = %d, want %d", step.after, n, step.want)
+		}
+	}
+}
+
 // requireRealGit is the path of the git of the host, or a skip.
 func requireRealGit(t *testing.T) string {
 	t.Helper()
