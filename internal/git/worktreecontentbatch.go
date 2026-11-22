@@ -68,7 +68,9 @@ const longStoppedLine = "[GitHandler] worktree_create: stopped using the long-ru
 // no size gives the first text (c9125eb8, measured on Linux).
 // The same text for the other answers that do not parse is claustrum's own.
 // An end of the output gives "it stopped answering (EOF)" for the batch and
-// for hash-object (measured on Linux).
+// for hash-object (measured on Linux). A git that ends after its first answer
+// gives the broken pipe of the next write (answered): 4c111e86 logs it for the
+// batch (measured on Linux), and the hash-object case is claustrum's own.
 func stopCause(err error) string {
 	if errors.Is(err, errBatchAnswer) {
 		return "it answered with something other than the object asked for"
@@ -466,8 +468,9 @@ func (c *contentCheck) catFile(kind, id string) ([]byte, string, error) {
 // --buffer --batch` in a tree of three levels below the top then, and separate
 // runs read the other levels (measured on Linux, for both faults).
 //
-// A read of a level with one tree counts as one separate run: 4c111e86
-// counts 4 for the top tree and three such levels (measured on Linux).
+// A read of a level with one tree counts as one separate run (4c111e86,
+// measured on Linux). A batch that answers the commit and then ends gives 4:
+// the top tree by its own call and three such reads.
 //
 // Claustrum's own, not measured: each tree of that read counts in
 // c.separate, the trees of one level go to the read in the

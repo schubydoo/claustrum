@@ -199,7 +199,8 @@ type contentFile struct {
 // is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
 // check that stops at the deadline returns nil and atDeadline: the caller then
 // runs only the config listing of the copy step and answers the timeout
-// (4c111e86, measured on Linux).
+// (4c111e86, measured on Linux with a batch that did not answer). After the
+// other stop points the same is claustrum's own (dotClaudeListingOnly).
 func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
 	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}
