@@ -444,8 +444,8 @@ func TestCheckLauncherFileDigestGrowth(t *testing.T) {
 
 // TestCheckLauncherFileLinkHolder pins the test of the folder that holds a middle link
 // of a chain: front, then w/mid, then the file in ok. w is on neither path, so only the
-// link walk reaches it. 4c111e86 refuses a link that a folder of the login holds (row
-// K8 of cell l_m24l1, measured on Linux).
+// link walk reaches it. 4c111e86 refuses a link that a folder of the login holds
+// (measured on Linux).
 func TestCheckLauncherFileLinkHolder(t *testing.T) {
 	d := launcherDir(t)
 	ok := writeLauncher(t, filepath.Join(d, "ok", "launcher.sh"), "#!/bin/sh\n", 0o755)
