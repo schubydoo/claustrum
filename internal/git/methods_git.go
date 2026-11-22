@@ -3659,9 +3659,15 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			}
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
-		// On Windows the alternates file is checked here too, and the registration
-		// and the branch stay (measured on Windows, alternatesRefusal).
+		// On Windows GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment and
+		// the alternates file are checked here too, and the registration and the
+		// branch stay (measured on Windows, alternateEnvRefusal, alternatesRefusal).
+		// The one git call before the env refusal is the excludes read of a new
+		// daemon (4c111e86, measured on Windows).
 		if t.verdict == gitDirTrusted {
+			if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
+				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+			}
 			if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}

@@ -115,9 +115,11 @@ var alternateEnvLogged atomic.Bool
 // git.list_branches answer it also with "ownGitConfigOff":true, and with
 // "shadowDirOff":true (off) git runs. An empty value gives no refusal of
 // git.status and git.info (4c111e86, measured on Windows). Both switches on a
-// create and a remove are claustrum's own, not measured. A remove of a worktree
-// folder that is gone, or with worktreeRoot, does not run this check (claustrum's
-// own, not measured).
+// create and a remove are claustrum's own, not measured. A remove of a gone
+// worktree folder refuses too, after at most the excludes read. With worktreeRoot
+// a remove refuses before this check (both 4c111e86, measured on Windows). The
+// place of the gone-folder check before the share and no-repository answers of
+// removeGoneWorktree is claustrum's own, not measured.
 //
 // The daemon logs alternateEnvLine once, also for an empty value (4c111e86,
 // measured on Windows: one line for a daemon of eight requests). On a request
