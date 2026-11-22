@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -306,5 +307,53 @@ func TestUnlookableShareRow(t *testing.T) {
 	}
 	if n := strings.Count(buf.String(), "looking for links in"); n != 4 {
 		t.Errorf("got %d lines of the look, want 4:\n%s", n, buf.String())
+	}
+}
+
+// A git.status refused for a junction on a share is the first request: it makes
+// no excludes read, and the next git.info makes it. Both replies are the share
+// link text (4c111e86, measured on Windows). A directory symbolic link and a
+// junction above the last name keep the read at the status (claustrum's own, not
+// measured).
+func TestShareLinkStatusLeavesTheExcludesRead(t *testing.T) {
+	run := installEnvStub(t)
+	jct, lnk := `\\127.0.0.1\clok\jct`, `\\127.0.0.1\clok\lnk`
+	oldLstat, oldOn := lstatPath, networkLinkChecks
+	lstatPath = func(path string) (fs.FileInfo, error) {
+		switch path {
+		case jct:
+			return linkInfo(fs.ModeIrregular), nil
+		case lnk:
+			return linkInfo(fs.ModeSymlink), nil
+		}
+		return linkInfo(fs.ModeDir), nil
+	}
+	networkLinkChecks = true
+	t.Cleanup(func() { lstatPath, networkLinkChecks = oldLstat, oldOn })
+	read := []string{"config", "--includes", "--path", "core.excludesFile"}
+	for _, c := range []struct {
+		base, link string
+		atStatus   bool
+	}{
+		{jct, jct, false},
+		{lnk, lnk, true},
+		{jct + `\sub`, jct, true},
+	} {
+		resetUserExcludesCache(t)
+		want := `"error":{"code":-32603,"message":` + jsonString(t, shareLinkText(c.link)) + `}`
+		raw, calls := run("git.status", map[string]any{"path": c.base, "baseRepo": c.base})
+		if !strings.Contains(raw, want) {
+			t.Fatalf("%s: status reply = %s\nwant %s", c.base, raw, want)
+		}
+		if got := len(calls) == 1 && slices.Equal(calls[0].argv, read); got != c.atStatus || len(calls) > 1 {
+			t.Errorf("%s: status calls = %v, want the excludes read %v", c.base, calls, c.atStatus)
+		}
+		raw, calls = run("git.info", map[string]any{"path": c.base})
+		if !strings.Contains(raw, want) {
+			t.Fatalf("%s: info reply = %s\nwant %s", c.base, raw, want)
+		}
+		if got := len(calls) == 1 && slices.Equal(calls[0].argv, read); got == c.atStatus || len(calls) > 1 {
+			t.Errorf("%s: info calls = %v, want the excludes read %v", c.base, calls, !c.atStatus)
+		}
 	}
 }

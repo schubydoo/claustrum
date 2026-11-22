@@ -42,16 +42,24 @@ func networkLinkText(path string) string {
 // The tests of unlookablePathRefusal and pathLookRefusal come first (claustrum's
 // own, not measured).
 func networkLinkRefusal(path string) string {
-	if msg := unlookablePathRefusal(path); msg != "" {
-		return msg
+	msg, _ := networkLinkRefusalAt(path)
+	return msg
+}
+
+// networkLinkRefusalAt is networkLinkRefusal. lastJunction is true when the
+// refusal is shareLinkText for a junction that is the last name of path. It
+// takes the kind and the place from the looks of the walk, with no other look.
+func networkLinkRefusalAt(path string) (msg string, lastJunction bool) {
+	if msg, lastJunction := unlookableRefusalAt(path); msg != "" {
+		return msg, lastJunction
 	}
 	if msg := pathLookRefusal(path); msg != "" {
-		return msg
+		return msg, false
 	}
 	if networkLinkChecks && throughNetworkLink(path) {
-		return networkLinkText(path)
+		return networkLinkText(path), false
 	}
-	return ""
+	return "", false
 }
 
 // lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal and
@@ -126,53 +134,61 @@ func longUNCText(path string) string {
 // path passes. A junction counts as a link, and so does a link above the last
 // name. A path that is missing below a link passes.
 func unlookablePathRefusal(path string) string {
+	msg, _ := unlookableRefusalAt(path)
+	return msg
+}
+
+// unlookableRefusalAt is unlookablePathRefusal, with lastJunction as in
+// networkLinkRefusalAt.
+func unlookableRefusalAt(path string) (msg string, lastJunction bool) {
 	if !networkLinkChecks || len(path) < 4 || !isSlash(path[0]) || !isSlash(path[1]) {
-		return ""
+		return "", false
 	}
 	if (path[2] == '?' || path[2] == '.') && isSlash(path[3]) {
 		if path[2] == '?' && len(path) >= 8 && strings.EqualFold(path[4:7], "UNC") && isSlash(path[7]) {
-			return longUNCText(path)
+			return longUNCText(path), false
 		}
-		return ""
+		return "", false
 	}
 	if len(strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })) < 3 {
-		return ""
+		return "", false
 	}
 	_, err := lstatPath(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return ""
+		return "", false
 	case errors.Is(err, fs.ErrPermission) || networkAccessDenied(err):
 		folder, _ := firstFailedFolder(path, err)
-		return deniedShareText(path, folder)
+		return deniedShareText(path, folder), false
 	case err != nil:
 		folder, ferr := firstFailedFolder(path, err)
 		logging.Infof("[GitHandler] looking for links in %q: %q", path, ferr.Error())
-		return unlookableShareText(folder)
+		return unlookableShareText(folder), false
 	}
-	if link := linkOnShare(path); link != "" {
-		return shareLinkText(link)
+	if link, lastJunction := linkOnShare(path); link != "" {
+		return shareLinkText(link), lastJunction
 	}
-	return ""
+	return "", false
 }
 
 // linkOnShare returns the first name below the share of the UNC path that is a
 // link (folderIsLink), as a path with backslashes, or "". A name that cannot be
-// read ends the walk with "" (claustrum's own, not measured).
-func linkOnShare(path string) string {
+// read ends the walk with "" (claustrum's own, not measured). lastJunction is
+// true when that link is a junction (no symbolic link bit) and the last name.
+func linkOnShare(path string) (link string, lastJunction bool) {
 	names := strings.FieldsFunc(path, func(r rune) bool { return r < 0x80 && isSlash(byte(r)) })
 	cur := `\\` + names[0] + `\` + names[1]
-	for _, name := range names[2:] {
+	for i, name := range names[2:] {
 		cur += `\` + name
 		fi, err := lstatPath(cur)
 		if err != nil {
-			return ""
+			return "", false
 		}
-		if folderIsLink(fi.Mode()) {
-			return cur
+		if m := fi.Mode(); folderIsLink(m) {
+			return cur, m&fs.ModeSymlink == 0 && i == len(names)-3
 		}
 	}
-	return ""
+	return "", false
 }
 
 // throughNetworkLink reports whether a name of the absolute path is a link whose
