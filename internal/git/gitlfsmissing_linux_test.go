@@ -14,7 +14,7 @@ const lfsMissingStderr = "git-lfs smudge -- 'a.bin': 1: git-lfs: not found\n" +
 	"error: external filter 'git-lfs smudge -- %f' failed\n" +
 	"fatal: a.bin: smudge filter lfs failed\n"
 
-// TestCreateAnswersGitLFSNotFoundForTheLoginGit: the git of the login-shell
+// TestCreateAnswersGitLFSNotFoundForTheShellPathGit: the git of the login-shell
 // PATH runs, and the checkout fails for a git-lfs that it does not find. With
 // git-lfs on the login-shell PATH, and neither beside that git nor on the PATH of
 // the daemon, the create answers git_lfs_not_found with the text "not a git
@@ -22,7 +22,7 @@ const lfsMissingStderr = "git-lfs smudge -- 'a.bin': 1: git-lfs: not found\n" +
 // git-lfs on no PATH it answers the failed checkout (87375cc7, measured on
 // Linux). Mutation: drop the git_lfs_not_found arm (the first row answers the
 // failed checkout).
-func TestCreateAnswersGitLFSNotFoundForTheLoginGit(t *testing.T) {
+func TestCreateAnswersGitLFSNotFoundForTheShellPathGit(t *testing.T) {
 	for _, row := range []struct {
 		name       string
 		lfsOnLogin bool
@@ -43,7 +43,7 @@ func TestCreateAnswersGitLFSNotFoundForTheLoginGit(t *testing.T) {
 			if row.lfsOnLogin {
 				writeFile(t, filepath.Join(lfsDir, "git-lfs"), "#!/bin/sh\ncat\n", 0o755)
 			}
-			loginGitFixture(t, filepath.Join(prefix, "bin"), lfsDir)
+			shellPathGitFixture(t, filepath.Join(prefix, "bin"), lfsDir)
 			logs := captureLogBuf(t)
 			raw, _ := f.create(t, nil)
 			if row.lfsOnLogin {

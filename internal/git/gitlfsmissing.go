@@ -15,19 +15,19 @@ import (
 // Linux).
 const lfsNotFoundLine = "[GitHandler] worktree_create: the checkout needs git-lfs, which lies neither beside the git from the login shell's PATH nor on the helper's own PATH; the worktree is undone and the answer is \"not a git repository\", as where no git is found. With git-lfs beside that git, or on the system's own PATH, sessions in this repository get a worktree: %s"
 
-// lfsNotFoundForLoginGit reports whether a checkout that failed with stderr
+// lfsNotFoundForShellPathGit reports whether a checkout that failed with stderr
 // failed for a git-lfs that the git of the login-shell PATH does not find. That
-// git runs (LoginGit), git-lfs is on the login-shell PATH, and it lies neither
+// git runs (ShellPathGit), git-lfs is on the login-shell PATH, and it lies neither
 // beside that git nor on the PATH of the daemon. 87375cc7 then answers
 // git_lfs_not_found with the text "not a git repository", after the undo of a
 // failed checkout. With git-lfs on no PATH the reply of a failed checkout stays
 // (measured on Linux). macOS answers the failed checkout in every build
 // (measured), and Windows has no login shell here.
-func lfsNotFoundForLoginGit(stderr string) bool {
+func lfsNotFoundForShellPathGit(stderr string) bool {
 	if runtime.GOOS != "linux" || !strings.Contains(stderr, "git-lfs: not found") {
 		return false
 	}
-	git := LoginGit()
+	git := ShellPathGit()
 	if git == "" {
 		return false
 	}
@@ -37,7 +37,7 @@ func lfsNotFoundForLoginGit(stderr string) bool {
 	if _, err := exec.LookPath(filepath.Join(filepath.Dir(git), "git-lfs")); err == nil {
 		return false
 	}
-	for _, dir := range filepath.SplitList(loginShellPATH()) {
+	for _, dir := range filepath.SplitList(shellPathValue()) {
 		if !filepath.IsAbs(dir) {
 			continue
 		}

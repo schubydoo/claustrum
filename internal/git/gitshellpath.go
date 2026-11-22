@@ -24,79 +24,79 @@ import (
 // <prefix>/lib/git-core. Before it uses that git it runs `<git> --exec-path`.
 // git.info, git.list_branches, git.worktree_create and the pane's git of a
 // "gitRead":true spawn then run it (measured on Linux). A git that is not laid
-// out so runs no call, and one log line names it (loginGitSkipLine, measured on
+// out so runs no call, and one log line names it (shellPathGitSkipLine, measured on
 // Linux and macOS). Claustrum's own, not measured: the rest of macOS follows
 // Linux, Windows has no login shell here, the call has the limit of
-// loginGitExecPathBound, a git in a session folder runs no call, a call that
+// shellPathGitExecPathBound, a git in a session folder runs no call, a call that
 // fails gives the line with its error, the line comes once for each git, and
 // the answer is kept for one value of the login-shell PATH.
 
-// loginGitSkipLine is the line of a git of the login-shell PATH that the daemon
+// shellPathGitSkipLine is the line of a git of the login-shell PATH that the daemon
 // does not use. The first %q is the git, then the reason, the state of the
 // `--exec-path` call and its output.
-const loginGitSkipLine = "[sessiondirs] not using %q from the login shell's PATH as Claude's git: %s: %s (exec path %q). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core"
+const shellPathGitSkipLine = "[sessiondirs] not using %q from the login shell's PATH as Claude's git: %s: %s (exec path %q). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core"
 
-// loginGitExecPathBound is the limit of the `--exec-path` call (claustrum's own,
+// shellPathGitExecPathBound is the limit of the `--exec-path` call (claustrum's own,
 // not measured: no row shows the bound of 87375cc7 or the kind of its stop).
-var loginGitExecPathBound = 10 * time.Second
+var shellPathGitExecPathBound = 10 * time.Second
 
-// loginGitKill ends the `--exec-path` call at its bound, through the handle of
+// shellPathGitKill ends the `--exec-path` call at its bound, through the handle of
 // that one process. A test replaces it.
-var loginGitKill = func(p *os.Process) { _ = p.Kill() }
+var shellPathGitKill = func(p *os.Process) { _ = p.Kill() }
 
-// loginGitWaited runs right after the wait of the `--exec-path` call. A test
+// shellPathGitWaited runs right after the wait of the `--exec-path` call. A test
 // sets it to run a stop late, as the watch of the context of Go can.
-var loginGitWaited = func(*exec.Cmd) {}
+var shellPathGitWaited = func(*exec.Cmd) {}
 
-// loginShellPATH is the PATH of the login shell that a read already gave, after
+// shellPathValue is the PATH of the login shell that a read already gave, after
 // a wait for a read that runs (shellenv.AwaitRunningLoginPATH). A git call never
 // starts a read. With no result there is no login git (claustrum's own, not
 // measured). A test replaces it.
-var loginShellPATH = func() string {
+var shellPathValue = func() string {
 	shellenv.AwaitRunningLoginPATH()
 	return shellenv.CurrentLoginPATH()
 }
 
 var (
-	loginGitMu     sync.Mutex
-	loginGitDone   bool
-	loginGitFor    string          // the login-shell PATH of the answer
-	loginGitPath   string          // the git that the answer accepts, or ""
-	loginGitLogged map[string]bool // the gits that the skip line named
+	shellPathGitMu     sync.Mutex
+	shellPathGitDone   bool
+	shellPathGitFor    string          // the login-shell PATH of the answer
+	shellPathGitPath   string          // the git that the answer accepts, or ""
+	shellPathGitLogged map[string]bool // the gits that the skip line named
 )
 
-// LoginGit is the git of the login-shell PATH that the git methods run, or ""
+// ShellPathGit is the git of the login-shell PATH that the git methods run, or ""
 // when the PATH of the daemon holds a git, or when the login-shell PATH holds
 // none that is laid out as an install.
-func LoginGit() string {
+func ShellPathGit() string {
 	if runtime.GOOS == "windows" {
 		return ""
 	}
 	if _, err := exec.LookPath("git"); !errors.Is(err, exec.ErrNotFound) {
 		return ""
 	}
-	path := loginShellPATH()
-	loginGitMu.Lock()
-	defer loginGitMu.Unlock()
-	if loginGitDone && loginGitFor == path {
-		return loginGitPath
+	path := shellPathValue()
+	shellPathGitMu.Lock()
+	defer shellPathGitMu.Unlock()
+	if shellPathGitDone && shellPathGitFor == path {
+		return shellPathGitPath
 	}
-	loginGitDone, loginGitFor, loginGitPath = true, path, ""
+	shellPathGitDone, shellPathGitFor, shellPathGitPath = true, path, ""
 	git := firstGitOn(path)
 	if git == "" {
 		return ""
 	}
-	reason, state, execPath := loginGitTest(git)
+	reason, state, execPath := shellPathGitTest(git)
 	if reason == "" {
-		loginGitPath = git
+		shellPathGitPath = git
 		return git
 	}
-	if loginGitLogged == nil {
-		loginGitLogged = map[string]bool{}
+	if shellPathGitLogged == nil {
+		shellPathGitLogged = map[string]bool{}
 	}
-	if !loginGitLogged[git] {
-		loginGitLogged[git] = true
-		logging.Infof(loginGitSkipLine, git, reason, state, execPath)
+	if !shellPathGitLogged[git] {
+		shellPathGitLogged[git] = true
+		logging.Infof(shellPathGitSkipLine, git, reason, state, execPath)
 	}
 	return ""
 }
@@ -114,18 +114,18 @@ func firstGitOn(path string) string {
 	return ""
 }
 
-// loginGitTest tests git, a git of the login-shell PATH. reason is "" for a git
+// shellPathGitTest tests git, a git of the login-shell PATH. reason is "" for a git
 // that the daemon uses. Else it is the reason, state is the state of the
 // `--exec-path` call, and execPath is its output. A git that is not laid out as
 // an install runs no call: "not started" with no output (measured on Linux).
-func loginGitTest(git string) (reason, state, execPath string) {
+func shellPathGitTest(git string) (reason, state, execPath string) {
 	bin := filepath.Dir(git)
 	prefix := filepath.Dir(bin)
 	laidOut := filepath.Base(bin) == "bin" && (isFolder(filepath.Join(prefix, "libexec", "git-core")) || isFolder(filepath.Join(prefix, "lib", "git-core")))
 	if !laidOut {
 		return "not laid out as an install", "not started", ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), loginGitExecPathBound)
+	ctx, cancel := context.WithTimeout(context.Background(), shellPathGitExecPathBound)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, git, "--exec-path")
 	// A git in a session folder is passed over, as at the start of every git
@@ -158,7 +158,7 @@ func loginGitTest(git string) (reason, state, execPath string) {
 func runExecPath(cmd *exec.Cmd) error {
 	gate := &sysproc.LeaderGate{}
 	cmd.Cancel = func() error {
-		gate.Do(func() { loginGitKill(cmd.Process) })
+		gate.Do(func() { shellPathGitKill(cmd.Process) })
 		return nil
 	}
 	cmd.WaitDelay = shadowCallDrain
@@ -167,7 +167,7 @@ func runExecPath(cmd *exec.Cmd) error {
 	}
 	gate.CloseAfterExit(cmd.Process, sysproc.AwaitExit(cmd.Process.Pid))
 	err := cmd.Wait()
-	loginGitWaited(cmd)
+	shellPathGitWaited(cmd)
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
 		return nil
 	}

@@ -817,11 +817,11 @@ type gitReadStart struct {
 	step    GitReadStep
 }
 
-// GitReadLoginGit gives the git of the login-shell PATH that the pane's git of a
+// GitReadShellPathGit gives the git of the login-shell PATH that the pane's git of a
 // "gitRead":true spawn runs when the PATH of the daemon holds no git, or "". The
-// git methods set it (git.LoginGit). 87375cc7 runs that git there (measured on
+// git methods set it (git.ShellPathGit). 87375cc7 runs that git there (measured on
 // Linux). The log line keeps the command git.
-var GitReadLoginGit = func() string { return "" }
+var GitReadShellPathGit = func() string { return "" }
 
 // SpawnGitRead starts the pane's git of a "gitRead":true spawn: the command git
 // with args in cwd. refusal is the shape refusal of args, or nil. It comes right
@@ -902,7 +902,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	}
 	cmd := exec.Command(path, argv...)
 	if gitRead != nil && errors.Is(cmd.Err, exec.ErrNotFound) {
-		if p := GitReadLoginGit(); p != "" {
+		if p := GitReadShellPathGit(); p != "" {
 			cmd.Path, cmd.Err = p, nil
 		}
 	}

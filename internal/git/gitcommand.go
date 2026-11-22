@@ -11,10 +11,10 @@ import (
 // gitCommand is exec.Command of git by its bare name, with a git in a session
 // folder passed over (sessiondirs.PickGit). Every git call of the git methods
 // starts through it or through gitCommandContext. With no git on the PATH of
-// the daemon it runs the git of the login-shell PATH (LoginGit).
+// the daemon it runs the git of the login-shell PATH (ShellPathGit).
 func gitCommand(args ...string) *exec.Cmd {
 	cmd := exec.Command("git", args...)
-	useLoginGit(cmd)
+	useShellPathGit(cmd)
 	sessiondirs.PickGit(cmd)
 	return cmd
 }
@@ -22,18 +22,18 @@ func gitCommand(args ...string) *exec.Cmd {
 // gitCommandContext is gitCommand with ctx, as exec.CommandContext.
 func gitCommandContext(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	useLoginGit(cmd)
+	useShellPathGit(cmd)
 	sessiondirs.PickGit(cmd)
 	return cmd
 }
 
-// useLoginGit makes cmd, a command of git by its bare name that the PATH of the
+// useShellPathGit makes cmd, a command of git by its bare name that the PATH of the
 // daemon did not find, run the git of the login-shell PATH, when there is one.
-func useLoginGit(cmd *exec.Cmd) {
+func useShellPathGit(cmd *exec.Cmd) {
 	if !errors.Is(cmd.Err, exec.ErrNotFound) {
 		return
 	}
-	if p := LoginGit(); p != "" {
+	if p := ShellPathGit(); p != "" {
 		cmd.Path, cmd.Err = p, nil
 	}
 }
@@ -41,7 +41,7 @@ func useLoginGit(cmd *exec.Cmd) {
 // noGitStarts reports that a git call cannot start now: PATH finds no git that
 // the daemon runs, or each git on it lies in a session folder
 // (sessiondirs.NoOtherGitError). It starts no process but the `--exec-path`
-// call of LoginGit.
+// call of ShellPathGit.
 func noGitStarts() bool {
 	err := gitCommand("version").Err
 	return errors.Is(err, exec.ErrNotFound) || errors.As(err, new(sessiondirs.NoOtherGitError))

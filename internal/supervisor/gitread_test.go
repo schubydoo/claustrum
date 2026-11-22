@@ -120,19 +120,19 @@ func TestSpawnGitReadIgnoresAdoptedSet(t *testing.T) {
 	}
 }
 
-// TestSpawnGitReadRunsTheLoginGit: with no git on the PATH of the daemon, the
-// pane's git of a gitRead spawn runs the git that GitReadLoginGit gives
+// TestSpawnGitReadRunsTheShellPathGit: with no git on the PATH of the daemon, the
+// pane's git of a gitRead spawn runs the git that GitReadShellPathGit gives
 // (87375cc7, measured on Linux). Mutation: keep the error of the bare name (the
 // step does not run, and the spawn fails).
-func TestSpawnGitReadRunsTheLoginGit(t *testing.T) {
+func TestSpawnGitReadRunsTheShellPathGit(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", t.TempDir())
-	old := GitReadLoginGit
-	GitReadLoginGit = func() string { return exe }
-	t.Cleanup(func() { GitReadLoginGit = old })
+	old := GitReadShellPathGit
+	GitReadShellPathGit = func() string { return exe }
+	t.Cleanup(func() { GitReadShellPathGit = old })
 	m := newTestProcManager(t)
 	stop := errors.New("stop after the env")
 	ran := false

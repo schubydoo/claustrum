@@ -217,10 +217,10 @@ func (r listingRun) gitNotOnPath() bool {
 }
 
 // gitLookupError is the exec error that a git call gets when PATH holds no git
-// and the login-shell PATH holds no git that the daemon uses (LoginGit), or nil.
-// It starts no process but the `--exec-path` call of LoginGit.
+// and the login-shell PATH holds no git that the daemon uses (ShellPathGit), or nil.
+// It starts no process but the `--exec-path` call of ShellPathGit.
 func gitLookupError() error {
-	if _, err := exec.LookPath("git"); errors.Is(err, exec.ErrNotFound) && LoginGit() == "" {
+	if _, err := exec.LookPath("git"); errors.Is(err, exec.ErrNotFound) && ShellPathGit() == "" {
 		return err
 	}
 	return nil

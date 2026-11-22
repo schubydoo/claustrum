@@ -344,7 +344,7 @@ component_management:
         # the start of each git call, with a git in a session folder passed over.
         - internal/git/gitcommand.go
         # the git of the login shell's PATH (87375cc7).
-        - internal/git/gitlogin.go
+        - internal/git/gitshellpath.go
         # the git_lfs_not_found answer for a git of the login shell's PATH (87375cc7).
         - internal/git/gitlfsmissing.go
         - internal/git/gitoutsidecalls.go
