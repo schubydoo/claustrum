@@ -3666,16 +3666,18 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 			}
 		}
-		// A baseRepo that does not exist runs no start test and no `git version`.
-		// Below a repository on a share the start test still runs (askForMissingOnShare).
-		// The start test waits for the next request that needs it. Nothing is deleted.
-		// 4c111e86 does so on Windows (measured). For a share host that does not resolve,
-		// its calls are measured: none, and the start test later. Linux and macOS share
-		// this path: claustrum's own, not measured there. So is a baseRepo
-		// below a local repository. Only the branch step runs, and git cannot start in
-		// the missing folder.
+		// A baseRepo that does not exist runs no start test and no `git version`
+		// (4c111e86, measured on Windows for a local baseRepo). Below a repository on a
+		// share the start test still runs (askForMissingOnShare). So it does with a
+		// daemon GIT_DIR, as before (claustrum's own, not measured). The start test waits
+		// for the next request that needs it. Nothing is deleted. For a share host that
+		// does not resolve, the calls of 4c111e86 are measured: none, and the start test
+		// later. Linux and macOS share this path: claustrum's own, not measured there. So
+		// is a baseRepo below a local repository. Only the branch step runs, and git
+		// cannot start in the missing folder. The trust verdict of a missing baseRepo
+		// carries no pin of a daemon GIT_DIR, so the test reads the environment.
 		_, statErr := os.Stat(repo)
-		missing := errors.Is(statErr, fs.ErrNotExist)
+		missing := errors.Is(statErr, fs.ErrNotExist) && os.Getenv("GIT_DIR") == ""
 		missingDone := func() rpc.Response {
 			defer lockWorktreeAddStep(repo)()
 			kept := runBranchStep(req.use, repo, p.BranchName).kept()

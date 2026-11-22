@@ -40,3 +40,37 @@ func TestRemoveOnMissingBaseRepoRunsNoStartTest(t *testing.T) {
 		t.Errorf("the git.status after the removes ran no start test, calls %d", len(calls))
 	}
 }
+
+// TestRemoveOnMissingBaseRepoWithDaemonGitDir pins the same removes with a daemon
+// GIT_DIR, to the git directory of a repository and to a missing path. They keep
+// the steps of origin/main before this rule: the first remove runs the start test
+// and `git version`, a later one `git version` alone, and the reply is success
+// with branchKept (claustrum's own, not measured).
+func TestRemoveOnMissingBaseRepoWithDaemonGitDir(t *testing.T) {
+	const want = `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
+	for _, form := range []string{"repository", "missing"} {
+		t.Run(form, func(t *testing.T) {
+			f := newShadowFixture(t)
+			root := resolveTestRoot(t, t.TempDir())
+			gitDir := filepath.Join(f.repo, ".git")
+			if form == "missing" {
+				gitDir = filepath.Join(root, "nogit")
+			}
+			t.Setenv("GIT_DIR", gitDir)
+			base := filepath.Join(root, "nx", "repo")
+			for i := range 2 {
+				raw, calls := f.call(t, "git.worktree_remove", map[string]any{
+					"baseRepo": base, "worktreePath": filepath.Join(base, ".claude", "worktrees", "w1"), "branchName": "w1"})
+				if raw != want {
+					t.Errorf("remove %d = %s\nwant %s", i, raw, want)
+				}
+				if n := len(testCalls(calls)); (i == 0) != (n > 0) {
+					t.Errorf("remove %d ran %d calls of the start test", i, n)
+				}
+				if len(calls) == 0 || strings.Join(calls[len(calls)-1].argv, " ") != "version" {
+					t.Errorf("remove %d made %d calls, want `git version` last", i, len(calls))
+				}
+			}
+		})
+	}
+}
