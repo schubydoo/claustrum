@@ -35,11 +35,11 @@ func wantPeerCheckLine() string {
 // wantCapabilityFeatures is the features array in the order of the frame. Windows
 // lists no git.worktree.external_root, process.spawn.link_bound,
 // process.spawn.cli_temp_root or process.spawn.cli_temp_root_end. Only Linux lists launcher.checked_by_handle and
-// launcher.local_kinds_only.
+// launcher.local_kinds_only. Only Windows lists files.realpath.how_far (87375cc7).
 func wantCapabilityFeatures() string {
-	const head = `"process.stdin.offset","process.spawn.refuses_given_up_id","process.spawn.unattended_seconds","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","process.spawn.git_read","server.line_end","launcher.managed","launcher.non_string_refused","launcher.supplies_cli","server.peer_check","server.peer_check.out_of_resources","server.peer_check.absence_shown","git.outside_session_folders","git.worktree_create.unusable_git_refused","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
+	const head = `"process.stdin.offset","process.spawn.refuses_given_up_id","process.spawn.unattended_seconds","process.kill.farewell","files.extract_tar.execBit","files.list.includeDotNames","files.list.junctionsAsDirs","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_create.verified_config","git.worktree_create.verify_error_codes","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","process.spawn.failure_reason","process.spawn.git_read","server.line_end","launcher.managed","launcher.non_string_refused","launcher.supplies_cli","server.peer_check","server.peer_check.out_of_resources","server.peer_check.absence_shown","git.outside_session_folders","git.worktree_create.unusable_git_refused","git.worktree_create.not_found_codes","git.shadow_dir","git.hooks_null_device","git.status.own_lfs_store","files.read.real",`
 	if runtime.GOOS == "windows" {
-		return head + `"server.instance_id"`
+		return head + `"files.realpath.how_far","server.instance_id"`
 	}
 	const unix = `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","git.worktree_create.own_lfs_store","git.worktree_create.lfs_error_codes","process.spawn.cli_temp_root","process.spawn.cli_temp_root_end",`
 	if runtime.GOOS == "linux" {

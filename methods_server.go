@@ -74,10 +74,13 @@ var capabilityMethods = append(append([]string{
 // git.worktree_create.unusable_git_refused after git.outside_session_folders, and
 // process.spawn.refuses_given_up_id after process.stdin.offset (measured on Linux,
 // macOS and Windows). 4c111e86 also lists server.peer_check.out_of_resources and
-// server.peer_check.absence_shown after server.peer_check (measured on Linux and
-// Windows). claustrum lists them on macOS too (not measured there). 87375cc7 inserted
+// server.peer_check.absence_shown after server.peer_check (measured on Linux, macOS
+// and Windows). 87375cc7 inserted
 // process.spawn.unattended_seconds after process.spawn.refuses_given_up_id (measured on
-// Linux, macOS and Windows). The array is always emitted.
+// Linux, macOS and Windows). It inserted git.worktree_create.not_found_codes after
+// git.worktree_create.unusable_git_refused (measured on Linux, macOS and Windows). On
+// Windows only, it lists files.realpath.how_far after files.read.real
+// (osCapabilityFeatures, measured on Windows). The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"process.spawn.refuses_given_up_id",
@@ -105,6 +108,7 @@ var capabilityFeatures = append(append([]string{
 	"server.peer_check.absence_shown",
 	"git.outside_session_folders",
 	"git.worktree_create.unusable_git_refused",
+	"git.worktree_create.not_found_codes",
 	"git.shadow_dir",
 	"git.hooks_null_device",
 	"git.status.own_lfs_store",
