@@ -389,8 +389,9 @@ func TestRepoConfigIncludeNotExpanded(t *testing.T) {
 	if got, want := configDetail(t, gitDir), unexpanded("inc.cfg", "~root/x"); got != want {
 		t.Errorf("include line in an included file: detail = %q, want %q", got, want)
 	}
-	// Claustrum's own, not measured: an unset or relative
-	// HOME refuses, and an empty HOME is not relative.
+	// A relative HOME refuses (4c111e86, measured on Linux).
+	// Claustrum's own, not measured: an unset HOME refuses,
+	// and an empty HOME is not relative.
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = ~/x\n")
 	t.Setenv("HOME", "rel/home")
 	if got, want := configDetail(t, gitDir), unexpanded("config", "~/x"); got != want {
@@ -445,6 +446,17 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = ~\n")
 	if got, want := configDetail(t, gitDir), notRegularDetail(home); got != want {
 		t.Errorf("include ~: detail = %q, want %q", got, want)
+	}
+	// A `~/` value keeps the rest as written, with no clean (4c111e86, measured on
+	// Linux). Mutation: join and clean it (both rows differ).
+	if err := os.Mkdir(filepath.Join(home, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for value, want := range map[string]string{"~/sub/../x": markerDetail(home + "/sub/../x"), "~/": notRegularDetail(home + "/")} {
+		setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+value+"\n")
+		if got := configDetail(t, gitDir); got != want {
+			t.Errorf("include %s: detail = %q, want %q", value, got, want)
+		}
 	}
 	setRepoConfig(t, gitDir, version0+"[include]\n\tpath = "+filepath.Join(home, "missing")+"\n")
 	if got := configDetail(t, gitDir); got != "" {
