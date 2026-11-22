@@ -97,9 +97,15 @@ func firstFailedFolder(path string, err error) (string, error) {
 	return path, err
 }
 
+// shareLinkLead starts each shareLinkText. No other refusal text starts so.
+const shareLinkLead = "Claude doesn't follow links on a network share, and `"
+
+// isShareLinkRefusal reports whether msg is a shareLinkText.
+func isShareLinkRefusal(msg string) bool { return strings.HasPrefix(msg, shareLinkLead) }
+
 // shareLinkText names the link on the share.
 func shareLinkText(link string) string {
-	return "Claude doesn't follow links on a network share, and `" + link + "` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder."
+	return shareLinkLead + link + "` is a symlink or junction, so git wasn't run. Open the folder it points to instead, or replace the link with a real folder."
 }
 
 func longUNCText(path string) string {

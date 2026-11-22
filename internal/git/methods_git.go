@@ -758,8 +758,14 @@ func gitStatus(req *gitCall) rpc.Response {
 	// on Windows, networkLinkRefusal). The text names baseRepo, not path. The row
 	// sends both through the link, so the test of baseRepo alone and its place after
 	// the link chain test are claustrum's own, not measured.
+	//
+	// A link on a share (shareLinkText) makes no excludes read here. The next git.info
+	// makes it (4c111e86, measured on Windows). The read before each other refusal of
+	// this test is claustrum's own, not measured.
 	if msg := networkLinkRefusal(p.BaseRepo); msg != "" {
-		globalExcludesPath()
+		if !isShareLinkRefusal(msg) {
+			globalExcludesPath()
+		}
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// On Windows a failed start test that is still kept answers first, also for a

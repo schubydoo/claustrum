@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -306,5 +307,37 @@ func TestUnlookableShareRow(t *testing.T) {
 	}
 	if n := strings.Count(buf.String(), "looking for links in"); n != 4 {
 		t.Errorf("got %d lines of the look, want 4:\n%s", n, buf.String())
+	}
+}
+
+// A git.status refused for a junction on a share is the first request: it makes
+// no excludes read, and the next git.info makes it. Both replies are the share
+// link text (4c111e86, measured on Windows).
+func TestShareLinkStatusLeavesTheExcludesRead(t *testing.T) {
+	run := installEnvStub(t)
+	jct := `\\127.0.0.1\clok\jct`
+	oldLstat, oldOn := lstatPath, networkLinkChecks
+	lstatPath = func(path string) (fs.FileInfo, error) {
+		if path == jct {
+			return linkInfo(fs.ModeIrregular), nil
+		}
+		return linkInfo(fs.ModeDir), nil
+	}
+	networkLinkChecks = true
+	t.Cleanup(func() { lstatPath, networkLinkChecks = oldLstat, oldOn })
+	want := `"error":{"code":-32603,"message":` + jsonString(t, shareLinkText(jct)) + `}`
+	raw, calls := run("git.status", map[string]any{"path": jct, "baseRepo": jct})
+	if !strings.Contains(raw, want) {
+		t.Fatalf("status reply = %s\nwant %s", raw, want)
+	}
+	if len(calls) != 0 {
+		t.Errorf("status calls = %v, want none", calls)
+	}
+	raw, calls = run("git.info", map[string]any{"path": jct})
+	if !strings.Contains(raw, want) {
+		t.Fatalf("info reply = %s\nwant %s", raw, want)
+	}
+	if len(calls) != 1 || !slices.Equal(calls[0].argv, []string{"config", "--includes", "--path", "core.excludesFile"}) {
+		t.Errorf("info calls = %v, want only the excludes read", calls)
 	}
 }
