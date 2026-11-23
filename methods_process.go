@@ -199,8 +199,8 @@ const gitReadCombineText = `gitRead needs the command "git" and a cwd, and canno
 // passes. With gitRead, "pty":true gets Invalid params (measured on Linux and
 // Windows), and so does a cliTempRoot text or object, from the decode (measured on
 // Linux). A launcher array gets the combine text here (claustrum's own, not
-// measured). A pty object with no valid key gets its own text (measured on Linux
-// and macOS). The combine refusal logs its failed-start line (4c111e86, measured on
+// measured). A pty object with no valid key gets its own text (measured on Linux,
+// macOS and Windows). The combine refusal logs its failed-start line (4c111e86, measured on
 // Linux, macOS and Windows).
 func gitReadRefusal(req *request, p *spawnParams) *rpc.Response {
 	if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
@@ -242,9 +242,9 @@ func ptyBare(v json.RawMessage) bool {
 }
 
 // ptyKeyRefusal is the refusal of a pty object with no "key" of 64 hex digits, or
-// nil. Measured: {} and an object with only cols and rows, on a plain spawn on Linux
-// (4c111e86 and c9125eb8) and with gitRead on Linux and macOS (c9125eb8). The text
-// on a plain spawn on macOS and Windows is claustrum's own, not measured.
+// nil. Measured: {} and an object with only cols and rows, on a plain spawn on Linux (4c111e86 and c9125eb8), an object
+// with only cols and rows on a plain spawn on Windows (4c111e86 and 87375cc7), and with gitRead on Linux and macOS
+// (c9125eb8) and Windows (4c111e86 and 87375cc7). The text on a plain spawn on macOS is claustrum's own, not measured.
 func ptyKeyRefusal(req *request, v json.RawMessage) *rpc.Response {
 	if !ptyObject(v) || ptyKeyOK(v) {
 		return nil
@@ -269,10 +269,10 @@ func ptyKeyOK(v json.RawMessage) bool {
 const keyedPtyText = "this host's helper cannot open a terminal"
 
 // ptyMembersBad is true, while keyedPtyRefused holds, for a pty object whose members
-// fail the decode. Measured on Windows: a key that is a number, and cols or rows that
-// are negative, a text or 10^12, and cols of 80.5. A null key passes to the key test,
-// and absent or 0 cols or rows pass. claustrum's own, not measured: the 16-bit bound,
-// rows of 80.5, a null cols or rows, and other key types.
+// fail the decode. Measured on Windows: a key that is a number, an array, an object
+// or true, and cols or rows that are negative, a text, 80.5, 65536, 2^31, 2^32 or
+// 10^12. A null key passes to the key test, and absent, 0, null or 65535 cols or
+// rows pass.
 func ptyMembersBad(v json.RawMessage) bool {
 	if !keyedPtyRefused || !ptyObject(v) {
 		return false
@@ -355,9 +355,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, unattendedText, supervisor.SpawnReason{Reason: "other"})
 	}
 	// On Windows a valid key is refused here. The refusal wins over linkBound with a
-	// launcher, the launcher refusal, the cwd test, the command lookup and a live id
-	// (measured on Windows). Its place after the launcher shape test, and over a given-up
-	// or spent id, is claustrum's own, not measured.
+	// launcher, the launcher refusal, the cwd test, the command lookup, a live id and a
+	// given-up id (measured on Windows). Its place after the launcher shape test, and
+	// over a spent id, is claustrum's own, not measured.
 	if bad := keyedPtyRefusal(req, &p); bad != nil {
 		return *bad
 	}

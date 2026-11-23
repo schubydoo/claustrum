@@ -197,9 +197,9 @@ This section matches `4c111e86` and `87375cc7`, measured on one Windows host, ex
 
 A `pty` object with a valid key gets `this host's helper cannot open a terminal`, with the reason `other`. Uppercase hex is valid, and absent or `0` `cols` and `rows` reach this refusal. It starts no child and logs one failed-start line.
 
-A key that is a number gets `Invalid params`, and so do `cols` or `rows` that are negative, a text or `10^12`, and `cols` of `80.5`. A `null` key gets the key text. claustrum's own (not measured): another key type, the bound of 65535, `rows` of `80.5`, and a `null` `cols` or `rows`, which reach the refusal.
+A key that is a number, an array, an object or `true` gets `Invalid params`, and so do `cols` or `rows` that are negative, a text, `80.5`, `65536`, `2^31`, `2^32` or `10^12`. A `null` key gets the key text. `cols` or `rows` of `65535` or `null` reach the refusal.
 
-A bad member type, an empty `id` or `command`, a bad key and `gitRead` get their own replies first, and on `87375cc7` a refused `unattendedSeconds` too. The refusal then wins over the command lookup, the `cwd` test, the `launcher` refusal, `linkBound` with a launcher and a live `id`. claustrum's own (not measured): its place after the launcher shape test, and that it wins over a given-up or spent `id`.
+A bad member type, an empty `id` or `command`, a bad key and `gitRead` get their own replies first, and on `87375cc7` a refused `unattendedSeconds` too. The refusal then wins over the command lookup, the `cwd` test, the `launcher` refusal, `linkBound` with a launcher, a live `id` and a given-up `id`. claustrum's own (not measured): its place after the launcher shape test, and that it wins over a spent `id`.
 
 The refusal does not reserve the `id`, so a plain spawn of it starts. A `process.stdin` for it gets `Process not found`. After a `process.kill`, `process.killAndWait` or `process.reattach` of it, the `id` is [given up](#a-given-up-id).
 
