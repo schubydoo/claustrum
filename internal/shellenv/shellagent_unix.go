@@ -78,10 +78,10 @@ func defaultShellAgentSocket() string { return agentHandOffState.socket() }
 //
 // A cached socket with a live answer of dialAgentSocket is returned with no probe
 // and no log, even if its agent has died since. Once that answer is gone, it is
-// dialed again on every spawn, so an agent restarted at the same path is picked up
-// with no probe. Otherwise the login shell runs again only when it has never
-// run or ran at least agentReprobeAfter ago, and only while fewer than
-// agentMaxFailures runs in a row have failed. A dial that has not returned
+// dialed again on every spawn that runs this step, so an agent restarted at the
+// same path is picked up with no probe. Otherwise the login shell runs again only
+// when it has never run or ran at least agentReprobeAfter ago, and only while fewer
+// than agentMaxFailures runs in a row have failed. A dial that has not returned
 // within agentDialBound ends the hand-off for the life of the daemon, even if it
 // would have succeeded later.
 //

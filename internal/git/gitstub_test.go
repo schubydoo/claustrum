@@ -434,7 +434,11 @@ func runGitSlow(args []string) int {
 			return logTermStub(exitCode)
 		}
 	}
-	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
+	cmd, err := gitBehindStub(args...)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 127
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	// CLAUSTRUM_GITSTUB_STDINLOG names a file that gets the stdin of each call
 	// whose last argument is --stdin-paths, and of each `cat-file --buffer
@@ -638,7 +642,11 @@ func stubMatches(args []string, match string) bool {
 // runGitReal runs the real git with args and the stub's own stdio, and returns its
 // exit code.
 func runGitReal(args []string) int {
-	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
+	cmd, err := gitBehindStub(args...)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 127
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
@@ -649,6 +657,36 @@ func runGitReal(args []string) int {
 		return ee.ExitCode()
 	}
 	return 0
+}
+
+// gitBehindStub returns the command of the git that CLAUSTRUM_GITSTUB_REAL names.
+// It refuses a program that is the file of this running stub. The test is by file
+// identity, so a link or another spelling also matches.
+func gitBehindStub(args ...string) (*exec.Cmd, error) {
+	path := os.Getenv("CLAUSTRUM_GITSTUB_REAL")
+	self, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("git stub: find its own binary: %w", err)
+	}
+	if sameExeFile(path, self) {
+		return nil, fmt.Errorf("git stub: CLAUSTRUM_GITSTUB_REAL %q is the stub itself", path)
+	}
+	return exec.Command(path, args...), nil
+}
+
+// sameExeFile reports whether the program that name starts is the file at path.
+// A name that does not resolve is not the same program.
+func sameExeFile(name, path string) bool {
+	found, err := exec.LookPath(name)
+	if err != nil && !errors.Is(err, exec.ErrDot) {
+		return false
+	}
+	a, err := os.Stat(found)
+	if err != nil {
+		return false
+	}
+	b, err := os.Stat(path)
+	return err == nil && os.SameFile(a, b)
 }
 
 // gitStubAction applies a CLAUSTRUM_GITSTUB_ACTION to leaf, then writes the
@@ -784,7 +822,11 @@ func applyGitStubStep(w []string) error {
 		}
 		return os.WriteFile(w[2], b, 0o644)
 	case len(w) > 1 && w[0] == "git":
-		out, err := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), w[1:]...).CombinedOutput()
+		cmd, err := gitBehindStub(w[1:]...)
+		if err != nil {
+			return err
+		}
+		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("step git %q: %v: %s", w[1:], err, out)
 		}
@@ -834,6 +876,14 @@ func runGitHelper(mode string, args []string) (int, bool) {
 		// itself exits 0 (leaving the orphan to hold the pipe) or blocks past the deadline
 		// is chosen by CLAUSTRUM_GITSTUB_EXIT0.
 		return runGitLingering(args), true
+	case "git-real-check":
+		// Runs only the refusal of gitBehindStub and starts nothing, so a test
+		// can ask the installed stub with no risk of a chain of stubs.
+		if _, err := gitBehindStub(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 127, true
+		}
+		return 0, true
 	case "late-stderr":
 		// The second child of a failed git-lingering read-tree. It holds stderr
 		// for 300 ms and then writes one line there.

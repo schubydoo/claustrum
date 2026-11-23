@@ -103,7 +103,7 @@ These rules are not measured.
 - A child that survives a `process.kill` still gets the end. It keeps `"killedBy":"client"`, so its exited line ends in `(client)`.
 - On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
-A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux, macOS and Windows). With that arg, also with a `launcherCheck` object, claustrum arms the end (claustrum's own, not measured). On Windows every launcher is refused.
+A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux, macOS and Windows). With that arg, on Linux also with a `launcherCheck` object, claustrum arms the end, and a macOS `launcherCheck` gets its refusal (claustrum's own, not measured). On Windows every launcher is refused.
 
 ## Response
 
@@ -202,7 +202,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 
 ### After a failure
 
-A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
+A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required`, `Command is required` or `A terminal needs a key of 32 bytes in hex` error writes no line (the key text: `4c111e86` and `87375cc7`, measured on Windows).
 
 ### A keyed `pty` on Windows
 
@@ -422,7 +422,7 @@ With `launcher`, the child runs as `<launcher...> <command> <args...>`. The laun
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
-1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60, `87375cc7` answers the refusal of that member instead (measured on Windows). Other refused values here are claustrum's own.
+1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60 and no `--no-session-persistence`, `87375cc7` answers the refusal of that member instead (measured on Windows). Other refused values here are claustrum's own.
 2. A relative `command` gets `-32602 command must be an absolute path when a launcher is given`.
 3. The checks of `launcher.resolve` run, with `command` in place of `cliPath`. A refusal gets `-32004 the managed launcher cannot be used: <reason>`, with a reason of [Unusable reasons](launcher-resolve.md#unusable-reasons). `[]` gets the text for no launcher.
 4. The `cwd` test, with its usual error.
@@ -506,7 +506,7 @@ Its `server.capabilities` feature is `process.spawn.shellAgentSocket`. A child w
 - A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, never after 3 failed runs in a row. A connect still open after 500 ms ends the hand-off for good (`f6010b97`, measured on Linux: a dial that hangs gets no login shell run 610 s later). A stat that does not answer ends it too (for good: claustrum's own). The reply then comes after 0.5 to 1.5 s, also for a stat that answers at 1.5 s (`4c111e86`, measured on Linux). It logs `[shellenv] A check of SSH_AUTH_SOCK=<path> never returned (a hung filesystem?); not using it or asking the login shell again for this daemon's lifetime` (`4c111e86`, measured on Linux).
 - While the `PATH` read runs, the step runs no shell (measured against `52d82f0a`).
 - The step never fails a spawn. Each run and give-up writes a `[shellenv]` line.
-- A `gitRead` spawn skips this step. It runs no shell for the socket, logs no agent line and uses up no try, and its git gets an empty `SSH_AUTH_SOCK` (`87375cc7` and `4c111e86`, measured on Linux). With a login shell that exports none, the next plain spawn logs `try 1 of 3` (Linux and macOS). On macOS, with that shell, the `gitRead` spawn logs no agent line and its git gets the empty value. A macOS login shell that exports a socket and a cached socket are claustrum's own, not measured.
+- A `gitRead` spawn skips this step. It runs no shell for the socket, logs no agent line and uses up no try, and its git gets an empty `SSH_AUTH_SOCK` (`87375cc7` and `4c111e86`, measured on Linux at a first run). With a login shell that exports none, the next plain spawn logs `try 1 of 3` (Linux and macOS). On macOS, with that shell, the `gitRead` spawn logs no agent line and its git gets the empty value. A macOS login shell that exports a socket and a skip with a cached socket are claustrum's own, not measured.
 
 ## Rare states
 

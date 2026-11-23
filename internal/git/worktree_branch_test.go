@@ -18,7 +18,7 @@ import (
 // Each test names its rows. A kept row checks that the branch survives with its
 // commit. A deleted row checks that it is gone.
 
-// realGitPath returns the git on PATH before a test puts the stub there.
+// realGitPath returns the first git on PATH. After a stub install, that is the stub.
 func realGitPath(t *testing.T) string {
 	t.Helper()
 	requireGit(t)
@@ -30,7 +30,7 @@ func realGitPath(t *testing.T) string {
 }
 
 // refAt returns the object of refs/heads/<name> in repo, or "" when the branch is
-// gone. It asks the real git, so a stub rule never touches the answer.
+// gone. It asks realGit. When realGit is the stub, a stub rule applies.
 func refAt(t *testing.T, realGit, repo, name string) string {
 	t.Helper()
 	cmd := exec.Command(realGit, "-C", repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+name)
