@@ -44,8 +44,8 @@ An accepted value above 0 arms [the unattended end](#the-unattended-end-build-87
 
 - A text, a float or `null`: `Invalid params` (measured on Linux and Windows, macOS for a text). Other forms that are no whole number in int64, such as `1e3`, `1.0` or a larger number, get it too (claustrum's own).
 - A negative value: `-32602` `unattendedSeconds refused: it is negative, or came with pty, linkBound, gitRead or cliTempRootEnd, or for a Claude Code that was not started with --no-session-persistence`, reason `other` (Linux, macOS and Windows). A refusal logs the failed-start line (Linux and macOS). `Invalid params` logs none (Linux).
-- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows for all but `pty`, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). A bare `ccd-cli` with no args counts, and `ccd-cli.exe`, `ccd-cli-x` and `claude` do not (Linux and macOS). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux, macOS and Windows).
-- A `pty` error comes first (Linux and Windows, macOS for `true`). `0` and `1000000000000` pass (Linux, and `99999999999` on Windows), and `0` passes this test with each of these members (Linux).
+- A positive value with a `pty` object with a key, a `linkBound` object, `gitRead`, `cliTempRootEnd`, or a Claude Code start without `--no-session-persistence`: the same refusal (Linux, Windows, macOS for `gitRead`, `cliTempRootEnd` and a Claude Code start). A Claude Code start has the shape of [the session folders](git-rules-session-folders.md#which-spawn-makes-a-session-folder): a command named `ccd-cli` or in a folder of that name, or a `stream-json` arg on a command other than a bare `git` (Linux). A bare `ccd-cli` with no args counts, and `ccd-cli.exe`, `ccd-cli-x` and `claude` do not (Linux and macOS). On Windows `ccd-cli.exe` does not count. A launcher counts (Linux, macOS and Windows).
+- A `pty` error comes first (Linux and Windows, macOS for `true`), except the Windows refusal of a valid key, which comes after this test on `87375cc7`. `0` and `1000000000000` pass (Linux, and `99999999999` on Windows), and `0` passes this test with each of these members (Linux).
 - The test comes after the `id` and `command` tests and before `linkBound` with a `launcher` (Linux). The place of the type test, of this test after the test of the launcher members, and of this test before every step of [the managed launcher](#the-managed-launcher) is claustrum's own.
 
 ### The unattended end (build `87375cc7`)
@@ -155,16 +155,23 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | No `params`, or a member that the method reads has the wrong type. A `launcher` that is not an array, or that holds an element that is not a string, gets it too. A `null` element becomes an empty argument. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
-| `-32602` | `Invalid params` | A `pty` that is present and is no object and not `null`, such as `true` or `false` (`4c111e86` and `c9125eb8`, measured on Linux, Windows and macOS). Its place before the `id` test is claustrum's own. |
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
 | `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. |
 | `-32602` | `Command is required` | `command` is absent or empty, with no `launcherSuppliesCli`. |
 | `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
-| `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). |
-| `-32602` | `A terminal needs a key of 32 bytes in hex` | A `pty` object with no `key` of 64 hex digits, such as `{}` (`4c111e86` and `c9125eb8`, measured on Linux). On macOS and Windows this text is claustrum's own. |
+| `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). It logs the failed-start line (`4c111e86`, measured on Linux and Windows, and `87375cc7`, measured on Windows). On macOS, and for `87375cc7` on Linux, the line is claustrum's own (not measured). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
 | `-32602` | `this id was asked after, or asked to be ended, while no process had it: take a fresh one` | A [given-up](#a-given-up-id) `id` (`4c111e86`). |
+
+### Errors of the `pty` member
+
+| Code | Text | Cause |
+|---|---|---|
+| `-32602` | `Invalid params` | A `pty` that is present and is no object and not `null`, such as `true` or `false` (`4c111e86` and `c9125eb8`, measured on Linux, Windows and macOS). Its place before the `id` test is claustrum's own. |
+| `-32602` | `Invalid params` | On Windows, a `pty` object with a bad member type or size. See [a keyed `pty` on Windows](#a-keyed-pty-on-windows). |
+| `-32602` | `A terminal needs a key of 32 bytes in hex` | A `pty` object with no `key` of 64 hex digits: `{}` (`4c111e86` and `c9125eb8`, measured on Linux), or a `key` that is absent, `null`, empty, not hex or of another length (`4c111e86` and `87375cc7`, measured on Windows). On macOS this text is claustrum's own. |
+| `-32602` | `this host's helper cannot open a terminal` | On Windows, a `pty` object with a valid key. See [a keyed `pty` on Windows](#a-keyed-pty-on-windows). |
 
 ### Start failures
 
@@ -182,7 +189,19 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 
 ### After a failure
 
-A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required`, `Command is required` or `linkBound cannot be combined with pty or launcher` error writes no line.
+A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required` or `Command is required` error writes no line.
+
+### A keyed `pty` on Windows
+
+This section matches `4c111e86` and `87375cc7`, measured on one Windows host, except where it says claustrum's own. That every Windows host refuses is claustrum's own.
+
+A `pty` object with a valid key gets `this host's helper cannot open a terminal`, with the reason `other`. Uppercase hex is valid, and absent or `0` `cols` and `rows` reach this refusal. It starts no child and logs one failed-start line.
+
+A key that is a number, an array, an object or `true` gets `Invalid params`, and so do `cols` or `rows` that are negative, a text, `80.5`, `65536`, `2^31`, `2^32` or `10^12`. A `null` key gets the key text. `cols` or `rows` of `65535` or `null` reach the refusal.
+
+A bad member type, an empty `id` or `command`, a bad key and `gitRead` get their own replies first, and on `87375cc7` a refused `unattendedSeconds` too. The refusal then wins over the command lookup, the `cwd` test, the `launcher` refusal, `linkBound` with a launcher, a live `id` and a given-up `id`. claustrum's own (not measured): its place after the launcher shape test, and that it wins over a spent `id`.
+
+The refusal does not reserve the `id`, so a plain spawn of it starts. A `process.stdin` for it gets `Process not found`. After a `process.kill`, `process.killAndWait` or `process.reattach` of it, the `id` is [given up](#a-given-up-id).
 
 ### The reason member (build `52d82f0a`)
 
@@ -548,4 +567,4 @@ A start that returns after the shutdown began gets no reply. Windows ends its ch
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): the Windows environment order.
 
-claustrum lacks the terminal of the pinned `4c111e86`. A `pty` object with a valid key runs the command with no terminal (claustrum's own). On Windows `c8e2f083` refuses `pty` with `-32602` (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+claustrum lacks the terminal of the pinned `4c111e86`. On Linux and macOS a `pty` object with a valid key runs the command with no terminal (claustrum's own). On Windows `c8e2f083` refuses `pty` with `-32602` (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
