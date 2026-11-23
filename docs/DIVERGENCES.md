@@ -553,10 +553,10 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   `SIGKILL`, as on the reference. No frame changes.
 - **Reference.** `b3081b51` also sends the group `SIGKILL` after the exit of such a
   child (measured on Linux). In the measured runs the group was empty, and the call
-  answered `ESRCH`.
+  answered `ESRCH`. For such a child with no launcher, `87375cc7` sends it to a group
+  whose member has its own stdio, and that member ends (measured on Linux and macOS).
 - **Systems and switch.** Linux and macOS. Off-wire, always on, no switch. Windows
-  sends no `SIGTERM` at a shutdown. On macOS the reference's signal after the exit is
-  not measured.
+  sends no `SIGTERM` at a shutdown.
 - **Cost.** With no group end, a process that the child left in its group with its own
   stdio outlives the shutdown. A member that holds the pipes of the child holds back the exit
   frame, so it still gets the `SIGKILL` at 1.5 s.
