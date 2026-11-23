@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -15,29 +16,47 @@ import (
 // timeoutMs deadline, also while another git call of the check runs. A check
 // with no deadline, or one that ends before it, ends none.
 //
-// On Linux it sends SIGKILL to each process, before their stdin closes, 2 or 3
-// times, and reaps when the check is free (measured). On macOS it sends SIGKILL
-// at the deadline and again 2 s later or at the end of the check (measured for
-// cat-file, commit and tree). No macOS row had a file hash running at the deadline.
-// On Windows all four are gone within one poll of the deadline (measured).
-// No group signal comes on Linux or macOS (measured).
+// On Linux and macOS it sends SIGKILL to each process, before their stdin closes
+// (measured on Linux). The file hash gets one send. The others get a repeat 2 s
+// later or at the end of the check, and cat-file gets a third send in some rows.
+// A killed file hash whose stdout a child holds keeps the reply about 2 s, and a
+// row with no file hash has no such wait (measured). On Windows all four are gone
+// within one poll of the deadline, with no such wait, and no git runs at the reply
+// (measured). No group signal comes on Linux or macOS (measured).
 //
-// Claustrum's own, not measured: exactly one repeat, a helper not yet tracked when
+// Claustrum's own, not measured: on Windows the check waits for the exit of each
+// killed helper before the rollback, at most killedExitBound. Also exactly one
+// repeat, a helper not yet tracked when
 // the kills go out gets no kill, and Windows has no repeat and no held reap. A
-// `cat-file --buffer --batch` read gets no kill. A
-// helper that hangs after another close of its stdin gets the kill with stdin closed.
+// `cat-file --buffer --batch` read gets no kill. The wait of the file hash is the
+// end of its stdout, at most gitDrainWait. No row has a killed file hash with no
+// child on its stdout. A helper that hangs after another close of its stdin gets
+// the kill with stdin closed.
 
 // helperRepeatAfter is the time from the kill to its repeat (87375cc7, measured on
 // Linux and macOS). The end of the check sends the repeat earlier. Tests replace it.
 var helperRepeatAfter = 2 * time.Second
 
+// killedExitBound is the longest wait at the end of the check for the exit of the
+// killed helpers on Windows, so a stuck process does not hold the request. The
+// longest time from the deadline to the reply of 87375cc7 in the big-file rows is
+// 2.07 s, with its rollback (measured on Windows). The 3 s are claustrum's own.
+const killedExitBound = 3 * time.Second
+
+// awaitExitsAtEnd turns on that wait. No Linux or macOS row needs it. Tests
+// replace it.
+var awaitExitsAtEnd = !holdKilledHelpers
+
 // deadlineHelper is one running helper that the deadline kills. The gate closes
 // after its exit and before its reap, so no signal reaches a reaped process. drop
-// closes its pipes, or is nil.
+// closes its pipes, or is nil. once marks the file hash, which gets no repeat and
+// whose reap does not wait for the end of the check. exited closes at its exit.
 type deadlineHelper struct {
-	p    *os.Process
-	gate sysproc.LeaderGate
-	drop func()
+	p      *os.Process
+	gate   sysproc.LeaderGate
+	drop   func()
+	once   bool
+	exited chan struct{}
 }
 
 // helperKills holds the helpers of one check that the deadline kills. firedCh
@@ -67,23 +86,93 @@ var deadlineHelperKill = func(p *os.Process) error { return p.Kill() }
 // when the kills go out gets no kill. Its pipes still close, so no read of the
 // check waits for it (claustrum's own, not measured).
 func (k *helperKills) track(p *os.Process, drop func()) {
-	h := &deadlineHelper{p: p, drop: drop}
+	k.runTracked(&deadlineHelper{p: p, drop: drop, exited: make(chan struct{})})
+}
+
+// trackOnce is track for the file hash.
+func (k *helperKills) trackOnce(p *os.Process) {
+	k.runTracked(&deadlineHelper{p: p, once: true, exited: make(chan struct{})})
+}
+
+// awaitKilledExits waits for the exit of each helper that the kills reached, at
+// most bound in all. With no kill it returns at once.
+func (k *helperKills) awaitKilledExits(bound time.Duration) {
+	k.mu.Lock()
+	fired := k.fired
+	helpers := slices.Clone(k.helpers)
+	k.mu.Unlock()
+	if !fired {
+		return
+	}
+	limit := time.NewTimer(bound)
+	defer limit.Stop()
+	for _, h := range helpers {
+		if h.exited == nil {
+			continue
+		}
+		select {
+		case <-h.exited:
+		case <-limit.C:
+			return
+		}
+	}
+}
+
+// runTracked is the step of track for the helper h.
+func (k *helperKills) runTracked(h *deadlineHelper) {
 	k.mu.Lock()
 	if k.fired || k.ended {
 		fired := k.fired
 		k.mu.Unlock()
-		if fired && drop != nil {
-			drop()
+		if fired && h.drop != nil {
+			h.drop()
 		}
 		return
 	}
 	k.helpers = append(k.helpers, h)
 	k.mu.Unlock()
-	seen := awaitHelperExit(p)
-	if holdKilledHelpers && k.sent() {
+	seen := awaitHelperExit(h.p)
+	close(h.exited)
+	if holdKilledHelpers && !h.once && k.sent() {
 		<-k.freeCh
 	}
-	h.gate.CloseAfterExit(p, seen)
+	h.gate.CloseAfterExit(h.p, seen)
+}
+
+// fileHashEnd is the end of the file hash call.
+type fileHashEnd struct {
+	out []byte
+	err error
+}
+
+// awaitFileHash waits for the end of the file hash call. After the kill it waits at
+// most grace more. ok is false when the call did not end by then.
+func awaitFileHash(ended <-chan fileHashEnd, fired <-chan struct{}, grace time.Duration) (r fileHashEnd, ok bool) {
+	select {
+	case r = <-ended:
+		return r, true
+	case <-fired:
+	}
+	if grace <= 0 {
+		return r, false
+	}
+	wait := time.NewTimer(grace)
+	defer wait.Stop()
+	select {
+	case r = <-ended:
+		return r, true
+	case <-wait.C:
+		return r, false
+	}
+}
+
+// fileHashGrace is the wait after the kill for the end of the file hash. On Linux
+// and macOS it is the wait for the stdout of a call that exited. Windows has none.
+func fileHashGrace() time.Duration {
+	if holdKilledHelpers {
+		return gitDrainWait
+	}
+	return 0
 }
 
 // sendAll sends the kill to each tracked helper that is not reaped. The caller
@@ -124,9 +213,14 @@ func (k *helperKills) fire() {
 
 // sendRepeat sends the one repeat of the kill. The caller holds k.mu.
 func (k *helperKills) sendRepeat() {
-	if !k.repeated {
-		k.repeated = true
-		k.sendAll()
+	if k.repeated {
+		return
+	}
+	k.repeated = true
+	for _, h := range k.helpers {
+		if !h.once {
+			h.gate.Do(func() { _ = deadlineHelperKill(h.p) })
+		}
 	}
 }
 
@@ -173,6 +267,9 @@ func (c *contentCheck) armDeadlineKill() (stop func()) {
 		cancel()
 		close(done)
 		kills.release()
+		if awaitExitsAtEnd {
+			kills.awaitKilledExits(killedExitBound)
+		}
 	}
 }
 

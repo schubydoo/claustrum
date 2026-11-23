@@ -336,6 +336,247 @@ func TestHelperAfterTheKillLosesItsPipes(t *testing.T) {
 	}
 }
 
+// TestAwaitKilledExits: after the kill the wait ends with the exit of each helper,
+// or at its bound. With no kill it returns at once. Mutations: no fired test, no
+// wait for a helper, and no bound.
+func TestAwaitKilledExits(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	countHelperKills(t)
+	wait := func(k *helperKills, bound time.Duration) chan struct{} {
+		ended := make(chan struct{})
+		go func() {
+			k.awaitKilledExits(bound)
+			close(ended)
+		}()
+		return ended
+	}
+	t.Run("no kill", func(t *testing.T) {
+		k := newHelperKills()
+		defer k.release()
+		k.helpers = []*deadlineHelper{{p: &os.Process{}, exited: make(chan struct{})}}
+		select {
+		case <-wait(k, time.Hour):
+		case <-time.After(10 * time.Second):
+			t.Fatal("the wait ran with no kill")
+		}
+	})
+	t.Run("ends with the exits", func(t *testing.T) {
+		a, b := make(chan struct{}), make(chan struct{})
+		k := newHelperKills()
+		defer k.release()
+		k.helpers = []*deadlineHelper{{p: &os.Process{}, exited: a}, {p: &os.Process{}, exited: b}}
+		k.fire()
+		ended := wait(k, time.Hour)
+		close(a)
+		select {
+		case <-ended:
+			t.Fatal("the wait ended with one helper still running")
+		case <-time.After(50 * time.Millisecond):
+		}
+		close(b)
+		select {
+		case <-ended:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the wait did not end after the exits")
+		}
+	})
+	t.Run("ends at the bound", func(t *testing.T) {
+		k := newHelperKills()
+		defer k.release()
+		k.helpers = []*deadlineHelper{{p: &os.Process{}, exited: make(chan struct{})}}
+		k.fire()
+		select {
+		case <-wait(k, 10*time.Millisecond):
+		case <-time.After(10 * time.Second):
+			t.Fatal("the wait has no bound")
+		}
+	})
+}
+
+// TestCheckEndWaitsForKilledExits: with the wait on, the stop of the watch returns
+// only after the exit of a killed helper. With it off, as on Linux and macOS, it
+// does not wait. Mutation: no call of the wait in the stop.
+func TestCheckEndWaitsForKilledExits(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	countHelperKills(t)
+	old := awaitExitsAtEnd
+	t.Cleanup(func() { awaitExitsAtEnd = old })
+	for _, on := range []bool{true, false} {
+		awaitExitsAtEnd = on
+		ctx, cancel := context.WithCancelCause(context.Background())
+		c := &contentCheck{u: gitUse{stop: &gitStop{}}, deadline: ctx}
+		stop := c.armDeadlineKill()
+		exited := make(chan struct{})
+		c.kills.helpers = []*deadlineHelper{{p: &os.Process{}, exited: exited}}
+		cancel(errCallerTimeoutMs)
+		for end := time.Now().Add(10 * time.Second); !c.kills.sent(); time.Sleep(time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatal("no kill")
+			}
+		}
+		stopped := make(chan struct{})
+		go func() {
+			stop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+			if on {
+				t.Error("the end of the check did not wait for the killed helper")
+			}
+		case <-time.After(200 * time.Millisecond):
+			if !on {
+				t.Error("the end of the check waited with the wait off")
+			}
+		}
+		close(exited)
+		select {
+		case <-stopped:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the end of the check did not finish after the exit")
+		}
+	}
+}
+
+// TestTrackMarksTheExit: a tracked helper marks its exit, also while its reap
+// waits for the end of the check. Mutation: no close of exited.
+func TestTrackMarksTheExit(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	recordHelperKills(t)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperExitChild$")
+	cmd.Env = append(os.Environ(), "CLAUSTRUM_HELPER_EXIT_CHILD=1", "CLAUSTRUM_TEST_HELPER=")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stdin.Close() }()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	k := newHelperKills()
+	tracked := make(chan struct{})
+	go func() {
+		k.track(cmd.Process, nil)
+		close(tracked)
+	}()
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		k.mu.Lock()
+		n := len(k.helpers)
+		k.mu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(end) {
+			_ = cmd.Process.Kill()
+			t.Fatal("the helper was not tracked")
+		}
+	}
+	k.fire()
+	gone := make(chan struct{})
+	go func() {
+		k.awaitKilledExits(time.Hour)
+		close(gone)
+	}()
+	select {
+	case <-gone:
+	case <-time.After(10 * time.Second):
+		t.Error("the exit of the killed helper was not marked")
+	}
+	k.release()
+	<-tracked
+	_ = cmd.Wait()
+}
+
+// TestFileHashGetsNoRepeat: the file hash gets one send, and another helper gets
+// its repeat at the end of the check on Linux and macOS (87375cc7, measured).
+// Mutation: no once test in sendRepeat.
+func TestFileHashGetsNoRepeat(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	var mu sync.Mutex
+	sent := map[*os.Process]int{}
+	old := deadlineHelperKill
+	t.Cleanup(func() { deadlineHelperKill = old })
+	deadlineHelperKill = func(p *os.Process) error {
+		mu.Lock()
+		sent[p]++
+		mu.Unlock()
+		return nil
+	}
+	file, batch := &os.Process{}, &os.Process{}
+	k := newHelperKills()
+	k.helpers = []*deadlineHelper{{p: file, once: true}, {p: batch}}
+	k.fire()
+	k.release()
+	want := 1
+	if holdKilledHelpers {
+		want = 2
+	}
+	if sent[file] != 1 || sent[batch] != want {
+		t.Errorf("sends: file hash %d, other helper %d, want 1 and %d", sent[file], sent[batch], want)
+	}
+}
+
+// TestAwaitFileHash: the wait ends with the call, and after the kill at the end of
+// the grace. With no grace it ends at the kill. Mutations: no wait for the grace,
+// and no bound on it.
+func TestAwaitFileHash(t *testing.T) {
+	type outcome struct {
+		r  fileHashEnd
+		ok bool
+	}
+	run := func(ended chan fileHashEnd, fired chan struct{}, grace time.Duration) chan outcome {
+		got := make(chan outcome, 1)
+		go func() {
+			r, ok := awaitFileHash(ended, fired, grace)
+			got <- outcome{r, ok}
+		}()
+		return got
+	}
+	t.Run("ends with the call after the kill", func(t *testing.T) {
+		ended, fired := make(chan fileHashEnd, 1), make(chan struct{})
+		close(fired)
+		got := run(ended, fired, time.Hour)
+		select {
+		case o := <-got:
+			t.Fatalf("the wait ended at the kill: %+v", o)
+		case <-time.After(50 * time.Millisecond):
+		}
+		ended <- fileHashEnd{out: []byte("x")}
+		select {
+		case o := <-got:
+			if !o.ok || string(o.r.out) != "x" {
+				t.Errorf("result %+v, want the call", o)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the wait did not end with the call")
+		}
+	})
+	t.Run("ends at the grace", func(t *testing.T) {
+		fired := make(chan struct{})
+		close(fired)
+		select {
+		case o := <-run(make(chan fileHashEnd), fired, 10*time.Millisecond):
+			if o.ok {
+				t.Errorf("result %+v, want no result", o)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the wait has no bound")
+		}
+	})
+	t.Run("no grace", func(t *testing.T) {
+		fired := make(chan struct{})
+		close(fired)
+		select {
+		case o := <-run(make(chan fileHashEnd), fired, 0):
+			if o.ok {
+				t.Errorf("result %+v, want no result", o)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the wait did not end at the kill")
+		}
+	})
+}
+
 // TestHelperKillsNoKillAfterTheEnd: a deadline that fires after the end of the
 // check sends nothing. Mutation: no ended test in fire.
 func TestHelperKillsNoKillAfterTheEnd(t *testing.T) {

@@ -404,19 +404,17 @@ func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...strin
 // gitAfterListing is git. With endAtDeadline set, a deadline that passed by the
 // end of the config listing starts no call. The hash-object call of the files
 // does not start then (4c111e86 and 87375cc7, measured on Linux, and 4c111e86 on
-// Windows). That call is a helper of the deadline kill, and the check does not
-// wait for it after the kill (87375cc7, measured on Windows).
+// Windows). That call is a helper of the deadline kill. After the kill the check
+// does not wait for it on Windows (87375cc7, measured), and on Linux and macOS it
+// waits at most fileHashGrace for its stdout (awaitFileHash).
 func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
-	var track func(*os.Process, func())
-	if endAtDeadline {
-		track = c.helperTrack()
+	var track func(*os.Process)
+	if endAtDeadline && c.kills != nil {
+		track = c.kills.trackOnce
 	}
 	s := c.u.stop
 	if s != nil {
-		s = &gitStop{wide: s.wide}
-		if track != nil {
-			s.beforeReap = func(p *os.Process) { track(p, nil) }
-		}
+		s = &gitStop{wide: s.wide, beforeReap: track}
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, dir, args...)
@@ -433,21 +431,16 @@ func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []b
 		out, err := gitOutput(ctx, cmd)
 		return out, errBuf.String(), err
 	}
-	type result struct {
-		out []byte
-		err error
-	}
-	ended := make(chan result, 1)
+	ended := make(chan fileHashEnd, 1)
 	go func() {
 		out, err := gitOutput(ctx, cmd)
-		ended <- result{out, err}
+		ended <- fileHashEnd{out, err}
 	}()
-	select {
-	case r := <-ended:
-		return r.out, errBuf.String(), r.err
-	case <-c.kills.firedCh:
+	r, ok := awaitFileHash(ended, c.kills.firedCh, fileHashGrace())
+	if !ok {
 		return nil, "", errContentDeadline
 	}
+	return r.out, errBuf.String(), r.err
 }
 
 // cmd builds one call of the check in dir, after its config listing: b3081b51
