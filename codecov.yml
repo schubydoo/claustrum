@@ -170,6 +170,8 @@ component_management:
         - internal/git/gitcall.go
         - internal/git/fortest.go
         - methods_process.go
+        - ptykeyed_unix.go
+        - ptykeyed_windows.go
         - spawnsessionoff.go
         # The data.reason member of a refused process.spawn start, with its OS split.
         - internal/supervisor/spawnreason.go
