@@ -27,7 +27,7 @@ import (
 // Claustrum's own, not measured: on Windows the check waits for the exit of each
 // killed helper before the rollback, at most killedExitBound. That wait counts a
 // start still under way. Also exactly one repeat, and Windows has no repeat and no
-// held reap. After the kills a commit, tree or file hash does not start. A helper
+// held reap. After the kills no commit, tree or file hash helper starts. A failed scratch write of a running helper still runs one `hash-object --stdin`, with its call limit. A helper
 // whose start was under way, or a batch that starts then, gets its kill at once. A
 // `cat-file --buffer --batch` read gets no kill. The wait of the file hash is the
 // end of its stdout, at most gitDrainWait. No row has a killed file hash with no
