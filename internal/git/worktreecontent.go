@@ -102,7 +102,7 @@ type contentCheck struct {
 	deadline   context.Context
 	keepTook   time.Duration
 	atDeadline bool
-	// kills holds the helpers that the deadline kills on Linux, or is nil
+	// kills holds the helpers that the deadline kills, or is nil
 	// (armDeadlineKill).
 	kills *helperKills
 }

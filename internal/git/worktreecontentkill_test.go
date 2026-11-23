@@ -308,6 +308,34 @@ func TestHelperKillsSendsOnceAndNotAfterTheGate(t *testing.T) {
 	}
 }
 
+// TestHelperAfterTheKillLosesItsPipes: a helper that comes after the kills went
+// out gets no kill, and its pipes close, so a read of the check does not wait for
+// it. A helper that comes after the end of a check with no kill keeps its pipes.
+// Mutation: no drop in the early return of track.
+func TestHelperAfterTheKillLosesItsPipes(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	calls := countHelperKills(t)
+	k := newHelperKills()
+	t.Cleanup(k.release)
+	k.fire()
+	drops := 0
+	k.track(&os.Process{Pid: -1}, func() { drops++ })
+	if drops != 1 {
+		t.Errorf("%d drops of a helper after the kill, want 1", drops)
+	}
+	if n := calls(); n != 0 {
+		t.Errorf("%d kills of a helper after the kill, want none", n)
+	}
+	k.track(&os.Process{Pid: -1}, nil)
+	ended := newHelperKills()
+	ended.release()
+	drops = 0
+	ended.track(&os.Process{Pid: -1}, func() { drops++ })
+	if drops != 0 {
+		t.Errorf("%d drops after the end of a check with no kill, want none", drops)
+	}
+}
+
 // TestHelperKillsNoKillAfterTheEnd: a deadline that fires after the end of the
 // check sends nothing. Mutation: no ended test in fire.
 func TestHelperKillsNoKillAfterTheEnd(t *testing.T) {

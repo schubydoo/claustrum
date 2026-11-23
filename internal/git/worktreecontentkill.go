@@ -64,12 +64,17 @@ var deadlineHelperKill = func(p *os.Process) error { return p.Kill() }
 // track is the step of a helper between its start and its reap (gitStop). It
 // returns after the exit of the helper. After a kill on Linux and macOS it also
 // waits for the end of the check, so the reap comes then. A helper not yet tracked
-// when the kills go out gets no kill.
+// when the kills go out gets no kill. Its pipes still close, so no read of the
+// check waits for it (claustrum's own, not measured).
 func (k *helperKills) track(p *os.Process, drop func()) {
 	h := &deadlineHelper{p: p, drop: drop}
 	k.mu.Lock()
 	if k.fired || k.ended {
+		fired := k.fired
 		k.mu.Unlock()
+		if fired && drop != nil {
+			drop()
+		}
 		return
 	}
 	k.helpers = append(k.helpers, h)
