@@ -660,8 +660,8 @@ func runGitReal(args []string) int {
 }
 
 // gitBehindStub returns the command of the git that CLAUSTRUM_GITSTUB_REAL names.
-// It refuses a program that is this running stub, so a stub call never starts
-// itself. The test is by file identity, so a link or another spelling also matches.
+// It refuses a program that is the file of this running stub. The test is by file
+// identity, so a link or another spelling also matches.
 func gitBehindStub(args ...string) (*exec.Cmd, error) {
 	path := os.Getenv("CLAUSTRUM_GITSTUB_REAL")
 	self, err := os.Executable()

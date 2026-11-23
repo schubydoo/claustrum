@@ -173,7 +173,7 @@ func installGitSlowStub(t *testing.T, realGit string) {
 
 // keptRealGit returns realGit, or the git of the installed stub when realGit is a
 // stub: the file in bin, or this test binary. It fails the test when no true git
-// is known, because a stub that names a stub starts itself.
+// is known.
 func keptRealGit(t *testing.T, realGit, bin string) string {
 	t.Helper()
 	stub, err := exec.LookPath(filepath.Join(bin, "git"))
