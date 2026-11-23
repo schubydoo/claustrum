@@ -203,6 +203,8 @@ func TestDocsNoPhantomMethod(t *testing.T) {
 	known["process.spawn.cli_temp_root_end"] = true
 	// It lists this one on Windows only.
 	known["files.realpath.how_far"] = true
+	// It lists this one on Linux and macOS only.
+	known["launcher.exit_ends_group"] = true
 	// It lists these on Linux only.
 	known["launcher.checked_by_handle"] = true
 	known["launcher.local_kinds_only"] = true
@@ -253,7 +255,7 @@ var docGoNotMethods = map[string]string{
 // its first `//` to the end. It reads no other text of a test file, because a
 // test frame may use any method name.
 func TestDocsNoPhantomMethodInGoText(t *testing.T) {
-	known := map[string]bool{"files.realpath.how_far": true, "files.mkdir.verified_parent": true, "git.worktree.external_root": true, "process.spawn.link_bound": true, "git.worktree_create.own_lfs_store": true, "git.worktree_create.lfs_error_codes": true, "process.spawn.cli_temp_root": true, "process.spawn.cli_temp_root_end": true, "launcher.checked_by_handle": true, "launcher.local_kinds_only": true}
+	known := map[string]bool{"files.realpath.how_far": true, "launcher.exit_ends_group": true, "files.mkdir.verified_parent": true, "git.worktree.external_root": true, "process.spawn.link_bound": true, "git.worktree_create.own_lfs_store": true, "git.worktree_create.lfs_error_codes": true, "process.spawn.cli_temp_root": true, "process.spawn.cli_temp_root_end": true, "launcher.checked_by_handle": true, "launcher.local_kinds_only": true}
 	for _, m := range docMethods() {
 		known[m] = true
 	}
