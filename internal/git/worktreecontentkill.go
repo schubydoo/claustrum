@@ -16,8 +16,8 @@ import (
 // timeoutMs deadline, also while another git call of the check runs. A check
 // with no deadline, or one that ends before it, ends none.
 //
-// On Linux and macOS it sends SIGKILL to each process, before their stdin closes
-// (measured on Linux). The file hash gets one send. The others get a repeat 2 s
+// On Linux and macOS it sends SIGKILL to each process, and to the three long-running
+// helpers before their stdin closes (measured on Linux). The file hash gets one send. The others get a repeat 2 s
 // later or at the end of the check, and cat-file gets a third send in some rows.
 // A killed file hash whose stdout a child holds keeps the reply about 2 s, and a
 // row with no file hash has no such wait (measured). On Windows all four are gone
@@ -25,9 +25,10 @@ import (
 // (measured). No group signal comes on Linux or macOS (measured).
 //
 // Claustrum's own, not measured: on Windows the check waits for the exit of each
-// killed helper before the rollback, at most killedExitBound. Also exactly one
-// repeat, a helper not yet tracked when
-// the kills go out gets no kill, and Windows has no repeat and no held reap. A
+// killed helper before the rollback, at most killedExitBound. That wait counts a
+// start still under way. Also exactly one repeat, and Windows has no repeat and no
+// held reap. After the kills a commit, tree or file hash does not start. A helper
+// whose start was under way, or a batch that starts then, gets its kill at once. A
 // `cat-file --buffer --batch` read gets no kill. The wait of the file hash is the
 // end of its stdout, at most gitDrainWait. No row has a killed file hash with no
 // child on its stdout. A helper that hangs after another close of its stdin gets
@@ -70,11 +71,18 @@ type helperKills struct {
 	repeat   *time.Timer
 	firedCh  chan struct{}
 	freeCh   chan struct{}
+	// starting counts the helpers between reserve and their track or failed
+	// start. startsDone closes when it goes back to 0, and is nil at 0.
+	starting   int
+	startsDone chan struct{}
 }
 
 func newHelperKills() *helperKills {
 	return &helperKills{firedCh: make(chan struct{}), freeCh: make(chan struct{})}
 }
+
+// helperExitWait is awaitHelperExit. Tests replace it.
+var helperExitWait = awaitHelperExit
 
 // deadlineHelperKill sends the kill through the handle of the process. Tests
 // replace it.
@@ -82,30 +90,72 @@ var deadlineHelperKill = func(p *os.Process) error { return p.Kill() }
 
 // track is the step of a helper between its start and its reap (gitStop). It
 // returns after the exit of the helper. After a kill on Linux and macOS it also
-// waits for the end of the check, so the reap comes then. A helper not yet tracked
-// when the kills go out gets no kill. Its pipes still close, so no read of the
-// check waits for it (claustrum's own, not measured).
+// waits for the end of the check, so the reap comes then. A helper that comes after
+// the kills went out gets its kill here, through its gate, and then its drop
+// (claustrum's own, not measured).
 func (k *helperKills) track(p *os.Process, drop func()) {
-	k.runTracked(&deadlineHelper{p: p, drop: drop, exited: make(chan struct{})})
+	k.runTracked(&deadlineHelper{p: p, drop: drop, exited: make(chan struct{})}, nil)
 }
 
-// trackOnce is track for the file hash.
-func (k *helperKills) trackOnce(p *os.Process) {
-	k.runTracked(&deadlineHelper{p: p, once: true, exited: make(chan struct{})})
+// trackOnce is track for the file hash, which has no pipes to drop. unreserve ends
+// its count of reserve, or is nil.
+func (k *helperKills) trackOnce(p *os.Process, unreserve func()) {
+	k.runTracked(&deadlineHelper{p: p, once: true, exited: make(chan struct{})}, unreserve)
 }
 
-// awaitKilledExits waits for the exit of each helper that the kills reached, at
-// most bound in all. With no kill it returns at once.
-func (k *helperKills) awaitKilledExits(bound time.Duration) {
+// reserve counts a helper before its start, so the end of the check knows about a
+// start still under way. The function that it returns clears the count once.
+func (k *helperKills) reserve() (unreserve func()) {
 	k.mu.Lock()
-	fired := k.fired
-	helpers := slices.Clone(k.helpers)
-	k.mu.Unlock()
-	if !fired {
+	defer k.mu.Unlock()
+	if k.starting == 0 {
+		k.startsDone = make(chan struct{})
+	}
+	k.starting++
+	return sync.OnceFunc(func() {
+		k.mu.Lock()
+		defer k.mu.Unlock()
+		if k.starting--; k.starting == 0 {
+			close(k.startsDone)
+			k.startsDone = nil
+		}
+	})
+}
+
+// refuseStart is the last test before the start of a hash-object. After the kills
+// that git does not start, as after a deadline during its listing.
+func (k *helperKills) refuseStart() error {
+	if k.sent() {
+		return errContentDeadline
+	}
+	return nil
+}
+
+// awaitKilledExits waits for each start still under way and for the exit of each
+// helper that the kills reached, at most bound in all. With no kill it returns at
+// once.
+func (k *helperKills) awaitKilledExits(bound time.Duration) {
+	if !k.sent() {
 		return
 	}
 	limit := time.NewTimer(bound)
 	defer limit.Stop()
+	for {
+		k.mu.Lock()
+		starts := k.startsDone
+		k.mu.Unlock()
+		if starts == nil {
+			break
+		}
+		select {
+		case <-starts:
+		case <-limit.C:
+			return
+		}
+	}
+	k.mu.Lock()
+	helpers := slices.Clone(k.helpers)
+	k.mu.Unlock()
 	for _, h := range helpers {
 		if h.exited == nil {
 			continue
@@ -118,21 +168,36 @@ func (k *helperKills) awaitKilledExits(bound time.Duration) {
 	}
 }
 
-// runTracked is the step of track for the helper h.
-func (k *helperKills) runTracked(h *deadlineHelper) {
+// runTracked is the step of track for the helper h. unreserve ends its count of
+// reserve, or is nil. Only a seen exit marks h as gone, so a failed wait keeps the
+// end of the check waiting up to its bound.
+func (k *helperKills) runTracked(h *deadlineHelper, unreserve func()) {
 	k.mu.Lock()
-	if k.fired || k.ended {
-		fired := k.fired
+	if k.ended && !k.fired {
 		k.mu.Unlock()
-		if fired && h.drop != nil {
-			h.drop()
+		if unreserve != nil {
+			unreserve()
 		}
 		return
 	}
 	k.helpers = append(k.helpers, h)
+	late := k.fired
+	if late {
+		// One send, with no repeat and no held reap (claustrum's own, not measured).
+		h.once = true
+		h.gate.Do(func() { _ = deadlineHelperKill(h.p) })
+	}
 	k.mu.Unlock()
-	seen := awaitHelperExit(h.p)
-	close(h.exited)
+	if unreserve != nil {
+		unreserve()
+	}
+	if late && h.drop != nil {
+		h.drop()
+	}
+	seen := helperExitWait(h.p)
+	if seen {
+		close(h.exited)
+	}
 	if holdKilledHelpers && !h.once && k.sent() {
 		<-k.freeCh
 	}
@@ -290,14 +355,6 @@ func waitForKeep(ctx context.Context, keep time.Duration, done <-chan struct{}) 
 	case <-done:
 		return false
 	}
-}
-
-// helperTrack is the step that a killed helper runs after its start, or nil.
-func (c *contentCheck) helperTrack() func(*os.Process, func()) {
-	if c.kills == nil {
-		return nil
-	}
-	return c.kills.track
 }
 
 // endLong closes the pipes of b and waits for the end of its git. A kill ends the

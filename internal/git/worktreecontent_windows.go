@@ -12,9 +12,9 @@ import (
 const holdKilledHelpers = false
 
 // awaitHelperExit waits for the exit of the helper p on the handle of p, and reaps
-// nothing. It reports that it saw the exit. A failed wait reports false, and the
-// gate of the helper then closes, so the helper gets no kill (claustrum's own, not
-// measured).
+// nothing. It reports that it saw the exit. A failed wait reports false. The gate of
+// the helper then closes, so the helper gets no kill, and the end of the check does
+// not count it as gone (claustrum's own, not measured).
 func awaitHelperExit(p *os.Process) bool {
 	seen := false
 	err := p.WithHandle(func(h uintptr) {

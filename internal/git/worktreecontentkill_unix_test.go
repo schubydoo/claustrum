@@ -89,7 +89,7 @@ func TestFileHashIsReapedAtItsExit(t *testing.T) {
 	defer release()
 	tracked := make(chan struct{})
 	go func() {
-		k.trackOnce(cmd.Process)
+		k.trackOnce(cmd.Process, nil)
 		close(tracked)
 	}()
 	for end := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {

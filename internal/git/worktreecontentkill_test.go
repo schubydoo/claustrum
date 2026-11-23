@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -273,10 +274,9 @@ func countHelperKills(t *testing.T) (count func() int) {
 }
 
 // TestHelperKillsSendsOnceAndNotAfterTheGate: a second fire sends nothing, a
-// closed gate sends nothing, and a helper that comes after the fire is not
-// tracked. The end of the check sends the one repeat on Linux and macOS, and none
-// on Windows. Mutations: no fired test in fire, no gate around the send, a track
-// after the fire, and no repeat at the end.
+// closed gate sends nothing. The end of the check sends the one repeat on Linux and macOS, and none
+// on Windows. Mutations: no fired test in fire, no gate around the send, and no
+// repeat at the end.
 func TestHelperKillsSendsOnceAndNotAfterTheGate(t *testing.T) {
 	setRepeatAfter(t, time.Hour)
 	calls := countHelperKills(t)
@@ -288,10 +288,6 @@ func TestHelperKillsSendsOnceAndNotAfterTheGate(t *testing.T) {
 	k.fire()
 	if n := calls(); n != 1 {
 		t.Errorf("%d kills, want 1 for the live helper alone", n)
-	}
-	k.track(&os.Process{Pid: -1}, nil)
-	if len(k.helpers) != 2 {
-		t.Errorf("a helper was tracked after the fire: %d helpers", len(k.helpers))
 	}
 	k.release()
 	want := 1
@@ -308,31 +304,269 @@ func TestHelperKillsSendsOnceAndNotAfterTheGate(t *testing.T) {
 	}
 }
 
-// TestHelperAfterTheKillLosesItsPipes: a helper that comes after the kills went
-// out gets no kill, and its pipes close, so a read of the check does not wait for
-// it. A helper that comes after the end of a check with no kill keeps its pipes.
-// Mutation: no drop in the early return of track.
-func TestHelperAfterTheKillLosesItsPipes(t *testing.T) {
+// startExitChild starts a child that ends at the end of its stdin. The cleanup
+// ends it and reaps it, so no child outlives the test.
+func startExitChild(t *testing.T) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperExitChild$")
+	cmd.Env = append(os.Environ(), "CLAUSTRUM_HELPER_EXIT_CHILD=1", "CLAUSTRUM_TEST_HELPER=")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	return cmd
+}
+
+// TestHelperAfterTheKillGetsItsKill: a helper that registers after the kills went
+// out joins the helpers and gets its kill through its gate and then its drop. The
+// exit wait covers it. A helper after the end of a check with no kill gets neither.
+// Mutations: no join after the fire, no late kill, the drop before the kill, and
+// no late drop.
+func TestHelperAfterTheKillGetsItsKill(t *testing.T) {
 	setRepeatAfter(t, time.Hour)
-	calls := countHelperKills(t)
+	var mu sync.Mutex
+	var order []string
+	old := deadlineHelperKill
+	t.Cleanup(func() { deadlineHelperKill = old })
+	deadlineHelperKill = func(p *os.Process) error {
+		mu.Lock()
+		order = append(order, "kill")
+		mu.Unlock()
+		return p.Kill()
+	}
+	cmd := startExitChild(t)
 	k := newHelperKills()
-	t.Cleanup(k.release)
+	release := sync.OnceFunc(k.release)
+	t.Cleanup(release)
 	k.fire()
-	drops := 0
-	k.track(&os.Process{Pid: -1}, func() { drops++ })
-	if drops != 1 {
-		t.Errorf("%d drops of a helper after the kill, want 1", drops)
+	tracked := make(chan struct{})
+	go func() {
+		k.track(cmd.Process, func() {
+			mu.Lock()
+			order = append(order, "drop")
+			mu.Unlock()
+		})
+		close(tracked)
+	}()
+	gone := make(chan struct{})
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		k.mu.Lock()
+		n := len(k.helpers)
+		k.mu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatal("the helper did not join after the kill")
+		}
 	}
-	if n := calls(); n != 0 {
-		t.Errorf("%d kills of a helper after the kill, want none", n)
+	go func() {
+		k.awaitKilledExits(30 * time.Second)
+		close(gone)
+	}()
+	select {
+	case <-gone:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the late helper did not end")
 	}
-	k.track(&os.Process{Pid: -1}, nil)
+	release()
+	select {
+	case <-tracked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the track of the late helper did not end")
+	}
+	mu.Lock()
+	got := slices.Clone(order)
+	mu.Unlock()
+	if !slices.Equal(got, []string{"kill", "drop"}) {
+		t.Errorf("order = %q, want one kill and then the drop", got)
+	}
 	ended := newHelperKills()
 	ended.release()
-	drops = 0
+	drops := 0
 	ended.track(&os.Process{Pid: -1}, func() { drops++ })
-	if drops != 0 {
-		t.Errorf("%d drops after the end of a check with no kill, want none", drops)
+	if drops != 0 || len(ended.helpers) != 0 {
+		t.Errorf("after the end of a check with no kill: %d drops, %d helpers", drops, len(ended.helpers))
+	}
+}
+
+// TestExitWaitCountsAStartUnderWay: the wait at the end of the check waits for a
+// reserved start, inside its bound, and the clear counts once. Mutations: no wait
+// for the starts, no bound on it, and no close at a count of 0.
+func TestExitWaitCountsAStartUnderWay(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	countHelperKills(t)
+	k := newHelperKills()
+	defer k.release()
+	first, second := k.reserve(), k.reserve()
+	k.fire()
+	ended := make(chan struct{})
+	go func() {
+		k.awaitKilledExits(time.Hour)
+		close(ended)
+	}()
+	first()
+	first()
+	select {
+	case <-ended:
+		t.Fatal("the wait ended with a start still under way")
+	case <-time.After(50 * time.Millisecond):
+	}
+	second()
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the wait did not end after the last start")
+	}
+	stuck := newHelperKills()
+	defer stuck.release()
+	stuck.reserve()
+	stuck.fire()
+	bounded := make(chan struct{})
+	go func() {
+		stuck.awaitKilledExits(10 * time.Millisecond)
+		close(bounded)
+	}()
+	select {
+	case <-bounded:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the wait for a start has no bound")
+	}
+}
+
+// lateStartRow runs a create whose deadline fires after the last deadline test of
+// one helper and before its start, while the call waits for the hold of its
+// repository folder. That helper does not start, so only the want helpers that
+// run already get a kill (4c111e86 and 87375cc7, measured on Linux for a deadline
+// during its listing).
+func lateStartRow(t *testing.T, hold string, fileOnly bool, isCall func([]string) bool, want int) {
+	t.Helper()
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".mcp.json": "{}\n"})
+	gate := gateStub(t, hold, 10*time.Second, "", "")
+	if fileOnly {
+		contentTestCallOnly(t)
+	}
+	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o644) })
+	killed := recordHelperKills(t)
+	var reached atomic.Bool
+	fired := make(chan struct{})
+	old := beforeRepoHold
+	t.Cleanup(func() { beforeRepoHold = old })
+	beforeRepoHold = func(args []string) {
+		if !isCall(args) || reached.Swap(true) {
+			return
+		}
+		select {
+		case <-fired:
+			for end := time.Now().Add(5 * time.Second); len(sortedPids(killed())) < want && time.Now().Before(end); {
+				time.Sleep(time.Millisecond)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("the deadline did not fire")
+		}
+	}
+	firedDeadlineThen(t, reached.Load, func() { close(fired) })
+	raw, _ := f.create(t, map[string]any{"timeoutMs": markerTimeoutMs})
+	if !reached.Load() {
+		t.Fatalf("the seam did not run for the call, reply %s", raw)
+	}
+	if !strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Fatalf("git.worktree_create = %s, want the timeout of a good checkout", raw)
+	}
+	if got := sortedPids(killed()); len(got) != want {
+		t.Errorf("killed pids %v, want %d: a helper started after the kill", got, want)
+	}
+}
+
+// TestFileHashDoesNotStartAfterTheKill: lateStartRow for the file hash. Mutations:
+// no beforeStart test, and none for the file hash.
+func TestFileHashDoesNotStartAfterTheKill(t *testing.T) {
+	lateStartRow(t, "hash-object,--stdin-paths", true, func(args []string) bool {
+		return slices.Contains(args, "--no-filters") && slices.Contains(args, "--stdin-paths") && !slices.Contains(args, "--literally")
+	}, 3)
+}
+
+// TestCommitHashDoesNotStartAfterTheKill: lateStartRow for the commit hash-object.
+// Mutation: no beforeStart for the long-running calls.
+func TestCommitHashDoesNotStartAfterTheKill(t *testing.T) {
+	lateStartRow(t, "hash-object,commit,--stdin-paths", false, func(args []string) bool {
+		return slices.Contains(args, "commit") && slices.Contains(args, "--literally")
+	}, 1)
+}
+
+// TestLateKillGoesThroughTheGate: a late helper whose gate is closed gets no send.
+// Mutation: the late kill outside the gate.
+func TestLateKillGoesThroughTheGate(t *testing.T) {
+	setRepeatAfter(t, time.Hour)
+	calls := countHelperKills(t)
+	old := helperExitWait
+	t.Cleanup(func() { helperExitWait = old })
+	helperExitWait = func(*os.Process) bool { return true }
+	k := newHelperKills()
+	defer k.release()
+	k.fire()
+	h := &deadlineHelper{p: &os.Process{Pid: -1}, exited: make(chan struct{})}
+	h.gate.Close()
+	k.runTracked(h, nil)
+	if n := calls(); n != 0 {
+		t.Errorf("%d kills through a closed gate, want none", n)
+	}
+}
+
+// TestJoinClearsTheStartCount: a helper that joins clears its count of reserve
+// while it still runs. Mutation: no clear after the join.
+func TestJoinClearsTheStartCount(t *testing.T) {
+	release := make(chan struct{})
+	old := helperExitWait
+	t.Cleanup(func() { helperExitWait = old })
+	helperExitWait = func(*os.Process) bool { <-release; return true }
+	k := newHelperKills()
+	defer k.release()
+	unreserve := k.reserve()
+	ended := make(chan struct{})
+	go func() {
+		k.runTracked(&deadlineHelper{p: &os.Process{Pid: -1}, exited: make(chan struct{})}, unreserve)
+		close(ended)
+	}()
+	defer func() {
+		close(release)
+		<-ended
+	}()
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		k.mu.Lock()
+		n := k.starting
+		k.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		if time.Now().After(end) {
+			t.Fatal("the count of the start did not clear at the join")
+		}
+	}
+}
+
+// TestUnseenExitIsNotAnExit: a wait that did not see the exit leaves the helper
+// counted as running. Mutation: exited closes on an unseen exit.
+func TestUnseenExitIsNotAnExit(t *testing.T) {
+	old := helperExitWait
+	t.Cleanup(func() { helperExitWait = old })
+	helperExitWait = func(*os.Process) bool { return false }
+	k := newHelperKills()
+	defer k.release()
+	h := &deadlineHelper{p: &os.Process{Pid: -1}, exited: make(chan struct{})}
+	k.runTracked(h, nil)
+	select {
+	case <-h.exited:
+		t.Error("a wait that failed marked the helper as gone")
+	default:
 	}
 }
 

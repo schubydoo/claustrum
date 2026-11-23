@@ -149,16 +149,16 @@ func (c *contentCheck) startBatch() {
 	}
 	// No pipe: every object is read by a separate run, with no line
 	// (claustrum's own, not measured).
-	c.batch = c.startLong(false, c.helperTrack(), nil, "cat-file", "--batch")
+	c.batch = c.startLong(false, true, nil, "cat-file", "--batch")
 }
 
 // startLong starts one long-running git of the check in the base repository,
 // with env after its environment. It gets the limit of one call, and its stop
 // stops no other call (contentCheck.git). It is nil when no pipe opened. With
 // endAtDeadline set, it is also nil when the deadline passed by the end of the
-// config listing, and no git starts (gitAfterListing). A track that is not nil
-// makes this git one that the deadline kills (helperKills.track).
-func (c *contentCheck) startLong(endAtDeadline bool, track func(*os.Process, func()), env []string, args ...string) *objectBatch {
+// config listing, and no git starts (gitAfterListing). With killed set, the deadline
+// kills this git (helperKills), and a start under way counts at the end of the check.
+func (c *contentCheck) startLong(endAtDeadline, killed bool, env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil
@@ -167,9 +167,17 @@ func (c *contentCheck) startLong(endAtDeadline bool, track func(*os.Process, fun
 	if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
+	kills := c.kills
+	unreserve := func() {}
+	if killed && kills != nil && s != nil {
+		unreserve = kills.reserve()
+	} else {
+		kills = nil
+	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, c.repo, args...)
 	if endAtDeadline && c.pastDeadline() {
+		unreserve()
 		_ = inR.Close()
 		_ = inW.Close()
 		return nil
@@ -179,12 +187,18 @@ func (c *contentCheck) startLong(endAtDeadline bool, track func(*os.Process, fun
 	cmd.Stdin, cmd.Stdout = inR, outW
 	b := &objectBatch{in: inW, inR: inR, outR: outR, out: bufio.NewReader(outR), done: make(chan struct{}),
 		closeInR: sync.OnceFunc(func() { _ = inR.Close() })}
-	if s != nil && track != nil {
-		s.beforeReap = func(p *os.Process) { track(p, b.drop) }
+	if kills != nil {
+		s.beforeReap = func(p *os.Process) {
+			kills.runTracked(&deadlineHelper{p: p, drop: b.drop, exited: make(chan struct{})}, unreserve)
+		}
+		if endAtDeadline {
+			s.beforeStart = kills.refuseStart
+		}
 	}
 	go func() {
 		defer close(b.done)
 		_ = gitRun(ctx, cmd)
+		unreserve()
 		// Any end of git reads as an end of its output (io.EOF).
 		_ = outW.Close()
 		b.endedOrDropped(&b.ended)
@@ -329,7 +343,7 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 	if h == nil {
 		// A deadline that passed by the end of its listing starts no hash-object,
 		// and the object does not count (4c111e86 and 87375cc7, measured on Linux).
-		h = c.startLong(true, c.helperTrack(), objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		h = c.startLong(true, true, objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
 		if h == nil {
 			if c.atDeadline {
 				return "", nil, errContentDeadline
@@ -561,7 +575,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 // answer. No pipe gives no fault (claustrum's own, not measured).
 func (c *contentCheck) readByDepth(level []*treeWalk) (read [][]byte, faulted bool) {
 	read = make([][]byte, len(level))
-	b := c.startLong(false, nil, nil, "cat-file", "--buffer", "--batch")
+	b := c.startLong(false, false, nil, "cat-file", "--buffer", "--batch")
 	if b == nil {
 		return read, false
 	}

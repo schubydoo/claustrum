@@ -257,7 +257,8 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	// measured on Linux). Before the deadline it goes after the gits of the
 	// check end (claustrum's own). At the deadline the check ends with no wait
 	// for its `cat-file --batch` (4c111e86, measured on Linux), and the folder
-	// goes then (claustrum's own, not measured).
+	// goes then. On Windows it goes after the wait for the killed helpers
+	// (armDeadlineKill). Both are claustrum's own, not measured.
 	defer c.removeScratch()
 	defer c.armDeadlineKill()()
 	c.startBatch()
@@ -409,16 +410,20 @@ func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...strin
 // waits at most fileHashGrace for its stdout (awaitFileHash).
 func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
 	var track func(*os.Process)
-	if endAtDeadline && c.kills != nil {
-		track = c.kills.trackOnce
-	}
+	unreserve := func() {}
 	s := c.u.stop
-	if s != nil {
-		s = &gitStop{wide: s.wide, beforeReap: track}
+	if endAtDeadline && c.kills != nil && s != nil {
+		kills := c.kills
+		unreserve = kills.reserve()
+		track = func(p *os.Process) { kills.trackOnce(p, unreserve) }
+		s = &gitStop{wide: s.wide, beforeReap: track, beforeStart: kills.refuseStart}
+	} else if s != nil {
+		s = &gitStop{wide: s.wide}
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, dir, args...)
 	if endAtDeadline && c.pastDeadline() {
+		unreserve()
 		return nil, "", errContentDeadline
 	}
 	cmd.Env = append(cmd.Env, env...)
@@ -434,6 +439,7 @@ func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []b
 	ended := make(chan fileHashEnd, 1)
 	go func() {
 		out, err := gitOutput(ctx, cmd)
+		unreserve()
 		ended <- fileHashEnd{out, err}
 	}()
 	r, ok := awaitFileHash(ended, c.kills.firedCh, fileHashGrace())
