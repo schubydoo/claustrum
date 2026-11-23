@@ -558,6 +558,14 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, i
 A failed raise writes no line (claustrum's own). The name `Claustrum` is claustrum's own, and the
 reference prints `Claude` there.
 
+On Linux and macOS a start with `CLAUDE_SSH_LEAVE_GROUPS=1` writes [its line](protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7) after the open-files line, before the banner (`87375cc7`, measured).
+
+If the daemon cannot remove that variable from its environment, it logs this WARN line (claustrum's own):
+
+```
+[Server] cannot remove CLAUDE_SSH_LEAVE_GROUPS from the daemon environment (<error>): child processes inherit it
+```
+
 A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner.
 On Linux it is at INFO level, comes after the open-files line, and names the
 namespaces of the daemon:

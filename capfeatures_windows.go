@@ -14,3 +14,6 @@ var osCapabilityFeatures = []string{"files.realpath.how_far"}
 // osCapabilityMethods is empty on Windows: c9125eb8 has no files.mkdir there,
 // and 4c111e86 has no files.find there (measured on Windows).
 var osCapabilityMethods []string
+
+// launcherGroupFeatures is empty on Windows, which has no end of a launcher's group.
+var launcherGroupFeatures []string

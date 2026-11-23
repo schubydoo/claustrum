@@ -80,8 +80,10 @@ var capabilityMethods = append(append([]string{
 // Linux, macOS and Windows). It inserted git.worktree_create.not_found_codes after
 // git.worktree_create.unusable_git_refused (measured on Linux, macOS and Windows). On
 // Windows only, it lists files.realpath.how_far after files.read.real
-// (osCapabilityFeatures, measured on Windows). The array is always emitted.
-var capabilityFeatures = append(append([]string{
+// (osCapabilityFeatures, measured on Windows). On Linux and macOS it lists
+// launcher.exit_ends_group after server.instance_id (launcherGroupFeatures, measured).
+// The array is always emitted.
+var capabilityFeatures = append(append(append([]string{
 	"process.stdin.offset",
 	"process.spawn.refuses_given_up_id",
 	"process.spawn.unattended_seconds",
@@ -113,7 +115,7 @@ var capabilityFeatures = append(append([]string{
 	"git.hooks_null_device",
 	"git.status.own_lfs_store",
 	filesReadRealFeature,
-}, osCapabilityFeatures...), "server.instance_id")
+}, osCapabilityFeatures...), "server.instance_id"), launcherGroupFeatures...)
 
 // filesReadRealFeature is listed only when files.ReadRealAvailable is true. The
 // exact start test is claustrum's own.
@@ -140,6 +142,10 @@ func (s *server) featuresFor() []string {
 	list := capabilityFeatures
 	if !files.ReadRealAvailable() {
 		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == filesReadRealFeature })
+	}
+	// CLAUDE_SSH_LEAVE_GROUPS=1 takes the name out (87375cc7, measured on Linux and macOS).
+	if s.procs != nil && s.procs.LeaveGroups {
+		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == launcherExitFeature })
 	}
 	if s.procs == nil || s.procs.Jobs == supervisor.JobsOff {
 		return list

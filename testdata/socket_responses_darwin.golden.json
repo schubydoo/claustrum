@@ -94,7 +94,8 @@
         "git.worktree_create.lfs_error_codes",
         "process.spawn.cli_temp_root",
         "process.spawn.cli_temp_root_end",
-        "server.instance_id"
+        "server.instance_id",
+        "launcher.exit_ends_group"
       ],
       "peerCheck": "off"
     }

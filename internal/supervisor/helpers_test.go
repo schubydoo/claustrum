@@ -140,6 +140,70 @@ func runHelper(mode string, args []string) int {
 		exitZeroOnSigterm()
 		fmt.Print("ready\n")
 		time.Sleep(60 * time.Second)
+	case "group-leader":
+		// A launcher: args are the command, a pid file, the shape of its member (hold,
+		// closed or none), the member's kind (exit or ignore) and "stay" or "go". The
+		// member writes the pid file once its SIGTERM handling is set.
+		if args[2] != "none" {
+			exe, err := os.Executable()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			member := exec.Command(exe, args[1], args[3])
+			member.Env = BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "group-member"})
+			if args[2] == "hold" {
+				member.Stdout, member.Stderr = os.Stdout, os.Stderr
+			}
+			if err := member.Start(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			// The shape "two" adds a holder of the pipes in its own session. Its pid
+			// file is the member's with ".holder".
+			if args[2] == "two" {
+				holder := exec.Command(exe, args[1]+".holder", "holder")
+				holder.Env = BuildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "group-member"})
+				holder.Stdout, holder.Stderr = os.Stdout, os.Stderr
+				if err := holder.Start(); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return 1
+				}
+				for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+					if _, err := os.Stat(args[1] + ".holder"); err == nil {
+						break
+					}
+				}
+			}
+			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+				if _, err := os.Stat(args[1]); err == nil {
+					break
+				}
+			}
+		}
+		fmt.Print("ready\n")
+		if args[4] == "stay" {
+			time.Sleep(60 * time.Second)
+		}
+	case "group-member":
+		// A member of a launcher's group: args are the pid file and exit, ignore or
+		// holder. A holder leaves for its own session and keeps the pipes.
+		switch args[1] {
+		case "ignore":
+			ignoreSigterm()
+		case "holder":
+			startOwnSession()
+		default:
+			exitZeroOnSigterm()
+		}
+		tmp := args[0] + ".tmp"
+		if err := os.WriteFile(tmp, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+			return 1
+		}
+		if err := os.Rename(tmp, args[0]); err != nil {
+			return 1
+		}
+		time.Sleep(60 * time.Second)
 	case "term-exit0-kid":
 		// Start a grandchild in the group with no stdio that sleeps 60 s, record its
 		// PID in args[0], exit with code 0 on SIGTERM (Unix), then announce
