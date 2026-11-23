@@ -240,7 +240,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   path or a link target.
 - **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM` first, then its group gets `SIGKILL` (`argsAskEnd`,
   `endAsked`, [D28](docs/DIVERGENCES.md#d28)). Never widen: In the shutdown sweep, send a group
-  `SIGKILL` after the exit of a child only while its exit drain is open.
+  `SIGKILL` after the exit of a child only while its exit drain is open. On Linux and macOS a plain spawn whose leader is reaped gets a group `SIGKILL` while any process holds its pipes, also one outside the group
+  (`killGroupInOpenDrain`, [the rule](docs/protocol/server.md#a-child-in-its-exit-drain)). A reused group number takes that signal, as on `87375cc7` (measured on Linux), a risk the maintainer accepted. A client `KILL` can come before it, so the group can get two. A pty spawn gets none. Never widen: send it from this path at most once for a child, only to a plain spawn, before its exit frame.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
   the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.

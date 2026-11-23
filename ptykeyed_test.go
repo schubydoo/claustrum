@@ -35,6 +35,19 @@ func ptyWith(extra map[string]any) map[string]any {
 	return o
 }
 
+// TestSpawnTempRootAskMarksAPty: only a pty object marks the spawn, so that the
+// shutdown drain kill skips it (87375cc7, measured on Linux and macOS).
+func TestSpawnTempRootAskMarksAPty(t *testing.T) {
+	if !spawnTempRootAsk(&spawnParams{Pty: json.RawMessage(`{"cols":80}`)}).Pty {
+		t.Error("a pty object did not mark the spawn")
+	}
+	for _, v := range []json.RawMessage{nil, json.RawMessage("null"), json.RawMessage("true")} {
+		if spawnTempRootAsk(&spawnParams{Pty: v}).Pty {
+			t.Errorf("the pty member %q marked the spawn", v)
+		}
+	}
+}
+
 // TestKeyedPtyRefusedOnWindowsOnly pins the system of the rule. 4c111e86 and 87375cc7
 // refuse a keyed pty on Windows (measured). Linux and macOS keep the plain spawn of
 // claustrum (claustrum's own).
