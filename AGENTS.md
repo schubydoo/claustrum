@@ -248,7 +248,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **The unattended end of a spawn** (87375cc7). `SIGTERM` to the child, then the group `SIGKILL` after at most 7 s (Linux,
   macOS). Windows ends the job (`endUnheld`, `killGroupOnUnheldExit`,
   [process.spawn](docs/protocol/process-spawn.md#the-unattended-end-build-87375cc7)). Never widen: arm it only for an
-  accepted top-level unattendedSeconds above 0. Signal only that child, its group or its job, and none to a group that
+  accepted top-level unattendedSeconds above 0. Send no `SIGKILL` for a refused `SIGTERM`. Signal only that child, its group or its job, and none to a group that
   the spawn did not make. Send each signal through `unheldGate` before the reap (Linux, macOS). Start no end after the
   shutdown began.
 - **The extract marker.** `.synced` goes as a tree through the handle of `destDir` that
