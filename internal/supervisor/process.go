@@ -1049,9 +1049,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	// A gitRead spawn skips the step and uses up no try. Its git gets an empty
-	// SSH_AUTH_SOCK (87375cc7 and 4c111e86, measured on Linux, and on macOS with a
-	// login shell that exports none). A macOS login shell that exports a socket and
-	// a cached socket are claustrum's own, not measured.
+	// SSH_AUTH_SOCK (87375cc7 and 4c111e86, measured on Linux at a first run, and on
+	// macOS with a login shell that exports none). A macOS login shell that exports a
+	// socket and a skip with a cached socket are claustrum's own, not measured.
 	if gitRead == nil {
 		cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
 	}

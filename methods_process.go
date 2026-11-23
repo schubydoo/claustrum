@@ -344,9 +344,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Command is required")
 	}
 	// A pty object with no valid key keeps its own text (87375cc7, measured on Linux
-	// and Windows). The refusal logs its failed-start line, comes after the id and
-	// command tests and before the linkBound test with a launcher (measured on
-	// Linux). Its place against the launcher shape test is claustrum's own.
+	// and Windows). The unattendedSeconds refusal logs its failed-start line, comes
+	// after the id and command tests and before the linkBound test with a launcher
+	// (measured on Linux). Its place against the launcher shape test is claustrum's own.
 	if unattendedSet && unattendedRefused(&p, unattended) {
 		if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
 			return *bad
@@ -379,7 +379,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// (87375cc7, measured on Linux, macOS and Windows). The test above refused it with
 	// pty, linkBound, gitRead and cliTempRootEnd, and for a launcher spawn without
 	// --no-session-persistence (measured on Linux, for a launcher also on macOS and Windows).
-	// With that arg, also with a launcherCheck object, it is armed (claustrum's own, not measured).
+	// On Linux and macOS with that arg it is armed, on Linux also with a launcherCheck object (claustrum's own, not measured).
 	var unheld time.Duration
 	if unattended > 0 {
 		unheld = supervisor.UnheldTTL(unattended)
