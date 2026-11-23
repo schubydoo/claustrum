@@ -380,7 +380,7 @@ func TestUnheldRefusedThenSignalable(t *testing.T) {
 }
 
 // TestUnheldRefusedThenOwnExit: a refused child that exits by itself ends the checks,
-// with its plain exited line and no signal after the refusal (87375cc7, measured on
+// with its plain exited line and no signal after its exit (87375cc7, measured on
 // Linux and macOS). The child leaves when its stdin closes.
 func TestUnheldRefusedThenOwnExit(t *testing.T) {
 	buf := captureLogBuf(t)
