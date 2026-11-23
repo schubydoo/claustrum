@@ -17,20 +17,20 @@ import (
 // with no deadline, or one that ends before it, ends none.
 //
 // On Linux and macOS it sends SIGKILL to each process, and to the three long-running
-// helpers before their stdin closes (measured on Linux). The file hash gets one send. The others get a repeat 2 s
-// later or at the end of the check, and cat-file gets a third send in some rows.
-// A killed file hash whose stdout a child holds keeps the reply about 2 s, and a
-// row with no file hash has no such wait (measured). On Windows all four are gone
+// helpers before their stdin closes (measured on Linux). The file hash gets one send. The others get 1 to 3
+// sends in all, and a repeat comes most often 2 s later.
+// A killed file hash whose stdout a child holds keeps the reply about 2 to 3 s, and a
+// row with no file hash has no such wait (measured). On Windows each running helper is gone
 // within one poll of the deadline, with no such wait, and no git runs at the reply
-// (measured). No group signal comes on Linux or macOS (measured).
+// (measured). These helpers get no group signal on Linux or macOS (measured).
 //
 // Claustrum's own, not measured: on Windows the check waits for the exit of each
 // killed helper before the rollback, at most killedExitBound. That wait counts a
-// start still under way. Also exactly one repeat, and Windows has no repeat and no
+// start still under way. Also exactly one repeat for a helper that runs at the kill, and Windows has no repeat and no
 // held reap. After the kills no commit, tree or file hash helper starts. A failed scratch write of a running helper still runs one `hash-object --stdin`, with its call limit. A helper
 // whose start was under way, or a batch that starts then, gets its kill at once. A
 // `cat-file --buffer --batch` read gets no kill. The wait of the file hash is the
-// end of its stdout, at most gitDrainWait. No row has a killed file hash with no
+// end of its stdout, at most gitDrainWait. No row shows the wait of a killed file hash with no
 // child on its stdout. A helper that hangs after another close of its stdin gets
 // the kill with stdin closed.
 

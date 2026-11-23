@@ -99,7 +99,7 @@ type gitStop struct {
 	// have not answered yet.
 	wide *atomic.Int32
 	// beforeReap, when set, runs after the start of a call and before its wait.
-	// It returns after the exit of git and reaps nothing (helperKills.track).
+	// It returns after the exit of git and reaps nothing (helperKills.runTracked).
 	beforeReap func(*os.Process)
 	// beforeStart, when set, is the last test before the start of a call. Its
 	// error is the error of the call, and no process starts (helperKills).

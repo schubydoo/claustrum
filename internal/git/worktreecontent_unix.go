@@ -11,8 +11,8 @@ import (
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
-// holdKilledHelpers is true: on Linux and macOS a killed helper of the content
-// check is reaped at the end of the check, after a repeat kill (87375cc7, measured).
+// holdKilledHelpers is true: on Linux a killed helper of the content check is reaped
+// when the check is free (87375cc7, measured). macOS and the one repeat are claustrum's own.
 const holdKilledHelpers = true
 
 // awaitHelperExit waits for the exit of the helper p and reaps nothing. It reports

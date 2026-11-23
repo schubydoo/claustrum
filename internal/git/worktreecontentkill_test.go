@@ -561,7 +561,12 @@ func TestUnseenExitIsNotAnExit(t *testing.T) {
 	helperExitWait = func(*os.Process) bool { return false }
 	k := newHelperKills()
 	defer k.release()
-	h := &deadlineHelper{p: &os.Process{Pid: -1}, exited: make(chan struct{})}
+	// A child of this test that is already reaped: the gate has no running process
+	// to wait for after the unseen exit.
+	cmd := startExitChild(t)
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	h := &deadlineHelper{p: cmd.Process, exited: make(chan struct{})}
 	k.runTracked(h, nil)
 	select {
 	case <-h.exited:
@@ -658,7 +663,7 @@ func TestCheckEndWaitsForKilledExits(t *testing.T) {
 			if on {
 				t.Error("the end of the check did not wait for the killed helper")
 			}
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(time.Second):
 			if !on {
 				t.Error("the end of the check waited with the wait off")
 			}

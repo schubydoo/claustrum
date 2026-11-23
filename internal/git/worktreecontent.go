@@ -113,7 +113,7 @@ var errContentDeadline = errors.New("the deadline of the request passed")
 // pastDeadline reports whether the deadline passed. Then the check reads no object,
 // also by a separate run (4c111e86, measured on Linux for a batch that did not answer).
 // Apart from the kill of four helpers (helperKills), a deadline during another git call
-// does not cut that call. The next step tests it (4c111e86 and 87375cc7, measured on
+// does not cut that call. The check stops at the next step (4c111e86 and 87375cc7, measured on
 // Linux, and 4c111e86 on Windows).
 func (c *contentCheck) pastDeadline() bool {
 	if !c.atDeadline && c.deadline != nil && (c.kills.sent() || callerTimeoutFired(c.deadline) &&
