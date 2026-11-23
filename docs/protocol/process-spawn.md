@@ -108,6 +108,46 @@ With `"cliTempRoot": true` on Linux and macOS the result can carry `cliTempRoot`
 
 After the result, the output comes as [stream notifications](streams.md#stream-notifications) with the `id` as `processId`. The last one is the `exit` frame.
 
+### The group of an exited launcher (build `87375cc7`)
+
+On Linux and macOS, `87375cc7` ends what a launcher left in its process group after the launcher ends, also after a kill of the launcher by another process or a `process.kill` (measured). A spawn with no launcher gets no such end (measured on Linux and macOS). claustrum has no such end on Windows, and `87375cc7` lists no `launcher.exit_ends_group` there (measured).
+
+**Linux** (measured):
+
+- The daemon sees the exit without a reap, so the leader holds the group number. The reap comes after the group `SIGKILL`.
+- Pipes at their end: one group `SIGKILL` at once, with no `SIGTERM` and no line.
+- Pipes still open 200 ms after the exit: a group `SIGTERM` and the line below, also with no member in the group. The group `SIGKILL` follows once the pipes are at their end, at the latest 1.5 s after the `SIGTERM`.
+- The 5 s pipe drain of the `exit` frame counts from the exit of the launcher, not from its reap.
+- A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. `87375cc7` often sends that `SIGKILL` twice, and claustrum sends it once. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM`. The record goes.
+- A stream-json launcher that the shutdown asked to end with `SIGTERM` gets the steps above after its exit. A group `SIGKILL` of the shutdown ends them.
+
+```
+[process.Manager] Process <id> exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL
+```
+
+#### The end on macOS (measured)
+
+- The daemon reaps the leader first. Then it probes with `kill(-pgid, 0)`. After 0 it sends `kill(-pgid, SIGKILL)`. After `ESRCH` it sends none. After `EPERM`, `87375cc7` still sends it, and claustrum sends none (claustrum's own). No `SIGTERM` goes out.
+- A leader with no member gets the probe (`ESRCH`) and no `SIGKILL`.
+- A leader that exits during a shutdown gets these steps too, also a stream-json launcher that the shutdown asked to end.
+- After the reap the kernel can reuse the number. In a staged run, `87375cc7` killed an unrelated group that way. claustrum follows this, an accepted risk.
+
+#### `CLAUDE_SSH_LEAVE_GROUPS`
+
+This holds on Linux and macOS (measured). The daemon reads it once at its start. The value `1` turns the end off. The daemon then logs one line before its listening line and lists no `launcher.exit_ends_group`. `0`, `yes` and empty leave it on. Each of these values leaves the environment of the children. Another value also leaves it on (claustrum's own, not measured).
+
+```
+[daemon] what an exited launcher leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set
+```
+
+claustrum's own rules of this end, not measured:
+
+- A group number of 1 or less, the daemon's pid and the daemon's group get no signal.
+- After the temp-root or unattended end killed the group, or after the shutdown sent the group its `SIGKILL`, this end sends nothing.
+- After the exit of the leader, this end, the 1.5 s step of a shutdown and a client `KILL` share one claim on the group `SIGKILL`. A client `KILL` that passed its test just before the exit can still send a second one. A refused client or 1.5 s `KILL` gives the claim back.
+- With `-keep-children` a shutdown inside the Linux wait stops the end with no more signals, and the member lives.
+- On Linux a request in the wait treats the child as exited, so its `exit` frame gets no `killedBy` from that request. A `process.kill` with `KILL` there ends the group at once.
+
 ## Errors
 
 A failure is a JSON-RPC error. There is no `errorCode` member.
@@ -192,6 +232,7 @@ After a good read, the child gets the login-shell `PATH` of the user. A `PATH` i
 | `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own). |
 | The eight editor names and the session folders | A spawn of the bare command `git`. See [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child) (`b3081b51`). |
 | `CLAUDE_SSH_PEER_CHECK` | The daemon environment, at its start. On Windows that covers any letter case. A value in `env` reaches the child. These three are measured on Linux, macOS and Windows. If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
+| `CLAUDE_SSH_LEAVE_GROUPS` | The daemon environment at its start, on Linux and macOS (`87375cc7`, measured). A value in `env` reaches the child (claustrum's own). Windows does not remove it (claustrum's own, not measured). If the removal fails, claustrum logs one WARN line of its own, and the children inherit it. |
 
 The Go runtime variables `GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT` and `GOTRACEBACK` reach the child unchanged. `GOGC` and `GOMAXPROCS` are measured on Linux, the other three are not measured.
 

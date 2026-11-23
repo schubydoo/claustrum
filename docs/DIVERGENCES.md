@@ -546,8 +546,10 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 
 - **Behavior.** At a shutdown the daemon sends `SIGTERM` to a child whose args ask
   for `stream-json`. Once the exit frame of that child is out, claustrum sends its
-  group no signal. A member of the group that still lives with its own stdio stays
-  alive. A child that is still there 1.5 s after the `SIGTERM` gets the group
+  group no signal. For a spawn with no group end, a member of the group that still
+  lives with its own stdio stays alive. A launcher spawn with the end on gets [its group
+  end](protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7) before
+  that frame. A child that is still there 1.5 s after the `SIGTERM` gets the group
   `SIGKILL`, as on the reference. No frame changes.
 - **Reference.** `b3081b51` also sends the group `SIGKILL` after the exit of such a
   child (measured on Linux). In the measured runs the group was empty, and the call
@@ -555,8 +557,8 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 - **Systems and switch.** Linux and macOS. Off-wire, always on, no switch. Windows
   sends no `SIGTERM` at a shutdown. On macOS the reference's signal after the exit is
   not measured.
-- **Cost.** A process that the child left in its group with its own stdio outlives
-  the shutdown. A member that holds the pipes of the child holds back the exit
+- **Cost.** With no group end, a process that the child left in its group with its own
+  stdio outlives the shutdown. A member that holds the pipes of the child holds back the exit
   frame, so it still gets the `SIGKILL` at 1.5 s.
 - **Rule.** Approved by the maintainer on 2026-11-04. After the exit frame the group
   can be empty, and its number can then name another process. A `SIGKILL` there

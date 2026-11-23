@@ -52,9 +52,9 @@ func (m *Manager) endForLostTempRoot(p *Proc, grace time.Duration) {
 	// too, so the group gets one SIGKILL.
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.tempRootKilled {
+	if !p.tempRootKilled.Load() {
 		live, _ := p.signalIfLiveLocked("KILL", "temp_root")
-		p.tempRootKilled = live
+		p.tempRootKilled.Store(live)
 	}
 }
 
@@ -75,9 +75,9 @@ func (p *Proc) killGroupOnTempRootExit() {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.tempRootTermed || p.tempRootKilled || !groupMadeAtSpawn(p.cmd.Process.Pid) {
+	if !p.tempRootTermed || p.tempRootKilled.Load() || !groupMadeAtSpawn(p.cmd.Process.Pid) {
 		return
 	}
 	_ = signalGroup(p.group, p.cmd.Process, "KILL")
-	p.tempRootKilled = true
+	p.tempRootKilled.Store(true)
 }

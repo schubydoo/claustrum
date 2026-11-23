@@ -35,3 +35,4 @@ func ignoreSigterm()     {}
 func ignoreSighup()      {}
 func exitZeroOnSigterm() {}
 func leaveSpawnGroup()   {}
+func startOwnSession()   {}

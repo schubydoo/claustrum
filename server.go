@@ -454,6 +454,9 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 	// on every system (see internal/supervisor/childjobs.go). With -keep-children a job does not end its
 	// child when the daemon dies.
 	procs.Jobs, procs.JobTest = supervisor.StartChildJobs(keepChildren)
+	// CLAUDE_SSH_LEAVE_GROUPS is read and removed here, with its one line.
+	startLeaveGroups(procs)
+	procs.KeepChildren = keepChildren
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
 	// listening line. The daemon also removes the variable from its own environment
 	// here, before it serves a request (see startPeerCheck).

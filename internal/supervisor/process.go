@@ -157,7 +157,9 @@ type Proc struct {
 	// is reachable exactly when a grandchild holds the pipe open, and a
 	// grandchild that calls setsid() (which is what daemonizing means) leaves the
 	// group, so the group really can empty and its id be reused mid-drain. Read
-	// only under p.mu, by signalIfLive, by IsLive, and by reattach.
+	// only under p.mu, by signalIfLive, by IsLive, and by reattach. On Linux the end
+	// of a launcher's group sets it once the exit is seen, before the wait, so a
+	// request in that wait claims no killedBy (settleLeftGroupHeld).
 	reaped bool
 	// exitedAt is stamped alongside running=false, so it dates the exit frame
 	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
@@ -210,7 +212,28 @@ type Proc struct {
 	// goroutine then runs killGroupOnTempRootExit before the reap. tempRootKilled is
 	// set under p.mu once a group SIGKILL of the temp_root end goes out, and
 	// tempRootTermed once the SIGTERM of that end went out.
-	tempRootEnd, tempRootKilled, tempRootTermed bool
+	tempRootEnd, tempRootTermed bool
+	tempRootKilled              atomic.Bool
+	// endsGroup is set once at spawn: a launcher spawn on Linux or macOS while
+	// CLAUDE_SSH_LEAVE_GROUPS is not 1. The exit goroutine then ends what the leader
+	// left in its group (launchergroup_unix.go). leaderHeld is true, under p.mu, while
+	// that end on Linux holds the unreaped leader. It clears before the wait.
+	// keepsGroup is set once at spawn by -keep-children. stopKilledGroup is set, under
+	// p.mu, once a shutdown sent the group SIGKILL of that end (killHeldGroupAtStop).
+	endsGroup       bool
+	leaderHeld      bool
+	keepsGroup      bool
+	stopKilledGroup bool
+	// sweepKilledGroup is set once the shutdown sweep or endAsked sent this group its
+	// SIGKILL. An atomic, so the macOS end reads it with no lock after the reap.
+	sweepKilledGroup atomic.Bool
+	// groupKillClaimed is taken once by the one group SIGKILL that the end of a launcher's
+	// group, endAsked and a client KILL after the leader's exit send together.
+	groupKillClaimed atomic.Bool
+	// leaderReapSeen is set by the macOS end as its first step after cmd.Wait, before the
+	// reaped mark. A signal path that tests it later sends no second group SIGKILL. One
+	// that passed the test before can still send.
+	leaderReapSeen atomic.Bool
 	// forgetRecord removes the child's registry record. The exit goroutine calls it
 	// as soon as the wait on the child returns, before the pipe drain, and then
 	// closes recordDone. Both are set once at spawn. A nil value means there is
@@ -258,11 +281,12 @@ type Proc struct {
 	// set once the SIGTERM of the end went out. unheldKilled is set once a group SIGKILL
 	// of the end went out, and unheldStayed when the child still ran at that SIGKILL.
 	// These four change under p.mu. unheldGate closes before the reap of the child.
-	unheldTTL                                time.Duration
-	stopsBegan                               *atomic.Bool
-	unheldSince                              time.Time
-	unheldTermed, unheldKilled, unheldStayed bool
-	unheldGate                               sysproc.LeaderGate
+	unheldTTL                  time.Duration
+	stopsBegan                 *atomic.Bool
+	unheldSince                time.Time
+	unheldTermed, unheldStayed bool
+	unheldKilled               atomic.Bool
+	unheldGate                 sysproc.LeaderGate
 	// unheldExitSeen is the seam unheldExitSeen as spawnWith read it, set before the
 	// exit goroutine starts.
 	unheldExitSeen func(*Proc)
@@ -333,6 +357,13 @@ type Manager struct {
 	// While it is pending, a spawn answers the same (measured on Windows against
 	// 4c111e86). In both states the spawn puts its child in no job (from the code). Nil: no test.
 	JobTest *JobTest
+
+	// LeaveGroups is set once at the start of the daemon, by CLAUDE_SSH_LEAVE_GROUPS=1.
+	// A launcher spawn then gets no end of its group (launchergroup_unix.go).
+	LeaveGroups bool
+	// KeepChildren is -keep-children, set once at the start of the daemon. A shutdown
+	// then sends no signal to the group of an exited launcher.
+	KeepChildren bool
 
 	// adopted is the environment of the last good server.adoptEnv (adoptenv.go).
 	adopted adoptedEnv
@@ -629,7 +660,7 @@ func (p *Proc) signalIfLiveErr(signame, killedBy string) (bool, error) {
 // running child. That temp_root replaces no other reason is claustrum's own, not
 // measured.
 func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
-	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
+	if !p.running || p.reaped || p.leaderReapSeen.Load() || p.cmd == nil || p.cmd.Process == nil {
 		return false, nil
 	}
 	takeOver := killedBy == "temp_root" && p.killedBy == "client" && sysproc.SurelyRuns(p.cmd.Process)
@@ -647,6 +678,9 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 	p.signalled = true
 	if killedBy == "shutdown" {
 		p.endedByShutdown = true
+		if signame == "KILL" {
+			p.sweepKilledGroup.Store(true)
+		}
 	}
 	return true, nil
 }
@@ -676,7 +710,32 @@ func (p *Proc) killGroupAfterExit() error {
 	if p.cmd == nil || p.cmd.Process == nil {
 		return nil
 	}
+	if p.endsGroup && !p.launcherStillRunsLocked() {
+		return p.claimedGroupKillLocked()
+	}
 	return signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
+// launcherStillRunsLocked reports that the leader of a launcher spawn has not exited.
+// An escalation on such a child takes no claim, because the claim covers the group end
+// after the exit. The end that follows still sends its one SIGKILL. A taken claim means
+// that the exit came already. The caller holds p.mu.
+func (p *Proc) launcherStillRunsLocked() bool {
+	return !p.reaped && !p.leaderReapSeen.Load() && !p.groupKillClaimed.Load() && sysproc.SurelyRuns(p.cmd.Process)
+}
+
+// claimedGroupKillLocked sends the group SIGKILL of an exited child. For a launcher with
+// the end on it sends the group's one SIGKILL: nothing if the claim is taken. A refused
+// signal gives the claim back, so the end can still send it. The caller holds p.mu.
+func (p *Proc) claimedGroupKillLocked() error {
+	if p.endsGroup && p.groupKillClaimed.Swap(true) {
+		return nil
+	}
+	err := signalGroup(p.group, p.cmd.Process, "KILL")
+	if err != nil && p.endsGroup {
+		p.groupKillClaimed.Store(false)
+	}
+	return err
 }
 
 // killGroupBeforeExitFrame sends SIGKILL to the group of a process whose exit frame is
@@ -689,7 +748,28 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	if !p.running || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+	// The claim is taken under p.mu. On Linux the end clears leaderHeld under p.mu
+	// before its wait, so a SIGKILL that won here lands before the reap.
+	if p.endsGroup && p.groupKillClaimed.Swap(true) {
+		return
+	}
+	// A refused kill gives the claim back and is no killed group, so the end still sends.
+	if err := signalGroup(p.group, p.cmd.Process, "KILL"); err != nil {
+		if p.endsGroup {
+			p.groupKillClaimed.Store(false)
+		}
+		return
+	}
+	p.sweepKilledGroup.Store(true)
+}
+
+// launcherLeaderGone reports that p is a launcher spawn whose leader has exited: seen
+// and held on Linux, reaped on macOS. endAsked counts such a child as exited (87375cc7,
+// measured on Linux and macOS).
+func (p *Proc) launcherLeaderGone() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.endsGroup && p.reaped
 }
 
 // killGroupInDrain sends SIGKILL to the group of a process inside its exit drain:
@@ -703,17 +783,19 @@ func (p *Proc) killGroupBeforeExitFrame() {
 //
 // With skipLivePid true it sends nothing if pidInUse finds a live process at the pid of
 // the ended child, because the group number is that pid (claustrum's own, not measured).
-// process.kill passes true and killAndWait passes false.
+// process.kill passes true and killAndWait passes false. While the end of a launcher's
+// group holds the unreaped leader (leaderHeld), the pid is that zombie and the group
+// number cannot be reused, so the test is skipped and the KILL ends the group at once.
 func (p *Proc) killGroupInDrain(skipLivePid bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || !p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	if skipLivePid && PidInUse(p.cmd.Process.Pid) {
+	if skipLivePid && !p.leaderHeld && PidInUse(p.cmd.Process.Pid) {
 		return
 	}
-	_ = signalGroup(p.group, p.cmd.Process, "KILL")
+	_ = p.claimedGroupKillLocked()
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -1264,6 +1346,8 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		sessionKey:  sessionKey,
 		askEnd:      argsAskEnd(args),
 		tempRootEnd: tempRoot.End,
+		endsGroup:   launcher != nil && LauncherGroupEndBuilt && !m.LeaveGroups,
+		keepsGroup:  m.KeepChildren,
 		subs:        map[*conn.Conn]struct{}{c: {}},
 		running:     true,
 		stdin:       stdin,
@@ -1420,9 +1504,21 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	if p.unheldTTL > 0 {
 		p.killGroupOnUnheldExit()
 	}
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	// On Linux the group of an exited launcher ends here, while the unreaped leader
+	// holds the group number (87375cc7, measured on Linux).
+	var groupExitSeen time.Time
+	if p.endsGroup && !groupEndAfterReap {
+		groupExitSeen = p.settleLeftGroupHeld(drained)
+	}
 	// cmd.Wait returns the moment the process itself exits — it no longer
 	// waits on the pipes, because they are ours now.
 	err := p.cmd.Wait()
+	// On macOS it ends here, right after the reap (87375cc7, measured on macOS).
+	if p.endsGroup && groupEndAfterReap {
+		p.settleLeftGroupReaped()
+	}
 	code := 0
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -1468,9 +1564,11 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	// the exit and the grandchild's next write fails with EPIPE (measured at
 	// 5db5e4a). Waiting for EOF instead (what claustrum did) means the exit frame
 	// is delayed for as long as the grandchild lives, which for a dev server is
-	// "never".
-	drained := make(chan struct{})
-	go func() { wg.Wait(); close(drained) }()
+	// "never". After the end of a launcher's group the grace counts from the exit of
+	// the leader, not from its later reap (87375cc7, measured on Linux).
+	if !groupExitSeen.IsZero() {
+		grace -= time.Since(groupExitSeen)
+	}
 	select {
 	case <-drained:
 	case <-time.After(grace):
@@ -2208,6 +2306,10 @@ func argsAskEnd(args []string) bool {
 	return false
 }
 
+// beforeSweepSignal runs in the sweep between its test of a held leader and its signal.
+// A seam for a test. Production never reassigns it.
+var beforeSweepSignal = func(*Proc) {}
+
 // KillAllCount ends every live child at shutdown. It returns how many children got
 // a signal, for the "cleanup:" line. A child that refused the signal counts too
 // (claustrum's own, not measured).
@@ -2222,16 +2324,25 @@ func (m *Manager) KillAllCount() int {
 	n := 0
 	var asked []*Proc
 	for _, p := range m.procs {
+		// The group of an exited launcher whose leader is still held (Linux).
+		if p.killHeldGroupAtStop() {
+			n++
+			continue
+		}
 		sig := "KILL"
 		if ShutdownAsksEnd && p.askEnd {
 			sig = "TERM"
 		}
 		// Skip exited children — their pgid may already be recycled (see kill).
+		beforeSweepSignal(p)
 		if p.signalIfLive(sig, "shutdown") {
 			n++
 			if sig == "TERM" {
 				asked = append(asked, p)
 			}
+		} else if p.killHeldGroupAtStop() {
+			// The exit goroutine took the hold between the two tests.
+			n++
 		}
 	}
 	m.mu.Unlock()
@@ -2245,9 +2356,12 @@ func (m *Manager) KillAllCount() int {
 // shutdownEndGrace. A child that is still there at the end of the wait gets the group
 // SIGKILL then (b3081b51, measured on Linux and macOS). That includes a child whose
 // exit drain a member of its group holds open (claustrum's own, not measured). The wait is bounded, so the shutdown
-// takes at most shutdownEndGrace longer. A child counts as ended when its exit frame
-// is out (claustrum's own, not measured). Then it logs one line, whose text is the
-// reference's (measured on Linux and macOS).
+// takes at most shutdownEndGrace longer. A child counts as exited when its exit frame
+// is out. A launcher spawn with the end on also counts once its leader has exited
+// (87375cc7, measured on Linux and macOS). With a member that holds the pipes of a spawn
+// with no launcher, 87375cc7 counts it as exited and claustrum as killed (measured on
+// Linux and macOS). Then it logs one line, whose text is the reference's (measured on
+// Linux and macOS).
 //
 // b3081b51 also sends the group SIGKILL after the exit of an ended child (measured on
 // Linux). claustrum sends no signal to a child whose exit frame is out, and so none
@@ -2271,7 +2385,11 @@ func endAsked(asked []*Proc, start time.Time) {
 		case <-p.done:
 			exited++
 		default:
-			killed++
+			if p.launcherLeaderGone() {
+				exited++
+			} else {
+				killed++
+			}
 			p.killGroupBeforeExitFrame()
 		}
 	}

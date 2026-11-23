@@ -187,11 +187,11 @@ func (m *Manager) endUnheld(p *Proc, now time.Time, grace time.Duration) (again 
 	p.unheldGate.Do(func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if p.unheldKilled || p.stopsBegan.Load() {
+		if p.unheldKilled.Load() || p.stopsBegan.Load() {
 			return
 		}
 		live, _ := p.signalIfLiveLocked("KILL", "unattended")
-		p.unheldKilled = live
+		p.unheldKilled.Store(live)
 		p.unheldStayed = live
 	})
 	return false
@@ -219,11 +219,11 @@ func (p *Proc) killGroupOnUnheldExit() {
 		p.unheldGate.Do(func() {
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			if !p.unheldTermed || p.unheldKilled || p.stopsBegan.Load() || !groupMadeAtSpawn(p.cmd.Process.Pid) {
+			if !p.unheldTermed || p.unheldKilled.Load() || p.stopsBegan.Load() || !groupMadeAtSpawn(p.cmd.Process.Pid) {
 				return
 			}
 			_ = signalGroup(p.group, p.cmd.Process, "KILL")
-			p.unheldKilled = true
+			p.unheldKilled.Store(true)
 		})
 	}
 	if seen && p.unheldExitSeen != nil {

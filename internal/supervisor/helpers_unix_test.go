@@ -42,6 +42,9 @@ func exitZeroOnSigterm() {
 	}()
 }
 
+// startOwnSession moves this process to a session of its own.
+func startOwnSession() { _, _ = syscall.Setsid() }
+
 // leaveSpawnGroup moves the helper child into the group of its parent, the test
 // binary, out of the group that its spawn made (the "leave-group-term-exit0" mode).
 func leaveSpawnGroup() {
