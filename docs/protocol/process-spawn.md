@@ -487,6 +487,7 @@ Its `server.capabilities` feature is `process.spawn.shellAgentSocket`. A child w
 - A dialed socket that does not accept a connection in 250 ms is not handed on. The shell runs again only 10 minutes after the last run, never after 3 failed runs in a row. A connect still open after 500 ms ends the hand-off for good (`f6010b97`, measured on Linux: a dial that hangs gets no login shell run 610 s later). A stat that does not answer ends it too (for good: claustrum's own). The reply then comes after 0.5 to 1.5 s, also for a stat that answers at 1.5 s (`4c111e86`, measured on Linux). It logs `[shellenv] A check of SSH_AUTH_SOCK=<path> never returned (a hung filesystem?); not using it or asking the login shell again for this daemon's lifetime` (`4c111e86`, measured on Linux).
 - While the `PATH` read runs, the step runs no shell (measured against `52d82f0a`).
 - The step never fails a spawn. Each run and give-up writes a `[shellenv]` line.
+- A `gitRead` spawn skips this step. It runs no shell for the socket, logs no agent line and uses up no try, and its git gets an empty `SSH_AUTH_SOCK` (`87375cc7` and `4c111e86`, measured on Linux). With a login shell that exports none, the next plain spawn logs `try 1 of 3` (Linux and macOS). On macOS, with that shell, the `gitRead` spawn logs no agent line and its git gets the empty value. A macOS login shell that exports a socket and a cached socket are claustrum's own, not measured.
 
 ## Rare states
 
