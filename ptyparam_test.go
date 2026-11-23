@@ -12,6 +12,10 @@ import (
 // macOS too). Absent and null run the child (measured on Linux). A bare value with no
 // id, and an object with a valid key that runs with no terminal, are claustrum's own.
 func TestSocketPlainSpawnPtyMember(t *testing.T) {
+	// The row of a valid key is the Linux and macOS path. Windows has its own test.
+	prev := keyedPtyRefused
+	keyedPtyRefused = false
+	t.Cleanup(func() { keyedPtyRefused = prev })
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	const invalid = `{"code":-32602,"message":"Invalid params"}`
