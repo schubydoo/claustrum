@@ -313,7 +313,7 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   huge value, which is a different, observable behavior.
 - **Git time limits** (`internal/git/gitstop.go`) are always on and are no divergence
   ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)).
-- **The deadline kill of the content check** (Linux, `internal/git/worktreecontentkill.go`, `helperKills`). At the `timeoutMs` deadline the running `cat-file --batch` and commit `hash-object` each get one `SIGKILL` through their process handle, before their stdin closes ([rule](docs/protocol/git-worktree-create.md#the-content-check)). Never widen: signal only these two gits of this check, before their reap (`sysproc.LeaderGate`), never a group, and never a tree or file `hash-object`.
+- **The deadline kill of the content check** (Linux, `internal/git/worktreecontentkill.go`, `helperKills`). At the `timeoutMs` deadline the running `cat-file --batch` and commit `hash-object` each get one `SIGKILL` through their process handle ([rule](docs/protocol/git-worktree-create.md#the-content-check)). In a check that saw the deadline it comes before their stdin closes. Never widen: signal only these two gits of this check, before their reap (`sysproc.LeaderGate`), never a group, and never a tree or file `hash-object`.
 - **The `timeoutMs` stop of the read-tree call** (`internal/git/githarden.go`, `cmd.Cancel`). Never widen: it sends its
   group `SIGKILL` only before the reap of git (`sysproc.LeaderGate`). The kill after a drain overrun comes before the reap too (`runCheckoutPipes`). A wait with no exit status sends no overrun kill (claustrum's own).
 - **A failed read-tree call** (Linux, `runCheckoutPipes`). After the checkout git of a create fails by itself, its group gets one

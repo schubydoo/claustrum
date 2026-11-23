@@ -481,7 +481,7 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 			return body, ""
 		case errors.Is(err, errContentDeadline):
 			return nil, err.Error()
-		case c.endedByKill(err):
+		case c.endedByKill(err): // also a tree hash-object that fails by itself after the kill: its stop line is not written
 			return nil, errContentDeadline.Error()
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))

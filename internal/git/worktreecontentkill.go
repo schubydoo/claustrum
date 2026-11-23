@@ -13,15 +13,15 @@ import (
 // The kill at the deadline of the content check. On Linux, 4c111e86 and
 // 87375cc7 send one SIGKILL to the process of the running `cat-file --batch`
 // and of the running commit hash-object, 0 to 2 ms after the timeoutMs deadline
-// (measured on Linux). No SIGTERM and no group signal come. The kill comes
-// before the close of their stdin, and also while another git call of the check
-// runs. A check with no deadline, or one that ends before it, sends none.
+// (measured on Linux). No SIGTERM and no group signal come. A check that saw the deadline kills before it closes their stdin.
+// After another close, a helper that hangs gets the kill with stdin closed (from the code). The kill also comes while
+// another git call of the check runs. A check with no deadline, or one that ends before it, sends none.
 //
 // Those builds also kill the tree hash-object and the hash-object of the files
 // (measured on Linux). Claustrum does not, so these two run as before. macOS and
 // Windows send no signal here, because no row measures them.
 //
-// Claustrum's own, not measured: a helper that starts after the deadline gets no
+// Claustrum's own, not measured: a helper not yet tracked when the kills go out gets no
 // kill, and one kill goes to each helper. 87375cc7 sends a second SIGKILL 2 s
 // later, to a helper that is dead and not yet reaped (measured on Linux).
 
@@ -44,8 +44,8 @@ type helperKills struct {
 var deadlineHelperKill = func(p *os.Process) error { return p.Kill() }
 
 // track is the step of a helper between its start and its reap (gitStop). It
-// returns after the exit of the helper. A helper that starts after the kills
-// went out is not tracked.
+// returns after the exit of the helper. A helper not yet tracked when the kills
+// go out gets no kill.
 func (k *helperKills) track(p *os.Process) {
 	h := &deadlineHelper{p: p}
 	k.mu.Lock()
@@ -135,8 +135,8 @@ func (c *contentCheck) helperTrack() func(*os.Process) {
 }
 
 // endedByKill reports that err of a long-running hash-object follows the kill
-// of the deadline. The check then stops with no stop line (87375cc7, measured
-// on Linux).
+// of the deadline. The check then stops with no stop line (87375cc7, measured on Linux).
+// A tree hash-object that fails by itself after the kill counts too, and its stop line is not written (claustrum's own, not measured).
 func (c *contentCheck) endedByKill(err error) bool {
 	return !errors.Is(err, errNoHashHelper) && c.kills.sent() && c.pastDeadline()
 }
