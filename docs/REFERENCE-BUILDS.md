@@ -181,8 +181,8 @@ rest are noise such as a random name, timing, or a known gap.
 These items stay open:
 
 - claustrum does not build the terminal: the `pty` member of `process.spawn` and the
-  method `process.resize`. A `pty` object with a key runs the command with no terminal
-  (claustrum's own). The maintainer holds the terminal until a Claude Desktop build
+  method `process.resize`. On Linux and macOS a `pty` object with a key runs the command
+  with no terminal (claustrum's own). The maintainer holds the terminal until a Claude Desktop build
   calls it.
 - The text of the ssh door in the `GIT_SSH_COMMAND` of the read-tree call differs from
   the reference, by the maintainer's choice. A copy of that text is a copy of code by

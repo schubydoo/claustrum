@@ -11,6 +11,17 @@ import (
 	"github.com/schubydoo/claustrum/internal/supervisor"
 )
 
+// TestLinkBoundLauncherLogLine pins the one failed-start line of linkBound with a
+// launcher (4c111e86, measured on Linux and Windows, and 87375cc7, measured on Windows).
+func TestLinkBoundLauncherLogLine(t *testing.T) {
+	logs := captureLogBuf(t)
+	spawnErrorOf(t, map[string]any{"id": "lb-log", "command": "/no/such/plain", "linkBound": map[string]any{}, "launcher": []string{"/no/such/launcher"}})
+	const line = "[process.Manager] Failed to start process lb-log: linkBound cannot be combined with pty or launcher"
+	if n := strings.Count(logs.String(), line); n != 1 {
+		t.Errorf("%d lines of %q, want 1:\n%s", n, line, logs.String())
+	}
+}
+
 // linkSpawnReq builds a process.spawn request of a helper mode with extra params.
 func linkSpawnReq(t *testing.T, id int, procID, mode string, args []string, extra map[string]any) string {
 	t.Helper()
