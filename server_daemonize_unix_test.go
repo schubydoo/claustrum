@@ -294,9 +294,9 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 		t.Errorf("the session folders line appears %d times, want 1", n)
 	}
 
-	// Linux logs the start line of files.read real once. The host /proc is real
-	// here, so it is the pass line.
-	if runtime.GOOS == "linux" {
+	// Linux and macOS log the start line of files.read real once. On Linux the host
+	// /proc is real here, so it is the pass line. macOS has only the pass line.
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		const passLine = "[FilesHandler] files.realpath: using the OS's path for the open handle"
 		if n := strings.Count(string(b), passLine); n != 1 {
 			t.Errorf("the files handler start line appears %d times, want 1", n)

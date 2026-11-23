@@ -16,8 +16,8 @@ const (
 // readRealStartLine gives the start line of the files handler on the system
 // goos, or "" for none. Linux gives the line of its start test (683cc6a9).
 // Windows gives the pass line, with no files.realpath call (4c111e86 and
-// c9125eb8, measured on Windows). macOS gives none: its start lines are not
-// measured.
+// c9125eb8, measured on Windows). macOS gives the pass line too (4c111e86 and
+// 87375cc7, measured on macOS).
 func readRealStartLine(goos string, available func() bool) string {
 	switch goos {
 	case "linux":
@@ -25,7 +25,7 @@ func readRealStartLine(goos string, available func() bool) string {
 			return filesRealPassLine
 		}
 		return filesRealFailLine
-	case "windows":
+	case "darwin", "windows":
 		return filesRealPassLine
 	}
 	return ""

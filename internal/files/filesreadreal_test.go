@@ -36,7 +36,7 @@ func TestFilesReadRealLoop(t *testing.T) {
 
 // TestReadRealStartLineBySystem: Windows logs the pass line with no start test
 // (4c111e86 and c9125eb8, measured on Windows). Linux logs the line of its start
-// test (683cc6a9). macOS logs none, as its lines are not measured.
+// test (683cc6a9). macOS logs the pass line (4c111e86 and 87375cc7, measured on macOS).
 func TestReadRealStartLineBySystem(t *testing.T) {
 	pass := func() bool { return true }
 	fail := func() bool { return false }
@@ -48,7 +48,7 @@ func TestReadRealStartLineBySystem(t *testing.T) {
 		{"windows", fail, filesRealPassLine},
 		{"linux", pass, filesRealPassLine},
 		{"linux", fail, filesRealFailLine},
-		{"darwin", pass, ""},
+		{"darwin", fail, filesRealPassLine},
 	} {
 		if got := readRealStartLine(tc.goos, tc.available); got != tc.want {
 			t.Errorf("readRealStartLine(%s) = %q, want %q", tc.goos, got, tc.want)
