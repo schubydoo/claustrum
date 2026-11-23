@@ -109,7 +109,8 @@ var errContentDeadline = errors.New("the deadline of the request passed")
 
 // pastDeadline reports whether the deadline passed. Then the check reads no object,
 // also by a separate run (4c111e86, measured on Linux for a batch that did not answer).
-// On Windows 4c111e86 logs "stopped at the deadline" after it read 2 objects (measured).
+// A deadline during another git call does not cut that call. The next step tests it
+// (4c111e86 and 87375cc7, measured on Linux, and 4c111e86 on Windows).
 func (c *contentCheck) pastDeadline() bool {
 	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
 		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {
@@ -199,8 +200,7 @@ type contentFile struct {
 // is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
 // check that stops at the deadline returns nil and atDeadline: the caller then
 // runs only the config listing of the copy step and answers the timeout
-// (4c111e86, measured on Linux with a batch that did not answer). After the other
-// stop points, the Windows stop too, the same is claustrum's own (dotClaudeListingOnly).
+// (dotClaudeListingOnly).
 func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
 	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}
@@ -341,6 +341,12 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 		return nil, r
 	}
 	ids, failed := c.worktreeIDs(hashed)
+	// The result of a hash that the deadline passed during is not used, and the
+	// line counts no file (4c111e86 and 87375cc7, measured on Linux). A failed
+	// call at that point is claustrum's own, not measured.
+	if len(hashed) > 0 && c.pastDeadline() {
+		return nil, nil
+	}
 	if failed {
 		// A failed hash-object call whose files changed kind refuses with no
 		// cat-file blob call (measured on Linux). The log line then counts no
@@ -393,12 +399,23 @@ func (c *contentCheck) contentMismatch(name string) *contentRefusal {
 // or of the create. On macOS a stopped `hash-object --stdin-paths` is
 // followed by the compare step, and the create succeeds (measured).
 func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
+	return c.gitAfterListing(false, dir, stdin, env, args...)
+}
+
+// gitAfterListing is git. With endAtDeadline set, a deadline that passed by the
+// end of the config listing starts no call. The hash-object call of the files
+// does not start then (4c111e86 and 87375cc7, measured on Linux, and 4c111e86 on
+// Windows).
+func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
 	s := c.u.stop
 	if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, dir, args...)
+	if endAtDeadline && c.pastDeadline() {
+		return nil, "", errContentDeadline
+	}
 	cmd.Env = append(cmd.Env, env...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -463,6 +480,8 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 			}
 			c.read++
 			return body, ""
+		case errors.Is(err, errContentDeadline):
+			return nil, err.Error()
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))
 			c.stopped = true
@@ -675,7 +694,7 @@ func (c *contentCheck) worktreeIDs(files []contentFile) (ids []string, failed bo
 		}
 		in.WriteString(p + "\n")
 	}
-	out, _, err := c.git(c.repo, []byte(in.String()), nil, "hash-object", "--no-filters", "--stdin-paths")
+	out, _, err := c.gitAfterListing(true, c.repo, []byte(in.String()), nil, "hash-object", "--no-filters", "--stdin-paths")
 	if err != nil {
 		return nil, !isGitStop(err)
 	}

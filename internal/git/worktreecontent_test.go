@@ -1181,6 +1181,205 @@ func TestContentCheckStopsAtTheDeadline(t *testing.T) {
 	noReadbackFolder(t, f)
 }
 
+// callsAfter names the calls after calls[from] up to the for-each-ref of the
+// branch step. An ask about the repository after the 5 s of a kept answer
+// (probeKeep) is left out.
+func callsAfter(calls []envCall, from int) []string {
+	var after []string
+	for _, n := range calls[from+1:] {
+		switch {
+		case slices.Equal(n.argv, []string{"config", "-z", "--list"}):
+			after = append(after, "listing")
+		case containsSeq(n.argv, "rev-parse", "--git-dir"):
+		default:
+			after = append(after, n.argv[len(n.argv)-1])
+		}
+		if slices.Contains(n.argv, "for-each-ref") {
+			break
+		}
+	}
+	return after
+}
+
+// isFileHash reports the `hash-object --no-filters --stdin-paths` call of the
+// files. The long-running hash-object calls end with -w.
+func isFileHash(c envCall) bool {
+	return slices.Contains(c.argv, "hash-object") && c.argv[len(c.argv)-1] == "--stdin-paths"
+}
+
+// TestContentCheckDeadlineDuringAListing: the deadline passes while the config
+// listing of the next git call is held. That listing ends, its call does not
+// start, and the check stops with the objects hashed so far (4c111e86 and
+// 87375cc7, measured on Linux, and 4c111e86 on Windows for the file hash). The
+// copy step then runs its listing, though `.claude/` holds only `worktrees`.
+// Mutations: no test after the listing of a hash-object (the call starts and
+// the count grows), and the old test for a child of `.claude/` (one listing
+// fewer).
+func TestContentCheckDeadlineDuringAListing(t *testing.T) {
+	for _, tc := range []struct {
+		name, before string
+		objects      int
+		notRun       func(envCall) bool
+	}{
+		{"commit hash", "cat-file,--batch", 0, func(c envCall) bool { return stubMatches(c.argv, "hash-object,commit,--stdin-paths") }},
+		{"tree hash", "hash-object,commit,--stdin-paths", 1, func(c envCall) bool { return stubMatches(c.argv, "hash-object,tree,--stdin-paths") }},
+		{"file hash", "hash-object,tree,--stdin-paths", 2, isFileHash},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".mcp.json": "{}\n"})
+			if err := os.MkdirAll(filepath.Dir(f.leaf), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			marker := gateStubPre(t, tc.before)
+			held := filepath.Join(t.TempDir(), "held")
+			t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "config,-z,--list")
+			t.Setenv("CLAUSTRUM_GITSTUB_AFTER2", marker+".in")
+			t.Setenv("CLAUSTRUM_GITSTUB_GATE2", held)
+			t.Setenv("CLAUSTRUM_GITSTUB_MS2", "30000")
+			t.Cleanup(func() { _ = os.WriteFile(held, nil, 0o644) })
+			firedDeadlineThen(t, func() bool { return exists(held + ".in") }, func() { _ = os.WriteFile(held, nil, 0o644) })
+			logs := captureLogBuf(t)
+			raw, calls := f.create(t, map[string]any{"timeoutMs": markerTimeoutMs})
+			if !strings.Contains(raw, `"errorCode":"timeout"`) || !strings.Contains(raw, "deadline expired after the checkout finished") {
+				t.Fatalf("git.worktree_create = %s, want the timeout of a good checkout", raw)
+			}
+			commit := gitRevParse(t, f.repo, "HEAD")
+			if want := checkedLine("0", "files", tc.objects, commit, "stopped at the deadline"); !want.MatchString(logs.String()) {
+				t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+			}
+			if slices.ContainsFunc(calls, tc.notRun) {
+				t.Errorf("the call after the held listing started: %v", calls)
+			}
+			if strings.Contains(logs.String(), "stopped using the long-running git") {
+				t.Errorf("log:\n%s\nwant no stop line of a long-running git", logs)
+			}
+			from := slices.IndexFunc(calls, func(c envCall) bool { return stubMatches(c.argv, tc.before) })
+			if from < 0 {
+				t.Fatalf("no call %q", tc.before)
+			}
+			// The held listing, the listing of the copy step, and the listing of
+			// the branch step with its for-each-ref call.
+			if got, want := callsAfter(calls, from), []string{"listing", "listing", "listing", "refs/heads/"}; !slices.Equal(got, want) {
+				t.Errorf("the calls after %q are %q, want %q", tc.before, got, want)
+			}
+			noReadbackFolder(t, f)
+		})
+	}
+}
+
+// TestContentCheckDeadlineBeforeALevelHash: after a stop of the batch, the
+// deadline passes during the listing of the tree hash-object of a read per
+// folder depth. That git does not start, and the check stops with no stop line
+// of that git (claustrum's own, not measured). Mutation: no deadline arm in
+// readLevel (the nil git of the level is closed, a panic).
+func TestContentCheckDeadlineBeforeALevelHash(t *testing.T) {
+	f := twoFolderFixture(t)
+	slowGit(t, "cat-file,--batch", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_NTHFILE", filepath.Join(t.TempDir(), "nth"))
+	t.Setenv("CLAUSTRUM_GITSTUB_NTH", "1")
+	stdin := filepath.Join(t.TempDir(), "stdin")
+	t.Setenv("CLAUSTRUM_GITSTUB_STDINLOG", stdin)
+	held := filepath.Join(t.TempDir(), "held")
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "config,-z,--list")
+	t.Setenv("CLAUSTRUM_GITSTUB_AFTER2", stdin)
+	t.Setenv("CLAUSTRUM_GITSTUB_GATE2", held)
+	t.Setenv("CLAUSTRUM_GITSTUB_MS2", "30000")
+	t.Cleanup(func() { _ = os.WriteFile(held, nil, 0o644) })
+	firedDeadlineThen(t, func() bool { return exists(held + ".in") }, func() { _ = os.WriteFile(held, nil, 0o644) })
+	logs := captureLogBuf(t)
+	raw, calls := f.create(t, map[string]any{"timeoutMs": markerTimeoutMs})
+	if !strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Fatalf("git.worktree_create = %s, want the timeout of a good checkout", raw)
+	}
+	if want := checkedLineSep("0", "files", 2, 2, gitRevParse(t, f.repo, "HEAD"), "stopped at the deadline"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	if n := strings.Count(logs.String(), "stopped using the long-running git"); n != 1 {
+		t.Errorf("log:\n%s\nwant only the stop line of the batch, got %d", logs, n)
+	}
+	got, _ := objectCalls(calls)
+	want := []string{"batch", "read commit", "write commit", "read tree", "write tree", "buffer"}
+	if !slices.Equal(got, want) {
+		t.Errorf("object calls = %q, want %q", got, want)
+	}
+}
+
+// gateStubPre makes the first rule of the stub write its gate file with ".in"
+// added when a call that match names starts, with no wait, and returns the
+// gate file.
+func gateStubPre(t *testing.T, match string) string {
+	t.Helper()
+	gate := filepath.Join(t.TempDir(), "gate")
+	slowGit(t, match, "pre", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_GATE", gate)
+	return gate
+}
+
+// TestContentCheckDeadlineDuringTheFileHash: the deadline passes during the
+// `hash-object --stdin-paths` call of the files. The call is not cut, its result
+// is not used, and the line counts no file (4c111e86 and 87375cc7, measured on
+// Linux). A create with no `.claude/` folder runs no listing of the copy step
+// (claustrum's own, not measured). Mutations: no test after that call (the line
+// ends with match), and no test for the folder (one listing more).
+func TestContentCheckDeadlineDuringTheFileHash(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		outside bool
+		want    []string
+	}{
+		{"only worktrees in .claude", false, []string{"listing", "listing", "refs/heads/"}},
+		{"no .claude folder", true, []string{"listing", "refs/heads/"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".mcp.json": "{}\n"})
+			extra := map[string]any{"timeoutMs": markerTimeoutMs}
+			if tc.outside {
+				extra["worktreePath"] = filepath.Join(f.repo, "wt", "w1")
+				if err := os.RemoveAll(filepath.Join(f.repo, ".claude")); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.MkdirAll(filepath.Dir(f.leaf), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			gate := gateStub(t, "hash-object,--stdin-paths", 30*time.Second, "", "")
+			contentTestCallOnly(t)
+			t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o644) })
+			firedDeadlineThen(t, func() bool { return exists(gate + ".in") }, func() { _ = os.WriteFile(gate, nil, 0o644) })
+			logs := captureLogBuf(t)
+			raw, calls := f.create(t, extra)
+			if !strings.Contains(raw, `"errorCode":"timeout"`) || !strings.Contains(raw, "deadline expired after the checkout finished") {
+				t.Fatalf("git.worktree_create = %s, want the timeout of a good checkout", raw)
+			}
+			if want := checkedLine("0", "files", 2, gitRevParse(t, f.repo, "HEAD"), "stopped at the deadline"); !want.MatchString(logs.String()) {
+				t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+			}
+			from := slices.IndexFunc(calls, isFileHash)
+			if from < 0 {
+				t.Fatal("no hash-object call of the files")
+			}
+			if got := callsAfter(calls, from); !slices.Equal(got, tc.want) {
+				t.Errorf("the calls after the file hash are %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestContentCheckDeadlineAfterTheCheck: with a timeoutMs that does not expire
+// during the check, the line ends with match and the create succeeds (4c111e86
+// and 87375cc7, measured on Linux). Mutation: a stop that ignores the deadline
+// state fails this test.
+func TestContentCheckDeadlineAfterTheCheck(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".mcp.json": "{}\n"})
+	logs := captureLogBuf(t)
+	raw, _ := f.create(t, map[string]any{"timeoutMs": markerTimeoutMs})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if want := checkedLine("2", "files", 2, gitRevParse(t, f.repo, "HEAD"), "match"); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+}
+
 // waitStubExit waits up to 30 s for the end of the stub call whose argv holds
 // match, by its start line in timeLog (CLAUSTRUM_GITSTUB_TIMELOG). So its exit
 // lands in no later test. It writes the pid to pidFile for stubExited, and it
@@ -1212,7 +1411,13 @@ func waitStubExit(t *testing.T, timeLog, pidFile, match string) {
 // the timer.
 func firedDeadlineAt(t *testing.T, ready func() bool) {
 	t.Helper()
-	fired := deadlineAt(t, ready, nil)
+	firedDeadlineThen(t, ready, nil)
+}
+
+// firedDeadlineThen is firedDeadlineAt, and then runs once the deadline fired.
+func firedDeadlineThen(t *testing.T, ready func() bool, then func()) {
+	t.Helper()
+	fired := deadlineAt(t, ready, then)
 	marked := callerDeadline
 	callerDeadline = func(base context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 		ctx, cancel := marked(base, d)

@@ -149,13 +149,15 @@ func (c *contentCheck) startBatch() {
 	}
 	// No pipe: every object is read by a separate run, with no line
 	// (claustrum's own, not measured).
-	c.batch = c.startLong(nil, "cat-file", "--batch")
+	c.batch = c.startLong(false, nil, "cat-file", "--batch")
 }
 
 // startLong starts one long-running git of the check in the base repository,
 // with env after its environment. It gets the limit of one call, and its stop
-// stops no other call (contentCheck.git). It is nil when no pipe opened.
-func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
+// stops no other call (contentCheck.git). It is nil when no pipe opened. With
+// endAtDeadline set, it is also nil when the deadline passed by the end of the
+// config listing, and no git starts (gitAfterListing).
+func (c *contentCheck) startLong(endAtDeadline bool, env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil
@@ -166,6 +168,11 @@ func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, c.repo, args...)
+	if endAtDeadline && c.pastDeadline() {
+		_ = inR.Close()
+		_ = inW.Close()
+		return nil
+	}
 	cmd.Env = append(cmd.Env, env...)
 	outR, outW := io.Pipe()
 	cmd.Stdin, cmd.Stdout = inR, outW
@@ -314,8 +321,13 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 		return "", h, errNoHashHelper
 	}
 	if h == nil {
-		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		// A deadline that passed by the end of its listing starts no hash-object,
+		// and the object does not count (4c111e86 and 87375cc7, measured on Linux).
+		h = c.startLong(true, objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
 		if h == nil {
+			if c.atDeadline {
+				return "", nil, errContentDeadline
+			}
 			return "", nil, errNoHashHelper
 		}
 	}
@@ -508,6 +520,8 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 				c.separate++
 				bodies[i] = body
 				continue
+			case errors.Is(err, errContentDeadline):
+				return nil, err.Error()
 			case errors.Is(err, errNoHashHelper):
 				if text := c.writeObject("tree", t.id, body); text != "" {
 					return nil, text
@@ -541,7 +555,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 // answer. No pipe gives no fault (claustrum's own, not measured).
 func (c *contentCheck) readByDepth(level []*treeWalk) (read [][]byte, faulted bool) {
 	read = make([][]byte, len(level))
-	b := c.startLong(nil, "cat-file", "--buffer", "--batch")
+	b := c.startLong(false, nil, "cat-file", "--buffer", "--batch")
 	if b == nil {
 		return read, false
 	}
