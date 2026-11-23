@@ -68,8 +68,8 @@ type spawnParams struct {
 	// no object, or an unattendedSeconds that is no integer, gets Invalid params
 	// (claustrum's own, not measured: before, the member was ignored).
 	LinkBound *supervisor.LinkBoundParams `json:"linkBound"`
-	// Pty is the terminal member, read only for its refusals (ptyBare,
-	// ptyKeyRefusal). Absent and null give a plain spawn (measured on Linux).
+	// Pty is the terminal member, read only for its refusals (ptyBare, ptyMembersBad,
+	// ptyKeyRefusal, keyedPtyRefusal). Absent and null give a plain spawn (measured on Linux).
 	Pty json.RawMessage `json:"pty"`
 	// CLITempRoot asks for the private temp folder step (clitemproot_unix.go) on Linux
 	// and macOS. On Windows it changes nothing (b3081b51, measured with true, false and
@@ -130,7 +130,7 @@ func unattendedValue(v json.RawMessage) (n int64, set, ok bool) {
 // each of these, a pty object with a key, a command named ccd-cli or in a folder
 // named ccd-cli, the bare and the two --...-format=stream-json args, and a bare git
 // with a stream-json arg passes. 0 passes, also with each of these members.
-// Windows measured the plain rows and the bare stream-json arg (there ccd-cli.exe
+// Windows measured the plain rows, a pty object with a key and the bare stream-json arg (there ccd-cli.exe
 // does not count), and macOS -1, cliTempRootEnd, gitRead and a ccd-cli with a
 // stream-json arg.
 // A launcher spawn counts as the CLI path (measured on Linux, macOS and Windows).
@@ -264,6 +264,39 @@ func ptyKeyOK(v json.RawMessage) bool {
 	return err == nil
 }
 
+// keyedPtyText is the refusal of a pty object with a valid key on Windows (4c111e86
+// and 87375cc7, measured on Windows).
+const keyedPtyText = "this host's helper cannot open a terminal"
+
+// ptyMembersBad is true, while keyedPtyRefused holds, for a pty object whose members
+// fail the decode. Measured on Windows: a key that is a number, and cols or rows that
+// are negative, a text or 10^12, and cols of 80.5. A null key passes to the key test,
+// and absent or 0 cols or rows pass. claustrum's own, not measured: the 16-bit bound,
+// rows of 80.5, a null cols or rows, and other key types.
+func ptyMembersBad(v json.RawMessage) bool {
+	if !keyedPtyRefused || !ptyObject(v) {
+		return false
+	}
+	var o struct {
+		Key  string `json:"key"`
+		Cols uint16 `json:"cols"`
+		Rows uint16 `json:"rows"`
+	}
+	return json.Unmarshal(v, &o) != nil
+}
+
+// keyedPtyRefusal is the refusal of a spawn with a valid pty key while keyedPtyRefused
+// holds, or nil. It starts no child, writes no record and logs its failed-start line
+// (measured on Windows). A gitRead spawn gets its combine text instead (measured on
+// Windows).
+func keyedPtyRefusal(req *request, p *spawnParams) *rpc.Response {
+	if !keyedPtyRefused || p.GitRead || !ptyObject(p.Pty) || !ptyKeyOK(p.Pty) {
+		return nil
+	}
+	logging.Errorf("[process.Manager] Failed to start process %s: %s", supervisor.LogID(p.ID), keyedPtyText)
+	return rpc.Ptr(rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, keyedPtyText, supervisor.SpawnReason{Reason: "other"}))
+}
+
 // The pane's git of a gitRead spawn runs the git of the login-shell PATH, as
 // the git methods do, when the PATH of the daemon holds no git.
 func init() { supervisor.GitReadShellPathGit = git.ShellPathGit }
@@ -298,7 +331,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// The place of the unattendedSeconds type test right after the decode is
 	// claustrum's own, not measured.
 	unattended, unattendedSet, unattendedOK := unattendedValue(p.UnattendedSeconds)
-	if ptyBare(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK {
+	if ptyBare(p.Pty) || ptyMembersBad(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 	}
 	if p.ID == "" {
@@ -321,13 +354,24 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		logging.Errorf("[process.Manager] Failed to start process %s: %s", supervisor.LogID(p.ID), unattendedText)
 		return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, unattendedText, supervisor.SpawnReason{Reason: "other"})
 	}
+	// On Windows a valid key is refused here. The refusal wins over linkBound with a
+	// launcher, the launcher refusal, the cwd test, the command lookup and a live id
+	// (measured on Windows). Its place after the launcher shape test, and over a given-up
+	// or spent id, is claustrum's own, not measured.
+	if bad := keyedPtyRefusal(req, &p); bad != nil {
+		return *bad
+	}
 	// 683cc6a9 refuses linkBound with a launcher by this text (measured on Linux).
 	// The place of the test after the id and command tests is claustrum's own, not
 	// measured. "pty":true got Invalid params from the ptyBare test above.
 	var linkTTL time.Duration
 	if p.LinkBound != nil {
 		if p.Launcher != nil {
-			return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, "linkBound cannot be combined with pty or launcher", supervisor.SpawnReason{Reason: "other"})
+			const linkLauncherText = "linkBound cannot be combined with pty or launcher"
+			// The refusal logs its failed-start line (4c111e86, measured on Linux and
+			// Windows, and 87375cc7, measured on Windows).
+			logging.Errorf("[process.Manager] Failed to start process %s: %s", supervisor.LogID(p.ID), linkLauncherText)
+			return rpc.ErrResultData(req.ID, rpc.CodeInvalidParam, linkLauncherText, supervisor.SpawnReason{Reason: "other"})
 		}
 		linkTTL = supervisor.UnattendedTTL(p.LinkBound.UnattendedSeconds)
 	}
@@ -349,8 +393,8 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, gitReadShape(p.Args), s.gitReadStep(p.Cwd, p.Args))
 	} else {
 		// The place of this test after the id, launcher, command and linkBound
-		// tests is claustrum's own, not measured. A pty object with a valid key
-		// gives a plain spawn with no terminal (claustrum's own: it has none).
+		// tests is claustrum's own, not measured. On Linux and macOS a pty object with
+		// a valid key gives a plain spawn with no terminal (claustrum's own: it has none).
 		if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
 			return *bad
 		}
