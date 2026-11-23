@@ -1046,7 +1046,13 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	cmd.Env = install.StripEnv(buildSpawnEnvOn(adoptedEnv, adopted && gitRead == nil, env, noShellAgent), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
-	cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
+	// A gitRead spawn skips the step and uses up no try. Its git gets an empty
+	// SSH_AUTH_SOCK (87375cc7 and 4c111e86, measured on Linux, and on macOS with a
+	// login shell that exports none). A macOS login shell that exports a socket and
+	// a cached socket are claustrum's own, not measured.
+	if gitRead == nil {
+		cmd.Env = shellenv.AddAgentSocket(cmd.Env, noShellAgent)
+	}
 	// After a good adopt with no "noLoginShell":true, a spawn of any connection
 	// starts the read again of the login-shell PATH, and keeps the old PATH. A spawn
 	// with "disableShellAgentSocket":true starts none (c9125eb8, measured on Linux and
