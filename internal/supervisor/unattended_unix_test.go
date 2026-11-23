@@ -244,3 +244,232 @@ func TestUnheldNoTermAtAStepAfterAClientKill(t *testing.T) {
 		t.Errorf("an end line at a step after a client kill:\n%s", buf.String())
 	}
 }
+
+// refuseUnheldTerm makes each SIGTERM fail with err, with nothing sent, while the
+// returned switch is on. Every other signal goes on to its target.
+func refuseUnheldTerm(t *testing.T, err error) *atomic.Bool {
+	t.Helper()
+	refusing := &atomic.Bool{}
+	refusing.Store(true)
+	inner := signalGroup
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		if signame == "TERM" && refusing.Load() {
+			return &SignalFailed{Name: "terminated", Err: err}
+		}
+		return inner(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = inner })
+	return refusing
+}
+
+const refusedLineEnd = ": no connection attached for 1m0s, but it could not be sent SIGTERM\n"
+
+// TestUnheldRefusedTermTriesAgain: a SIGTERM refused with EPERM logs one line, sends no
+// SIGKILL, and goes again at each later step (87375cc7, measured on Linux and macOS).
+func TestUnheldRefusedTermTriesAgain(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := fakeUnheldTicker(t)
+	refuseUnheldTerm(t, syscall.EPERM)
+	sent := recordSignalsByProc(t)
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rf-again", "ignore-term")
+	<-f.steps
+	at := unheldSinceOf(p).Add(p.unheldTTL)
+	for i := range 3 {
+		f.settle(t, at.Add(time.Duration(i)*15*time.Second))
+	}
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM", "TERM", "TERM"}) {
+		t.Errorf("signals = %q, want three refused TERM and no KILL", got)
+	}
+	if n := strings.Count(buf.String(), "Process rf-again"+refusedLineEnd); n != 1 {
+		t.Errorf("%d refused lines, want 1:\n%s", n, buf.String())
+	}
+	if by := p.KilledByForTest(); by != "" {
+		t.Errorf("killedBy = %q after refused signals, want none", by)
+	}
+}
+
+// TestUnheldRefusalFromTheSignalCall: an EPERM of the call that signals the child counts
+// as a refusal through the real ProcGroup.Signal. The seam takes only the SIGTERM.
+func TestUnheldRefusalFromTheSignalCall(t *testing.T) {
+	buf := captureLogBuf(t)
+	fakeUnheldTicker(t)
+	realOne := sysproc.SignalOne
+	sysproc.SignalOne = func(proc *os.Process, sig syscall.Signal) error {
+		if sig == syscall.SIGTERM {
+			return syscall.EPERM
+		}
+		return realOne(proc, sig)
+	}
+	t.Cleanup(func() { sysproc.SignalOne = realOne })
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rf-call", "ignore-term")
+	if !m.endUnheld(p, unheldSinceOf(p).Add(p.unheldTTL), time.Millisecond) {
+		t.Error("no further step after an EPERM of the signal call")
+	}
+	if n := strings.Count(buf.String(), "Process rf-call"+refusedLineEnd); n != 1 {
+		t.Errorf("%d refused lines, want 1:\n%s", n, buf.String())
+	}
+}
+
+// TestUnheldRefusedTermAcrossAReattach: no SIGTERM goes while a connection is attached.
+// After a new detach the next one waits for the whole time, and no second line comes
+// (87375cc7, measured on Linux and macOS).
+func TestUnheldRefusedTermAcrossAReattach(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := fakeUnheldTicker(t)
+	refuseUnheldTerm(t, syscall.EPERM)
+	sent := recordSignalsByProc(t)
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rf-back", "ignore-term")
+	<-f.steps
+	f.settle(t, unheldSinceOf(p).Add(p.unheldTTL))
+	c, _ := pipeConn(t)
+	if _, found, _, _, _, _ := m.Reattach(c, "rf-back", 0); !found {
+		t.Fatal("reattach found nothing")
+	}
+	f.settle(t, time.Now().Add(time.Hour))
+	if got := sent(p.cmd.Process); len(got) != 1 {
+		t.Fatalf("signals = %q with a connection attached, want only the first TERM", got)
+	}
+	m.DetachConn(c)
+	since := unheldSinceOf(p)
+	f.settle(t, since.Add(p.unheldTTL-time.Millisecond))
+	if got := sent(p.cmd.Process); len(got) != 1 {
+		t.Fatalf("signals = %q before the whole time, want only the first TERM", got)
+	}
+	f.settle(t, since.Add(p.unheldTTL))
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM", "TERM"}) {
+		t.Errorf("signals = %q, want a second TERM after the whole time", got)
+	}
+	if n := strings.Count(buf.String(), "Process rf-back"+refusedLineEnd); n != 1 {
+		t.Errorf("%d refused lines, want 1:\n%s", n, buf.String())
+	}
+}
+
+// TestUnheldRefusedThenSignalable: the first step after the refusal ends runs the usual
+// end, with its signals and lines. 87375cc7 does this for a child that stays on Linux,
+// and for one that leaves on macOS (measured). The wait is shrunk here.
+func TestUnheldRefusedThenSignalable(t *testing.T) {
+	old := unheldEndGrace
+	unheldEndGrace = 200 * time.Millisecond
+	t.Cleanup(func() { unheldEndGrace = old })
+	buf := captureLogBuf(t)
+	f := fakeUnheldTicker(t)
+	refusing := refuseUnheldTerm(t, syscall.EPERM)
+	sent := recordSignalsByProc(t)
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rf-open", "ignore-term")
+	<-f.steps
+	at := unheldSinceOf(p).Add(p.unheldTTL)
+	f.settle(t, at)
+	refusing.Store(false)
+	f.step(t, at.Add(15*time.Second))
+	select {
+	case <-p.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the child did not end")
+	}
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM", "TERM", "KILL"}) {
+		t.Errorf("signals = %q, want the refused TERM, a TERM and the group KILL", got)
+	}
+	wantLinesInOrder(t, buf.String(),
+		"[process.Manager] Process rf-open: no connection attached for 1m0s, but it could not be sent SIGTERM",
+		"[process.Manager] Process rf-open: no connection attached for 1m0s: it stayed at SIGTERM, and its group was killed",
+		"[process.Manager] Process rf-open exited with code -1, terminated by SIGKILL, asked to end by this daemon (unattended)")
+}
+
+// TestUnheldRefusedThenOwnExit: a refused child that exits by itself ends the checks,
+// with its plain exited line and no signal after the refusal (87375cc7, measured on
+// Linux and macOS). The child leaves when its stdin closes.
+func TestUnheldRefusedThenOwnExit(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := fakeUnheldTicker(t)
+	refuseUnheldTerm(t, syscall.EPERM)
+	sent := recordSignalsByProc(t)
+	m := newTestProcManager(t)
+	c, _ := pipeConn(t)
+	exe, env := helperCommand(t, "cat")
+	p, err := m.SpawnWithTempRoot(c, "rf-own", exe, nil, "", env, false, nil, 0, TempRootAsk{}, nil, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { endOwnChild(t, p) })
+	<-f.steps
+	m.DetachConn(c)
+	f.settle(t, unheldSinceOf(p).Add(p.unheldTTL))
+	_ = p.stdin.Close()
+	select {
+	case <-p.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the child did not exit")
+	}
+	f.waitStopped(t)
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
+		t.Errorf("signals = %q, want only the refused TERM", got)
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "[process.Manager] Process rf-own exited with code 0\n") {
+		t.Errorf("no plain exited line:\n%s", logs)
+	}
+	if strings.Contains(logs, "Process rf-own: no connection attached for 1m0s: it") {
+		t.Errorf("an end line after an own exit:\n%s", logs)
+	}
+}
+
+// TestUnheldOtherTermErrorStops: a SIGTERM that fails with another error than EPERM
+// stops the end, with no line and no SIGKILL (claustrum's own, not measured).
+func TestUnheldOtherTermErrorStops(t *testing.T) {
+	buf := captureLogBuf(t)
+	f := fakeUnheldTicker(t)
+	refuseUnheldTerm(t, syscall.EIO)
+	sent := recordSignalsByProc(t)
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rf-eio", "ignore-term")
+	<-f.steps
+	f.step(t, unheldSinceOf(p).Add(p.unheldTTL))
+	f.waitStopped(t)
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
+		t.Errorf("signals = %q, want one TERM", got)
+	}
+	if strings.Contains(buf.String(), "Process rf-eio"+refusedLineEnd) {
+		t.Errorf("a refused line for another error:\n%s", buf.String())
+	}
+}
+
+// TestUnheldRefusedLineForEachChild: each refused child logs its own line (87375cc7,
+// measured on Linux). No macOS row has two refused children.
+func TestUnheldRefusedLineForEachChild(t *testing.T) {
+	buf := captureLogBuf(t)
+	fakeUnheldTicker(t)
+	refuseUnheldTerm(t, syscall.EPERM)
+	m := newTestProcManager(t)
+	for _, id := range []string{"rf-one", "rf-two"} {
+		p, _ := spawnUnheldHelper(t, m, id, "ignore-term")
+		if !m.endUnheld(p, unheldSinceOf(p).Add(p.unheldTTL), time.Millisecond) {
+			t.Errorf("%s: no further step after a refusal", id)
+		}
+		if n := strings.Count(buf.String(), "Process "+id+refusedLineEnd); n != 1 {
+			t.Errorf("%s: %d refused lines, want 1", id, n)
+		}
+	}
+}
+
+// TestUnheldRefusedStopsAtTheShutdown: once the shutdown began, a refused child gets no
+// further SIGTERM of the end, and the check returns (claustrum's own, not measured).
+func TestUnheldRefusedStopsAtTheShutdown(t *testing.T) {
+	f := fakeUnheldTicker(t)
+	refuseUnheldTerm(t, syscall.EPERM)
+	sent := recordSignalsByProc(t)
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rf-stop", "ignore-term")
+	<-f.steps
+	at := unheldSinceOf(p).Add(p.unheldTTL)
+	f.settle(t, at)
+	m.RefuseStarts()
+	f.step(t, at.Add(15*time.Second))
+	f.waitStopped(t)
+	if got := sent(p.cmd.Process); !slices.Equal(got, []string{"TERM"}) {
+		t.Errorf("signals = %q, want only the TERM before the shutdown", got)
+	}
+}

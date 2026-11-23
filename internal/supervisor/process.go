@@ -290,6 +290,8 @@ type Proc struct {
 	// unheldExitSeen is the seam unheldExitSeen as spawnWith read it, set before the
 	// exit goroutine starts.
 	unheldExitSeen func(*Proc)
+	// unheldRefusalLogged is set under p.mu with the one line of a refused SIGTERM.
+	unheldRefusalLogged bool
 
 	// cliTempRoot is the answer of the private temp folder step, set once at spawn.
 	// releaseTemp gives that folder back after the exit frame (clitemproot_unix.go).

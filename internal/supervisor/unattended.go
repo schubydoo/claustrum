@@ -1,6 +1,8 @@
 package supervisor
 
 import (
+	"errors"
+	"syscall"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/conn"
@@ -23,6 +25,10 @@ import (
 //   - The end, Linux and macOS (measured there): SIGTERM to the child only, and a wait until it
 //     leaves, at most 7 s. Then SIGKILL goes to its group, also after the child left.
 //   - The end, Windows (measured there): the SIGTERM ends the job, and the child leaves.
+//   - A SIGTERM refused with EPERM, Linux and macOS (measured there): one line at the
+//     first refusal, and no SIGKILL. Each later step with no connection for the whole
+//     time sends a new SIGTERM. One that goes through runs the usual end (measured
+//     for a child that stays on Linux and one that leaves on macOS).
 //   - A child that a process.kill ended, an own exit and server.shutdown give no end
 //     and no line. A child that survives a process.kill still gets the end (claustrum's
 //     own, not measured).
@@ -151,11 +157,12 @@ func (m *Manager) watchUnheld(p *Proc, h unheldHooks) {
 //
 // Under p.mu, right before the SIGTERM, the end tests the shutdown and the clock at
 // now again. After the shutdown began it sends nothing. After a reattach it sends
-// nothing and reports true, so the check goes on. A refused SIGTERM stops the end with
-// no line and no SIGKILL, and the child gets no later end (claustrum's own, not
-// measured).
+// nothing and reports true, so the check goes on. After a SIGTERM refused with EPERM
+// it reports true too, and it logs the refused line once for each child. Only Linux
+// and macOS make such an error. Another failed SIGTERM stops the end with no line and
+// no SIGKILL, and that child gets no later end (claustrum's own, not measured).
 func (m *Manager) endUnheld(p *Proc, now time.Time, grace time.Duration) (again bool) {
-	termed := false
+	termed, firstRefusal := false, false
 	p.unheldGate.Do(func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -173,7 +180,15 @@ func (m *Manager) endUnheld(p *Proc, now time.Time, grace time.Duration) (again 
 		live, err := p.signalIfLiveLocked("TERM", "unattended")
 		p.unheldTermed = live && err == nil
 		termed = p.unheldTermed
+		if live && errors.Is(err, syscall.EPERM) {
+			again = true
+			firstRefusal = !p.unheldRefusalLogged
+			p.unheldRefusalLogged = true
+		}
 	})
+	if firstRefusal {
+		logging.Infof("[process.Manager] Process %s: no connection attached for %s, but it could not be sent SIGTERM", LogID(p.id), p.unheldTTL)
+	}
 	if !termed {
 		return again
 	}

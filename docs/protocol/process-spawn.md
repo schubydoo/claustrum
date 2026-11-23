@@ -77,13 +77,26 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 [process.Manager] Process <id>: no connection attached for <time>: it stayed at SIGTERM, and its group was killed
 ```
 
+#### A refused `SIGTERM`
+
+A `SIGTERM` refused with `EPERM` logs this line once for each child, at its first refusal (87375cc7, measured on Linux and macOS with the value 60, two refused children on Linux only). A reattach and a new detach do not log it again. The four rules below have the same scope.
+
+```
+[process.Manager] Process <id>: no connection attached for <time>, but it could not be sent SIGTERM
+```
+
+- The daemon sends `SIGTERM` again at each later check while no connection holds the child. It sends no `SIGKILL` while the `SIGTERM` is refused.
+- During a reattach it sends nothing. After a new detach, the next try comes at the first check after the whole time.
+- Once a `SIGTERM` goes through, the usual end runs, with its lines (measured for a child that stays on Linux and one that leaves on macOS).
+- A child that exits by itself ends the checks, with only its exited line.
+
 #### claustrum's own rules of the end
 
 These rules are not measured.
 
 - A value from 2 to 59, and 1 on Windows, gets a check each 15 s, a quarter of its 60 s. A check comes at most each 60 s, and no end row of this member has a value above 240.
 - An `<id>` of more than 8 bytes is [cut](../DAEMON.md#a-long-id-in-a-line) in these lines.
-- A refused `SIGTERM` stops the end, with no line and no `SIGKILL`. That child gets no later end, also after a reattach and a new detach.
+- A `SIGTERM` that fails with another error than `EPERM` stops the end, with no line and no `SIGKILL`. That child gets no later end.
 - A spawn or a reattach on a closed connection starts the clock.
 - Once the shutdown began, no end starts and the end sends no more signals.
 - A reattach or a shutdown after the check and before the `SIGTERM` ends nothing.
