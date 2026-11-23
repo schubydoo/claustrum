@@ -7,7 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
+
+// holdKilledHelpers is true: on Linux and macOS a killed helper of the content
+// check is reaped at the end of the check, after a repeat kill (87375cc7, measured).
+const holdKilledHelpers = true
+
+// awaitHelperExit waits for the exit of the helper p and reaps nothing. It reports
+// that it saw the exit.
+func awaitHelperExit(p *os.Process) bool { return sysproc.AwaitExit(p.Pid) }
 
 // lacksExecBit reports whether fi has no execute bit for its owner. Only the
 // owner bit counts (claustrum's own, not measured).

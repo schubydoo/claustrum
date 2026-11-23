@@ -7,10 +7,6 @@ import (
 	"path/filepath"
 )
 
-// helperKillAtDeadline turns on the kill of worktreecontentkill.go, which rows
-// measure on Linux only.
-const helperKillAtDeadline = true
-
 // leafLinkErr follows the link at path in leaf through a root at leaf. It
 // returns the error of a link that the root cannot follow. A loop gives "too
 // many levels of symbolic links", and a link out of leaf gives "path escapes

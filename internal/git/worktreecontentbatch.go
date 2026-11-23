@@ -158,14 +158,14 @@ func (c *contentCheck) startBatch() {
 // endAtDeadline set, it is also nil when the deadline passed by the end of the
 // config listing, and no git starts (gitAfterListing). A track that is not nil
 // makes this git one that the deadline kills (helperKills.track).
-func (c *contentCheck) startLong(endAtDeadline bool, track func(*os.Process), env []string, args ...string) *objectBatch {
+func (c *contentCheck) startLong(endAtDeadline bool, track func(*os.Process, func()), env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil
 	}
 	s := c.u.stop
 	if s != nil {
-		s = &gitStop{wide: s.wide, beforeReap: track}
+		s = &gitStop{wide: s.wide}
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, c.repo, args...)
@@ -179,6 +179,9 @@ func (c *contentCheck) startLong(endAtDeadline bool, track func(*os.Process), en
 	cmd.Stdin, cmd.Stdout = inR, outW
 	b := &objectBatch{in: inW, inR: inR, outR: outR, out: bufio.NewReader(outR), done: make(chan struct{}),
 		closeInR: sync.OnceFunc(func() { _ = inR.Close() })}
+	if s != nil && track != nil {
+		s.beforeReap = func(p *os.Process) { track(p, b.drop) }
+	}
 	go func() {
 		defer close(b.done)
 		_ = gitRun(ctx, cmd)
@@ -283,7 +286,7 @@ func (b *objectBatch) hash(path string) (string, error) {
 // stopBatch ends the batch and the long-running hash-object calls of the
 // check, if they run. After the deadline it does not wait for them.
 func (c *contentCheck) stopBatch() {
-	end := (*objectBatch).close
+	end := c.endLong
 	if c.atDeadline {
 		// The kill comes before the close of stdin (measured on Linux).
 		c.kills.fire()
@@ -326,13 +329,7 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 	if h == nil {
 		// A deadline that passed by the end of its listing starts no hash-object,
 		// and the object does not count (4c111e86 and 87375cc7, measured on Linux).
-		// Of the hash-object calls only the one of the commit gets the kill of
-		// the deadline (helperKills).
-		var track func(*os.Process)
-		if kind == "commit" {
-			track = c.helperTrack()
-		}
-		h = c.startLong(true, track, objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		h = c.startLong(true, c.helperTrack(), objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
 		if h == nil {
 			if c.atDeadline {
 				return "", nil, errContentDeadline
@@ -512,7 +509,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	var h *objectBatch
 	defer func() {
 		if h != nil {
-			h.close()
+			c.endLong(h)
 		}
 	}()
 	hashing := true
@@ -542,7 +539,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 			}
 			// The stopped git ends here, so a later tree of the level would
 			// start a new one without the flag.
-			h.close()
+			c.endLong(h)
 			h = nil
 			hashing = false
 			c.depthEnded = true

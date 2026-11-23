@@ -112,7 +112,7 @@ var errContentDeadline = errors.New("the deadline of the request passed")
 
 // pastDeadline reports whether the deadline passed. Then the check reads no object,
 // also by a separate run (4c111e86, measured on Linux for a batch that did not answer).
-// Apart from the kill of two helpers (helperKills), a deadline during another git call
+// Apart from the kill of four helpers (helperKills), a deadline during another git call
 // does not cut that call. The next step tests it (4c111e86 and 87375cc7, measured on
 // Linux, and 4c111e86 on Windows).
 func (c *contentCheck) pastDeadline() bool {
@@ -404,11 +404,19 @@ func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...strin
 // gitAfterListing is git. With endAtDeadline set, a deadline that passed by the
 // end of the config listing starts no call. The hash-object call of the files
 // does not start then (4c111e86 and 87375cc7, measured on Linux, and 4c111e86 on
-// Windows).
+// Windows). That call is a helper of the deadline kill, and the check does not
+// wait for it after the kill (87375cc7, measured on Windows).
 func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
+	var track func(*os.Process, func())
+	if endAtDeadline {
+		track = c.helperTrack()
+	}
 	s := c.u.stop
 	if s != nil {
 		s = &gitStop{wide: s.wide}
+		if track != nil {
+			s.beforeReap = func(p *os.Process) { track(p, nil) }
+		}
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, dir, args...)
@@ -421,8 +429,25 @@ func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []b
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	out, err := gitOutput(ctx, cmd)
-	return out, errBuf.String(), err
+	if s == nil || track == nil {
+		out, err := gitOutput(ctx, cmd)
+		return out, errBuf.String(), err
+	}
+	type result struct {
+		out []byte
+		err error
+	}
+	ended := make(chan result, 1)
+	go func() {
+		out, err := gitOutput(ctx, cmd)
+		ended <- result{out, err}
+	}()
+	select {
+	case r := <-ended:
+		return r.out, errBuf.String(), r.err
+	case <-c.kills.firedCh:
+		return nil, "", errContentDeadline
+	}
 }
 
 // cmd builds one call of the check in dir, after its config listing: b3081b51
@@ -481,7 +506,7 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 			return body, ""
 		case errors.Is(err, errContentDeadline):
 			return nil, err.Error()
-		case c.endedByKill(err): // also a tree hash-object that fails by itself after the kill: its stop line is not written
+		case c.endedByKill(err): // also a hash-object that fails by itself after the kill: its stop line is not written
 			return nil, errContentDeadline.Error()
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))

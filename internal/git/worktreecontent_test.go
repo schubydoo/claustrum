@@ -1316,7 +1316,7 @@ func gateStubPre(t *testing.T, match string) string {
 }
 
 // TestContentCheckDeadlineDuringTheFileHash: the deadline passes during the
-// `hash-object --stdin-paths` call of the files. The call is not cut, its result
+// `hash-object --stdin-paths` call of the files. The call gets the kill, its result
 // is not used, and the line counts no file (4c111e86 and 87375cc7, measured on
 // Linux). A create with no `.claude/` folder runs no listing of the copy step
 // (claustrum's own, not measured). Mutations: no test after that call (the line
