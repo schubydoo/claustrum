@@ -102,6 +102,9 @@ type contentCheck struct {
 	deadline   context.Context
 	keepTook   time.Duration
 	atDeadline bool
+	// kills holds the helpers that the deadline kills on Linux, or is nil
+	// (armDeadlineKill).
+	kills *helperKills
 }
 
 // errContentDeadline ends the reads of a check whose deadline passed.
@@ -109,11 +112,12 @@ var errContentDeadline = errors.New("the deadline of the request passed")
 
 // pastDeadline reports whether the deadline passed. Then the check reads no object,
 // also by a separate run (4c111e86, measured on Linux for a batch that did not answer).
-// A deadline during another git call does not cut that call. The next step tests it
-// (4c111e86 and 87375cc7, measured on Linux, and 4c111e86 on Windows).
+// Apart from the kill of two helpers (helperKills), a deadline during another git call
+// does not cut that call. The next step tests it (4c111e86 and 87375cc7, measured on
+// Linux, and 4c111e86 on Windows).
 func (c *contentCheck) pastDeadline() bool {
-	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
-		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {
+	if !c.atDeadline && c.deadline != nil && (c.kills.sent() || callerTimeoutFired(c.deadline) &&
+		!keepWithinDeadline(c.deadline, c.keepTook, time.Now())) {
 		c.atDeadline = true
 	}
 	return c.atDeadline
@@ -129,19 +133,13 @@ func (c *contentCheck) readAtDeadline(b *objectBatch, kind, id string) ([]byte, 
 	ctx, keep := c.deadline, c.keepTook
 	readDone := make(chan struct{})
 	defer close(readDone)
+	kills := c.kills
 	stop := context.AfterFunc(ctx, func() {
-		if !callerTimeoutFired(ctx) {
+		if !callerTimeoutFired(ctx) || !waitForKeep(ctx, keep, readDone) {
 			return
 		}
-		if dl, ok := ctx.Deadline(); ok && keep > 0 {
-			if wait := time.Until(dl.Add(keep)); wait > 0 {
-				select {
-				case <-time.After(wait):
-				case <-readDone:
-					return
-				}
-			}
-		}
+		// The kill comes before the close of stdin (measured on Linux).
+		kills.fire()
 		b.drop()
 	})
 	defer stop()
@@ -261,6 +259,7 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	// for its `cat-file --batch` (4c111e86, measured on Linux), and the folder
 	// goes then (claustrum's own, not measured).
 	defer c.removeScratch()
+	defer c.armDeadlineKill()()
 	c.startBatch()
 	defer c.stopBatch()
 	body, text := c.readObject("commit", c.commit)
@@ -482,6 +481,8 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 			return body, ""
 		case errors.Is(err, errContentDeadline):
 			return nil, err.Error()
+		case c.endedByKill(err):
+			return nil, errContentDeadline.Error()
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))
 			c.stopped = true
