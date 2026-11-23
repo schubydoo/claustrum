@@ -155,9 +155,12 @@ func gitSlowStubDir(t *testing.T) string {
 
 // installGitSlowStub puts the git stub of gitSlowStubDir first on PATH as `git`,
 // in the "git-slow" helper mode, with realGit as the git it passes calls through to.
+// A second fixture in one test finds the stub on PATH, so keptRealGit holds the git
+// of the first one.
 func installGitSlowStub(t *testing.T, realGit string) {
 	t.Helper()
 	bin := gitSlowStubDir(t)
+	realGit = keptRealGit(t, realGit, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)
@@ -166,6 +169,30 @@ func installGitSlowStub(t *testing.T, realGit string) {
 		t.Setenv("CLAUSTRUM_GITSTUB_"+k, "")
 	}
 	slowGit(t, "", "", 0, "", "")
+}
+
+// keptRealGit returns realGit, or the git of the installed stub when realGit is a
+// stub: the file in bin, or this test binary. It fails the test when no true git
+// is known, because a stub that names a stub starts itself.
+func keptRealGit(t *testing.T, realGit, bin string) string {
+	t.Helper()
+	stub, err := exec.LookPath(filepath.Join(bin, "git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	isStub := func(p string) bool { return sameExeFile(p, stub) || sameExeFile(p, self) }
+	if !isStub(realGit) {
+		return realGit
+	}
+	kept := os.Getenv("CLAUSTRUM_GITSTUB_REAL")
+	if kept == "" || isStub(kept) {
+		t.Fatalf("git stub: %q is a stub, and CLAUSTRUM_GITSTUB_REAL %q names no real git", realGit, kept)
+	}
+	return kept
 }
 
 // stubStderr makes the slowed call write exactly b to stderr. With second set, it
