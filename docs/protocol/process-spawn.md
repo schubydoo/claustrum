@@ -96,7 +96,7 @@ These rules are not measured.
 
 - A value from 2 to 59, and 1 on Windows, gets a check each 15 s, a quarter of its 60 s. A check comes at most each 60 s, and no end row of this member has a value above 240.
 - An `<id>` of more than 8 bytes is [cut](../DAEMON.md#a-long-id-in-a-line) in these lines.
-- A `SIGTERM` that fails with another error than `EPERM` stops the end, with no line and no `SIGKILL`. That child gets no later end.
+- On Linux and macOS, a `SIGTERM` error other than `EPERM` or `ESRCH` stops the end. It logs no line and sends no `SIGKILL`. That child gets no later end.
 - A spawn or a reattach on a closed connection starts the clock.
 - Once the shutdown began, no end starts and the end sends no more signals.
 - A reattach or a shutdown after the check and before the `SIGTERM` ends nothing.

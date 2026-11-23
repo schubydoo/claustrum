@@ -417,7 +417,7 @@ func TestUnheldRefusedThenOwnExit(t *testing.T) {
 	}
 }
 
-// TestUnheldOtherTermErrorStops: a SIGTERM that fails with another error than EPERM
+// TestUnheldOtherTermErrorStops: a SIGTERM that fails with EIO, an error other than EPERM or ESRCH,
 // stops the end, with no line and no SIGKILL (claustrum's own, not measured).
 func TestUnheldOtherTermErrorStops(t *testing.T) {
 	buf := captureLogBuf(t)
