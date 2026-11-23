@@ -34,8 +34,8 @@ import (
 // child on its stdout. A helper that hangs after another close of its stdin gets
 // the kill with stdin closed.
 
-// helperRepeatAfter is the time from the kill to its repeat (87375cc7, measured on
-// Linux and macOS). The end of the check sends the repeat earlier. Tests replace it.
+// helperRepeatAfter is the most common time from the kill to its repeat (87375cc7,
+// measured on Linux and macOS). The end of the check sends the repeat earlier. Tests replace it.
 var helperRepeatAfter = 2 * time.Second
 
 // killedExitBound is the longest wait at the end of the check for the exit of the
