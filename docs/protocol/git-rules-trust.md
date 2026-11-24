@@ -100,8 +100,10 @@ The daemon judges the git directory G:
 - On Windows the daemon does not expand 8.3 short names in G. A `.git` file or a
   daemon `GIT_DIR` can name an entry as `…\GIT~1\WORKTR~1\<name>`. That G is no
   entry, so its `commondir` gets S1 for `../..` (not measured).
-- On Windows the daemon resolves G when a component of G is a symlink. Else it
-  keeps G as spelled, also with a junction before its last component.
+- On Windows the daemon resolves G when a component of G is a symlink, for both
+  sources. Else a G that a `.git` file names stays as spelled, also with a junction
+  before its last component. A daemon `GIT_DIR` first gets the real path of the
+  folder of its last name (see the start of this page).
 
 ### A stray `commondir`
 
