@@ -59,7 +59,7 @@ starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
 ??? note "Junction paths"
     On Windows a refusal for a junction `path` names the config behind the junction,
     and one to a bare repository answers as that repository (`4c111e86`, measured).
-    A linked worktree's `.git` file can name its entry through a local junction `J` to the git directory. All five methods answer, and `GIT_DIR` keeps `J` (`4c111e86`, measured on Windows). The daemon reads the config and holds the git directory at the target of `J`. A junction named `.git`, a daemon `GIT_DIR` and a junction chain keep the link refusal (claustrum's own, not measured).
+    A linked worktree's `.git` file can name its entry through a local junction `J` to the git directory. All five methods answer, and `GIT_DIR` keeps `J` (`4c111e86`, measured on Windows). The daemon reads the config and holds the git directory at the target of `J`. A junction named `.git` and a junction chain keep the link refusal (claustrum's own, not measured). A daemon `GIT_DIR` first gets the real path of the folder of its last name (see the start of this page).
 
 ### How the daemon judges the git directory
 

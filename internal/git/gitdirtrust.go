@@ -464,8 +464,8 @@ var requestJunctionTarget = lastNameJunctionTarget
 // <W>\J\worktrees\wl` and a junction J to R\.git, 4c111e86 and 87375cc7 keep J in
 // GIT_DIR and answer all five methods (measured on Windows). The daemon reads the
 // config and holds the git directory at the target (gitDirTrust.configDir). A
-// junction named `.git` keeps its link refusal, and so does a daemon GIT_DIR
-// (claustrum's own, not measured).
+// junction named `.git` keeps its link refusal (claustrum's own, not measured). A
+// daemon GIT_DIR reaches here at the real path of its folder (realParentPath).
 func entryRepoThroughJunction(repo string, fromEnv bool) string {
 	if fromEnv || filepath.Base(repo) == ".git" {
 		return ""
