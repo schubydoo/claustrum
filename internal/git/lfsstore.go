@@ -57,13 +57,17 @@ import (
 //
 // Claustrum's own, not measured: a baseRepo that is a linked worktree. The
 // seed runs only when the repository has a folder `lfs/objects`. It reads the store of the repository by path,
-// read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too. The
-// form of the keep on macOS is not measured. It keeps no object that the store already has. A link at
+// read only. It stops at the bound of seedContext. A link at a shard folder on the way gives a copy too.
+// It keeps no object that the store already has. A link at
 // `lfs/objects` or at a shard folder keeps nothing. The keep tests the bytes
 // of an object against its oid, not its size. After a deadline it does not
-// sweep. After a checkout that failed by itself it makes only a hard link at
-// the name of the object, with no temp name, no copy and no sweep, so that
-// path has no remove.
+// sweep. On Linux, after a checkout that failed by itself, it makes only a
+// hard link at the name of the object, with no temp name, no copy and no
+// sweep, so that path has no remove. On macOS the rest of the keep is
+// claustrum's own too.
+//
+// Measured on macOS: the copy after a failed checkout, the uncut copy of a
+// tick and the miss rule of keepPass.
 const (
 	// pointerBlobMax is the largest blob that the seed reads as a pointer
 	// (claustrum's own, the cutoff of git-lfs).
@@ -809,8 +813,9 @@ var (
 // one pass followed the oid order and not the file names (3 of 3 runs on
 // each build). Each object is tested against the free space at that moment,
 // with no test of a sum. The first object that fails ends the keep for the
-// rest of the request, also when the free space rises later. An object first
-// tested after a rise is kept (all measured on macOS).
+// rest of the request, also when the free space rises later. With no miss
+// before it, an object first tested after a rise is kept (all measured on
+// macOS).
 //
 // After a failed checkout one keepBudget covers the whole pass (keepPassBound).
 // A second object gets no bound of its own. When the first object ended inside
@@ -845,7 +850,8 @@ const (
 	// 4c111e86 keeps then by the copy of a good checkout (measured on Linux).
 	keepAfterDeadline
 	// keepAfterFailure is a checkout that failed by itself, or that another
-	// stop ended (claustrum's own, not measured).
+	// stop ended (claustrum's own, not measured). Only Linux gives this form.
+	// macOS keeps as after a deadline (keepFailedByCopy).
 	keepAfterFailure
 	// keepDuringCheckout is a keep while the read-tree call runs
 	// (keepTicker). It copies as after a deadline, with no sweep (claustrum's
