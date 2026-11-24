@@ -8,11 +8,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -767,6 +769,8 @@ var storeFreeBytes = freeBytes
 // kept. On 4c111e86 a 900 MiB keep stopped 3.0 s after the open of the object
 // in five rows, with 1.75 to 2.03 s of that in the copy (measured on Linux).
 // The exact bound and its start are claustrum's own, not measured.
+// On macOS a tick has no such bound (keepTickRunsToExit), and after a failed
+// checkout one keepBudget covers the pass (keepPassBound).
 // newObjectHash is the hash of the bytes test. keepCopy is the copy of the
 // keep. A test replaces all three.
 var (
@@ -774,6 +778,62 @@ var (
 	newObjectHash = sha256.New
 	keepCopy      = io.Copy
 )
+
+// keepStopsAtMiss, keepSumsCopy, keepTickRunsToExit, keepFailedByCopy and
+// keepPassBound are the rules of the keep on macOS. Linux keeps its older form,
+// because no row measures these rules there. A test sets them.
+//
+// keepTickRunsToExit: keepBudget bounds neither the bytes test nor the copy of
+// a tick. Both stop at the exit of git (keepTicker.halt). Of 85 copies that
+// began before the last download, none was cut, and one ran 3.09 s. With an
+// 800 MB object that came 4 s before a 2 MB object, 87375cc7 began its copy up
+// to 6.8 s after the download, and never kept the 2 MB object alone (0 of 40).
+// Claustrum's 3 s bound on the bytes test of a tick kept the 2 MB object alone
+// in 7 of 40. In the traced runs each object got one bytes test of at most
+// 3.0 s, with no cut and no retry. No bound on the bytes test is claustrum's own.
+//
+// keepFailedByCopy: after a checkout that failed by itself the keep copies to a
+// temp name, as after a deadline, on one file system and on two (measured).
+// Claustrum's own, not measured: no sweep after that copy, and other failures.
+var (
+	keepStopsAtMiss    = runtime.GOOS == "darwin"
+	keepSumsCopy       = runtime.GOOS == "darwin"
+	keepTickRunsToExit = runtime.GOOS == "darwin"
+	keepFailedByCopy   = runtime.GOOS == "darwin"
+	keepPassBound      = runtime.GOOS == "darwin"
+)
+
+// keepPass is the state of the keep of one create, shared by its ticks and its
+// keep after the checkout. The ticks end before that keep starts. On macOS one
+// pass walks the objects in oid order. A failed checkout with two objects in
+// one pass followed the oid order and not the file names (3 of 3 runs on
+// each build). Each object is tested against the free space at that moment,
+// with no test of a sum. The first object that fails ends the keep for the
+// rest of the request, also when the free space rises later. An object first
+// tested after a rise is kept (all measured on macOS).
+//
+// After a failed checkout one keepBudget covers the whole pass (keepPassBound).
+// A second object gets no bound of its own. When the first object ended inside
+// 3 s, the second got no temp file (87375cc7, measured on macOS with two
+// objects of about 500 MB each or of about 650 MB each). The rows fit this
+// shared bound. Claustrum's own, not measured: the same bound after a deadline,
+// a stop during the copy of a later object, and a bound for each object after a
+// good checkout.
+type keepPass struct {
+	ended bool
+}
+
+// markMiss ends the keep after an object that failed the test of the space.
+func (p *keepPass) markMiss() {
+	if p != nil && keepStopsAtMiss {
+		p.ended = true
+	}
+}
+
+// over reports whether a miss ended the keep.
+func (p *keepPass) over() bool {
+	return p != nil && p.ended
+}
 
 // keepForm is how the checkout before a keep ended.
 type keepForm int
@@ -908,13 +968,27 @@ func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
 		return l
 	}
 	// Each budget has its own context, so a keep after a deadline of the
-	// checkout still runs.
+	// checkout still runs. After a failed checkout one bound covers the pass.
+	pass := context.Background()
+	if keepPassBound && form != keepAfterGood {
+		bound, stop := context.WithTimeout(pass, keepBudget)
+		defer stop()
+		pass = bound
+	}
 	for _, oid := range downloadedOIDs(private) {
-		ctx, cancel := context.WithTimeout(context.Background(), keepBudget)
-		if !returnDownload(ctx, a.root, a.path, private, oid, time.Now(), form) {
+		if u.keeps.over() {
+			l.add(private, repoStore, oid)
+			continue
+		}
+		ctx, cancel := context.WithTimeout(pass, keepBudget)
+		kept, short := returnDownload(ctx, a.root, a.path, private, oid, time.Now(), form)
+		cancel()
+		if short {
+			u.keeps.markMiss()
+		}
+		if !kept {
 			l.add(private, repoStore, oid)
 		}
-		cancel()
 	}
 	return l
 }
@@ -942,9 +1016,10 @@ var newKeepTick = func(d time.Duration) (<-chan time.Time, func()) {
 // checkout ended at the exit of git, with no copy. The keep after the
 // checkout then read it again, and only it wrote a temp file (measured on
 // Linux).
-// Claustrum's own, not measured: a stop during the copy of a tick, which
-// removes that temp file as any stopped copy does, the rest of the keep on
-// macOS, and the ticks after a stop for the space, until git exits.
+// On macOS a copy of a tick that still ran at an early exit of git left a temp
+// file that went at once, in 7 runs of a failed download. Claustrum's own, not
+// measured: that stop on Linux, the rest of the keep on macOS, and the ticks
+// after a stop for the space, until git exits.
 type keepTicker struct {
 	quit  chan struct{}
 	ended chan struct{}
@@ -986,6 +1061,9 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 			case <-tick:
 			}
 			for _, oid := range downloadedOIDs(private) {
+				if u.keeps.over() {
+					return
+				}
 				if tried[oid] {
 					continue
 				}
@@ -996,8 +1074,15 @@ func startKeepTicker(u gitUse, private string) *keepTicker {
 				}
 				tried[oid] = true
 				ctx, cancel := context.WithTimeout(k.ctx, keepBudget)
-				returnDownload(ctx, a.root, a.path, private, oid, time.Now(), keepDuringCheckout)
+				if keepTickRunsToExit {
+					cancel()
+					ctx, cancel = context.WithCancel(k.ctx)
+				}
+				_, short := returnDownload(ctx, a.root, a.path, private, oid, time.Now(), keepDuringCheckout)
 				cancel()
+				if short {
+					u.keeps.markMiss()
+				}
 			}
 		}
 	}()
@@ -1090,48 +1175,48 @@ var openShardFolder = (*os.Root).OpenRoot
 // at the name oid. The downloaded copy then turns into that object
 // (swapInKept), and the temp name goes (measured on Linux). A failed or stopped
 // copy keeps nothing. After a deadline the shard gets no sweep (claustrum's
-// own, not measured). After a checkout that failed by itself the keep is one
-// hard link at the name oid (claustrum's own, not measured). The result is
+// own, not measured). On Linux, after a checkout that failed by itself the keep
+// is one hard link at the name oid (claustrum's own, not measured). The result is
 // true when the store has the object at the end: it was there, or the keep
-// put it there.
-func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) bool {
+// put it there. short reports an object that failed keepHasSpace (keepPass).
+func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string, now time.Time, form keepForm) (kept, short bool) {
 	// A missing `lfs` and `lfs/objects` get 0755 (claustrum's own, not
 	// measured). The two shard levels get 0777 (measured on Linux).
 	objects := openShard(root, filepath.Join("lfs", "objects"), 0o755)
 	if objects == nil {
-		return false
+		return false, false
 	}
 	defer func() { _ = objects.Close() }()
 	rel := filepath.Join(oid[:2], oid[2:4])
 	if _, err := objects.Lstat(filepath.Join(rel, oid)); err == nil {
-		return true
+		return true, false
 	}
 	src := storeObjectPath(private, oid)
 	if !objectHoldsOID(ctx, src, oid) {
-		return false
+		return false, false
 	}
 	shard := openShard(objects, rel, 0o777)
 	if shard == nil {
-		return false
+		return false, false
 	}
 	defer func() { _ = shard.Close() }()
 	if _, err := shard.Lstat(oid); err == nil {
-		return true
+		return true, false
 	}
 	shardPath := filepath.Join(dir, "lfs", "objects", rel)
 	if !keepHasSpace(shardPath, src) {
-		return false
+		return false, true
 	}
 	if form == keepAfterFailure {
-		return keepHardLink(shard, src, oid) == nil
+		return keepHardLink(shard, src, oid) == nil, false
 	}
 	var n [4]byte
 	if _, err := rand.Read(n[:]); err != nil {
-		return false
+		return false, false
 	}
 	temp := ".claude-" + hex.EncodeToString(n[:]) + "-" + oid
-	if !copyIntoRoot(ctx, shard, shardPath, src, temp) {
-		return false
+	if !copyIntoRoot(ctx, shard, shardPath, src, temp, oid) {
+		return false, false
 	}
 	err := shard.Link(temp, oid)
 	if err == nil {
@@ -1142,7 +1227,7 @@ func returnDownload(ctx context.Context, root *os.Root, dir, private, oid string
 	if err == nil && form == keepAfterGood {
 		sweepShardTemps(shard, shardPath, oid, now)
 	}
-	return err == nil
+	return err == nil, false
 }
 
 // objectHoldsOID reports whether the bytes of the regular file at path give
@@ -1224,8 +1309,11 @@ func swapInKept(shard *os.Root, private, oid, temp string) {
 // success. The file has mode 0666 before the umask, O_EXCL and O_NOFOLLOW, and
 // gets the bytes in 32 KiB writes, with no fsync (measured on Linux). A write
 // that fails or the end of ctx stops the copy. The file is then closed and
-// removed at once (measured on Linux).
-func copyIntoRoot(ctx context.Context, root *os.Root, rootPath, src, name string) bool {
+// removed at once (measured on Linux). On macOS the copy also computes the
+// sha256 of the bytes that it reads, as the copy of the seed does. Bytes that
+// do not give oid fail the copy, and the file goes by that same remove
+// (claustrum's own form, not measured).
+func copyIntoRoot(ctx context.Context, root *os.Root, rootPath, src, name, oid string) bool {
 	in, err := openObjectNoFollow(src)
 	if err != nil {
 		return false
@@ -1235,9 +1323,18 @@ func copyIntoRoot(ctx context.Context, root *os.Root, rootPath, src, name string
 	if err != nil {
 		return false
 	}
-	_, err = keepCopy(out, ctxReader{ctx, in})
+	var from io.Reader = ctxReader{ctx, in}
+	var sum hash.Hash
+	if keepSumsCopy {
+		sum = newObjectHash()
+		from = io.TeeReader(from, sum)
+	}
+	_, err = keepCopy(out, from)
 	if cerr := out.Close(); err == nil {
 		err = cerr
+	}
+	if err == nil && sum != nil && hex.EncodeToString(sum.Sum(nil)) != oid {
+		err = errKeepBytes
 	}
 	if err != nil {
 		// name is the temp name that the keep built, not a name from a read.
@@ -1246,6 +1343,9 @@ func copyIntoRoot(ctx context.Context, root *os.Root, rootPath, src, name string
 	}
 	return true
 }
+
+// errKeepBytes is a keep copy whose bytes do not give the oid of the object.
+var errKeepBytes = errors.New("the bytes of the copy do not match the oid")
 
 // sweepShardTemps removes stale temp names from the shard of the object oid
 // that the keep just put in the store. It reads at most shardReadMax
