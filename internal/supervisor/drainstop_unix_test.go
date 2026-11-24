@@ -345,7 +345,7 @@ func TestDrainKillGoesOutOnce(t *testing.T) {
 	}
 	wg.Wait()
 	m.KillAllCount()
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	p.killGroupBeforeExitFrame()
 	_ = p.killGroupAfterExit()
 	if got := count(); got != 1 {
@@ -361,7 +361,7 @@ func TestShutdownAddsAKillAfterAClientKillInTheDrain(t *testing.T) {
 	m := newTestProcManager(t)
 	p, _ := spawnPlainWithMember(t, m, "hold", "go")
 	awaitLeaderReaped(t, p)
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	if n := m.KillAllCount(); n != 1 {
 		t.Errorf("killAllCount = %d, want 1", n)
 	}

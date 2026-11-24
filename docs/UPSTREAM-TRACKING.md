@@ -605,7 +605,7 @@ them after each Go bump.
 
 On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from the Go source, not measured). The link counts of `git.status` and `git.info`, and the link test of an alternates line, read a junction as `ModeIrregular` (from the code).
 
-With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23 in `go.mod`, those answers can move. That is derived from the Go source (`os/types_windows.go` and `path/filepath/symlink.go`), not measured. After each Go bump that changes `winsymlink`, check `TestInfoRootLinkThenDotDotWindows`, `TestInfoRootBelowJunctionWindows` and `TestInfoThroughJunctionWindows`.
+With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23 in `go.mod`, those answers can move, and so can each Windows junction test that reads `ModeIrregular`, such as the remove behind a junction (`hasJunctionBelow`) and the real path of a daemon `GIT_DIR` (`junctionFreePath`). That is derived from the Go source (`os/types_windows.go` and `path/filepath/symlink.go`), not measured. After each Go bump that changes `winsymlink`, check `TestInfoRootLinkThenDotDotWindows`, `TestInfoRootBelowJunctionWindows`, `TestInfoThroughJunctionWindows` and `TestWorktreeRemoveBehindJunctionsKeepsRealRecord`. No Windows test runs the daemon `GIT_DIR` step.
 
 ### The git version under the checkout tests
 

@@ -1131,7 +1131,7 @@ func TestEscalationAfterTheEndSendsNoSecondKill(t *testing.T) {
 	if err := p.killGroupAfterExit(); err != nil {
 		t.Fatal(err)
 	}
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	if err := m.Kill("lgagain", "KILL"); err != nil {
 		t.Fatal(err)
 	}
@@ -1164,7 +1164,7 @@ func TestEndSendsTheKillAfterARefusedClaim(t *testing.T) {
 	returned := make(chan struct{})
 	go func() { p.settleLeftGroupHeld(drained); close(returned) }()
 	awaitLeaderHeld(t, p)
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	<-returned
 	_ = p.cmd.Wait()
 	if got := sent(); !slices.Equal(got, []syscall.Signal{syscall.SIGKILL}) {

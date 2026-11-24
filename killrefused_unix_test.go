@@ -3,7 +3,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -62,6 +64,36 @@ func TestKillAnswersARefusedSignal(t *testing.T) {
 	}
 	if got := p.KilledByForTest(); got != "" {
 		t.Errorf("a refused kill stamped killedBy=%q, want empty", got)
+	}
+}
+
+// A refused group KILL of an exited child answers the same error. 87375cc7 answers it
+// for a leader that is reaped while a process holds the pipes (measured on Linux and
+// macOS, EPERM). It answers it in the hold of an exited launcher after the SIGTERM of its
+// end (measured on Linux, EPERM). Only Linux holds the leader, so the hold case runs there only.
+func TestKillAnswersARefusedGroupKillOfAnExitedChild(t *testing.T) {
+	for _, held := range []bool{false, true} {
+		t.Run(fmt.Sprintf("held=%v", held), func(t *testing.T) {
+			if held && runtime.GOOS != "linux" {
+				t.Skipf("only Linux holds the leader of an exited launcher, and %s does not", runtime.GOOS)
+			}
+			calls := refusingSignals(t, syscall.EPERM)
+			oldInUse := supervisor.SetPidInUseForTest(func(int) bool { return false })
+			t.Cleanup(func() { supervisor.SetPidInUseForTest(oldInUse) })
+			s := newTestServer(t)
+			p := s.procs.AddExitedChildForTest("k1", noSuchPid, held)
+			got := dispatchRaw(t, s, `{"jsonrpc":"2.0","id":4,"method":"process.kill","params":{"id":"k1","signal":"KILL"},"auth":"`+testToken+`"}`)
+			want := `{"jsonrpc":"2.0","id":4,"error":{"code":-32603,"message":"operation not permitted"}}`
+			if got != want {
+				t.Errorf("process.kill KILL = %s, want %s", got, want)
+			}
+			if strings.Join(*calls, ",") != "group" {
+				t.Errorf("signal calls = %v, want one group KILL", *calls)
+			}
+			if got := p.KilledByForTest(); got != "" {
+				t.Errorf("a refused kill stamped killedBy=%q, want empty", got)
+			}
+		})
 	}
 }
 

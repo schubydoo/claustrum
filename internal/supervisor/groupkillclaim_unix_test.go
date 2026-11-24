@@ -28,11 +28,11 @@ func TestRefusedKillKeepsTheMarkOfAnEndedGroup(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { signalGroup = old })
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	if !p.groupKillClaimed.Load() {
 		t.Error("the refused kill erased the mark of the ended group")
 	}
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	if n := sent.Load(); n != 1 {
 		t.Errorf("group kills = %d, want only the refused one", n)
 	}
@@ -54,7 +54,7 @@ func TestSweepCountsAKillThatLandedInTheHold(t *testing.T) {
 		return &Proc{running: true, reaped: true, leaderHeld: held, endsGroup: true, stopsBegan: &atomic.Bool{}, cmd: &exec.Cmd{Process: &os.Process{Pid: fakeGroupNumber}}}
 	}
 	held := newProc(true)
-	held.killGroupInDrain(false)
+	_ = held.killGroupInDrain(false)
 	m := newTestProcManager(t)
 	m.procs["held"] = held
 	if n := m.KillAllCount(); n != 1 {
@@ -89,7 +89,7 @@ func TestRefusedClientKillInTheHoldIsNoCount(t *testing.T) {
 	}
 	t.Cleanup(func() { signalGroup = old })
 	p := &Proc{running: true, reaped: true, leaderHeld: true, endsGroup: true, stopsBegan: &atomic.Bool{}, cmd: &exec.Cmd{Process: &os.Process{Pid: fakeGroupNumber}}}
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	if p.heldGroupKilled {
 		t.Error("a refused client KILL set the mark for the count")
 	}
