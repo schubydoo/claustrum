@@ -111,7 +111,7 @@ func copyDotClaude(u gitUse, repo, worktree string) {
 // dotClaudeListingOnly runs the config listing of the `.claude/` pass, and no
 // call. After a content check that stopped at the timeoutMs deadline, 4c111e86
 // and 87375cc7 run that listing and no `ls-files` call, also when `.claude/`
-// holds only `worktrees` (measured on Linux, and 4c111e86 on Windows). Claustrum's
+// holds only `worktrees` (4c111e86 measured on Linux and Windows, 87375cc7 on Linux and Windows with only `worktrees` there). Claustrum's
 // own, not measured: a stop seen at a read per folder depth, no listing with no
 // `.claude/` folder, the listing with an empty one, and no `.worktreeinclude` pass.
 func dotClaudeListingOnly(u gitUse, repo string) {
