@@ -69,7 +69,7 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 - Linux and macOS: `SIGTERM` to the child only. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
 - Windows: the `SIGTERM` is the end of the [job](process-kill.md#windows-child-trees). The child leaves at once with code 1.
 - One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`. The stayed line is measured on Linux and macOS.
-- A refused group `SIGKILL` gives the third line in place of the second (measured on Linux).
+- A refused group `SIGKILL` gives the third line in place of the second (measured on Linux). On macOS, and after an error other than `EPERM`, the line is claustrum's own, not measured.
 - A later reattach gets the `exit` frame with `"killedBy":"unattended"`.
 - A child that a `process.kill` ended, an own exit and `server.shutdown` give no end and no line. The shutdown ends the child as usual.
 

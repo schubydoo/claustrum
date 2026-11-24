@@ -148,7 +148,7 @@ When a process holds the stdout or stderr of a child whose leader has exited, th
 
 claustrum follows these rows for a spawn with no launcher, `gitRead`, link, temp folder, pty or unattended time. A pty spawn gets none from this path (claustrum's own, not measured). A pty child of `87375cc7` with no `stream-json` arg logged its exit before the shutdown and got no signal (measured on Linux and macOS). The test is that some process holds a pipe, not that it is in the group. So a member on its own stdio ends if a process in another session holds the pipes, and that holder lives on (`87375cc7`, measured on Linux). A client `KILL`, to the running leader or inside the drain, and then a shutdown make two group kills (`87375cc7`, measured on Linux). If the exited leader left its group, claustrum sends none at the reap or in a sweep after the reap. If its exit frame is not out, a `stream-json` child that the shutdown sent a `SIGTERM` still gets the `SIGKILL` at 1.5 s. A refused `SIGTERM` gets it too. Both rules are claustrum's own, not measured.
 
-If a new group took the number after the reap, it gets the `SIGKILL`, as on `87375cc7` (measured on Linux). The maintainer accepted that risk. On macOS the rules for an outside holder, a client `KILL`, a reused number and the 5 s edge are claustrum's own, not measured.
+If a new group took the number after the reap, it gets the `SIGKILL`, as on `87375cc7` (measured on Linux). The maintainer accepted that risk. On macOS some rules are claustrum's own, not measured: those for an outside holder, a client `KILL`, a reused number, a refused `SIGKILL` and the 5 s edge.
 
 With `-keep-children` the children keep running ([CT-2](../DIVERGENCES.md#ct-2)). The stop removes `daemon.token` by the rules of [Token persistence](../DAEMON.md#token-persistence-daemontoken). The daemon then exits with code 0 (from the code).
 
@@ -163,13 +163,15 @@ On `server.shutdown` the daemon logs these two lines before it closes any connec
 [Server] shutdown requested
 ```
 
+#### The cleanup line
+
 If the daemon logs a `[Server] Connection closed: <label>` line, it comes after the close of its connection. Then the daemon logs:
 
 ```
 [Server] cleanup: closed <n> connection(s), ended <n> child process group(s)
 ```
 
-The first count includes the connection that sent the request (measured against `5fd08069` on Windows only). The word `ended` is that of `b3081b51`, where `be1c1ca5` says `killed` (measured on Linux, macOS and Windows). A running child that refused a client `KILL` and then its shutdown `SIGKILL` does not count (`87375cc7`, measured on Linux). On Linux the second count also takes a held launcher group whose kill landed before the shutdown (claustrum's own, not measured). Before it, a stop that sent `SIGTERM` logs this line (`b3081b51`, measured on Linux and macOS):
+The first count includes the connection that sent the request (measured against `5fd08069` on Windows only). The word `ended` is that of `b3081b51`, where `be1c1ca5` says `killed` (measured on Linux, macOS and Windows). A running child that refused a client `KILL` and then its shutdown `SIGKILL` does not count (`87375cc7`, measured on Linux). A refused sweep `SIGKILL` with no client `KILL` first does not count either, and a refused sweep `SIGTERM` counts. Both rules, and the rule on macOS, are claustrum's own, not measured. On Linux the second count also takes a held launcher group whose kill landed before the shutdown (claustrum's own, not measured). Before it, a stop that sent `SIGTERM` logs this line (`b3081b51`, measured on Linux and macOS):
 
 ```
 [process.Manager] KillAll: asked <n> Claude Code process(es) to end: <n> exited, <n> had to be killed, after <duration>
