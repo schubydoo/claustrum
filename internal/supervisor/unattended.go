@@ -205,9 +205,10 @@ func (m *Manager) endUnheld(p *Proc, now time.Time, grace time.Duration) (again 
 		if p.unheldKilled.Load() || p.stopsBegan.Load() {
 			return
 		}
-		live, _ := p.signalIfLiveLocked("KILL", "unattended")
+		live, err := p.signalIfLiveLocked("KILL", "unattended")
 		p.unheldKilled.Store(live)
 		p.unheldStayed = live
+		p.unheldKillFailed = live && err != nil
 	})
 	return false
 }
@@ -250,13 +251,17 @@ func (p *Proc) killGroupOnUnheldExit() {
 // logUnheldEnd logs the line of the end of an armed p after its reap, before its
 // exited line, once endUnheld sent the SIGTERM. The texts are the reference's
 // (87375cc7, measured on Linux and macOS, and the first on Windows). The cut of a long id is
-// claustrum's own, not measured.
+// claustrum's own, not measured. After a refused group SIGKILL of a child that stayed,
+// 87375cc7 logs the "could not be killed" line (measured on Linux, EPERM). That line on
+// macOS and after another error is claustrum's own, not measured.
 func (p *Proc) logUnheldEnd() {
 	p.mu.Lock()
-	termed, stayed := p.unheldTermed, p.unheldStayed
+	termed, stayed, failed := p.unheldTermed, p.unheldStayed, p.unheldKillFailed
 	p.mu.Unlock()
 	switch {
 	case !termed:
+	case stayed && failed:
+		logging.Infof("[process.Manager] Process %s: no connection attached for %s: it stayed at SIGTERM, and its group could not be killed", LogID(p.id), p.unheldTTL)
 	case stayed:
 		logging.Infof("[process.Manager] Process %s: no connection attached for %s: it stayed at SIGTERM, and its group was killed", LogID(p.id), p.unheldTTL)
 	default:

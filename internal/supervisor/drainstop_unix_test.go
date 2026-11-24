@@ -237,6 +237,102 @@ func TestShutdownAskedChildGetsTheDrainKillAtOnce(t *testing.T) {
 	}
 }
 
+// refuseGroupKills makes each KILL of signalGroup fail with EPERM, with nothing sent.
+// Every other signal goes on to its target.
+func refuseGroupKills(t *testing.T) {
+	t.Helper()
+	inner := signalGroup
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		if signame == "KILL" {
+			return &SignalFailed{Name: "killed", Err: syscall.EPERM}
+		}
+		return inner(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = inner })
+}
+
+// TestShutdownWaitEndsAtTheReapAfterARefusedDrainKill: a stream-json child ends on the
+// SIGTERM and its member holds the pipes. The drain kill is refused. The wait ends at the
+// reap and counts the child as exited (87375cc7, measured on Linux).
+func TestShutdownWaitEndsAtTheReapAfterARefusedDrainKill(t *testing.T) {
+	logs := captureLogBuf(t)
+	oldEnd, oldDrain := shutdownEndGrace, exitDrainGrace
+	shutdownEndGrace, exitDrainGrace = 8*time.Second, 30*time.Second
+	t.Cleanup(func() { shutdownEndGrace, exitDrainGrace = oldEnd, oldDrain })
+	m := newTestProcManager(t)
+	p, _ := spawnPlainWithMember(t, m, "hold", "stay", "stream-json")
+	refuseGroupKills(t)
+	start := time.Now()
+	m.KillAllCount()
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("the sweep took %v, want its end at the reap", d)
+	}
+	if want := "asked 1 Claude Code process(es) to end: 1 exited, 0 had to be killed"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log has no %q:\n%s", want, logs.String())
+	}
+	if !p.groupKillClaimed.spent() {
+		t.Error("the drain kill took no claim")
+	}
+}
+
+// TestShutdownCountsNoRefusedSweepKill: a live leader whose sweep SIGKILL is refused is no ended
+// group in the count of the cleanup line. 87375cc7 does so after a refused client KILL (measured on Linux), and with none first, as here, it is claustrum's own.
+func TestShutdownCountsNoRefusedSweepKill(t *testing.T) {
+	m := newTestProcManager(t)
+	spawnPlainWithMember(t, m, "closed", "stay")
+	refuseGroupKills(t)
+	if n := m.KillAllCount(); n != 0 {
+		t.Errorf("killAllCount = %d, want 0", n)
+	}
+}
+
+// TestShutdownCountsARefusedSweepTerm: a stream-json child that refuses its sweep SIGTERM
+// still counts in the cleanup line, as before (claustrum's own, not measured). The seam
+// refuses the SIGTERM, and the KILL at the end of the short wait reaches the test's own child.
+func TestShutdownCountsARefusedSweepTerm(t *testing.T) {
+	old := shutdownEndGrace
+	shutdownEndGrace = 100 * time.Millisecond
+	t.Cleanup(func() { shutdownEndGrace = old })
+	m := newTestProcManager(t)
+	spawnPlainWithMember(t, m, "closed", "stay", "stream-json")
+	inner := signalGroup
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		if signame == "TERM" {
+			return &SignalFailed{Name: "terminated", Err: syscall.EPERM}
+		}
+		return inner(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = inner })
+	if n := m.KillAllCount(); n != 1 {
+		t.Errorf("killAllCount = %d, want 1", n)
+	}
+}
+
+// TestShutdownWaitRunsToItsEdgeWithNoDrainKill: with -keep-children no drain kill takes the
+// claim of a stream-json child whose member holds the pipes. The wait then runs to its edge
+// and counts the child as killed, as before. The seam refuses each KILL.
+func TestShutdownWaitRunsToItsEdgeWithNoDrainKill(t *testing.T) {
+	logs := captureLogBuf(t)
+	oldEnd, oldDrain := shutdownEndGrace, exitDrainGrace
+	shutdownEndGrace, exitDrainGrace = 1500*time.Millisecond, 30*time.Second
+	t.Cleanup(func() { shutdownEndGrace, exitDrainGrace = oldEnd, oldDrain })
+	m := newTestProcManager(t)
+	m.KeepChildren = true
+	p, _ := spawnPlainWithMember(t, m, "hold", "stay", "stream-json")
+	refuseGroupKills(t)
+	start := time.Now()
+	m.KillAllCount()
+	if d := time.Since(start); d < 1400*time.Millisecond {
+		t.Errorf("the sweep took %v, want the whole wait", d)
+	}
+	if want := "asked 1 Claude Code process(es) to end: 0 exited, 1 had to be killed"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log has no %q:\n%s", want, logs.String())
+	}
+	if p.groupKillClaimed.Load() {
+		t.Error("a drain kill took the claim with -keep-children")
+	}
+}
+
 // TestDrainKillGoesOutOnce: every path that can follow sends no second SIGKILL.
 func TestDrainKillGoesOutOnce(t *testing.T) {
 	count := countDrainKills(t)

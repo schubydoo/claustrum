@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"errors"
 	"syscall"
 	"time"
 
@@ -67,9 +68,10 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	if asked {
 		stopped = p.sweepKilledGroup.Load
 	}
-	// A taken claim ends the wait and the SIGTERM. A refused kill that holds the claim for a
-	// moment ends them too, and the end then sends its SIGKILL at once.
-	stopNow := func() bool { return stopped() || p.groupKillClaimed.Load() }
+	// A spent claim ends the wait and the SIGTERM. A refused kill under way ends neither. 87375cc7
+	// then sends the SIGKILL of the end at its usual time (measured on Linux, a client KILL after
+	// the SIGTERM). A refused kill under way before the SIGTERM is claustrum's own, not measured.
+	stopNow := func() bool { return stopped() || p.groupKillClaimed.spent() }
 	if !awaitPipesEnd(drained, groupTermAfter-time.Since(seen), stopNow) && !stopNow() &&
 		signalCheckedGroup(pid, syscall.SIGTERM) == nil {
 		logging.Infof("[process.Manager] Process %s exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL", LogID(p.id))
@@ -91,14 +93,24 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 // of another path that is under way ends first. A refused one has given the claim back
 // by then. With -keep-children, a shutdown that began before the last test, below, gets
 // no SIGKILL. One that begins after that test can get it (claustrum's own, not measured).
+//
+// A kill call that fails logs one line with its error. 87375cc7 logs it after a refused
+// SIGKILL of the end, and none after a refused SIGKILL of a shutdown (measured on Linux,
+// EPERM). The line after another error is claustrum's own, not measured. A number that
+// groupNumberRefused refuses makes no kill call and logs nothing (claustrum's own).
 func (p *Proc) sendHeldEndKill(pid int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.keepsGroup && p.shutdownBegan() {
 		return
 	}
-	if p.groupKillClaimed.takeFinal() {
-		p.heldGroupKilled = signalCheckedGroup(pid, syscall.SIGKILL) == nil
+	if !p.groupKillClaimed.takeFinal() {
+		return
+	}
+	err := signalCheckedGroup(pid, syscall.SIGKILL)
+	p.heldGroupKilled = err == nil
+	if err != nil && !errors.Is(err, errGroupRefused) {
+		logging.Infof("[process.Manager] the process group of pid %d, which has exited, was not sent SIGKILL: %v", pid, err)
 	}
 }
 
