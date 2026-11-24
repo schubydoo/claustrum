@@ -214,15 +214,15 @@ func TestKillGroupInDrainSendsNothingBeforeTheReap(t *testing.T) {
 	oldInUse := SetPidInUseForTest(func(int) bool { return false })
 	t.Cleanup(func() { SetPidInUseForTest(oldInUse) })
 	p := &Proc{id: "LIVE", running: true, cmd: &exec.Cmd{Process: &os.Process{Pid: noSuchPid}}}
-	p.killGroupInDrain(true)
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(true)
+	_ = p.killGroupInDrain(false)
 	if n := signals.Load(); n != 0 {
 		t.Errorf("group signals to a record before its reap = %d, want 0", n)
 	}
 	p.mu.Lock()
 	p.reaped = true
 	p.mu.Unlock()
-	p.killGroupInDrain(false)
+	_ = p.killGroupInDrain(false)
 	if n := signals.Load(); n != 1 {
 		t.Errorf("group signals to the reaped record = %d, want 1", n)
 	}

@@ -147,6 +147,19 @@ func (m *Manager) AddRefusedChildForTest(id string, pid int) *Proc {
 	return p
 }
 
+// AddExitedChildForTest puts a record under id in the table of m whose leader is reaped
+// and whose exit frame is not out yet, with the child pid pid, and returns it. With held
+// it is a launcher spawn whose end still holds the leader.
+func (m *Manager) AddExitedChildForTest(id string, pid int, held bool) *Proc {
+	p := m.AddRefusedChildForTest(id, pid)
+	p.mu.Lock()
+	p.reaped = true
+	p.plainGroupEnd = !held
+	p.endsGroup, p.leaderHeld = held, held
+	p.mu.Unlock()
+	return p
+}
+
 // IDForTest returns the id of p.
 func (p *Proc) IDForTest() string { return p.id }
 

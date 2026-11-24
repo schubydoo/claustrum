@@ -419,7 +419,7 @@ func TestDrainKillsHonorTheClaim(t *testing.T) {
 		return &Proc{running: true, reaped: true, endsGroup: ends, stopsBegan: &atomic.Bool{}, cmd: &exec.Cmd{Process: &os.Process{Pid: fakeGroupNumber}}}
 	}
 	paths := map[string]func(*Proc){
-		"drain":      func(p *Proc) { p.killGroupInDrain(false) },
+		"drain":      func(p *Proc) { _ = p.killGroupInDrain(false) },
 		"after exit": func(p *Proc) { _ = p.killGroupAfterExit() },
 	}
 	for name, kill := range paths {
@@ -459,7 +459,7 @@ func TestDrainKillsHonorTheClaim(t *testing.T) {
 	t.Cleanup(func() { SetPidInUseForTest(oldPid) })
 	sent.Store(0)
 	skipped := newProc(true)
-	skipped.killGroupInDrain(true)
+	_ = skipped.killGroupInDrain(true)
 	if sent.Load() != 0 || skipped.groupKillClaimed.Load() {
 		t.Errorf("skipped kill: %d signals, claim %v", sent.Load(), skipped.groupKillClaimed.Load())
 	}
