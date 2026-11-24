@@ -230,6 +230,15 @@ type Proc struct {
 	// groupKillClaimed is taken once by the one group SIGKILL that the end of a launcher's
 	// group, endAsked and a client KILL after the leader's exit send together.
 	groupKillClaimed atomic.Bool
+	// plainGroupEnd is set once at spawn: a spawn with no launcher, gitRead, link, temp
+	// folder, pty or unattended time, the shape of the rows of killGroupInOpenDrain.
+	// outPipes are the read ends of its stdout and stderr. leaderKeptGroup is set under
+	// p.mu before the reap: the exited leader still led the group of the spawn.
+	// pipesHeldAtGrace is set under p.mu when the drain grace ends with a pipe held.
+	plainGroupEnd    bool
+	outPipes         [2]*os.File
+	leaderKeptGroup  bool
+	pipesHeldAtGrace bool
 	// leaderReapSeen is set by the macOS end as its first step after cmd.Wait, before the
 	// reaped mark. A signal path that tests it later sends no second group SIGKILL. One
 	// that passed the test before can still send.
@@ -616,8 +625,8 @@ var signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
 // p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
 // between, which is the very race the check exists to prevent. Every signal site
-// goes through here for that reason, except killGroupAfterExit, killGroupInDrain and
-// killGroupBeforeExitFrame.
+// goes through here for that reason, except killGroupAfterExit, killGroupInDrain,
+// killGroupInOpenDrain and killGroupBeforeExitFrame.
 //
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
@@ -692,7 +701,7 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 // NOT take the reaped guard signalIfLive applies: by construction it runs after
 // the reap, so that guard would make it a no-op and the orphans would survive.
 //
-// With killGroupInDrain and killGroupBeforeExitFrame it is one of three places where claustrum knowingly signals
+// With killGroupInDrain, killGroupInOpenDrain and killGroupBeforeExitFrame it is one of four places where claustrum knowingly signals
 // a pgid whose leader is gone. Its one caller is the escalation of killAndWaitProc,
 // after the grace ran out.
 // There the leader has often ended, and a group member that holds its pipes keeps
@@ -712,7 +721,7 @@ func (p *Proc) killGroupAfterExit() error {
 	if p.cmd == nil || p.cmd.Process == nil {
 		return nil
 	}
-	if p.endsGroup && !p.launcherStillRunsLocked() {
+	if !p.endsGroup || !p.launcherStillRunsLocked() {
 		return p.claimedGroupKillLocked()
 	}
 	return signalGroup(p.group, p.cmd.Process, "KILL")
@@ -728,9 +737,13 @@ func (p *Proc) launcherStillRunsLocked() bool {
 
 // claimedGroupKillLocked sends the group SIGKILL of an exited child. For a launcher with
 // the end on it sends the group's one SIGKILL: nothing if the claim is taken. A refused
-// signal gives the claim back, so the end can still send it. The caller holds p.mu.
+// signal gives the claim back, so the end can still send it. A plain spawn sends
+// nothing once killGroupInOpenDrain took the claim. The caller holds p.mu.
 func (p *Proc) claimedGroupKillLocked() error {
 	if p.endsGroup && p.groupKillClaimed.Swap(true) {
+		return nil
+	}
+	if p.plainGroupEnd && p.groupKillClaimed.Load() {
 		return nil
 	}
 	err := signalGroup(p.group, p.cmd.Process, "KILL")
@@ -738,6 +751,54 @@ func (p *Proc) claimedGroupKillLocked() error {
 		p.groupKillClaimed.Store(false)
 	}
 	return err
+}
+
+// afterGraceClose runs in the exit goroutine after the grace closed the read ends. A
+// seam for a test. Production never reassigns it.
+var afterGraceClose = func(*Proc) {}
+
+// notePipesHeldAtGrace records, before the grace closes the read ends, whether a process
+// still holds a pipe. A pipe that reached its end at that moment does not count (D28).
+func (p *Proc) notePipesHeldAtGrace() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pipesHeldAtGrace = pipesStillHeld(p.outPipes)
+}
+
+// killGroupInOpenDrain sends the group SIGKILL of a shutdown to a plain child whose
+// leader is reaped while a process holds its stdout or stderr. 87375cc7 and 4c111e86
+// send it after the shutdown starts, and none once the exit frame is out (measured
+// on Linux and macOS). It holds p.mu across the test and the signal, so it cannot follow
+// the frame. This path sends at most once for a child. The grace closes the read ends
+// before the frame, and a pipe held at that close still counts. At the 5 s edge 87375cc7
+// can log its grace line and send the SIGKILL with no exit frame (measured on Linux). The order of the line and the kill is not measured.
+//
+// The test is that some process holds a pipe, not that it is in the group. So a member
+// on its own stdio ends if a process in another session holds the pipes, as on 87375cc7
+// (measured on Linux). With no writer left it gets no signal (D28).
+//
+// A client KILL before it, to the running leader or inside the drain, makes two group
+// kills, as on 87375cc7 (measured on Linux). A spawn with a pty gets none (87375cc7,
+// measured on Linux and macOS). It sends nothing for -keep-children or for a leader that left the
+// group of the spawn (claustrum's own, not measured). It makes no test of the number
+// beyond groupNumberRefused. A number that a new group reused takes this SIGKILL, as on
+// 87375cc7 (measured on Linux). The maintainer accepted that risk. It reports whether
+// it sent the signal.
+func (p *Proc) killGroupInOpenDrain() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.plainGroupEnd || p.keepsGroup || !p.leaderKeptGroup || !p.running || !p.reaped ||
+		p.sweepKilledGroup.Load() || p.cmd == nil || p.cmd.Process == nil {
+		return false
+	}
+	pid := p.cmd.Process.Pid
+	if drainGroupRefused(pid) || (!p.pipesHeldAtGrace && !pipesStillHeld(p.outPipes)) {
+		return false
+	}
+	if p.groupKillClaimed.Swap(true) {
+		return false
+	}
+	return signalGroup(p.group, p.cmd.Process, "KILL") == nil
 }
 
 // killGroupBeforeExitFrame sends SIGKILL to the group of a process whose exit frame is
@@ -753,6 +814,10 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	// The claim is taken under p.mu. On Linux the end clears leaderHeld under p.mu
 	// before its wait, so a SIGKILL that won here lands before the reap.
 	if p.endsGroup && p.groupKillClaimed.Swap(true) {
+		return
+	}
+	// killGroupInOpenDrain sent this plain child its one SIGKILL.
+	if p.plainGroupEnd && p.groupKillClaimed.Load() {
 		return
 	}
 	// A refused kill gives the claim back and is no killed group, so the end still sends.
@@ -886,8 +951,9 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 
 // TempRootAsk holds the two temp-folder members of a process.spawn request: Folder is
 // "cliTempRoot":true, and End is "cliTempRootEnd":true, which asks the daemon to end
-// the child when its private temp folder is lost (endForLostTempRoot).
-type TempRootAsk struct{ Folder, End bool }
+// the child when its private temp folder is lost (endForLostTempRoot). Pty is true for
+// a pty object in the request. It starts no step, and killGroupInOpenDrain skips it.
+type TempRootAsk struct{ Folder, End, Pty bool }
 
 // SpawnWithTempRoot is spawnVia with the cliTempRoot params of process.spawn. When
 // tempRoot.Folder is true, the step of clitemproot_unix.go runs after the env is
@@ -1371,6 +1437,8 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		unheldTTL:  unheld,
 		stopsBegan: &m.startsStopped,
 	}
+	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && tempRoot == (TempRootAsk{}) && unheld == 0
+	p.outPipes = [2]*os.File{stdoutR, stderrR}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c
 		p.bufCap = linkReplayCap
@@ -1520,6 +1588,8 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	if p.endsGroup && !groupEndAfterReap {
 		groupExitSeen = p.settleLeftGroupHeld(drained)
 	}
+	// The group of the leader can be read only before the reap.
+	keptGroup := p.plainGroupEnd && leaderKeptOwnGroup(p.cmd.Process.Pid)
 	// cmd.Wait returns the moment the process itself exits — it no longer
 	// waits on the pipes, because they are ours now.
 	err := p.cmd.Wait()
@@ -1545,7 +1615,14 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	}
 	p.mu.Lock()
 	p.reaped = true
+	p.leaderKeptGroup = keptGroup
+	askedAtStop := p.endedByShutdown
 	p.mu.Unlock()
+	// A child that the sweep asked to end and that left a process on its pipes gets the
+	// group SIGKILL at once, within 6 ms of the SIGTERM (87375cc7, measured on Linux).
+	if askedAtStop {
+		p.killGroupInOpenDrain()
+	}
 	if p.unheldTTL > 0 {
 		p.logUnheldEnd()
 	}
@@ -1583,7 +1660,9 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 		// The text is the reference's, and it comes before the two read-error lines
 		// that the close below causes (measured on Linux).
 		logging.Warnf("[process.Manager] Process %s: pipe drain grace expired (grandchild holding stdio?); force-closing", p.id)
+		p.notePipesHeldAtGrace()
 		sysproc.CloseAll(stdoutR, stderrR)
+		afterGraceClose(p)
 	}
 	// Both pumps have returned by here: either they hit EOF on their own, or
 	// the close above turned their blocked Read into ErrClosed. That barrier
@@ -2319,8 +2398,8 @@ func argsAskEnd(args []string) bool {
 var beforeSweepSignal = func(*Proc) {}
 
 // KillAllCount ends every live child at shutdown. It returns how many children got
-// a signal, for the "cleanup:" line. A child that refused the signal counts too
-// (claustrum's own, not measured).
+// a signal, for the "cleanup:" line. A child that refused its sweep signal counts too,
+// but a refused group kill of an open drain does not (claustrum's own, not measured).
 //
 // On Linux and macOS (ShutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
 // to its pid first, and the sweep waits for it (endAsked). Every other child gets the
@@ -2341,7 +2420,7 @@ func (m *Manager) KillAllCount() int {
 		if ShutdownAsksEnd && p.askEnd {
 			sig = "TERM"
 		}
-		// Skip exited children — their pgid may already be recycled (see kill).
+		// signalIfLive skips an exited child, whose pgid can be recycled (see kill).
 		beforeSweepSignal(p)
 		if p.signalIfLive(sig, "shutdown") {
 			n++
@@ -2350,6 +2429,9 @@ func (m *Manager) KillAllCount() int {
 			}
 		} else if p.killHeldGroupAtStop() {
 			// The exit goroutine took the hold between the two tests.
+			n++
+		} else if p.killGroupInOpenDrain() {
+			// The leader is reaped and a process holds the pipes (Linux, macOS).
 			n++
 		}
 	}
@@ -2362,14 +2444,14 @@ func (m *Manager) KillAllCount() int {
 
 // endAsked waits for the children that the shutdown sweep sent SIGTERM, for at most
 // shutdownEndGrace. A child that is still there at the end of the wait gets the group
-// SIGKILL then (b3081b51, measured on Linux and macOS). That includes a child whose
+// SIGKILL then (b3081b51, measured on Linux and macOS). That includes a spawn outside the shape of killGroupInOpenDrain whose
 // exit drain a member of its group holds open (claustrum's own, not measured). The wait is bounded, so the shutdown
 // takes at most shutdownEndGrace longer. A child counts as exited when its exit frame
 // is out. A launcher spawn with the end on also counts once its leader has exited
 // (87375cc7, measured on Linux and macOS). With a member that holds the pipes of a spawn
-// with no launcher, 87375cc7 counts it as exited and claustrum as killed (measured on
-// Linux and macOS). Then it logs one line, whose text is the reference's (measured on
-// Linux and macOS).
+// with no launcher, 87375cc7 counts it as exited (measured on Linux and macOS). claustrum
+// does too when the exit frame goes out inside the wait, and counts any other spawn as killed. Then it logs one line, whose text is
+// the reference's (measured on Linux and macOS).
 //
 // b3081b51 also sends the group SIGKILL after the exit of an ended child (measured on
 // Linux). claustrum sends no signal to a child whose exit frame is out, and so none

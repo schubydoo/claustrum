@@ -558,15 +558,17 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 - **Systems and switch.** Linux and macOS. Off-wire, always on, no switch. Windows
   sends no `SIGTERM` at a shutdown.
 - **Cost.** With no group end, a process that the child left in its group with its own
-  stdio outlives the shutdown. A member that holds the pipes of the child holds back the exit
-  frame, so it still gets the `SIGKILL` at 1.5 s.
+  stdio outlives the shutdown, if no process holds the pipes. A process that holds the pipes
+  holds back the exit frame. A [plain spawn](protocol/server.md#which-spawns-get-it) then gets the group `SIGKILL` before its exit frame, as on
+  `87375cc7` (measured on Linux and macOS). That also ends a member on its own stdio, and a
+  reused group number takes the signal (`87375cc7`, measured on Linux). Another spawn with no launcher gets the `SIGKILL` at 1.5 s (from the code).
 - **Rule.** Approved by the maintainer on 2026-11-04. After the exit frame the group
   can be empty, and its number can then name another process. A `SIGKILL` there
   cannot be taken back, the same shape as [D20](#d20).
 - **Reopen trigger.** A client needs such a group member ended at a shutdown. Or a
   measurement shows that the reference sends no `SIGKILL` there.
 - **Pointers.** [server.shutdown](protocol/server.md#what-the-stop-does) and
-  `internal/supervisor/process.go` (`endAsked`).
+  `internal/supervisor/process.go` (`endAsked`, `killGroupInOpenDrain`).
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

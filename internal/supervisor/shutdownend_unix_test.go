@@ -111,7 +111,8 @@ func TestShutdownSweepKillsAGrandchildThatHoldsThePipes(t *testing.T) {
 	if got, want := sent(p), []string{"TERM", "KILL"}; !slices.Equal(got, want) {
 		t.Errorf("signals to the child = %q, want %q", got, want)
 	}
-	const line = "[process.Manager] KillAll: asked 1 Claude Code process(es) to end: 0 exited, 1 had to be killed, after "
+	// The group SIGKILL follows the reap, and the child counts as exited.
+	const line = "[process.Manager] KillAll: asked 1 Claude Code process(es) to end: 1 exited, 0 had to be killed, after "
 	if !strings.Contains(logs.String(), line) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), line)
 	}
