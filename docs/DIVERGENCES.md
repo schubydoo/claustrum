@@ -559,7 +559,7 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   sends no `SIGTERM` at a shutdown.
 - **Cost.** With no group end, a process that the child left in its group with its own
   stdio outlives the shutdown, if no process holds the pipes. A process that holds the pipes
-  holds back the exit frame. A [plain spawn](protocol/server.md#which-spawns-get-it) then gets the group `SIGKILL` right after the reap, as on
+  holds back the exit frame. A [plain spawn](protocol/server.md#which-spawns-get-it) then gets the group `SIGKILL` before its exit frame, as on
   `87375cc7` (measured on Linux and macOS). That also ends a member on its own stdio, and a
   reused group number takes the signal (`87375cc7`, measured on Linux). Another spawn with no launcher gets the `SIGKILL` at 1.5 s (from the code).
 - **Rule.** Approved by the maintainer on 2026-11-04. After the exit frame the group

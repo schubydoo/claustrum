@@ -2398,8 +2398,8 @@ func argsAskEnd(args []string) bool {
 var beforeSweepSignal = func(*Proc) {}
 
 // KillAllCount ends every live child at shutdown. It returns how many children got
-// a signal, for the "cleanup:" line. A child that refused the signal counts too
-// (claustrum's own, not measured).
+// a signal, for the "cleanup:" line. A child that refused its sweep signal counts too,
+// but a refused group kill of an open drain does not (claustrum's own, not measured).
 //
 // On Linux and macOS (ShutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
 // to its pid first, and the sweep waits for it (endAsked). Every other child gets the
