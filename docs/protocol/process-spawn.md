@@ -157,8 +157,8 @@ claustrum's own rules of this end, not measured:
 
 - A group number of 1 or less, the daemon's pid and the daemon's group get no signal.
 - After the temp-root or unattended end killed the group, or after the shutdown sent the group its `SIGKILL`, this end sends nothing.
-- After the exit of the leader, this end, the 1.5 s step of a shutdown and a client `KILL` share one claim on the group `SIGKILL`. A client `KILL` that passed its test just before the exit can still send a second one. A refused client or 1.5 s `KILL` gives the claim back.
-- With `-keep-children` a shutdown inside the Linux wait stops the end with no more signals, and the member lives.
+- After the exit of the leader, this end, the 1.5 s step of a shutdown and a client `KILL` share one claim on the group `SIGKILL`. A client `KILL` that passed its test just before the exit can still send a second one. A refused client or 1.5 s `KILL` gives the claim back, unless a mark of the end came meanwhile.
+- With `-keep-children` a shutdown that began before the last test of the Linux end gets no group `SIGKILL` from it. A signal that passed its test just before the shutdown still goes.
 - On Linux a request in the wait treats the child as exited, so its `exit` frame gets no `killedBy` from that request. A `process.kill` with `KILL` there ends the group at once.
 
 ## Errors

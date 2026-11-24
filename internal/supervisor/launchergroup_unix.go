@@ -57,13 +57,18 @@ func (p *Proc) groupAlreadyEnded() bool {
 // Linux holds the unreaped leader. leaderHeld clears under p.mu before the wait, so
 // this signal never comes after the reap. 87375cc7 kills the group at the shutdown and
 // counts it as ended (measured on Linux). It reports whether a shutdown killed this
-// group. With -keep-children it sends nothing (claustrum's own). macOS never holds a
-// leader.
+// group. A held group that already took a landed SIGKILL gets no second one and counts
+// too (claustrum's own, not measured). With -keep-children it sends nothing (claustrum's
+// own). macOS never holds a leader.
 func (p *Proc) killHeldGroupAtStop() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.leaderHeld && !p.keepsGroup && !p.groupKillClaimed.Swap(true) {
-		p.stopKilledGroup = signalCheckedGroup(p.cmd.Process.Pid, syscall.SIGKILL) == nil
+	if p.leaderHeld && !p.keepsGroup {
+		if p.groupKillClaimed.takeFinal() {
+			p.stopKilledGroup = signalCheckedGroup(p.cmd.Process.Pid, syscall.SIGKILL) == nil
+		} else if p.heldGroupKilled {
+			p.stopKilledGroup = true
+		}
 	}
 	return p.stopKilledGroup
 }
@@ -81,7 +86,7 @@ func (p *Proc) settleLeftGroupReaped() {
 		return
 	}
 	// One atomic claim, so no lock and no wait comes between the reap and the kill.
-	if p.groupKillClaimed.Swap(true) {
+	if !p.groupKillClaimed.takeFinal() {
 		return
 	}
 	probeThenKillGroup(p.cmd.Process.Pid)

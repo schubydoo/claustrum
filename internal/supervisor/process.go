@@ -219,17 +219,20 @@ type Proc struct {
 	// left in its group (launchergroup_unix.go). leaderHeld is true, under p.mu, while
 	// that end on Linux holds the unreaped leader. It clears before the wait.
 	// keepsGroup is set once at spawn by -keep-children. stopKilledGroup is set, under
-	// p.mu, once a shutdown sent the group SIGKILL of that end (killHeldGroupAtStop).
+	// p.mu, once a shutdown sent the group SIGKILL of that end (killHeldGroupAtStop), or
+	// found that heldGroupKilled is set. heldGroupKilled is set under p.mu once a client KILL,
+	// a killAndWait escalation or the SIGKILL of the end landed. Only a shutdown during the hold reads it.
 	endsGroup       bool
 	leaderHeld      bool
 	keepsGroup      bool
 	stopKilledGroup bool
+	heldGroupKilled bool
 	// sweepKilledGroup is set once the shutdown sweep or endAsked sent this group its
 	// SIGKILL. An atomic, so the macOS end reads it with no lock after the reap.
 	sweepKilledGroup atomic.Bool
 	// groupKillClaimed is taken once by the one group SIGKILL that the end of a launcher's
 	// group, endAsked and a client KILL after the leader's exit send together.
-	groupKillClaimed atomic.Bool
+	groupKillClaimed groupKillClaim
 	// plainGroupEnd is set once at spawn: a spawn with no launcher, gitRead, link, temp
 	// folder, pty or unattended time, the shape of the rows of killGroupInOpenDrain.
 	// outPipes are the read ends of its stdout and stderr. leaderKeptGroup is set under
@@ -740,15 +743,19 @@ func (p *Proc) launcherStillRunsLocked() bool {
 // signal gives the claim back, so the end can still send it. A plain spawn sends
 // nothing once killGroupInOpenDrain took the claim. The caller holds p.mu.
 func (p *Proc) claimedGroupKillLocked() error {
-	if p.endsGroup && p.groupKillClaimed.Swap(true) {
+	if p.endsGroup && !p.groupKillClaimed.tryTake() {
 		return nil
 	}
 	if p.plainGroupEnd && p.groupKillClaimed.Load() {
 		return nil
 	}
 	err := signalGroup(p.group, p.cmd.Process, "KILL")
-	if err != nil && p.endsGroup {
-		p.groupKillClaimed.Store(false)
+	if p.endsGroup {
+		if err != nil {
+			p.groupKillClaimed.giveBack()
+		} else {
+			p.heldGroupKilled = true
+		}
 	}
 	return err
 }
@@ -795,7 +802,7 @@ func (p *Proc) killGroupInOpenDrain() bool {
 	if drainGroupRefused(pid) || (!p.pipesHeldAtGrace && !pipesStillHeld(p.outPipes)) {
 		return false
 	}
-	if p.groupKillClaimed.Swap(true) {
+	if !p.groupKillClaimed.takeFinal() {
 		return false
 	}
 	return signalGroup(p.group, p.cmd.Process, "KILL") == nil
@@ -813,7 +820,7 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	}
 	// The claim is taken under p.mu. On Linux the end clears leaderHeld under p.mu
 	// before its wait, so a SIGKILL that won here lands before the reap.
-	if p.endsGroup && p.groupKillClaimed.Swap(true) {
+	if p.endsGroup && !p.groupKillClaimed.tryTake() {
 		return
 	}
 	// killGroupInOpenDrain sent this plain child its one SIGKILL.
@@ -823,7 +830,7 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	// A refused kill gives the claim back and is no killed group, so the end still sends.
 	if err := signalGroup(p.group, p.cmd.Process, "KILL"); err != nil {
 		if p.endsGroup {
-			p.groupKillClaimed.Store(false)
+			p.groupKillClaimed.giveBack()
 		}
 		return
 	}

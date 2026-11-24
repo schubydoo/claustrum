@@ -67,7 +67,8 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	if asked {
 		stopped = p.sweepKilledGroup.Load
 	}
-	// A taken claim means that the group has its SIGKILL, so the wait and the SIGTERM end.
+	// A taken claim ends the wait and the SIGTERM. A refused kill that holds the claim for a
+	// moment ends them too, and the end then sends its SIGKILL at once.
 	stopNow := func() bool { return stopped() || p.groupKillClaimed.Load() }
 	if !awaitPipesEnd(drained, groupTermAfter-time.Since(seen), stopNow) && !stopNow() &&
 		signalCheckedGroup(pid, syscall.SIGTERM) == nil {
@@ -82,14 +83,23 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 		}
 		return seen
 	}
-	// Under p.mu, so a kill of another path that is under way ends first. A refused one
-	// has given the claim back by then.
+	p.sendHeldEndKill(pid)
+	return seen
+}
+
+// sendHeldEndKill sends the one group SIGKILL of the end. It runs under p.mu, so a kill
+// of another path that is under way ends first. A refused one has given the claim back
+// by then. With -keep-children, a shutdown that began before the last test, below, gets
+// no SIGKILL. One that begins after that test can get it (claustrum's own, not measured).
+func (p *Proc) sendHeldEndKill(pid int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.groupKillClaimed.Swap(true) {
-		_ = signalCheckedGroup(pid, syscall.SIGKILL)
+	if p.keepsGroup && p.shutdownBegan() {
+		return
 	}
-	return seen
+	if p.groupKillClaimed.takeFinal() {
+		p.heldGroupKilled = signalCheckedGroup(pid, syscall.SIGKILL) == nil
+	}
 }
 
 // awaitPipesEnd returns once the pipes are at their end, after bound, or once stop
