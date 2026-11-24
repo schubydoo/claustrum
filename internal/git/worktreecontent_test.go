@@ -1209,8 +1209,8 @@ func isFileHash(c envCall) bool {
 
 // TestContentCheckDeadlineDuringAListing: the deadline passes while the config
 // listing of the next git call is held. That listing ends, its call does not
-// start, and the check stops with the objects hashed so far (4c111e86 and
-// 87375cc7, measured on Linux, and 4c111e86 on Windows for the file hash). The
+// start, and the check stops with the objects hashed so far (4c111e86 and 87375cc7
+// measured on Linux, and 4c111e86 on Windows for a listing held before the file hash). The
 // copy step then runs its listing, though `.claude/` holds only `worktrees`.
 // Mutations: no test after the listing of a hash-object (the call starts and
 // the count grows), and the old test for a child of `.claude/` (one listing

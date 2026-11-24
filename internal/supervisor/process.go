@@ -778,8 +778,8 @@ func (p *Proc) notePipesHeldAtGrace() {
 // (measured on Linux). With no writer left it gets no signal (D28).
 //
 // A client KILL before it, to the running leader or inside the drain, makes two group
-// kills, as on 87375cc7 (measured on Linux). A spawn with a pty and no stream-json arg whose leader exited before the shutdown gets none (87375cc7,
-// measured on Linux and macOS). Any other pty spawn gets none from this path either (claustrum's own, not measured). It sends nothing for -keep-children or for a leader that left the
+// kills, as on 87375cc7 (measured on Linux). A pty spawn gets none from this path (claustrum's own, not measured).
+// A pty child of 87375cc7 with no stream-json arg logged its exit before the shutdown and got no signal (measured on Linux and macOS). It sends nothing for -keep-children or for a leader that left the
 // group of the spawn (claustrum's own, not measured). It makes no test of the number
 // beyond groupNumberRefused. A number that a new group reused takes this SIGKILL, as on
 // 87375cc7 (measured on Linux). The maintainer accepted that risk. It reports whether
