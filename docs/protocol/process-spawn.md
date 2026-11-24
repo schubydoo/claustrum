@@ -69,12 +69,14 @@ The daemon ends an armed child that had no connection for a time. The spawn logs
 - Linux and macOS: `SIGTERM` to the child only. The daemon waits until the child leaves, at most 7 s. Then `SIGKILL` goes to its group, also after the child left. No `SIGHUP` goes out.
 - Windows: the `SIGTERM` is the end of the [job](process-kill.md#windows-child-trees). The child leaves at once with code 1.
 - One of these lines comes before the exited line, which ends in `asked to end by this daemon (unattended)`. The stayed line is measured on Linux and macOS.
+- A refused group `SIGKILL` gives the third line in place of the second (measured on Linux). On macOS, and after an error other than `EPERM`, the line is claustrum's own, not measured.
 - A later reattach gets the `exit` frame with `"killedBy":"unattended"`.
 - A child that a `process.kill` ended, an own exit and `server.shutdown` give no end and no line. The shutdown ends the child as usual.
 
 ```
 [process.Manager] Process <id>: no connection attached for <time>: it left at SIGTERM
 [process.Manager] Process <id>: no connection attached for <time>: it stayed at SIGTERM, and its group was killed
+[process.Manager] Process <id>: no connection attached for <time>: it stayed at SIGTERM, and its group could not be killed
 ```
 
 #### A refused `SIGTERM`
@@ -131,11 +133,13 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 - Pipes at their end: one group `SIGKILL` at once, with no `SIGTERM` and no line.
 - Pipes still open 200 ms after the exit: a group `SIGTERM` and the line below, also with no member in the group. The group `SIGKILL` follows once the pipes are at their end, at the latest 1.5 s after the `SIGTERM`.
 - The 5 s pipe drain of the `exit` frame counts from the exit of the launcher, not from its reap.
-- A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. `87375cc7` often sends that `SIGKILL` twice, and claustrum sends it once. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM`. The record goes.
+- A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. `87375cc7` often sends that `SIGKILL` twice, and claustrum sends it once. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM` or a refused `SIGKILL`. The record goes.
 - A stream-json launcher that the shutdown asked to end with `SIGTERM` gets the steps above after its exit. A group `SIGKILL` of the shutdown ends them.
+- On Linux a refused group `SIGKILL` of this end logs the second line below (`87375cc7`, measured). One of a shutdown logs none. On macOS claustrum logs no such line (claustrum's own, not measured).
 
 ```
 [process.Manager] Process <id> exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL
+[process.Manager] the process group of pid <pid>, which has exited, was not sent SIGKILL: operation not permitted
 ```
 
 #### The end on macOS (measured)

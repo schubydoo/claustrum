@@ -292,11 +292,13 @@ type Proc struct {
 	// the moment the last connection went, zero while one is attached. unheldTermed is
 	// set once the SIGTERM of the end went out. unheldKilled is set once a group SIGKILL
 	// of the end went out, and unheldStayed when the child still ran at that SIGKILL.
-	// These four change under p.mu. unheldGate closes before the reap of the child.
+	// unheldKillFailed is set when that SIGKILL failed. These five change under p.mu.
+	// unheldGate closes before the reap of the child.
 	unheldTTL                  time.Duration
 	stopsBegan                 *atomic.Bool
 	unheldSince                time.Time
 	unheldTermed, unheldStayed bool
+	unheldKillFailed           bool
 	unheldKilled               atomic.Bool
 	unheldGate                 sysproc.LeaderGate
 	// unheldExitSeen is the seam unheldExitSeen as spawnWith read it, set before the
@@ -754,6 +756,7 @@ func (p *Proc) claimedGroupKillLocked() error {
 		if err != nil {
 			p.groupKillClaimed.giveBack()
 		} else {
+			p.groupKillClaimed.landed()
 			p.heldGroupKilled = true
 		}
 	}
@@ -2405,8 +2408,10 @@ func argsAskEnd(args []string) bool {
 var beforeSweepSignal = func(*Proc) {}
 
 // KillAllCount ends every live child at shutdown. It returns how many children got
-// a signal, for the "cleanup:" line. A child that refused its sweep signal counts too,
-// but a refused group kill of an open drain does not (claustrum's own, not measured).
+// a signal, for the "cleanup:" line. A child that refused its sweep SIGKILL does not count.
+// 87375cc7 counts no refused sweep SIGKILL of a live leader and no refused group kill of
+// an open drain (measured on Linux, EPERM, the live leader only after a refused client KILL). The other
+// cases are claustrum's own, not measured. A refused sweep SIGTERM counts, as before.
 //
 // On Linux and macOS (ShutdownAsksEnd) a child that argsAskEnd accepts gets SIGTERM
 // to its pid first, and the sweep waits for it (endAsked). Every other child gets the
@@ -2429,8 +2434,10 @@ func (m *Manager) KillAllCount() int {
 		}
 		// signalIfLive skips an exited child, whose pgid can be recycled (see kill).
 		beforeSweepSignal(p)
-		if p.signalIfLive(sig, "shutdown") {
-			n++
+		if live, err := p.signalIfLiveErr(sig, "shutdown"); live {
+			if err == nil || sig == "TERM" {
+				n++
+			}
 			if sig == "TERM" {
 				asked = append(asked, p)
 			}
@@ -2457,7 +2464,7 @@ func (m *Manager) KillAllCount() int {
 // is out. A launcher spawn with the end on also counts once its leader has exited
 // (87375cc7, measured on Linux and macOS). With a member that holds the pipes of a spawn
 // with no launcher, 87375cc7 counts it as exited (measured on Linux and macOS). claustrum
-// does too when the exit frame goes out inside the wait, and counts any other spawn as killed. Then it logs one line, whose text is
+// does too when the exit frame goes out inside the wait, or at the reap after the drain kill (awaitAskedExit). It counts any other spawn as killed. Then it logs one line, whose text is
 // the reference's (measured on Linux and macOS).
 //
 // b3081b51 also sends the group SIGKILL after the exit of an ended child (measured on
@@ -2470,13 +2477,11 @@ func endAsked(asked []*Proc, start time.Time) {
 	late := false
 	for _, p := range asked {
 		if !late {
-			select {
-			case <-p.done:
+			if awaitAskedExit(p, timer.C) {
 				exited++
 				continue
-			case <-timer.C:
-				late = true
 			}
+			late = true
 		}
 		select {
 		case <-p.done:
@@ -2492,6 +2497,35 @@ func endAsked(asked []*Proc, start time.Time) {
 	}
 	logging.Infof("[process.Manager] KillAll: asked %d Claude Code process(es) to end: %d exited, %d had to be killed, after %s",
 		len(asked), exited, killed, time.Since(start).Round(time.Millisecond))
+}
+
+// awaitAskedExit waits in endAsked for the exit of p, until late fires. It reports true at the
+// exit frame, and at the reap once killGroupInOpenDrain took the claim of a plain child: the end
+// of the wait then sends that child nothing. So a refused drain kill ends the wait at once, as on
+// 87375cc7 (measured on Linux, EPERM). On macOS that is claustrum's own, not measured. After a
+// landed drain kill the count is that of 87375cc7 too (measured on Linux).
+func awaitAskedExit(p *Proc, late <-chan time.Time) bool {
+	reaped := p.recordDone
+	for {
+		select {
+		case <-p.done:
+			return true
+		case <-reaped:
+			if p.plainDrainKillSpent() {
+				return true
+			}
+			reaped = nil
+		case <-late:
+			return false
+		}
+	}
+}
+
+// plainDrainKillSpent reports that killGroupInOpenDrain took the claim of a plain child.
+func (p *Proc) plainDrainKillSpent() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.plainGroupEnd && p.groupKillClaimed.spent()
 }
 
 // BuildEnv merges the caller-supplied env map over the daemon's environment.

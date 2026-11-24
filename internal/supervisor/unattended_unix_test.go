@@ -110,6 +110,38 @@ func TestUnheldEndOfAChildThatStays(t *testing.T) {
 	}
 }
 
+// TestUnheldRefusedGroupKillLine: a child that stays at the SIGTERM and whose group
+// SIGKILL is refused gets the "could not be killed" line (87375cc7, measured on Linux).
+// The seam refuses the SIGKILL, and the test ends its own child.
+func TestUnheldRefusedGroupKillLine(t *testing.T) {
+	buf := captureLogBuf(t)
+	fakeUnheldTicker(t)
+	inner := signalGroup
+	signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
+		if signame == "KILL" {
+			return &SignalFailed{Name: "killed", Err: syscall.EPERM}
+		}
+		return inner(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = inner })
+	m := newTestProcManager(t)
+	p, _ := spawnUnheldHelper(t, m, "rk-stay", "ignore-term")
+	m.endUnheld(p, unheldSinceOf(p).Add(p.unheldTTL), time.Millisecond)
+	_ = p.cmd.Process.Kill()
+	select {
+	case <-p.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the child did not end")
+	}
+	got := buf.String()
+	if !strings.Contains(got, "[process.Manager] Process rk-stay: no connection attached for 1m0s: it stayed at SIGTERM, and its group could not be killed\n") {
+		t.Errorf("no refused-kill line:\n%s", got)
+	}
+	if strings.Contains(got, "and its group was killed") {
+		t.Errorf("a killed line after a refused SIGKILL:\n%s", got)
+	}
+}
+
 // TestUnheldNoLineAfterAClientKill: a child that a process.kill ended gets no end line
 // and no signal of the check, and the check returns at its exit (87375cc7, measured on
 // Linux, macOS and Windows).
