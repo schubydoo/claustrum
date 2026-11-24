@@ -856,23 +856,25 @@ func (p *Proc) launcherLeaderGone() bool {
 // a process.kill with "signal":"KILL" there too, and for a killAndWait with "SIGKILL"
 // (measured on Linux and macOS). A TERM there sends no signal to the ended child either
 // (measured on Linux). The exit frame of the process.kill case has no killedBy (measured on Linux and macOS),
-// and this stamps none. The Windows answer is not measured. On Windows the error is ignored.
+// and this stamps none. The Windows answer is not measured.
 //
 // With skipLivePid true it sends nothing if pidInUse finds a live process at the pid of
 // the ended child, because the group number is that pid (claustrum's own, not measured).
 // process.kill passes true and killAndWait passes false. While the end of a launcher's
 // group holds the unreaped leader (leaderHeld), the pid is that zombie and the group
 // number cannot be reused, so the test is skipped and the KILL ends the group at once.
-func (p *Proc) killGroupInDrain(skipLivePid bool) {
+//
+// It returns the error of the kill, or nil if it sent none. process.kill answers it, and killAndWait drops it.
+func (p *Proc) killGroupInDrain(skipLivePid bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || !p.reaped || p.cmd == nil || p.cmd.Process == nil {
-		return
+		return nil
 	}
 	if skipLivePid && !p.leaderHeld && PidInUse(p.cmd.Process.Pid) {
-		return
+		return nil
 	}
-	_ = p.claimedGroupKillLocked()
+	return p.claimedGroupKillLocked()
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -1959,8 +1961,10 @@ func (p *Proc) stdinWriter() {
 // does (measured). The spelling "SIGKILL" there is not measured. A live process at
 // the pid of the ended child skips that kill (claustrum's own, not measured).
 //
-// It returns a *SignalFailed when the system refused the signal, and process.kill
-// answers its text (see SignalFailed). Each other case returns nil.
+// It returns a *SignalFailed when the system refused the signal, also the group KILL in
+// the exit drain or in the hold of an exited launcher, and process.kill answers its text
+// (see SignalFailed). 87375cc7 answers the error of that group KILL (measured on Linux
+// and macOS, EPERM). Each other case returns nil.
 func (m *Manager) Kill(id, signal string) error {
 	p := m.Get(id)
 	if p == nil {
@@ -1968,7 +1972,7 @@ func (m *Manager) Kill(id, signal string) error {
 	}
 	live, err := p.signalIfLiveErr(signal, "client")
 	if !live && KillEndsDrainGroup && strings.TrimPrefix(signal, "SIG") == "KILL" {
-		p.killGroupInDrain(true)
+		err = p.killGroupInDrain(true)
 	}
 	return err
 }
@@ -2165,7 +2169,7 @@ func (m *Manager) signalAndWaitAs(p *Proc, signal, label string, grace time.Dura
 		logging.Warnf("[process.Manager] KillAndWait %s: signal %s failed: %v", p.id, failed.Name, err)
 	}
 	if !live && strings.TrimPrefix(signal, "SIG") == "KILL" {
-		p.killGroupInDrain(false)
+		_ = p.killGroupInDrain(false)
 	}
 	select {
 	case <-p.done:
