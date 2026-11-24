@@ -406,11 +406,11 @@ func TestLFSSeedCopiesThroughLink(t *testing.T) {
 	}
 }
 
-// TestLFSKeepAfterFailedCheckout: git-lfs downloads a.bin, then b.bin is on
-// no server and the checkout fails. a.bin reaches the store of the repository
-// by a hard link at its name, and no temp name stays (4c111e86 keeps after a
-// deadline, measured on Linux. A failed filter is claustrum's own, not
-// measured).
+// TestLFSKeepAfterFailedCheckout: git-lfs downloads a.bin, then b.bin is on no
+// server and the checkout fails. a.bin reaches the store of the repository by a
+// hard link at its name (on macOS by a copy), and no temp name stays (4c111e86
+// keeps after a deadline, measured on Linux. A failed filter is claustrum's
+// own, not measured).
 func TestLFSKeepAfterFailedCheckout(t *testing.T) {
 	seamFreeSpace(t)
 	f := newLFSFixture(t, map[string]string{"a.bin": "alpha-object", "b.bin": "beta-object"})
@@ -624,6 +624,9 @@ func TestLFSKeepAfterDeadlineCopies(t *testing.T) {
 // copy form. One that failed by itself, or with no such deadline, gets the hard
 // link.
 func TestFailedKeepForm(t *testing.T) {
+	prevForm := keepFailedByCopy
+	keepFailedByCopy = false
+	t.Cleanup(func() { keepFailedByCopy = prevForm })
 	fired, cancel := context.WithCancelCause(context.Background())
 	cancel(errCallerTimeoutMs)
 	killed := errors.New("signal: killed")

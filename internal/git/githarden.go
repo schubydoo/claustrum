@@ -964,10 +964,10 @@ var leaderExitWait = sysproc.AwaitExitStatus
 // failedKeepForm is the form of the keep after the failed read-tree call err
 // with the context ctx of the caller. A deadline of timeoutMs gives the copy
 // form, as the deadline arm of the reply reads it (4c111e86, measured on
-// Linux). Every other failure gives the hard link (claustrum's own, not
-// measured).
+// Linux). Every other failure gives the hard link on Linux (claustrum's own,
+// not measured), and the copy form on macOS (keepFailedByCopy).
 func failedKeepForm(ctx context.Context, err error) keepForm {
-	if callerTimeoutFired(ctx) && !errors.As(err, new(checkoutFailedAlone)) {
+	if keepFailedByCopy || (callerTimeoutFired(ctx) && !errors.As(err, new(checkoutFailedAlone))) {
 		return keepAfterDeadline
 	}
 	return keepAfterFailure
@@ -1187,6 +1187,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	var tickWait time.Duration
 	if storeInCheckout && u.shadow() && u.inFolder() {
 		lfs.path, lfs.runDir = filepath.Join(idxDir, "lfs"), u.host.runDir
+		u.keeps = &keepPass{}
 		lfs.seed = func() (bool, time.Duration, error) {
 			seedCtx, cancel := seedContext(ctx, timeoutMs, arrival)
 			defer cancel()

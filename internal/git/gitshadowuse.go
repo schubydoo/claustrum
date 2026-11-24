@@ -67,6 +67,9 @@ type gitUse struct {
 	// accepted is the held git directory of a create, where gitDirMustBeReal is
 	// set (acceptedGitDir). It is nil in every other request.
 	accepted *acceptedGitDir
+	// keeps is the state of the LFS keep of a create with a private store
+	// (keepPass), or nil.
+	keeps *keepPass
 	// lightSix gives the light calls of a request with no folder the six values
 	// of profileEnv (noRepoCreateCalls).
 	lightSix bool
