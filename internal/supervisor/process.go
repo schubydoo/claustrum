@@ -622,11 +622,11 @@ var signalGroup = func(g *ProcGroup, proc *os.Process, signame string) error {
 // killAndWaitProc still waits for the exit (measured on Linux in the log). Any other
 // earlier reason stays (claustrum's own, not measured).
 //
-// p.mu is held across the check, the stamp and the delivery: a reaped check that
-// returns before the signal leaves a gap for the exit goroutine to reap in
-// between, which is the very race the check exists to prevent. Every signal site
-// goes through here for that reason, except killGroupAfterExit, killGroupInDrain,
-// killGroupInOpenDrain and killGroupBeforeExitFrame.
+// p.mu is held across the check, the stamp and the
+// delivery: a reaped check that returns before the
+// signal leaves a gap for the exit goroutine to
+// reap in between, which is the very race the
+// check exists to prevent.
 //
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
@@ -701,7 +701,7 @@ func (p *Proc) signalIfLiveLocked(signame, killedBy string) (bool, error) {
 // NOT take the reaped guard signalIfLive applies: by construction it runs after
 // the reap, so that guard would make it a no-op and the orphans would survive.
 //
-// With killGroupInDrain, killGroupInOpenDrain and killGroupBeforeExitFrame it is one of four places where claustrum knowingly signals
+// It is one of the places where claustrum knowingly signals
 // a pgid whose leader is gone. Its one caller is the escalation of killAndWaitProc,
 // after the grace ran out.
 // There the leader has often ended, and a group member that holds its pipes keeps
@@ -778,8 +778,8 @@ func (p *Proc) notePipesHeldAtGrace() {
 // (measured on Linux). With no writer left it gets no signal (D28).
 //
 // A client KILL before it, to the running leader or inside the drain, makes two group
-// kills, as on 87375cc7 (measured on Linux). A spawn with a pty gets none (87375cc7,
-// measured on Linux and macOS). It sends nothing for -keep-children or for a leader that left the
+// kills, as on 87375cc7 (measured on Linux). A spawn with a pty and no stream-json arg whose leader exited before the shutdown gets none (87375cc7,
+// measured on Linux and macOS). Any other pty spawn gets none from this path either (claustrum's own, not measured). It sends nothing for -keep-children or for a leader that left the
 // group of the spawn (claustrum's own, not measured). It makes no test of the number
 // beyond groupNumberRefused. A number that a new group reused takes this SIGKILL, as on
 // 87375cc7 (measured on Linux). The maintainer accepted that risk. It reports whether
