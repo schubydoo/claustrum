@@ -475,6 +475,8 @@ component_management:
         - internal/supervisor/launchergroup_linux.go
         - internal/supervisor/launchergroup_darwin.go
         - internal/supervisor/launchergroup_other.go
+        - internal/supervisor/drainstop_unix.go
+        - internal/supervisor/drainstop_other.go
         - leavegroups.go
         # the session folders: the record and its prune, the git skip, the PATH cut.
         - sessionfolders.go

@@ -411,7 +411,7 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			}
 			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders, unheld)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd)}, folders, unheld)
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, spawnTempRootAsk(&p), folders, unheld)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {
@@ -438,6 +438,12 @@ func spawnErrorReply(id interface{}, err error, cwd string) rpc.Response {
 		return rpc.ErrResultData(id, sr.Code, sr.Msg, reason)
 	}
 	return rpc.ErrResultData(id, rpc.CodeInternal, err.Error(), reason)
+}
+
+// spawnTempRootAsk gives the members of a spawn request that the manager reads at the
+// start of the child.
+func spawnTempRootAsk(p *spawnParams) supervisor.TempRootAsk {
+	return supervisor.TempRootAsk{Folder: p.CLITempRoot, End: bool(p.CLITempRootEnd), Pty: ptyObject(p.Pty)}
 }
 
 type stdinParams struct {
