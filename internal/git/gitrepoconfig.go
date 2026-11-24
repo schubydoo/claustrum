@@ -1494,7 +1494,7 @@ func repoReadVerdict(t gitDirTrust, s *gitStop) *repoVerdict {
 	// read tests the state of each file, and a link to the same folder keeps
 	// those states. The refusal is not kept. A link that is there before the
 	// first request gets the same refusal on 5fd08069 (measured on Windows).
-	// The read takes t.configDir when it is set (configDirThroughJunction).
+	// The read takes t.configDir when it is set (entryRepoThroughJunction).
 	dir := t.pinCommonDir
 	if t.configDir != "" {
 		dir = t.configDir
@@ -1604,7 +1604,7 @@ func requestRefusal(t gitDirTrust, v *repoVerdict) string {
 		// request and are no part of the kept read. On 5fd08069 a change of one of
 		// these files leads to no new read of the config and to no new copy of it
 		// (measured).
-		refusal = gitDirFilesRefusal(t.pinCommonDir)
+		refusal = gitDirFilesRefusal(t.holdFolderFor(t.pinCommonDir))
 	}
 	return refusal
 }

@@ -77,6 +77,10 @@ type acceptedGitDir struct {
 	// addBranch is the branch that the staged add made (`-b`), and addTip its
 	// tip in the held folder right after the add, or "" (addStage.finish).
 	addBranch, addTip string
+	// junctionTo is the git directory of a second repository, when a junction in
+	// baseRepo moved there right after `rev-parse --absolute-git-dir`
+	// (noteJunctionMove). It is "" for every other create.
+	junctionTo string
 }
 
 // stagedEntry is the name of a registration that the staging step moved into
@@ -347,6 +351,64 @@ func answeredElsewhere(u gitUse, gitDir string) bool {
 	}
 	fi, err := os.Lstat(u.gitDir)
 	return err == nil && fi.Mode().IsRegular()
+}
+
+// noteJunctionMove records a junction in baseRepo that now leads to the main git
+// directory of a second repository, on Windows, right after `rev-parse
+// --absolute-git-dir`. 4c111e86 and 87375cc7 then run the `worktree add` with
+// GIT_DIR=<second repository>, so the branch lands there. The registration and the
+// `.git` file of the leaf land in the held folder, and the leaf stays where it was
+// made. The create answers unsafe_path with no rollback (measured on Windows, by the
+// maintainer's decision of 2026-11-23). It reports false for every other state: a
+// held folder that is gone, a linked worktree on either side, or no junction. Those
+// states keep the refusals of the steps. It runs at this one step, so a junction
+// moved at another step keeps its refusal too.
+func (a *acceptedGitDir) noteJunctionMove(repo string) bool {
+	to := a.junctionLeadsTo(repo)
+	if to == "" {
+		return false
+	}
+	a.junctionTo = to
+	return true
+}
+
+// behindMovedJunction reports that a junction in baseRepo leads elsewhere now, on
+// Windows, while the held folder stands at its own path. The new target can be a
+// folder with no git directory (87375cc7, measured on Windows).
+func (a *acceptedGitDir) behindMovedJunction(repo string) bool {
+	if a == nil || !stagedAddWindowsSteps || a.trust.worktreeEntry != "" || a.stands() {
+		return false
+	}
+	if _, through := junctionFreePath(repo); !through {
+		return false
+	}
+	now := gitDirIdentity(a.path)
+	return now != nil && os.SameFile(now, a.info)
+}
+
+// junctionLeadsTo is the main git directory of a second repository that a junction
+// in baseRepo leads to now, on Windows, while the held folder stands at its own path.
+// It is "" in every other state.
+func (a *acceptedGitDir) junctionLeadsTo(repo string) string {
+	if a == nil || !stagedAddWindowsSteps || a.trust.worktreeEntry != "" {
+		return ""
+	}
+	if _, through := junctionFreePath(repo); !through {
+		return ""
+	}
+	if now := gitDirIdentity(a.path); now == nil || !os.SameFile(now, a.info) {
+		return ""
+	}
+	t := gitDirTrustFor(repo)
+	if t.verdict != gitDirTrusted || t.pinCommonDir == "" || t.worktreeEntry != "" || a.isAt(t.pinCommonDir) {
+		return ""
+	}
+	return t.pinCommonDir
+}
+
+// junctionMoved reports that noteJunctionMove recorded a move. It is safe on nil.
+func (a *acceptedGitDir) junctionMoved() bool {
+	return a != nil && a.junctionTo != ""
 }
 
 // movedTo is the hold of a create on the git directory gitDir that git

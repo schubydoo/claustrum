@@ -88,9 +88,18 @@ func setOrigin(t *testing.T, repo, slug, branch string) {
 func junctionsLikeWindows(t *testing.T) func(t *testing.T, link, target string) {
 	t.Helper()
 	var links []string
-	oldResolve, oldSpelled := resolveWalkLinks, walkStartsAsSpelled
-	t.Cleanup(func() { resolveWalkLinks, walkStartsAsSpelled = oldResolve, oldSpelled })
+	oldResolve, oldSpelled, oldHolds, oldLink, oldFinal := resolveWalkLinks, walkStartsAsSpelled, pathHoldsJunction, pathHoldsLink, finalLeafPath
+	t.Cleanup(func() {
+		resolveWalkLinks, walkStartsAsSpelled, pathHoldsJunction, pathHoldsLink, finalLeafPath = oldResolve, oldSpelled, oldHolds, oldLink, oldFinal
+	})
 	walkStartsAsSpelled = true
+	finalLeafPath = filepath.EvalSymlinks
+	pathHoldsJunction = func(p string) bool {
+		return slices.ContainsFunc(links, func(l string) bool {
+			return p == l || strings.HasPrefix(p, l+string(filepath.Separator))
+		})
+	}
+	pathHoldsLink = pathHoldsJunction
 	resolveWalkLinks = func(p string) (string, error) {
 		if !filepath.IsAbs(p) {
 			return filepath.EvalSymlinks(p)
@@ -133,11 +142,11 @@ func infoFrame(t *testing.T, root, branch, slug, defaultBranch string) string {
 	return string(b)
 }
 
-// The walk of the trust check starts at the path as it is spelled when the path has a
-// junction before its last component. So the pin names the repository that holds the
-// junction, not the one behind it. Mutations: in walkStart, drop the arm of
-// walkStartsAsSpelled. In gitDirTrustFor, call resolveWalkLinks in place of walkStart.
-func TestTrustWalkStartsAtSpelledPath(t *testing.T) {
+// The walk of the trust check starts at the real path of a path with a junction. So
+// the pin names the repository behind the junction, as 4c111e86 and 87375cc7 do
+// (measured on Windows). This overrules the rows of 89cb6289, whose walk kept the
+// spelled path. Mutation: in walkStart, drop the linkFreePath arm.
+func TestTrustWalkStartsAtRealPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the cells run on real junctions in TestInfoThroughJunctionWindows")
 	}
@@ -151,15 +160,14 @@ func TestTrustWalkStartsAtSpelledPath(t *testing.T) {
 		cell, path string
 		want       []string
 	}{
-		{"junction before the last component", filepath.Join(f.J, "sub"), pinOf(f.P)},
-		{"junction outside any repository", filepath.Join(f.QJ, "sub"), []string{"GIT_DIR=" + os.DevNull}},
-		{"junction as the last component", f.J, pinOf(f.P)},
+		{"junction before the last component", filepath.Join(f.J, "sub"), pinOf(f.R)},
+		{"junction outside any repository", filepath.Join(f.QJ, "sub"), pinOf(f.R)},
+		{"junction as the last component", f.J, pinOf(f.R)},
 		{"no junction, P", f.P, pinOf(f.P)},
 		{"no junction, R", filepath.Join(f.R, "inner", "sub"), pinOf(f.R)},
 		{"folder symlink", filepath.Join(f.P, "L", "sub"), pinOf(f.R)},
-		// The pin of 89cb6289 is spelled <KP>\.git on Windows. Off Windows the check
-		// resolves the symlink KP in the git directory, so the pin names P.
-		{"two junctions", filepath.Join(f.KP, "J", "sub"), pinOf(f.P)},
+		{"two junctions", filepath.Join(f.KP, "J", "sub"), pinOf(f.R)},
+		{"a junction to the repository", f.KP, pinOf(f.P)},
 	} {
 		t.Run(tc.cell, func(t *testing.T) {
 			if got := commonDirPinEnv(tc.path); !slices.Equal(got, tc.want) {
@@ -227,81 +235,44 @@ func TestTrustWalkNeedsResolveOffWindows(t *testing.T) {
 	}
 }
 
-// checkJunctionInfoCells asserts the git.info result of each cell on the fixture f. The
-// frames are those of 89cb6289 on Windows. The measured frames are checked in
-// TestInfoThroughJunctionWindows only. Off Windows the root is not git's answer, and
-// the file system takes the `..` after a symlink through its target.
+// checkJunctionInfoCells asserts the git.info result of each cell on the fixture f.
+// A path through a junction answers as the repository behind it (4c111e86 and
+// 87375cc7, measured on Windows on <P>\J\sub and <K>\J\sub). The other cells follow
+// from that walk (claustrum's own, not measured).
 func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 	t.Helper()
 	sub := filepath.Join(f.J, "sub")
-	mixed := infoFrame(t, f.P, "rmain", "p/p", "")
+	behind := infoFrame(t, f.R, "rmain", "r/r", "rmain")
 	t.Run("junction before the last component", func(t *testing.T) {
-		wantResult(t, "info", info(t, sub), mixed)
+		wantResult(t, "info", info(t, sub), behind)
 	})
 	t.Run("junction as the last component", func(t *testing.T) {
-		wantResult(t, "info", info(t, f.J), mixed)
+		wantResult(t, "info", info(t, f.J), behind)
 	})
 	t.Run("no junction, P", func(t *testing.T) {
 		wantResult(t, "info", info(t, f.P), infoFrame(t, f.P, "main", "p/p", "main"))
 	})
 	t.Run("no junction, R", func(t *testing.T) {
-		wantResult(t, "info", info(t, filepath.Join(f.R, "inner", "sub")), infoFrame(t, f.R, "rmain", "r/r", "rmain"))
+		wantResult(t, "info", info(t, filepath.Join(f.R, "inner", "sub")), behind)
 	})
 	t.Run("junction outside any repository", func(t *testing.T) {
-		wantResult(t, "info", info(t, filepath.Join(f.QJ, "sub")), `{"isRepo":false,"repoSlug":"","defaultBranch":""}`)
-	})
-	// The hooks and fsmonitor settings of R are not in the configuration that git
-	// reads, so the frame stays (measured).
-	t.Run("hooks path in the config of R", func(t *testing.T) {
-		rCfg := filepath.Join(dotGitOf(f.R), "config")
-		before, err := os.ReadFile(rCfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { writeFile(t, rCfg, string(before), 0o644) })
-		runGit(t, f.R, "config", "core.hooksPath", filepath.Join(f.R, ".git", "hk"))
-		runGit(t, f.R, "config", "core.fsmonitor", filepath.Join(f.base, "marker"))
-		wantResult(t, "info", info(t, sub), mixed)
-	})
-	t.Run("R has no origin", func(t *testing.T) {
-		t.Cleanup(func() { setOrigin(t, f.R, "r/r", "rmain") })
-		runGit(t, f.R, "remote", "remove", "origin")
-		wantResult(t, "info", info(t, sub), mixed)
+		wantResult(t, "info", info(t, filepath.Join(f.QJ, "sub")), behind)
 	})
 	t.Run("P has no origin", func(t *testing.T) {
 		t.Cleanup(func() { setOrigin(t, f.P, "p/p", "main") })
 		runGit(t, f.P, "remote", "remove", "origin")
-		wantResult(t, "info", info(t, sub), infoFrame(t, f.P, "rmain", "", ""))
+		wantResult(t, "info", info(t, sub), behind)
 	})
-	// The listing reads the config of P, so a broken line there refuses the request
-	// (measured). A measurement had a syntax error in the config file. The daemon's
-	// own read now answers that state first (TestRepoConfigSyntaxError), so the
-	// line here is an include.path with no value, which the listing of git refuses
-	// and the read does not.
-	t.Run("broken config of P", func(t *testing.T) {
-		cfg := filepath.Join(dotGitOf(f.P), "config")
-		b, err := os.ReadFile(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { writeFile(t, cfg, string(b), 0o644) })
-		breakListing(t, dotGitOf(f.P))
-		r := info(t, sub)
-		const head = "config-defined hooks could not be pinned off; git not run: listing the " +
-			"configuration in force: exit status 128: error: missing value for 'include.path' fatal: bad config line "
-		tail := " in file " + dotGitOf(f.P) + "/config"
-		if r.Error == nil || r.Error.Code != -32603 || !strings.HasPrefix(r.Error.Message, head) ||
-			!strings.HasSuffix(r.Error.Message, tail) {
-			t.Errorf("info = %+v %s\nwant -32603 %q ... %q", r.Error, r.Result, head, tail)
-		}
+	t.Run("R has no origin", func(t *testing.T) {
+		t.Cleanup(func() { setOrigin(t, f.R, "r/r", "rmain") })
+		runGit(t, f.R, "remote", "remove", "origin")
+		wantResult(t, "info", info(t, sub), infoFrame(t, f.R, "rmain", "", ""))
 	})
 }
 
 // With the walk of Windows and a symlink in the place of each junction, git.info
-// answers the frames of the cells: the root, the repo and the repoSlug of P and the
-// branch of R. The listing prints the origin of P, and the branch is that of R
-// (measured). No reference build ran in this state off Windows. Mutation: in
-// gitDirTrustFor, call resolveWalkLinks in place of walkStart.
+// answers as the repository behind the junction. No reference build ran in this
+// state off Windows. Mutation: in walkStart, drop the linkFreePath arm.
 func TestInfoThroughSimulatedJunction(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the cells run on real junctions in TestInfoThroughJunctionWindows")

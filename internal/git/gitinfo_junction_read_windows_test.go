@@ -11,7 +11,7 @@ import (
 // to a bare repository answers as that repository: git.info has no work tree,
 // and git.list_branches lists main. A junction J to a repository T whose config
 // has a bad line gets the refusal that names the config of T. Mutation: in
-// gitInfo or gitListBranches, drop the configDir line.
+// walkStart, drop the junctionFreePath arm.
 func TestInfoThroughJunctionToTargetWindows(t *testing.T) {
 	requireGit(t)
 	base := resolveTestRoot(t, t.TempDir())

@@ -122,8 +122,8 @@ func TestWorktreeRemoveFileLeafIsRefused(t *testing.T) {
 }
 
 // On Windows a junction leaf (ModeIrregular) puts the path in backticks. A regular file
-// leaf, and any leaf on Linux and macOS, has none (`4c111e86`, measured on Windows, row
-// e_junction_remove).
+// leaf, and any leaf on Linux and macOS, has none (`4c111e86`, measured on
+// Windows).
 func TestLeafNotDirText(t *testing.T) {
 	p := `C:\w\R\.claude\worktrees\w1`
 	for _, c := range []struct {

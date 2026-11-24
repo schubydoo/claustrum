@@ -77,8 +77,13 @@ var treeDeleteSites = []treeDeleteSite{
 		guards: []homeGuardCall{{"internal/git/methods_git.go", "worktreeRemoveHomeRefusal", wipesHome}},
 	},
 	{
-		file: "internal/git/worktreeremove.go", fn: "dropWorktreeEntryByPath", count: 1,
+		file: "internal/git/worktreeremove.go", fn: "dropMatchingEntry", count: 1,
 		why:    "Path 2: git.worktree_remove deletes the registration of worktreePath",
+		guards: []homeGuardCall{{"internal/git/methods_git.go", "worktreeRemoveHomeRefusal", wipesHome}},
+	},
+	{
+		file: "internal/git/worktreeremove.go", fn: "dropHeldEntry", count: 1,
+		why:    "Path 2: git.worktree_remove deletes the registration through the held git directory",
 		guards: []homeGuardCall{{"internal/git/methods_git.go", "worktreeRemoveHomeRefusal", wipesHome}},
 	},
 	{

@@ -1120,6 +1120,25 @@ var (
 	errGitDirNotReal = errors.New("the git directory changed after the read-tree call")
 )
 
+// checkoutFolder is the working directory of the calls of the read-tree checkout. On
+// Windows it is the resolved leaf of the checkpoint, so a junction that moves to a
+// second repository right before a call that succeeds leaves that repository unchanged (87375cc7,
+// measured on Windows). On Linux and macOS it stays the leaf as sent.
+func checkoutFolder(leaf, resolved string) string {
+	if stagedAddWindowsSteps && resolved != "" {
+		return resolved
+	}
+	return leaf
+}
+
+// indexStepRefused reports whether the held git directory left its path before the
+// index goes into its registration. A junction in baseRepo that moved to another
+// folder is no refusal: 87375cc7 places the index in the held folder and then
+// answers that the leaf no longer leads to its folder (measured on Windows).
+func (u gitUse) indexStepRefused(step, repo string) bool {
+	return u.swapped(step) && !u.accepted.behindMovedJunction(repo)
+}
+
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
@@ -1129,7 +1148,7 @@ var (
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
-// (checkoutWorkTree). The working directory stays leaf. rule is the filter
+// (checkoutWorkTree). The working directory is leaf (checkoutFolder). rule is the filter
 // rule, or nil (hardenedGitCheckout).
 //
 // settle says whether the settle step runs (settleCheckout).
@@ -1200,7 +1219,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		}
 	}
 	if err == nil || drained {
-		if u.swapped("index") {
+		if u.indexStepRefused("index", repo) {
 			return stderr, drained, 0, errGitDirNotReal, nil
 		}
 		// The settle step runs after a checkout that exited 0 in time, when
@@ -1237,7 +1256,7 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 		// The test of the held git directory runs again right before the
 		// placement, so a swap during the settle step or the keep gets the same
 		// answer (claustrum's own, not measured).
-		if err == nil && settle && u.swapped("settled") {
+		if err == nil && settle && u.indexStepRefused("settled", repo) {
 			return stderr, drained, keepTook, errGitDirNotReal, nil
 		}
 		if u.accepted != nil && tested.path == "" {

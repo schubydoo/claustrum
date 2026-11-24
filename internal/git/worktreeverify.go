@@ -296,8 +296,19 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	var heldErr error
 	var heldRegistration string
 	held := false
+	// A read-tree call can fail by itself after a junction in baseRepo moved to a
+	// second repository. 87375cc7 then removes the leaf and the registration of the
+	// first repository and answers with no undo text. In the second repository only
+	// the ref of the same name goes, also for a live or locked worktree. Its entry and
+	// its empty leaf stay (measured on Windows, 5 of 5, by the maintainer's decision of
+	// 2026-11-23). With no such ref nothing goes there. The leaf goes by the path that
+	// the checkpoint resolved, after its guards. A gate that refuses keeps the ref
+	// (claustrum's own, not measured).
+	acrossMove := false
+	mayCross := !tested.noRegistration
+	leaf := worktreePath
 	testHeld := func(step string) {
-		if held || !u.swapped(step) {
+		if held || acrossMove || !u.swapped(step) {
 			return
 		}
 		held, tested = true, testedRegistration{}
@@ -306,13 +317,17 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 		}
 	}
 	testHeld("undo")
+	if held && mayCross && u.afterJunctionMove != nil && cp.info != nil &&
+		u.accepted.junctionLeadsTo(repo) != "" && leafSafeToRemove(cp.resolved, cp) {
+		acrossMove, held, heldErr, leaf = true, false, nil, cp.resolved
+	}
 	switch {
 	case tested.noRegistration:
 	case held:
 	case tested.path != "":
 	case u.accepted != nil:
-		if admin := linkedGitDirOf(worktreePath); admin != "" {
-			heldRegistration = absoluteAdminDir(worktreePath, admin)
+		if admin := linkedGitDirOf(leaf); admin != "" {
+			heldRegistration = absoluteAdminDir(leaf, admin)
 		}
 	default:
 		// A leaf behind a Windows junction finds no match here, because its record
@@ -320,10 +335,10 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 		// (claustrum's own, not measured).
 		registration = createdWorktreeAdminDir(repo, worktreePath)
 	}
-	leafSafe := func() bool { return leafSafeToRemove(worktreePath, cp) }
+	leafSafe := func() bool { return leafSafeToRemove(leaf, cp) }
 	touchLeaf := leafSafe()
 	if touchLeaf {
-		if detail := clearWorktreeLeaf(worktreePath); detail != "" {
+		if detail := clearWorktreeLeaf(leaf); detail != "" {
 			remain := "the worktree directory, its registration, and the branch all remain"
 			if branch == "" {
 				remain = "the worktree directory and its registration both remain"
@@ -343,17 +358,23 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	case tested.path != "":
 		regErr = removeTestedRegistration(tested)
 	case u.accepted != nil:
-		u.accepted.removeCreatedRegistration(heldRegistration, worktreePath)
+		u.accepted.removeCreatedRegistration(heldRegistration, leaf)
 	default:
 		regErr = removeCreatedRegistration(registration)
 	}
-	if regErr == nil {
+	switch {
+	case acrossMove:
+		res = branchStepResult{kind: branchBehindSwap}
+		if next, ok := u.afterJunctionMove(); ok {
+			res = runBranchStep(next, repo, branch)
+		}
+	case regErr == nil:
 		res = runBranchStep(u, repo, branch)
 	}
 	var parts []string
 	leafGone := false
 	if touchLeaf && leafSafe() {
-		if err := removeEmptyLeaf(worktreePath); err != nil {
+		if err := removeEmptyLeaf(leaf); err != nil {
 			parts = append(parts, fmt.Sprintf("the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (%v)", err))
 		} else {
 			leafGone = true
@@ -432,6 +453,13 @@ func gitFileGoneText(worktreePath string) string {
 func gitDirIsLinkNow(gitDir string) bool {
 	fi, err := os.Lstat(filepath.Clean(gitDir))
 	return err == nil && fi.Mode()&fs.ModeSymlink != 0
+}
+
+// leafMovedText is the refusal of a create whose leaf path leads elsewhere after a
+// junction in baseRepo moved, with the path in the form of tickPath (4c111e86 and
+// 87375cc7, measured on Windows).
+func leafMovedText(worktreePath string) string {
+	return "refusing to create worktree: " + tickPath(worktreePath) + " no longer leads to the directory that was created for the worktree"
 }
 
 // leafReplacedText is the refusal of a create whose leaf is no longer the folder

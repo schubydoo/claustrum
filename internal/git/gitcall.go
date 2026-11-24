@@ -1,6 +1,7 @@
 package git
 
 import (
+	"os"
 	"sync/atomic"
 
 	"github.com/schubydoo/claustrum/internal/rpc"
@@ -35,6 +36,28 @@ type gitCall struct {
 	// atReply are the removals that wait for the reply of the request
 	// (runAtReply).
 	atReply []func()
+	// removePin is the git directory that the trust check found for baseRepo before a
+	// remove located its worktree, or "". removePinInfo is the identity of that git
+	// directory. removeBase is the identity of the folder of baseRepo then, or nil
+	// when none opened. removePinned is true once they are read, on Windows only
+	// (pinBeforeLocate).
+	removePin     string
+	removePinInfo os.FileInfo
+	removeBase    os.FileInfo
+	removePinned  bool
+	// removeBaseDir is the real path of baseRepo at the pin. removeHold is one open
+	// handle of the real git directory at the pin, or nil, with its path and identity
+	// (pinBeforeLocate). The registration delete goes through it.
+	removeBaseDir  string
+	removeHold     *os.Root
+	removeHoldPath string
+	removeHoldInfo os.FileInfo
+	// removeDotGitLink is true when `<baseRepo>/.git` was a link at the pin.
+	removeDotGitLink bool
+	// behindJunction is true for a remove of a worktree behind a junction between
+	// baseRepo and the leaf. Only a record of the leaf as sent loses its registration
+	// (removeGoneWorktree).
+	behindJunction bool
 	// gitRefused is true when the last settings gate of the request got a bad
 	// answer of git about the repository (ShadowHost.askGit).
 	gitRefused bool

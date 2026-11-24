@@ -163,7 +163,7 @@ func TestWorktreeRemoveThroughJunctionDropsEntry(t *testing.T) {
 
 // A worktree leaf that is a junction to a live worktree is refused with the path in
 // backticks. The junction, the worktree behind it, its entry and its branch stay
-// (`4c111e86`, measured on Windows, row e_junction_remove).
+// (`4c111e86`, measured on Windows).
 func TestWorktreeRemoveJunctionLeafIsRefused(t *testing.T) {
 	f := newRmFixture(t)
 	live := filepath.Join(filepath.Dir(f.repo), "jt5")
@@ -253,5 +253,62 @@ func TestWorktreeRemoveGoneLeafKeepsTheEntryBehindALinkedRegistrationsFolder(t *
 				t.Error("branch wt1 is still there, want it deleted")
 			}
 		})
+	}
+}
+
+// A baseRepo through a junction K, with a second junction at .claude\worktrees. The
+// record names the real repository path, not the leaf as sent, so it keeps its entry,
+// and only the branch goes (4c111e86 and 87375cc7 have this kind of
+// record). Mutation: in removeGoneWorktree, give dropWorktreeEntryByPath sp in place of
+// dropSet (the real-base spelling of sp matches the record). Only Windows runs it.
+func TestWorktreeRemoveBehindJunctionsKeepsRealRecord(t *testing.T) {
+	f := newWTFixture(t, false)
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
+	out := filepath.Dir(f.top)
+	wts := filepath.Dir(f.leaf())
+	moved := filepath.Join(out, "E")
+	if err := os.Rename(wts, moved); err != nil {
+		t.Fatal(err)
+	}
+	makeJunction(t, wts, moved)
+	k := filepath.Join(out, "K")
+	makeJunction(t, k, f.top)
+	resetUserExcludesCache(t)
+	clearDaemonConfigEnv(t)
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
+		"baseRepo": k, "worktreePath": filepath.Join(k, ".claude", "worktrees", "w1"), "branchName": "w1"}))
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	if !exists(filepath.Join(moved, "w1", ".git")) || !exists(filepath.Join(f.regDir, "w1")) {
+		t.Error("the folder or the registration of the real-path record went")
+	}
+	if f.hasRef(t, "w1") {
+		t.Error("the branch stayed")
+	}
+}
+
+// A create whose leaf exists behind a junction at .claude\worktrees gets the parent
+// failure, before the test of a leaf that exists (87375cc7, measured on
+// Windows). Mutation: move the junctionParentRefusal test after the os.Lstat of the leaf.
+// Only Windows runs it.
+func TestWorktreeCreateJunctionComesBeforeTheExistingLeaf(t *testing.T) {
+	f := newWTFixture(t, false)
+	wts := filepath.Dir(f.leaf())
+	if err := os.RemoveAll(wts); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(filepath.Dir(f.top), "E")
+	if err := os.MkdirAll(filepath.Join(moved, "w1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	makeJunction(t, wts, moved)
+	resetUserExcludesCache(t)
+	clearDaemonConfigEnv(t)
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": f.top, "worktreePath": f.leaf(), "branchName": "w1"}))
+	want := "failed to create parent directory: " + wts + " is not a directory"
+	if !strings.Contains(got, jsonString(t, want)) || !strings.Contains(got, `"errorCode":"mkdir_failed"`) {
+		t.Errorf("got %s\nwant %s", got, want)
 	}
 }

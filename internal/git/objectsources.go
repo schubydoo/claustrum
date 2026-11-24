@@ -158,8 +158,9 @@ func statusLinkChainRefusal(baseRepo string) string {
 // the git directory of the repository, or "" for none.
 //
 // all is true for git.status, which runs every test. git.info,
-// git.worktree_create and git.worktree_remove run only the tests of Windows
-// line endings and of the count, the two that the rows measure there.
+// git.worktree_create and git.worktree_remove run the tests of Windows line
+// endings, of a ".." after a link (4c111e86, measured on Windows) and of the
+// count, the three that the rows measure there.
 //
 // Measured on Windows: a file with CRLF, a line that starts with a quote, a
 // tab, a ".." after a link, a file of 1048577 bytes or a folder, 1000 lines,
@@ -199,9 +200,9 @@ func alternatesRefusal(common string, all bool) string {
 				if hasControlByte(line) {
 					return alternatesControlText(file)
 				}
-				if link := firstLinkBeforeDots(objects, line); link != "" {
-					return alternatesDotDotText(file, link)
-				}
+			}
+			if link := firstLinkBeforeDots(objects, line); link != "" {
+				return alternatesDotDotText(file, link)
 			}
 			if dirs++; depth >= alternatesMaxDepth || dirs > alternatesMaxDirs {
 				return alternatesTooManyText(file)

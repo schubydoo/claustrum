@@ -74,11 +74,9 @@ halves: the home wipe is unrecoverable data loss, and no honest caller has a use
 for it. A caller can still reach that path by accident, which is what the guard
 is for.
 
-Clause (b) is used by D6, D8 and D19, and each has its own trigger. D6 rests on an
+Clause (b) is used by D6 and D8, and each has its own trigger. D6 rests on an
 observed value plus a measured accepted set. So read it as unenumerated, not
-established. Rule 2 puts the burden on the divergence. D19 holds for worktrees
-that either daemon creates, because both creates refuse the junction. A worktree
-made outside the daemon can still sit behind it.
+established. Rule 2 puts the burden on the divergence.
 
 Clause (c) is narrow, and no entry uses it today. An `error.code` is not
 diagnostic text, because a client branches on it. On-disk state that a caller can
@@ -133,7 +131,6 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [D6](#d6) | `-cli-version` is one path component | off-wire (`-install` output) | always-on | all |
 | [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
-| [D19](#d19) | Refuse a junction between `baseRepo` and the leaf on remove | on-wire | always-on | Windows |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
 | [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | Linux, macOS |
 | [D23](#d23) | A child's environment block is in name order | off-wire (child environment, visible in stream output) | always-on | Windows |
@@ -321,42 +318,6 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   `internal/runlock/daemon_runlock_unix.go` (`holderSignalRefusal`, `StopRunDirHolder`),
   `internal/runlock/daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`) and
   `internal/runlock/daemon_runlock_linux.go`.
-
-### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
-
-- **Behavior.** On Windows, `git.worktree_remove` refuses a junction at any
-  directory between `baseRepo` and the leaf:
-  `{"success":false,"error":"failed to remove worktree: openat <path from
-  baseRepo>: path escapes from parent"}`. Here `<path from baseRepo>` is the
-  folder that holds the leaf. For a junction at `.claude` or
-  `.claude\worktrees` the frame has `.claude\\worktrees`. That text is claustrum's own,
-  the error of `os.Root`. Nothing is deleted, and the branch stays. For a
-  junction above `.claude` no git call runs.
-- **Reference.** On Windows, for a junction at `.claude` or `.claude\worktrees`,
-  it answers `{"success":true}` and deletes only the branch. So a live worktree
-  behind the junction is left on a deleted branch. With no worktree behind it,
-  the answer is `{"success":true}` too. This is measured on `f6010b97`, and on
-  `89cb6289` for a branch that another ref reaches. A junction above `.claude`
-  with a leaf and branch that do not exist gets `{"success":true}` from
-  `89cb6289`. Nothing changes on disk (measured on Windows).
-  Not measured: a live
-  worktree behind such a junction, and the branch step there.
-- **Systems and switch.** Windows. Always on, no switch.
-- **Cost.** A Windows client sees `success:false` where the reference sends
-  `success:true`. A branch that the reference deletes stays. A client that
-  relies on the remove to delete the branch there must delete it itself.
-- **Rule.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27,
-  widened on 2026-10-07 to any directory between `baseRepo` and the leaf. The
-  `git.worktree_create` of both daemons refuses a junction there with
-  `mkdir_failed`. Above `.claude` both answer
-  `failed to create parent directory: <P>\J is not a directory`, with equal
-  frames. So only a worktree made
-  outside the daemon sits behind it.
-- **Reopen trigger.** The reference refuses the junction with the same text (then
-  this is parity), or deletes the tree through the junction. Or a Windows client
-  depends on the success reply there.
-- **Pointers.** [git.worktree_remove](protocol/git-worktree-remove.md#error-texts)
-  and `internal/git/worktreeremove.go` (`openRemoveParent`).
 
 ### D20 · Wait for a settle before the group `SIGKILL` of a leader that reads as gone (Linux and macOS) { #d20 }
 
@@ -829,6 +790,10 @@ see [DAEMON.md → The `lsof` reads](DAEMON.md#the-lsof-reads-macos).
 
 The prune counts version files only, as on the reference. claustrum writes no
 `.blob-` file now, and it accepts a version that starts with `.blob-`.
+
+### D19 · Refuse a junction between `baseRepo` and the leaf on remove (retired) { #d19 }
+
+The maintainer retired it on 2026-11-23 to follow the reference. A Windows remove now answers success there, deletes the branch and keeps the folder behind the junction. The registration goes only when its record names the leaf as the caller spelled it: see [git.worktree_remove](protocol/git-worktree-remove.md#where-the-paths-can-be).
 
 ### D21 · A second daemon on a live socket appends to `remote-server.log` (retired) { #d21 }
 

@@ -176,11 +176,11 @@ func (st *shadowRepo) forgetGoneCopies(base *os.Root, name string) {
 // linked worktree gives the folder of its repository (measured). A `.git` file gives the git directory
 // that it names, and a submodule its folder under `modules` (measured). On Linux and macOS a symbolic link
 // in the path is resolved, and the letter case is as sent (measured). On Windows the path has backslashes,
-// a junction is not resolved and another letter case gives the same name (measured).
+// and another letter case gives the same name (measured). A junction in the request path is resolved, and one that a `.git` file names stays (from the code).
 //
 // gitDir is the git directory that the trust check pinned. That check resolves
-// the links of the request path on Linux and macOS, and on Windows it resolves
-// no junction and gives each name the letter case of the disk (walkStart). No
+// the links of the request path on Linux and macOS, and on Windows it takes the real
+// path of a junction and gives each name the letter case of the disk (walkStart). No
 // Windows or macOS ran claustrum with this name yet.
 func shadowRepoName(gitDir string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(gitDir)))

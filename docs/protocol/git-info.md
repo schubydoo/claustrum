@@ -97,7 +97,7 @@ On Linux and macOS:
 On Windows:
 
 - The daemon finds the folder the same way, and then asks git to confirm it (measured on Windows). If git names the same folder, `root` is the answer of git as printed (measured on Windows). Else it is the folder that the daemon found (measured on Windows). In both cases the separators are forward slashes (measured on Windows).
-- The walk resolves a folder symbolic link and no junction, so a `..` after a junction is taken by text (measured on Windows). When git confirms the folder, `root` is git's spelling, which can name the target of a junction (measured on Windows).
+- The walk starts at the real path of a path with a junction, and a `..` is taken by text first (`4c111e86`, measured on Windows). When git confirms the folder, `root` is git's spelling, which can name the target of a junction (measured on Windows).
 - The comparison of the two folders is by file identity (claustrum's own, not measured).
 
 ## repoSlug
@@ -143,14 +143,14 @@ The settings copy can add files to the folder `git-shadow` beside the socket: th
 
 | | Linux and macOS | Windows |
 |---|---|---|
-| `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk does not resolve a junction. |
+| `root` | The folder found by the walk, in the native form. | Confirmed by git, with forward slashes. The walk starts at the real path of a junction. |
 | `path` is a regular file | The "no repository" body. | `-32603` with `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` |
 | An alternates file with Windows line endings or too many object directories | git runs. | `-32603`, and only the excludes read runs git. [Object sources](git-rules-trust.md#the-object-sources-on-windows). A daemon `GIT_ALTERNATE_OBJECT_DIRECTORIES`: [Object sources](git-rules-trust.md#the-object-sources-on-windows). |
 | A `path` behind 32 or more links | No link test (claustrum's own). | `-32603` with the link-chain text (measured on Windows). |
 | A `path` through a link to a network or device path | No link test (claustrum's own). | `-32603`, and no git call runs on it. [Network links](git-rules-windows-paths.md#a-link-to-a-network-or-device-path). |
 | A `\\?\UNC\` or refused-share `path` | Does not apply. | `-32603`. [UNC refusals](git-rules-windows-paths.md#unc-refusals). |
 | A `path` below an `IO_REPARSE_TAG_WIM` folder | Does not apply. | `-32603` (`4c111e86`). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link). |
-| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, `root`, `repo` and `repoSlug` come from P. `branch` comes from R, and `defaultBranch` can be `""` (measured on Windows). |
+| A junction from repository P into repository R | Does not apply. | With no `GIT_DIR` or `GIT_COMMON_DIR` in the daemon's environment, the reply is that of R (`4c111e86`, measured on Windows). |
 
 ## Differences from the reference
 

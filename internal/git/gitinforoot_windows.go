@@ -125,10 +125,14 @@ func onDiskName(dir, name string) string {
 }
 
 // checkoutWorkTree is the --work-tree value of the read-tree checkout of
-// git.worktree_create. On Windows it is the leaf as sent. The resolved leaf of the
-// references is measured on Linux and macOS only.
-func checkoutWorkTree(leaf, _ string) string {
-	return leaf
+// git.worktree_create: the leaf with its junctions resolved, as the checkpoint of the
+// create read it (87375cc7, measured on Windows). Without a checkpoint it is the leaf
+// as sent (claustrum's own, not measured).
+func checkoutWorkTree(leaf, resolved string) string {
+	if resolved == "" {
+		return leaf
+	}
+	return resolved
 }
 
 // adminRecordChecked reports whether git.worktree_create compares the new worktree's
@@ -141,8 +145,8 @@ const adminRecordChecked = false
 // lastNameJunctionTarget is the target of the junction at p, cleaned. Go reports a
 // junction as ModeIrregular, and os.Readlink reads its target. ok is false for any
 // other entry and for a target with no drive letter (claustrum's own, not
-// measured). A junction to another junction gives the first target only (not
-// measured).
+// measured). A junction to another junction gives the first target only, and the
+// link test of the read then refuses it (not measured).
 func lastNameJunctionTarget(p string) (string, bool) {
 	fi, err := os.Lstat(p)
 	if err != nil || fi.Mode()&os.ModeIrregular == 0 {
