@@ -17,9 +17,9 @@ import (
 )
 
 // TestKilledFileHashHoldsTheReplyForItsStdout: a child of the file hash holds its
-// stdout. After the kill the reply waits for that stdout, at most gitDrainWait, and
-// the call gets one send (87375cc7, measured on Linux and macOS). Mutation: no
-// grace on Linux and macOS (the reply comes at once).
+// stdout. After the kill the reply waits for that stdout, and the call gets one send
+// (87375cc7, measured on Linux and macOS). The cap of gitDrainWait is claustrum's own.
+// Mutation: no grace on Linux and macOS (the reply comes at once).
 func TestKilledFileHashHoldsTheReplyForItsStdout(t *testing.T) {
 	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".mcp.json": "{}\n"})
 	dir := t.TempDir()
@@ -139,7 +139,8 @@ func TestHelperKillsRepeatsOnceAfterTheWait(t *testing.T) {
 
 // TestKilledHelperIsReapedAtTheEndOfTheCheck: on Linux and macOS a killed helper
 // stays unreaped until the end of the check, and the repeat reaches it before its
-// reap (87375cc7, measured). Mutations: no hold in track, and a gate that closes
+// reap. On Linux 87375cc7 holds the reap (measured). The hold on macOS and this one
+// repeat are claustrum's own. Mutations: no hold in track, and a gate that closes
 // at the exit.
 func TestKilledHelperIsReapedAtTheEndOfTheCheck(t *testing.T) {
 	setRepeatAfter(t, time.Hour)
