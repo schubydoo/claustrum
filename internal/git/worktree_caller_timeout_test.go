@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
@@ -1274,13 +1275,15 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				if !slices.Equal(pre[1:], []string{"config", "-z", "--list"}) || gitDirArg(pre[0]) != wantGitDir {
 					t.Errorf("precursor = %q, want --git-dir=%s config -z --list", pre, wantGitDir)
 				}
-				// Off Windows the --work-tree is the leaf with its symlinks resolved. The
-				// temporary directory of macOS is behind a symlink.
-				workTree := f.leaf()
-				if runtime.GOOS != "windows" {
-					if workTree, err = filepath.EvalSymlinks(f.leaf()); err != nil {
-						t.Fatal(err)
-					}
+				// The --work-tree is the leaf with its links resolved. The temporary
+				// directory of macOS is behind a symlink. On Windows the leaf is also
+				// read by its handle, so an 8.3 short name comes back long.
+				workTree, err := filepath.EvalSymlinks(f.leaf())
+				if runtime.GOOS == "windows" {
+					workTree, err = pathcanon.FinalPath(f.leaf())
+				}
+				if err != nil {
+					t.Fatal(err)
 				}
 				profile := hardenedProfileArgs(false)
 				tail := []string{"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",

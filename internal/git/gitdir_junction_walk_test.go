@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/schubydoo/claustrum/internal/pathcanon"
 )
 
 // A daemon GIT_DIR through a junction is judged and pinned at its real path, as
@@ -95,8 +97,16 @@ func TestRemoveBehindASecondJunction(t *testing.T) {
 	resetUserExcludesCache(t)
 	clearDaemonConfigEnv(t)
 	junctionOpenRefused(t)
+	// The record must name the leaf as the request spells it. On Windows git records the
+	// long name of a temporary folder that the test spells in 8.3 form, so the request
+	// takes the long name there too.
+	top, leaf := f.top, f.leaf()
+	if runtime.GOOS == "windows" {
+		top = pathcanon.FinalDir(f.top)
+		leaf = filepath.Join(top, ".claude", "worktrees", "w1")
+	}
 	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
-		"baseRepo": f.top, "worktreePath": f.leaf(), "branchName": "w1"}))
+		"baseRepo": top, "worktreePath": leaf, "branchName": "w1"}))
 	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
@@ -104,7 +114,8 @@ func TestRemoveBehindASecondJunction(t *testing.T) {
 		t.Error("the folder behind the junction lost its .git file")
 	}
 	if exists(filepath.Join(f.regDir, "w1")) {
-		t.Error("the registration of the spelled leaf stayed")
+		record, _ := os.ReadFile(filepath.Join(f.regDir, "w1", "gitdir"))
+		t.Errorf("the registration of the spelled leaf stayed: record %q, leaf %q", record, leaf)
 	}
 	if f.hasRef(t, "w1") {
 		t.Error("the branch stayed")

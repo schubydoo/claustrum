@@ -179,7 +179,9 @@ func TestUnlookablePathFrames(t *testing.T) {
 func TestRemoveThroughDeviceLinkDeletesNothing(t *testing.T) {
 	f := newWTFixture(t, false)
 	runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
-	link := filepath.Join(filepath.Dir(f.top), "vol")
+	// The link sits in a folder with no link above it, as on Windows. The temporary
+	// folder of macOS is below the link /var, which the hop walk does not read.
+	link := filepath.Join(realTempDir(t), "vol")
 	if err := os.Symlink(f.top, link); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +270,8 @@ func TestRemoveThroughABadChainDeletesNothing(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newWTFixture(t, false)
 			runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
-			out := filepath.Dir(f.top)
+			// Links in a folder with no link above it (TestRemoveThroughDeviceLinkDeletesNothing).
+			out := realTempDir(t)
 			first, second := filepath.Join(out, "one"), filepath.Join(out, "two")
 			if err := os.Symlink(f.top, second); err != nil {
 				t.Fatal(err)
