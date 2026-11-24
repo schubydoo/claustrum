@@ -241,7 +241,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM` first, then its group gets `SIGKILL` (`argsAskEnd`,
   `endAsked`, [D28](docs/DIVERGENCES.md#d28)). Never widen: In the shutdown sweep, send a group
   `SIGKILL` after the exit of a child only while its exit drain is open. On Linux and macOS a plain spawn whose reaped leader stayed in its group gets a group `SIGKILL` while any process holds its pipes. That process can be outside the group. With `-keep-children` it gets none
-  (`killGroupInOpenDrain`, [the rule](docs/protocol/server.md#a-child-in-its-exit-drain)). A reused group number takes that signal, as on `87375cc7` (measured on Linux), a risk the maintainer accepted. A client `KILL` can come before it, so the group can get two. A pty spawn gets none. Never widen: send it from this path at most once for a child, only to a plain spawn, before its exit frame.
+  (`killGroupInOpenDrain`, [the rule](docs/protocol/server.md#a-child-in-its-exit-drain)). A reused group number takes that signal, as on `87375cc7` (measured on Linux), a risk the maintainer accepted. A client `KILL` can come before it, so the group can get two. A pty spawn gets none from this path. Never widen: send it from this path at most once for a child, only to a plain spawn, before its exit frame.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
   the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.
@@ -314,6 +314,7 @@ states](docs/protocol/git-worktree-create.md#rare-states)).
   huge value, which is a different, observable behavior.
 - **Git time limits** (`internal/git/gitstop.go`) are always on and are no divergence
   ([Time limits](docs/protocol/git-rules-calls.md#time-limits-of-git-calls)).
+- **The deadline kill of the content check** (87375cc7, `internal/git/worktreecontentkill.go`, `helperKills`). At the `timeoutMs` deadline the running `cat-file --batch` and the commit, tree and file `hash-object` each get `Process.Kill` ([rule](docs/protocol/git-worktree-create.md#the-content-check)). Linux and macOS repeat it once (claustrum's own, not measured), except for the file `hash-object`. Never widen: signal only these four helpers of this check, before their reap (`sysproc.LeaderGate`), and never a group.
 - **The `timeoutMs` stop of the read-tree call** (`internal/git/githarden.go`, `cmd.Cancel`). Never widen: it sends its
   group `SIGKILL` only before the reap of git (`sysproc.LeaderGate`). The kill after a drain overrun comes before the reap too (`runCheckoutPipes`). A wait with no exit status sends no overrun kill (claustrum's own).
 - **A failed read-tree call** (Linux, `runCheckoutPipes`). After the checkout git of a create fails by itself, its group gets one

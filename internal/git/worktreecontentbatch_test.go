@@ -127,7 +127,7 @@ func TestObjectBatchWriteAfterItsGitEnded(t *testing.T) {
 	id := strings.Repeat("a", 40)
 	slowGit(t, "cat-file,--batch", "fail", 0, "", id+" commit 1\nx\n")
 	c := &contentCheck{repo: f.repo}
-	b := c.startLong(nil, "cat-file", "--batch")
+	b := c.startLong(false, false, nil, "cat-file", "--batch")
 	if b == nil {
 		t.Fatal("no batch started")
 	}
@@ -152,7 +152,7 @@ func TestObjectBatchDropClosesStdinReadEnd(t *testing.T) {
 	f := newContentFixture(t, map[string]string{".mcp.json": "{}\n"})
 	gate := gateStub(t, "cat-file,--batch", 30*time.Second, "", "")
 	c := &contentCheck{repo: f.repo}
-	b := c.startLong(nil, "cat-file", "--batch")
+	b := c.startLong(false, false, nil, "cat-file", "--batch")
 	if b == nil {
 		t.Fatal("no batch started")
 	}

@@ -149,13 +149,16 @@ func (c *contentCheck) startBatch() {
 	}
 	// No pipe: every object is read by a separate run, with no line
 	// (claustrum's own, not measured).
-	c.batch = c.startLong(nil, "cat-file", "--batch")
+	c.batch = c.startLong(false, true, nil, "cat-file", "--batch")
 }
 
 // startLong starts one long-running git of the check in the base repository,
 // with env after its environment. It gets the limit of one call, and its stop
-// stops no other call (contentCheck.git). It is nil when no pipe opened.
-func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
+// stops no other call (contentCheck.git). It is nil when no pipe opened. With
+// endAtDeadline set, it is also nil when the deadline passed by the end of the
+// config listing, and no git starts (gitAfterListing). With killed set, the deadline
+// kills this git (helperKills), and a start under way counts at the end of the check.
+func (c *contentCheck) startLong(endAtDeadline, killed bool, env []string, args ...string) *objectBatch {
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil
@@ -164,16 +167,38 @@ func (c *contentCheck) startLong(env []string, args ...string) *objectBatch {
 	if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
+	kills := c.kills
+	unreserve := func() {}
+	if killed && kills != nil && s != nil {
+		unreserve = kills.reserve()
+	} else {
+		kills = nil
+	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, c.repo, args...)
+	if endAtDeadline && c.pastDeadline() {
+		unreserve()
+		_ = inR.Close()
+		_ = inW.Close()
+		return nil
+	}
 	cmd.Env = append(cmd.Env, env...)
 	outR, outW := io.Pipe()
 	cmd.Stdin, cmd.Stdout = inR, outW
 	b := &objectBatch{in: inW, inR: inR, outR: outR, out: bufio.NewReader(outR), done: make(chan struct{}),
 		closeInR: sync.OnceFunc(func() { _ = inR.Close() })}
+	if kills != nil {
+		s.beforeReap = func(p *os.Process) {
+			kills.runTracked(&deadlineHelper{p: p, drop: b.drop, exited: make(chan struct{})}, unreserve)
+		}
+		if endAtDeadline {
+			s.beforeStart = kills.refuseStart
+		}
+	}
 	go func() {
 		defer close(b.done)
 		_ = gitRun(ctx, cmd)
+		unreserve()
 		// Any end of git reads as an end of its output (io.EOF).
 		_ = outW.Close()
 		b.endedOrDropped(&b.ended)
@@ -275,8 +300,10 @@ func (b *objectBatch) hash(path string) (string, error) {
 // stopBatch ends the batch and the long-running hash-object calls of the
 // check, if they run. After the deadline it does not wait for them.
 func (c *contentCheck) stopBatch() {
-	end := (*objectBatch).close
+	end := c.endLong
 	if c.atDeadline {
+		// The kill comes before the close of stdin (measured on Linux).
+		c.kills.fire()
 		end = (*objectBatch).drop
 	}
 	if c.batch != nil {
@@ -314,8 +341,13 @@ func (c *contentCheck) hashOn(h *objectBatch, kind, id string, body []byte) (str
 		return "", h, errNoHashHelper
 	}
 	if h == nil {
-		h = c.startLong(objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
+		// A deadline that passed by the end of its listing starts no hash-object,
+		// and the object does not count (4c111e86 and 87375cc7, measured on Linux).
+		h = c.startLong(true, true, objectWriteEnv(c.objects), "hash-object", "-t", kind, "--literally", "--no-filters", "--stdin-paths", "-w")
 		if h == nil {
+			if c.atDeadline {
+				return "", nil, errContentDeadline
+			}
 			return "", nil, errNoHashHelper
 		}
 	}
@@ -491,7 +523,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 	var h *objectBatch
 	defer func() {
 		if h != nil {
-			h.close()
+			c.endLong(h)
 		}
 	}()
 	hashing := true
@@ -508,6 +540,8 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 				c.separate++
 				bodies[i] = body
 				continue
+			case errors.Is(err, errContentDeadline):
+				return nil, err.Error()
 			case errors.Is(err, errNoHashHelper):
 				if text := c.writeObject("tree", t.id, body); text != "" {
 					return nil, text
@@ -519,7 +553,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 			}
 			// The stopped git ends here, so a later tree of the level would
 			// start a new one without the flag.
-			h.close()
+			c.endLong(h)
 			h = nil
 			hashing = false
 			c.depthEnded = true
@@ -541,7 +575,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 // answer. No pipe gives no fault (claustrum's own, not measured).
 func (c *contentCheck) readByDepth(level []*treeWalk) (read [][]byte, faulted bool) {
 	read = make([][]byte, len(level))
-	b := c.startLong(nil, "cat-file", "--buffer", "--batch")
+	b := c.startLong(false, false, nil, "cat-file", "--buffer", "--batch")
 	if b == nil {
 		return read, false
 	}
