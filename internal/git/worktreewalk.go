@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,10 +19,29 @@ var baseRepoWalkStat = os.Stat
 // foldFirst picks its order of "..".
 func linkWalkFails(p string, foldFirst bool) bool {
 	if baseRepoWalksAsSpelled {
-		return spelledWalkFails(p, baseRepoWalkStat, foldFirst)
+		return spelledWalkFails(p, baseRepoWalkStat, foldFirst) || realPathUnlistable(p)
 	}
 	_, err := evalSymlinks(p)
 	return err != nil
+}
+
+// realPathUnlistable reports whether a folder on the real path of p denies the listing
+// that filepath.EvalSymlinks needs, on Windows. 87375cc7 then answers git.status and
+// git.list_branches as no repository and refuses a create and a remove as no trust
+// root, with no git call. On a local drive git.info still reads it, and on a share it
+// answers no repository (measured on Windows). A junction past that folder leaves it
+// off the real path, and the request goes on (measured). A path with no link gets the
+// same test: local, deeper, 8.3, share and share root (87375cc7, measured on Windows).
+func realPathUnlistable(p string) bool {
+	real, ok := linkFreePath(p)
+	if !ok {
+		var err error
+		if real, err = filepath.Abs(p); err != nil {
+			return false
+		}
+	}
+	_, err := evalSymlinks(real)
+	return errors.Is(err, fs.ErrPermission)
 }
 
 // spelledWalkFails walks p by its names as sent. Each name joins the path before it,
@@ -51,7 +71,7 @@ func statusBaseWalkFails(p string) bool {
 	if !baseRepoWalksAsSpelled {
 		return linkWalkFails(p, false)
 	}
-	return walkSpelled(p, baseRepoWalkStat, lastNameEntry, true)
+	return walkSpelled(p, baseRepoWalkStat, lastNameEntry, true) || realPathUnlistable(p)
 }
 
 // lastNameEntry is os.Lstat, except that it follows a symbolic link.

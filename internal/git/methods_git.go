@@ -234,7 +234,6 @@ func gitInfo(req *gitCall) rpc.Response {
 	if t.verdict == gitDirRefused {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
-	t.configDir = configDirThroughJunction(p.Path, t.pinCommonDir)
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
@@ -506,7 +505,7 @@ func (req *gitCall) keepLiveCreate(off bool, t gitDirTrust, repo string, added *
 		}()
 		var before os.FileInfo
 		if gitDirMustBeReal && !*added && t.verdict == gitDirTrusted && t.pinCommonDir != "" {
-			before = gitDirIdentity(t.pinCommonDir)
+			before = gitDirIdentity(t.holdFolderFor(t.pinCommonDir))
 		}
 		msg, noRepo := req.settingsGate(t, false, repo, ask)
 		if msg != "" || noRepo {
@@ -519,7 +518,7 @@ func (req *gitCall) keepLiveCreate(off bool, t gitDirTrust, repo string, added *
 			return u, true
 		}
 		if gitDirMustBeReal {
-			h := acceptGitDir(req.use.gitDir, before)
+			h := acceptGitDir(t.holdFolderFor(req.use.gitDir), before)
 			if h == nil {
 				return gitUse{}, false
 			}
@@ -904,9 +903,7 @@ func gitStatus(req *gitCall) rpc.Response {
 	// pinned. be1c1ca5 and b3081b51 do so for that worktree and for another linked
 	// worktree as path, also with the off switch (measured on Linux). macOS and
 	// Windows are claustrum's own, not measured.
-	if t.worktreeEntry != "" && sameProbeFolder(common, t.worktreeEntry) {
-		common = t.pinCommonDir
-	}
+	common = statusCommonOfEntry(t, common)
 	// On Windows the request goes on with the git directory that git printed,
 	// when it is another spelling of the same folder (usePrintedGitDir).
 	if statusFollowsPrintedGitDir {
@@ -1005,6 +1002,13 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if msg := pathLookRefusal(p.Path); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// A path through a link to a network or device path is refused with no git call
+	// (87375cc7, measured on Windows, linkHopRefusal).
+	if p.Path != "" {
+		if msg := linkHopRefusal(p.Path); msg != "" {
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+		}
+	}
 	// A path inside a managed worktrees tree, and a non-empty path that does not
 	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
 	// and before the check of the daemon's own GIT_CONFIG_COUNT. On Windows the
@@ -1026,7 +1030,6 @@ func gitListBranches(req *gitCall) rpc.Response {
 	if t.verdict == gitDirRefused {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
-	t.configDir = configDirThroughJunction(p.Path, t.pinCommonDir)
 	if msg, bad := daemonCountRefusal(); bad {
 		// A `.git` file to a regular file answers "no repository" (gitDirTrust.fileGitDir).
 		if t.fileGitDir {
@@ -1175,6 +1178,22 @@ func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, mem
 	return nil
 }
 
+// resolvedPairTree is the --work-tree of the pair of a create on Windows. It is repo with
+// its junctions and short names resolved (87375cc7, measured on Windows). After a
+// junction move at `rev-parse --absolute-git-dir` it is the leaf below the top of the
+// held git directory (measured on Windows, one row). A held folder that is not named
+// `.git` keeps repo (claustrum's own, not measured).
+func resolvedPairTree(held *acceptedGitDir, repo, leaf string) string {
+	if !held.junctionMoved() {
+		return pathcanon.FinalDir(repo)
+	}
+	rel, err := filepath.Rel(repo, filepath.Clean(leaf))
+	if err != nil || !filepath.IsLocal(rel) || filepath.Base(held.path) != ".git" {
+		return repo
+	}
+	return filepath.Join(filepath.Dir(held.path), rel)
+}
+
 // pairSSHUse is the use of the absolute-git-dir pair and the show-toplevel
 // pair of a create. With "shadowDirOff":true, when the calls name no copy and
 // the daemon is not in the state fallback-git, both pairs get
@@ -1261,7 +1280,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// The git directory as it is before the gate (acceptedGitDir).
 	var gitDirBefore os.FileInfo
 	if gitDirMustBeReal && t.verdict == gitDirTrusted && t.pinCommonDir != "" {
-		gitDirBefore = gitDirIdentity(t.pinCommonDir)
+		gitDirBefore = gitDirIdentity(t.holdFolderFor(t.pinCommonDir))
 	}
 	if t.verdict == gitDirRefused {
 		// The excludes read of a first request runs before the refusal. 4c111e86 makes
@@ -1362,7 +1381,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// measured: it gets the refusal of a config behind a link (measurements on
 	// Windows have that text for a change after the gate).
 	if gitDirMustBeReal && req.use.shadow() {
-		held := acceptGitDir(req.use.gitDir, gitDirBefore)
+		held := acceptGitDir(t.holdFolderFor(req.use.gitDir), gitDirBefore)
 		if held == nil {
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false,
 				Error: repoConfigPrefix + gitDirLinkText(req.use.gitDir), ErrorCode: "worktree_add_failed"})
@@ -1559,6 +1578,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "symlinked_component"})
 		}
 	}
+	// On Windows a junction between the repo and the leaf fails the parent step, and
+	// nothing is created (measured on Windows). It comes before the test of a leaf
+	// that exists behind the junction (87375cc7, measured on Windows). It runs before
+	// the stale registration drop below, so nothing is touched either.
+	if p.WorktreeRoot == "" {
+		if msg := junctionParentRefusal(repo, p.WorktreePath); msg != "" {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "mkdir_failed"})
+		}
+	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
 		// On Linux and macOS the refusal names the cleaned path, with the symlinks
 		// of its parent folder resolved and its last name kept (parentResolvedPath:
@@ -1572,21 +1600,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// With a worktreeRoot, and on macOS and Windows, that is claustrum's own (not measured).
 		existing := externalPathSpelling(p.WorktreePath)
 		if p.WorktreeRoot == "" {
-			existing = existingPathSpelling(p.WorktreePath)
+			// A folder above the leaf through a junction is named by its real path
+			// (4c111e86, measured on Windows).
+			existing = realParentPath(existingPathSpelling(p.WorktreePath))
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{
 			Success:   false,
 			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", tickPath(existing)),
 			ErrorCode: "unsafe_path",
 		})
-	}
-	// On Windows a junction between the repo and the leaf fails the parent step, and
-	// nothing is created (measured on Windows). It runs before the stale
-	// registration drop below, so nothing is touched either.
-	if p.WorktreeRoot == "" {
-		if msg := junctionParentRefusal(repo, p.WorktreePath); msg != "" {
-			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "mkdir_failed"})
-		}
 	}
 	// The target is confirmed missing above, so a worktree registration still
 	// naming it is stale (on Windows not always, D27). Drop
@@ -1596,6 +1618,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// On Linux and macOS a create that holds its git directory runs the step
 	// through the held folder (gitdirheld.go). Windows runs it by the path.
 	staleStep := func() (bool, bool, bool) {
+		// The stale step goes by the path, which now leads to the second repository.
+		// No row deletes an entry there, so the step does not run.
+		if req.use.accepted.junctionMoved() {
+			return false, false, false
+		}
 		if createStepHook != nil && req.use.accepted != nil {
 			createStepHook("stale")
 		}
@@ -1849,6 +1876,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	//     that directory (acceptedGitDir.movedTo).
 	if answeredSwap {
 		switch {
+		case req.use.accepted.noteJunctionMove(repo):
+			// The step of the add comes next, with the second repository in GIT_DIR.
 		case stagedAddWindowsSteps && answeredElsewhere(req.use, gitDir):
 			// No refusal here: the step of the add comes next.
 		case stagedAddWindowsSteps:
@@ -1901,6 +1930,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				// baseRepo through a link (measured on Linux). The other pairs keep
 				// repo, and the test of the name .git is claustrum's own (not measured).
 				pairTree = filepath.Dir(gitDir)
+			} else if stagedAddWindowsSteps {
+				pairTree = resolvedPairTree(req.use.accepted, repo, p.WorktreePath)
 			}
 			return pairBeforeAdd(req, gitDir, repo, pairTree, req.use.shadow(), bool(p.ShadowDirOff), staleGone || staleLockedPair)
 		}
@@ -1960,6 +1991,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			text, code = refused.text, "unsafe_path"
 		default:
 			return rpc.Response{}, false
+		}
+		// After a junction move no rollback runs: its branch step goes by the path,
+		// which leads to the second repository (claustrum's own, not measured).
+		if req.use.accepted.junctionMoved() {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: text, ErrorCode: code}), true
 		}
 		reg := testedRegistration{}
 		if incomplete != nil && incomplete.keepRegistration {
@@ -2169,6 +2205,15 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 			Success:   false,
 			Error:     "git worktree add failed: " + stagedAddText(addStderr, addErr, p.WorktreePath),
 			ErrorCode: "worktree_add_failed",
+		})
+	}
+	// A junction that moved to a second repository before the add: the refusal of
+	// 4c111e86 and 87375cc7, with no checkout and no rollback (noteJunctionMove).
+	if req.use.accepted.junctionMoved() {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{
+			Success:   false,
+			Error:     leafMovedText(p.WorktreePath),
+			ErrorCode: "unsafe_path",
 		})
 	}
 	// On Linux and macOS, a git directory that is no longer the held folder
@@ -2644,7 +2689,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// A second create of the repository goes on while this one checks out.
 		// Each rollback below takes the lock again first (withWorktreeCreateLock).
 		hold.release()
-		rtStderr, rtDrained, keepTook, rtErr, installErr = runWorktreeCheckout(callerCtx, cu, p.WorktreePath,
+		rtStderr, rtDrained, keepTook, rtErr, installErr = runWorktreeCheckout(callerCtx, cu, checkoutFolder(p.WorktreePath, checkpoint.resolved),
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
 			indexDir, repo, tested, checkoutRev, cu.gitDirPin(repo), rule, cu.shadow() || byCommit, p.TimeoutMs, arrival)
 		var filters filterPlan
@@ -2798,7 +2843,17 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 				msg += checkoutNote(rtStderr, text, rule)
 			}
 			hold.retake()
-			undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			undoUse := req.use
+			// Only a read-tree call that ran and exited with a failure can reach a second
+			// repository. A stopped listing, a failed folder and a git that did not start
+			// keep it unchanged (claustrum's own, not measured).
+			if errors.As(rtErr, new(*exec.ExitError)) {
+				undoUse.afterJunctionMove = func() (gitUse, bool) {
+					ok := req.movedBranchGate(p, repo)
+					return req.use, ok
+				}
+			}
+			undo, kept := undoFailedCheckout(undoUse, repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			// A git-lfs that the git of the login-shell PATH does not find: the
 			// same undo, then git_lfs_not_found with the text of no git and one
 			// log line (lfsNotFoundForShellPathGit). The undo text after it is
@@ -2832,6 +2887,13 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// whose timeoutMs expired gets this answer, and on Linux and macOS only the leaf goes. A
 		// folder that replaced the leaf gets it too, and the identity guard keeps
 		// that folder.
+		// A junction in baseRepo moved right before a good read-tree call, also to a
+		// folder with no git directory. 87375cc7 answers this text and rolls nothing
+		// back. The leaf, the index, the branch and the entry stay in the first
+		// repository (measured on Windows).
+		if req.use.accepted.behindMovedJunction(repo) {
+			return refuseUnsafe(leafMovedText(p.WorktreePath))
+		}
 		if leafGitFileGone(p.WorktreePath) {
 			if !windowsAddTests {
 				hold.retake()
@@ -3058,6 +3120,7 @@ func removeRefusal(req *gitCall) func(msg string) rpc.Response {
 }
 
 func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Response {
+	defer req.closeRemoveHold()
 	refuse := removeRefusal(req)
 	// On Windows a \\?\UNC\ baseRepo, a baseRepo on a share that cannot be found or
 	// that denies every account, and a directory link on a share are refused
@@ -3074,6 +3137,13 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	// the code). Its place here is claustrum's own, not measured.
 	if msg := pathLookRefusal(repo); msg != "" {
 		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+	}
+	// A baseRepo through a link that leaves the local drives, or a link that cannot
+	// be read, is refused with no git call and no delete (linkHopRefusal). 4c111e86
+	// and 87375cc7 answer so (measured on Windows). Its place after the two tests
+	// above is claustrum's own, not measured.
+	if msg := linkHopRefusal(repo); msg != "" {
+		return refuse(msg)
 	}
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
 	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
@@ -3226,7 +3296,21 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if err := statInsideDir(repo, first); err != nil {
 			return refuse("failed to remove worktree: " + err.Error())
 		}
+		req.pinBeforeLocate(repo)
+		if createStepHook != nil {
+			createStepHook("remove pinned")
+		}
 		target, err = locateInRepoWorktree(repo, p.WorktreePath)
+		// A junction that moved around the locate leaves no way to tell which
+		// repository the open folder is in, so nothing is deleted (claustrum's own,
+		// not measured).
+		if err == nil && (req.movedSincePin(repo) || req.openedOtherBase(target)) {
+			target.close()
+			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		if createStepHook != nil {
+			createStepHook("remove located")
+		}
 	}
 	if err != nil {
 		return refuse(worktreeRemoveText(err))
@@ -3240,6 +3324,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		}
 	}
 	if target.parent == nil {
+		req.behindJunction = target.behindJunction
 		return removeGoneWorktree(req, p, repo, target.path)
 	}
 	// A leaf that is a symbolic link or not a directory is refused, and nothing is
@@ -3421,7 +3506,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 				return refuse(lockCheckRefusal(p.WorktreePath))
 			}
 			// Any other failed check runs once more, as on f6010b97 (measured on Linux
-			// and macOS) and of 89cb6289. 5fd08069 repeats and not in FR and CaP0
+			// and macOS) and of 89cb6289. 5fd08069 repeats too, except in two other states
 			// (measured on Linux).
 			if c.refused() || checkErr != nil {
 				repeatRepositoryCheck(req.use, repo)
@@ -3458,9 +3543,19 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	// as before.
 	commonDir := verifyGitDir(repo)
 	probe := newRegistrationProbe(req.use, answered, target.path)
+	junctionMoved := false
 	if p.WorktreeRoot == "" {
 		commonDir = registrationGitDir(repo, answered)
 		probe = newRegistrationProbe(req.use, answered, inRepoWorkTree(repo))
+		// A junction in baseRepo that now leads to another repository does not move
+		// the registration: 4c111e86 and 87375cc7 delete the entry of the first
+		// repository and keep that of the second (measured on Windows).
+		commonDir, junctionMoved = req.pinnedCommonDir(repo, commonDir)
+		// A move with no git directory of the first repository at its pin has no
+		// place to read the locks, so nothing is deleted (claustrum's own, not measured).
+		if junctionMoved && !req.pinStands() {
+			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
 		// After a second listing that passed, 5fd08069 makes the pair of the probe
 		// before it answers (measured on Linux and macOS). The order of the pair
 		// and the deletes is not measured. claustrum does not use the answer.
@@ -3617,22 +3712,318 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	// The entry, the branch step and the reply wait for the `worktree add` of a
 	// create in the same git directory, and the tree does not (lockWorktreeAddStep).
 	defer lockWorktreeAddStep(repo)()
+	if createStepHook != nil {
+		createStepHook("remove entry step")
+	}
+	// A `.git` that is no longer the held folder keeps every registration, and no
+	// branch step runs. 87375cc7 answers this text with "branchKept":true when a
+	// junction to a second repository took the place of `.git` during the tree delete
+	// (measured on Windows).
+	//
+	// With "shadowDirOff":true 87375cc7 answers the same text with no "branchKept". Its
+	// branch step runs by the path, and the ref of the same name goes in the second
+	// repository, also for a locked worktree there. Its entry, its leaf and its lock
+	// stay (measured on Windows).
+	held := req.holdsGitDir(commonDir)
 	pending := ""
+	offSwapped := false
+	if dropEntry && held && req.holdLeftItsPath() {
+		text := fmt.Sprintf("removed the worktree but could not drop its registration (%s)", realDirText(req.removeHoldPath))
+		if !p.ShadowDirOff {
+			// 87375cc7 asks git about the repository once more here (measured on Windows).
+			// The answer changes nothing.
+			if t := requestGitDirTrust(repo, false); req.shadow != nil && req.shadow.asksGit(t, false) {
+				req.shadow.askGit(t, repo)
+			}
+			return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: false, BranchKept: !skippedBranchName(p.BranchName), Error: text})
+		}
+		pending, offSwapped = text, true
+	}
+	if createStepHook != nil {
+		createStepHook("remove entry drop")
+	}
 	switch {
-	case !dropEntry:
+	case !dropEntry || offSwapped:
 	case entry != "":
-		if err := dropWorktreeEntry(commonDir, entry); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		drop := func() error { return dropWorktreeEntry(commonDir, entry) }
+		if held {
+			drop = func() error { return dropHeldEntry(req.removeHold, entry) }
+		}
+		if err := drop(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			pending = fmt.Sprintf("removed the worktree but could not drop its registration (%v)", err)
 		}
 	default:
 		if matches == 0 {
 			probe.pairIfWorktreesDir(commonDir)
 		}
-		dropWorktreeEntryByPath(commonDir, sp)
+		if held {
+			dropHeldEntryByPath(req.removeHold, commonDir, sp)
+		} else {
+			dropWorktreeEntryByPath(commonDir, sp)
+		}
+	}
+	// The branch step then runs in the second repository, and it deletes the ref of
+	// the same name there (4c111e86 and 87375cc7, measured on Windows, by the
+	// maintainer's decision of 2026-11-23). A second repository that the gate refuses
+	// gets no branch step (claustrum's own, not measured).
+	if createStepHook != nil {
+		createStepHook("remove branch step")
+	}
+	// With a daemon GIT_COMMON_DIR and a link put at `.git`, 87375cc7 refuses the branch
+	// step and keeps the ref of the second repository (measured on Windows). With
+	// "shadowDirOff":true that state is not measured, and it gets the same refusal.
+	if req.dotGitBecameLink(repo) {
+		text := fmt.Sprintf("removed the worktree, but left its branch %q in place: %s", p.BranchName,
+			repoConfigPrefix+gitDirLinkText(filepath.Join(repo, ".git")))
+		if pending != "" {
+			text = pending
+		}
+		return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: false, Error: text, BranchKept: !skippedBranchName(p.BranchName)})
+	}
+	// A `.git` that left the held folder after the entry went gets no branch step, so
+	// no ref of another repository goes (claustrum's own, not measured).
+	if !offSwapped && req.removeHold != nil && req.holdLeftItsPath() {
+		return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: pending == "", Error: pending, BranchKept: !skippedBranchName(p.BranchName)})
+	}
+	if junctionMoved || req.movedSincePin(repo) {
+		// No branch step ran, so the reply has the member of a kept branch, as a
+		// remove that keeps the branch with no step has (keptAll, claustrum's own for
+		// this state, not measured).
+		if !req.movedBranchGate(p, repo) {
+			return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: pending == "", Error: pending, BranchKept: !skippedBranchName(p.BranchName)})
+		}
 	}
 	// The branch step adds no text to the reply. A kept branch adds the member only.
 	kept := runBranchStep(req.use, repo, p.BranchName).kept()
 	return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: pending == "", Error: pending, BranchKept: kept})
+}
+
+// pinBeforeLocate records, on Windows, the folder of baseRepo and its git directory
+// before the remove opens the folder of the worktree. A later step compares the folder
+// with it (movedSincePin), and on a move the locks and the entry are read in this git
+// directory. It runs for every request: a plain baseRepo can become a link too.
+func (req *gitCall) pinBeforeLocate(repo string) {
+	if !walkStartsAsSpelled {
+		return
+	}
+	// One resolve serves every read of the pin, so a junction in the path of baseRepo that moves after the resolve does not change those reads.
+	// A move before the resolve, or a swap of .git during the pin, can still give the pin another repository (pinIsOfBase).
+	at := repo
+	if final, ok := linkFreePath(repo); ok {
+		at = final
+	}
+	// The handle of the folder stays open through the hold. With no handle, for example
+	// at a dangling junction, the remove keeps no pin and no hold, so its later reads go
+	// by the path and a move with no pin refuses (claustrum's own, not measured).
+	base := openPinBase(at)
+	if base != nil {
+		defer func() { _ = base.Close() }()
+		req.removeBase = rootFolderIdentity(base)
+	}
+	req.removePinned = true
+	req.removeBaseDir = pathcanon.FinalDir(at)
+	req.removeDotGitLink = dotGitLinkNow(at)
+	t := requestGitDirTrust(at, false)
+	if base == nil || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return
+	}
+	req.removePin, req.removePinInfo = t.pinCommonDir, baseFolderIdentity(t.pinCommonDir)
+	req.holdRemoveGitDir(t.holdFolderFor(t.pinCommonDir))
+	if !req.pinIsOfBase(base) {
+		req.closeRemoveHold()
+		req.removePin, req.removePinInfo = "", nil
+	}
+}
+
+// openPinBase opens the folder of baseRepo for the pin, or answers nil. The first open
+// lets another process rename the folder (openHeldGitDir). It follows no link at the
+// last name and needs its parent folder to open, so a plain open is the second try.
+// A test replaces it.
+var openPinBase = func(at string) *os.Root {
+	if r, err := openHeldGitDir(at); err == nil {
+		return r
+	}
+	r, err := openRootNoWait(at)
+	if err != nil {
+		return nil
+	}
+	return r
+}
+
+// pinIsOfBase reports whether the pin and the hold are the git directory of the open
+// folder base, by the path that the handle has now. It makes no git call. A second swap
+// during that read can still keep a pin of another repository (from the code, not measured).
+func (req *gitCall) pinIsOfBase(base *os.Root) bool {
+	f, err := base.Open(".")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	final, err := pathcanon.PathOfOpenFolder(f)
+	if err != nil {
+		return false
+	}
+	t := requestGitDirTrust(final, false)
+	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return false
+	}
+	now := baseFolderIdentity(t.pinCommonDir)
+	if now == nil || req.removePinInfo == nil || !os.SameFile(now, req.removePinInfo) {
+		return false
+	}
+	if req.removeHold == nil {
+		return true
+	}
+	held := gitDirIdentity(t.holdFolderFor(t.pinCommonDir))
+	return held != nil && os.SameFile(held, req.removeHoldInfo)
+}
+
+// holdRemoveGitDir opens the real git directory dir once, with no link at its last
+// name. A git directory that is a link at the pin gets no hold, and its entry goes by
+// the path as before. A `.git` put there later cannot move this handle.
+func (req *gitCall) holdRemoveGitDir(dir string) {
+	before := gitDirIdentity(dir)
+	if before == nil {
+		return
+	}
+	root, err := openHeldGitDir(dir)
+	if err != nil {
+		return
+	}
+	info := rootFolderIdentity(root)
+	if info == nil || !os.SameFile(info, before) {
+		_ = root.Close()
+		return
+	}
+	req.removeHold, req.removeHoldPath, req.removeHoldInfo = root, dir, info
+}
+
+// closeRemoveHold closes the hold of pinBeforeLocate.
+func (req *gitCall) closeRemoveHold() {
+	if req.removeHold != nil {
+		_ = req.removeHold.Close()
+		req.removeHold = nil
+	}
+}
+
+// holdsGitDir reports whether commonDir is the git directory of the hold.
+func (req *gitCall) holdsGitDir(commonDir string) bool {
+	if req.removeHold == nil {
+		return false
+	}
+	c := filepath.Clean(commonDir)
+	return sameGitDirPath(c, filepath.Clean(req.removePin)) || sameGitDirPath(c, filepath.Clean(req.removeHoldPath))
+}
+
+// dotGitLinkNow reports whether `<repo>/.git` is a junction or a symbolic link now.
+func dotGitLinkNow(repo string) bool {
+	fi, err := os.Lstat(filepath.Join(repo, ".git"))
+	return err == nil && folderIsLink(fi.Mode())
+}
+
+// dotGitBecameLink reports whether a request with a daemon GIT_COMMON_DIR finds a link
+// at `<repo>/.git` where the pin found none. The git directory of the hold is then
+// another folder, so holdLeftItsPath does not see the change.
+func (req *gitCall) dotGitBecameLink(repo string) bool {
+	return req.removePinned && !req.removeDotGitLink && daemonCommonDirSet() && dotGitLinkNow(repo)
+}
+
+// holdLeftItsPath reports whether the path of the held git directory no longer names
+// the held folder, as a real folder.
+func (req *gitCall) holdLeftItsPath() bool {
+	now := gitDirIdentity(req.removeHoldPath)
+	return now == nil || !os.SameFile(now, req.removeHoldInfo)
+}
+
+// pinStands reports whether the pinned git directory is still at its path. The pin of
+// a plain baseRepo is spelled through the folder that moved, so after a move it can
+// name the second repository. Then no lock can be read in the first one.
+func (req *gitCall) pinStands() bool {
+	if req.removePin == "" || req.removePinInfo == nil {
+		return false
+	}
+	now := baseFolderIdentity(req.removePin)
+	return now != nil && os.SameFile(now, req.removePinInfo)
+}
+
+// sameRemoveBase reports whether now is the folder of baseRepo at the pin. Two folders
+// that did not open count as one.
+func (req *gitCall) sameRemoveBase(now os.FileInfo) bool {
+	if now == nil || req.removeBase == nil {
+		return now == nil && req.removeBase == nil
+	}
+	return os.SameFile(now, req.removeBase)
+}
+
+// movedSincePin reports whether baseRepo now leads to another folder than at the pin.
+// It compares the identity of the open folder. It is false with no pin.
+func (req *gitCall) movedSincePin(repo string) bool {
+	return req.removePinned && !req.sameRemoveBase(baseFolderIdentity(repo))
+}
+
+// openedOtherBase reports whether the locate opened another folder than the pinned
+// one, also when the path leads back to the pinned folder by now.
+func (req *gitCall) openedOtherBase(target removeTarget) bool {
+	return req.removePinned && target.baseInfo != nil && !req.sameRemoveBase(target.baseInfo)
+}
+
+// movedBranchGate reports whether the branch step can run in the repository that a
+// moved baseRepo now leads to: a main git directory whose gate passes.
+func (req *gitCall) movedBranchGate(p *gitParams, repo string) bool {
+	t := requestGitDirTrust(repo, false)
+	if t.verdict != gitDirTrusted || t.pinCommonDir == "" || t.worktreeEntry != "" {
+		return false
+	}
+	msg, noRepo := req.removeGate(t, p.ShadowDirOff, repo)
+	return msg == "" && !noRepo
+}
+
+// removeGoneAfterMove answers a gone leaf whose baseRepo moved to a second repository
+// after the locate. 87375cc7 answers success there and deletes only the ref of the same
+// name in the second repository. The entry of each repository, the leaf and the
+// sentinel of the second stay (measured on Windows). A state that no row covers keeps
+// everything: no pinned git directory, a locked entry of the leaf in either
+// repository, a second repository with no main git directory, or a gate that refuses
+// (claustrum's own, not measured).
+func (req *gitCall) removeGoneAfterMove(p *gitParams, repo, path string, checked bool) rpc.Response {
+	refuse := removeRefusal(req)
+	if !checked || !req.pinStands() {
+		return refuse(lockCheckRefusal(p.WorktreePath))
+	}
+	first := newWorktreePathSet(p.WorktreePath)
+	if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.IsLocal(rel) {
+		first = newWorktreePathSet(p.WorktreePath, filepath.Join(req.removeBaseDir, rel))
+	}
+	if lock, readable, _ := worktreeLockedByPath(req.removePin, first); !readable {
+		return refuse(lockCheckRefusal(p.WorktreePath))
+	} else if lock != notLocked {
+		return refuse(goneLockedWorktreeRefusal(p.WorktreePath, lock))
+	}
+	t := requestGitDirTrust(repo, false)
+	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return refuse(lockCheckRefusal(p.WorktreePath))
+	}
+	if lock, readable, _ := worktreeLockedByPath(t.pinCommonDir, goneWorktreePathSet(p, repo, path)); !readable {
+		return refuse(lockCheckRefusal(p.WorktreePath))
+	} else if lock != notLocked {
+		return refuse(goneLockedWorktreeRefusal(p.WorktreePath, lock))
+	}
+	if !req.movedBranchGate(p, repo) {
+		return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+	}
+	kept := runBranchStep(req.use, repo, p.BranchName).kept()
+	return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
+}
+
+// pinnedCommonDir is the git directory of the registrations of a remove after the pin.
+// It is the pin, unless a daemon GIT_COMMON_DIR chose another one and baseRepo did not
+// move. moved reports a move.
+func (req *gitCall) pinnedCommonDir(repo, commonDir string) (dir string, moved bool) {
+	moved = req.movedSincePin(repo)
+	if req.removePin != "" && (moved || !daemonCommonDirSet()) {
+		return req.removePin, moved
+	}
+	return commonDir, moved
 }
 
 // removeGoneWorktree answers a remove whose worktree directory is not there. The
@@ -3723,6 +4114,13 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		missing := errors.Is(statErr, fs.ErrNotExist) && os.Getenv("GIT_DIR") == ""
 		missingDone := func() rpc.Response {
 			defer lockWorktreeAddStep(repo)()
+			// A folder that took the missing path since the pin gets no branch step.
+			if createStepHook != nil {
+				createStepHook("remove branch step")
+			}
+			if req.movedSincePin(repo) {
+				return keptAll()
+			}
 			kept := runBranchStep(req.use, repo, p.BranchName).kept()
 			return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: true, BranchKept: kept})
 		}
@@ -3838,6 +4236,9 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 	// of a create in the same git directory (lockWorktreeAddStep). With no
 	// worktree folder that is not measured.
 	defer lockWorktreeAddStep(repo)()
+	if req.movedSincePin(repo) {
+		return req.removeGoneAfterMove(p, repo, path, checkRegistration)
+	}
 	if checkRegistration {
 		// Without worktreeRoot the registrations are those of registrationGitDir. If
 		// <git dir>/worktrees exists, the call log of 89cb6289 shows the pair of
@@ -3850,6 +4251,11 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		var probe registrationProbe
 		if p.WorktreeRoot == "" {
 			commonDir = registrationGitDir(repo, answered)
+			var moved bool
+			commonDir, moved = req.pinnedCommonDir(repo, commonDir)
+			if moved && !req.pinStands() {
+				return refuse(lockCheckRefusal(p.WorktreePath))
+			}
 			probe = newRegistrationProbe(req.use, answered, inRepoWorkTree(repo))
 			probe.pairIfWorktreesDir(commonDir)
 		}
@@ -3885,9 +4291,35 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 		// (measured on Windows, which refuses worktreeRoot before this step). On
 		// Linux and macOS openRegistrationsFolder refuses a symbolic link there too.
 		linked := removeRegistrationsLinked(filepath.Join(commonDir, worktreesSubdir))
-		if !linked && (p.WorktreeRoot != "" || !baseRepoGitFileEndsInSpace(repo)) {
-			dropWorktreeEntryByPath(commonDir, sp)
+		// Behind a junction the entry goes only when its record names the leaf as the
+		// caller spelled it. A record of the real path keeps its entry, and the folder
+		// behind the junction stays (hasJunctionBelow).
+		dropSet := sp
+		if req.behindJunction {
+			dropSet = newWorktreePathSet(p.WorktreePath)
 		}
+		if !linked && (p.WorktreeRoot != "" || !baseRepoGitFileEndsInSpace(repo)) {
+			if createStepHook != nil {
+				createStepHook("remove entry step")
+			}
+			if req.holdsGitDir(commonDir) {
+				// A `.git` that left the held folder keeps every registration (no row
+				// has a gone leaf there, claustrum's own).
+				if req.holdLeftItsPath() {
+					return refuse(lockCheckRefusal(p.WorktreePath))
+				}
+				dropHeldEntryByPath(req.removeHold, commonDir, dropSet)
+			} else {
+				dropWorktreeEntryByPath(commonDir, dropSet)
+			}
+		}
+	}
+	// A move after the test above reaches no branch of the second repository.
+	if createStepHook != nil {
+		createStepHook("remove branch step")
+	}
+	if req.movedSincePin(repo) || (req.removeHold != nil && req.holdLeftItsPath()) || req.dotGitBecameLink(repo) {
+		return keptAll()
 	}
 	// The branch step runs on this path too (measured). Without a repository its
 	// for-each-ref fails, and the branch counts as kept (measured).

@@ -16,16 +16,13 @@ the daemon walks up from the request folder:
 
 - The walk starts at the request folder with symlinks resolved. A refusal names
   the resolved path.
-- On Windows the walk resolves no junction before the last path component. It starts at the spelled path and takes `..` by text. With a junction
-  `<P>\J` into repository `<R>`, each git call on
-  `<P>\J\sub` carries `GIT_COMMON_DIR=<P>\.git` (a folder symlink gives `<R>\.git`). A second junction
-  `<KP>` to `<P>` gives the pin `<KP>\.git`. A junction as the last component gives
-  the pin of `<P>` too. A junction outside any repository gives "no repository",
-  and each git call carries `GIT_DIR=NUL`.
+- On Windows a path with a junction starts the walk at its real path, with long names and the case on disk (`4c111e86`, `87375cc7`, measured on Windows). So `<P>\J\sub`, with a junction
+  `<P>\J` into repository `<R>`, finds `<R>`, also through a second junction `<K>` to `<P>`.
+  A `..` is taken by text first. A daemon `GIT_DIR` through a junction takes its real path too (measured). A path that does not open keeps the spelled start (from the code).
 - On Windows any folder path that does not resolve, like `<P>\gone\..`, starts the walk as spelled
   (from the code).
 - On Windows a config refusal of `git.info` follows the spelled start too,
-  except a junction `path`. In `shadow` without
+  except a path with a junction. In `shadow` without
   `"shadowDirOff":true`, it is the
   [class 1 text](git-rules-config.md#repository-config-refusals). A
   config that git refuses and the daemon's read accepts, such as an `include.path`
@@ -60,14 +57,9 @@ with 40 hex digits in either case. A symlink `HEAD` passes when its target text
 starts with `refs/`. Any other `HEAD` fails at once, a FIFO for example.
 
 ??? note "Junction paths"
-    On Windows `git.info` and `git.list_branches` read the config of a junction
-    `path` that holds its git directory through its target, so a refusal names that
-    file, and one to a bare repository answers as that repository (`4c111e86`,
-    measured).
-    Other methods, a daemon `GIT_DIR` and a target with no drive letter keep the
-    pin. A junction chain
-    reads its first target, so one to a bare repository is refused. Both are
-    claustrum's own, not measured.
+    On Windows a refusal for a junction `path` names the config behind the junction,
+    and one to a bare repository answers as that repository (`4c111e86`, measured).
+    A linked worktree's `.git` file can name its entry through a local junction `J` to the git directory. All five methods answer, and `GIT_DIR` keeps `J` (`4c111e86`, measured on Windows). The daemon reads the config and holds the git directory at the target of `J`. A junction named `.git`, a daemon `GIT_DIR` and a junction chain keep the link refusal (claustrum's own, not measured).
 
 ### How the daemon judges the git directory
 
@@ -425,7 +417,7 @@ The daemon reads `<git dir>\objects\info\alternates` and the same file of each f
 
 The repack advice is `To stop depending on that file, run "git repack -a -d" in the repository it belongs to, then delete that file.` A valid line gives the frame of `be1c1ca5`. These checks run with `"shadowDirOff":true` too (claustrum's own, not measured).
 
-`git.info`, a create and a remove are measured with Windows line endings and 1000 lines, and run no other test of this table (claustrum's own, not measured).
+`git.info`, a create and a remove are measured with Windows line endings, 1000 lines and `..` after a junction (`4c111e86`). They run no other test of this table (claustrum's own, not measured).
 
 `git.status` has three more tests (measured on Windows):
 

@@ -3,6 +3,8 @@
 package git
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -120,10 +122,10 @@ func TestSweepRemovesAJunctionAsALink(t *testing.T) {
 	}
 }
 
-// TestStatusThroughAJunction must match a measured case, request 2: a
-// git.status whose `path` and `baseRepo` go through a junction to the
-// repository. The reply names a repository. The daemon has two folders of a
-// repository: the one of the junction path and the one of the real path. Each
+// TestStatusThroughAJunction: a git.status whose `path` and `baseRepo` go through a
+// junction to the repository. The reply names a repository. The walk starts at the
+// real path, so the daemon has one folder of the repository, that of the real path.
+// 4c111e86 and 87375cc7 read one config there (measured on Windows). Each
 // call with --git-dir=<git directory> names the real git directory and carries
 // GIT_COMMON_DIR=<the folder of the real path> and GIT_OBJECT_DIRECTORY=<real
 // git directory>\objects.
@@ -142,10 +144,11 @@ func TestStatusThroughAJunction(t *testing.T) {
 	folder := filepath.Join(f.run, shadowRootName, daemonFolders(t, f.run)[0])
 	viaJunction := shadowRepoName(filepath.Join(jrepo, ".git"))
 	real := shadowRepoName(f.gitDir)
-	for _, name := range []string{viaJunction, real} {
-		if _, err := os.Lstat(filepath.Join(folder, name, "config")); err != nil {
-			t.Errorf("the folder %s of a repository: %v", name, err)
-		}
+	if _, err := os.Lstat(filepath.Join(folder, real, "config")); err != nil {
+		t.Errorf("the folder %s of the real path: %v", real, err)
+	}
+	if _, err := os.Lstat(filepath.Join(folder, viaJunction)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a folder %s of the junction path: %v", viaJunction, err)
 	}
 	n := 0
 	for _, c := range calls {

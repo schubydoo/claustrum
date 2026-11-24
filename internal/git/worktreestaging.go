@@ -299,7 +299,7 @@ func openAddStage(u gitUse) (*addStage, error) {
 	st := &addStage{u: u}
 	switch {
 	case u.accepted != nil:
-		if u.swapped("prepare") {
+		if u.swapped("prepare") && !u.accepted.junctionMoved() {
 			if fi, err := os.Lstat(u.gitDir); err == nil && fi.Mode().IsRegular() {
 				return nil, errors.New(realDirText(u.gitDir))
 			}
@@ -799,6 +799,9 @@ func (e *addNotPrepared) Error() string { return e.text }
 //
 // The locks of the add (takeAddLocks) come after the listing.
 func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
+	if u.accepted.junctionMoved() {
+		u.addGitDir = u.accepted.junctionTo
+	}
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
 	defer takeAddLocks(cp.lock, repo)()
 	return runAddStaged(ctx, u, cmd, leaf, cp)
@@ -932,7 +935,13 @@ func stagedAddText(stderr string, err error, worktreePath string) string {
 func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
 	st.recordBranchTip()
 	replaced := false
-	if st.u.swapped("staged") {
+	// After a junction move the path of the leaf leads to the second repository. The
+	// leaf that the create made is at its resolved path, and writeLeafGitFile tests
+	// its identity (noteJunctionMove).
+	if st.u.accepted.junctionMoved() {
+		leaf = cp.resolved
+	}
+	if st.u.swapped("staged") && !st.u.accepted.junctionMoved() {
 		var next *acceptedGitDir
 		if !stagedAddWindowsSteps && st.u.accepted != nil {
 			next = st.u.accepted.replacedAtPath(st.u.accepted.dir)

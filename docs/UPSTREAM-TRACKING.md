@@ -167,7 +167,6 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D6](DIVERGENCES.md#d6) | Always-on | No, install path | A `-cli-version` of more than one path component is refused |
 | [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Linux and macOS a FIFO, another user's file or a link to one at `remote-server.log` fails the start. On Windows a file link does. The `git-shadow` sweep writes nothing through a link |
 | [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
-| [D19](DIVERGENCES.md#d19) | Always-on, Windows | Maybe | `git.worktree_remove` refuses a junction between `baseRepo` and the leaf |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
 | [D22](DIVERGENCES.md#d22) | Always-on, Linux and macOS | Maybe | `git.worktree_remove` refuses a lock where `89cb6289` answers success (four states, and a missing daemon `GIT_DIR` of `b3081b51`), and differs with `worktreeRoot` in three more |
 | [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
@@ -183,7 +182,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [CT-7](DIVERGENCES.md#ct-7) | Off | No, install path | An opt-in size cap fails `-install` |
 | [CT-8](DIVERGENCES.md#ct-8) | Off | No, install path | An opt-in bound fails a slow `-install` download |
 
-D1, D4, D5, D7, D9, D11, D13, D14, D16, D17, D18, D21 and D25 are retired: claustrum
+D1, D4, D5, D7, D9, D11, D13, D14, D16, D17, D18, D19, D21 and D25 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
 entry above covers it. One thing on those paths is claustrum's own and not
 drift: the D13 chmod, clear and rename come after the checksum test. A difference against `89cb6289` on the D4 paths is
@@ -604,25 +603,9 @@ them after each Go bump.
 
 ### Windows junctions in `filepath.EvalSymlinks`
 
-On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the
-last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from
-the Go source, not measured). These answers rest on that failure:
+On Windows, the walk of `filepath.EvalSymlinks` fails at a junction before the last component, since Go 1.23 turned on the `winsymlink` GODEBUG setting (from the Go source, not measured). The link counts of `git.status` and `git.info`, and the link test of an alternates line, read a junction as `ModeIrregular` (from the code).
 
-- The `git.info` answers for a path with a junction before its last component
-  (from the code). These are `root`, `repo`, `repoSlug` and the `GIT_COMMON_DIR`
-  pin of the trust check ([git.info → Differences by system](protocol/git-info.md#differences-by-system),
-  [Git-directory trust check](protocol/git-rules-trust.md#git-directory-trust-check)).
-- The link counts of `git.status` and `git.info`, and the link test of an alternates line. Both read a
-  junction as `ModeIrregular` (from the code).
-
-With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23
-in `go.mod`, the walk follows the junction. Those answers then flip or move to the
-repository behind the junction, and other Windows junction answers can move too.
-That is derived from the Go source (`os/types_windows.go` and
-`path/filepath/symlink.go`), not measured. After each Go bump that changes
-`winsymlink`, check `TestInfoRootLinkThenDotDotWindows`,
-`TestInfoRootBelowJunctionWindows` and `TestInfoThroughJunctionWindows`, which pins
-the frames of `89cb6289`.
+With `GODEBUG=winsymlink=0` in the daemon environment, or a `go` line below 1.23 in `go.mod`, those answers can move. That is derived from the Go source (`os/types_windows.go` and `path/filepath/symlink.go`), not measured. After each Go bump that changes `winsymlink`, check `TestInfoRootLinkThenDotDotWindows`, `TestInfoRootBelowJunctionWindows` and `TestInfoThroughJunctionWindows`.
 
 ### The git version under the checkout tests
 

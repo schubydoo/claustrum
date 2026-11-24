@@ -49,9 +49,8 @@ cut. The `<worktreePath>` of the remove text is as sent, and it is not cut.
 
 On Linux and macOS the path of the config is the resolved path, so a request through
 a symbolic link gets the real path. On Windows a request in another letter case gets
-the real spelling. A request through a junction keeps the junction spelling, except
-[a junction `path`](git-rules-trust.md#how-the-daemon-finds-the-git-directory) of
-`git.info` or `git.list_branches` (4c111e86).
+the real spelling. A request through a junction gets the real path
+([the walk](git-rules-trust.md#how-the-daemon-finds-the-git-directory)).
 
 The path of an included file is the folder of the file that holds the setting, one
 separator, and the value as written. The Windows `is outside` text is the exception:

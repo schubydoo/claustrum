@@ -22,40 +22,66 @@ func TestNetworkLinkText(t *testing.T) {
 	}
 }
 
-// The substitute names of the rows of b3081b51 on Windows leave the local drives.
-// A drive letter after the prefix, a relative target and a target rooted on the
-// drive of the link do not (claustrum's own, not measured).
-func TestTargetLeavesLocalDrive(t *testing.T) {
-	cases := []struct {
-		target string
-		want   bool
+// Each target form gets the verdict of its row (4c111e86 and 87375cc7, measured on
+// Windows), or the refusal of a form with no row (claustrum's own). Mutations in
+// judgeLinkTarget: drop the colon test of a drive path. Let a name with no `\??\`
+// follow. Let a rooted relative name follow.
+func TestJudgeLinkTarget(t *testing.T) {
+	for _, c := range []struct {
+		target   string
+		relative bool
+		to       string
+		want     linkHop
 	}{
-		{`\??\UNC\localhost\share`, true},
-		{`\??\NUL`, true},
-		{`\??\Volume{00000000-0000-0000-0000-000000000001}\work\local`, true},
-		{`\??\GLOBALROOT\Device\HarddiskVolume3\work\local`, true},
-		{`\\?\UNC\localhost\share`, true},
-		{`\\?\Volume{00000000-0000-0000-0000-000000000001}\`, true},
-		{`\\localhost\share`, true},
-		{`\\.\NUL`, true},
-		{`//localhost/share`, true},
-		{`\??\C:\work\local`, false},
-		{`\??\c:`, false},
-		{`\\?\D:\work`, false},
-		{`C:\work\local`, false},
-		{`..\local`, false},
-		{`\work\local`, false},
-		{`local`, false},
-		{``, false},
-		{`\??\C`, true},
-		{`\??\1:\x`, true},
-		{`\??\AB\x`, true},
-		{`\??\C:x`, true},
-	}
-	for _, c := range cases {
-		if got := targetLeavesLocalDrive(c.target); got != c.want {
-			t.Errorf("%q: got %v, want %v", c.target, got, c.want)
+		{`\??\C:\work\local`, false, `C:\work\local`, hopFollows},
+		{`\??\c:`, false, `c:`, hopFollows},
+		{`\??\X:\jt`, false, `X:\jt`, hopFollows},
+		{`\??\C:\Device\HarddiskVolume3\x`, false, `C:\Device\HarddiskVolume3\x`, hopFollows},
+		{`..\local`, true, `..\local`, hopFollows},
+		{`local`, true, `local`, hopFollows},
+		{`\??\UNC\localhost\share`, false, "", hopToDevice},
+		{`\??\NUL`, false, "", hopToDevice},
+		{`\??\Volume{00000000-0000-0000-0000-000000000001}\work`, false, "", hopToDevice},
+		{`\??\GLOBALROOT\Device\HarddiskVolume3\x`, false, "", hopToDevice},
+		{`\??\C`, false, "", hopToDevice},
+		{`\??\1:\x`, false, "", hopToDevice},
+		{`\??\C:x`, false, "", hopToDevice},
+		{`\??\C:\??\C:\x`, false, "", hopToDevice},
+		{`\??\C:\GLOBAL??\C:\x`, false, "", hopToDevice},
+		{`\??\C:\x`, true, "", hopToDevice},
+		{`\GLOBAL??\C:\x`, true, "", hopToDevice},
+		{`\\?\C:\x`, false, "", hopUnreadable},
+		{`\Device\HarddiskVolume3\x`, false, "", hopUnreadable},
+		{`\GLOBAL??\C:\x`, false, "", hopUnreadable},
+		{`\DosDevices\C:\x`, false, "", hopUnreadable},
+		{`\work\local`, false, "", hopUnreadable},
+		{`X:\jt`, false, "", hopUnreadable},
+		{`\work\local`, true, "", hopRooted},
+		{`\Device\HarddiskVolume3\x`, true, "", hopRooted},
+		{`a:b`, true, "", hopUnreadable},
+		{``, false, "", hopUnreadable},
+	} {
+		if to, got := judgeLinkTarget(c.target, c.relative); to != c.to || got != c.want {
+			t.Errorf("%q relative %v: got %q, %v, want %q, %v", c.target, c.relative, to, got, c.to, c.want)
 		}
+	}
+}
+
+// The relative flag is read from a symbolic link only. Mutation: in
+// reparseIsRelative, drop the test of the tag.
+func TestReparseIsRelative(t *testing.T) {
+	data := reparseData(reparseTagSymlink, `..\x`, `..\x`)
+	if reparseIsRelative(data) {
+		t.Error("flag 0 reads as relative")
+	}
+	binary.LittleEndian.PutUint32(data[16:], symlinkFlagRelative)
+	if !reparseIsRelative(data) {
+		t.Error("flag 1 reads as absolute")
+	}
+	junction := reparseData(reparseTagMountPoint, `\??\C:\x`, `C:\x`)
+	binary.LittleEndian.PutUint32(junction[16:], symlinkFlagRelative)
+	if reparseIsRelative(junction) {
+		t.Error("a junction reads as relative")
 	}
 }
 
@@ -99,17 +125,22 @@ func TestReparseSubstituteName(t *testing.T) {
 	}
 }
 
+// fakeRelative at the start of a value of fakeLinkTargets marks a link with the
+// relative flag.
+const fakeRelative = "rel:"
+
 // fakeLinkTargets replaces the reparse read for one test: each link in targets
-// reads as its value. Other entries read as no link.
+// reads as its value. Other entries cannot be read.
 func fakeLinkTargets(t *testing.T, targets map[string]string) {
 	t.Helper()
-	oldRead, oldOn := readLinkTarget, networkLinkChecks
+	oldRead, oldRelative, oldOn := readLinkTarget, readLinkRelative, networkLinkChecks
 	readLinkTarget = func(path string) (string, bool) {
 		v, ok := targets[path]
-		return v, ok
+		return strings.TrimPrefix(v, fakeRelative), ok
 	}
+	readLinkRelative = func(path string) bool { return strings.HasPrefix(targets[path], fakeRelative) }
 	networkLinkChecks = true
-	t.Cleanup(func() { readLinkTarget, networkLinkChecks = oldRead, oldOn })
+	t.Cleanup(func() { readLinkTarget, readLinkRelative, networkLinkChecks = oldRead, oldRelative, oldOn })
 }
 
 // The walk refuses a path with a link to a network or device path at any name,

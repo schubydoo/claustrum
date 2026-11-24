@@ -4,11 +4,32 @@ On Windows the git methods test the links, the shares and the reparse tags of a 
 
 ## A link to a network or device path
 
-On Windows `b3081b51` refuses a repository path through a symlink or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status` and `git.worktree_create`, and `path` of `git.info`. No git call runs on it, and the text is:
+On Windows `b3081b51` refuses a repository path through a symlink or junction to a network or device path (measured on Windows). The targets are a UNC path, `\\.\NUL`, `\\?\Volume{guid}` and `\\?\GLOBALROOT`. The last two are refused too when they lead to a local folder. The path is `baseRepo` of `git.status`, `git.worktree_create` and `git.worktree_remove`, and `path` of `git.info` and `git.list_branches` (`87375cc7`). No git call runs on it, and the text is:
 
 `` Claude doesn't follow `<path>` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. Or open the folder by its network path. ``
 
-`git.status` and `git.info` answer `-32603`, and a create `"errorCode":"worktree_add_failed"` with no folder or branch. A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). Claustrum's own, not measured: each path name is tested, a local link's target is not followed, and `git.status` tests `baseRepo` alone. Also claustrum's own, not measured: the `\\?\`, two-separator and relative targets, a refused `"shadowDirOff":true` request, the place after the chain test and the cleaned path.
+`git.status`, `git.info` and `git.list_branches` answer `-32603`, and a create `"errorCode":"worktree_add_failed"` with no folder or branch. A remove answers `"success":false` and deletes nothing (`4c111e86`, measured on Windows with a junction to a volume GUID path). A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). Claustrum's own, not measured: `git.status` tests `baseRepo` alone, a refused `"shadowDirOff":true` request, the place after the chain test and the cleaned path.
+
+### A folder that denies List
+
+A folder on the real path of the request that denies List fails the trust-root walk (`87375cc7`, measured on Windows). `git.status` and `git.list_branches` answer no repository with no git call. A create gets `nested_base_repo`, and a remove the same text. On a local drive `git.info` still reads the repository, and on a share it answers no repository. A denied folder past a junction is off the real path, and the request goes on (measured). A path with no link gets the same test in local, deeper, 8.3, share and share-root layouts (measured).
+
+### Each hop of a link
+
+The test walks each name of the path and each hop of each link, before any git call or delete. `4c111e86` and `87375cc7` refuse the last hop of a chain, a link in the middle of the path and a chain that ends in a UNC path (measured on Windows, `git.info`, `git.status` and a remove). A create runs the same test (from the code).
+
+| Target of a hop | Answer |
+|---|---|
+| `\??\<drive>:\…` | The walk follows it. A colon after the drive gets the refusal above (claustrum's own, not measured) |
+| `\??\` and anything else, such as `Volume{guid}` or `UNC\` | The refusal above |
+| Any other absolute name: `\\?\C:\`, `\Device\`, `\GLOBAL??\`, `\DosDevices\`, `X:\`, a rooted `\path` | The text below |
+| A directory symbolic link with a rooted relative target | The text below with the reason `a link target starts with a single backslash (the volume root)`. With a colon, the refusal above |
+| A relative target with no root | The walk follows it (claustrum's own, not measured) |
+| A link that cannot be read, or a relative target with a colon | The text below (claustrum's own, not measured) |
+
+`` Claude couldn't check that `<path>` stays on a local drive (a link that Claude can't read), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to. ``
+
+A chain of 32 hops gets the text of a [chain of links](git-rules-trust.md#the-object-sources-on-windows), also for junctions (claustrum's own, not measured). A missing name ends the walk with no refusal (measured for a dead local target). After a link, git runs in the real long path, also for a link to a subst drive (measured).
 
 ## A folder with a reparse tag that is no link
 

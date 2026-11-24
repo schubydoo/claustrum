@@ -10,8 +10,9 @@ import (
 	"testing"
 )
 
-// A line with ".." after a symbolic link is refused for git.status, and the
-// text names the link (measured on Windows). The other methods go on.
+// A line with ".." after a symbolic link is refused for each method, and the text
+// names the link (4c111e86, measured on Windows with a junction). Mutation: in
+// alternatesRefusal, move the firstLinkBeforeDots test back inside `if all`.
 func TestAlternatesDotDotAfterLink(t *testing.T) {
 	checksOn(t)
 	root := realTempDir(t)
@@ -30,8 +31,8 @@ func TestAlternatesDotDotAfterLink(t *testing.T) {
 	if got, want := alternatesRefusal(common, true), alternatesDotDotText(alternatesOf(objects), lnk); got != want {
 		t.Errorf("git.status check:\n got %q\nwant %q", got, want)
 	}
-	if got := alternatesRefusal(common, false); got != "" {
-		t.Errorf("check of the other methods: got %q", got)
+	if got, want := alternatesRefusal(common, false), alternatesDotDotText(alternatesOf(objects), lnk); got != want {
+		t.Errorf("check of the other methods:\n got %q\nwant %q", got, want)
 	}
 	// A link with no ".." after it passes.
 	writeFile(t, alternatesOf(objects), lnk+"\n", 0o644)

@@ -73,10 +73,11 @@ const doorReadBeforeListing = false
 // can run those steps.
 var gitDirMustBeReal = true
 
-// statusFollowsPrintedGitDir is true on Windows. The trust check resolves no
-// junction there, so git can print another spelling of the git directory of a
-// request. A git.status then goes on with the printed path (usePrintedGitDir,
-// statusPrintedRootSpelling). 5fd08069 does so on Windows (measured).
+// statusFollowsPrintedGitDir is true on Windows. The trust check takes the real
+// path of a junction there (junctionFreePath). Git can still print another spelling
+// of the git directory of a request, such as one through a `.git` file. A git.status
+// then goes on with the printed path (usePrintedGitDir, statusPrintedRootSpelling).
+// 5fd08069 does so on Windows (measured).
 const statusFollowsPrintedGitDir = true
 
 // probeConfigFreeRun is false on Windows: no git-directory test follows a good

@@ -64,8 +64,9 @@ type gitDirTrust struct {
 	// that GIT_DIR. It is empty when the check left the
 	// directory to git with no pin.
 	pinCommonDir string
-	// configDir is the folder of the daemon's read of the config, when it is not
-	// pinCommonDir (configDirThroughJunction). It is empty for every other request.
+	// configDir is the folder of the daemon's read of the config and of the hold of a
+	// create, when it is not pinCommonDir (entryRepoThroughJunction). It is empty for
+	// every other request.
 	configDir string
 	// noRepoEnv is what commonDirPinEnv returns in place of the pin when verdict is
 	// gitDirNoRepo, so every hardened git call in that folder carries it, whatever the
@@ -288,6 +289,7 @@ func gitDirTrustFor(dir string) gitDirTrust {
 		if !filepath.IsAbs(gd) {
 			gd = filepath.Join(start, gd)
 		}
+		gd = realParentPath(gd)
 		t := judgeGitDir(gd, true)
 		t.unsearchable = gitDirUnsearchable(gd)
 		return t
@@ -340,20 +342,19 @@ var resolveWalkLinks = filepath.EvalSymlinks
 // start: dir with its symlinks resolved. On Linux and macOS a dir that does not
 // resolve has no start.
 //
-// On Windows (walkStartsAsSpelled) a dir that does not resolve and is a directory
-// starts the walk as it is spelled, cleaned. filepath.EvalSymlinks fails there for a
-// path with a junction before its last component, because Go reports a junction as an
-// irregular file, not a directory. So the walk resolves no junction, and it takes `..`
-// after one by text. 89cb6289 answers and pins so on Windows. With a junction <P>\J into
-// another repository R, each git call of git.info on <P>\J\sub after the excludes read
-// carries GIT_COMMON_DIR=<P>\.git, and the root is P (measured). Two junctions in the path
-// give the pin <KP>\.git, spelled through the first one (measured), and <P>\J\..\J\sub gives
-// the pin of P. A junction outside any repository gives GIT_DIR=NUL on each call (measured).
-// <T>\lnk\.. with a junction lnk gives the root T (measured). A repository below a junction
-// gives git's own spelling of the root (measured). A missing name before `..` is another
-// failure of the resolve for a directory that exists. The paths <P>\missing\.. and
-// <P>\missing\..\J\sub are equal to 89cb6289 in frame, disk and every git call (measured).
+// On Windows a dir with a junction, a directory symlink or a link to a subst drive in it starts at its real path (linkFreePath).
+// So a junction <P>\J into a second repository R finds R, on <P>\J\sub and on
+// <K>\J\sub with a junction K to P (4c111e86 and 87375cc7, measured on Windows). A dir
+// that has no junction and does not resolve, and is a directory, starts as it is
+// spelled, cleaned (walkStartsAsSpelled). A missing name before `..` is such a dir. The
+// paths <P>\missing\.. and <P>\missing\..\J\sub are equal to 89cb6289 in frame, disk and
+// every git call (measured).
 func walkStart(dir string) (string, error) {
+	if final, ok := linkFreePath(dir); ok {
+		if fi, err := os.Stat(final); err == nil && fi.IsDir() {
+			return final, nil
+		}
+	}
 	start, err := resolveWalkLinks(dir)
 	if err == nil || !walkStartsAsSpelled {
 		return start, err
@@ -364,38 +365,126 @@ func walkStart(dir string) (string, error) {
 	return filepath.Clean(dir), nil
 }
 
+// pathHoldsJunction is holdsJunction behind a seam, so a test on any system can
+// stand in for a Windows junction.
+var pathHoldsJunction = holdsJunction
+
+// holdsJunction reports whether a name of the absolute path p is a junction. Go
+// reports a junction as an irregular file, and only a junction or a symbolic link
+// has a target to read (readLinkTarget). So another reparse tag is no junction. A
+// name that cannot be read ends the test.
+func holdsJunction(p string) bool {
+	vol := filepath.VolumeName(p)
+	cur := vol + string(filepath.Separator)
+	for _, name := range strings.FieldsFunc(p[len(vol):], isPathSep) {
+		cur = filepath.Join(cur, name)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return false
+		}
+		if fi.Mode()&fs.ModeIrregular != 0 {
+			if _, ok := readLinkTarget(cur); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// junctionFreePath is the path of an open handle of p when p has a junction in it,
+// on Windows: the real path, with long names and the letter case on disk. 4c111e86
+// and 87375cc7 use that path (measured on Windows). ok is false off Windows, for a path
+// with no junction and for a path that does not open, such as a dangling junction.
+func junctionFreePath(p string) (final string, ok bool) {
+	if !walkStartsAsSpelled {
+		return "", false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil || !pathHoldsJunction(abs) {
+		return "", false
+	}
+	final, err = finalLeafPath(abs)
+	return final, err == nil
+}
+
+// pathHoldsLink is holdsLink behind a seam, so a test on any system can stand in for
+// a Windows link.
+var pathHoldsLink = holdsLink
+
+// holdsLink reports whether a name of the absolute path p is a junction or a
+// symbolic link (folderIsLink).
+func holdsLink(p string) bool {
+	vol := filepath.VolumeName(p)
+	cur := vol + string(filepath.Separator)
+	for _, name := range strings.FieldsFunc(p[len(vol):], isPathSep) {
+		cur = filepath.Join(cur, name)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return false
+		}
+		if folderIsLink(fi.Mode()) {
+			return true
+		}
+	}
+	return false
+}
+
+// linkFreePath is the path of an open handle of p when p has a link in it, on
+// Windows. After a chain whose first hop is a directory symbolic link, and for a link
+// to a subst drive, 4c111e86 and 87375cc7 run git in the real long path (measured on
+// Windows). ok is false as for junctionFreePath.
+func linkFreePath(p string) (final string, ok bool) {
+	if !walkStartsAsSpelled {
+		return "", false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil || !pathHoldsLink(abs) {
+		return "", false
+	}
+	final, err = finalLeafPath(abs)
+	return final, err == nil
+}
+
+// realParentPath is p with the folder that holds its last name at its real path
+// (junctionFreePath), and p itself when that folder has no junction. The last name
+// is kept, so a link at that name stays a link for the tests that refuse it.
+func realParentPath(p string) string {
+	if parent, ok := junctionFreePath(filepath.Dir(p)); ok {
+		return filepath.Join(parent, filepath.Base(p))
+	}
+	return p
+}
+
 // requestJunctionTarget is lastNameJunctionTarget behind a seam, so a test on any
 // system can stand in for a Windows junction.
 var requestJunctionTarget = lastNameJunctionTarget
 
-// configDirThroughJunction is the folder of the daemon's read of the config for
-// git.info and git.list_branches on dir, or "" for pin itself. When the walk start
-// of dir is a junction and pin is in it, the read takes pin through the target of
-// the junction. With a junction <W>\J to a repository T whose config has a bad
-// line, 4c111e86 names <W>\T\.git\config. A junction <W>\jb to a bare repository
-// gets the answers of that repository, with no link refusal (measured on Windows).
-// A daemon GIT_DIR keeps pin, and so do the three other git methods (claustrum's
-// own, not measured).
-func configDirThroughJunction(dir, pin string) string {
-	if dir == "" || pin == "" || os.Getenv("GIT_DIR") != "" {
+// entryRepoThroughJunction is the target of repo, the repository folder that a
+// linked worktree's `.git` file names, when repo is a junction. With `gitdir:
+// <W>\J\worktrees\wl` and a junction J to R\.git, 4c111e86 and 87375cc7 keep J in
+// GIT_DIR and answer all five methods (measured on Windows). The daemon reads the
+// config and holds the git directory at the target (gitDirTrust.configDir). A
+// junction named `.git` keeps its link refusal, and so does a daemon GIT_DIR
+// (claustrum's own, not measured).
+func entryRepoThroughJunction(repo string, fromEnv bool) string {
+	if fromEnv || filepath.Base(repo) == ".git" {
 		return ""
 	}
-	start, err := walkStart(dir)
-	if err != nil {
-		return ""
-	}
-	if start, err = filepath.Abs(start); err != nil {
-		return ""
-	}
-	rest, ok := strings.CutPrefix(pin, start)
-	if !ok || (rest != "" && !os.IsPathSeparator(rest[0])) {
-		return ""
-	}
-	target, ok := requestJunctionTarget(start)
+	target, ok := requestJunctionTarget(repo)
 	if !ok {
 		return ""
 	}
-	return target + rest
+	return target
+}
+
+// holdFolderFor is the folder that a create holds for the git directory gitDir: the
+// target of a junction that a linked worktree's `.git` file names
+// (entryRepoThroughJunction), and gitDir itself for every other request.
+func (t gitDirTrust) holdFolderFor(gitDir string) string {
+	if t.configDir != "" {
+		return t.configDir
+	}
+	return gitDir
 }
 
 // gitWalkRoot is the root of git.info on Linux and macOS. It is the folder where a walk
@@ -621,7 +710,7 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	if !sameGitDirPath(commondirPath(g, content), repo) {
 		return refuseForeignCommondir(cd, repo)
 	}
-	return gitDirTrust{pinCommonDir: repo, worktreeEntry: g}
+	return gitDirTrust{pinCommonDir: repo, worktreeEntry: g, configDir: entryRepoThroughJunction(repo, fromEnv)}
 }
 
 // commondirValue is the value of the content b of a commondir file. Every trailing CR

@@ -14,8 +14,8 @@ import (
 
 // The test of a repository path that goes through a symbolic link or a junction to
 // a network or device path. claustrum runs it on Windows only, before any git call
-// on the repository, for the baseRepo of git.status and git.worktree_create and the
-// path of git.info (measured on Windows). The test reads the entries of the path
+// on the repository, for the baseRepo of git.status, git.worktree_create and
+// git.worktree_remove and the path of git.info and git.list_branches (measured on Windows). The test reads the entries of the path
 // only, and it starts no git.
 
 // networkLinkChecks turns the test on. It is true on Windows. The tests set it on
@@ -26,6 +26,10 @@ var networkLinkChecks = gitEnvWindowsForm
 // as its reparse data holds it, and true. It returns false for any other entry
 // and for a read that fails (linkTarget). It is a seam for the tests.
 var readLinkTarget = linkTarget
+
+// readLinkRelative reports whether the symbolic link at path has the relative flag
+// in its reparse data (linkRelative). It is a seam for the tests.
+var readLinkRelative = linkRelative
 
 // networkLinkText names the path cleaned. The rows send clean paths with
 // backslashes, so the cleaning is claustrum's own, not measured.
@@ -56,10 +60,7 @@ func networkLinkRefusalAt(path string) (msg string, lastJunction bool) {
 	if msg := pathLookRefusal(path); msg != "" {
 		return msg, false
 	}
-	if networkLinkChecks && throughNetworkLink(path) {
-		return networkLinkText(path), false
-	}
-	return "", false
+	return linkHopRefusal(path), false
 }
 
 // lstatPath is os.Lstat. It is a seam for the tests of unlookablePathRefusal and
@@ -191,48 +192,137 @@ func linkOnShare(path string) (link string, lastJunction bool) {
 	return "", false
 }
 
-// throughNetworkLink reports whether a name of the absolute path is a link whose
-// target leaves the local drives. The names are tested from the volume down, so
-// a name below a link is read through that link by the system. The target of a
-// local link is not followed further, and a name that cannot be read ends the
-// test with false (claustrum's own, not measured).
-func throughNetworkLink(path string) bool {
-	p, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	vol := filepath.VolumeName(p)
-	cur := vol + string(filepath.Separator)
-	for _, name := range strings.FieldsFunc(p[len(vol):], isPathSep) {
-		cur = filepath.Join(cur, name)
-		fi, err := os.Lstat(cur)
-		if err != nil {
-			return false
-		}
-		if fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) == 0 {
-			continue
-		}
-		if target, ok := readLinkTarget(cur); ok && targetLeavesLocalDrive(target) {
-			return true
-		}
-	}
-	return false
+// unreadableLinkText names the path cleaned, as networkLinkText does (4c111e86 and
+// 87375cc7, measured on Windows).
+func unreadableLinkText(path string) string {
+	return uncheckedLinkText(path, "a link that Claude can't read")
 }
 
-// targetLeavesLocalDrive reports whether a link target names something other than
-// a path on a drive letter. A target in the NT form \??\ or the form \\?\ is local
-// only with a drive letter after the prefix, so UNC\, a device name, Volume{guid}
-// and GLOBALROOT are not. A target that starts with two separators is a UNC path
-// or a \\.\ device path. A relative target stays on the drive of its link. The
-// rows measure \??\UNC\, \??\NUL, \??\Volume{guid} and \??\GLOBALROOT. The other
-// forms are claustrum's own, not measured.
-func targetLeavesLocalDrive(target string) bool {
-	for _, prefix := range []string{`\??\`, `\\?\`} {
-		if strings.HasPrefix(target, prefix) {
-			return !startsWithDrive(target[len(prefix):])
-		}
+// rootedLinkText is the text of a directory symbolic link whose relative target
+// starts with one backslash (4c111e86 and 87375cc7, measured on Windows).
+func rootedLinkText(path string) string {
+	return uncheckedLinkText(path, "a link target starts with a single backslash (the volume root)")
+}
+
+func uncheckedLinkText(path, reason string) string {
+	return "Claude couldn't check that `" + filepath.Clean(path) + "` stays on a local drive (" + reason + "), so git wasn't run. If a folder name in that path ends in a dot or a space, rename it. Otherwise, replace the link in that path with the folder it points to."
+}
+
+// linkHopRefusal walks each name of path and each hop of each link on it, and returns
+// the refusal of the first hop that does not stay on a local drive, or "". 4c111e86
+// and 87375cc7 refuse the last hop of a chain, a link in the middle of the path and a
+// chain that ends in a UNC path (measured on Windows). A chain of linkChainCap hops
+// gets linkChainText (claustrum's own for a junction, not measured). A missing name
+// ends the walk with no refusal, as a dead local link does (measured). A name that
+// the Lstat cannot read ends it too (claustrum's own, not measured).
+func linkHopRefusal(path string) string {
+	if !networkLinkChecks {
+		return ""
 	}
-	return len(target) >= 2 && isSlash(target[0]) && isSlash(target[1])
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	for hops := 0; ; hops++ {
+		if hops >= linkChainCap {
+			return linkChainText(path)
+		}
+		next, verdict := firstLinkHop(p)
+		switch verdict {
+		case hopToDevice:
+			return networkLinkText(path)
+		case hopUnreadable:
+			return unreadableLinkText(path)
+		case hopRooted:
+			return rootedLinkText(path)
+		}
+		if next == "" {
+			return ""
+		}
+		p = next
+	}
+}
+
+// firstLinkHop finds the first link on the absolute path p and returns p with that
+// link replaced by its target. next is "" when p has no link.
+func firstLinkHop(p string) (next string, verdict linkHop) {
+	vol := filepath.VolumeName(p)
+	cur := vol + string(filepath.Separator)
+	names := strings.FieldsFunc(p[len(vol):], isPathSep)
+	for i, name := range names {
+		at := filepath.Join(cur, name)
+		fi, err := os.Lstat(at)
+		if err != nil {
+			return "", hopFollows
+		}
+		if !folderIsLink(fi.Mode()) {
+			cur = at
+			continue
+		}
+		target, ok := readLinkTarget(at)
+		if !ok {
+			return "", hopUnreadable
+		}
+		relative := readLinkRelative(at)
+		to, verdict := judgeLinkTarget(target, relative)
+		if verdict != hopFollows {
+			return "", verdict
+		}
+		if relative {
+			to = filepath.Join(cur, to)
+		}
+		return filepath.Join(append([]string{to}, names[i+1:]...)...), hopFollows
+	}
+	return "", hopFollows
+}
+
+// linkHop is the verdict on one target of a link.
+type linkHop int
+
+const (
+	hopFollows linkHop = iota
+	hopToDevice
+	hopUnreadable
+	hopRooted
+)
+
+// judgeLinkTarget judges the substitute name target of a link. relative is the
+// relative flag of a symbolic link. It returns the path that the link leads to when
+// the walk follows it. 4c111e86 and 87375cc7 answer so on Windows (measured):
+//
+//   - `\??\<drive>:\...` follows. A colon after the drive gets the device refusal (claustrum's own, not measured).
+//   - `\??\` before anything else, such as `Volume{guid}`, `UNC\`, `NUL` or
+//     `GLOBALROOT`, gets the device refusal.
+//   - Any other absolute name, such as `\\?\C:\`, `\Device\`, `\GLOBAL??\`,
+//     `\DosDevices\`, `C:\` or a rooted `\path`, cannot be read.
+//   - A relative name rooted at `\` gets rootedLinkText. With a colon it gets the
+//     device refusal.
+//
+// A relative name with no root follows, and one with a colon cannot be read. An empty
+// name cannot be read (all three claustrum's own, not measured).
+func judgeLinkTarget(target string, relative bool) (string, linkHop) {
+	if target == "" {
+		return "", hopUnreadable
+	}
+	if relative {
+		switch {
+		case isSlash(target[0]) && strings.Contains(target, ":"):
+			return "", hopToDevice
+		case isSlash(target[0]):
+			return "", hopRooted
+		case strings.Contains(target, ":"):
+			return "", hopUnreadable
+		}
+		return target, hopFollows
+	}
+	rest, ok := strings.CutPrefix(target, `\??\`)
+	if !ok {
+		return "", hopUnreadable
+	}
+	if !startsWithDrive(rest) || strings.Contains(rest[2:], ":") {
+		return "", hopToDevice
+	}
+	return rest, hopFollows
 }
 
 // startsWithDrive reports whether s is a drive letter and a colon, alone or
@@ -252,6 +342,16 @@ const (
 	reparseTagMountPoint = 0xA0000003
 	reparseTagSymlink    = 0xA000000C
 )
+
+// symlinkFlagRelative is the relative flag in the reparse data of a symbolic link.
+const symlinkFlagRelative = 1
+
+// reparseIsRelative reports whether data is that of a symbolic link with the
+// relative flag.
+func reparseIsRelative(data []byte) bool {
+	return len(data) >= 20 && binary.LittleEndian.Uint32(data) == reparseTagSymlink &&
+		binary.LittleEndian.Uint32(data[16:])&symlinkFlagRelative != 0
+}
 
 // reparseSubstituteName returns the substitute name of the reparse data of a
 // symbolic link or a junction, and true. Any other tag and data that is too

@@ -30,6 +30,13 @@ import (
 // (settingsGateRefusal sets it). Its calls name the folder of the repository in
 // the folder of the daemon, so git reads the daemon's copy of the settings.
 type gitUse struct {
+	// addGitDir is the git directory of the `worktree add` call after a junction
+	// move (acceptedGitDir.noteJunctionMove). It is "" for every other call.
+	addGitDir string
+	// afterJunctionMove is set for the rollback of a read-tree call that failed by
+	// itself. It runs the gate of the repository that a moved junction leads to, and
+	// gives the use of the branch step there (undoFailedCheckout).
+	afterJunctionMove func() (gitUse, bool)
 	// host is the settings control of the daemon. folder is the folder of the
 	// daemon, <S>, as it was when the request passed its gate.
 	host   *ShadowHost
@@ -834,6 +841,16 @@ func (u gitUse) pin(dir string) []string {
 	t, ok := u.names(dir)
 	if !ok {
 		return commonDirPinEnv(dir)
+	}
+	// The `worktree add` after a junction move names the second repository
+	// (acceptedGitDir.noteJunctionMove).
+	if u.addGitDir != "" {
+		u.renewCopy()
+		env := []string{"GIT_COMMON_DIR=" + u.repoDir, "GIT_OBJECT_DIRECTORY=" + filepath.Join(u.addGitDir, "objects"), "GIT_DIR=" + u.addGitDir}
+		if root, _ := gitWalkRoot(dir); root != "" {
+			env = append(env, "GIT_WORK_TREE="+root)
+		}
+		return env
 	}
 	gitDir := t.pinCommonDir
 	if t.worktreeEntry != "" {

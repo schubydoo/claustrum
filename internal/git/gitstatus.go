@@ -197,6 +197,17 @@ func resolvedDir(p string) string {
 	return filepath.Clean(p)
 }
 
+// statusCommonOfEntry is the git directory that git.status goes on in, for the answer
+// printed of `rev-parse --absolute-git-dir`. For the entry of a linked worktree it is
+// the repository that the trust check pinned. For an entry named through a junction
+// it is the target of that junction (4c111e86 and 87375cc7, measured on Windows).
+func statusCommonOfEntry(t gitDirTrust, printed string) string {
+	if t.worktreeEntry != "" && sameProbeFolder(printed, t.worktreeEntry) {
+		return t.holdFolderFor(t.pinCommonDir)
+	}
+	return printed
+}
+
 // statusPathOf runs the tests on `path` that come before the next git call. Each
 // failure answers isRepo:false with 3 calls in total:
 //
@@ -254,6 +265,11 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 		return sp, true
 	}
 	sp.probeTree = statusProbeDir(clean)
+	// After a link, also one to a subst drive, the value is the real path (4c111e86
+	// and 87375cc7, measured on Windows).
+	if final, ok := linkFreePath(clean); ok {
+		sp.probeTree = final
+	}
 	for _, s := range []string{resolvedDir(clean), pathcanon.FinalDir(clean)} {
 		if abs, err := filepath.Abs(s); err == nil {
 			sp.spellings = append(sp.spellings, abs)

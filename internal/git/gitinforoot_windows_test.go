@@ -86,8 +86,8 @@ func TestInfoRootPairWindows(t *testing.T) {
 }
 
 // For <T>\lnk\.., a directory symlink lnk -> X\sub gives the root X, and a
-// junction gives the root T, because the walk resolves no junction (measured).
-// Mutations: resolve junctions in the walk, or give up the walk when
+// junction gives the root T, because `..` is taken by text first (measured).
+// Mutations: resolve the link before the `..`, or give up the walk when
 // filepath.EvalSymlinks fails on the junction.
 func TestInfoRootLinkThenDotDotWindows(t *testing.T) {
 	r := newTrustRepo(t)

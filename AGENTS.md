@@ -167,11 +167,12 @@ not widen it.
 
 It deletes `worktreePath` and its registration through an `os.Root`, not
 `git worktree remove`. Before any delete it refuses a symlink or non-directory leaf
-and a lock that counts (D22). A failed repository check, a Windows junction
-(D19) and `homeguard.WipesHomeDir` also refuse. Markers beside dangling `.git` links: see
+and a lock that counts (D22). A failed repository check and `homeguard.WipesHomeDir` also refuse. Markers beside dangling `.git` links: see
 [their rule](docs/protocol/git-list-branches.md#response). Never widen: On Linux and macOS a gone worktree whose locked entry sits
 behind a linked `<git dir>/worktrees` succeeds, and its branch goes. That exception
-follows the reference. Do not widen it.
+follows the reference. Do not widen it. Never widen (maintainer approved, Windows): with a junction between `baseRepo`
+and the leaf, the branch ref goes, and so does the one registration whose record names the leaf as the caller spelled it.
+Keep the leaf, all behind the junction, and a registration whose record names the real path (`hasJunctionBelow`).
 
 #### Path 3: the `git.worktree_create` rollback
 
@@ -180,6 +181,9 @@ deletes the leaf and the registration and runs the branch step. Some states keep
 registration or the branch (method page). Before the add, the stale step removes at most
 one stale `worktrees` entry, and only one with no `locked` file. The one tree delete with no home guard is the
 registration of a create that holds no git directory and accepted no registration.
+Never widen (maintainer approved, Windows only): a read-tree call can fail by itself after a junction in `baseRepo`
+moved to a second repository. The leaf and the registration of the first repository then go. In the second repository only
+the ref of the same name goes, also for a live or locked worktree (`87375cc7`, measured on Windows). Its entry and leaf stay.
 Never widen: Never widen a delete of the [steps that move
 the hold](#steps-that-move-the-hold). Never widen: on Linux and macOS the branch step runs behind a link at `.git`
 only when the link names the held git directory. Only an empty folder that took the leaf right after a staged add goes,
@@ -292,7 +296,12 @@ On Linux and macOS, `acceptedGitDir.movedTo`, `askedAgain` and `replacedAtPath` 
 step that resolves the path of the git directory again, and never widen a delete of these
 steps. The maintainer approved two exceptions: the Windows stale step, and the rollback
 of the registration after the staging step took the hold ([Rare
-states](docs/protocol/git-worktree-create.md#rare-states)).
+states](docs/protocol/git-worktree-create.md#rare-states)). Never widen (maintainer approved, Windows only): a junction in `baseRepo`
+that moves to a second repository right after `rev-parse --absolute-git-dir` (`noteJunctionMove`) puts that repository in the
+`GIT_DIR` of the one `worktree add`, so its branch lands there. The registration stays in the held folder, the leaf stays, and no stale step and no rollback of the good add run. Its rollback after a failed add is on [the create page](docs/protocol/git-worktree-create.md#differences-by-system).
+During a remove `pinBeforeLocate` pins the `baseRepo` folder and one handle of its real git directory. With that hold, one move after the pin reaches only the ref of the same name in the second repository.
+The states with no hold and the open race windows are on [the remove page](docs/protocol/git-worktree-remove.md#platform-notes).
+A move inside the branch step still reaches that ref by path with no gate. Add no other delete there.
 
 ### Other rules
 
@@ -341,7 +350,6 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D6 | `-cli-version` must be one path component | always-on | all |
 | D8 | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | always-on | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
-| D19 | Remove refuses a junction between `baseRepo` and the leaf | always-on | Windows |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
 | D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |
 | D23 | The environment of a child is in name order | always-on | Windows |

@@ -59,7 +59,8 @@ func junctionParentRefusal(repo, worktreePath string) string {
 			return ""
 		}
 		if fi.Mode()&os.ModeIrregular != 0 {
-			return fmt.Sprintf("failed to create parent directory: %s is not a directory", cur)
+			// A junction above repo is named by its real path (4c111e86, measured).
+			return fmt.Sprintf("failed to create parent directory: %s is not a directory", realParentPath(cur))
 		}
 	}
 	return ""

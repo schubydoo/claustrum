@@ -3,6 +3,7 @@
 package pathcanon
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -66,6 +67,16 @@ func FinalPath(p string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
+	return pathFromHandle(h)
+}
+
+// PathOfOpenFolder is the path of the open folder f as the file system reports it now.
+// A rename of the folder or of a parent shows in the answer.
+func PathOfOpenFolder(f *os.File) (string, error) {
+	return pathFromHandle(windows.Handle(f.Fd()))
+}
+
+func pathFromHandle(h windows.Handle) (string, error) {
 	buf := make([]uint16, 1024)
 	// Flags 0 are FILE_NAME_NORMALIZED and VOLUME_NAME_DOS: a drive-letter path.
 	n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)

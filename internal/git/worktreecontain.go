@@ -204,8 +204,8 @@ func markerAboveSpelling(repo string) bool {
 // absent.
 //
 // On Windows the walk follows a junction before "..", so <out>\J\..\repo passes and
-// names <out>\repo (b3081b51, measured on Windows). A parent folder that denies List
-// to the daemon no longer refuses (claustrum's own, not measured).
+// names <out>\repo (b3081b51, measured on Windows). A folder on the real path that
+// denies List to the daemon refuses (realPathUnlistable, 87375cc7, measured on Windows).
 func baseRepoWalkFails(repo string) bool {
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return false

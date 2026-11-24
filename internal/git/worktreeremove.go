@@ -18,7 +18,7 @@ import (
 // worktree directory itself, then the entry of the worktree under <git dir>/worktrees. Every delete goes through an os.Root,
 // so no delete follows a symbolic link out of the directory that holds it. That is a property of os.Root, not a measurement.
 // The rules below were measured side by side against f6010b97: all 107 cases equal on macOS, every remove case equal on Linux,
-// and every Windows row equal except the junction rows of D19. The rows of 89cb6289 on which entry goes are in the tests;
+// and every Windows row equal except the junction rows, which claustrum then refused. The rows of 89cb6289 on which entry goes are in the tests;
 // docs/protocol/git-worktree-remove.md has the rule. The row names are those of those runs. Unit tests pin this code to the
 // rows.
 
@@ -66,7 +66,7 @@ func notADir(fi fs.FileInfo, err error) bool {
 
 // leafNotDirText is the refusal text for a worktree leaf of mode m that is not a
 // directory. On Windows a junction leaf (ModeIrregular) puts the path in backticks
-// (`4c111e86`, measured on Windows, row e_junction_remove). Another reparse point of that
+// (`4c111e86`, measured on Windows). Another reparse point of that
 // mode gets the same text (not measured). Any other leaf has no backticks.
 func leafNotDirText(goos, path string, m fs.FileMode) string {
 	if goos == "windows" && m&fs.ModeIrregular != 0 {
@@ -82,6 +82,12 @@ type removeTarget struct {
 	parent *os.Root
 	leaf   string
 	path   string
+	// behindJunction is true for a zero target whose folder sits behind a junction
+	// between baseRepo and the leaf (locateInRepoWorktree).
+	behindJunction bool
+	// baseInfo is the identity of the folder that the locate opened as baseRepo, on
+	// Windows, or nil (openRemoveParent).
+	baseInfo os.FileInfo
 }
 
 func (t removeTarget) close() {
@@ -97,9 +103,9 @@ func (t removeTarget) close() {
 // (measured). A missing component, or one that is not a directory, gives the zero
 // target. repo resolves as the leaf of a create does (leafResolve). On Windows a
 // junction before its last name then leads to the live worktree, and b3081b51
-// removes it (measured on Windows). A parent folder that denies List fails
-// EvalSymlinks too, and the handle path then leads to the live remove (claustrum's
-// own, not measured).
+// removes it (measured on Windows). A folder on the real path that denies List
+// fails the walk of baseRepoWalkFails first, so the remove refuses before this step
+// (87375cc7, measured on Windows).
 //
 // The home guard of the caller reads the path as sent. On the handle branch the
 // path that the remove reaches is <handle path of repo>/<rel>, so that path gets the
@@ -116,12 +122,56 @@ func locateInRepoWorktree(repo, worktreePath string) (removeTarget, error) {
 		}
 		return removeTarget{}, err
 	}
+	// A baseRepo with a link in it is opened at its real path, where git records the
+	// worktree. So the record matches with no extra pair of git calls (4c111e86 and
+	// 87375cc7, measured on Windows, a junction at baseRepo and a link to a subst drive).
+	if final, ok := linkFreePath(filepath.Clean(repo)); ok {
+		resolved = final
+	}
 	if byHandle {
 		if msg := worktreeRemoveHomeRefusal(filepath.Join(resolved, rel)); msg != "" {
 			return removeTarget{}, &removeHomeRefusal{text: msg}
 		}
 	}
-	return openRemoveParent(resolved, filepath.Dir(rel), filepath.Base(rel))
+	target, err := removeParentOpener(resolved, filepath.Dir(rel), filepath.Base(rel))
+	if err != nil && strings.Contains(err.Error(), "path escapes from parent") && junctionBelowRepo(resolved, filepath.Dir(rel)) {
+		return removeTarget{behindJunction: true}, nil
+	}
+	return target, err
+}
+
+// removeParentOpener is openRemoveParent behind a seam, so a test on any system can stand
+// in for the refusal that os.Root gives for a Windows junction.
+var removeParentOpener = openRemoveParent
+
+// junctionBelowRepo is hasJunctionBelow behind a seam, for the same test.
+var junctionBelowRepo = hasJunctionBelow
+
+// hasJunctionBelow reports whether a name of dirRel below base is a junction, on
+// Windows. A remove with such a name goes on as for a gone worktree: it answers
+// success, deletes the branch and keeps the folder behind the junction. A registration
+// whose record names the real path stays (4c111e86 and 87375cc7, measured on Windows
+// with a junction at `.claude\J2` and at `.claude\worktrees`). One whose record names
+// the leaf as the caller spelled it goes (4c111e86 and 87375cc7, measured on Windows with a junction
+// at `.claude` and at `.claude\worktrees`). Another reparse tag keeps the error of os.Root (claustrum's
+// own, not measured).
+func hasJunctionBelow(base, dirRel string) bool {
+	if !walkStartsAsSpelled {
+		return false
+	}
+	cur := base
+	for _, name := range strings.Split(dirRel, string(filepath.Separator)) {
+		cur = filepath.Join(cur, name)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return false
+		}
+		if fi.Mode()&fs.ModeIrregular != 0 {
+			_, ok := readLinkTarget(cur)
+			return ok
+		}
+	}
+	return false
 }
 
 // locateExternalWorktree is locateInRepoWorktree for a worktree beneath a worktreeRoot.
@@ -182,10 +232,8 @@ func levelSearchError(level *os.Root) error {
 
 // openRemoveParent opens the directory that holds the worktree. On Windows a junction
 // at a directory between base and the leaf makes os.Root refuse the open with "openat
-// <dirRel>: path escapes from parent". Measured for a junction at .claude and at
-// .claude\worktrees, and for a junction J with the dirRel J\sub\.claude\worktrees
-// and J\.claude\worktrees. The request then fails, and nothing is deleted. That
-// refusal is divergence D19.
+// <dirRel>: path escapes from parent". locateInRepoWorktree takes that error for an
+// in-repo worktree (hasJunctionBelow). Nothing behind the junction is deleted.
 //
 // On Linux and macOS it opens base and then each component of dirRel, one level at a
 // time. After each open it looks at "." in that level, before any look at the level
@@ -205,6 +253,10 @@ func openRemoveParent(base, dirRel, leaf string) (removeTarget, error) {
 		}
 		return removeTarget{}, err
 	}
+	var baseInfo os.FileInfo
+	if walkStartsAsSpelled {
+		baseInfo = rootFolderIdentity(parent)
+	}
 	var levels []string
 	switch {
 	case dirRel == ".":
@@ -222,7 +274,7 @@ func openRemoveParent(base, dirRel, leaf string) (removeTarget, error) {
 		gone := err != nil && (isGoneErr(err) || notADir(parent.Stat(name)))
 		_ = parent.Close()
 		if gone {
-			return removeTarget{}, nil
+			return removeTarget{baseInfo: baseInfo}, nil
 		}
 		if err != nil {
 			return removeTarget{}, err
@@ -233,7 +285,33 @@ func openRemoveParent(base, dirRel, leaf string) (removeTarget, error) {
 		_ = parent.Close()
 		return removeTarget{}, err
 	}
-	return removeTarget{parent: parent, leaf: leaf, path: filepath.Join(base, dirRel, leaf)}, nil
+	return removeTarget{parent: parent, leaf: leaf, path: filepath.Join(base, dirRel, leaf), baseInfo: baseInfo}, nil
+}
+
+// rootFolderIdentity is the identity of the folder that r holds, read from an open
+// handle, or nil. On Windows a FileInfo of a path reads its identity from that path at
+// the first compare, so it could name another folder by then.
+func rootFolderIdentity(r *os.Root) os.FileInfo {
+	f, err := r.Open(".")
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	return fi
+}
+
+// baseFolderIdentity is rootFolderIdentity of the folder at path, or nil.
+func baseFolderIdentity(path string) os.FileInfo {
+	r, err := openRootNoWait(path)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = r.Close() }()
+	return rootFolderIdentity(r)
 }
 
 // checkLeafIdentity reports an error unless leafDir is still the directory named leaf
@@ -591,6 +669,13 @@ func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) 
 	if pathcanon.Canonical(base) == pathcanon.Canonical(commonDir) {
 		return notLocked, true
 	}
+	// On Windows Canonical keeps a junction before the last name. A baseRepo through a
+	// junction names the folder of commonDir then, and the lock tests of commonDir
+	// cover it. With a file at `.git\worktrees` there, 4c111e86 and 87375cc7 answer
+	// success and delete nothing (measured on Windows).
+	if walkStartsAsSpelled && sameLockFolder(base, commonDir) {
+		return notLocked, true
+	}
 	// A `.git` that is a file, as in a linked worktree or a submodule, holds no
 	// worktrees directory.
 	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
@@ -604,6 +689,10 @@ func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) 
 	lock, readable, _ = worktreeLockedByPath(base, sp)
 	return lock, readable
 }
+
+// sameLockFolder is sameProbeFolder behind a seam, so a test on any system can stand
+// in for a `.git` that Canonical does not resolve.
+var sameLockFolder = sameProbeFolder
 
 // baseRepoLockRefusal answers the D22 refusal of lockedInBaseRepo, or "" when the
 // removal goes on. An entry that cannot be read gets the lock-check refusal, and a
@@ -806,6 +895,12 @@ func dropWorktreeEntryByPath(commonDir string, sp worktreePathSet) {
 		return
 	}
 	defer func() { _ = root.Close() }()
+	dropMatchingEntry(root, recs, sp)
+}
+
+// dropMatchingEntry deletes the one entry of recs whose record names the worktree, in
+// the registrations folder root. Two matches or a locked match delete nothing.
+func dropMatchingEntry(root *os.Root, recs []entryRecord, sp worktreePathSet) {
 	match := ""
 	for _, r := range recs {
 		if !sp.has(r.path) {
@@ -819,6 +914,43 @@ func dropWorktreeEntryByPath(commonDir string, sp worktreePathSet) {
 	if match != "" {
 		_ = root.RemoveAll(match)
 	}
+}
+
+// dropHeldEntry deletes the entry name through the handle held of the git directory.
+// The open of `worktrees` follows no link out of that folder.
+func dropHeldEntry(held *os.Root, name string) error {
+	root, err := openInRootNoWait(held, worktreesSubdir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.RemoveAll(name)
+}
+
+// dropHeldEntryByPath is dropWorktreeEntryByPath through the handle held of the git
+// directory. It lists and deletes in one open folder. A failure leaves the entry.
+func dropHeldEntryByPath(held *os.Root, commonDir string, sp worktreePathSet) {
+	root, err := openInRootNoWait(held, worktreesSubdir)
+	if err != nil {
+		return
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.Open(".")
+	if err != nil {
+		return
+	}
+	names, err := f.Readdirnames(-1)
+	_ = f.Close()
+	if err != nil {
+		return
+	}
+	var recs []entryRecord
+	for _, name := range names {
+		if r, ok := loadEntryRecord(root, filepath.Join(commonDir, worktreesSubdir), name); ok {
+			recs = append(recs, r)
+		}
+	}
+	dropMatchingEntry(root, recs, sp)
 }
 
 // verifiedWorktreeEntry turns the git dir that the worktree's `.git` file names into

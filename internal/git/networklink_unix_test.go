@@ -171,3 +171,120 @@ func TestUnlookablePathFrames(t *testing.T) {
 		t.Errorf("the worktree folder after the plain remove: %v", err)
 	}
 }
+
+// A remove with a baseRepo through a junction to a volume GUID path answers the
+// refusal of the other methods, and the worktree, its registration and its branch
+// stay (4c111e86, measured on Windows). A symbolic link stands for the junction.
+// Mutation: drop the linkHopRefusal test of gitWorktreeRemoveLocked.
+func TestRemoveThroughDeviceLinkDeletesNothing(t *testing.T) {
+	f := newWTFixture(t, false)
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
+	link := filepath.Join(filepath.Dir(f.top), "vol")
+	if err := os.Symlink(f.top, link); err != nil {
+		t.Fatal(err)
+	}
+	fakeLinkTargets(t, map[string]string{link: `\??\Volume{00000000-0000-0000-0000-000000000001}\work\T`})
+	resetUserExcludesCache(t)
+	clearDaemonConfigEnv(t)
+	got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
+		"baseRepo": link, "worktreePath": filepath.Join(link, ".claude", "worktrees", "w1"), "branchName": "w1"}))
+	if want := spellRemoveFrame(t, networkLinkText(link)); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	f.wantW1(t, "after the refusal", true)
+}
+
+// linkChain makes the symbolic links of a chain below root, each named by its map key.
+func linkChain(t *testing.T, root string, links map[string]string) {
+	t.Helper()
+	for name, to := range links {
+		if err := os.Symlink(to, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// The walk judges each hop of each link. A chain that ends at a device or UNC target,
+// a link in the middle of the path and an unreadable hop refuse, and a chain of local
+// hops passes (4c111e86 and 87375cc7, measured on Windows). A loop
+// reaches the hop limit. Symbolic links with the relative flag stand for the local
+// hops. Mutations in linkHopRefusal and firstLinkHop: follow no hop (return after the
+// first link). Let an unreadable link pass. Drop the test of the hop limit.
+func TestLinkHopRefusalWalksEachHop(t *testing.T) {
+	root := realTempDir(t)
+	for _, d := range []string{"real/R", "F/real"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	linkChain(t, root, map[string]string{"P": "L2", "L2": "real", "M": "F", "U": "L3", "L3": "real", "OK": "OK2", "OK2": "real", "A": "B", "B": "A", "X": "real"})
+	if err := os.Symlink("real", filepath.Join(root, "F", "G")); err != nil {
+		t.Fatal(err)
+	}
+	const guid = `\??\Volume{00000000-0000-0000-0000-000000000001}\work`
+	at := func(name string) string { return filepath.Join(root, name) }
+	fakeLinkTargets(t, map[string]string{
+		at("P"): fakeRelative + "L2", at("L2"): guid,
+		at("M"): fakeRelative + "F", filepath.Join(root, "F", "G"): guid,
+		at("U"): fakeRelative + "L3", at("L3"): `\??\UNC\localhost\C$\work`,
+		at("OK"): fakeRelative + "OK2", at("OK2"): fakeRelative + "real",
+		at("A"): fakeRelative + "B", at("B"): fakeRelative + "A",
+	})
+	for _, c := range []struct {
+		path string
+		want func(string) string
+	}{
+		{filepath.Join(at("P"), "R"), networkLinkText},
+		{filepath.Join(at("M"), "G", "R"), networkLinkText},
+		{filepath.Join(at("U"), "R"), networkLinkText},
+		{filepath.Join(at("X"), "R"), unreadableLinkText},
+		{filepath.Join(at("A"), "R"), linkChainText},
+		{filepath.Join(at("OK"), "R"), func(string) string { return "" }},
+		{filepath.Join(root, "real", "R"), func(string) string { return "" }},
+	} {
+		if got, want := linkHopRefusal(c.path), c.want(c.path); got != want {
+			t.Errorf("%s:\n got %q\nwant %q", c.path, got, want)
+		}
+	}
+}
+
+// A remove through a chain that ends at a volume GUID, or through a rooted relative
+// symbolic link, answers its refusal, and the worktree, its registration and its
+// branch stay, where the earlier build deleted. Mutation: drop the
+// linkHopRefusal test of gitWorktreeRemoveLocked.
+func TestRemoveThroughABadChainDeletesNothing(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		targets func(first, second string) map[string]string
+		want    func(string) string
+	}{
+		{"chain to a volume GUID", func(first, second string) map[string]string {
+			return map[string]string{first: fakeRelative + filepath.Base(second), second: `\??\Volume{00000000-0000-0000-0000-000000000001}\work\T`}
+		}, networkLinkText},
+		{"rooted relative link", func(first, second string) map[string]string {
+			return map[string]string{first: fakeRelative + `\work\T`}
+		}, rootedLinkText},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newWTFixture(t, false)
+			runGit(t, f.top, "worktree", "add", "-q", "-b", "w1", f.leaf())
+			out := filepath.Dir(f.top)
+			first, second := filepath.Join(out, "one"), filepath.Join(out, "two")
+			if err := os.Symlink(f.top, second); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(second, first); err != nil {
+				t.Fatal(err)
+			}
+			fakeLinkTargets(t, c.targets(first, second))
+			resetUserExcludesCache(t)
+			clearDaemonConfigEnv(t)
+			got := gitDispatch(t, newTestGitDeps(), rpcLine(t, "git.worktree_remove", map[string]any{
+				"baseRepo": first, "worktreePath": filepath.Join(first, ".claude", "worktrees", "w1"), "branchName": "w1"}))
+			if want := spellRemoveFrame(t, c.want(first)); got != want {
+				t.Errorf("got  %s\nwant %s", got, want)
+			}
+			f.wantW1(t, "after the refusal", true)
+		})
+	}
+}
