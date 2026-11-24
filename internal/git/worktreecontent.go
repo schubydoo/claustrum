@@ -102,6 +102,9 @@ type contentCheck struct {
 	deadline   context.Context
 	keepTook   time.Duration
 	atDeadline bool
+	// kills holds the helpers that the deadline kills, or is nil
+	// (armDeadlineKill).
+	kills *helperKills
 }
 
 // errContentDeadline ends the reads of a check whose deadline passed.
@@ -109,10 +112,12 @@ var errContentDeadline = errors.New("the deadline of the request passed")
 
 // pastDeadline reports whether the deadline passed. Then the check reads no object,
 // also by a separate run (4c111e86, measured on Linux for a batch that did not answer).
-// On Windows 4c111e86 logs "stopped at the deadline" after it read 2 objects (measured).
+// Apart from the kill of four helpers (helperKills), a deadline during another git call
+// does not cut that call. The check stops at the next step (4c111e86 and 87375cc7, measured on
+// Linux, and 4c111e86 on Windows).
 func (c *contentCheck) pastDeadline() bool {
-	if !c.atDeadline && c.deadline != nil && callerTimeoutFired(c.deadline) &&
-		!keepWithinDeadline(c.deadline, c.keepTook, time.Now()) {
+	if !c.atDeadline && c.deadline != nil && (c.kills.sent() || callerTimeoutFired(c.deadline) &&
+		!keepWithinDeadline(c.deadline, c.keepTook, time.Now())) {
 		c.atDeadline = true
 	}
 	return c.atDeadline
@@ -128,19 +133,13 @@ func (c *contentCheck) readAtDeadline(b *objectBatch, kind, id string) ([]byte, 
 	ctx, keep := c.deadline, c.keepTook
 	readDone := make(chan struct{})
 	defer close(readDone)
+	kills := c.kills
 	stop := context.AfterFunc(ctx, func() {
-		if !callerTimeoutFired(ctx) {
+		if !callerTimeoutFired(ctx) || !waitForKeep(ctx, keep, readDone) {
 			return
 		}
-		if dl, ok := ctx.Deadline(); ok && keep > 0 {
-			if wait := time.Until(dl.Add(keep)); wait > 0 {
-				select {
-				case <-time.After(wait):
-				case <-readDone:
-					return
-				}
-			}
-		}
+		// The kill comes before the close of stdin (measured on Linux).
+		kills.fire()
 		b.drop()
 	})
 	defer stop()
@@ -199,8 +198,7 @@ type contentFile struct {
 // is contentCheck.ask, and deadline and keepTook are those of contentCheck. A
 // check that stops at the deadline returns nil and atDeadline: the caller then
 // runs only the config listing of the copy step and answers the timeout
-// (4c111e86, measured on Linux with a batch that did not answer). After the other
-// stop points, the Windows stop too, the same is claustrum's own (dotClaudeListingOnly).
+// (dotClaudeListingOnly).
 func checkWorktreeContent(u gitUse, repo, leaf, commit string, ask func() string, deadline context.Context, keepTook time.Duration) (refused *contentRefusal, atDeadline bool) {
 	start := time.Now()
 	c := &contentCheck{u: u, repo: repo, leaf: leaf, commit: commit, ask: ask, deadline: deadline, keepTook: keepTook}
@@ -259,8 +257,10 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	// measured on Linux). Before the deadline it goes after the gits of the
 	// check end (claustrum's own). At the deadline the check ends with no wait
 	// for its `cat-file --batch` (4c111e86, measured on Linux), and the folder
-	// goes then (claustrum's own, not measured).
+	// goes then. On Windows it goes after the wait for the killed helpers
+	// (armDeadlineKill). Both are claustrum's own, not measured.
 	defer c.removeScratch()
+	defer c.armDeadlineKill()()
 	c.startBatch()
 	defer c.stopBatch()
 	body, text := c.readObject("commit", c.commit)
@@ -341,6 +341,12 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 		return nil, r
 	}
 	ids, failed := c.worktreeIDs(hashed)
+	// The result of a hash that the deadline passed during is not used, and the
+	// line counts no file (4c111e86 and 87375cc7, measured on Linux). A failed
+	// call at that point is claustrum's own, not measured.
+	if len(hashed) > 0 && c.pastDeadline() {
+		return nil, nil
+	}
 	if failed {
 		// A failed hash-object call whose files changed kind refuses with no
 		// cat-file blob call (measured on Linux). The log line then counts no
@@ -393,20 +399,54 @@ func (c *contentCheck) contentMismatch(name string) *contentRefusal {
 // or of the create. On macOS a stopped `hash-object --stdin-paths` is
 // followed by the compare step, and the create succeeds (measured).
 func (c *contentCheck) git(dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
+	return c.gitAfterListing(false, dir, stdin, env, args...)
+}
+
+// gitAfterListing is git. With endAtDeadline set, a deadline that passed by the
+// end of the config listing starts no call. The hash-object call of the files
+// does not start then (4c111e86 and 87375cc7, measured on Linux, and 4c111e86 on
+// Windows). That call is a helper of the deadline kill. After the kill the check
+// does not wait for it on Windows (87375cc7, measured), and on Linux and macOS it
+// waits at most fileHashGrace for its stdout (awaitFileHash).
+func (c *contentCheck) gitAfterListing(endAtDeadline bool, dir string, stdin []byte, env []string, args ...string) ([]byte, string, error) {
+	var track func(*os.Process)
+	unreserve := func() {}
 	s := c.u.stop
-	if s != nil {
+	if endAtDeadline && c.kills != nil && s != nil {
+		kills := c.kills
+		unreserve = kills.reserve()
+		track = func(p *os.Process) { kills.trackOnce(p, unreserve) }
+		s = &gitStop{wide: s.wide, beforeReap: track, beforeStart: kills.refuseStart}
+	} else if s != nil {
 		s = &gitStop{wide: s.wide}
 	}
 	ctx := s.context()
 	cmd := c.cmd(ctx, dir, args...)
+	if endAtDeadline && c.pastDeadline() {
+		unreserve()
+		return nil, "", errContentDeadline
+	}
 	cmd.Env = append(cmd.Env, env...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	out, err := gitOutput(ctx, cmd)
-	return out, errBuf.String(), err
+	if s == nil || track == nil {
+		out, err := gitOutput(ctx, cmd)
+		return out, errBuf.String(), err
+	}
+	ended := make(chan fileHashEnd, 1)
+	go func() {
+		out, err := gitOutput(ctx, cmd)
+		unreserve()
+		ended <- fileHashEnd{out, err}
+	}()
+	r, ok := awaitFileHash(ended, c.kills.firedCh, fileHashGrace())
+	if !ok {
+		return nil, "", errContentDeadline
+	}
+	return r.out, errBuf.String(), r.err
 }
 
 // cmd builds one call of the check in dir, after its config listing: b3081b51
@@ -463,6 +503,10 @@ func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
 			}
 			c.read++
 			return body, ""
+		case errors.Is(err, errContentDeadline):
+			return nil, err.Error()
+		case c.endedByKill(err): // also a hash-object that fails by itself after the kill: its stop line is not written
+			return nil, errContentDeadline.Error()
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))
 			c.stopped = true
@@ -675,7 +719,7 @@ func (c *contentCheck) worktreeIDs(files []contentFile) (ids []string, failed bo
 		}
 		in.WriteString(p + "\n")
 	}
-	out, _, err := c.git(c.repo, []byte(in.String()), nil, "hash-object", "--no-filters", "--stdin-paths")
+	out, _, err := c.gitAfterListing(true, c.repo, []byte(in.String()), nil, "hash-object", "--no-filters", "--stdin-paths")
 	if err != nil {
 		return nil, !isGitStop(err)
 	}

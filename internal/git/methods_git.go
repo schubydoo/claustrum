@@ -2867,9 +2867,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if p.WorktreeRoot != "" {
 			recheckLocation(*checkUse, repo)
 		}
-		// At a read of the check that sees the timeoutMs deadline, the check stops and the deadline
-		// test below answers (4c111e86, measured on Linux with a batch that did not answer). On Windows
-		// it logs the stop after 2 objects (measured). The LFS keep time does not count (keepWithinDeadline, claustrum's own).
+		// At a step of the check that sees the timeoutMs deadline, the check stops and the deadline
+		// test below answers (contentCheck.pastDeadline). The LFS keep time does not count
+		// (keepWithinDeadline, claustrum's own).
 		var checkDeadline context.Context
 		if p.TimeoutMs > 0 {
 			checkDeadline = callerCtx
@@ -2902,7 +2902,7 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// which the pass lists nothing.
 	//
 	// Best-effort: the worktree exists, so a copy failure does not fail the request.
-	// After a content check with a read that saw the deadline the copy step runs
+	// After a content check that saw the deadline the copy step runs
 	// only the config listing of its `.claude/` pass (dotClaudeListingOnly).
 	if checkStopped {
 		dotClaudeListingOnly(req.use, repo)

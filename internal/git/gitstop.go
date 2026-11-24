@@ -98,6 +98,12 @@ type gitStop struct {
 	// wide is the count of the daemon's requests with "shadowDirOff":true that
 	// have not answered yet.
 	wide *atomic.Int32
+	// beforeReap, when set, runs after the start of a call and before its wait.
+	// It returns after the exit of git and reaps nothing (helperKills.runTracked).
+	beforeReap func(*os.Process)
+	// beforeStart, when set, is the last test before the start of a call. Its
+	// error is the error of the call, and no process starts (helperKills).
+	beforeStart func() error
 
 	mu      sync.Mutex
 	stopped *gitStopped
@@ -242,10 +248,18 @@ func gitRunLimited(s *gitStop, kind gitLimit, toEOF bool, cmd *exec.Cmd) error {
 		}
 	} else {
 		cmd.WaitDelay = gitDrainWait
+		if s.beforeStart != nil {
+			if err := s.beforeStart(); err != nil {
+				return err
+			}
+		}
 		if err := cmd.Start(); err != nil {
 			return err
 		}
 		arm()
+		if s.beforeReap != nil {
+			s.beforeReap(cmd.Process)
+		}
 		err = cmd.Wait()
 	}
 	mu.Lock()

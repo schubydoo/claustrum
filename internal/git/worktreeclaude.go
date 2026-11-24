@@ -108,15 +108,14 @@ func copyDotClaude(u gitUse, repo, worktree string) {
 	copyClaudeDirCalls(u, repo, worktree, claudeDirPassCalls(repo, gitArgvBudget))
 }
 
-// dotClaudeListingOnly runs the config listing of the first call of the
-// `.claude/` pass, and no call. After a content check that stopped at the
-// timeoutMs deadline, 4c111e86 runs that listing and no `ls-files` call
-// (measured on Linux with a batch that did not answer). Claustrum's own, not
-// measured: the same after a batch that answered or a stop seen at a read per
-// folder depth, no listing with no child of `.claude/`, and no
-// `.worktreeinclude` pass.
+// dotClaudeListingOnly runs the config listing of the `.claude/` pass, and no
+// call. After a content check that stopped at the timeoutMs deadline, 4c111e86
+// and 87375cc7 run that listing and no `ls-files` call, also when `.claude/`
+// holds only `worktrees` (measured on Linux, and 4c111e86 on Windows). Claustrum's
+// own, not measured: a stop seen at a read per folder depth, no listing with no
+// `.claude/` folder, the listing with an empty one, and no `.worktreeinclude` pass.
 func dotClaudeListingOnly(u gitUse, repo string) {
-	if len(claudeDirPassCalls(repo, gitArgvBudget)) == 0 {
+	if fi, err := os.Stat(filepath.Join(repo, claudeDirName)); err != nil || !fi.IsDir() {
 		return
 	}
 	u.live.perCallGate()
