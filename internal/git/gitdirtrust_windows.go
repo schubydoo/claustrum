@@ -152,6 +152,13 @@ var leafResolvesByHandle = true
 // (measured on Windows).
 var removeNamesStrayFile = true
 
+// removeRereadsRefusedConfig is false on Windows: a remove runs its settings
+// gate one time after a refused config (removeGate). 87375cc7 and 4c111e86
+// make one read and one `git version` call for a syntax error (measured on
+// Windows). Format version 3 and the other refusals follow it (claustrum's own,
+// not measured).
+var removeRereadsRefusedConfig = false
+
 // removeRegistrationsLinked reports whether the registrations folder dir is a
 // junction or a directory symbolic link. Go reports a junction as ModeIrregular.
 // A remove of a worktree folder that exists then deletes nothing and answers

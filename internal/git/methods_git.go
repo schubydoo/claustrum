@@ -3071,7 +3071,9 @@ func makeRefusedLeafParents(p *gitParams, repo string) {
 // other method makes one. With a syntax error it makes the read and its `git
 // version` call two times (measured on Linux, 3 of 3 runs, and on macOS). A
 // refusal of another file of the git directory takes the same way: it makes
-// no git call (not measured).
+// no git call (not measured). On Windows 87375cc7 and 4c111e86 make the read
+// and its `git version` call one time for a syntax error
+// (removeRereadsRefusedConfig, measured on Windows).
 //
 // After a gate that passed, the later git commands follow the off switch
 // (measured on Linux). A later gate runs one time (claustrum's own, not
@@ -3086,7 +3088,7 @@ func makeRefusedLeafParents(p *gitParams, repo string) {
 // answer that is good, and the other bad answers, which get no more calls.
 func (req *gitCall) removeGate(t gitDirTrust, off rpc.JSONTrueSwitch, repo string) (msg string, noRepo bool) {
 	msg, noRepo = req.settingsGateRefusal(t, off, repo)
-	if req.gitRefused || req.configRefused {
+	if req.gitRefused || (req.configRefused && removeRereadsRefusedConfig) {
 		msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	}
 	if req.gitDisagreed {

@@ -81,6 +81,11 @@ var leafResolvesByHandle = false
 // there (not measured). It is a variable so that a test on Linux can set it.
 var removeNamesStrayFile = false
 
+// removeRereadsRefusedConfig is true on Linux and macOS: a remove runs its
+// settings gate one more time after a refused config (removeGate). It is a
+// variable so that a test on Linux can set it.
+var removeRereadsRefusedConfig = true
+
 // removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
 // of a worktree folder that exists refuses such a folder (measured on Linux and
 // macOS).
