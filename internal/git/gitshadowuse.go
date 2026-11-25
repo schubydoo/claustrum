@@ -51,7 +51,7 @@ type gitUse struct {
 	read    *repoVerdict
 	noRenew bool
 	// noRecheck skips recheck before a call. The calls after the checkout of a
-	// create set it (worktreecontent.go).
+	// create set it, except the content check (worktreecontent.go).
 	noRecheck bool
 	// atReply takes the removal of a short-lived folder that stays until the
 	// reply of the request (gitCall.runAtReply), or it is nil.
