@@ -337,8 +337,9 @@ real paths. The calls with `--git-dir=`, the call about the repository and the
 failed `--attr-source` probe and the letter case of the `GIT_DIR` name. A `git.info`
 after one on another repository makes the read of the config again (measured). With a
 daemon `GIT_DIR` of another repository, `git.info`, a create and a remove in a second
-repository make no call on the daemon's repository: each call in a repository runs on
-the second one (measured). The other methods there are claustrum's own, not measured. A relative
+repository with a trusted walk make no call on the daemon's repository: each call in a
+repository runs on the second one (measured). A refused walk keeps the daemon verdict
+([the trust check](git-rules-trust.md#git-directory-trust-check)). The other methods there are claustrum's own, not measured. A relative
 daemon `GIT_DIR` keeps the rules above (claustrum's own, not measured).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
 
