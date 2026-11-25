@@ -234,6 +234,37 @@ func daemonCommonDirStays() bool {
 	return daemonCommonDirSet() && os.Getenv("GIT_DIR") == ""
 }
 
+// daemonGitDirSkipped reports whether a request with a copy runs as with no
+// GIT_DIR in the daemon's environment: on Windows, with a daemon GIT_DIR and no
+// daemon GIT_COMMON_DIR (copyPinsWalkGitDir).
+//
+// 87375cc7 does so on Windows for a plain repository, for a folder behind a
+// junction with GIT_DIR spelled through it, and with GIT_DIR at the real path
+// (measured on Windows). git.info, git.status, a create and a remove there have
+// the calls of a request with no daemon GIT_DIR. Each pinned call carries
+// GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
+// --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
+// a git.info on another repository reads the config of its own one. A daemon
+// GIT_DIR that names another repository than the walk is claustrum's own, not
+// measured: the copy follows the walk.
+func daemonGitDirSkipped() bool {
+	return copyPinsWalkGitDir && os.Getenv("GIT_DIR") != "" && !daemonCommonDirSet()
+}
+
+// copyTrust is the verdict t of the trust check on dir as the copy of a request
+// takes it. With daemonGitDirSkipped a trusted t gives way to the verdict of the
+// walk from dir, when that walk finds a trusted git directory. The refusals of
+// the check stay those of the daemon's GIT_DIR.
+func copyTrust(t gitDirTrust, dir string) gitDirTrust {
+	if !daemonGitDirSkipped() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return t
+	}
+	if w := trustWithGitDir(dir, ""); w.verdict == gitDirTrusted && w.pinCommonDir != "" {
+		return w
+	}
+	return t
+}
+
 // requestGitDirTrust runs the check for one method. readMethod is true for git.info
 // and git.list_branches, which skip the check when the daemon's environment carries
 // GIT_COMMON_DIR. git.status, git.worktree_create and git.worktree_remove check anyway.
@@ -269,6 +300,12 @@ func commonDirPinEnv(dir string) []string {
 // gitDirTrustFor finds and judges the git directory for dir. A dir that does not
 // resolve to an existing directory is left to git, which answers for itself.
 func gitDirTrustFor(dir string) gitDirTrust {
+	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+}
+
+// trustWithGitDir is gitDirTrustFor with gd in the place of the daemon's GIT_DIR.
+// An empty gd walks from dir.
+func trustWithGitDir(dir, gd string) gitDirTrust {
 	if dir == "" {
 		dir = "."
 	}
@@ -285,7 +322,7 @@ func gitDirTrustFor(dir string) gitDirTrust {
 	// A GIT_DIR in the daemon's environment is inherited by git, so that directory is
 	// the one judged, for every request directory. A relative value is taken relative
 	// to the request directory, as git takes it.
-	if gd := os.Getenv("GIT_DIR"); gd != "" {
+	if gd != "" {
 		if !filepath.IsAbs(gd) {
 			gd = filepath.Join(start, gd)
 		}

@@ -363,7 +363,7 @@ var probeDropNames = []string{
 // and macOS `/private/tmp/o` (measured). A root with no parent folder is not
 // measured.
 func probeEnv(dir, root string) []string {
-	env := slices.DeleteFunc(listingEnvBase(), func(kv string) bool {
+	env := slices.DeleteFunc(withoutSkippedGitDir(listingEnvBase()), func(kv string) bool {
 		return slices.Contains(probeNames, envName(kv)) || slices.Contains(probeDropNames, envName(kv))
 	})
 	probe := filepath.Join(dir, shadowProbeName)
@@ -738,10 +738,12 @@ func sameProbeFolder(a, b string) bool {
 // makes the call: the state is shadow and the trust check pinned a git
 // directory. With a GIT_DIR or a GIT_COMMON_DIR in the daemon's own environment
 // no call of the request names a copy (gitUse.names), and the call is not
-// measured there: claustrum makes none.
+// measured there: claustrum makes none. On Windows a daemon GIT_DIR alone keeps
+// the call (daemonGitDirSkipped). 87375cc7 makes it once in git.info and twice
+// in a create there, in the real folder of the walk (measured on Windows).
 func (h *ShadowHost) asksGit(t gitDirTrust, off bool) bool {
 	return !off && t.verdict == gitDirTrusted && t.pinCommonDir != "" && h.control(false) == controlShadow &&
-		!daemonCommonDirSet() && os.Getenv("GIT_DIR") == ""
+		!daemonCommonDirSet() && (os.Getenv("GIT_DIR") == "" || daemonGitDirSkipped())
 }
 
 // recheck asks git again before a call of the request in dir, when the kept

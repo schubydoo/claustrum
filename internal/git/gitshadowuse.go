@@ -767,11 +767,12 @@ func (u gitUse) addNamesCopy(dir string) bool {
 
 // namesCopy is names with no test of the daemon's own GIT_COMMON_DIR. It tells
 // whether a call in dir names the copy of this request when that variable is gone.
+// On Windows the verdict of a daemon GIT_DIR gives way to the walk (copyTrust).
 func (u gitUse) namesCopy(dir string) (gitDirTrust, bool) {
 	if !u.shadow() {
 		return gitDirTrust{}, false
 	}
-	t := gitDirTrustFor(dir)
+	t := copyTrust(gitDirTrustFor(dir), dir)
 	// A create that holds its git directory keeps the verdict of its gate for
 	// its baseRepo, as long as the trust check finds a git directory there.
 	// After a symbolic link to a copy of the git directory was put at `.git`,
@@ -843,7 +844,8 @@ func (u gitUse) commonVars() []string {
 // 5fd08069 each such call has GIT_DIR=<the daemon's value>, the profile values,
 // GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<that git directory>/objects,
 // in this order (measured on Linux, 27 calls). A relative GIT_DIR of the daemon
-// is not measured.
+// is not measured. On Windows the call gets all four variables of the walk
+// instead (daemonGitDirSkipped).
 func (u gitUse) pin(dir string) []string {
 	t, ok := u.names(dir)
 	if !ok {
@@ -863,7 +865,7 @@ func (u gitUse) pin(dir string) []string {
 	if t.worktreeEntry != "" {
 		gitDir = t.worktreeEntry
 	}
-	if os.Getenv("GIT_DIR") != "" {
+	if os.Getenv("GIT_DIR") != "" && !daemonGitDirSkipped() {
 		return u.commonVars()
 	}
 	env := append(u.commonVars(), "GIT_DIR="+gitDir)

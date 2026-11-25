@@ -193,7 +193,7 @@ func precursorEnv(heavy bool, pin []string) []string {
 
 // precursorEnvWith is precursorEnv with the profile given by the caller.
 func precursorEnvWith(profile, pin []string) []string {
-	env := append(withoutDaemonSSH(listingEnvBase(), profile), profile...)
+	env := append(withoutDaemonSSH(daemonPartFor(listingEnvBase(), pin), profile), profile...)
 	env = append(env, pin...)
 	return append(env, "LC_ALL=C", "LANGUAGE=C")
 }
@@ -232,6 +232,40 @@ func withoutDaemonSSH(daemon, profile []string) []string {
 	})
 }
 
+// withoutSkippedGitDir is env without its GIT_DIR entries when the daemon's
+// GIT_DIR is skipped (daemonGitDirSkipped), and env itself otherwise. On Windows
+// the name matches in any letter case (claustrum's own, not measured).
+func withoutSkippedGitDir(env []string) []string {
+	if !daemonGitDirSkipped() {
+		return env
+	}
+	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		name := envName(kv)
+		if gitEnvHere.windows {
+			name = strings.ToUpper(name)
+		}
+		return name == "GIT_DIR"
+	})
+}
+
+// daemonPartFor is daemon, the daemon's part of the environment of a call with
+// pin, without a skipped GIT_DIR (withoutSkippedGitDir) when pin names the copy
+// of a request. A pinned call then has the GIT_DIR of its pin only, and a call
+// with --git-dir= has none (87375cc7, measured on Windows).
+func daemonPartFor(daemon, pin []string) []string {
+	if !pinNamesCopy(pin) {
+		return daemon
+	}
+	return withoutSkippedGitDir(daemon)
+}
+
+// pinNamesCopy reports whether pin holds GIT_OBJECT_DIRECTORY. Of the pins of a
+// call only those of a copy set it (gitUse.commonVars, gitUse.gitDirPin, from the
+// code).
+func pinNamesCopy(pin []string) bool {
+	return slices.ContainsFunc(pin, func(kv string) bool { return strings.HasPrefix(kv, "GIT_OBJECT_DIRECTORY=") })
+}
+
 // hardenedGitEnv builds the environment for a hardened git command: the daemon's
 // own environment as a git child gets it (gitChildEnv), without GIT_CONFIG and
 // GIT_CONFIG_PARAMETERS, less GIT_CONFIG_COUNT
@@ -256,7 +290,7 @@ func hardenedEnvFrom(daemon []string, heavy bool, pin, hooks []string) []string 
 
 // hardenedEnvWith is hardenedEnvFrom with the profile part given by the caller.
 func hardenedEnvWith(daemon, profile, pin, hooks []string) []string {
-	base := dropConfigOverrides(withoutDaemonSSH(daemon, profile))
+	base := dropConfigOverrides(withoutDaemonSSH(daemonPartFor(daemon, pin), profile))
 	// A refused count gives 0 here.
 	count, _ := inheritedConfigProblem(base)
 	env := append(withoutConfigCountSet(base), profile...)
@@ -1448,15 +1482,26 @@ func attrSourceArgs() []string {
 // probe (4c111e86, measured on Linux), and exit 0 there is "not supported".
 // Every other failure is "unknown": known is false. That covers a run that did not
 // start, a run that a signal ended and a failed `git version`.
+//
+// On Windows a daemon GIT_DIR does not go to the probe (daemonGitDirSkipped,
+// 87375cc7, measured on Windows). The `git version` after it follows the probe
+// (claustrum's own, not measured).
 func probeAttrSource() (supported, known bool) {
-	err := gitOutsideCmd(nil, "--attr-source="+gitEmptyTree, "version").Run()
+	err := attrProbeCmd("--attr-source="+gitEmptyTree, "version").Run()
 	if err == nil {
 		return true, true
 	}
 	if !exitedWithCode(err) {
 		return false, false
 	}
-	return false, gitOutsideCmd(nil, "version").Run() == nil
+	return false, attrProbeCmd("version").Run() == nil
+}
+
+// attrProbeCmd is the command of one call of probeAttrSource.
+func attrProbeCmd(args ...string) *exec.Cmd {
+	cmd := gitOutsideCmd(nil, args...)
+	cmd.Env = withoutSkippedGitDir(cmd.Env)
+	return cmd
 }
 
 var (

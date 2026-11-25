@@ -1342,6 +1342,11 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 		}
 		return "", false
 	}
+	// On Windows a daemon GIT_DIR gives the copy the git directory of the walk
+	// (copyTrust).
+	if !off {
+		t = copyTrust(t, dir)
+	}
 	var read *repoVerdict
 	if ask && req.shadow.asksGit(t, bool(off)) {
 		if a := req.shadow.askGit(t, dir); a.bad() {

@@ -71,6 +71,11 @@ var startNameRefuses = func(error) bool { return false }
 // Linux can set it.
 var walkStartsAsSpelled = false
 
+// copyPinsWalkGitDir is false on Linux and macOS. With a daemon GIT_DIR the calls of
+// a request with a copy keep that variable there (gitUse.pin). It is a variable so
+// that a test on Linux can set it.
+var copyPinsWalkGitDir = false
+
 // baseRepoWalksAsSpelled is false on Linux and macOS. The trust-root test of baseRepo and
 // the git.list_branches path test walk with filepath.EvalSymlinks there (linkWalkFails).
 // It is a variable so that a test on Linux can set it.

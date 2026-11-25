@@ -150,6 +150,10 @@ var startNameRefuses = func(err error) bool { return errors.Is(err, windows.ERRO
 // (walkStart). It is a variable so that a test can set it.
 var walkStartsAsSpelled = true
 
+// copyPinsWalkGitDir is true on Windows: with a daemon GIT_DIR a request with a copy
+// runs as with no daemon GIT_DIR (daemonGitDirSkipped).
+var copyPinsWalkGitDir = true
+
 // baseRepoWalksAsSpelled is true on Windows. The trust-root test of baseRepo and the
 // git.list_branches path test walk the path as sent (spelledWalkFails).
 var baseRepoWalksAsSpelled = true

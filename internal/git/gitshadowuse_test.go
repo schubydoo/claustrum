@@ -112,6 +112,7 @@ func TestGitUseFolderVariables(t *testing.T) {
 	t.Run("daemon GIT_DIR", func(t *testing.T) {
 		// The daemon's own GIT_DIR stays at its place in the environment: the
 		// call gets the two first variables only (measured on Linux).
+		setCopyPinsWalkGitDir(t, false)
 		t.Setenv("GIT_DIR", f.gitDir)
 		if got := u.pin(f.repo); !slices.Equal(got, common) {
 			t.Errorf("pin = %q\nwant %q", got, common)
