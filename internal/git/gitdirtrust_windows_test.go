@@ -195,8 +195,10 @@ func TestGitDirTrustShortNamePinWindows(t *testing.T) {
 // TestShortDaemonGitDirRootPairWindows: git.info with "shadowDirOff":true and
 // a daemon GIT_DIR at the 8.3 spelling of the repository's own `.git`. The two
 // calls with --git-dir= run in the long spelling and carry it in --git-dir= and
-// GIT_COMMON_DIR. GIT_DIR keeps the short one. 87375cc7 does so (measured on
-// Windows). Mutation: in gitInfo pass u.gitDirPin to gitInfoRoot.
+// GIT_COMMON_DIR. GIT_DIR keeps the short one. 87375cc7 does so for short folder
+// names above .git (measured on Windows). A short name of .git itself is
+// claustrum's own, not measured. Mutation: in gitInfo pass u.gitDirPin to
+// gitInfoRoot.
 func TestShortDaemonGitDirRootPairWindows(t *testing.T) {
 	f := newShadowFixture(t)
 	repo, gitDir := configRepo(t)
