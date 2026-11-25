@@ -735,7 +735,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// before the list of the profile (gitUse.checkoutFront).
 		list = append(list, u.checkoutFront(gitDir)...)
 		// doorReadBeforeListing is true on every system. This branch runs only
-		// when a test sets it false as a mutation (gitsshdoor_checkout_test.go).
+		// when the const is edited to false as a mutation (gitsshdoor_checkout_test.go).
 		if !doorReadBeforeListing {
 			if err := readDoor(); err != nil {
 				return "", false, err
