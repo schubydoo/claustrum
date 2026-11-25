@@ -322,7 +322,7 @@ func openAddStage(u gitUse) (*addStage, error) {
 	if errors.Is(err, fs.ErrExist) {
 		err = nil
 		if fi, statErr := st.git.Lstat(worktreesSubdir); statErr == nil && !goesAsTree(fi.Mode()) {
-			err = errors.New(quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory")
+			err = &worktreesNotFolder{text: quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory", file: fi.Mode().IsRegular()}
 		}
 	}
 	var regs []registrationCopy
@@ -781,10 +781,26 @@ func stagedOtherEntryRefusal(leaf string) *addRefused {
 // other failed steps are not measured in attach mode: they get the same rule.
 // On Linux and macOS the refusal of worktreesFolderRefusal is such an error
 // too. offLink marks the refusal of offWorktreesRefusal.
+//
+// ownWords marks a file at `<git dir>\worktrees` on Windows. 87375cc7 and
+// 4c111e86 then answer `cannot add a worktree: ` and the text, also in attach
+// mode, with the second listing of an attach add (measured on Windows). With
+// "shadowDirOff":true it marks the text of offWorktreesRefusal (measured on
+// Windows, attach mode claustrum's own).
 type addNotPrepared struct {
-	text    string
-	offLink bool
+	text     string
+	offLink  bool
+	ownWords bool
 }
+
+// worktreesNotFolder is the error of openAddStage for an entry `worktrees`
+// of the git directory that is no real folder. file says it is a regular file.
+type worktreesNotFolder struct {
+	text string
+	file bool
+}
+
+func (e *worktreesNotFolder) Error() string { return e.text }
 
 func (e *addNotPrepared) Error() string { return e.text }
 
@@ -840,7 +856,9 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 		if errors.As(err, &refsErr) {
 			return "", &addOwnFiles{text: refsCopyText + refsErr.text}
 		}
-		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error()}
+		var notFolder *worktreesNotFolder
+		file := errors.As(err, &notFolder) && notFolder.file
+		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error(), ownWords: stagedAddWindowsSteps && file}
 	}
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)

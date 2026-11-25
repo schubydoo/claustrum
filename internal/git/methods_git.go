@@ -1140,8 +1140,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 //
 // The test does not follow a link. A symbolic link to a real folder there
 // gives no pair, also when that folder holds a registration (measured on
-// Linux). A broken link, a file and a Windows junction give none either (not
-// measured).
+// Linux). A broken link and a Windows junction give none either (not
+// measured). On Windows a file there gives the pair, but not with the member
+// (87375cc7 and 4c111e86, measured on Windows). A file on Linux and macOS
+// gives none (not measured).
 //
 // The calls are gitDirWorkTreeToplevel in the common git directory of gitDir.
 // For a linked baseRepo that is the `.git` of the main repository, not the
@@ -1164,7 +1166,8 @@ func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, mem
 	registrations := gitDirRegistryDir(gitDir)
 	fi, err := os.Lstat(registrations)
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
-	if !missing && (err != nil || !fi.IsDir()) {
+	fileRuns := stagedAddWindowsSteps && !member && err == nil && fi.Mode().IsRegular()
+	if !missing && !fileRuns && (err != nil || !fi.IsDir()) {
 		return nil
 	}
 	run := func() {
@@ -2121,6 +2124,16 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	var swappedLate *addSwappedAfterListing
 	if copyGone(addErr) || errors.As(addErr, &ownFiles) || errors.As(addErr, &swappedLate) {
 		return refuseAdd(addErr.Error())
+	}
+	// On Windows a file at `<git dir>\worktrees` starts the text with `cannot
+	// add a worktree: `, after the pair, and an attach add runs its second
+	// listing first (addNotPrepared.ownWords, 87375cc7, measured on Windows).
+	var ownWords *addNotPrepared
+	if errors.As(addErr, &ownWords) && ownWords.ownWords {
+		if attachBranch != "" {
+			offLinkListing(baseCtx, req.use, repo)
+		}
+		return refuseAdd("cannot add a worktree: " + ownWords.text)
 	}
 	// A stopped attach add gets no fallback, so one add runs, as on 5fd08069
 	// (measured on Linux).

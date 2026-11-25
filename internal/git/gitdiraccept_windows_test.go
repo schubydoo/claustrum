@@ -368,7 +368,8 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 // TestAttachWithAFileAtWorktreesOnWindows must match a measured case (on
 // Windows, 2 of 2 runs). A create with `existingBranch` finds a file at
 // `.git\worktrees`. 5fd08069 answers the text of that step one time and
-// makes no second add with a new branch. Without the rule of addNotPrepared
+// makes no second add with a new branch. 87375cc7 starts that text with
+// `cannot add a worktree: ` (measured on Windows). Without the rule of addNotPrepared
 // the text has a second part, `(attaching to the existing branch eb was
 // refused first: …)`.
 func TestAttachWithAFileAtWorktreesOnWindows(t *testing.T) {
@@ -392,7 +393,7 @@ func TestAttachWithAFileAtWorktreesOnWindows(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &reply); err != nil {
 		t.Fatalf("the reply %s: %v", raw, err)
 	}
-	want := "git worktree add failed: cannot prepare the repository's worktrees directory: " + quoteOperand(worktrees) + " is not a directory"
+	want := "cannot add a worktree: cannot prepare the repository's worktrees directory: " + quoteOperand(worktrees) + " is not a directory"
 	if reply.Result.Success || reply.Result.Error != want || reply.Result.ErrorCode != "worktree_add_failed" {
 		t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
 	}
