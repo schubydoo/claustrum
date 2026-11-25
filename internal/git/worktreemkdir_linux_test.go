@@ -44,40 +44,39 @@ func TestRepoParentsWalkByHandles(t *testing.T) {
 }
 
 // TestRepoParentsInAReadDeniedRepo: a repo of mode 0300 has write and search
-// permission and no read permission. The parent step still makes `.claude` and
-// `.claude/worktrees` there, as a mkdir by path did (claustrum's own, not
-// measured). Mutation: open the repo with O_RDONLY, and the step fails with
-// `mkdirat .claude: permission denied`.
+// permission and no read permission. The parent step cannot open it, reads
+// "open <repo>: permission denied" and makes nothing, as 87375cc7 does (measured
+// on Linux). Mutation: open the repo with O_PATH, and the folders are made.
 func TestRepoParentsInAReadDeniedRepo(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the permission bits this case relies on")
 	}
 	repo := t.TempDir()
+	want := "open " + resolvedDir(repo) + ": permission denied"
 	chmodForTest(t, repo, 0o300)
 	dir := filepath.Join(repo, ".claude", "worktrees")
-	if err := mkdirRepoWorktreeParents(repo, dir); err != nil {
-		t.Fatalf("mkdirRepoWorktreeParents = %v, want nil", err)
+	if err := mkdirRepoWorktreeParents(repo, dir); err == nil || err.Error() != want {
+		t.Fatalf("mkdirRepoWorktreeParents = %v, want %s", err, want)
 	}
-	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
-		t.Errorf(".claude/worktrees: %v, want a folder", err)
+	if _, err := os.Lstat(filepath.Join(repo, ".claude")); !os.IsNotExist(err) {
+		t.Errorf(".claude: %v, want none", err)
 	}
 }
 
-// TestLeafPathEnds: the leaf keeps the name of worktreePath. A path that ends in
-// `/.` makes nothing and reads `mkdirat .: no such file or directory`, as a mkdir
-// by path did. A trailing slash makes the leaf. A path of PATH_MAX bytes or more
-// reads `mkdirat <leaf>: file name too long`, also when its parent is shorter
-// (claustrum's own, not measured on 87375cc7). Mutations: clean the path (the
-// dot case makes wt), or drop the length test (the long leaf is made).
+// TestLeafPathEnds: a path that ends in `/.` makes the folder before the dot, as
+// 87375cc7 does (measured on Linux). A trailing slash makes the leaf. A path of
+// PATH_MAX bytes or more reads `mkdirat <leaf>: file name too long`, also when its
+// parent is shorter (claustrum's own, not measured). Mutations: trim only the
+// slashes (the dot case fails with mkdirat .), or drop the length test (the long
+// leaf is made).
 func TestLeafPathEnds(t *testing.T) {
 	base := t.TempDir()
 	dot := filepath.Join(base, "wt") + "/."
-	err := mkdirWorktreeLeaf(dot)
-	if err == nil || err.Error() != "mkdirat .: no such file or directory" {
-		t.Errorf("mkdirWorktreeLeaf(%q) = %v, want mkdirat .: no such file or directory", dot, err)
+	if err := mkdirWorktreeLeaf(dot); err != nil {
+		t.Errorf("mkdirWorktreeLeaf(%q) = %v, want nil", dot, err)
 	}
-	if _, err := os.Lstat(filepath.Join(base, "wt")); !os.IsNotExist(err) {
-		t.Errorf("wt after the dot path: %v, want none", err)
+	if fi, err := os.Lstat(filepath.Join(base, "wt")); err != nil || !fi.IsDir() {
+		t.Errorf("wt after the dot path: %v, want a folder", err)
 	}
 	if err := mkdirWorktreeLeaf(filepath.Join(base, "ws") + "/"); err != nil {
 		t.Errorf("mkdirWorktreeLeaf with a trailing slash = %v, want nil", err)

@@ -16,12 +16,13 @@ import (
 // makes the leaf by a mkdirat through a handle of its parent (measured on Linux).
 // A failure reads `mkdirat <leaf>: <errno>`, also when the parent cannot be
 // opened. That string is wire-visible in the mkdir_failed frame (7d193f89,
-// measured). The leaf is worktreePath less its trailing slashes, not cleaned, so a
-// path that ends in `/.` makes nothing. A path of PATH_MAX bytes or more fails
-// with ENAMETOOLONG, as a mkdir by path does (claustrum's own, not measured).
+// measured). The leaf is worktreePath cleaned, so a path that ends in `/.` makes
+// the folder before the dot. 87375cc7 then succeeds (measured on Linux). A path of
+// PATH_MAX bytes or more fails with ENAMETOOLONG, as a mkdir by path does
+// (claustrum's own, not measured).
 func mkdirWorktreeLeaf(worktreePath string) error {
-	leaf := strings.TrimRight(worktreePath, "/")
-	name := filepath.Base(worktreePath)
+	leaf := filepath.Clean(worktreePath)
+	name := filepath.Base(leaf)
 	if len(worktreePath) >= unix.PathMax {
 		return &fs.PathError{Op: "mkdirat", Path: name, Err: unix.ENAMETOOLONG}
 	}
@@ -62,15 +63,14 @@ func mkdirRepoWorktreeParents(repo, dir string) error {
 	}
 	p := resolvedDir(repo)
 	names := strings.Split(rel, string(filepath.Separator))
-	// The repo is opened as a path handle, so a repo with write and search
-	// permission and no read permission still works, as a mkdir by path did. A
-	// repo that cannot be opened names the first component (claustrum's own, not
-	// measured).
+	// A repo that cannot be opened, also one of mode 0300, reads "open <repo>:
+	// <errno>" (87375cc7, measured on Linux). <repo> has its symlinks resolved
+	// (claustrum's own, not measured).
 	fd, err := retryEINTR(func() (int, error) {
-		return unix.Open(p, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		return unix.Open(p, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	})
 	if err != nil {
-		return &fs.PathError{Op: "mkdirat", Path: names[0], Err: err}
+		return &fs.PathError{Op: "open", Path: p, Err: err}
 	}
 	defer func() { _ = unix.Close(fd) }()
 	for _, name := range names {
