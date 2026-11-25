@@ -234,8 +234,10 @@ func gitInfo(req *gitCall) rpc.Response {
 	// With "shadowDirOff":true a daemon GIT_DIR keeps its verdict on Windows
 	// (gitDirTrustFor, 87375cc7, measured on Windows).
 	offDaemon := bool(p.ShadowDirOff) && daemonGitDirSkipped()
-	if d := daemonGitDirVerdict(p.Path); offDaemon && !d.unsearchable {
-		t = d
+	if offDaemon {
+		if d := daemonGitDirVerdict(p.Path); !d.unsearchable {
+			t = d
+		}
 	}
 	if t.verdict == gitDirRefused {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
