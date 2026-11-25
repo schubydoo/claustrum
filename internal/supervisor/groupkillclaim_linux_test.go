@@ -152,7 +152,8 @@ func TestEndMarksOnlyALandedKillForTheCount(t *testing.T) {
 
 // TestEndLogsTheTermLineAfterItsKill: the SIGTERM line of the end comes after its
 // SIGKILL, and after the refusal line of a refused one. A shutdown in the wait after the
-// SIGTERM logs no SIGTERM line (87375cc7, measured on Linux). The kill call is a fake.
+// SIGTERM logs no SIGTERM line (87375cc7 outside its race of a second SIGKILL,
+// measured on Linux). The kill call is a fake.
 func TestEndLogsTheTermLineAfterItsKill(t *testing.T) {
 	oldTerm, oldBound := groupTermAfter, groupKillBound
 	groupTermAfter, groupKillBound = 30*time.Millisecond, 2*time.Second

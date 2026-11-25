@@ -87,7 +87,8 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	}
 	p.sendHeldEndKill(pid)
 	// 87375cc7 logs the SIGTERM line after the SIGKILL of the end, and after its refusal
-	// line. A shutdown in the wait logs none (measured on Linux). After a client KILL that
+	// line. A shutdown in the wait logs none, except in its race of a second SIGKILL
+	// (measured on Linux). After a client KILL that
 	// ended the wait, the line still goes (claustrum's own, not measured).
 	if termed {
 		logging.Infof("[process.Manager] Process %s exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL", LogID(p.id))
