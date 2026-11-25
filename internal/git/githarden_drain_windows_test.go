@@ -10,7 +10,7 @@ import (
 )
 
 // On Windows a read-tree call that the deadline stops gets no stdout drain.
-// 87375cc7 answers right at the stop while a process holds only the stdout of
+// 87375cc7 answers within 0.5 s of the stop while a process holds only the stdout of
 // git, and it waits for a process that holds stderr too (measured on Windows).
 // The stub starts a child that holds its output for 10 s, and the deadline
 // fires once that child runs. The drain cap is longer than the hold.
