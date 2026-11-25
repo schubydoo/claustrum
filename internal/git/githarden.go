@@ -262,10 +262,20 @@ func daemonPartFor(daemon, pin []string) []string {
 }
 
 // pinNamesOtherGitDir reports whether pin sets GIT_COMMON_DIR to another folder
-// than the daemon's GIT_DIR.
+// than the common git directory of the daemon's GIT_DIR, as the trust check
+// judges it (gitDirTrustFor). A daemon GIT_DIR of a linked-worktree entry has the
+// main git directory there (claustrum's own, not measured).
 func pinNamesOtherGitDir(pin []string) bool {
 	v, ok := lookupExact(pin, "GIT_COMMON_DIR")
-	return ok && daemonGitDirSkipped() && !sameProbeFolder(v, os.Getenv("GIT_DIR"))
+	if !ok || !daemonGitDirSkipped() {
+		return false
+	}
+	gd := os.Getenv("GIT_DIR")
+	common := judgeGitDir(realParentPath(gd), true).pinCommonDir
+	if common == "" {
+		common = gd
+	}
+	return !sameProbeFolder(v, common)
 }
 
 // pinNamesCopy reports whether pin holds GIT_OBJECT_DIRECTORY. Of the pins of a

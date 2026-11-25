@@ -452,3 +452,24 @@ func TestDaemonGitDirOfAnotherRepositoryNamesOneRepository(t *testing.T) {
 		})
 	}
 }
+
+// TestDaemonGitDirEntryKeepsItsPin: with daemonGitDirSkipped and a daemon GIT_DIR of
+// a linked-worktree entry, a pin with no copy of the same repository names the main
+// git directory. The daemon's GIT_DIR then stays in the call, and a pin of another
+// repository drops it (claustrum's own, not measured). Mutation: in
+// pinNamesOtherGitDir compare the pin with the daemon GIT_DIR itself.
+func TestDaemonGitDirEntryKeepsItsPin(t *testing.T) {
+	clearFolderEnv(t)
+	f := newRepoFolderFixture(t)
+	entry := filepath.Join(f.gitDir, "worktrees", "wr")
+	t.Setenv("GIT_DIR", entry)
+	setCopyPinsWalkGitDir(t, true)
+	daemon := []string{"A=1", "GIT_DIR=" + entry}
+	if got := daemonPartFor(daemon, []string{"GIT_COMMON_DIR=" + f.gitDir}); !slices.Equal(got, daemon) {
+		t.Errorf("same repository: daemonPartFor = %q, want %q", got, daemon)
+	}
+	_, other := configRepo(t)
+	if got, want := daemonPartFor(daemon, []string{"GIT_COMMON_DIR=" + other}), []string{"A=1"}; !slices.Equal(got, want) {
+		t.Errorf("another repository: daemonPartFor = %q, want %q", got, want)
+	}
+}
