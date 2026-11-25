@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -71,5 +72,34 @@ func TestBadFolderNameKeepsTheCountRefusal(t *testing.T) {
 	want := errFrame(t, hooksPinPrefix+`inherited GIT_CONFIG_COUNT "x" is not a count`)
 	if got := f.frame(t, "git.info", map[string]any{"path": dir}); got != want {
 		t.Errorf("git.info = %s\nwant %s", got, want)
+	}
+}
+
+// GIT_ALTERNATE_OBJECT_DIRECTORIES in the daemon's environment refuses git.info
+// after at most its excludes read (4c111e86, measured on Windows), so it comes
+// before the answer of a bad folder name too (claustrum's own order, not
+// measured). The daemon logs its line. This test runs the checks of Windows on
+// every system.
+func TestBadFolderNameKeepsTheAlternateEnvRefusal(t *testing.T) {
+	f := newNoRepoFixture(t)
+	dir, _ := badStatNameDir(t, f)
+	checksOn(t)
+	alternateEnvLogged.Store(false)
+	t.Cleanup(func() { alternateEnvLogged.Store(false) })
+	logs := captureLogBuf(t)
+	t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", filepath.Join(t.TempDir(), "objects"))
+	got, calls := f.call(t, "git.info", map[string]any{"path": dir})
+	if want := errFrame(t, alternateEnvText); got != want {
+		t.Errorf("git.info = %s\nwant %s", got, want)
+	}
+	if len(calls) != 1 || !calls[0].excludesRead() {
+		var argv [][]string
+		for _, c := range calls {
+			argv = append(argv, c.argv)
+		}
+		t.Errorf("git.info ran git %q, want 1 call: the excludes read only", argv)
+	}
+	if n := strings.Count(logs.String(), alternateEnvLine); n != 1 {
+		t.Errorf("log has %d lines %q, want 1", n, alternateEnvLine)
 	}
 }
