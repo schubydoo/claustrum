@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Windows a git.worktree_create in a repository with a file at .git\worktrees now answers with the text and the git calls of the reference, and a remove reads a refused config once.
+On Windows git.worktree_create with a file or a junction at .git\worktrees, git.info on a folder with a bad name and git.worktree_remove with a refused config now answer as the reference does.
