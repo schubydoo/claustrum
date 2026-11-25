@@ -503,7 +503,7 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 //     door first, then that listing, with the same reply (measured on Windows).
 //     Mutation: set doorRefusalAfterListing false (the listing does not run). Without the file rule of gitUse.listedSwap the reply
 //     has the link text. The file here names a folder that does not exist, so
-//     that git fails on every host. In the cell it names the git directory of
+//     that git fails on every host. In the 5fd08069 cell it names the git directory of
 //     a second repository.
 func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
 	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`

@@ -560,7 +560,9 @@ func deadlineStop(cmd *exec.Cmd, s *checkoutStop) func() error {
 //     refusals of the plan. 5fd08069 has that order (measured on Linux). The
 //     config read of the ssh door comes before this listing, and the listing
 //     carries the five entries of the door too (c9125eb8, measured on Linux and
-//     macOS, and 87375cc7 on Windows, doorReadBeforeListing).
+//     macOS, doorReadBeforeListing). On Windows 87375cc7 shows the mark,
+//     GIT_SSH_COMMAND and GIT_SSH_VARIANT there (measured on Windows). The
+//     other two entries on Windows are claustrum's own, not measured.
 //   - The read-tree call has the item lfs.storage=<git directory>/lfs (Linux
 //     and macOS: `<checkout folder>/lfs`) before the list of the profile. The
 //     pairs of the filter rule come before that item (measured on Linux). For
@@ -666,8 +668,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// The config read of the ssh door (gitsshdoor.go), and the door in the
 		// env of the read-tree call. The read comes before the second listing,
 		// and that listing gets the door too (c9125eb8 and b3081b51, measured
-		// on Linux and macOS, and 87375cc7 on Windows). A refusal of the read
-		// before that listing is claustrum's own (not measured).
+		// on Linux and macOS, and 87375cc7 on Windows).
 		readDoor := func() error {
 			door, text := readSSHDoorSettings(u, leaf, gitDir, env)
 			if err := u.stop.halted(); err != nil {
@@ -733,6 +734,8 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// The items of the `config.worktree` file come after that item and
 		// before the list of the profile (gitUse.checkoutFront).
 		list = append(list, u.checkoutFront(gitDir)...)
+		// doorReadBeforeListing is true on every system. This branch runs only
+		// when a test sets it false as a mutation (gitsshdoor_checkout_test.go).
 		if !doorReadBeforeListing {
 			if err := readDoor(); err != nil {
 				return "", false, err
