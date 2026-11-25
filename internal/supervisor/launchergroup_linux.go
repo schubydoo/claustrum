@@ -22,8 +22,8 @@ var (
 
 // settleLeftGroupHeld ends what an exited launcher left in its group, while the
 // unreaped leader holds the group number. With its pipes at their end, the group gets
-// SIGKILL at once. Otherwise, 200 ms after the exit, it gets SIGTERM and the line,
-// whatever the group holds. SIGKILL follows once the pipes are at their end, at the
+// SIGKILL at once. Otherwise, 200 ms after the exit, it gets SIGTERM, whatever the group
+// holds, and the line after the SIGKILL. SIGKILL follows once the pipes are at their end, at the
 // latest after groupKillBound (87375cc7, measured on Linux). The 200 ms count from the
 // moment the exit is seen. It returns that moment, or the zero time if it saw no exit.
 //
@@ -72,9 +72,9 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	// then sends the SIGKILL of the end at its usual time (measured on Linux, a client KILL after
 	// the SIGTERM). A refused kill under way before the SIGTERM is claustrum's own, not measured.
 	stopNow := func() bool { return stopped() || p.groupKillClaimed.spent() }
-	if !awaitPipesEnd(drained, groupTermAfter-time.Since(seen), stopNow) && !stopNow() &&
-		signalCheckedGroup(pid, syscall.SIGTERM) == nil {
-		logging.Infof("[process.Manager] Process %s exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL", LogID(p.id))
+	termed := !awaitPipesEnd(drained, groupTermAfter-time.Since(seen), stopNow) && !stopNow() &&
+		signalCheckedGroup(pid, syscall.SIGTERM) == nil
+	if termed {
 		awaitPipesEnd(drained, groupKillBound, stopNow)
 	}
 	if stopped() {
@@ -86,6 +86,12 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 		return seen
 	}
 	p.sendHeldEndKill(pid)
+	// 87375cc7 logs the SIGTERM line after the SIGKILL of the end, and after its refusal
+	// line. A shutdown in the wait logs none (measured on Linux). After a client KILL that
+	// ended the wait, the line still goes (claustrum's own, not measured).
+	if termed {
+		logging.Infof("[process.Manager] Process %s exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL", LogID(p.id))
+	}
 	return seen
 }
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -145,6 +146,63 @@ func TestEndMarksOnlyALandedKillForTheCount(t *testing.T) {
 			if p.heldGroupKilled != tc.want {
 				t.Errorf("heldGroupKilled = %v, want %v", p.heldGroupKilled, tc.want)
 			}
+		})
+	}
+}
+
+// TestEndLogsTheTermLineAfterItsKill: the SIGTERM line of the end comes after its
+// SIGKILL, and after the refusal line of a refused one. A shutdown in the wait after the
+// SIGTERM logs no SIGTERM line (87375cc7, measured on Linux). The kill call is a fake.
+func TestEndLogsTheTermLineAfterItsKill(t *testing.T) {
+	oldTerm, oldBound := groupTermAfter, groupKillBound
+	groupTermAfter, groupKillBound = 30*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { groupTermAfter, groupKillBound = oldTerm, oldBound })
+	for _, tc := range []struct {
+		name     string
+		shutdown bool
+	}{
+		{"refused end kill", false},
+		{"shutdown in the wait", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureLogBuf(t)
+			termed := make(chan struct{})
+			real := signalLeftGroup
+			signalLeftGroup = func(_ int, sig syscall.Signal) error {
+				if sig == syscall.SIGTERM {
+					close(termed)
+					return nil
+				}
+				return syscall.EPERM
+			}
+			t.Cleanup(func() { signalLeftGroup = real })
+			id := "lgline"
+			if tc.shutdown {
+				id = "lglnstop"
+			}
+			p := startExitedLeader(t, id)
+			returned := make(chan struct{})
+			go func() { p.settleLeftGroupHeld(make(chan struct{})); close(returned) }()
+			select {
+			case <-termed:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the end sent no SIGTERM")
+			}
+			if tc.shutdown {
+				p.stopsBegan.Store(true)
+			}
+			<-returned
+			_ = p.cmd.Wait()
+			termLine := "[process.Manager] Process " + id + " " + groupTermLineTail
+			refusal := "[process.Manager] the process group of pid " + strconv.Itoa(p.cmd.Process.Pid) + ", which has exited, was not sent SIGKILL: operation not permitted"
+			got := buf.String()
+			if tc.shutdown {
+				if strings.Contains(got, termLine) || strings.Contains(got, refusal) {
+					t.Errorf("log = %q, want no SIGTERM line and no refusal line after a shutdown", got)
+				}
+				return
+			}
+			wantLinesInOrder(t, got, refusal, termLine)
 		})
 	}
 }
