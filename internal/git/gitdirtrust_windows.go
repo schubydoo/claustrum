@@ -181,8 +181,10 @@ var removeRereadsRefusedConfig = false
 // removeRechecksPlainFolder is false on Windows: in a folder where the trust check
 // finds no repository, a failed `rev-parse --absolute-git-dir` of a remove runs
 // no repeat. 87375cc7 makes the listing and the rev-parse one time there in the
-// state shadow, with GIT_DIR=NUL, also with an absolute daemon GIT_DIR of a folder
-// (measured on Windows).
+// state shadow, with GIT_DIR=NUL, also with an absolute daemon GIT_DIR that names
+// the git directory of a repository (measured on Windows for the .git folder of a
+// plain repository). Other trusted kinds, as a bare repository or a
+// linked-worktree entry, are claustrum's own, not measured.
 var removeRechecksPlainFolder = false
 
 // removeRegistrationsLinked reports whether the registrations folder dir is a
