@@ -1140,10 +1140,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 //
 // The test does not follow a link. A symbolic link to a real folder there
 // gives no pair, also when that folder holds a registration (measured on
-// Linux). A broken link and a Windows junction give none either (not
-// measured). On Windows a file there gives the pair, but not with the member
-// (87375cc7 and 4c111e86, measured on Windows). A file on Linux and macOS
-// gives none (not measured).
+// Linux). A broken link and a file give none either (not measured). On
+// Windows a file or a junction there gives the pair, but not with the member
+// (87375cc7, measured on Windows, and 4c111e86 for the file). A directory
+// symbolic link there gets the same (claustrum's own, not measured).
 //
 // The calls are gitDirWorkTreeToplevel in the common git directory of gitDir.
 // For a linked baseRepo that is the `.git` of the main repository, not the
@@ -1166,8 +1166,8 @@ func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, mem
 	registrations := gitDirRegistryDir(gitDir)
 	fi, err := os.Lstat(registrations)
 	missing := missingRuns && errors.Is(err, fs.ErrNotExist)
-	fileRuns := stagedAddWindowsSteps && !member && err == nil && fi.Mode().IsRegular()
-	if !missing && !fileRuns && (err != nil || !fi.IsDir()) {
+	nonFolderRuns := stagedAddWindowsSteps && !member && err == nil
+	if !missing && !nonFolderRuns && (err != nil || !fi.IsDir()) {
 		return nil
 	}
 	run := func() {
@@ -2065,12 +2065,18 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// On Windows a junction at `<git dir>\worktrees` of the held folder refuses
 	// the create first, and the registrations behind it are not read. b3081b51
 	// answers this text after such a junction came right after `rev-parse
-	// --absolute-git-dir` (measured on Windows). A junction that was there
-	// before the request, and a directory symbolic link, are not measured: they
-	// get the same text. A request with no settings copy keeps the test of
-	// worktreeAdd.
+	// --absolute-git-dir` (measured on Windows). With a junction that was there
+	// before the request, 87375cc7 gives the same text after the listing of the
+	// add and the pair (measured on Windows). An attach add runs its second
+	// listing, as with a file there, and a directory symbolic link gets the same
+	// (claustrum's own, not measured). A request with no settings copy keeps the
+	// test of worktreeAdd.
 	if stagedAddWindowsSteps && req.use.shadow() {
 		if msg := req.use.worktreesLinkRefusal(); msg != "" {
+			offLinkListing(baseCtx, req.use, repo)
+			if attachBranch != "" {
+				offLinkListing(baseCtx, req.use, repo)
+			}
 			return refuseAdd("cannot add a worktree: " + msg)
 		}
 	}
@@ -2125,9 +2131,10 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	if copyGone(addErr) || errors.As(addErr, &ownFiles) || errors.As(addErr, &swappedLate) {
 		return refuseAdd(addErr.Error())
 	}
-	// On Windows a file at `<git dir>\worktrees` starts the text with `cannot
-	// add a worktree: `, after the pair, and an attach add runs its second
-	// listing first (addNotPrepared.ownWords, 87375cc7, measured on Windows).
+	// On Windows an entry at `<git dir>\worktrees` that is no folder starts the
+	// text with `cannot add a worktree: `, after the pair, and an attach add runs
+	// its second listing first (addNotPrepared.ownWords, 87375cc7, measured on
+	// Windows for a file).
 	var ownWords *addNotPrepared
 	if errors.As(addErr, &ownWords) && ownWords.ownWords {
 		if attachBranch != "" {

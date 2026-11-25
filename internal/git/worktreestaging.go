@@ -322,7 +322,7 @@ func openAddStage(u gitUse) (*addStage, error) {
 	if errors.Is(err, fs.ErrExist) {
 		err = nil
 		if fi, statErr := st.git.Lstat(worktreesSubdir); statErr == nil && !goesAsTree(fi.Mode()) {
-			err = &worktreesNotFolder{text: quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory", file: fi.Mode().IsRegular()}
+			err = &worktreesNotFolder{text: quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory"}
 		}
 	}
 	var regs []registrationCopy
@@ -782,11 +782,12 @@ func stagedOtherEntryRefusal(leaf string) *addRefused {
 // On Linux and macOS the refusal of worktreesFolderRefusal is such an error
 // too. offLink marks the refusal of offWorktreesRefusal.
 //
-// ownWords marks a file at `<git dir>\worktrees` on Windows. 87375cc7 and
-// 4c111e86 then answer `cannot add a worktree: ` and the text, also in attach
-// mode, with the second listing of an attach add (measured on Windows). With
-// "shadowDirOff":true it marks the text of offWorktreesRefusal (measured on
-// Windows, attach mode claustrum's own).
+// ownWords marks an entry at `<git dir>\worktrees` that is no folder, on
+// Windows. For a file there 87375cc7 and 4c111e86 answer `cannot add a
+// worktree: ` and the text, also in attach mode, with the second listing of an
+// attach add (measured on Windows). Another kind there is claustrum's own, not
+// measured. With "shadowDirOff":true it marks the text of offWorktreesRefusal,
+// for a file or a junction (87375cc7, measured on Windows).
 type addNotPrepared struct {
 	text     string
 	offLink  bool
@@ -794,11 +795,8 @@ type addNotPrepared struct {
 }
 
 // worktreesNotFolder is the error of openAddStage for an entry `worktrees`
-// of the git directory that is no real folder. file says it is a regular file.
-type worktreesNotFolder struct {
-	text string
-	file bool
-}
+// of the git directory that is no real folder.
+type worktreesNotFolder struct{ text string }
 
 func (e *worktreesNotFolder) Error() string { return e.text }
 
@@ -857,8 +855,7 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 			return "", &addOwnFiles{text: refsCopyText + refsErr.text}
 		}
 		var notFolder *worktreesNotFolder
-		file := errors.As(err, &notFolder) && notFolder.file
-		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error(), ownWords: stagedAddWindowsSteps && file}
+		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error(), ownWords: stagedAddWindowsSteps && errors.As(err, &notFolder)}
 	}
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)

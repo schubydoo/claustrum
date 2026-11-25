@@ -10,23 +10,31 @@ import (
 	"testing"
 )
 
-// TestWindowsCreateWithAFileAtWorktrees: a regular file at `.git/worktrees`,
-// with the steps of Windows switched on. 87375cc7 and 4c111e86 answer
-// `cannot add a worktree: ` and the text, after the show-toplevel pair, and an
-// attach add makes one more listing (measured on Windows). With
-// "shadowDirOff":true the text of the off refusal gets the same start, with no
-// pair (measured on Windows). No `worktree add` runs.
+// TestWindowsCreateWithAFileAtWorktrees: a regular file or a link at
+// `.git/worktrees`, with the steps of Windows switched on. For a file
+// 87375cc7 and 4c111e86 answer `cannot add a worktree: ` and the text, after
+// the show-toplevel pair, and an attach add makes one more listing (measured on
+// Windows). A junction there gets the same in a new branch (87375cc7, measured
+// on Windows, a link stands for it here). With "shadowDirOff":true the text of
+// the off refusal gets the same start, with no pair (measured on Windows for
+// both kinds). No `worktree add` runs.
 func TestWindowsCreateWithAFileAtWorktrees(t *testing.T) {
+	const prepare = "cannot prepare the repository's worktrees directory: %q is not a directory"
+	const list = "cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place"
 	for _, row := range []struct {
 		name     string
+		link     bool
 		extra    map[string]any
 		text     string
 		pairs    int
 		listings int
 	}{
-		{"a new branch", nil, "cannot prepare the repository's worktrees directory: %q is not a directory", 1, 4},
-		{"attach", map[string]any{"existingBranch": "eb"}, "cannot prepare the repository's worktrees directory: %q is not a directory", 1, 6},
-		{"shadowDirOff", map[string]any{"shadowDirOff": true}, "cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place", 0, 4},
+		{"a new branch", false, nil, prepare, 1, 4},
+		{"attach", false, map[string]any{"existingBranch": "eb"}, prepare, 1, 6},
+		{"shadowDirOff", false, map[string]any{"shadowDirOff": true}, list, 0, 4},
+		{"a link, a new branch", true, nil, prepare, 1, 4},
+		{"a link, attach", true, map[string]any{"existingBranch": "eb"}, prepare, 1, 6},
+		{"a link, shadowDirOff", true, map[string]any{"shadowDirOff": true}, list, 0, 4},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
@@ -38,7 +46,11 @@ func TestWindowsCreateWithAFileAtWorktrees(t *testing.T) {
 			if err := os.Rename(worktrees, worktrees+"-kept"); err != nil && !os.IsNotExist(err) {
 				t.Fatal(err)
 			}
-			mustWrite(t, worktrees, "x\n")
+			if row.link {
+				linkAt(t, worktrees, t.TempDir())
+			} else {
+				mustWrite(t, worktrees, "x\n")
+			}
 			setStagedAddWindowsSteps(t, true)
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 			params := map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}
@@ -65,8 +77,8 @@ func TestWindowsCreateWithAFileAtWorktrees(t *testing.T) {
 			if pairs != row.pairs || listings != row.listings {
 				t.Errorf("the create made %d pairs and %d listings, want %d and %d", pairs, listings, row.pairs, row.listings)
 			}
-			if got := mustRead(t, worktrees); got != "x\n" {
-				t.Errorf("the file at worktrees = %q", got)
+			if fi, err := os.Lstat(worktrees); err != nil || fi.IsDir() {
+				t.Errorf("the entry at worktrees: %v, want it kept", err)
 			}
 		})
 	}

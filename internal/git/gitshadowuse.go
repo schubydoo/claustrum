@@ -320,8 +320,8 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	heldAtListing := f.accepted != nil && f.accepted.stands()
 	cmd := hardenedGitCmd(ctx, f, repo, false, nil, args...)
 	if offMember || (off && f.accepted != nil) {
-		if text, file := offWorktreesRefusal(repo); text != "" {
-			return "", &addNotPrepared{text: text, offLink: true, ownWords: stagedAddWindowsSteps && file}
+		if text := offWorktreesRefusal(repo); text != "" {
+			return "", &addNotPrepared{text: text, offLink: true, ownWords: stagedAddWindowsSteps}
 		}
 	}
 	// A create that holds its git directory runs no `worktree add` when the
@@ -502,7 +502,8 @@ func (u gitUse) worktreesFolderRefusal() string {
 // junction at `worktrees` of the held git directory, by its Lstat through the
 // held root. It is "" for a request that holds no git directory, and for a
 // file there, whose text 5fd08069 gives at the add (measured on Windows).
-// 87375cc7 gives it there too, after the pair (addNotPrepared.ownWords).
+// 87375cc7 gives it there too, after the pair (addNotPrepared.ownWords). It
+// gives the text of a link after the listing of the add and the pair.
 func (u gitUse) worktreesLinkRefusal() string {
 	if u.accepted == nil {
 		return ""
@@ -560,17 +561,16 @@ func (u gitUse) worktreesOpenRefusal() string {
 // The folder is that of the git directory that the trust check pins. claustrum's
 // own, not measured: a daemon GIT_COMMON_DIR, with which git writes elsewhere,
 // and a file there on Windows.
-func offWorktreesRefusal(repo string) (text string, file bool) {
+func offWorktreesRefusal(repo string) string {
 	t := gitDirTrustFor(repo)
 	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return "", false
+		return ""
 	}
 	dir := filepath.Join(t.pinCommonDir, worktreesSubdir)
-	fi, err := os.Lstat(dir)
-	if err != nil || fi.IsDir() {
-		return "", false
+	if fi, err := os.Lstat(dir); err != nil || fi.IsDir() {
+		return ""
 	}
-	return listEntriesPrefix + realDirText(dir), fi.Mode().IsRegular()
+	return listEntriesPrefix + realDirText(dir)
 }
 
 // makeWorktreesFolder makes the folder `worktrees` in the git directory gitDir

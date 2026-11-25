@@ -38,7 +38,7 @@ func TestWorktreesOpenRefusalWithoutAHeldFolder(t *testing.T) {
 // "shadowDirOff":true, and it is no linked entry.
 func TestFolderOutsideARepositoryIsNoLinkedEntry(t *testing.T) {
 	dir := t.TempDir()
-	if got, _ := offWorktreesRefusal(dir); got != "" {
+	if got := offWorktreesRefusal(dir); got != "" {
 		t.Fatalf("offWorktreesRefusal: got %q, want no refusal", got)
 	}
 	if entryIsLink(dir) {
