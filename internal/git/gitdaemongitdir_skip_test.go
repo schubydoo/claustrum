@@ -473,3 +473,78 @@ func TestDaemonGitDirEntryKeepsItsPin(t *testing.T) {
 		t.Errorf("another repository: daemonPartFor = %q, want %q", got, want)
 	}
 }
+
+// TestDaemonGitDirRefusedWalkWins: with daemonGitDirSkipped the daemon GIT_DIR names
+// repository A. The trust check refuses the stray commondir of repository B.
+// git.info, git.status, a create and a remove in B answer that refusal with no git
+// call, as with no daemon GIT_DIR. The remove adds its lock prefix. Nothing lands
+// in A or B. 87375cc7 answers so (measured on Windows). Mutation: in gitDirTrustFor
+// drop `w.verdict == gitDirRefused ||`. git.info then makes 2 calls about the
+// repository and answers "git and Claude disagree about which repository holds
+// this folder".
+func TestDaemonGitDirRefusedWalkWins(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	tree := func(t *testing.T, root string) []string {
+		t.Helper()
+		var names []string
+		err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			names = append(names, p+" "+fi.Mode().String())
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return names
+	}
+	run := func(t *testing.T, withGitDir bool) []string {
+		f := newShadowFixture(t)
+		setAttrSource(t, true)
+		repoA, gitA := configRepo(t)
+		repoB, gitB := configRepo(t)
+		cd := filepath.Join(gitB, "commondir")
+		if err := os.WriteFile(cd, []byte(".//\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if withGitDir {
+			t.Setenv("GIT_DIR", gitA)
+		}
+		other, _ := configRepo(t)
+		if raw, _ := f.info(t, other, nil); !strings.Contains(raw, `"isRepo":true`) {
+			t.Fatalf("the first git.info = %s", raw)
+		}
+		beforeA, beforeB := tree(t, repoA), tree(t, repoB)
+		refusal := refuseStrayContent(cd).refusal
+		leaf := filepath.Join(repoB, ".claude", "worktrees", "w1")
+		var replies []string
+		for _, m := range skipRequests(repoB) {
+			raw, calls := f.call(t, m.method, m.params)
+			want := strings.Trim(jsonQuoted(t, refusal), `"`)
+			if m.method == "git.worktree_remove" {
+				want = strings.Trim(jsonQuoted(t, "could not check whether "+leaf+" is locked: "+refusal), `"`)
+			}
+			if !strings.Contains(raw, want) {
+				t.Errorf("%s = %s, want the refusal %s", m.method, raw, want)
+			}
+			if len(calls) != 0 {
+				t.Errorf("%s made %d git calls, want 0: %q", m.method, len(calls), calls)
+			}
+			replies = append(replies, strings.ReplaceAll(raw, strings.Trim(jsonQuoted(t, repoB), `"`), "<B>"))
+		}
+		if a := tree(t, repoA); !slices.Equal(a, beforeA) {
+			t.Errorf("A changed:\n%q\n%q", beforeA, a)
+		}
+		if b := tree(t, repoB); !slices.Equal(b, beforeB) {
+			t.Errorf("B changed:\n%q\n%q", beforeB, b)
+		}
+		return replies
+	}
+	var plain, skipped []string
+	t.Run("no daemon GIT_DIR", func(t *testing.T) { plain = run(t, false) })
+	t.Run("daemon GIT_DIR", func(t *testing.T) { skipped = run(t, true) })
+	if !slices.Equal(plain, skipped) {
+		t.Errorf("the replies differ:\n%q\n%q", plain, skipped)
+	}
+}
