@@ -307,7 +307,9 @@ func gitInfo(req *gitCall) rpc.Response {
 	// 87375cc7 makes the excludes read only as the first request of a daemon,
 	// and none after a git.info on a repository (measured on Windows). The place
 	// after the link tests, the trust check, the count and the refusal of
-	// GIT_ALTERNATE_OBJECT_DIRECTORIES is claustrum's own, not measured. The trust
+	// GIT_ALTERNATE_OBJECT_DIRECTORIES is claustrum's own, not measured. So is the
+	// place before the no-git answer, a failed start test and a bad answer about
+	// the repository (settingsGateRefusal). The trust
 	// check cannot resolve such a folder and leaves it to git (gitDirTrustFor), so
 	// no step before it makes a git call (from the code).
 	if p.Path != "" {
@@ -1153,7 +1155,8 @@ func gitListBranches(req *gitCall) rpc.Response {
 // before the listing (87375cc7, measured on Windows). The caller then gets them
 // back as afterListing, for worktreeAdd. On Linux and macOS a refusal before the
 // add then runs no pair (claustrum's own, not measured): the listing of the add
-// stays the last call of the refusals of 5fd08069 after a swap.
+// stays the last call of the refusals of 5fd08069 after a swap. A swap after
+// the listing is the exception (worktreeAdd).
 //
 // The test does not follow a link. A symbolic link to a real folder there
 // gives no pair, also when that folder holds a registration (measured on
