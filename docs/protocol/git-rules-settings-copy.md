@@ -332,13 +332,14 @@ follow the walk (`87375cc7`, measured on Windows). So do a remove as the first r
 of a daemon, and all five methods on a folder in no repository (measured).
 Calls with no `--git-dir=` carry the `GIT_DIR` and `GIT_WORK_TREE` of the walk, at their
 real paths. The calls with `--git-dir=`, the call about the repository and the
-`--attr-source` probe carry no `GIT_DIR`. `git.status` of a linked worktree and
+`--attr-source` probe carry no `GIT_DIR`. `git.status` and `git.info` of a linked worktree and
 `git.list_branches` on a repository are claustrum's own, not measured. So are the `git version` after a
 failed `--attr-source` probe and the letter case of the `GIT_DIR` name. A `git.info`
 after one on another repository makes the read of the config again (measured). With a
 daemon `GIT_DIR` of another repository, `git.info`, a create and a remove in a second
-repository make no call on the daemon's repository: each call in a repository runs on
-the second one (measured). The other methods there are claustrum's own, not measured. A relative
+repository with a trusted walk make no call on the daemon's repository: each call in a
+repository runs on the second one (measured). The other methods there are claustrum's own, not measured.
+A refused walk gets its own refusal and makes no call ([the trust check](git-rules-trust.md#git-directory-trust-check)). A relative
 daemon `GIT_DIR` keeps the rules above (claustrum's own, not measured).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
 

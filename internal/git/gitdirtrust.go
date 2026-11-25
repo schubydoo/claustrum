@@ -247,8 +247,9 @@ func daemonCommonDirStays() bool {
 // GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
 // a git.info on another repository makes the read of the config again.
-// git.status of a linked worktree, git.list_branches on a repository and a daemon
-// GIT_DIR of another repository are claustrum's own, not measured: the copy follows the
+// git.status and git.info of a linked worktree, git.status in a second repository
+// and git.list_branches on a repository are claustrum's own, not measured: the
+// copy follows the
 // walk only when the walk finds a trusted git directory. A relative GIT_DIR
 // and one that names no folder keep the rules above (claustrum's own, not
 // measured). The refusals of a regular file there are those of 5fd08069
