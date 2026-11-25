@@ -13,3 +13,7 @@ const stagingFolderMode = 0o755
 // of the git directory (mainRefsFault). A variable, so that a test on another
 // system can run that step.
 var mainRefsOpenTest = true
+
+// addStageTestsWorktrees is false on Windows: openAddStage runs its mkdir of
+// `worktrees` also when the folder is there.
+const addStageTestsWorktrees = false

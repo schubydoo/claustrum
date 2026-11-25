@@ -318,7 +318,15 @@ func openAddStage(u gitUse) (*addStage, error) {
 		}
 		st.git, st.own = git, true
 	}
-	err := st.git.Mkdir(worktreesSubdir, 0o755)
+	// On Linux a `worktrees` folder that is there gets no mkdir here. 87375cc7
+	// makes it at the gate and only tests it here (measured on Linux). A missing one is
+	// made, as on the other systems (claustrum's own, not measured).
+	var err error
+	if _, statErr := st.git.Lstat(worktreesSubdir); statErr == nil && addStageTestsWorktrees {
+		err = fs.ErrExist
+	} else {
+		err = st.git.Mkdir(worktreesSubdir, 0o755)
+	}
 	if errors.Is(err, fs.ErrExist) {
 		err = nil
 		if fi, statErr := st.git.Lstat(worktreesSubdir); statErr == nil && !goesAsTree(fi.Mode()) {
@@ -1239,12 +1247,12 @@ func (st *addStage) move(leaf string, cp worktreeCheckpoint) error {
 	stagedEntryModes(reg, st.git, staging)
 	// On Linux and macOS a `worktrees` folder that went after the add is made
 	// again, and the create goes on. 4c111e86 succeeds after `worktrees` was
-	// renamed right after the add (measured on Linux and macOS). The mode is
-	// that of openAddStage (not measured). Windows keeps its rule. A failed
-	// mkdir gives its own error, where the rename gave one before (claustrum's
-	// own, not measured).
+	// renamed right after the add (measured on Linux and macOS). The mkdir has
+	// mode 0777 (87375cc7, measured on Linux, macOS not measured). Windows keeps
+	// its rule. A failed mkdir gives its own error, where the rename gave one
+	// before (claustrum's own, not measured).
 	if !stagedAddWindowsSteps {
-		if err := st.git.Mkdir(worktreesSubdir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+		if err := st.git.Mkdir(worktreesSubdir, 0o777); err != nil && !errors.Is(err, fs.ErrExist) {
 			return fail(err)
 		}
 	}

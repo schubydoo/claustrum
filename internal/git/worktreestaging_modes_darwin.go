@@ -8,3 +8,7 @@ const stagedEntryTakesWorktreesGroup = false
 // the umask. On macOS b3081b51 gives the new entry 755 under umask 022 and
 // 775 under umask 002 (measured on macOS). Other umasks are not measured.
 const stagingFolderMode = 0o775
+
+// addStageTestsWorktrees is false on macOS: openAddStage runs its mkdir of
+// `worktrees` also when the folder is there.
+const addStageTestsWorktrees = false

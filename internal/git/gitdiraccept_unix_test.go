@@ -910,6 +910,36 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 	}
 }
 
+// TestRemadeRegistrationsFolderMode: under umask 0 the `worktrees` folder that
+// the staging step makes again asks for mode 0777. 87375cc7 runs that mkdir
+// with 0777 (measured on Linux, macOS not measured). Mutation: ask for 0755,
+// and the folder has 0755.
+func TestRemadeRegistrationsFolderMode(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	useUmask(t, 0)
+	wt := filepath.Join(f.gitDir, worktreesSubdir)
+	atStep(t, "staged", func() {
+		if err := os.Rename(wt, wt+".gone"); err != nil {
+			t.Errorf("the rename of the registrations folder: %v", err)
+		}
+	})
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, _ := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want a good create", raw)
+	}
+	fi, err := os.Lstat(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o777 {
+		t.Errorf("the remade registrations folder has mode %#o, want 0777", got)
+	}
+}
+
 // TestCreateWithTheLeafReplacedAfterTheAdd: right after a good staged `worktree
 // add` the leaf is renamed to w1.old, and a new folder is put at its path.
 // 4c111e86 answers the text of a replaced leaf with unsafe_path (measured on
