@@ -156,7 +156,9 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   `GIT_COMMON_DIR`, a folder in no repository gets the verdict of the walk. In the
   state `shadow` `87375cc7` answers so on all five methods (measured on Windows).
   A folder of a second repository gets the verdict of its trusted walk too, for `git.info`,
-  a create and a remove (measured on Windows). `git.status`, `git.list_branches` and
+  a create and a remove (measured on Windows). A walk that the trust check refuses keeps
+  the daemon verdict, so the request runs on the daemon's repository (from the code,
+  claustrum's own, not measured). `git.status`, `git.list_branches` and
   `fallback-git` there are claustrum's own, not measured. `git.info` with `"shadowDirOff":true`
   keeps the verdict of that `GIT_DIR`, measured for a folder in no repository and
   claustrum's own in a repository. The other methods with that switch, and `fallback-git`, follow the walk

@@ -503,6 +503,11 @@ func TestDaemonGitDirSkippedLinkedWorktree(t *testing.T) {
 			{"git.info", map[string]any{"path": f.wt}},
 		} {
 			raw, calls := f.call(t, m.method, m.params)
+			// The run with no daemon GIT_DIR must give good replies, so that a fault
+			// that makes both runs refuse the same way does not pass.
+			if !withGitDir && (!strings.Contains(raw, `"isRepo":true`) || strings.Contains(raw, `"error"`)) {
+				t.Fatalf("%s with no daemon GIT_DIR = %s, want a good reply", m.method, raw)
+			}
 			line := m.method + " " + raw
 			for _, c := range calls {
 				line += "\n  " + c.cwd + " | " + strings.Join(dropConfigArgs(c.argv), " ") + " ||"
