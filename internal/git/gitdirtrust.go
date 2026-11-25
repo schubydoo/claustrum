@@ -254,9 +254,14 @@ func daemonGitDirSkipped() bool {
 // copyTrust is the verdict t of the trust check on dir as the copy of a request
 // takes it. With daemonGitDirSkipped a trusted t gives way to the verdict of the
 // walk from dir, when that walk finds a trusted git directory. The refusals of
-// the check stay those of the daemon's GIT_DIR.
+// the check stay those of the daemon's GIT_DIR. A trusted GIT_DIR that names no
+// folder keeps its verdict, so the measured refusals of the read of its config
+// stay (TestGitDirTrustDaemonGitDirPlainFileWindows).
 func copyTrust(t gitDirTrust, dir string) gitDirTrust {
 	if !daemonGitDirSkipped() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return t
+	}
+	if fi, err := os.Stat(t.pinCommonDir); err != nil || !fi.IsDir() {
 		return t
 	}
 	if w := trustWithGitDir(dir, ""); w.verdict == gitDirTrusted && w.pinCommonDir != "" {
