@@ -155,8 +155,10 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
 - On Windows, with an absolute daemon `GIT_DIR` of a folder and no daemon
   `GIT_COMMON_DIR`, a folder in no repository gets the verdict of the walk. In the
   state `shadow` `87375cc7` answers so on all five methods (measured on Windows).
-  `git.info` with `"shadowDirOff":true` keeps the verdict of that `GIT_DIR`
-  (measured). The other methods with that switch, and `fallback-git`, follow the walk
+  A folder of a second repository gets the verdict of its walk too, for `git.info`,
+  a create and a remove (measured on Windows). `git.info` with `"shadowDirOff":true`
+  keeps the verdict of that `GIT_DIR`, measured for a folder in no repository and
+  claustrum's own in a repository. The other methods with that switch, and `fallback-git`, follow the walk
   (claustrum's own, not measured). In the state `shadow` the calls follow the walk
   ([the git calls](git-rules-settings-copy.md#the-git-calls)). A refusal of that
   `GIT_DIR` stays (from the code).
