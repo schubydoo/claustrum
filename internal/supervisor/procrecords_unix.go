@@ -2,7 +2,11 @@
 
 package supervisor
 
-import "github.com/schubydoo/claustrum/internal/childrec"
+import (
+	"runtime"
+
+	"github.com/schubydoo/claustrum/internal/childrec"
+)
 
 // The two record steps of the shutdown that read the process table of the manager. The
 // records themselves are in internal/childrec.
@@ -11,6 +15,14 @@ import "github.com/schubydoo/claustrum/internal/childrec"
 // removed its record, or until the bound of childrec.AwaitDone passes. The graceful
 // shutdown calls it after it killed the children, so the daemon does not exit before
 // the records are gone. It is a no-op for a manager with no run dir.
+//
+// It does not wait for a child whose shutdown SIGKILL failed with EPERM. 87375cc7 logs
+// the cleanup line at once there, after a refused sweep SIGKILL of a running child whose
+// client KILL was refused first, and
+// after a refused group SIGKILL at the end of the wait of endAsked (measured on Linux,
+// at a server.shutdown). That record stays (from the code).
+// Only Linux skips the wait. On macOS a group of exiting processes can answer EPERM,
+// so a refused kill there does not show a child that cannot end (claustrum's own).
 func (m *Manager) AwaitRecordsRemoved() {
 	if m.RunDir == "" {
 		return
@@ -18,7 +30,7 @@ func (m *Manager) AwaitRecordsRemoved() {
 	m.mu.Lock()
 	waits := make([]chan struct{}, 0, len(m.procs))
 	for _, p := range m.procs {
-		if p.recordDone != nil {
+		if p.recordDone != nil && (runtime.GOOS != "linux" || !p.stopKillRefused.Load()) {
 			waits = append(waits, p.recordDone)
 		}
 	}
