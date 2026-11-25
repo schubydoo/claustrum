@@ -92,6 +92,8 @@ component_management:
       name: server & lifecycle
       paths:
         - server.go
+        - readrealwait_darwin.go
+        - readrealwait_other.go
         - shutdownreply_other.go
         - shutdownreply_windows.go
         - internal/conn/lineend.go
