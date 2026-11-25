@@ -3773,7 +3773,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	}
 	// With no held git directory and a git directory spelled below baseRepo, a move of
 	// baseRepo since the pin keeps the entry (claustrum's own, not measured). Another git
-	// directory keeps the delete of the measured move (gitDirBelowBase).
+	// directory keeps the delete of before (gitDirBelowBase).
 	var moved func() bool
 	if gitDirBelowBase(repo, commonDir) {
 		moved = func() bool { return req.movedSincePin(repo) }
