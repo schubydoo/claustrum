@@ -87,7 +87,7 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	}
 	p.sendHeldEndKill(pid)
 	// 87375cc7 logs the SIGTERM line after the SIGKILL of the end, and after its refusal
-	// line. A shutdown in the wait logs none. In most runs of its race of a second
+	// line. A shutdown in the wait logs none. In some runs of its race of a second
 	// SIGKILL, 87375cc7 logs it (measured on Linux). After a client KILL that
 	// ended the wait, the line still goes (claustrum's own, not measured).
 	if termed {
