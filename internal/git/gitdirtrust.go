@@ -235,20 +235,24 @@ func daemonCommonDirStays() bool {
 }
 
 // daemonGitDirSkipped reports whether a request with a copy runs as with no
-// GIT_DIR in the daemon's environment: on Windows, with a daemon GIT_DIR and no
-// daemon GIT_COMMON_DIR (copyPinsWalkGitDir).
+// GIT_DIR in the daemon's environment: on Windows, with an absolute daemon
+// GIT_DIR that names a folder and no daemon GIT_COMMON_DIR (copyPinsWalkGitDir).
 //
 // 87375cc7 does so on Windows for a plain repository, for a folder behind a
-// junction with GIT_DIR spelled through it, and with GIT_DIR at the real path
-// (measured on Windows). git.info, git.status, a create and a remove there have
-// the calls of a request with no daemon GIT_DIR. Each pinned call carries
+// junction with GIT_DIR spelled through it, and with GIT_DIR at the real path.
+// In the state shadow the calls of git.info, git.status on the repository, a
+// create and a remove there follow the walk (measured on Windows). So does a
+// remove as the first request of a daemon, and git.info and git.status on a
+// folder in no repository (measured on Windows). Each pinned call carries
 // GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
-// a git.info on another repository reads the config of its own one. A daemon
-// GIT_DIR that names another repository than the walk is claustrum's own, not
-// measured: the copy follows the walk. A relative GIT_DIR and one that names no
-// folder keep the rules of before, so the measured refusals of a regular file
-// stay (TestGitDirTrustDaemonGitDirPlainFileWindows).
+// a git.info on another repository makes the read of the config again.
+// git.status of a linked worktree, git.list_branches and a daemon GIT_DIR of
+// another repository are claustrum's own, not measured: the copy follows the
+// walk only when the walk finds a trusted git directory. A relative GIT_DIR
+// and one that names no folder keep the rules above (claustrum's own, not
+// measured). The refusals of a regular file there are those of 5fd08069
+// (TestGitDirTrustDaemonGitDirPlainFileWindows).
 func daemonGitDirSkipped() bool {
 	gd := os.Getenv("GIT_DIR")
 	if !copyPinsWalkGitDir || gd == "" || daemonCommonDirSet() || !filepath.IsAbs(gd) {
@@ -306,8 +310,20 @@ func commonDirPinEnv(dir string) []string {
 
 // gitDirTrustFor finds and judges the git directory for dir. A dir that does not
 // resolve to an existing directory is left to git, which answers for itself.
+//
+// With daemonGitDirSkipped a dir in which the walk finds no repository gets the
+// verdict of the walk. 87375cc7 answers git.info and git.status on such a folder
+// with the calls of a daemon with no GIT_DIR there: the listing and the next
+// call carry GIT_DIR=NUL (measured on Windows). Other states than shadow follow
+// (claustrum's own, not measured).
 func gitDirTrustFor(dir string) gitDirTrust {
-	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+	t := trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+	if daemonGitDirSkipped() && t.verdict == gitDirTrusted {
+		if w := trustWithGitDir(dir, ""); w.verdict == gitDirNoRepo {
+			return w
+		}
+	}
+	return t
 }
 
 // trustWithGitDir is gitDirTrustFor with gd in the place of the daemon's GIT_DIR.

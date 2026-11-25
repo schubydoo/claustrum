@@ -203,11 +203,19 @@ func TestDaemonGitDirSkippedProbes(t *testing.T) {
 // folder is skipped. A regular file and a relative value keep the rules of before,
 // whose refusals are measured on Windows (TestGitDirTrustDaemonGitDirPlainFileWindows,
 // TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows). A daemon GIT_COMMON_DIR
-// keeps them too. Mutation: in daemonGitDirSkipped drop the tests of the value.
+// keeps them too. Mutations: in daemonGitDirSkipped drop the tests of the value,
+// or drop `|| !filepath.IsAbs(gd)`.
 func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
 	setCopyPinsWalkGitDir(t, true)
 	clearFolderEnv(t)
 	dir := t.TempDir()
+	// The relative value names a folder from the working folder of the test, so
+	// only the test of an absolute path refuses it.
+	cwd := t.TempDir()
+	if err := os.Mkdir(filepath.Join(cwd, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
 	file := filepath.Join(dir, "gitdir-file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
@@ -232,5 +240,28 @@ func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
 		if got := daemonGitDirSkipped(); got != row.want {
 			t.Errorf("%s: daemonGitDirSkipped = %v, want %v", row.name, got, row.want)
 		}
+	}
+}
+
+// TestDaemonGitDirSkippedPlainFolder: with daemonGitDirSkipped a folder in which the
+// walk finds no repository gets the verdict "no repository" and its pin, as with no
+// daemon GIT_DIR. 87375cc7 answers git.info and git.status there with the calls of
+// GIT_DIR=NUL (measured on Windows). With the switch off the daemon GIT_DIR stays the
+// judged directory. Mutation: in gitDirTrustFor drop the test of the walk.
+func TestDaemonGitDirSkippedPlainFolder(t *testing.T) {
+	clearFolderEnv(t)
+	_, gitDir := configRepo(t)
+	plain := resolveTestRoot(t, t.TempDir())
+	t.Setenv("GIT_DIR", gitDir)
+	setCopyPinsWalkGitDir(t, true)
+	if tr := gitDirTrustFor(plain); tr.verdict != gitDirNoRepo {
+		t.Errorf("verdict = %+v, want no repository", tr)
+	}
+	if got, want := commonDirPinEnv(plain), noRepoPin(); !slices.Equal(got, want) {
+		t.Errorf("pin = %q, want %q", got, want)
+	}
+	setCopyPinsWalkGitDir(t, false)
+	if tr := gitDirTrustFor(plain); tr.verdict != gitDirTrusted {
+		t.Errorf("off: verdict = %+v, want the daemon GIT_DIR trusted", tr)
 	}
 }

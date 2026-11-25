@@ -803,7 +803,8 @@ func (u gitUse) namesCopy(dir string) (gitDirTrust, bool) {
 // Linux). claustrum tests what the walk of the trust check found: a git
 // directory that no folder holds as its `.git` entry (gitWalkRoot). With a
 // GIT_DIR in the daemon's own environment the walk does not say that, and the
-// test does not run (not measured).
+// test does not run (not measured). This site keeps that test of the daemon
+// GIT_DIR on Windows too (claustrum's own, not measured).
 func (u gitUse) noWorkTree(dir string) bool {
 	if _, ok := u.names(dir); !ok || os.Getenv("GIT_DIR") != "" {
 		return false
@@ -844,8 +845,8 @@ func (u gitUse) commonVars() []string {
 // 5fd08069 each such call has GIT_DIR=<the daemon's value>, the profile values,
 // GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<that git directory>/objects,
 // in this order (measured on Linux, 27 calls). A relative GIT_DIR of the daemon
-// is not measured. On Windows the call gets all four variables of the walk
-// instead (daemonGitDirSkipped).
+// is not measured. On Windows (daemonGitDirSkipped) it also gets GIT_DIR of the
+// verdict and GIT_WORK_TREE of the walk.
 func (u gitUse) pin(dir string) []string {
 	t, ok := u.names(dir)
 	if !ok {
