@@ -85,14 +85,16 @@ func TestLeafPathEnds(t *testing.T) {
 		t.Errorf("ws: %v, want a folder", err)
 	}
 
+	// The name stays below NAME_MAX, so only the full length can fail the
+	// mkdirat. The parent stays below PATH_MAX, so it can be made and opened.
+	name := strings.Repeat("w", 200)
 	parent := base
-	for len(parent) < syscall.PathMax-300 {
+	for len(parent)+1+len(name) < syscall.PathMax {
 		parent = filepath.Join(parent, strings.Repeat("p", 200))
 	}
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	name := strings.Repeat("w", syscall.PathMax-len(parent))
 	long := filepath.Join(parent, name)
 	if err := mkdirWorktreeLeaf(long); !errors.Is(err, syscall.ENAMETOOLONG) || err.Error() != "mkdirat "+name+": file name too long" {
 		t.Errorf("mkdirWorktreeLeaf of %d bytes = %v, want mkdirat <leaf>: file name too long", len(long), err)
