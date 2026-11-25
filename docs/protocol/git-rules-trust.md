@@ -138,7 +138,7 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
 ### The daemon's `GIT_DIR` and `GIT_COMMON_DIR`
 
 - A `GIT_DIR` names the git directory to judge, for every request folder, even a
-  plain one, except on Windows (below). A relative value is taken relative to the request folder. A
+  plain one, except in the Windows case below. A relative value is taken relative to the request folder. A
   `GIT_DIR` that names a gone entry gets M5. Any other `GIT_DIR` that does not
   exist is left to git. On Linux and macOS each method then answers "no
   repository" in the state `shadow` (`b3081b51`, measured on Linux and macOS),
@@ -155,7 +155,7 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
 - On Windows, with an absolute daemon `GIT_DIR` of a folder and no daemon
   `GIT_COMMON_DIR`, a folder in no repository gets the verdict of the walk. In the
   state `shadow` `87375cc7` answers so on all five methods (measured on Windows).
-  A folder of a second repository gets the verdict of its walk too, for `git.info`,
+  A folder of a second repository gets the verdict of its trusted walk too, for `git.info`,
   a create and a remove (measured on Windows). `git.status`, `git.list_branches` and
   `fallback-git` there are claustrum's own, not measured. `git.info` with `"shadowDirOff":true`
   keeps the verdict of that `GIT_DIR`, measured for a folder in no repository and
