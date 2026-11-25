@@ -200,8 +200,7 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 			// The rows do not show a registrations folder in the repository.
 			// Without one 5fd08069 runs no pair before the add. b3081b51 and
 			// c9125eb8 run it in the first create of a repository, right before
-			// the add (pairBeforeAdd). A refusal before the add runs no pair
-			// (claustrum's own, not measured).
+			// the add (pairBeforeAdd).
 			if err := os.RemoveAll(filepath.Join(f.gitDir, worktreesSubdir)); err != nil {
 				t.Fatal(err)
 			}
