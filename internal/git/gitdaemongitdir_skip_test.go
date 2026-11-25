@@ -540,3 +540,52 @@ func TestDaemonGitDirSkippedLinkedWorktree(t *testing.T) {
 		}
 	}
 }
+
+// TestDaemonGitDirSkippedLogsOnce: with daemonGitDirSkipped the daemon logs
+// skippedGitDirLine once, before the line of the start test. So it does in a
+// daemon of five requests and for a remove as its first request. With no daemon
+// GIT_DIR it logs none (87375cc7, measured on Windows). Mutation: in
+// daemonGitDirVerdict drop the call of logSkippedGitDir.
+func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	run := func(t *testing.T, withGitDir, removeFirst bool) {
+		f := newShadowFixture(t)
+		setAttrSource(t, true)
+		skippedGitDirLogged.Store(false)
+		t.Cleanup(func() { skippedGitDirLogged.Store(false) })
+		repo, gitDir := configRepo(t)
+		reqs := skipRequests(repo)
+		if removeFirst {
+			runGit(t, repo, "worktree", "add", "-q", "-b", "w1", reqs[3].params["worktreePath"].(string))
+			reqs = reqs[3:]
+		}
+		logs := captureLogBuf(t)
+		if withGitDir {
+			t.Setenv("GIT_DIR", gitDir)
+		}
+		if !removeFirst {
+			other, _ := configRepo(t)
+			if raw, _ := f.info(t, other, nil); !strings.Contains(raw, `"isRepo":true`) {
+				t.Fatalf("the first git.info = %s", raw)
+			}
+		}
+		for _, m := range reqs {
+			f.call(t, m.method, m.params)
+		}
+		got := logs.String()
+		want := 0
+		if withGitDir {
+			want = 1
+		}
+		if n := strings.Count(got, skippedGitDirLine); n != want {
+			t.Fatalf("%d lines of the skipped GIT_DIR, want %d:\n%s", n, want, got)
+		}
+		at, shadow := strings.Index(got, skippedGitDirLine), strings.Index(got, shadowStateLine)
+		if shadow < 0 || at > shadow {
+			t.Errorf("the skipped GIT_DIR line at %d, the start test line at %d, want it first:\n%s", at, shadow, got)
+		}
+	}
+	t.Run("five requests", func(t *testing.T) { run(t, true, false) })
+	t.Run("remove first", func(t *testing.T) { run(t, true, true) })
+	t.Run("no daemon GIT_DIR", func(t *testing.T) { run(t, false, false) })
+}

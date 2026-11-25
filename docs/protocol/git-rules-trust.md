@@ -164,7 +164,8 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   claustrum's own in a repository. The other methods with that switch, and `fallback-git`, follow the walk
   (claustrum's own, not measured). In the state `shadow` the calls of a trusted walk follow it
   ([the git calls](git-rules-settings-copy.md#the-git-calls)). A refusal of that
-  `GIT_DIR` stays (from the code).
+  `GIT_DIR` stays (from the code). The daemon logs `[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`
+  once, in its first request, before the line of the start test (`87375cc7`, measured on Windows).
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
   refusal with `git worktree add failed: cannot locate the repository's git

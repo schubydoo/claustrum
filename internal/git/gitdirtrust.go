@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The git-directory trust check that every git.* method applies to the directory it runs git in, before
@@ -343,7 +346,29 @@ func gitDirTrustFor(dir string) gitDirTrust {
 // daemonGitDirVerdict is gitDirTrustFor without the walk of daemonGitDirSkipped:
 // the verdict of the daemon's GIT_DIR when it is set.
 func daemonGitDirVerdict(dir string) gitDirTrust {
+	logSkippedGitDir()
 	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+}
+
+// skippedGitDirLine is the log line of a daemon GIT_DIR that daemonGitDirSkipped
+// skips (87375cc7, measured on Windows).
+const skippedGitDirLine = "[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+
+// skippedGitDirLogged is true once the daemon logged skippedGitDirLine.
+var skippedGitDirLogged atomic.Bool
+
+// logSkippedGitDir logs skippedGitDirLine once per daemon, at the trust check of
+// the first request, with daemonGitDirSkipped. 87375cc7 logs it once in a daemon
+// of five requests, before the line of the start test (measured on Windows). So
+// it does for a remove as the first request, and for a GIT_DIR in its 8.3 form,
+// in its long form and behind a junction. With no daemon GIT_DIR it logs none
+// (measured on Windows). A relative GIT_DIR and one that names no folder log
+// none (claustrum's own, not measured). The line of a first request with
+// "shadowDirOff":true or on a folder in no repository is claustrum's own too.
+func logSkippedGitDir() {
+	if daemonGitDirSkipped() && skippedGitDirLogged.CompareAndSwap(false, true) {
+		logging.Infof(skippedGitDirLine)
+	}
 }
 
 // trustWithGitDir is gitDirTrustFor with gd in the place of the daemon's GIT_DIR.
