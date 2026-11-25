@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// openLeafParent opens dir as a path handle for removeWorktreeLeaf. O_PATH needs no
+// openLeafParent opens dir as a path handle. O_PATH needs no
 // read permission on dir, so a parent with write and search permission alone still
 // gives the handle. An error is the bare errno.
 func openLeafParent(dir string) (int, error) {

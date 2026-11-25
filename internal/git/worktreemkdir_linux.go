@@ -15,17 +15,23 @@ import (
 // handle and makes the leaf through it with mode 0777, less the umask. 87375cc7
 // makes the leaf by a mkdirat through a handle of its parent (measured on Linux).
 // A failure reads `mkdirat <leaf>: <errno>`, also when the parent cannot be
-// opened. The errno is that of a mkdir by path (claustrum's own). That string is
-// wire-visible in the mkdir_failed frame (7d193f89, measured).
+// opened. That string is wire-visible in the mkdir_failed frame (7d193f89,
+// measured). The leaf is worktreePath less its trailing slashes, not cleaned, so a
+// path that ends in `/.` makes nothing. A path of PATH_MAX bytes or more fails
+// with ENAMETOOLONG, as a mkdir by path does (claustrum's own, not measured).
 func mkdirWorktreeLeaf(worktreePath string) error {
-	leaf := filepath.Clean(worktreePath)
+	leaf := strings.TrimRight(worktreePath, "/")
+	name := filepath.Base(worktreePath)
+	if len(worktreePath) >= unix.PathMax {
+		return &fs.PathError{Op: "mkdirat", Path: name, Err: unix.ENAMETOOLONG}
+	}
 	fd, err := openLeafParent(filepath.Dir(leaf))
 	if err != nil {
-		return &fs.PathError{Op: "mkdirat", Path: filepath.Base(leaf), Err: err}
+		return &fs.PathError{Op: "mkdirat", Path: name, Err: err}
 	}
 	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Mkdirat(fd, filepath.Base(leaf), 0o777); err != nil {
-		return &fs.PathError{Op: "mkdirat", Path: filepath.Base(leaf), Err: err}
+		return &fs.PathError{Op: "mkdirat", Path: name, Err: err}
 	}
 	return nil
 }
@@ -35,13 +41,15 @@ func mkdirWorktreeLeaf(worktreePath string) error {
 // resolved, and walks down by handles. Each folder is tested and made by name
 // through the handle of its parent, then opened. 87375cc7 does the same (measured
 // on Linux). A new directory asks for mode 0755, and the umask applies. An existing
-// directory keeps its mode. The texts of 87375cc7 (measured on Linux):
+// directory keeps its mode. The texts of 87375cc7 (measured on Linux, except the
+// last):
 //   - An existing component that is not a directory: "<path> is not a directory".
 //     <path> is its full path, with the symlinks of repo resolved.
 //   - A directory that cannot be opened: "openat <name>: <errno>".
 //   - A directory without search permission: "\"<name>\" could not be examined
 //     (statat .: <errno>)". This includes the last directory.
-//   - A failed create names that component only: "mkdirat <name>: <errno>".
+//   - A failed create names that component only: "mkdirat <name>: <errno>"
+//     (f6010b97, measured on Linux and macOS, not measured on 87375cc7).
 //
 // A directory made before a later failure stays. A component that another process
 // creates at the same moment passes if it is a directory, as in os.MkdirAll. A
@@ -54,10 +62,12 @@ func mkdirRepoWorktreeParents(repo, dir string) error {
 	}
 	p := resolvedDir(repo)
 	names := strings.Split(rel, string(filepath.Separator))
-	// A repo that cannot be opened names the first component, as a mkdir by
-	// path did before (claustrum's own, not measured).
+	// The repo is opened as a path handle, so a repo with write and search
+	// permission and no read permission still works, as a mkdir by path did. A
+	// repo that cannot be opened names the first component (claustrum's own, not
+	// measured).
 	fd, err := retryEINTR(func() (int, error) {
-		return unix.Open(p, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		return unix.Open(p, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	})
 	if err != nil {
 		return &fs.PathError{Op: "mkdirat", Path: names[0], Err: err}

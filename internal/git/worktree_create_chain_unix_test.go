@@ -554,10 +554,10 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 
 // The in-repo parent step: an existing directory without search permission reads
 // "statat .: <errno>", and texts name the resolved, cleaned repo path. f6010b97
-// sends these on Linux and macOS. On Linux 87375cc7 opens each folder, so a
-// folder without search permission reads `"<name>" could not be examined (statat
-// .: <errno>)`, and one without read permission `openat <name>: <errno>`
-// (measured on Linux).
+// sends these on Linux and macOS. On Linux 87375cc7 opens each folder first. A
+// folder that it can open but not search (mode 0600) reads `"<name>" could not be
+// examined (statat .: <errno>)`, and one that it cannot open (mode 0300 or 0000)
+// reads `openat <name>: <errno>` (measured on Linux).
 func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 	examined := func(name string) func(string) string {
 		return func(string) string {

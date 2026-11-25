@@ -912,7 +912,7 @@ func TestCreateWithTheRegistrationsFolderGoneAfterTheAdd(t *testing.T) {
 
 // TestRemadeRegistrationsFolderMode: under umask 0 the `worktrees` folder that
 // the staging step makes again asks for mode 0777. 87375cc7 runs that mkdir
-// with 0777 (measured on Linux, macOS not measured). Mutation: ask for 0755,
+// with 0777 (measured on Linux, macOS claustrum's own, not measured). Mutation: ask for 0755,
 // and the folder has 0755.
 func TestRemadeRegistrationsFolderMode(t *testing.T) {
 	f := newSeededShadowFixture(t)
