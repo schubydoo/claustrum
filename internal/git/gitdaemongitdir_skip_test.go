@@ -172,6 +172,9 @@ func TestDaemonGitDirSkippedPin(t *testing.T) {
 // drop withoutSkippedGitDir in probeEnv, and in attrProbeCmd.
 func TestDaemonGitDirSkippedProbes(t *testing.T) {
 	gitDir := filepath.Join(t.TempDir(), ".git")
+	if err := os.Mkdir(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("GIT_DIR", gitDir)
 	has := func(env []string) bool {
 		_, ok := lookupExact(env, "GIT_DIR")
@@ -190,5 +193,41 @@ func TestDaemonGitDirSkippedProbes(t *testing.T) {
 	}
 	if v, _ := lookupExact(os.Environ(), "GIT_DIR"); v != gitDir {
 		t.Fatalf("GIT_DIR = %q", v)
+	}
+}
+
+// TestDaemonGitDirSkippedNeedsAFolder: only an absolute daemon GIT_DIR that names a
+// folder is skipped. A regular file and a relative value keep the rules of before,
+// whose refusals are measured on Windows (TestGitDirTrustDaemonGitDirPlainFileWindows,
+// TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows). A daemon GIT_COMMON_DIR
+// keeps them too. Mutation: in daemonGitDirSkipped drop the tests of the value.
+func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	clearFolderEnv(t)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "gitdir-file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		name, gitDir, commonDir string
+		want                    bool
+	}{
+		{"folder", dir, "", true},
+		{"regular file", file, "", false},
+		{"relative", ".git", "", false},
+		{"missing", filepath.Join(dir, "gone"), "", false},
+		{"with GIT_COMMON_DIR", dir, dir, false},
+	} {
+		t.Setenv("GIT_DIR", row.gitDir)
+		t.Setenv("GIT_COMMON_DIR", row.commonDir)
+		if row.commonDir == "" {
+			if err := os.Unsetenv("GIT_COMMON_DIR"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := daemonGitDirSkipped(); got != row.want {
+			t.Errorf("%s: daemonGitDirSkipped = %v, want %v", row.name, got, row.want)
+		}
 	}
 }

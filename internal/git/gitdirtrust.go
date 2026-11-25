@@ -246,22 +246,24 @@ func daemonCommonDirStays() bool {
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
 // a git.info on another repository reads the config of its own one. A daemon
 // GIT_DIR that names another repository than the walk is claustrum's own, not
-// measured: the copy follows the walk.
+// measured: the copy follows the walk. A relative GIT_DIR and one that names no
+// folder keep the rules of before, so the measured refusals of a regular file
+// stay (TestGitDirTrustDaemonGitDirPlainFileWindows).
 func daemonGitDirSkipped() bool {
-	return copyPinsWalkGitDir && os.Getenv("GIT_DIR") != "" && !daemonCommonDirSet()
+	gd := os.Getenv("GIT_DIR")
+	if !copyPinsWalkGitDir || gd == "" || daemonCommonDirSet() || !filepath.IsAbs(gd) {
+		return false
+	}
+	fi, err := os.Stat(gd)
+	return err == nil && fi.IsDir()
 }
 
 // copyTrust is the verdict t of the trust check on dir as the copy of a request
 // takes it. With daemonGitDirSkipped a trusted t gives way to the verdict of the
 // walk from dir, when that walk finds a trusted git directory. The refusals of
-// the check stay those of the daemon's GIT_DIR. A trusted GIT_DIR that names no
-// folder keeps its verdict, so the measured refusals of the read of its config
-// stay (TestGitDirTrustDaemonGitDirPlainFileWindows).
+// the check stay those of the daemon's GIT_DIR.
 func copyTrust(t gitDirTrust, dir string) gitDirTrust {
 	if !daemonGitDirSkipped() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return t
-	}
-	if fi, err := os.Stat(t.pinCommonDir); err != nil || !fi.IsDir() {
 		return t
 	}
 	if w := trustWithGitDir(dir, ""); w.verdict == gitDirTrusted && w.pinCommonDir != "" {
