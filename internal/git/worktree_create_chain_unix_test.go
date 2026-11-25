@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -553,12 +554,24 @@ func TestWorktreeCreateKeepsAnyMarkerEntry(t *testing.T) {
 
 // The in-repo parent step: an existing directory without search permission reads
 // "statat .: <errno>", and texts name the resolved, cleaned repo path. f6010b97
-// sends these on Linux and macOS.
+// sends these on Linux and macOS. On Linux 87375cc7 opens each folder, so a
+// folder without search permission reads `"<name>" could not be examined (statat
+// .: <errno>)`, and one without read permission `openat <name>: <errno>`
+// (measured on Linux).
 func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
+	examined := func(name string) func(string) string {
+		return func(string) string {
+			if runtime.GOOS == "linux" {
+				return `"` + name + `" could not be examined (statat .: permission denied)`
+			}
+			return "statat .: permission denied"
+		}
+	}
 	cases := []struct {
-		name   string
-		denied bool
-		setup  func(t *testing.T, repo string)
+		name      string
+		denied    bool
+		linuxOnly bool
+		setup     func(t *testing.T, repo string)
 		// send gives baseRepo and worktreePath from the fixture.
 		send func(base, repo string) (string, string)
 		text func(repo string) string
@@ -569,7 +582,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 				mkdirForTest(t, filepath.Join(repo, ".claude"))
 				chmodForTest(t, filepath.Join(repo, ".claude"), 0o600)
 			},
-			text: func(string) string { return "statat .: permission denied" },
+			text: examined(".claude"),
 		},
 		{
 			name: "worktrees_not_searchable", denied: true,
@@ -577,7 +590,7 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 				mkdirForTest(t, filepath.Join(repo, ".claude", "worktrees"))
 				chmodForTest(t, filepath.Join(repo, ".claude", "worktrees"), 0o600)
 			},
-			text: func(string) string { return "statat .: permission denied" },
+			text: examined("worktrees"),
 		},
 		{
 			name: "claude_not_searchable_worktrees_exists", denied: true,
@@ -585,7 +598,31 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 				mkdirForTest(t, filepath.Join(repo, ".claude", "worktrees"))
 				chmodForTest(t, filepath.Join(repo, ".claude"), 0o600)
 			},
-			text: func(string) string { return "statat .: permission denied" },
+			text: examined(".claude"),
+		},
+		{
+			name: "claude_not_readable", denied: true, linuxOnly: true,
+			setup: func(t *testing.T, repo string) {
+				mkdirForTest(t, filepath.Join(repo, ".claude"))
+				chmodForTest(t, filepath.Join(repo, ".claude"), 0o300)
+			},
+			text: func(string) string { return "openat .claude: permission denied" },
+		},
+		{
+			name: "claude_mode_0", denied: true, linuxOnly: true,
+			setup: func(t *testing.T, repo string) {
+				mkdirForTest(t, filepath.Join(repo, ".claude"))
+				chmodForTest(t, filepath.Join(repo, ".claude"), 0)
+			},
+			text: func(string) string { return "openat .claude: permission denied" },
+		},
+		{
+			name: "worktrees_not_readable", denied: true, linuxOnly: true,
+			setup: func(t *testing.T, repo string) {
+				mkdirForTest(t, filepath.Join(repo, ".claude", "worktrees"))
+				chmodForTest(t, filepath.Join(repo, ".claude", "worktrees"), 0o300)
+			},
+			text: func(string) string { return "openat worktrees: permission denied" },
 		},
 		{
 			name:  "unclean_path",
@@ -620,6 +657,9 @@ func TestWorktreeCreateInRepoChainTexts(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if c.denied && os.Geteuid() == 0 {
 				t.Skip("root ignores the permission bits this case relies on")
+			}
+			if c.linuxOnly && runtime.GOOS != "linux" {
+				t.Skip("macOS keeps the walk by path")
 			}
 			base, repo := createModesRepo(t)
 			c.setup(t, repo)

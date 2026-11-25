@@ -229,6 +229,8 @@ component_management:
         - internal/git/externalunsupported_windows.go
         - internal/git/externalunsupported_other.go
         - internal/git/worktreelock.go
+        - internal/git/worktreemkdir_darwin.go
+        - internal/git/worktreemkdir_linux.go
         - internal/git/worktreemkdir_unix.go
         - internal/git/worktreemkdir_windows.go
         - internal/git/worktreeleafparent_darwin.go
