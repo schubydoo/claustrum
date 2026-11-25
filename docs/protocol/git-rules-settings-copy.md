@@ -325,8 +325,8 @@ arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows).
 four follow the profile values, in that order (order measured on Linux and
 macOS). The staged `worktree add` moves its `GIT_COMMON_DIR` to the end ([staged
 add](git-worktree-create.md#the-staged-add)).
-On Windows, with a daemon `GIT_DIR` and no daemon `GIT_COMMON_DIR`, a request runs as
-with no daemon `GIT_DIR` (`87375cc7`, measured on Windows). Its calls with no
+On Windows, with a daemon `GIT_DIR` of a folder and no daemon `GIT_COMMON_DIR`, a request
+runs as with no daemon `GIT_DIR` (`87375cc7`, measured on Windows). Its calls with no
 `--git-dir=` carry the `GIT_DIR` and `GIT_WORK_TREE` of the walk, at their real paths. The calls with
 `--git-dir=`, the call about the repository and the `--attr-source` probe carry no
 `GIT_DIR`. A daemon `GIT_DIR` of another repository is claustrum's own, not

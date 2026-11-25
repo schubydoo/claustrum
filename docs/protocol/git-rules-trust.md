@@ -152,9 +152,9 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   daemon's environment sets `GIT_COMMON_DIR`. A relative value is first joined
   to the request folder (both measured on Linux and Windows). On Windows `/dev/null` names nothing, so it becomes
   `<request dir>\dev\null`.
-- On Windows in the state `shadow` the refusals stay those of that `GIT_DIR`
-  (from the code), and the calls follow the walk ([the git
-  calls](git-rules-settings-copy.md#the-git-calls)).
+- On Windows in the state `shadow` the calls follow the walk when that `GIT_DIR`
+  names a folder ([the git calls](git-rules-settings-copy.md#the-git-calls)). Its
+  refusals stay (from the code).
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
   refusal with `git worktree add failed: cannot locate the repository's git
