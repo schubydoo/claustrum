@@ -1155,7 +1155,9 @@ func gitListBranches(req *gitCall) rpc.Response {
 // before the listing (87375cc7, measured on Windows). The caller then gets them
 // back as afterListing, for worktreeAdd. On Linux and macOS a refusal before the
 // add then runs no pair (claustrum's own, not measured): the listing of the add
-// stays the last call of the refusals of 5fd08069 after a swap.
+// stays the last call of the refusals of 5fd08069 after a swap. A swap of the
+// held git directory after the listing runs the pair before its refusal
+// (4c111e86, measured on Linux, worktreeAdd).
 //
 // The test does not follow a link. A symbolic link to a real folder there
 // gives no pair, also when that folder holds a registration (measured on
