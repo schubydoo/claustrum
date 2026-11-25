@@ -136,8 +136,9 @@ var gitVersionDir = func() string {
 var nonFolderStartRefuses = true
 
 // startNameRefuses reports the stat error of a folder whose listing start error is a
-// refusal (unenterableDir): ERROR_INVALID_NAME. 87375cc7 answers git.info with the
-// hooks refusal and `chdir <path>: The filename, directory name, or volume label
+// refusal (unenterableDir), and that gitInfo answers before the start test:
+// ERROR_INVALID_NAME. 87375cc7 answers git.info with the hooks refusal and
+// `chdir <path>: The filename, directory name, or volume label
 // syntax is incorrect.` there, for a path through a junction that `mklink /J` made
 // to a `\??\Volume{<guid>}\` target (measured on Windows). On that junction
 // git.status keeps isRepo:false and git.worktree_remove keeps the trust-root text

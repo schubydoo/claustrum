@@ -150,12 +150,12 @@ func TestCreateDeletesNothingBehindALinkedRegistrationsFolder(t *testing.T) {
 func TestRemoveDeletesNothingBehindALinkedRegistrationsFolder(t *testing.T) {
 	t.Run("the entry by its record", func(t *testing.T) {
 		repo, leaf, target := linkedRegistrations(t)
-		dropWorktreeEntryByPath(filepath.Join(repo, ".git"), newWorktreePathSet(leaf))
+		dropWorktreeEntryByPath(filepath.Join(repo, ".git"), newWorktreePathSet(leaf), nil)
 		wantEntryKept(t, target)
 	})
 	t.Run("the verified entry", func(t *testing.T) {
 		repo, _, target := linkedRegistrations(t)
-		if err := dropWorktreeEntry(filepath.Join(repo, ".git"), "w1"); err == nil {
+		if err := dropWorktreeEntry(filepath.Join(repo, ".git"), "w1", nil); err == nil {
 			t.Error("dropWorktreeEntry = nil, want the error of the link")
 		}
 		wantEntryKept(t, target)

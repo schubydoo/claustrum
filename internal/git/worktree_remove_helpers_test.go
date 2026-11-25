@@ -109,7 +109,7 @@ func TestWorktreeEntryHelpersWithoutWorktreesDir(t *testing.T) {
 	if verifiedEntryLocked(common, "w") != notLocked {
 		t.Error("verifiedEntryLocked(no worktrees dir) is locked")
 	}
-	if err := dropWorktreeEntry(common, "w"); !errors.Is(err, fs.ErrNotExist) {
+	if err := dropWorktreeEntry(common, "w", nil); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("dropWorktreeEntry(no worktrees dir) = %v, want not-exist", err)
 	}
 }
