@@ -616,7 +616,7 @@ func stagedAdd(t *testing.T, f repoFolderFixture, u gitUse, args ...string) (lea
 	if args == nil {
 		args = []string{"worktree", "add", "--no-track", "--no-checkout", "-b", "w1", leaf}
 	}
-	stderr, err = worktreeAddStaged(context.Background(), u, f.repo, leaf, cp, args...)
+	stderr, err = worktreeAddStaged(context.Background(), u, f.repo, leaf, cp, nil, args...)
 	return leaf, stderr, err
 }
 
@@ -872,7 +872,7 @@ func TestWorktreeAddStagedWithNoCheckpoint(t *testing.T) {
 	if err := os.MkdirAll(leaf, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := worktreeAddStaged(context.Background(), u, f.repo, leaf, worktreeCheckpoint{},
+	_, err := worktreeAddStaged(context.Background(), u, f.repo, leaf, worktreeCheckpoint{}, nil,
 		"worktree", "add", "--no-track", "--no-checkout", "-b", "w1", leaf)
 	if got, want := incompleteText(err), "the create holds no checkpoint of the new worktree"; got != want {
 		t.Fatalf("the add = %v, want the text %q", err, want)

@@ -115,10 +115,9 @@ func TestCheckoutSSHDoorEnv(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Errorf("door entries of read-tree =\n%q\nwant\n%q", got, want)
 			}
-			// The second listing has the door entries of the read-tree call on
-			// Linux and macOS (c9125eb8, measured on Linux and macOS). On Windows
-			// it has no door, and it keeps a GIT_SSH_COMMAND of the daemon as before
-			// the door (doorReadBeforeListing, claustrum's own, not measured).
+			// The second listing has the door entries of the read-tree call
+			// (c9125eb8, measured on Linux and macOS, 87375cc7 on Windows,
+			// doorReadBeforeListing).
 			wantDoor := doorEntries(env)
 			if !doorReadBeforeListing {
 				wantDoor = nil

@@ -299,7 +299,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
 	if named && stagedAddWindowsSteps {
-		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, args...)
+		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, afterListing, args...)
 		if err == nil && f.accepted != nil {
 			f.accepted.moved = true
 		}

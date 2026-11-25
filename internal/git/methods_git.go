@@ -1132,11 +1132,12 @@ func gitListBranches(req *gitCall) rpc.Response {
 // (gitDirRegistryDir, not measured). The calls come after `rev-parse --absolute-git-dir` and before
 // the listing of the add (measured on macOS and Windows). With a missing folder
 // they come after the listing of the add and right before the add on Linux and
-// macOS (c9125eb8 and b3081b51, measured on Linux and macOS). The caller then
-// gets them back as afterListing, for worktreeAdd. Windows keeps the place
-// before the listing (claustrum's own, not measured). A refusal before the
-// add then runs no pair (claustrum's own, not measured): the listing of the
-// add stays the last call of the refusals of 5fd08069 after a swap.
+// macOS (c9125eb8 and b3081b51, measured on Linux and macOS). On Windows they
+// come there too in the state shadow, and an existing folder keeps the place
+// before the listing (87375cc7, measured on Windows). The caller then gets them
+// back as afterListing, for worktreeAdd. On Linux and macOS a refusal before the
+// add then runs no pair (claustrum's own, not measured): the listing of the add
+// stays the last call of the refusals of 5fd08069 after a swap.
 //
 // The test does not follow a link. A symbolic link to a real folder there
 // gives no pair, also when that folder holds a registration (measured on
@@ -1175,6 +1176,9 @@ func pairBeforeAdd(req *gitCall, gitDir, repo, workTree string, missingRuns, mem
 		_, _ = gitDirWorkTreeToplevel(req.stop, u.sshOff(), filepath.Dir(registrations), workTree, u.gitDirPin(repo), u.gitDirFront())
 	}
 	if (missing || late) && !stagedAddWindowsSteps {
+		return run
+	}
+	if missing && req.use.shadow() {
 		return run
 	}
 	run()

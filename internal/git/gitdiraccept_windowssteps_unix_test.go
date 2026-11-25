@@ -319,3 +319,11 @@ func TestWindowsStagedAddTexts(t *testing.T) {
 		}
 	})
 }
+
+// The pair of a first create with no registrations folder, with the steps of
+// Windows on (TestCreatePairAfterTheAddListingWithNoFolder). Mutation: run the
+// pair at once in pairBeforeAdd for a missing folder (the listing comes last).
+func TestCreatePairAfterTheAddListingWithWindowsSteps(t *testing.T) {
+	setStagedAddWindowsSteps(t, true)
+	wantPairRightBeforeAdd(t)
+}

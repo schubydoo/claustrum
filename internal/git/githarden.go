@@ -557,11 +557,10 @@ func deadlineStop(cmd *exec.Cmd, s *checkoutStop) func() error {
 //     GIT_INDEX_FILE and LANGUAGE=C, and no added LC_ALL. claustrum reads its
 //     output to the end and keeps none of it. A failure of it refuses the create (ownConfigListing). Then
 //     come the cap of the filter rule (tooManyFiltersText) and the other
-//     refusals of the plan. 5fd08069 has that order (measured on Linux). On
-//     Linux and macOS the config read of the ssh door comes before this
-//     listing, and the listing carries the five entries of the door too
-//     (c9125eb8, measured on Linux and macOS). Windows keeps the old order
-//     (doorReadBeforeListing).
+//     refusals of the plan. 5fd08069 has that order (measured on Linux). The
+//     config read of the ssh door comes before this listing, and the listing
+//     carries the five entries of the door too (c9125eb8, measured on Linux and
+//     macOS, and 87375cc7 on Windows, doorReadBeforeListing).
 //   - The read-tree call has the item lfs.storage=<git directory>/lfs (Linux
 //     and macOS: `<checkout folder>/lfs`) before the list of the profile. The
 //     pairs of the filter rule come before that item (measured on Linux). For
@@ -665,11 +664,10 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		// The two additions of the read-tree call (the comment above).
 		env = append(env, "LANGUAGE=C")
 		// The config read of the ssh door (gitsshdoor.go), and the door in the
-		// env of the read-tree call. On Linux and macOS the read comes before
-		// the second listing, and that listing gets the door too (c9125eb8
-		// and b3081b51, measured on Linux and macOS). A refusal of the read
-		// before that listing is claustrum's own (not measured). On Windows
-		// the read comes after the refusals below (doorReadBeforeListing).
+		// env of the read-tree call. The read comes before the second listing,
+		// and that listing gets the door too (c9125eb8 and b3081b51, measured
+		// on Linux and macOS, and 87375cc7 on Windows). A refusal of the read
+		// before that listing is claustrum's own (not measured).
 		readDoor := func() error {
 			door, text := readSSHDoorSettings(u, leaf, gitDir, env)
 			if err := u.stop.halted(); err != nil {
