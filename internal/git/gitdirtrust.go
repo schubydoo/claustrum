@@ -242,8 +242,8 @@ func daemonCommonDirStays() bool {
 // junction with GIT_DIR spelled through it, and with GIT_DIR at the real path.
 // In the state shadow the calls of git.info, git.status on the repository, a
 // create and a remove there follow the walk (measured on Windows). So does a
-// remove as the first request of a daemon, and git.info and git.status on a
-// folder in no repository (measured on Windows). Each pinned call carries
+// remove as the first request of a daemon, and the five methods on a folder in
+// no repository (measured on Windows, gitDirTrustFor). Each pinned call carries
 // GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
 // a git.info on another repository makes the read of the config again.
