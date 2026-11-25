@@ -231,6 +231,14 @@ func gitInfo(req *gitCall) rpc.Response {
 	// repository" answer (docs/protocol/git-rules-calls.md → "Where each method answers the
 	// refusal").
 	t := readGitDirTrust(p.Path, true)
+	// With "shadowDirOff":true a daemon GIT_DIR keeps its verdict on Windows
+	// (gitDirTrustFor, 87375cc7, measured on Windows).
+	offDaemon := bool(p.ShadowDirOff) && daemonGitDirSkipped()
+	if offDaemon {
+		if d := daemonGitDirVerdict(p.Path); !d.unsearchable {
+			t = d
+		}
+	}
 	if t.verdict == gitDirRefused {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, t.refusal)
 	}
@@ -384,6 +392,7 @@ func gitInfo(req *gitCall) rpc.Response {
 	} else if gate {
 		req.keepLive(bool(p.ShadowDirOff), gateTrust, gateDir)
 	}
+	req.use.daemonVerdict = offDaemon
 	req.listEntryConfig(t)
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603

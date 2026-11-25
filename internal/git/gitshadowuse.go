@@ -30,6 +30,9 @@ import (
 // (settingsGateRefusal sets it). Its calls name the folder of the repository in
 // the folder of the daemon, so git reads the daemon's copy of the settings.
 type gitUse struct {
+	// daemonVerdict keeps the verdict of the daemon's GIT_DIR in the pin of a call
+	// with no copy (git.info with "shadowDirOff":true, gitDirTrustFor).
+	daemonVerdict bool
 	// addGitDir is the git directory of the `worktree add` call after a junction
 	// move (acceptedGitDir.noteJunctionMove). It is "" for every other call.
 	addGitDir string
@@ -187,7 +190,7 @@ func (u gitUse) formNow(ask bool) (f gitUse, off bool) {
 		return u, false
 	}
 	if l.off() {
-		return gitUse{stop: l.stop, live: l, sshKept: u.sshKept}, true
+		return gitUse{stop: l.stop, live: l, sshKept: u.sshKept, daemonVerdict: u.daemonVerdict}, true
 	}
 	if l.pending {
 		l.pending = false
@@ -768,11 +771,12 @@ func (u gitUse) addNamesCopy(dir string) bool {
 
 // namesCopy is names with no test of the daemon's own GIT_COMMON_DIR. It tells
 // whether a call in dir names the copy of this request when that variable is gone.
+// On Windows the verdict of a daemon GIT_DIR gives way to the walk (copyTrust).
 func (u gitUse) namesCopy(dir string) (gitDirTrust, bool) {
 	if !u.shadow() {
 		return gitDirTrust{}, false
 	}
-	t := gitDirTrustFor(dir)
+	t := copyTrust(gitDirTrustFor(dir), dir)
 	// A create that holds its git directory keeps the verdict of its gate for
 	// its baseRepo, as long as the trust check finds a git directory there.
 	// After a symbolic link to a copy of the git directory was put at `.git`,
@@ -803,7 +807,8 @@ func (u gitUse) namesCopy(dir string) (gitDirTrust, bool) {
 // Linux). claustrum tests what the walk of the trust check found: a git
 // directory that no folder holds as its `.git` entry (gitWalkRoot). With a
 // GIT_DIR in the daemon's own environment the walk does not say that, and the
-// test does not run (not measured).
+// test does not run (not measured). This site keeps that test of the daemon
+// GIT_DIR on Windows too (claustrum's own, not measured).
 func (u gitUse) noWorkTree(dir string) bool {
 	if _, ok := u.names(dir); !ok || os.Getenv("GIT_DIR") != "" {
 		return false
@@ -844,11 +849,12 @@ func (u gitUse) commonVars() []string {
 // 5fd08069 each such call has GIT_DIR=<the daemon's value>, the profile values,
 // GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<that git directory>/objects,
 // in this order (measured on Linux, 27 calls). A relative GIT_DIR of the daemon
-// is not measured.
+// is not measured. On Windows (daemonGitDirSkipped) it also gets GIT_DIR of the
+// verdict and GIT_WORK_TREE of the walk.
 func (u gitUse) pin(dir string) []string {
 	t, ok := u.names(dir)
 	if !ok {
-		return commonDirPinEnv(dir)
+		return u.noCopyPin(dir)
 	}
 	// The `worktree add` after a junction move names the second repository
 	// (acceptedGitDir.noteJunctionMove).
@@ -864,7 +870,7 @@ func (u gitUse) pin(dir string) []string {
 	if t.worktreeEntry != "" {
 		gitDir = t.worktreeEntry
 	}
-	if os.Getenv("GIT_DIR") != "" {
+	if os.Getenv("GIT_DIR") != "" && !daemonGitDirSkipped() {
 		return u.commonVars()
 	}
 	env := append(u.commonVars(), "GIT_DIR="+gitDir)
@@ -874,13 +880,22 @@ func (u gitUse) pin(dir string) []string {
 	return env
 }
 
+// noCopyPin is the pin of a call in dir that names no copy: commonDirPinEnv, or
+// the pin of the daemon's verdict with daemonVerdict.
+func (u gitUse) noCopyPin(dir string) []string {
+	if u.daemonVerdict {
+		return commonDirPinOf(daemonGitDirVerdict(dir))
+	}
+	return commonDirPinEnv(dir)
+}
+
 // gitDirPin is the folder variables of a git call with --git-dir= in its argv,
 // for the repository of dir. In the state shadow they are GIT_COMMON_DIR and
 // GIT_OBJECT_DIRECTORY only. Such a call has no GIT_DIR and no GIT_WORK_TREE.
 // Measurements show that on Linux, macOS and Windows.
 func (u gitUse) gitDirPin(dir string) []string {
 	if _, ok := u.names(dir); !ok {
-		return commonDirPinEnv(dir)
+		return u.noCopyPin(dir)
 	}
 	// After a create moved its hold, a call with --git-dir= names the objects
 	// of that folder (measured on Linux). After askedAgain it names the folder
