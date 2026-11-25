@@ -115,17 +115,10 @@ func TestCheckoutSSHDoorEnv(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Errorf("door entries of read-tree =\n%q\nwant\n%q", got, want)
 			}
-			// The second listing has the door entries of the read-tree call on
-			// Linux and macOS (c9125eb8, measured on Linux and macOS). On Windows
-			// it has no door, and it keeps a GIT_SSH_COMMAND of the daemon as before
-			// the door (doorReadBeforeListing, claustrum's own, not measured).
+			// The second listing has the door entries of the read-tree call
+			// (c9125eb8, measured on Linux and macOS, 87375cc7 on Windows,
+			// doorReadBeforeListing). Mutation: set doorReadBeforeListing false.
 			wantDoor := doorEntries(env)
-			if !doorReadBeforeListing {
-				wantDoor = nil
-				if row.daemon != nil && row.daemon[0] == "GIT_SSH_COMMAND" {
-					wantDoor = []string{"GIT_SSH_COMMAND=" + row.daemon[1]}
-				}
-			}
 			var listings int
 			for _, c := range calls {
 				if _, ok := lookupExact(c.env, "GIT_INDEX_FILE"); !ok || !argvEndsWith(c.argv, []string{"config", "-z", "--list"}) {
@@ -248,4 +241,55 @@ func TestCheckoutSSHDoorReadStops(t *testing.T) {
 		t.Error("a read-tree call ran")
 	}
 	f.wantGone(t)
+}
+
+// checkDoorRefusalAfterGoodListing runs a create whose config read of the door
+// fails with exit 128, where doorRefusalAfterListing holds. The second listing
+// then runs and succeeds. The reply is the refusal of the read, and no call of
+// the checkout follows. This case is claustrum's own, not measured: 87375cc7
+// showed this order only with a listing that failed too
+// (TestCreateWithAFileAtTheGitDirOnWindows, X2). Mutations: return the
+// refusal of the read at once, or drop the return of doorRefusal after the
+// listing.
+func checkDoorRefusalAfterGoodListing(t *testing.T) {
+	t.Helper()
+	unsetDaemonSSH(t)
+	f := newCheckoutRuleFixture(t)
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "--get-regexp")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "128")
+	t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "boom\n")
+	raw, calls := f.create(t, nil)
+	want := failedFrame(t, "git worktree add failed (checkout): Claude could not read your own git config on the remote machine "+
+		"(exit status 128). Run git config --list there to see the problem.")
+	if raw != want {
+		t.Errorf("git.worktree_create = %s\nwant %s", raw, want)
+	}
+	read := slices.IndexFunc(calls, func(c envCall) bool {
+		return argvEndsWith(c.argv, []string{"config", "-z", "--get-regexp", sshDoorRegexp})
+	})
+	if read < 0 {
+		t.Fatal("no config read of the door")
+	}
+	if read+1 >= len(calls) || !calls[read+1].listing() {
+		t.Fatalf("the calls after the read of the door = %q, want the second listing first", argvs(calls[read+1:]))
+	}
+	if _, ok := lookupExact(calls[read+1].env, "GIT_INDEX_FILE"); !ok {
+		t.Errorf("the call after the read of the door has no GIT_INDEX_FILE: %q", calls[read+1].argv)
+	}
+	// The rollback makes listings of its own, with no GIT_INDEX_FILE.
+	for _, c := range calls[read+2:] {
+		if _, ok := lookupExact(c.env, "GIT_INDEX_FILE"); ok || slices.Contains(c.argv, "read-tree") {
+			t.Errorf("a call after the second listing = %q, want none of the checkout", c.argv)
+		}
+	}
+	f.wantGone(t)
+}
+
+// argvs is the argv of each call, joined by spaces.
+func argvs(calls []envCall) []string {
+	out := make([]string, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, strings.Join(c.argv, " "))
+	}
+	return out
 }

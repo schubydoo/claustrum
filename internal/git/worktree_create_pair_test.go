@@ -110,6 +110,37 @@ func TestCreatePairCases(t *testing.T) {
 	}
 }
 
+// TestCreatePairAfterTheAddListingWithNoFolder: in the state shadow a first create
+// with no registrations folder runs the pair after the listing of the add, right
+// before the add (c9125eb8 and b3081b51, measured on Linux and macOS, 87375cc7 on
+// Windows). Mutation: on Windows, or with the Windows steps on, run the pair at
+// once in pairBeforeAdd for a missing folder (the listing comes last).
+func TestCreatePairAfterTheAddListingWithNoFolder(t *testing.T) {
+	wantPairRightBeforeAdd(t)
+}
+
+// wantPairRightBeforeAdd runs a create with no registrations folder and wants the
+// pair as the two calls right before the add.
+func wantPairRightBeforeAdd(t *testing.T) {
+	t.Helper()
+	f := newCheckoutRuleFixture(t)
+	if err := os.RemoveAll(filepath.Join(f.gitDir, worktreesSubdir)); err != nil {
+		t.Fatal(err)
+	}
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	add := slices.IndexFunc(calls, func(c envCall) bool { return argvHas(c.argv, "worktree", "add") })
+	if add < 2 {
+		t.Fatalf("no add after two calls: %d", add)
+	}
+	if !argvHas(calls[add-1].argv, "rev-parse", "--show-toplevel") || !argvHas(calls[add-2].argv, "config", "-z", "--list") ||
+		!slices.ContainsFunc(calls[add-2].argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") }) {
+		t.Errorf("the two calls before the add = %q, %q, want the pair", calls[add-2].argv, calls[add-1].argv)
+	}
+}
+
 // TestCreatePairAfterStaleEntryResolvesALinkedBase: in the state shadow, after
 // the stale step removed an entry of the leaf, the pair of a baseRepo given
 // through a link has the resolved top of the repository as its work tree, as

@@ -371,7 +371,9 @@ A folder whose stat fails with `ERROR_INVALID_NAME` gives the start error
 and the hooks refusal in `git.info`. `87375cc7` answers so for a path through a
 junction that `mklink /J` made to a `\??\Volume{<guid>}\` path (measured on Windows).
 There `git.info` makes one git call, the excludes read, as the first request of a daemon, and none after a `git.info` on a repository (`87375cc7`, measured on Windows).
-The refusals of the trust check, the daemon's count and `GIT_ALTERNATE_OBJECT_DIRECTORIES` come first (claustrum's own, not measured). On that junction `git.status` keeps `isRepo:false` and `git.worktree_remove` keeps
+The refusals of the trust check, the daemon's count and `GIT_ALTERNATE_OBJECT_DIRECTORIES` come first (claustrum's own, not measured).
+The hooks refusal also comes before the no-git answer, a failed start test and a bad answer about the repository (claustrum's own, not measured).
+On that junction `git.status` keeps `isRepo:false` and `git.worktree_remove` keeps
 the trust-root text (`87375cc7`, measured on Windows). `git.list_branches`,
 `git.worktree_create` and other paths with that error are claustrum's own, not measured.
 
