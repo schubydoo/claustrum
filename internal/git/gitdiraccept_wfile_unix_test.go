@@ -11,10 +11,10 @@ import (
 )
 
 // TestWindowsCreateWithAFileAtWorktrees: a regular file or a link at
-// `.git/worktrees`, with the steps of Windows switched on. For a file
-// 87375cc7 and 4c111e86 answer `cannot add a worktree: ` and the text, after
-// the show-toplevel pair, and an attach add makes one more listing (measured on
-// Windows). A junction there gets the same in a new branch (87375cc7, measured
+// `.git/worktrees`, with the steps of Windows switched on. For a file in a new
+// branch 87375cc7 and 4c111e86 answer `cannot add a worktree: ` and the text,
+// after the show-toplevel pair. In attach mode 87375cc7 answers the same with
+// one more listing (measured on Windows). A junction there gets the same in a new branch (87375cc7, measured
 // on Windows, a link stands for it here). With "shadowDirOff":true the text of
 // the off refusal gets the same start, with no pair (measured on Windows for
 // both kinds). No `worktree add` runs.

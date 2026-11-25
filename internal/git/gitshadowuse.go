@@ -558,9 +558,10 @@ func (u gitUse) worktreesOpenRefusal() string {
 // The same path on Windows is not measured). A file at the name gets the same
 // text (measured on Linux). On Windows a junction and a directory symbolic link
 // there get it too, and 5fd08069 removes the leaf it made (measured on Windows).
-// The folder is that of the git directory that the trust check pins. claustrum's
-// own, not measured: a daemon GIT_COMMON_DIR, with which git writes elsewhere,
-// and a file there on Windows.
+// The folder is that of the git directory that the trust check pins. On Windows
+// 87375cc7 starts the text with `cannot add a worktree: ` (addNotPrepared.ownWords).
+// claustrum's own, not measured: a daemon GIT_COMMON_DIR, with which git writes
+// elsewhere.
 func offWorktreesRefusal(repo string) string {
 	t := gitDirTrustFor(repo)
 	if t.verdict != gitDirTrusted || t.pinCommonDir == "" {

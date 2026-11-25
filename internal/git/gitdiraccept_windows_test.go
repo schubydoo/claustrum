@@ -366,7 +366,7 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 }
 
 // TestAttachWithAFileAtWorktreesOnWindows must match a measured case (on
-// Windows, 2 of 2 runs). A create with `existingBranch` finds a file at
+// Windows). A create with `existingBranch` finds a file at
 // `.git\worktrees`. 5fd08069 answers the text of that step one time and
 // makes no second add with a new branch. 87375cc7 starts that text with
 // `cannot add a worktree: ` (measured on Windows). Without the rule of addNotPrepared

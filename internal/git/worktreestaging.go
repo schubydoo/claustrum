@@ -784,9 +784,9 @@ func stagedOtherEntryRefusal(leaf string) *addRefused {
 //
 // ownWords marks an entry at `<git dir>\worktrees` that is no folder, on
 // Windows. For a file there 87375cc7 and 4c111e86 answer `cannot add a
-// worktree: ` and the text, also in attach mode, with the second listing of an
-// attach add (measured on Windows). Another kind there is claustrum's own, not
-// measured. With "shadowDirOff":true it marks the text of offWorktreesRefusal,
+// worktree: ` and the text in a new branch. 87375cc7 does so in attach mode
+// too, with a second listing (measured on Windows). Another kind there is
+// claustrum's own, not measured. With "shadowDirOff":true it marks the text of offWorktreesRefusal,
 // for a file or a junction (87375cc7, measured on Windows).
 type addNotPrepared struct {
 	text     string

@@ -139,7 +139,9 @@ var nonFolderStartRefuses = true
 // refusal (unenterableDir): ERROR_INVALID_NAME. 87375cc7 answers git.info with the
 // hooks refusal and `chdir <path>: The filename, directory name, or volume label
 // syntax is incorrect.` there, for a path through a junction that `mklink /J` made
-// to a `\??\Volume{<guid>}\` target (measured on Windows). Other methods and other
+// to a `\??\Volume{<guid>}\` target (measured on Windows). On that junction
+// git.status keeps isRepo:false and git.worktree_remove keeps the trust-root text
+// (87375cc7, measured on Windows). git.list_branches, git.worktree_create and other
 // paths with that error are claustrum's own, not measured.
 var startNameRefuses = func(err error) bool { return errors.Is(err, windows.ERROR_INVALID_NAME) }
 
@@ -166,8 +168,8 @@ var removeNamesStrayFile = true
 // removeRereadsRefusedConfig is false on Windows: a remove runs its settings
 // gate one time after a refused config (removeGate). 87375cc7 and 4c111e86
 // make one read and one `git version` call for a syntax error (measured on
-// Windows). Format version 3 and the other refusals follow it (claustrum's own,
-// not measured).
+// Windows). Format version 3 makes one read too (87375cc7, measured on Windows).
+// Other refusals follow it (claustrum's own, not measured).
 var removeRereadsRefusedConfig = false
 
 // removeRegistrationsLinked reports whether the registrations folder dir is a
