@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/schubydoo/claustrum/internal/childrec"
@@ -230,6 +231,9 @@ type Proc struct {
 	// sweepKilledGroup is set once the shutdown sweep or endAsked sent this group its
 	// SIGKILL. An atomic, so the macOS end reads it with no lock after the reap.
 	sweepKilledGroup atomic.Bool
+	// stopKillRefused is set once the sweep SIGKILL or the group SIGKILL of endAsked
+	// failed with EPERM. On Linux AwaitRecordsRemoved then does not wait for this child.
+	stopKillRefused atomic.Bool
 	// groupKillClaimed is taken once by the one group SIGKILL that the end of a launcher's
 	// group, endAsked and a client KILL after the leader's exit send together.
 	groupKillClaimed groupKillClaim
@@ -834,6 +838,9 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	if err := signalGroup(p.group, p.cmd.Process, "KILL"); err != nil {
 		if p.endsGroup {
 			p.groupKillClaimed.giveBack()
+		}
+		if errors.Is(err, syscall.EPERM) {
+			p.stopKillRefused.Store(true)
 		}
 		return
 	}
@@ -2442,6 +2449,8 @@ func (m *Manager) KillAllCount() int {
 		if live, err := p.signalIfLiveErr(sig, "shutdown"); live {
 			if err == nil || sig == "TERM" {
 				n++
+			} else if errors.Is(err, syscall.EPERM) {
+				p.stopKillRefused.Store(true)
 			}
 			if sig == "TERM" {
 				asked = append(asked, p)
