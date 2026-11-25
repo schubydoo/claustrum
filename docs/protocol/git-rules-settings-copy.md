@@ -332,7 +332,7 @@ follow the walk (`87375cc7`, measured on Windows). So do a remove as the first r
 of a daemon, and all five methods on a folder in no repository (measured).
 Calls with no `--git-dir=` carry the `GIT_DIR` and `GIT_WORK_TREE` of the walk, at their
 real paths. The calls with `--git-dir=`, the call about the repository and the
-`--attr-source` probe carry no `GIT_DIR`. `git.status` of a linked worktree and
+`--attr-source` probe carry no `GIT_DIR`. `git.status` and `git.info` of a linked worktree and
 `git.list_branches` on a repository are claustrum's own, not measured. So are the `git version` after a
 failed `--attr-source` probe and the letter case of the `GIT_DIR` name. A `git.info`
 after one on another repository makes the read of the config again (measured). With a
