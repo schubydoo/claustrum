@@ -191,3 +191,45 @@ func TestGitDirTrustShortNamePinWindows(t *testing.T) {
 		}
 	})
 }
+
+// TestShortDaemonGitDirRootPairWindows: git.info with "shadowDirOff":true and
+// a daemon GIT_DIR at the 8.3 spelling of the repository's own `.git`. The two
+// calls with --git-dir= run in the long spelling and carry it in --git-dir= and
+// GIT_COMMON_DIR. GIT_DIR keeps the short one. 87375cc7 does so (measured on
+// Windows). Mutation: in gitInfo pass u.gitDirPin to gitInfoRoot.
+func TestShortDaemonGitDirRootPairWindows(t *testing.T) {
+	f := newShadowFixture(t)
+	repo, gitDir := configRepo(t)
+	short := shortPathName(t, gitDir)
+	t.Setenv("GIT_DIR", short)
+	raw, calls := f.info(t, repo, map[string]any{"shadowDirOff": true})
+	if !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	pair := 0
+	for _, c := range calls {
+		named := ""
+		for _, a := range c.argv {
+			if v, ok := strings.CutPrefix(a, "--git-dir="); ok {
+				named = v
+			}
+		}
+		if named == "" {
+			continue
+		}
+		pair++
+		common, _ := lookupExact(c.env, "GIT_COMMON_DIR")
+		daemon, _ := lookupExact(c.env, "GIT_DIR")
+		for name, got := range map[string]string{"--git-dir=": named, "the folder": c.cwd, "GIT_COMMON_DIR": common} {
+			if strings.Contains(got, "~") || !strings.EqualFold(filepath.Clean(got), gitDir) {
+				t.Errorf("call %q: %s is %q, want %q", c.argv, name, got, gitDir)
+			}
+		}
+		if daemon != short {
+			t.Errorf("call %q: GIT_DIR is %q, want %q", c.argv, daemon, short)
+		}
+	}
+	if pair != 2 {
+		t.Errorf("%d calls name --git-dir=, want 2", pair)
+	}
+}

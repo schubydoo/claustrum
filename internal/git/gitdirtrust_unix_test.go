@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -562,5 +563,36 @@ func TestGitDirTrustEntryWithoutCommondirInBrokenRepository(t *testing.T) {
 				t.Errorf("trust of TW = %+v, want the refusal %q", got, wantM3(r.entry()))
 			}
 		})
+	}
+}
+
+// TestWalkPairPinTakesTheWalkSpelling: with daemonGitDirSkipped and a daemon
+// pin that spells the repository's own `.git` another way, the root pair of
+// git.info takes the GIT_COMMON_DIR of the walk. A path through a symbolic link
+// to the repository stands in for an 8.3 short name. 87375cc7 has the long
+// spelling on that pair (measured on Windows). A pin of another repository
+// stays. Mutation: in walkPairPin return pin at the start.
+func TestWalkPairPinTakesTheWalkSpelling(t *testing.T) {
+	clearFolderEnv(t)
+	setCopyPinsWalkGitDir(t, true)
+	repo, gitDir := configRepo(t)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(repo, alias); err != nil {
+		t.Fatal(err)
+	}
+	// Off Windows the verdict of a daemon GIT_DIR resolves links, so the test
+	// builds the pin of the other spelling itself.
+	t.Setenv("GIT_DIR", gitDir)
+	if !daemonGitDirSkipped() {
+		t.Fatal("daemonGitDirSkipped is false")
+	}
+	pin := []string{"GIT_COMMON_DIR=" + filepath.Join(alias, ".git")}
+	if got, want := walkPairPin(repo, pin), "GIT_COMMON_DIR="+gitDir; len(got) != 1 || got[0] != want {
+		t.Errorf("walkPairPin = %q, want [%q]", got, want)
+	}
+	_, otherGitDir := configRepo(t)
+	other := []string{"GIT_COMMON_DIR=" + otherGitDir}
+	if got := walkPairPin(repo, other); !slices.Equal(got, other) {
+		t.Errorf("GIT_COMMON_DIR of another repository: walkPairPin = %q, want %q", got, other)
 	}
 }
