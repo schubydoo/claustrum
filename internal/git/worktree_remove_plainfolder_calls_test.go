@@ -11,20 +11,34 @@ import (
 // A remove in a folder where the trust check finds no repository: the listing
 // passes, and `rev-parse --absolute-git-dir` fails. On Linux and macOS the two
 // calls run once more (89cb6289, measured on Linux and macOS). On Windows they
-// run one time, each with GIT_DIR=NUL, also with a daemon GIT_DIR (87375cc7,
-// measured on Windows). The reply is the lock-check refusal, and the leaf stays.
-// Mutation: drop the test of removeRechecksPlainFolder in methods_git.go.
+// run one time, each with GIT_DIR=NUL, also with an absolute daemon GIT_DIR of a
+// folder (87375cc7, measured on Windows). That row ran in the state shadow. The
+// reply is the lock-check refusal, and the leaf stays. The row "once, daemon
+// GIT_DIR" sets GIT_DIR to the git directory of a real repository. With
+// copyPinsWalkGitDir on, the walk gives the plain folder gitDirNoRepo.
+// Mutations: drop the test of removeRechecksPlainFolder in methods_git.go, and
+// set copyPinsWalkGitDir off in the row of the daemon GIT_DIR.
 func TestRemoveInPlainFolderChecksOnce(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		rechecks bool
-		calls    []string
+		name         string
+		rechecks     bool
+		daemonGitDir bool
+		calls        []string
 	}{
-		{"repeat", true, []string{"list", "absolute-git-dir", "list", "absolute-git-dir"}},
-		{"once", false, []string{"list", "absolute-git-dir"}},
+		{"repeat", true, false, []string{"list", "absolute-git-dir", "list", "absolute-git-dir"}},
+		{"once", false, false, []string{"list", "absolute-git-dir"}},
+		{"once, daemon GIT_DIR", false, true, []string{"list", "absolute-git-dir"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newListingFixture(t)
+			var call func(*testing.T, string, map[string]any) (string, []envCall)
+			if tc.daemonGitDir {
+				call = newShadowFixture(t).call
+				setCopyPinsWalkGitDir(t, true)
+				_, gitDir := configRepo(t)
+				t.Setenv("GIT_DIR", gitDir)
+			} else {
+				call = newListingFixture(t).call
+			}
 			old := removeRechecksPlainFolder
 			t.Cleanup(func() { removeRechecksPlainFolder = old })
 			removeRechecksPlainFolder = tc.rechecks
@@ -36,7 +50,7 @@ func TestRemoveInPlainFolderChecksOnce(t *testing.T) {
 			}
 			keep := filepath.Join(wp, "keep.txt")
 			writeFile(t, keep, "k\n", 0o644)
-			raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": wp})
+			raw, calls := call(t, "git.worktree_remove", map[string]any{"baseRepo": base, "worktreePath": wp})
 			want := `{"success":false,"error":` + jsonString(t, lockCheckRefusal(wp)) + `}`
 			if got := replyPart(t, raw); got != want {
 				t.Errorf("remove = %s\nwant %s", got, want)
