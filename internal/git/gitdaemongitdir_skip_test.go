@@ -64,7 +64,10 @@ func TestDaemonGitDirSkippedMakesTheCallsOfNoGitDir(t *testing.T) {
 		folder := daemonFolder(t, f.run)
 		for _, m := range skipRequests(repo) {
 			raw, calls := f.call(t, m.method, m.params)
-			replies = append(replies, strings.ReplaceAll(strings.ReplaceAll(raw, filepath.ToSlash(repo), "<repo>"), repo, "<repo>"))
+			for _, old := range []string{strings.Trim(jsonQuoted(t, repo), `"`), filepath.ToSlash(repo), repo} {
+				raw = strings.ReplaceAll(raw, old, "<repo>")
+			}
+			replies = append(replies, raw)
 			var list []string
 			for _, c := range calls {
 				line := c.cwd + " | " + strings.Join(dropConfigArgs(c.argv), " ") + " ||"
