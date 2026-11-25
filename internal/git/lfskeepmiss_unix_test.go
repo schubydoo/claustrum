@@ -383,8 +383,8 @@ func (h pausedHash) Write(p []byte) (int, error) {
 }
 
 // TestKeepTickCopyPassesTheBudget: keepBudget cuts neither the bytes test nor
-// the copy of a tick on macOS. The uncut copy is measured (87375cc7 and
-// 4c111e86). No bound on the bytes test is claustrum's own, not measured. With
+// the copy of a tick on macOS. The uncut copy is measured (87375cc7). No
+// bound on the bytes test is claustrum's own, not measured. With
 // the rule off, as on Linux, it cuts both. Mutation: drop the branch of
 // keepTickRunsToExit in startKeepTicker (no object is kept).
 func TestKeepTickCopyPassesTheBudget(t *testing.T) {
@@ -429,7 +429,7 @@ func TestKeepTickCopyPassesTheBudget(t *testing.T) {
 }
 
 // TestKeepTickCopyStopsAtTheExit: the copy of a tick stops at the exit of git
-// and its temp file goes (macOS, 7 runs of a failed download). Mutation: give
+// and its temp file goes (macOS, claustrum's own, not measured). Mutation: give
 // the keep of a tick context.Background() in place of k.ctx in
 // startKeepTicker (the object is kept).
 func TestKeepTickCopyStopsAtTheExit(t *testing.T) {
