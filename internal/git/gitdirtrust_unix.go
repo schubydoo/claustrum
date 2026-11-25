@@ -96,6 +96,12 @@ var removeNamesStrayFile = false
 // variable so that a test on Linux can set it.
 var removeRereadsRefusedConfig = true
 
+// removeRechecksPlainFolder is true on Linux and macOS: in a folder where the
+// trust check finds no repository, a failed `rev-parse --absolute-git-dir` of a
+// remove runs the listing and the rev-parse once more (repeatRepositoryCheck).
+// 89cb6289 does so (measured on Linux and macOS). It is a variable so that a test can set it.
+var removeRechecksPlainFolder = true
+
 // removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
 // of a worktree folder that exists refuses such a folder (measured on Linux and
 // macOS).
