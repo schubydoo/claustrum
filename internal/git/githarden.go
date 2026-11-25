@@ -759,6 +759,11 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		var exitErr *exec.ExitError
 		return failedCheckoutSkipsStdoutDrain && deadlined && !stop.stopped() && errors.As(werr, &exitErr)
 	}
+	// After the deadline stop, Windows skips the stdout drain too
+	// (stoppedCheckoutSkipsStdoutDrain).
+	skipOut := func(werr error) bool {
+		return failedAlone(werr) || (stoppedCheckoutSkipsStdoutDrain && deadlined && stop.stopped())
+	}
 	// The keep while the read-tree call runs (keepTicker). Its ticks and the
 	// keep that runs stop when runCheckoutPipes sees the exit of git, before
 	// the drain (keepTicker.halt). It ends at the return, also after a panic,
@@ -777,7 +782,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	}
 	defer endKeeper()
 	err = runHeld(cmd, func() error {
-		return runCheckoutPipes(cmd, &errBuf, failedAlone, room, stop, keeper.halt)
+		return runCheckoutPipes(cmd, &errBuf, skipOut, room, stop, keeper.halt)
 	})
 	if failedAlone(err) {
 		err = checkoutFailedAlone{err}
@@ -806,7 +811,8 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 // holds both pipes past the deadline, the reply is still the failure of git
 // (checkoutFailedAlone, b3081b51, measured on Linux and macOS). Also not measured: a
 // failure with no timeoutMs (both pipes keep gitDrainWait), and Windows (it keeps
-// the drain, failedCheckoutSkipsStdoutDrain).
+// the drain, failedCheckoutSkipsStdoutDrain). On Windows skipOut also answers
+// true after the deadline stop (stoppedCheckoutSkipsStdoutDrain).
 //
 // On Linux a git that failed by itself gets one SIGKILL to its group after its
 // exit. A member of the group that still runs dies. 4c111e86 sends it after a Git

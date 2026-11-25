@@ -19,7 +19,7 @@ func NewSysProcAttr() *syscall.SysProcAttr {
 // the output pipe. Windows has no POSIX process-group signal, and this git exec path
 // runs in no Job Object, so there is nothing to tear down here beyond what
 // cmd.WaitDelay already did (it closed the daemon's own pipe ends, so the reply is
-// bounded). The measured pipe-holding-descendant scenario is a POSIX smudge/hook
-// orphan and is not reproduced on Windows; a stray descendant is left to exit on its
-// own rather than reaped. Nil-safe no-op so the shared caller stays cross-platform.
+// bounded). On Windows a descendant that the stop left, for example the git child of
+// a wrapper, runs on and is not ended (87375cc7, measured on Windows). It is left to
+// exit on its own rather than reaped. Nil-safe no-op so the shared caller stays cross-platform.
 func ReapProcessGroup(proc *os.Process) {}

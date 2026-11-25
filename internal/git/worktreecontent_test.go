@@ -185,6 +185,59 @@ func TestContentCheckMatch(t *testing.T) {
 	}
 }
 
+// TestContentCheckAsksAgainAfterTheKeptTime: the kept answer of the call
+// about the repository grows old while `cat-file --batch` starts. The next
+// call of the check then asks git again before its listing, as 87375cc7 and
+// 4c111e86 do after a held listing of 5 s (measured on Linux). The clock of
+// the kept answer jumps past probeKeep at the start of the batch, so the
+// time of the other calls on a slow runner does not count. Mutation: keep
+// noRecheck for the check (no call follows the batch).
+func TestContentCheckAsksAgainAfterTheKeptTime(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n", ".mcp.json": "{}\n"})
+	timeLog := filepath.Join(t.TempDir(), "times")
+	t.Setenv("CLAUSTRUM_GITSTUB_TIMELOG", timeLog)
+	base := time.Now()
+	old := probeClock
+	t.Cleanup(func() { probeClock = old })
+	probeClock = func() time.Time {
+		b, _ := os.ReadFile(timeLog)
+		for _, line := range strings.Split(string(b), "\n") {
+			if words := strings.Split(line, "\x1f"); len(words) > 3 && words[0] == "start" && stubMatches(words[3:], "cat-file,--batch") {
+				return base.Add(probeKeep + time.Second)
+			}
+		}
+		return base
+	}
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	batch := slices.IndexFunc(calls, func(c envCall) bool { return containsSeq(c.argv, "cat-file", "--batch") })
+	if batch < 0 {
+		t.Fatalf("no cat-file --batch call: %v", calls)
+	}
+	var got []string
+	for _, c := range calls[batch+1:] {
+		switch {
+		case c.isProbe():
+			got = append(got, "ask")
+		case slices.Equal(c.argv, []string{"config", "-z", "--list"}):
+			got = append(got, "listing")
+		case stubMatches(c.argv, "hash-object,commit"):
+			got = append(got, "commit")
+		}
+		if len(got) == 3 {
+			break
+		}
+	}
+	if want := []string{"ask", "listing", "commit"}; !slices.Equal(got, want) {
+		t.Errorf("the calls after the batch start with %q, want %q", got, want)
+	}
+	if n := len(probeCalls(calls[batch+1:])); n != 1 {
+		t.Errorf("%d calls about the repository after the batch, want 1", n)
+	}
+}
+
 // TestContentCheckScratchFiles: the long-running hash-object reads each
 // object from a file named by its id, in a folder `.readback-scratch-<n>`
 // beside `.readback-objects-<n>`. Each file goes right after its answer, so the
