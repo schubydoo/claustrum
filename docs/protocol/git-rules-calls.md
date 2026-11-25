@@ -245,7 +245,8 @@ after `LANGUAGE=C`, in this order (`be1c1ca5`, measured on Linux). `GIT_SSH_COMM
 is the [ssh door](git-worktree-create.md#the-ssh-door). `CLAUDE_SSH_PERSONS_SSH`
 is the person's ssh command. Then come `CLAUDE_SSH_PERSONS_ENV`,
 `CLAUDE_SSH_DOOR_MARK` with 16 hex digits, and `GIT_SSH_VARIANT`. One mark for
-each daemon process is claustrum's own. On Linux and macOS the second listing gets them too.
+each daemon process is claustrum's own. The second listing gets them too, but not after a refused read of the door. On Windows that is measured only for
+the mark, `GIT_SSH_COMMAND` and `GIT_SSH_VARIANT` (`87375cc7`). The other two are claustrum's own there, not measured.
 
 - With no ssh setting the person's command is `'ssh'`, in single quotes
   (Linux and Windows). The daemon's `GIT_SSH` gets single quotes too, such as

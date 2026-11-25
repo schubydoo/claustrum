@@ -282,7 +282,8 @@ func (u gitUse) shadow() bool {
 // call (measured on Linux).
 //
 // afterListing, when set, runs after the listing and the refusals that follow
-// it, right before the add (pairBeforeAdd).
+// it, right before the add (pairBeforeAdd). On Windows it runs right after the
+// listing (worktreeAddStaged).
 //
 // offMember is true for a create with "shadowDirOff":true and no copy. Its add
 // gets the same test after the listing. On 5fd08069 that listing comes after
@@ -299,7 +300,7 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	f, off := u.fixedForm(true)
 	_, named := f.names(repo)
 	if named && stagedAddWindowsSteps {
-		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, args...)
+		stderr, err := worktreeAddStaged(ctx, f, repo, leaf, cp, afterListing, args...)
 		if err == nil && f.accepted != nil {
 			f.accepted.moved = true
 		}

@@ -823,11 +823,16 @@ func (e *addNotPrepared) Error() string { return e.text }
 // 5fd08069 makes it and then stops (measured).
 //
 // The locks of the add (takeAddLocks) come after the listing.
-func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
+//
+// afterListing, when set, runs right after the listing (pairBeforeAdd).
+func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, afterListing func(), args ...string) (string, error) {
 	if u.accepted.junctionMoved() {
 		u.addGitDir = u.accepted.junctionTo
 	}
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
+	if afterListing != nil {
+		afterListing()
+	}
 	defer takeAddLocks(cp.lock, repo)()
 	return runAddStaged(ctx, u, cmd, leaf, cp)
 }

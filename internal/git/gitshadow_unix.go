@@ -25,6 +25,11 @@ var stagedAddWindowsSteps = false
 // macOS, hardenedGitCheckout).
 const doorReadBeforeListing = true
 
+// doorRefusalAfterListing is false on Linux and macOS. A refused config read of
+// the ssh door refuses the checkout, and no second listing runs (claustrum's
+// own, not measured). A test sets it true to run the order of Windows here.
+var doorRefusalAfterListing = false
+
 // gitDirMustBeReal is true on Linux and macOS. A create holds the git directory
 // that its gate accepted, and tests at its steps that the path still names it
 // (acceptedGitDir). On macOS, 5fd08069 refuses a create whose `.git` became a

@@ -415,7 +415,7 @@ func TestStagedAddNeedsAHeldGitDir(t *testing.T) {
 	f := newRepoFolderFixture(t)
 	clearFolderEnv(t)
 	setGitDirMustBeReal(t, true)
-	if _, err := worktreeAddStaged(context.Background(), f.useOf(t, f.repo), f.repo, filepath.Join(f.repo, "w1"), worktreeCheckpoint{},
+	if _, err := worktreeAddStaged(context.Background(), f.useOf(t, f.repo), f.repo, filepath.Join(f.repo, "w1"), worktreeCheckpoint{}, nil,
 		"worktree", "add", filepath.Join(f.repo, "w1")); err == nil ||
 		err.Error() != "cannot prepare the repository's worktrees directory: the create holds no git directory" {
 		t.Errorf("the add = %v, want the refusal", err)
