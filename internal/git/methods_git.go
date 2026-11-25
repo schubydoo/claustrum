@@ -218,6 +218,17 @@ func gitInfo(req *gitCall) rpc.Response {
 		if msg := networkLinkRefusal(p.Path); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
+		// On Windows a folder whose stat fails with the error of startNameRefuses
+		// gets the hooks refusal with its chdir error next, before the start test.
+		// 87375cc7 makes the excludes read only as the first request of a daemon,
+		// and no call later (measured on Windows). The place after the two link
+		// tests is claustrum's own, not measured.
+		if _, err := os.Stat(p.Path); startNameRefuses(err) {
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				return rpc.ErrResult(req.ID, rpc.CodeInternal, hooksRefusalPrefix+(&fs.PathError{Op: "chdir", Path: p.Path, Err: pe.Err}).Error())
+			}
+		}
 	}
 	// notRepo is the "no repository" answer. It carries the settingsControl member
 	// that the request has at that moment (ShadowHost.replyControl): none before a

@@ -359,7 +359,7 @@ A folder whose stat fails with `ERROR_INVALID_NAME` gives the start error
 `chdir <path>: The filename, directory name, or volume label syntax is incorrect.`
 and the hooks refusal in `git.info`. `87375cc7` answers so for a path through a
 junction that `mklink /J` made to a `\??\Volume{<guid>}\` path (measured on Windows).
-On that junction `git.status` keeps `isRepo:false` and `git.worktree_remove` keeps
+Its one git call is the excludes read of a first request (`87375cc7`, measured on Windows). On that junction `git.status` keeps `isRepo:false` and `git.worktree_remove` keeps
 the trust-root text (`87375cc7`, measured on Windows). `git.list_branches`,
 `git.worktree_create` and other paths with that error are claustrum's own, not measured.
 

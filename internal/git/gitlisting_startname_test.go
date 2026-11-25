@@ -31,8 +31,20 @@ func TestStartErrorOfABadFolderNameRefuses(t *testing.T) {
 		t.Fatalf("stat %s: %v, want an error that startNameRefuses reports", dir, statErr)
 	}
 	want := errFrame(t, hooksRefusalPrefix+(&os.PathError{Op: "chdir", Path: dir, Err: pe.Err}).Error())
-	if got := f.frame(t, "git.info", map[string]any{"path": dir}); got != want {
-		t.Errorf("git.info = %s\nwant %s", got, want)
+	// As the first request of a daemon 87375cc7 makes the excludes read only, and
+	// no call on a second request (measured on Windows).
+	for i, wantCalls := range []int{1, 0} {
+		got, calls := f.call(t, "git.info", map[string]any{"path": dir})
+		if got != want {
+			t.Errorf("git.info %d = %s\nwant %s", i+1, got, want)
+		}
+		if len(calls) != wantCalls || (wantCalls == 1 && !calls[0].excludesRead()) {
+			var argv [][]string
+			for _, c := range calls {
+				argv = append(argv, c.argv)
+			}
+			t.Errorf("git.info %d ran git %q, want %d call(s): the excludes read only", i+1, argv, wantCalls)
+		}
 	}
 	if got := f.frame(t, "git.info", map[string]any{"path": f.m}); got != resultOf(notRepoInfo) {
 		t.Errorf("git.info of a missing path = %s\nwant %s", got, resultOf(notRepoInfo))
