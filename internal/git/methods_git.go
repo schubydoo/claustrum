@@ -302,6 +302,22 @@ func gitInfo(req *gitCall) rpc.Response {
 	if msg := alternateEnvRefusal(bool(p.ShadowDirOff)); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
+	// On Windows a folder whose stat fails with the error of startNameRefuses
+	// gets the hooks refusal with its chdir error next, before the start test.
+	// 87375cc7 makes the excludes read only as the first request of a daemon,
+	// and none after a git.info on a repository (measured on Windows). The place
+	// after the link tests, the trust check, the count and the refusal of
+	// GIT_ALTERNATE_OBJECT_DIRECTORIES is claustrum's own, not measured. The trust
+	// check cannot resolve such a folder and leaves it to git (gitDirTrustFor), so
+	// no step before it makes a git call (from the code).
+	if p.Path != "" {
+		if _, err := os.Stat(p.Path); startNameRefuses(err) {
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				return rpc.ErrResult(req.ID, rpc.CodeInternal, hooksRefusalPrefix+(&fs.PathError{Op: "chdir", Path: p.Path, Err: pe.Err}).Error())
+			}
+		}
+	}
 	if msg := alternatesRefusal(t.pinCommonDir, false); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
