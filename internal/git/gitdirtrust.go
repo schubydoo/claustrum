@@ -322,7 +322,9 @@ func commonDirPinOf(t gitDirTrust) []string {
 // (measured on Windows). A dir in which the walk finds another trusted git
 // directory gets the verdict of the walk too: 87375cc7 runs git.info, a create
 // and a remove in a second repository with the calls of that repository and
-// none of the daemon's (measured on Windows). git.info with "shadowDirOff":true
+// none of the daemon's (measured on Windows). A walk that finds the folder of
+// the daemon's GIT_DIR keeps the daemon verdict, with its spelling
+// (TestGitDirTrustShortNamePinWindows). git.info with "shadowDirOff":true
 // keeps the daemon verdict (daemonGitDirVerdict): measured on Windows for a
 // folder in no repository, claustrum's own in a repository. The other methods
 // with that switch, and the state fallback-git, follow the walk (claustrum's
@@ -330,7 +332,7 @@ func commonDirPinOf(t gitDirTrust) []string {
 func gitDirTrustFor(dir string) gitDirTrust {
 	t := daemonGitDirVerdict(dir)
 	if daemonGitDirSkipped() && t.verdict == gitDirTrusted {
-		if w := trustWithGitDir(dir, ""); w.verdict == gitDirNoRepo || (w.verdict == gitDirTrusted && w.pinCommonDir != "") {
+		if w := trustWithGitDir(dir, ""); w.verdict == gitDirNoRepo || (w.verdict == gitDirTrusted && w.pinCommonDir != "" && !sameProbeFolder(w.pinCommonDir, t.pinCommonDir)) {
 			return w
 		}
 	}
