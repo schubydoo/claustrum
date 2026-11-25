@@ -1964,7 +1964,8 @@ func (p *Proc) stdinWriter() {
 // It returns a *SignalFailed when the system refused the signal, also the group KILL in
 // the exit drain or in the hold of an exited launcher, and process.kill answers its text
 // (see SignalFailed). 87375cc7 answers the error of that group KILL (measured on Linux
-// and macOS, EPERM). Each other case returns nil.
+// and macOS in the exit drain, and on Linux in the hold after the SIGTERM of its end,
+// EPERM). Each other case returns nil.
 func (m *Manager) Kill(id, signal string) error {
 	p := m.Get(id)
 	if p == nil {
