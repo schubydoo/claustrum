@@ -355,6 +355,14 @@ and nothing changes on disk:
   repository
 - `git.worktree_create` with `baseRepo` a regular file
 
+A folder whose stat fails with `ERROR_INVALID_NAME` gives the start error
+`chdir <path>: The filename, directory name, or volume label syntax is incorrect.`
+and the hooks refusal in `git.info`. `87375cc7` answers so for a path through a
+junction that `mklink /J` made to a `\??\Volume{<guid>}\` path (measured on Windows).
+On that junction `git.status` keeps `isRepo:false` and `git.worktree_remove` keeps
+the trust-root text (`87375cc7`, measured on Windows). `git.list_branches`,
+`git.worktree_create` and other paths with that error are claustrum's own, not measured.
+
 A `git version` that exits 1 and writes `boom` turns the `git.info` answer on a
 regular file into `{"error":{"code":-32603,"message":"git cannot run on this host;
 git not run: exit status 1: boom"}}`.

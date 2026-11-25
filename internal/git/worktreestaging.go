@@ -322,7 +322,7 @@ func openAddStage(u gitUse) (*addStage, error) {
 	if errors.Is(err, fs.ErrExist) {
 		err = nil
 		if fi, statErr := st.git.Lstat(worktreesSubdir); statErr == nil && !goesAsTree(fi.Mode()) {
-			err = errors.New(quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory")
+			err = &worktreesNotFolder{text: quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory"}
 		}
 	}
 	var regs []registrationCopy
@@ -777,14 +777,31 @@ func stagedOtherEntryRefusal(leaf string) *addRefused {
 // `.git\worktrees`, 5fd08069 answers `git worktree add failed: cannot prepare
 // the repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is
 // not a directory`, one time, after 11 git calls (measured on Windows, 2 of 2
-// runs). claustrum answers the same after 10 calls (measured, 2 runs). The
-// other failed steps are not measured in attach mode: they get the same rule.
+// runs). claustrum answered the same after 10 calls before it followed 87375cc7
+// (measured, 2 runs). On Windows it now gives the text of ownWords below. Linux
+// and macOS keep the text of 5fd08069. The other failed steps are not measured in attach mode: they get the same rule.
 // On Linux and macOS the refusal of worktreesFolderRefusal is such an error
 // too. offLink marks the refusal of offWorktreesRefusal.
+//
+// ownWords marks an entry at `<git dir>\worktrees` that is no folder, on
+// Windows. For a file there 87375cc7 and 4c111e86 answer `cannot add a
+// worktree: ` and the text in a new branch. 87375cc7 does so in attach mode
+// too, with a second listing (measured on Windows). Another kind there is
+// claustrum's own, not measured.
+//
+// With "shadowDirOff":true, ownWords also marks the text of offWorktreesRefusal
+// for a file or a junction there (87375cc7, measured on Windows).
 type addNotPrepared struct {
-	text    string
-	offLink bool
+	text     string
+	offLink  bool
+	ownWords bool
 }
+
+// worktreesNotFolder is the error of openAddStage for an entry `worktrees`
+// of the git directory that is no real folder.
+type worktreesNotFolder struct{ text string }
+
+func (e *worktreesNotFolder) Error() string { return e.text }
 
 func (e *addNotPrepared) Error() string { return e.text }
 
@@ -840,7 +857,8 @@ func runAddStaged(ctx context.Context, u gitUse, cmd *exec.Cmd, leaf string, cp 
 		if errors.As(err, &refsErr) {
 			return "", &addOwnFiles{text: refsCopyText + refsErr.text}
 		}
-		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error()}
+		var notFolder *worktreesNotFolder
+		return "", &addNotPrepared{text: prepareWorktreesPrefix + err.Error(), ownWords: stagedAddWindowsSteps && errors.As(err, &notFolder)}
 	}
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)
