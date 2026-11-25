@@ -180,8 +180,9 @@ var removeRereadsRefusedConfig = false
 
 // removeRechecksPlainFolder is false on Windows: in a folder where the trust check
 // finds no repository, a failed `rev-parse --absolute-git-dir` of a remove runs
-// no repeat. 87375cc7 makes the listing and the rev-parse one time there, with
-// GIT_DIR=NUL, also with an absolute daemon GIT_DIR of a folder (measured on Windows).
+// no repeat. 87375cc7 makes the listing and the rev-parse one time there in the
+// state shadow, with GIT_DIR=NUL, also with an absolute daemon GIT_DIR of a folder
+// (measured on Windows).
 var removeRechecksPlainFolder = false
 
 // removeRegistrationsLinked reports whether the registrations folder dir is a
