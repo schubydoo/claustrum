@@ -559,7 +559,8 @@ func (u gitUse) worktreesOpenRefusal() string {
 // text (measured on Linux). On Windows a junction and a directory symbolic link
 // there get it too, and 5fd08069 removes the leaf it made (measured on Windows).
 // The folder is that of the git directory that the trust check pins. On Windows
-// 87375cc7 starts the text with `cannot add a worktree: ` (addNotPrepared.ownWords).
+// 87375cc7 starts the text with `cannot add a worktree: ` for a file or a junction
+// (addNotPrepared.ownWords). A directory symbolic link there is claustrum's own.
 // claustrum's own, not measured: a daemon GIT_COMMON_DIR, with which git writes
 // elsewhere.
 func offWorktreesRefusal(repo string) string {

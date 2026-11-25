@@ -19,7 +19,8 @@ import (
 // the off refusal gets the same start, with no pair (measured on Windows for
 // both kinds). No `worktree add` runs.
 func TestWindowsCreateWithAFileAtWorktrees(t *testing.T) {
-	// The Windows rows have no second attach listing, so the macOS one stays off here.
+	// attachAddListsTwice is the macOS listing before the add, which the Windows rows do
+	// not have. The Windows attach listing comes from the ownWords branch of the create.
 	oldList := attachAddListsTwice
 	attachAddListsTwice = false
 	t.Cleanup(func() { attachAddListsTwice = oldList })
