@@ -265,8 +265,7 @@ func daemonGitDirSkipped() bool {
 
 // copyTrust is the verdict t of the trust check on dir as the copy of a request
 // takes it. With daemonGitDirSkipped a trusted t gives way to the verdict of the
-// walk from dir, when that walk finds a trusted git directory. The refusals of
-// the check stay those of the daemon's GIT_DIR.
+// walk from dir, when that walk finds a trusted git directory.
 func copyTrust(t gitDirTrust, dir string) gitDirTrust {
 	if !daemonGitDirSkipped() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return t
@@ -324,9 +323,10 @@ func commonDirPinOf(t gitDirTrust) []string {
 // directory gets the verdict of the walk too: 87375cc7 runs git.info, a create
 // and a remove in a second repository with the calls of that repository and
 // none of the daemon's (measured on Windows). A walk that the check refuses gets
-// that refusal, with no git call. 87375cc7 answers so for a stray commondir in a
-// second repository (measured on Windows). Other refusals are claustrum's own,
-// not measured. A walk that finds the folder of
+// that refusal, with no git call. 87375cc7 answers so for git.info, git.status, a
+// create and a remove on a stray commondir in a second repository (measured on
+// Windows). Other refusals and git.list_branches are claustrum's own, not
+// measured. A walk that finds the folder of
 // the daemon's GIT_DIR keeps the daemon verdict, with its spelling (f6010b97,
 // measured on Windows for the pin with no copy, TestGitDirTrustShortNamePinWindows). git.info with "shadowDirOff":true
 // keeps the daemon verdict (daemonGitDirVerdict): measured on Windows for a
