@@ -888,13 +888,16 @@ func removeListingCheck(u gitUse, repo string, noRepo bool) (c configVerdict, re
 // dropWorktreeEntryByPath deletes the one entry whose record names the worktree. It
 // deletes nothing when no record matches, when two records match (measured), or when
 // a matching entry is locked. It reports nothing: a failure leaves the entry in
-// place.
-func dropWorktreeEntryByPath(commonDir string, sp worktreePathSet) {
+// place. moved is the test of dropWorktreeEntry, or nil.
+func dropWorktreeEntryByPath(commonDir string, sp worktreePathSet, moved func() bool) {
 	root, recs, ok := listEntryRecords(commonDir)
 	if !ok || root == nil {
 		return
 	}
 	defer func() { _ = root.Close() }()
+	if moved != nil && moved() {
+		return
+	}
 	dropMatchingEntry(root, recs, sp)
 }
 
@@ -1035,14 +1038,34 @@ func verifiedEntryLocked(commonDir, name string) worktreeLock {
 
 // dropWorktreeEntry deletes the verified entry name. The worktrees directory itself
 // stays, also when it is then empty (measured).
-func dropWorktreeEntry(commonDir, name string) error {
+//
+// moved, when set, runs after the open of the registrations folder. If it reports a
+// move of baseRepo since the pin, the entry stays and errBaseMoved comes back. A
+// move after the open then reaches only the folder that is open. That keeps the
+// entry of a second repository (claustrum's own, not measured).
+func dropWorktreeEntry(commonDir, name string, moved func() bool) error {
 	root, err := openRegistrationsFolder(filepath.Join(commonDir, worktreesSubdir), os.OpenRoot)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = root.Close() }()
+	if moved != nil && moved() {
+		return errBaseMoved
+	}
 	return root.RemoveAll(name)
 }
+
+// gitDirBelowBase reports whether commonDir is spelled below repo, by the path alone.
+// A link in the path of repo that moves then moves the registrations too. A pin at the
+// real path or a daemon GIT_COMMON_DIR elsewhere does not move with it.
+func gitDirBelowBase(repo, commonDir string) bool {
+	rel, err := filepath.Rel(filepath.Clean(repo), filepath.Clean(commonDir))
+	return err == nil && filepath.IsLocal(rel)
+}
+
+// errBaseMoved is the error of an entry delete after baseRepo moved to another
+// folder (dropWorktreeEntry).
+var errBaseMoved = errors.New("baseRepo leads to another folder now")
 
 // entryAlreadyGone reports whether gitDir names an entry of the repository at commonDir
 // that is already gone: the entry is missing, or the whole worktrees directory is
