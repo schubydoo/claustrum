@@ -499,7 +499,9 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 //     intentional difference (decision of 2026-10-19).
 //   - X2: the file comes while the first listing of the checkout runs.
 //     5fd08069 runs the second listing, which fails with exit 128, and answers
-//     the text of ownConfigListing. Without the file rule of gitUse.listedSwap the reply
+//     the text of ownConfigListing. 87375cc7 runs the config read of the ssh
+//     door first, then that listing, with the same reply (measured on Windows).
+//     Mutation: set doorRefusalAfterListing false (the listing does not run). Without the file rule of gitUse.listedSwap the reply
 //     has the link text. The file here names a folder that does not exist, so
 //     that git fails on every host. In the cell it names the git directory of
 //     a second repository.
@@ -524,7 +526,7 @@ func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
 				"(for example: git branch -d w1, which git refuses if that would lose commits) before retrying " +
 				"this branch name: could not check whether another branch or remote-tracking ref reaches its commits (" + link + ")"
 		}},
-		{"X2", "listed", false, 1, func(_, leaf string) string {
+		{"X2", "listed", false, 2, func(_, leaf string) string {
 			return "git worktree add failed (checkout): Claude could not read your own git config on the remote machine " +
 				"(exit status 128). Run git config --list there to see the problem.; and the undo could not finish for " +
 				leaf + ": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
@@ -580,8 +582,10 @@ func TestCreateWithAFileAtTheGitDirOnWindows(t *testing.T) {
 			if got := len(calls) - swappedAt; got != row.after {
 				t.Errorf("%d git calls after the swap, want %d: %q", got, row.after, calls[swappedAt:])
 			}
-			if row.after == 1 && len(calls) > swappedAt && !calls[swappedAt].listing() {
-				t.Errorf("the call after the swap = %q, want the second listing", calls[swappedAt].argv)
+			// The config read of the ssh door comes first, and then the second
+			// listing (87375cc7, measured on Windows).
+			if row.after == 2 && len(calls) > swappedAt+1 && (!argvHas(calls[swappedAt].argv, "--get-regexp") || !calls[swappedAt+1].listing()) {
+				t.Errorf("the calls after the swap = %q, %q, want the read of the door and the second listing", calls[swappedAt].argv, calls[swappedAt+1].argv)
 			}
 			if got := mustRead(t, w1); got != before {
 				t.Errorf("w1 of the second repository = %q, want %q", got, before)

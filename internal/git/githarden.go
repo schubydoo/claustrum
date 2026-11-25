@@ -679,13 +679,24 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 			env = sshDoorEnv(env, door)
 			return nil
 		}
+		// On Windows a read that git refused still runs the second listing,
+		// and a refusal of that listing comes first. 87375cc7 does so after a
+		// `.git` file to a missing folder took the place of the git directory
+		// (measured on Windows). A stopped read stops at once.
+		var doorRefusal error
 		if doorReadBeforeListing {
 			if err := readDoor(); err != nil {
-				return "", false, err
+				if !doorRefusalAfterListing || u.stop.halted() != nil {
+					return "", false, err
+				}
+				doorRefusal = err
 			}
 		}
 		if text := ownConfigListing(leaf, gitDir, env); text != "" {
 			return "", false, checkoutRefusal(text)
+		}
+		if doorRefusal != nil {
+			return "", false, doorRefusal
 		}
 		if fileSwap {
 			return "", false, errGitDirChanged

@@ -301,7 +301,7 @@ In the state `fallback-git` git runs the filters, and this section does not appl
 
 In the state `shadow` the checkout starts ssh through a door of the daemon (`be1c1ca5`, measured on Linux, macOS and Windows). The refusal below is measured on Linux and macOS.
 
-- Before the read-tree call one more call runs in the new worktree: `git --git-dir=<git dir> config -z --get-regexp ^(core\.sshcommand|ssh\.variant)$`. Exit 1 means no match. It comes before the second listing, and that listing gets the five variables of the door too (`c9125eb8` and `b3081b51`, measured on Linux and macOS, `87375cc7` on Windows). After a refusal of that read no second listing runs (claustrum's own, not measured).
+- Before the read-tree call one more call runs in the new worktree: `git --git-dir=<git dir> config -z --get-regexp ^(core\.sshcommand|ssh\.variant)$`. Exit 1 means no match. It comes before the second listing, and that listing gets the five variables of the door too (`c9125eb8` and `b3081b51`, measured on Linux and macOS, `87375cc7` on Windows). On Windows a read that git refused still runs that listing, and its refusal comes first (`87375cc7`, measured on Windows). On Linux and macOS no second listing runs then (claustrum's own, not measured).
 - The ssh command of the repository's own config never runs (`be1c1ca5`, measured on Linux). claustrum's read names the settings copy, which holds no `core.sshCommand` (claustrum's own).
 - The read-tree call gets five variables of the door ([Variables of the ssh door](git-rules-calls.md#variables-of-the-ssh-door)).
 - The door refuses a Git LFS request whose host or path has a space, a special character or an unexpected word. It starts no ssh then.

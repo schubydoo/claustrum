@@ -64,6 +64,12 @@ const stagedAddWindowsSteps = true
 // gets the door entries (87375cc7, measured on Windows, hardenedGitCheckout).
 const doorReadBeforeListing = true
 
+// doorRefusalAfterListing is true on Windows. A refused config read of the ssh
+// door runs the second listing first (hardenedGitCheckout, 87375cc7, measured on
+// Windows for a `.git` file to a missing folder). Other refusals of the read
+// take the same way (claustrum's own, not measured).
+const doorRefusalAfterListing = true
+
 // gitDirMustBeReal is true on Windows. A git directory that is a junction or
 // a directory symbolic link is refused there, and a create tests at each of its steps that the
 // git directory is still the folder that its gate accepted (acceptedGitDir).
