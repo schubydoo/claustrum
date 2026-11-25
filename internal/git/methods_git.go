@@ -307,7 +307,9 @@ func gitInfo(req *gitCall) rpc.Response {
 	// 87375cc7 makes the excludes read only as the first request of a daemon,
 	// and none after a git.info on a repository (measured on Windows). The place
 	// after the link tests, the trust check, the count and the refusal of
-	// GIT_ALTERNATE_OBJECT_DIRECTORIES is claustrum's own, not measured. The trust
+	// GIT_ALTERNATE_OBJECT_DIRECTORIES is claustrum's own, not measured. So is the
+	// place before the no-git answer, a failed start test and a bad answer about
+	// the repository (settingsGateRefusal). The trust
 	// check cannot resolve such a folder and leaves it to git (gitDirTrustFor), so
 	// no step before it makes a git call (from the code).
 	if p.Path != "" {
