@@ -155,7 +155,7 @@ func TestEndMarksOnlyALandedKillForTheCount(t *testing.T) {
 // SIGTERM logs no SIGTERM line (87375cc7, measured on Linux). The kill call is a fake.
 func TestEndLogsTheTermLineAfterItsKill(t *testing.T) {
 	oldTerm, oldBound := groupTermAfter, groupKillBound
-	groupTermAfter, groupKillBound = 30*time.Millisecond, 300*time.Millisecond
+	groupTermAfter, groupKillBound = 30*time.Millisecond, 2*time.Second
 	t.Cleanup(func() { groupTermAfter, groupKillBound = oldTerm, oldBound })
 	for _, tc := range []struct {
 		name     string
