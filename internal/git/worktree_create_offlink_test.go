@@ -3,6 +3,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,14 +25,19 @@ type offLinkKind struct {
 // folder. 5fd08069 runs `rev-parse --absolute-git-dir`, then one listing in
 // the repository (two in attach mode), and then refuses. It answers the text
 // one time, runs no add, removes the leaf it made and makes nothing behind the
-// link.
+// link. On Windows 87375cc7 starts the text with `cannot add a worktree: `
+// (measured for a junction and a file).
 //
 // Mutations: in worktreeAdd, test offWorktreesRefusal before hardenedGitCmd.
 // The listing then does not run. Drop the call of offLinkListing: attach mode
 // then has one listing. On Windows, drop offMember from the test in
 // worktreeAdd: the create then succeeds through the link.
 func TestOffCreateWithALinkedRegistrationsFolder(t *testing.T) {
-	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed: cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place","errorCode":"worktree_add_failed"}}`
+	start := "git worktree add failed: "
+	if runtime.GOOS == "windows" {
+		start = "cannot add a worktree: "
+	}
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + start + `cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place","errorCode":"worktree_add_failed"}}`
 	for _, kind := range offLinkKinds {
 		for _, attach := range []bool{false, true} {
 			t.Run(kind.name+" attach "+strconv.FormatBool(attach), func(t *testing.T) {
