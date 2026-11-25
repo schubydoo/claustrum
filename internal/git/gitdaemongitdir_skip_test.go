@@ -245,8 +245,9 @@ func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
 
 // TestDaemonGitDirSkippedPlainFolder: with daemonGitDirSkipped a folder in which the
 // walk finds no repository gets the verdict "no repository" and its pin, as with no
-// daemon GIT_DIR. The verdict of the daemon GIT_DIR stays for daemonGitDirVerdict and
-// with the switch off. 87375cc7 answers so on Windows (measured on Windows).
+// daemon GIT_DIR. 87375cc7 gives a folder in no repository that verdict on Windows
+// (measured on Windows). The daemon verdict for daemonGitDirVerdict and with the
+// switch off is from the code.
 // Mutation: in gitDirTrustFor drop the test of the walk.
 func TestDaemonGitDirSkippedPlainFolder(t *testing.T) {
 	clearFolderEnv(t)
