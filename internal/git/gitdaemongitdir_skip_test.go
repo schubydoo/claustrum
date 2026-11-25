@@ -44,8 +44,7 @@ func skipRequests(repo string) []struct {
 // Windows). The replies are equal too.
 //
 // Mutations: in asksGit drop `|| daemonGitDirSkipped()` (no call about the
-// repository), in the settings gate drop copyTrust (no read of the config in
-// git.info), in gitUse.pin drop `&& !daemonGitDirSkipped()` (no GIT_DIR and
+// repository), in gitUse.pin drop `&& !daemonGitDirSkipped()` (no GIT_DIR and
 // GIT_WORK_TREE), in daemonPartFor return daemon (GIT_DIR on the calls with
 // --git-dir=), and in probeEnv drop withoutSkippedGitDir.
 func TestDaemonGitDirSkippedMakesTheCallsOfNoGitDir(t *testing.T) {
@@ -154,7 +153,7 @@ func TestDaemonGitDirSkippedPin(t *testing.T) {
 		t.Errorf("no copy: daemonPartFor = %q, want %q", got, daemon)
 	}
 	// A daemon GIT_DIR of another repository leaves the copy that of the walk
-	// (claustrum's own, not measured). Mutation: in gitUse.namesCopy drop copyTrust.
+	// (gitDirTrustFor, second repository).
 	_, otherGitDir := configRepo(t)
 	t.Setenv("GIT_DIR", otherGitDir)
 	if got := u.pin(f.repo); !slices.Equal(got, full) {
@@ -471,5 +470,73 @@ func TestDaemonGitDirEntryKeepsItsPin(t *testing.T) {
 	_, other := configRepo(t)
 	if got, want := daemonPartFor(daemon, []string{"GIT_COMMON_DIR=" + other}), []string{"A=1"}; !slices.Equal(got, want) {
 		t.Errorf("another repository: daemonPartFor = %q, want %q", got, want)
+	}
+}
+
+// TestDaemonGitDirSkippedLinkedWorktree: with daemonGitDirSkipped and a daemon
+// GIT_DIR of the repository's own `.git`, git.status and git.info on its linked
+// worktree make the calls and give the replies of a daemon with no GIT_DIR. The
+// walk finds the worktree entry, which has the same repository git directory as
+// the daemon GIT_DIR. So gitDirTrustFor keeps the daemon verdict, and only
+// copyTrust gives the copy the entry (claustrum's own, not measured).
+// Mutations: in the settings gate drop copyTrust (git.info refuses with the
+// disagree text), in gitUse.namesCopy drop copyTrust (the calls of git.info
+// carry GIT_DIR=<repo>/.git), and in copyTrust return t.
+func TestDaemonGitDirSkippedLinkedWorktree(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	run := func(t *testing.T, withGitDir bool) (lists []string) {
+		f := newShadowFixture(t)
+		setAttrSource(t, true)
+		if withGitDir {
+			t.Setenv("GIT_DIR", f.gitDir)
+		}
+		other, _ := configRepo(t)
+		if raw, _ := f.info(t, other, nil); !strings.Contains(raw, `"isRepo":true`) {
+			t.Fatalf("the first git.info = %s", raw)
+		}
+		folder := daemonFolder(t, f.run)
+		for _, m := range []struct {
+			method string
+			params map[string]any
+		}{
+			{"git.status", map[string]any{"path": f.wt, "baseRepo": f.repo}},
+			{"git.info", map[string]any{"path": f.wt}},
+		} {
+			raw, calls := f.call(t, m.method, m.params)
+			// The run with no daemon GIT_DIR must give good replies, so that a fault
+			// that makes both runs refuse the same way does not pass.
+			if !withGitDir && (!strings.Contains(raw, `"isRepo":true`) || strings.Contains(raw, `"error"`)) {
+				t.Fatalf("%s with no daemon GIT_DIR = %s, want a good reply", m.method, raw)
+			}
+			line := m.method + " " + raw
+			for _, c := range calls {
+				line += "\n  " + c.cwd + " | " + strings.Join(dropConfigArgs(c.argv), " ") + " ||"
+				for _, name := range []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE"} {
+					if v, ok := lookupExact(c.env, name); ok {
+						line += " " + name + "=" + v
+					}
+				}
+			}
+			for _, old := range []string{filepath.Join(folder, shadowRepoName(f.gitDir)), folder, f.run} {
+				line = strings.ReplaceAll(line, old, "<x>")
+			}
+			for _, old := range []string{strings.Trim(jsonQuoted(t, f.repo), `"`), filepath.ToSlash(f.repo), f.repo} {
+				line = strings.ReplaceAll(line, old, "<repo>")
+			}
+			lists = append(lists, line)
+		}
+		return lists
+	}
+	var plain, skipped []string
+	t.Run("no daemon GIT_DIR", func(t *testing.T) { plain = run(t, false) })
+	t.Run("daemon GIT_DIR", func(t *testing.T) { skipped = run(t, true) })
+	if len(plain) != 2 || len(skipped) != 2 {
+		t.Fatalf("%d and %d requests ran, want 2 and 2", len(plain), len(skipped))
+	}
+	varying := regexp.MustCompile(`[0-9a-f]{40}|[0-9]+`)
+	for i := range plain {
+		if a, b := varying.ReplaceAllString(plain[i], "#"), varying.ReplaceAllString(skipped[i], "#"); a != b {
+			t.Errorf("request %d differs:\n%s\n---\n%s", i+1, a, b)
+		}
 	}
 }
