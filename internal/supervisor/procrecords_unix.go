@@ -11,6 +11,12 @@ import "github.com/schubydoo/claustrum/internal/childrec"
 // removed its record, or until the bound of childrec.AwaitDone passes. The graceful
 // shutdown calls it after it killed the children, so the daemon does not exit before
 // the records are gone. It is a no-op for a manager with no run dir.
+//
+// It does not wait for a child whose shutdown SIGKILL failed with EPERM. 87375cc7 logs
+// the cleanup line at once there, after a refused sweep SIGKILL of a running child and
+// after a refused group SIGKILL at the end of the wait of endAsked (measured on Linux,
+// at a server.shutdown).
+// On macOS this is claustrum's own, not measured. That record stays (from the code).
 func (m *Manager) AwaitRecordsRemoved() {
 	if m.RunDir == "" {
 		return
@@ -18,7 +24,7 @@ func (m *Manager) AwaitRecordsRemoved() {
 	m.mu.Lock()
 	waits := make([]chan struct{}, 0, len(m.procs))
 	for _, p := range m.procs {
-		if p.recordDone != nil {
+		if p.recordDone != nil && !p.stopKillRefused.Load() {
 			waits = append(waits, p.recordDone)
 		}
 	}
