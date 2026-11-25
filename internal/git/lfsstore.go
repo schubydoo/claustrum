@@ -792,7 +792,7 @@ var (
 // bound did not cut the copy of a tick. With an 800 MB object that came 4 s
 // before a 2 MB object, 87375cc7 never kept the 2 MB object alone (0 of 40).
 // Claustrum's 3 s bound on the bytes test of a tick kept the 2 MB object alone
-// in 7 of 40. In the traced runs each object got one bytes test of at most
+// in 7 of 40. In the traced runs of 87375cc7 each object got one bytes test of at most
 // 3.0 s, with no cut and no retry. No bound on the bytes test is claustrum's own.
 //
 // keepFailedByCopy: after a checkout that failed by itself the keep copies to a
