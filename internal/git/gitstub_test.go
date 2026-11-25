@@ -511,7 +511,8 @@ func logTermStub(exitCode int) int {
 
 // holdStubOutput starts the descendant of the modes "hold" and "holdonly". It
 // holds the stdout and stderr of this call for CLAUSTRUM_GITSTUB_MS
-// milliseconds. With CLAUSTRUM_GITSTUB_HOLDSTDERR=1 it holds stderr alone. It
+// milliseconds. With CLAUSTRUM_GITSTUB_HOLDSTDERR=1 it holds stderr alone, and
+// with CLAUSTRUM_GITSTUB_HOLDSTDOUT=1 stdout alone. It
 // returns 1 when the descendant does not start. With CLAUSTRUM_GITSTUB_HOLDFIFO
 // set, it holds both until the writer of that FIFO closes it. The open of the
 // FIFO waits for the writer.
@@ -527,6 +528,9 @@ func holdStubOutput() int {
 	child.Stdout, child.Stderr = os.Stdout, os.Stderr
 	if os.Getenv("CLAUSTRUM_GITSTUB_HOLDSTDERR") == "1" {
 		child.Stdout = nil
+	}
+	if os.Getenv("CLAUSTRUM_GITSTUB_HOLDSTDOUT") == "1" {
+		child.Stderr = nil
 	}
 	if fifo := os.Getenv("CLAUSTRUM_GITSTUB_HOLDFIFO"); fifo != "" {
 		in, err := os.Open(fifo)
