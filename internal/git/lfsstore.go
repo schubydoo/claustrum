@@ -66,8 +66,8 @@ import (
 // sweep, so that path has no remove. On macOS the rest of the keep is
 // claustrum's own too.
 //
-// Measured on macOS: the copy after a failed checkout, the uncut copy of a
-// tick and the miss rule of keepPass.
+// Measured on macOS: the copy after a failed checkout and the miss rule of
+// keepPass (87375cc7 and 4c111e86), and the uncut copy of a tick (87375cc7).
 const (
 	// pointerBlobMax is the largest blob that the seed reads as a pointer
 	// (claustrum's own, the cutoff of git-lfs).
@@ -774,7 +774,7 @@ var storeFreeBytes = freeBytes
 // in five rows, with 1.75 to 2.03 s of that in the copy (measured on Linux).
 // The exact bound and its start are claustrum's own, not measured.
 // On macOS a tick has no such bound (keepTickRunsToExit), and after a failed
-// checkout one keepBudget covers the pass (keepPassBound).
+// checkout or a deadline one keepBudget covers the pass (keepPassBound).
 // newObjectHash is the hash of the bytes test. keepCopy is the copy of the
 // keep. A test replaces all three.
 var (
@@ -788,12 +788,11 @@ var (
 // because no row measures these rules there. A test sets them.
 //
 // keepTickRunsToExit: keepBudget bounds neither the bytes test nor the copy of
-// a tick. Both stop at the exit of git (keepTicker.halt). Of 85 copies that
-// began before the last download, none was cut, and one ran 3.09 s. With an
-// 800 MB object that came 4 s before a 2 MB object, 87375cc7 began its copy up
-// to 6.8 s after the download, and never kept the 2 MB object alone (0 of 40).
+// a tick. Both stop at the exit of git (keepTicker.halt). On 87375cc7 the 3 s
+// bound did not cut the copy of a tick. With an 800 MB object that came 4 s
+// before a 2 MB object, 87375cc7 never kept the 2 MB object alone (0 of 40).
 // Claustrum's 3 s bound on the bytes test of a tick kept the 2 MB object alone
-// in 7 of 40. In the traced runs each object got one bytes test of at most
+// in 7 of 40. In the traced runs of 87375cc7 each object got one bytes test of at most
 // 3.0 s, with no cut and no retry. No bound on the bytes test is claustrum's own.
 //
 // keepFailedByCopy: after a checkout that failed by itself the keep copies to a
@@ -974,7 +973,8 @@ func returnDownloads(u gitUse, private string, form keepForm) *leftOut {
 		return l
 	}
 	// Each budget has its own context, so a keep after a deadline of the
-	// checkout still runs. After a failed checkout one bound covers the pass.
+	// checkout still runs. After a failed checkout or a deadline one bound
+	// covers the pass.
 	pass := context.Background()
 	if keepPassBound && form != keepAfterGood {
 		bound, stop := context.WithTimeout(pass, keepBudget)
@@ -1022,10 +1022,9 @@ var newKeepTick = func(d time.Duration) (<-chan time.Time, func()) {
 // checkout ended at the exit of git, with no copy. The keep after the
 // checkout then read it again, and only it wrote a temp file (measured on
 // Linux).
-// On macOS a copy of a tick that still ran at an early exit of git left a temp
-// file that went at once, in 7 runs of a failed download. Claustrum's own, not
-// measured: that stop on Linux, the rest of the keep on macOS, and the ticks
-// after a stop for the space, until git exits.
+// Claustrum's own, not measured: a stop during a copy on Linux and during the
+// copy of a tick on macOS, the rest of the keep on macOS, and the ticks after
+// a stop for the space, until git exits.
 type keepTicker struct {
 	quit  chan struct{}
 	ended chan struct{}
