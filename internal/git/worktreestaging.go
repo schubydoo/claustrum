@@ -786,8 +786,10 @@ func stagedOtherEntryRefusal(leaf string) *addRefused {
 // Windows. For a file there 87375cc7 and 4c111e86 answer `cannot add a
 // worktree: ` and the text in a new branch. 87375cc7 does so in attach mode
 // too, with a second listing (measured on Windows). Another kind there is
-// claustrum's own, not measured. With "shadowDirOff":true it marks the text of offWorktreesRefusal,
-// for a file or a junction (87375cc7, measured on Windows).
+// claustrum's own, not measured.
+//
+// With "shadowDirOff":true, ownWords also marks the text of offWorktreesRefusal
+// for a file or a junction there (87375cc7, measured on Windows).
 type addNotPrepared struct {
 	text     string
 	offLink  bool

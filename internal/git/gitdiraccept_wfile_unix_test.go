@@ -19,6 +19,10 @@ import (
 // the off refusal gets the same start, with no pair (measured on Windows for
 // both kinds). No `worktree add` runs.
 func TestWindowsCreateWithAFileAtWorktrees(t *testing.T) {
+	// The Windows rows have no second attach listing, so the macOS one stays off here.
+	oldList := attachAddListsTwice
+	attachAddListsTwice = false
+	t.Cleanup(func() { attachAddListsTwice = oldList })
 	const prepare = "cannot prepare the repository's worktrees directory: %q is not a directory"
 	const list = "cannot list the repository's worktree entries: \"worktrees\" is a link or a file where Claude needs a real directory; put the directory itself in its place"
 	for _, row := range []struct {
