@@ -4,6 +4,7 @@ package supervisor
 
 import (
 	"os"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -47,6 +48,9 @@ func awaitRecordsQuickly(t *testing.T, m *Manager) {
 // with EPERM holds no wait for its record (87375cc7, measured on Linux). The seam sends
 // nothing, and the child is the test's own.
 func TestShutdownWaitSkipsARefusedSweepKill(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("only Linux skips the wait after a refused kill")
+	}
 	m := newTestProcManager(t)
 	p, _ := spawnPlainWithMember(t, m, "closed", "stay")
 	refuseGroupKills(t)
@@ -61,6 +65,9 @@ func TestShutdownWaitSkipsARefusedSweepKill(t *testing.T) {
 // SIGTERM, and the group SIGKILL at the end of the wait is refused with EPERM. It holds no
 // wait for its record (87375cc7, measured on Linux). The seam sends neither signal.
 func TestShutdownWaitSkipsARefusedKillOfTheAskedEnd(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("only Linux skips the wait after a refused kill")
+	}
 	old := shutdownEndGrace
 	shutdownEndGrace = 100 * time.Millisecond
 	t.Cleanup(func() { shutdownEndGrace = old })
