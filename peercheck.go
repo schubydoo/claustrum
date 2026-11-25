@@ -377,6 +377,17 @@ func (g *peerGate) ownOrRetry() (nsText, error) {
 	return own, nil
 }
 
+// startNamingFailed reports whether the start naming of the peer check failed, so that
+// logReadRealStart holds the start line.
+func (g *peerGate) startNamingFailed() bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.namingErr != nil
+}
+
 // logReadRealStart writes the start line of the files handler. After a failed start naming
 // it holds the line until the first read that works. Then the line comes right after the
 // serving line (4c111e86 and c9125eb8, measured on Linux). A good start naming writes it at

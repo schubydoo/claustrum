@@ -267,8 +267,11 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// The start test of files.read real, once and before the first connection line.
 	// A failed start naming of the peer check holds it (logReadRealStart). Its place
 	// after the banner is measured on Linux, macOS and Windows, and after the `host cleaning off` line on Linux and macOS.
-	// On macOS it first waits a short time for the shell read (readRealLineWait).
-	shellenv.AwaitStartRead(readRealLineWait)
+	// On macOS it first waits a short time for the shell read (readRealLineWait), so the
+	// first connection is accepted up to that much later. A held line needs no wait.
+	if !s.peerCheck.startNamingFailed() {
+		shellenv.AwaitStartRead(readRealLineWait)
+	}
 	s.peerCheck.logReadRealStart()
 	// The session folders: the record folder beside run, with the records of
 	// earlier daemons (internal/sessiondirs). It comes before the first request. Its
