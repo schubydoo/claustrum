@@ -232,7 +232,7 @@ type Proc struct {
 	// SIGKILL. An atomic, so the macOS end reads it with no lock after the reap.
 	sweepKilledGroup atomic.Bool
 	// stopKillRefused is set once the sweep SIGKILL or the group SIGKILL of endAsked
-	// failed with EPERM. AwaitRecordsRemoved then does not wait for this child.
+	// failed with EPERM. On Linux AwaitRecordsRemoved then does not wait for this child.
 	stopKillRefused atomic.Bool
 	// groupKillClaimed is taken once by the one group SIGKILL that the end of a launcher's
 	// group, endAsked and a client KILL after the leader's exit send together.

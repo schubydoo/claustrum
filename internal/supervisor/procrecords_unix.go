@@ -17,7 +17,8 @@ import (
 // the records are gone. It is a no-op for a manager with no run dir.
 //
 // It does not wait for a child whose shutdown SIGKILL failed with EPERM. 87375cc7 logs
-// the cleanup line at once there, after a refused sweep SIGKILL of a running child and
+// the cleanup line at once there, after a refused sweep SIGKILL of a running child whose
+// client KILL was refused first, and
 // after a refused group SIGKILL at the end of the wait of endAsked (measured on Linux,
 // at a server.shutdown). That record stays (from the code).
 // Only Linux skips the wait. On macOS a group of exiting processes can answer EPERM,
