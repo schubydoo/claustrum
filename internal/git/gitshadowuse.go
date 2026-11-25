@@ -30,6 +30,9 @@ import (
 // (settingsGateRefusal sets it). Its calls name the folder of the repository in
 // the folder of the daemon, so git reads the daemon's copy of the settings.
 type gitUse struct {
+	// daemonVerdict keeps the verdict of the daemon's GIT_DIR in the pin of a call
+	// with no copy (git.info with "shadowDirOff":true, gitDirTrustFor).
+	daemonVerdict bool
 	// addGitDir is the git directory of the `worktree add` call after a junction
 	// move (acceptedGitDir.noteJunctionMove). It is "" for every other call.
 	addGitDir string
@@ -850,7 +853,7 @@ func (u gitUse) commonVars() []string {
 func (u gitUse) pin(dir string) []string {
 	t, ok := u.names(dir)
 	if !ok {
-		return commonDirPinEnv(dir)
+		return u.noCopyPin(dir)
 	}
 	// The `worktree add` after a junction move names the second repository
 	// (acceptedGitDir.noteJunctionMove).
@@ -876,13 +879,22 @@ func (u gitUse) pin(dir string) []string {
 	return env
 }
 
+// noCopyPin is the pin of a call in dir that names no copy: commonDirPinEnv, or
+// the pin of the daemon's verdict with daemonVerdict.
+func (u gitUse) noCopyPin(dir string) []string {
+	if u.daemonVerdict {
+		return commonDirPinOf(daemonGitDirVerdict(dir))
+	}
+	return commonDirPinEnv(dir)
+}
+
 // gitDirPin is the folder variables of a git call with --git-dir= in its argv,
 // for the repository of dir. In the state shadow they are GIT_COMMON_DIR and
 // GIT_OBJECT_DIRECTORY only. Such a call has no GIT_DIR and no GIT_WORK_TREE.
 // Measurements show that on Linux, macOS and Windows.
 func (u gitUse) gitDirPin(dir string) []string {
 	if _, ok := u.names(dir); !ok {
-		return commonDirPinEnv(dir)
+		return u.noCopyPin(dir)
 	}
 	// After a create moved its hold, a call with --git-dir= names the objects
 	// of that folder (measured on Linux). After askedAgain it names the folder

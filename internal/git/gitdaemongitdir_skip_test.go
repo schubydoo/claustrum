@@ -201,7 +201,7 @@ func TestDaemonGitDirSkippedProbes(t *testing.T) {
 
 // TestDaemonGitDirSkippedNeedsAFolder: only an absolute daemon GIT_DIR that names a
 // folder is skipped. A regular file and a relative value keep the rules of before,
-// whose refusals are measured on Windows (TestGitDirTrustDaemonGitDirPlainFileWindows,
+// whose refusals are those of 5fd08069 (measured on Windows) (TestGitDirTrustDaemonGitDirPlainFileWindows,
 // TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows). A daemon GIT_COMMON_DIR
 // keeps them too. Mutations: in daemonGitDirSkipped drop the tests of the value,
 // or drop `|| !filepath.IsAbs(gd)`.
@@ -245,9 +245,9 @@ func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
 
 // TestDaemonGitDirSkippedPlainFolder: with daemonGitDirSkipped a folder in which the
 // walk finds no repository gets the verdict "no repository" and its pin, as with no
-// daemon GIT_DIR. 87375cc7 answers git.info and git.status there with the calls of
-// GIT_DIR=NUL (measured on Windows). With the switch off the daemon GIT_DIR stays the
-// judged directory. Mutation: in gitDirTrustFor drop the test of the walk.
+// daemon GIT_DIR. The verdict of the daemon GIT_DIR stays for daemonGitDirVerdict and
+// with the switch off. 87375cc7 answers so on Windows (measured on Windows).
+// Mutation: in gitDirTrustFor drop the test of the walk.
 func TestDaemonGitDirSkippedPlainFolder(t *testing.T) {
 	clearFolderEnv(t)
 	_, gitDir := configRepo(t)
@@ -260,8 +260,85 @@ func TestDaemonGitDirSkippedPlainFolder(t *testing.T) {
 	if got, want := commonDirPinEnv(plain), noRepoPin(); !slices.Equal(got, want) {
 		t.Errorf("pin = %q, want %q", got, want)
 	}
+	if tr := daemonGitDirVerdict(plain); tr.verdict != gitDirTrusted || tr.pinCommonDir != gitDir {
+		t.Errorf("daemonGitDirVerdict = %+v, want the daemon GIT_DIR trusted", tr)
+	}
 	setCopyPinsWalkGitDir(t, false)
 	if tr := gitDirTrustFor(plain); tr.verdict != gitDirTrusted {
 		t.Errorf("off: verdict = %+v, want the daemon GIT_DIR trusted", tr)
+	}
+}
+
+// TestDaemonGitDirSkippedPlainFolderCalls: with daemonGitDirSkipped and an absolute
+// daemon GIT_DIR of a repository, the five methods on a folder in no repository make
+// the calls and give the replies of a daemon with no GIT_DIR. git.info with
+// "shadowDirOff":true keeps the daemon verdict: its calls carry
+// GIT_COMMON_DIR=<that git directory>. 87375cc7 does so on Windows (measured on
+// Windows). Mutations: in gitDirTrustFor drop the test of the walk, or in gitInfo
+// drop offDaemon.
+func TestDaemonGitDirSkippedPlainFolderCalls(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	run := func(t *testing.T, withGitDir bool) (lists []string) {
+		f := newShadowFixture(t)
+		setAttrSource(t, true)
+		_, gitDir := configRepo(t)
+		if withGitDir {
+			t.Setenv("GIT_DIR", gitDir)
+		}
+		other, _ := configRepo(t)
+		if raw, _ := f.info(t, other, nil); !strings.Contains(raw, `"isRepo":true`) {
+			t.Fatalf("the first git.info = %s", raw)
+		}
+		plain := resolveTestRoot(t, t.TempDir())
+		reqs := []struct {
+			method string
+			params map[string]any
+		}{
+			{"git.info", map[string]any{"path": plain}},
+			{"git.status", map[string]any{"path": plain, "baseRepo": plain}},
+			{"git.list_branches", map[string]any{"path": plain}},
+			{"git.worktree_create", map[string]any{"baseRepo": plain, "branchName": "w1", "worktreePath": filepath.Join(plain, "w1")}},
+			{"git.worktree_remove", map[string]any{"baseRepo": plain, "worktreePath": filepath.Join(plain, "w1"), "branchName": "w1"}},
+		}
+		for _, m := range reqs {
+			raw, calls := f.call(t, m.method, m.params)
+			line := m.method + " " + raw
+			for _, c := range calls {
+				line += "\n  " + strings.Join(dropConfigArgs(c.argv), " ") + " ||"
+				for _, name := range []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE"} {
+					if v, ok := lookupExact(c.env, name); ok {
+						line += " " + name + "=" + v
+					}
+				}
+			}
+			for _, old := range []string{strings.Trim(jsonQuoted(t, plain), `"`), filepath.ToSlash(plain), plain} {
+				line = strings.ReplaceAll(line, old, "<plain>")
+			}
+			lists = append(lists, line)
+		}
+		if withGitDir {
+			_, calls := f.info(t, plain, map[string]any{"shadowDirOff": true})
+			if len(calls) == 0 {
+				t.Fatal("git.info with shadowDirOff made no call")
+			}
+			for _, c := range calls {
+				if v, _ := lookupExact(c.env, "GIT_COMMON_DIR"); c.listing() && v != gitDir {
+					t.Errorf("shadowDirOff: the listing has GIT_COMMON_DIR=%q, want %q", v, gitDir)
+				}
+			}
+		}
+		return lists
+	}
+	var plain, skipped []string
+	t.Run("no daemon GIT_DIR", func(t *testing.T) { plain = run(t, false) })
+	t.Run("daemon GIT_DIR", func(t *testing.T) { skipped = run(t, true) })
+	varying := regexp.MustCompile(`[0-9a-f]{40}|[0-9]+`)
+	if len(plain) != 5 || len(skipped) != 5 {
+		t.Fatalf("%d and %d requests ran, want 5 and 5", len(plain), len(skipped))
+	}
+	for i := range plain {
+		if a, b := varying.ReplaceAllString(plain[i], "#"), varying.ReplaceAllString(skipped[i], "#"); a != b {
+			t.Errorf("request %d differs:\n%s\n---\n%s", i+1, a, b)
+		}
 	}
 }

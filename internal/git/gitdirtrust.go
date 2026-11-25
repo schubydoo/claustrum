@@ -290,10 +290,14 @@ func requestGitDirTrust(dir string, readMethod bool) gitDirTrust {
 // The pin applies to every trusted git directory, and only when the daemon's own
 // environment does not already set GIT_COMMON_DIR.
 func commonDirPinEnv(dir string) []string {
+	return commonDirPinOf(gitDirTrustFor(dir))
+}
+
+// commonDirPinOf is commonDirPinEnv for the verdict t.
+func commonDirPinOf(t gitDirTrust) []string {
 	if daemonCommonDirSet() {
 		return nil
 	}
-	t := gitDirTrustFor(dir)
 	// A git directory that the daemon cannot search gets the pin of "no
 	// repository", as readGitDirTrust answers there (claustrum's own, not measured).
 	if t.unsearchable {
@@ -312,18 +316,27 @@ func commonDirPinEnv(dir string) []string {
 // resolve to an existing directory is left to git, which answers for itself.
 //
 // With daemonGitDirSkipped a dir in which the walk finds no repository gets the
-// verdict of the walk. 87375cc7 answers git.info and git.status on such a folder
-// with the calls of a daemon with no GIT_DIR there: the listing and the next
-// call carry GIT_DIR=NUL (measured on Windows). Other states than shadow follow
-// (claustrum's own, not measured).
+// verdict of the walk. In the state shadow 87375cc7 answers git.info, git.status,
+// git.list_branches, a create and a remove on such a folder with the calls of a
+// daemon with no GIT_DIR: the listing and the next call carry GIT_DIR=NUL
+// (measured on Windows). git.info with "shadowDirOff":true keeps the daemon
+// verdict (daemonGitDirVerdict, measured on Windows). The other methods with that
+// switch, and the state fallback-git, follow the walk (claustrum's own, not
+// measured).
 func gitDirTrustFor(dir string) gitDirTrust {
-	t := trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+	t := daemonGitDirVerdict(dir)
 	if daemonGitDirSkipped() && t.verdict == gitDirTrusted {
 		if w := trustWithGitDir(dir, ""); w.verdict == gitDirNoRepo {
 			return w
 		}
 	}
 	return t
+}
+
+// daemonGitDirVerdict is gitDirTrustFor without the walk of daemonGitDirSkipped:
+// the verdict of the daemon's GIT_DIR when it is set.
+func daemonGitDirVerdict(dir string) gitDirTrust {
+	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
 }
 
 // trustWithGitDir is gitDirTrustFor with gd in the place of the daemon's GIT_DIR.
