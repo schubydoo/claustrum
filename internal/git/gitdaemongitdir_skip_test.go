@@ -343,3 +343,112 @@ func TestDaemonGitDirSkippedPlainFolderCalls(t *testing.T) {
 		}
 	}
 }
+
+// TestDaemonGitDirOfAnotherRepositoryNamesOneRepository: with daemonGitDirSkipped and
+// a daemon GIT_DIR of repository A, git.info and a create in repository B run each
+// pinned call on one repository: GIT_DIR, GIT_COMMON_DIR (the copy),
+// GIT_OBJECT_DIRECTORY and GIT_WORK_TREE all name it. The alternates file that the
+// request reads is that of the same repository: a CRLF file there refuses the
+// request, and one in the other repository does not. The test holds for either
+// repository. At 6f30aa8b git.info runs its calls on B and reads the alternates of
+// A, and the create of B is refused by the hold (B against the identity of A).
+func TestDaemonGitDirOfAnotherRepositoryNamesOneRepository(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	checksOn(t)
+	type run struct {
+		replies []string
+		named   []string // the repository of each request, "A" or "B"
+	}
+	exec := func(t *testing.T, badIn string) run {
+		f := newShadowFixture(t)
+		setAttrSource(t, true)
+		repoA, gitA := configRepo(t)
+		repoB, gitB := configRepo(t)
+		t.Setenv("GIT_DIR", gitA)
+		roots := map[string]string{"A": repoA, "B": repoB}
+		other, _ := configRepo(t)
+		if raw, _ := f.info(t, other, nil); !strings.Contains(raw, `"isRepo":true`) {
+			t.Fatalf("the first git.info = %s", raw)
+		}
+		if badIn != "" {
+			info := filepath.Join(roots[badIn], ".git", "objects", "info")
+			if err := os.MkdirAll(info, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(info, "alternates"), []byte("x\r\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		folder := daemonFolder(t, f.run)
+		copies := map[string]string{"A": filepath.Join(folder, shadowRepoName(gitA)), "B": filepath.Join(folder, shadowRepoName(gitB))}
+		repoOf := func(v string) string {
+			for _, k := range []string{"A", "B"} {
+				if v == copies[k] || v == roots[k] || strings.HasPrefix(v, roots[k]+string(filepath.Separator)) {
+					return k
+				}
+			}
+			return ""
+		}
+		var r run
+		for _, m := range []struct {
+			method string
+			params map[string]any
+		}{
+			{"git.info", map[string]any{"path": repoB}},
+			{"git.worktree_create", map[string]any{"baseRepo": repoB, "branchName": "w1", "worktreePath": filepath.Join(repoB, ".claude", "worktrees", "w1")}},
+			{"git.status", map[string]any{"path": repoB, "baseRepo": repoB, "shadowDirOff": true}},
+			{"git.info", map[string]any{"path": repoB, "shadowDirOff": true}},
+		} {
+			raw, calls := f.call(t, m.method, m.params)
+			r.replies = append(r.replies, raw)
+			seen := map[string]bool{}
+			for _, c := range calls {
+				if _, pinned := lookupExact(c.env, "GIT_COMMON_DIR"); !pinned {
+					continue
+				}
+				in := map[string]bool{}
+				for _, name := range []string{"GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE"} {
+					if v, ok := lookupExact(c.env, name); ok {
+						if k := repoOf(v); k != "" {
+							in[k] = true
+						}
+					}
+				}
+				if len(in) > 1 {
+					t.Errorf("%s: the call %q names both repositories: %q", m.method, c.argv[len(c.argv)-2:], c.env)
+				}
+				for k := range in {
+					seen[k] = true
+				}
+			}
+			if len(seen) > 1 {
+				t.Errorf("%s: the calls name both repositories", m.method)
+			}
+			named := ""
+			for k := range seen {
+				named = k
+			}
+			r.named = append(r.named, named)
+		}
+		return r
+	}
+	var clean run
+	t.Run("clean", func(t *testing.T) { clean = exec(t, "") })
+	for i, method := range []string{"git.info", "git.worktree_create"} {
+		x := clean.named[i]
+		if x == "" {
+			t.Fatalf("%s names no repository: %q", method, clean.replies[i])
+		}
+		y := map[string]string{"A": "B", "B": "A"}[x]
+		t.Run(method+" bad alternates in "+x, func(t *testing.T) {
+			if raw := exec(t, x).replies[i]; !strings.Contains(raw, "alternates") {
+				t.Errorf("%s = %s, want the alternates refusal of %s, whose calls it runs", method, raw, x)
+			}
+		})
+		t.Run(method+" bad alternates in "+y, func(t *testing.T) {
+			if raw := exec(t, y).replies[i]; strings.Contains(raw, "alternates") {
+				t.Errorf("%s = %s, want no refusal: its calls run on %s", method, raw, x)
+			}
+		})
+	}
+}

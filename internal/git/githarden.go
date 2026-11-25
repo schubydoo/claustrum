@@ -251,12 +251,21 @@ func withoutSkippedGitDir(env []string) []string {
 // daemonPartFor is daemon, the daemon's part of the environment of a call with
 // pin, without a skipped GIT_DIR (withoutSkippedGitDir) when pin names the copy
 // of a request. A pinned call then has the GIT_DIR of its pin only, and a call
-// with --git-dir= has none (87375cc7, measured on Windows).
+// with --git-dir= has none (87375cc7, measured on Windows). It goes too when the
+// GIT_COMMON_DIR of a pin with no copy names another folder than that GIT_DIR, so
+// that git finds the repository of the pin (claustrum's own, not measured).
 func daemonPartFor(daemon, pin []string) []string {
-	if !pinNamesCopy(pin) {
+	if !pinNamesCopy(pin) && !pinNamesOtherGitDir(pin) {
 		return daemon
 	}
 	return withoutSkippedGitDir(daemon)
+}
+
+// pinNamesOtherGitDir reports whether pin sets GIT_COMMON_DIR to another folder
+// than the daemon's GIT_DIR.
+func pinNamesOtherGitDir(pin []string) bool {
+	v, ok := lookupExact(pin, "GIT_COMMON_DIR")
+	return ok && daemonGitDirSkipped() && !sameProbeFolder(v, os.Getenv("GIT_DIR"))
 }
 
 // pinNamesCopy reports whether pin holds GIT_OBJECT_DIRECTORY. Of the pins of a

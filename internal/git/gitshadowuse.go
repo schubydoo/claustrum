@@ -190,7 +190,7 @@ func (u gitUse) formNow(ask bool) (f gitUse, off bool) {
 		return u, false
 	}
 	if l.off() {
-		return gitUse{stop: l.stop, live: l, sshKept: u.sshKept}, true
+		return gitUse{stop: l.stop, live: l, sshKept: u.sshKept, daemonVerdict: u.daemonVerdict}, true
 	}
 	if l.pending {
 		l.pending = false
