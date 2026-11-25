@@ -2939,7 +2939,8 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// Each call of the check asks git about the repository again before its
 		// listing when the kept answer is older than probeKeep (recheck). On
 		// 87375cc7 and 4c111e86 a listing held 5 s or more gave one more call,
-		// and a listing held 4.5 s gave none (measured on Linux). macOS and
+		// and a listing held 4.5 s (87375cc7) or 4 s (4c111e86) gave none
+		// (measured on Linux). macOS and
 		// Windows are claustrum's own, not measured.
 		check := *checkUse
 		check.noRecheck = false
