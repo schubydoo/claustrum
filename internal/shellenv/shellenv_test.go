@@ -617,3 +617,46 @@ func TestLoginPATHReadAgainWindowKeepsARunningRead(t *testing.T) {
 		t.Errorf("log =\n%s\nwant no cap line for a read that ends after its window", got)
 	}
 }
+
+// TestAwaitStartReadWaitsWithinItsBound: the wait returns when the read ends, or
+// at the bound from the start of the read, and it stops no read.
+func TestAwaitStartReadWaitsWithinItsBound(t *testing.T) {
+	f := installPathReadFake(t)
+	AwaitStartRead(time.Hour) // no read runs, so no wait
+	WarmAtStart()
+	r := startedRead(t, f)
+	go func() {
+		time.Sleep(20 * time.Millisecond) // the answer comes while the wait runs
+		f.answer <- pathAnswer{path: "/login/bin"}
+	}()
+	AwaitStartRead(time.Hour)
+	select {
+	case <-r.end:
+	default:
+		t.Fatal("the wait returned before the read ended")
+	}
+
+	f = installPathReadFake(t)
+	WarmAtStart()
+	r = startedRead(t, f)
+	waitEnds(t, 50*time.Millisecond, "the wait did not end at its bound")
+	f.advance(time.Hour)
+	waitEnds(t, time.Minute, "the wait did not count from the start of the read")
+	if runningRead() != r {
+		t.Error("the wait stopped the read")
+	}
+	f.answer <- pathAnswer{path: "/login/bin"}
+	awaitReadEnd(t, r)
+}
+
+// waitEnds fails the test when AwaitStartRead(d) runs for 5 s.
+func waitEnds(t *testing.T, d time.Duration, msg string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { AwaitStartRead(d); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal(msg)
+	}
+}

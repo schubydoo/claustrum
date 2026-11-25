@@ -238,6 +238,22 @@ func AwaitRunningLoginPATH() {
 	}
 }
 
+// AwaitStartRead waits for a read that runs until d has passed since its start.
+// It starts no read and stops none.
+func AwaitStartRead(d time.Duration) {
+	s := loginPATHs
+	s.mu.Lock()
+	r := s.run
+	var left time.Duration
+	if r != nil {
+		left = d - s.clock().Sub(r.started)
+	}
+	s.mu.Unlock()
+	if left > 0 {
+		waitUpTo(r.end, left)
+	}
+}
+
 // dueLocked reports whether a spawn starts a new read.
 func (s *loginPATHState) dueLocked(noShellAgent bool) bool {
 	if s.failures == 0 {
