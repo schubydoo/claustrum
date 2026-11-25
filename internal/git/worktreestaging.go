@@ -777,8 +777,9 @@ func stagedOtherEntryRefusal(leaf string) *addRefused {
 // `.git\worktrees`, 5fd08069 answers `git worktree add failed: cannot prepare
 // the repository's worktrees directory: "C:\\o\\w\\repo\\.git\\worktrees" is
 // not a directory`, one time, after 11 git calls (measured on Windows, 2 of 2
-// runs). claustrum answers the same after 10 calls (measured, 2 runs). The
-// other failed steps are not measured in attach mode: they get the same rule.
+// runs). claustrum answered the same after 10 calls before it followed 87375cc7
+// (measured, 2 runs). On Windows it now gives the text of ownWords below. Linux
+// and macOS keep the text of 5fd08069. The other failed steps are not measured in attach mode: they get the same rule.
 // On Linux and macOS the refusal of worktreesFolderRefusal is such an error
 // too. offLink marks the refusal of offWorktreesRefusal.
 //
