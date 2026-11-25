@@ -457,6 +457,11 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
   measured on Linux and macOS). A filter refusal and the ssh door text of that
   failure then come before `timeout` too (claustrum's own, not measured). Windows
   keeps the drain and answers `timeout` there (claustrum's own, not measured).
+- On Windows the reply after the `timeoutMs` stop of a read-tree call does not
+  wait for a holder of stdout alone (`87375cc7`, measured on Windows). A holder of
+  stderr delays it up to the 5 s drain (measured). A git left running can then
+  fill the leaf again, and the undo text says so (measured). Linux and macOS wait
+  (claustrum's own, not measured).
 - The settle call of a create, its listing and the pair before it ([The settle step](git-worktree-create.md#the-settle-step)) have their own limit, and their stop stops no later call (claustrum's own).
 - `git.worktree_remove` gets none of these limits. Its first call has the 30 s
   bound of the call about the repository (measured on Linux).
