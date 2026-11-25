@@ -3775,10 +3775,17 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	if createStepHook != nil {
 		createStepHook("remove entry drop")
 	}
+	// With no held git directory and a git directory spelled below baseRepo, a move of
+	// baseRepo since the pin keeps the entry (claustrum's own, not measured). Another git
+	// directory keeps the delete of before (gitDirBelowBase).
+	var moved func() bool
+	if gitDirBelowBase(repo, commonDir) {
+		moved = func() bool { return req.movedSincePin(repo) }
+	}
 	switch {
 	case !dropEntry || offSwapped:
 	case entry != "":
-		drop := func() error { return dropWorktreeEntry(commonDir, entry) }
+		drop := func() error { return dropWorktreeEntry(commonDir, entry, moved) }
 		if held {
 			drop = func() error { return dropHeldEntry(req.removeHold, entry) }
 		}
@@ -3792,7 +3799,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		if held {
 			dropHeldEntryByPath(req.removeHold, commonDir, sp)
 		} else {
-			dropWorktreeEntryByPath(commonDir, sp)
+			dropWorktreeEntryByPath(commonDir, sp, moved)
 		}
 	}
 	// The branch step then runs in the second repository, and it deletes the ref of
@@ -4343,7 +4350,7 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 				}
 				dropHeldEntryByPath(req.removeHold, commonDir, dropSet)
 			} else {
-				dropWorktreeEntryByPath(commonDir, dropSet)
+				dropWorktreeEntryByPath(commonDir, dropSet, func() bool { return req.movedSincePin(repo) })
 			}
 		}
 	}
