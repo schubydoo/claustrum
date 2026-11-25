@@ -3,9 +3,12 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/windows"
 )
 
 // openNonBlocking adds nothing on Windows, which has no FIFO in the file system.
@@ -131,6 +134,14 @@ var gitVersionDir = func() string {
 // in a path that exists and is not a folder is a refusal there, as on 89cb6289
 // (measured on Windows). See unenterableDir.
 var nonFolderStartRefuses = true
+
+// startNameRefuses reports the stat error of a folder whose listing start error is a
+// refusal (unenterableDir): ERROR_INVALID_NAME. 87375cc7 answers git.info with the
+// hooks refusal and `chdir <path>: The filename, directory name, or volume label
+// syntax is incorrect.` there, for a path through a junction that `mklink /J` made
+// to a `\??\Volume{<guid>}\` target (measured on Windows). Other methods and other
+// paths with that error are claustrum's own, not measured.
+var startNameRefuses = func(err error) bool { return errors.Is(err, windows.ERROR_INVALID_NAME) }
 
 // walkStartsAsSpelled is true on Windows. A directory that filepath.EvalSymlinks cannot
 // resolve starts the walk of the trust check and of the git.info root as it is spelled

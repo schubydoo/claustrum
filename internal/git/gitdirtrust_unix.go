@@ -61,6 +61,11 @@ const gitVersionDir = "/"
 // on (unenterableDir). It is a variable so that a test on Linux can set it.
 var nonFolderStartRefuses = false
 
+// startNameRefuses reports false on Linux and macOS: a folder that does not stat
+// keeps the answer of an unenterable folder (unenterableDir). It is a variable so
+// that a test on Linux can set it.
+var startNameRefuses = func(error) bool { return false }
+
 // walkStartsAsSpelled is false on Linux and macOS. A dir that filepath.EvalSymlinks
 // cannot resolve starts no walk there (walkStart). It is a variable so that a test on
 // Linux can set it.

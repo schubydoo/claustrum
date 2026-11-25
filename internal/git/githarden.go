@@ -1784,11 +1784,11 @@ func failedListingCheck(u gitUse, r listingRun, dir string, heavy bool) configVe
 // fails too, it answers the "cannot run" text (measured). A path that does not exist, a path under a file and a
 // junction whose target is gone keep their answer there (measured). A folder with a path of 296 characters gets
 // the same refusal (measured). From the code: that folder passes os.Stat here, and the stat of "<dir>/." below
-// passes too.
+// passes too. On Windows a stat error that startNameRefuses reports is a refusal too (87375cc7, measured).
 func unenterableDir(dir string, err error) bool {
 	fi, statErr := os.Stat(dir)
 	if statErr != nil {
-		return true
+		return !startNameRefuses(statErr)
 	}
 	if !fi.IsDir() {
 		return !nonFolderStartRefuses
