@@ -308,8 +308,8 @@ func gitInfo(req *gitCall) rpc.Response {
 	// and none after a git.info on a repository (measured on Windows). The place
 	// after the link tests, the trust check, the count and the refusal of
 	// GIT_ALTERNATE_OBJECT_DIRECTORIES is claustrum's own, not measured. The trust
-	// check finds no git directory for such a folder, so no step before it makes a
-	// git call (from the code).
+	// check cannot resolve such a folder and leaves it to git (gitDirTrustFor), so
+	// no step before it makes a git call (from the code).
 	if p.Path != "" {
 		if _, err := os.Stat(p.Path); startNameRefuses(err) {
 			var pe *fs.PathError
