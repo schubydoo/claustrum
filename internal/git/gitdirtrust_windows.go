@@ -178,6 +178,13 @@ var removeNamesStrayFile = true
 // Other refusals follow it (claustrum's own, not measured).
 var removeRereadsRefusedConfig = false
 
+// removeRechecksPlainFolder is false on Windows: in a folder where the trust check
+// finds no repository, a failed `rev-parse --absolute-git-dir` of a remove runs
+// no repeat. 87375cc7 makes the listing and the rev-parse one time there in the
+// state shadow, with GIT_DIR=NUL, also with an absolute daemon GIT_DIR of a folder
+// (measured on Windows).
+var removeRechecksPlainFolder = false
+
 // removeRegistrationsLinked reports whether the registrations folder dir is a
 // junction or a directory symbolic link. Go reports a junction as ModeIrregular.
 // A remove of a worktree folder that exists then deletes nothing and answers

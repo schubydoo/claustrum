@@ -3446,7 +3446,8 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		// Measured side by side against f6010b97 on Linux, macOS and Windows (measured on
 		// macOS). A failed listing follows removeListingCheck. For a baseRepo that holds no
 		// repository, 89cb6289 runs the listing and the rev-parse twice before that answer
-		// (measured on Linux, macOS and Windows).
+		// (measured on Linux, macOS and Windows). 87375cc7 runs them one time on Windows after a good listing
+		// (measured on Windows, removeRechecksPlainFolder).
 		t := requestGitDirTrust(repo, false)
 		verdict := t.verdict
 		if verdict == gitDirRefused {
@@ -3573,8 +3574,12 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// Any other failed check runs once more, as on f6010b97 (measured on Linux
 			// and macOS) and of 89cb6289. 5fd08069 repeats too, except in two other states
 			// (measured on Linux).
+			// On Windows a failed rev-parse after a good listing, in a folder where the
+			// trust check finds no repository, runs no repeat (removeRechecksPlainFolder).
 			if c.refused() || checkErr != nil {
-				repeatRepositoryCheck(req.use, repo)
+				if c.refused() || verdict != gitDirNoRepo || removeRechecksPlainFolder {
+					repeatRepositoryCheck(req.use, repo)
+				}
 				return refuse(lockCheckRefusal(p.WorktreePath))
 			}
 			// An answer that names another git directory gets one more call
