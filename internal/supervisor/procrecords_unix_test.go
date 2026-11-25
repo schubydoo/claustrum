@@ -45,8 +45,8 @@ func awaitRecordsQuickly(t *testing.T, m *Manager) {
 }
 
 // TestShutdownWaitSkipsARefusedSweepKill: a running child whose sweep SIGKILL is refused
-// with EPERM holds no wait for its record (87375cc7, measured on Linux). The seam sends
-// nothing, and the child is the test's own.
+// with EPERM holds no wait for its record. With no client KILL first, as here, this is
+// claustrum's own, not measured. The seam sends nothing, and the child is the test's own.
 func TestShutdownWaitSkipsARefusedSweepKill(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("only Linux skips the wait after a refused kill")
