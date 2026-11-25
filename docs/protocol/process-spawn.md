@@ -135,7 +135,7 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 - The 5 s pipe drain of the `exit` frame counts from the exit of the launcher, not from its reap.
 - A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. In some runs `87375cc7` sends a second group `SIGKILL` to the same group a few ms after the first (measured on Linux). claustrum sends one. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM` or a refused `SIGKILL`. The record goes.
 - A stream-json launcher that the shutdown asked to end with `SIGTERM` gets the steps above after its exit. A group `SIGKILL` of the shutdown ends them.
-- On Linux, after the group `SIGKILL` of this end, a `SIGTERM` of the end logs the first line below. A shutdown in the wait logs none. In most runs of that race, `87375cc7` logs it (measured on Linux). After a client `KILL` that ended the wait the line still goes (claustrum's own, not measured).
+- On Linux, after the group `SIGKILL` of this end, a `SIGTERM` of the end logs the first line below. A shutdown in the wait logs none. In some runs with the second `SIGKILL` above, `87375cc7` logs it (measured on Linux). After a client `KILL` that ended the wait the line still goes (claustrum's own, not measured).
 - On Linux a refused group `SIGKILL` of this end logs the second line below, before the first (`87375cc7`, measured). One of a shutdown logs none. On macOS claustrum logs no such line (claustrum's own, not measured).
 
 ```
