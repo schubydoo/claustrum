@@ -1022,8 +1022,9 @@ var newKeepTick = func(d time.Duration) (<-chan time.Time, func()) {
 // checkout ended at the exit of git, with no copy. The keep after the
 // checkout then read it again, and only it wrote a temp file (measured on
 // Linux).
-// Claustrum's own, not measured: that stop on Linux, the rest of the keep on
-// macOS, and the ticks after a stop for the space, until git exits.
+// Claustrum's own, not measured: a stop during a copy on Linux and during the
+// copy of a tick on macOS, the rest of the keep on macOS, and the ticks after
+// a stop for the space, until git exits.
 type keepTicker struct {
 	quit  chan struct{}
 	ended chan struct{}
