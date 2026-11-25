@@ -18,9 +18,8 @@ import (
 //
 // It does not wait for a child whose shutdown SIGKILL failed with EPERM. 87375cc7 logs
 // the cleanup line at once there, after a refused sweep SIGKILL of a running child whose
-// client KILL was refused first, and
-// after a refused group SIGKILL at the end of the wait of endAsked (measured on Linux,
-// at a server.shutdown). That record stays (from the code).
+// client KILL was refused first, and after a refused group SIGKILL at the end of the
+// wait of endAsked (measured on Linux, at a server.shutdown).
 // Only Linux skips the wait. On macOS a group of exiting processes can answer EPERM,
 // so a refused kill there does not show a child that cannot end (claustrum's own).
 func (m *Manager) AwaitRecordsRemoved() {

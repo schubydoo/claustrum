@@ -61,6 +61,11 @@ const gitVersionDir = "/"
 // on (unenterableDir). It is a variable so that a test on Linux can set it.
 var nonFolderStartRefuses = false
 
+// startNameRefuses reports false on Linux and macOS: a folder that does not stat
+// keeps the answer of an unenterable folder (unenterableDir). It is a variable so
+// that a test on Linux can set it.
+var startNameRefuses = func(error) bool { return false }
+
 // walkStartsAsSpelled is false on Linux and macOS. A dir that filepath.EvalSymlinks
 // cannot resolve starts no walk there (walkStart). It is a variable so that a test on
 // Linux can set it.
@@ -80,6 +85,11 @@ var leafResolvesByHandle = false
 // that exists keeps the lock-check text for the S2 refusal of a stray commondir
 // there (not measured). It is a variable so that a test on Linux can set it.
 var removeNamesStrayFile = false
+
+// removeRereadsRefusedConfig is true on Linux and macOS: a remove runs its
+// settings gate one more time after a refused config (removeGate). It is a
+// variable so that a test on Linux can set it.
+var removeRereadsRefusedConfig = true
 
 // removeRegistrationsLinked is registrationsLinked on Linux and macOS. A remove
 // of a worktree folder that exists refuses such a folder (measured on Linux and
