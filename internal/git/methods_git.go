@@ -2592,9 +2592,9 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		// that fails leaves the ref, and then no content check runs
 		// (claustrum's own, not measured).
 		//
-		// The call and the content check ask git no new question about the
-		// repository (recheck). Skipping recheck there is claustrum's own (not
-		// measured).
+		// The call asks git no new question about the repository (recheck).
+		// Skipping recheck there is claustrum's own (not measured). The content
+		// check rechecks (checkWorktreeContent below).
 		quiet := cu
 		quiet.noRecheck = true
 		// After the add of a commit id from sourceBranch the content check asks
@@ -2936,7 +2936,14 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if p.TimeoutMs > 0 {
 			checkDeadline = callerCtx
 		}
-		r, stopped := checkWorktreeContent(*checkUse, repo, p.WorktreePath, checkCommit, checkAsk, checkDeadline, keepTook)
+		// Each call of the check asks git about the repository again before its
+		// listing when the kept answer is older than probeKeep (recheck). On
+		// 87375cc7 and 4c111e86 a listing held 5 s or more gave one more call,
+		// and a listing held 4.5 s (87375cc7) or 4 s (4c111e86) gave none
+		// (measured on Linux). macOS and Windows are claustrum's own, not measured.
+		check := *checkUse
+		check.noRecheck = false
+		r, stopped := checkWorktreeContent(check, repo, p.WorktreePath, checkCommit, checkAsk, checkDeadline, keepTook)
 		checkStopped = stopped
 		if r != nil {
 			u := req.use
