@@ -152,8 +152,9 @@ func TestDaemonGitDirSkippedPin(t *testing.T) {
 	if got := daemonPartFor(daemon, []string{"GIT_COMMON_DIR=" + f.gitDir}); !slices.Equal(got, daemon) {
 		t.Errorf("no copy: daemonPartFor = %q, want %q", got, daemon)
 	}
-	// A daemon GIT_DIR of another repository leaves the copy that of the walk
-	// (claustrum's own, not measured).
+	// A daemon GIT_DIR of another repository leaves the copy that of the walk,
+	// as 87375cc7 does for git.info, a create and a remove in a second repository
+	// (measured on Windows).
 	_, otherGitDir := configRepo(t)
 	t.Setenv("GIT_DIR", otherGitDir)
 	if got := u.pin(f.repo); !slices.Equal(got, full) {
