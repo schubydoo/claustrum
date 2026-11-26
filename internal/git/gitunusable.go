@@ -138,7 +138,7 @@ func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, a
 // claustrum's own, not measured. On Windows the walk has none of them (from the code).
 //
 // claustrum's own, not measured: a daemon GIT_DIR, or a kept GIT_COMMON_DIR, turns it
-// off, except on Windows for a variable of no folder (keptVarDotGit).
+// off, except on Windows for a kept variable of no folder (keptVarDotGit).
 // A `.git` folder of mode 0600 is unusable, as mode 0000 is. A `.git` file that names a
 // git directory the daemon cannot search counts as usable, so it keeps not_a_repo as
 // 683cc6a9 answers. So does a stat of a `.git` file target that fails with another error

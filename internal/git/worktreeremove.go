@@ -808,8 +808,7 @@ func repeatRepositoryCheck(u gitUse, repo string) {
 // goes on, and the remove succeeds after 2 calls (measured on Linux and
 // Windows). Without worktreeRoot, macOS is claustrum's own, not measured. With
 // worktreeRoot see gitDirCheckRefusal. The ask runs only in the state shadow
-// with a trusted verdict, a pinned git directory and no git directory in the
-// environment of the daemon. An empty answer counts as before. Those limits are
+// with a trusted verdict and a pinned git directory. An empty answer counts as before. Those limits are
 // claustrum's own, not measured. Only a daemon GIT_DIR that the request keeps
 // (daemonVarsKept) stops the ask. 87375cc7 asks as with no variable under an
 // ignored one, for a relative GIT_DIR (measured on Windows).

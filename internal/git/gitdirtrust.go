@@ -246,8 +246,7 @@ var offRequestsLive atomic.Int32
 // Windows). So does a request that starts while another one has the switch
 // (measured on Windows for a GIT_COMMON_DIR). A flip of the answer while a
 // request runs, when such a request starts or ends, is claustrum's own, not
-// measured. In the state fallback-git 87375cc7 sends no daemon
-// GIT_DIR on a repository call (measured on Windows).
+// measured.
 func daemonVarsKept() bool {
 	return !copyPinsWalkGitDir || offRequestsLive.Load() > 0
 }
