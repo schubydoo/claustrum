@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -598,7 +599,10 @@ func TestDaemonGitDirRefusedWalkWins(t *testing.T) {
 			if len(calls) != 0 {
 				t.Errorf("%s made %d git calls, want 0: %q", m.method, len(calls), calls)
 			}
-			replies = append(replies, strings.ReplaceAll(raw, strings.Trim(jsonQuoted(t, repoB), `"`), "<B>"))
+			// The refusal quotes the path with %q, so on Windows its backslashes are
+			// doubled once more than in the remove text, which names it plainly.
+			masked := strings.ReplaceAll(raw, strings.Trim(jsonQuoted(t, strings.Trim(strconv.Quote(repoB), `"`)), `"`), "<B>")
+			replies = append(replies, strings.ReplaceAll(masked, strings.Trim(jsonQuoted(t, repoB), `"`), "<B>"))
 		}
 		if a := tree(t, repoA); !slices.Equal(a, beforeA) {
 			t.Errorf("A changed:\n%q\n%q", beforeA, a)
