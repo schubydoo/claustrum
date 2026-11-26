@@ -164,7 +164,7 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   claustrum's own in a repository. For 8.3 short folder names above the repository's `.git`,
   `GIT_DIR` stays short. The two calls with `--git-dir=` take the long name there, in their
   folder and in `GIT_COMMON_DIR` (`87375cc7`, measured on Windows). Another spelling of the same folder,
-  such as a junction or a relative path, and a short name of `.git` itself are claustrum's own, not
+  such as a junction, and a short name of `.git` itself are claustrum's own, not
   measured. The other methods with that switch, and `fallback-git`, follow the walk
   (claustrum's own, not measured). In the state `shadow` the calls of a trusted walk follow it
   ([the git calls](git-rules-settings-copy.md#the-git-calls)). A refusal of that

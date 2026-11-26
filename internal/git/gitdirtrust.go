@@ -354,7 +354,7 @@ func daemonGitDirVerdict(dir string) gitDirTrust {
 // name in the daemon's GIT_DIR, 87375cc7 has the long name on both calls. It is
 // in --git-dir=, in the folder and in GIT_COMMON_DIR. GIT_DIR keeps the short
 // one (measured on Windows). The same folder reached by another spelling, such as
-// a junction or a relative path, is claustrum's own, not measured. A walk that
+// a junction, is claustrum's own, not measured. A walk that
 // finds another folder keeps pin (claustrum's own, not measured).
 func walkPairPin(dir string, pin []string) []string {
 	if len(pin) != 1 || !strings.HasPrefix(pin[0], "GIT_COMMON_DIR=") {
