@@ -329,7 +329,8 @@ On Windows, with a daemon `GIT_DIR` that is the absolute path of a folder and no
 `GIT_COMMON_DIR`, a request in the state `shadow` runs as with no daemon `GIT_DIR`. The
 calls of `git.info`, of `git.status` on the repository, of a create and of a remove
 follow the walk (`87375cc7`, measured on Windows). So do a remove as the first request
-of a daemon, and all five methods on a folder in no repository (measured).
+of a daemon, and all five methods on a folder in no repository, with `GIT_DIR` at the `.git`
+folder of a plain repository (measured).
 Calls with no `--git-dir=` carry the `GIT_DIR` and `GIT_WORK_TREE` of the walk, at their
 real paths. The calls with `--git-dir=`, the call about the repository and the
 `--attr-source` probe carry no `GIT_DIR`. `git.status` and `git.info` of a linked worktree and
