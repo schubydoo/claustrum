@@ -810,9 +810,11 @@ func repeatRepositoryCheck(u gitUse, repo string) {
 // worktreeRoot see gitDirCheckRefusal. The ask runs only in the state shadow
 // with a trusted verdict, a pinned git directory and no git directory in the
 // environment of the daemon. An empty answer counts as before. Those limits are
-// claustrum's own, not measured.
+// claustrum's own, not measured. A daemon GIT_DIR that the request ignores
+// (daemonGitDirSkipped) does not stop the ask. 87375cc7 asks as with no variable
+// there, for a relative GIT_DIR (measured on Windows).
 func gitDirAgain(u gitUse, repo string, t gitDirTrust, answered string) (gitDir, disagree string, err error) {
-	if !u.shadow() || daemonCommonDirSet() || os.Getenv("GIT_DIR") != "" ||
+	if !u.shadow() || daemonCommonDirSet() || (os.Getenv("GIT_DIR") != "" && !daemonGitDirSkipped()) ||
 		t.verdict != gitDirTrusted || t.pinCommonDir == "" || !namesOtherGitDir(t, answered) {
 		return answered, "", nil
 	}

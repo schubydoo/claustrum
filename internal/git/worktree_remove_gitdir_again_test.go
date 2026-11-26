@@ -87,6 +87,34 @@ func TestRemoveAsksTheGitDirAgain(t *testing.T) {
 	}
 }
 
+// TestRemoveAsksTheGitDirAgainUnderAnIgnoredGitDir: on Windows a relative daemon
+// GIT_DIR that the request ignores (daemonGitDirSkipped) asks as with no
+// variable. With a git that names another git directory every time, 87375cc7
+// refuses with the "disagree" text after 4 calls and deletes nothing (measured
+// on Windows). Mutation: in gitDirAgain drop `&& !daemonGitDirSkipped()`. The
+// remove then asks once and deletes the worktree.
+func TestRemoveAsksTheGitDirAgainUnderAnIgnoredGitDir(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	f := newSeededShadowFixture(t)
+	t.Chdir(f.repo)
+	t.Setenv("GIT_DIR", ".git")
+	other := stubOtherGitDir(t, false)
+	before := treeState(t, f.gitDir)
+	raw, calls := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": f.repo, "worktreePath": f.wt})
+	if got, want := removeErrorField(t, raw), removeDisagreeText(f.wt, f.repo, other, f.gitDir); got != want {
+		t.Errorf("the error = %s\n    want %s", got, want)
+	}
+	if asked := gitDirAsks(calls); asked != 4 {
+		t.Errorf("%d calls of rev-parse --absolute-git-dir, want 4", asked)
+	}
+	if _, err := os.Lstat(f.wt); err != nil {
+		t.Errorf("the worktree: %v, want it kept", err)
+	}
+	if after := treeState(t, f.gitDir); after != before {
+		t.Errorf("the git directory changed:\n%s\n    want\n%s", after, before)
+	}
+}
+
 // TestRemoveAsksTheGitDirOnce: outside the limits of the second ask, a remove
 // asks one time and uses the answer as before (claustrum's own, not measured).
 // With "shadowDirOff":true the request has no copy, and the worktree goes. With
