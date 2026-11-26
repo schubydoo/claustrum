@@ -268,8 +268,7 @@ func daemonGitDirSkipped() bool {
 
 // copyTrust is the verdict t of the trust check on dir as the copy of a request
 // takes it. With daemonGitDirSkipped a trusted t gives way to the verdict of the
-// walk from dir, when that walk finds a trusted git directory. The refusals of
-// the check stay those of the daemon's GIT_DIR.
+// walk from dir, when that walk finds a trusted git directory.
 func copyTrust(t gitDirTrust, dir string) gitDirTrust {
 	if !daemonGitDirSkipped() || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return t
@@ -326,7 +325,11 @@ func commonDirPinOf(t gitDirTrust) []string {
 // (measured on Windows). A dir in which the walk finds another trusted git
 // directory gets the verdict of the walk too: 87375cc7 runs git.info, a create
 // and a remove in a second repository with the calls of that repository and
-// none of the daemon's (measured on Windows). A walk that finds the folder of
+// none of the daemon's (measured on Windows). A walk that the check refuses gets
+// that refusal. 87375cc7 answers so for git.info, git.status, a create and a
+// remove on a stray commondir in a second repository, with GIT_DIR at the .git
+// folder of a plain repository (measured on Windows). Other refusals and git.list_branches are claustrum's own, not
+// measured. A walk that finds the folder of
 // the daemon's GIT_DIR keeps the daemon verdict, with its spelling (f6010b97,
 // measured on Windows for the pin with no copy, TestGitDirTrustShortNamePinWindows). git.info with "shadowDirOff":true
 // keeps the daemon verdict (daemonGitDirVerdict): measured on Windows for a
@@ -337,7 +340,7 @@ func commonDirPinOf(t gitDirTrust) []string {
 func gitDirTrustFor(dir string) gitDirTrust {
 	t := daemonGitDirVerdict(dir)
 	if daemonGitDirSkipped() && t.verdict == gitDirTrusted {
-		if w := trustWithGitDir(dir, ""); w.verdict == gitDirNoRepo || (w.verdict == gitDirTrusted && w.pinCommonDir != "" && !sameProbeFolder(w.pinCommonDir, t.pinCommonDir)) {
+		if w := trustWithGitDir(dir, ""); w.verdict == gitDirRefused || w.verdict == gitDirNoRepo || (w.verdict == gitDirTrusted && w.pinCommonDir != "" && !sameProbeFolder(w.pinCommonDir, t.pinCommonDir)) {
 			return w
 		}
 	}
@@ -399,12 +402,13 @@ func gitDirNamesFolder() bool {
 // walkPairPin is the pin of the root pair of git.info (gitInfoRoot) for a
 // request that keeps the daemon verdict (gitUse.daemonVerdict) and names no
 // copy. pin is the pin of that verdict. When the walk from dir finds the folder
-// of its GIT_COMMON_DIR, the pair takes the walk's spelling. For an 8.3 short
-// name in the daemon's GIT_DIR, 87375cc7 has the long name on both calls. It is
-// in --git-dir=, in the folder and in GIT_COMMON_DIR. GIT_DIR keeps the short
-// one (measured on Windows). The same folder reached by another spelling, such as
-// a junction, is claustrum's own, not measured. A walk that
-// finds another folder keeps pin (claustrum's own, not measured).
+// of its GIT_COMMON_DIR, the pair takes the walk's spelling. For 8.3 short
+// folder names above .git in the daemon's GIT_DIR, 87375cc7 has the long name on
+// both calls. It is in --git-dir=, in the folder and in GIT_COMMON_DIR. GIT_DIR
+// keeps the short one (measured on Windows). The same folder reached by another
+// spelling, such as a junction, and a short name of .git itself are claustrum's
+// own, not measured. A walk that finds another folder keeps pin (claustrum's
+// own, not measured).
 func walkPairPin(dir string, pin []string) []string {
 	if len(pin) != 1 || !strings.HasPrefix(pin[0], "GIT_COMMON_DIR=") {
 		return pin

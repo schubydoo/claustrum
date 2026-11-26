@@ -329,7 +329,8 @@ On Windows, with a daemon `GIT_DIR` that is the absolute path of a folder and no
 `GIT_COMMON_DIR`, a request in the state `shadow` runs as with no daemon `GIT_DIR`. The
 calls of `git.info`, of `git.status` on the repository, of a create and of a remove
 follow the walk (`87375cc7`, measured on Windows). So do a remove as the first request
-of a daemon, and all five methods on a folder in no repository (measured).
+of a daemon, and all five methods on a folder in no repository, with `GIT_DIR` at the `.git`
+folder of a plain repository (measured).
 Calls with no `--git-dir=` carry the `GIT_DIR` and `GIT_WORK_TREE` of the walk, at their
 real paths. The calls with `--git-dir=`, the call about the repository and the
 `--attr-source` probe carry no `GIT_DIR`. `git.status` and `git.info` of a linked worktree and
@@ -338,8 +339,8 @@ failed `--attr-source` probe and the letter case of the `GIT_DIR` name. A `git.i
 after one on another repository makes the read of the config again (measured). With a
 daemon `GIT_DIR` of another repository, `git.info`, a create and a remove in a second
 repository with a trusted walk make no call on the daemon's repository: each call in a
-repository runs on the second one (measured). A refused walk keeps the daemon verdict
-(from the code, [the trust check](git-rules-trust.md#git-directory-trust-check)). The other methods there are claustrum's own, not measured. A relative
+repository runs on the second one (measured). The other methods there are claustrum's own, not measured.
+A refused walk gets the refusal of its walk. [The trust check](git-rules-trust.md#git-directory-trust-check) has its measured cases. A relative
 daemon `GIT_DIR` keeps the rules above (claustrum's own, not measured).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
 
