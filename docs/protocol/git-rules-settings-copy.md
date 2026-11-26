@@ -339,7 +339,7 @@ after one on another repository makes the read of the config again (measured). W
 daemon `GIT_DIR` of another repository, `git.info`, a create and a remove in a second
 repository with a trusted walk make no call on the daemon's repository: each call in a
 repository runs on the second one (measured). The other methods there are claustrum's own, not measured.
-A refused walk gets the refusal of its walk and makes no call ([the trust check](git-rules-trust.md#git-directory-trust-check)). A relative
+A refused walk gets the refusal of its walk and makes no call. [The trust check](git-rules-trust.md#git-directory-trust-check) has its measured cases. A relative
 daemon `GIT_DIR` keeps the rules above (claustrum's own, not measured).
 [Hardened git calls](git-rules-calls.md#hardened-git-calls) has the other points of a call.
 
