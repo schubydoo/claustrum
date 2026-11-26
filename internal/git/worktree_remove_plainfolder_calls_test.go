@@ -11,8 +11,9 @@ import (
 // A remove in a folder where the trust check finds no repository: the listing
 // passes, and `rev-parse --absolute-git-dir` fails. On Linux and macOS the two
 // calls run once more (89cb6289, measured on Linux and macOS). On Windows they
-// run one time, each with GIT_DIR=NUL, also with an absolute daemon GIT_DIR of a
-// folder (87375cc7, measured on Windows). That row ran in the state shadow. The
+// run one time, each with GIT_DIR=NUL, also with an absolute daemon GIT_DIR that
+// names the .git folder of a plain repository (87375cc7, measured on Windows; the
+// remove page has the other kinds). That row ran in the state shadow. The
 // reply is the lock-check refusal, and the leaf stays. The row "once, daemon
 // GIT_DIR" sets GIT_DIR to the git directory of a real repository. With
 // copyPinsWalkGitDir on, the walk gives the plain folder gitDirNoRepo.
