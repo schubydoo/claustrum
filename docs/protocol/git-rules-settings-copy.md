@@ -337,7 +337,7 @@ real paths. The calls with `--git-dir=`, the call about the repository and the
 `git.list_branches` on a repository are claustrum's own, not measured. So are the `git version` after a
 failed `--attr-source` probe and the letter case of the `GIT_DIR` name. A `git.info`
 after one on another repository makes the read of the config again (measured). With a
-daemon `GIT_DIR` of another repository, `git.info`, a create and a remove in a second
+daemon `GIT_DIR` of another repository, `git.info`, `git.status`, a create and a remove in a second
 repository with a trusted walk make no call on the daemon's repository: each call in a
 repository runs on the second one (measured). The other methods there are claustrum's own, not measured.
 A refused walk gets the refusal of its walk. [The trust check](git-rules-trust.md#git-directory-trust-check) has its measured cases. A relative
