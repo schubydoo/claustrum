@@ -145,7 +145,11 @@ func TestRemoveAsksTheGitDirOnce(t *testing.T) {
 			t.Fatalf("git.worktree_remove = %s after %d calls, leaf: %v; want success after 1 call, leaf gone", raw, asked, statErr)
 		}
 	})
+	// A GIT_DIR that the request keeps. On Windows only an off request keeps it
+	// (daemonVarsKept), and an ignored one asks again
+	// (TestRemoveAsksTheGitDirAgainUnderAnIgnoredGitDir).
 	t.Run("daemon GIT_DIR", func(t *testing.T) {
+		keepDaemonVars(t)
 		f := newSeededShadowFixture(t)
 		t.Setenv("GIT_DIR", f.gitDir)
 		stubOtherGitDir(t, false)

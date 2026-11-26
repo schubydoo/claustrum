@@ -313,9 +313,12 @@ func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 // run on Windows, as in the rows above.
 // Mutations: read the answer of the listing without noRepoPinned in
 // noRepoCreateCalls (create), in removeGoneWorktree (remove) and in
-// externalWorkTreeRefusal (remove with worktreeRoot).
+// externalWorkTreeRefusal (remove with worktreeRoot). This is the rule of Linux
+// and macOS. On Windows a kept GIT_COMMON_DIR of no folder gives the create the
+// text of keptVarDotGit (TestCreateUnderAKeptVarOfNoFolder), so the test runs the
+// rule of Linux there.
 func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
-	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
+	setCopyPinsWalkGitDir(t, false)
 	f := newNoRepoFixture(t)
 	root := filepath.Dir(f.n)
 	e := filepath.Join(root, "E")

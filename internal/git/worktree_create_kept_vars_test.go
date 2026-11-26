@@ -114,3 +114,41 @@ func TestNamesNoFolder(t *testing.T) {
 		}
 	}
 }
+
+// TestKeptVarDotGitWalk: the walk of keptVarDotGit under the Windows rule while
+// the variables are kept. A GIT_DIR of a folder names nothing. With a missing
+// GIT_DIR, an empty dir walks from the working folder, a missing dir names
+// nothing, and a walk that meets no `.git` up to the root names nothing (all
+// claustrum's own, not measured). Mutations: drop the test of bad, or stop the
+// walk after its first folder.
+func TestKeptVarDotGitWalk(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	keepDaemonVars(t)
+	clearFolderEnv(t)
+	repo := filepath.Join(realTempDir(t), "R")
+	sub := filepath.Join(repo, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	makeDir(t, filepath.Join(repo, ".git"))
+	t.Setenv("GIT_DIR", t.TempDir())
+	if got := keptVarDotGit(repo); got != "" {
+		t.Errorf("a GIT_DIR of a folder: keptVarDotGit = %q, want no name", got)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(t.TempDir(), "gone"))
+	if got, want := keptVarDotGit(sub), filepath.Join(repo, ".git"); got != want {
+		t.Errorf("from a subfolder: keptVarDotGit = %q, want %q", got, want)
+	}
+	t.Chdir(repo)
+	if got, want := keptVarDotGit(""), filepath.Join(repo, ".git"); got != want {
+		t.Errorf("an empty dir: keptVarDotGit = %q, want %q", got, want)
+	}
+	if got := keptVarDotGit(filepath.Join(repo, "gone")); got != "" {
+		t.Errorf("a missing dir: keptVarDotGit = %q, want no name", got)
+	}
+	plain := realTempDir(t)
+	requireTempOutsideCheckout(t, plain)
+	if got := keptVarDotGit(plain); got != "" {
+		t.Errorf("no .git up to the root: keptVarDotGit = %q, want no name", got)
+	}
+}
