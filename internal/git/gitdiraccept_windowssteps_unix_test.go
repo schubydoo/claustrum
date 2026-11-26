@@ -327,3 +327,11 @@ func TestCreatePairAfterTheAddListingWithWindowsSteps(t *testing.T) {
 	setStagedAddWindowsSteps(t, true)
 	wantPairRightBeforeAdd(t)
 }
+
+// The pair of a create in the state fallback-git, with the steps of Windows on
+// (TestCreatePairInFallbackGit). Mutation: drop fallbackPair from the test of
+// the pair in gitWorktreeCreate (no pair runs).
+func TestCreatePairInFallbackGitWithWindowsSteps(t *testing.T) {
+	setStagedAddWindowsSteps(t, true)
+	wantFallbackPair(t, true)
+}

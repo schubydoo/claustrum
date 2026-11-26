@@ -119,6 +119,66 @@ func TestCreatePairAfterTheAddListingWithNoFolder(t *testing.T) {
 	wantPairRightBeforeAdd(t)
 }
 
+// TestCreatePairInFallbackGit: in the state fallback-git a create without the
+// member, in a repository with a registrations folder, runs the pair on
+// Windows. 87375cc7 runs it right after `rev-parse --absolute-git-dir` and
+// before the listing of the add (measured on Windows). Linux and macOS run no
+// pair there (claustrum's own, not measured). Mutation: drop fallbackPair from
+// the test of the pair in gitWorktreeCreate (no pair runs on Windows).
+func TestCreatePairInFallbackGit(t *testing.T) {
+	wantFallbackPair(t, stagedAddWindowsSteps)
+}
+
+// wantFallbackPair runs a create in the state fallback-git and wants the pair
+// right after `rev-parse --absolute-git-dir`, or no pair.
+func wantFallbackPair(t *testing.T, pair bool) {
+	t.Helper()
+	f := newCheckoutRuleFixture(t)
+	h := f.d.Shadow
+	h.mu.Lock()
+	h.state = controlFallback
+	h.mu.Unlock()
+	raw, calls := f.create(t, nil)
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s, want success", raw)
+	}
+	if got := ranPair(calls, f.repo); got != pair {
+		t.Fatalf("the pair ran = %v, want %v", got, pair)
+	}
+	if !pair {
+		return
+	}
+	gitDirFlag := func(c envCall) bool {
+		return slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") })
+	}
+	at := slices.IndexFunc(calls, func(c envCall) bool { return argvHas(c.argv, "rev-parse", "--absolute-git-dir") })
+	if at < 0 || at+4 >= len(calls) {
+		t.Fatalf("no four calls after rev-parse --absolute-git-dir (at %d of %d)", at, len(calls))
+	}
+	next := calls[at+1 : at+5]
+	if !argvHas(next[0].argv, "config", "-z", "--list") || !gitDirFlag(next[0]) ||
+		!argvHas(next[1].argv, "rev-parse", "--show-toplevel") || !gitDirFlag(next[1]) ||
+		!argvHas(next[2].argv, "config", "-z", "--list") || gitDirFlag(next[2]) ||
+		!argvHas(next[3].argv, "worktree", "add") {
+		t.Errorf("the calls after rev-parse --absolute-git-dir = %q, %q, %q, %q, want the pair, the listing and the add",
+			next[0].argv, next[1].argv, next[2].argv, next[3].argv)
+	}
+	// Both calls of the pair run in the git directory with the variables of the
+	// row: GIT_COMMON_DIR of the repository, GIT_SSH_COMMAND=false, and no
+	// GIT_DIR or GIT_OBJECT_DIRECTORY.
+	for _, c := range next[:2] {
+		if filepath.Clean(c.cwd) != filepath.Clean(f.gitDir) {
+			t.Errorf("%q runs in %s, want %s", c.argv, c.cwd, f.gitDir)
+		}
+		if !slices.Contains(c.env, "GIT_COMMON_DIR="+f.gitDir) || !slices.Contains(c.env, "GIT_SSH_COMMAND=false") ||
+			slices.ContainsFunc(c.env, func(e string) bool {
+				return strings.HasPrefix(e, "GIT_DIR=") || strings.HasPrefix(e, "GIT_OBJECT_DIRECTORY=")
+			}) {
+			t.Errorf("%q has the variables %q", c.argv, c.env)
+		}
+	}
+}
+
 // wantPairRightBeforeAdd runs a create with no registrations folder and wants the
 // pair as the two calls right before the add.
 func wantPairRightBeforeAdd(t *testing.T) {
