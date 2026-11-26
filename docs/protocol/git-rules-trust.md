@@ -177,7 +177,7 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   once, in its first request with no `"shadowDirOff":true`, before the line of the start test. A daemon `GIT_COMMON_DIR` adds
   the same line with `GIT_COMMON_DIR` for `GIT_DIR` right before it, and logs it alone with no `GIT_DIR`
   (`87375cc7`, measured on Windows). A `GIT_DIR` that names no folder logs none. A `GIT_COMMON_DIR` that names
-  no folder logs its line. That switch on another method counts as on `git.info` (claustrum's own, not measured).
+  no folder logs its line. That switch on another method counts as on `git.info`. These three rules are claustrum's own, not measured.
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
   refusal with `git worktree add failed: cannot locate the repository's git
