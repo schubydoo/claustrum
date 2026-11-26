@@ -243,9 +243,10 @@ var offRequestsLive atomic.Int32
 // GIT_COMMON_DIR, and a GIT_DIR or GIT_COMMON_DIR that names no folder. Its
 // replies and the disk after a create and a remove are those of no variable
 // too (measured on Windows). With "shadowDirOff":true it keeps them (measured on
-// Windows). A request that starts while another one has the switch is claustrum's
-// own, not measured. So is a flip of the answer while a request runs, when such a
-// request starts or ends. In the state fallback-git 87375cc7 sends no daemon
+// Windows). So does a request that starts while another one has the switch
+// (measured on Windows for a GIT_COMMON_DIR). A flip of the answer while a
+// request runs, when such a request starts or ends, is claustrum's own, not
+// measured. In the state fallback-git 87375cc7 sends no daemon
 // GIT_DIR on a repository call (measured on Windows).
 func daemonVarsKept() bool {
 	return !copyPinsWalkGitDir || offRequestsLive.Load() > 0
