@@ -3848,14 +3848,22 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	if createStepHook != nil {
 		createStepHook("remove branch step")
 	}
-	// With a daemon GIT_COMMON_DIR and a link put at `.git`, 87375cc7 refuses the branch
-	// step and keeps the ref of the second repository (measured on Windows). With
-	// "shadowDirOff":true that state is not measured, and it gets the same refusal.
+	// With a daemon GIT_COMMON_DIR, or with no such variable and a `.git` file, and a
+	// link put at `.git`, 87375cc7 refuses the branch step and keeps the ref of the
+	// second repository (measured on Windows). With "shadowDirOff":true that state is
+	// not measured, and it gets the same refusal.
 	if req.dotGitBecameLink(repo) {
 		text := fmt.Sprintf("removed the worktree, but left its branch %q in place: %s", p.BranchName,
 			repoConfigPrefix+gitDirLinkText(filepath.Join(repo, ".git")))
 		if pending != "" {
 			text = pending
+		}
+		// With no daemon GIT_COMMON_DIR, 87375cc7 asks git about the repository once more
+		// here (measured on Windows). The answer changes nothing.
+		if !daemonCommonDirSet() && !bool(p.ShadowDirOff) {
+			if t := requestGitDirTrust(repo, false); req.shadow != nil && req.shadow.asksGit(t, false) {
+				req.shadow.askGit(t, repo)
+			}
 		}
 		return rpc.OKResult(req.ID, rpc.WorktreeRemoveReply{Success: false, Error: text, BranchKept: !skippedBranchName(p.BranchName)})
 	}
@@ -3902,6 +3910,7 @@ func (req *gitCall) pinBeforeLocate(repo string) {
 	req.removePinned = true
 	req.removeBaseDir = pathcanon.FinalDir(at)
 	req.removeDotGitLink = dotGitLinkNow(at)
+	req.removeDotGitFile = dotGitFileNow(at)
 	t := requestGitDirTrust(at, false)
 	if base == nil || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
 		return
@@ -4000,11 +4009,18 @@ func dotGitLinkNow(repo string) bool {
 	return err == nil && folderIsLink(fi.Mode())
 }
 
-// dotGitBecameLink reports whether a request with a daemon GIT_COMMON_DIR finds a link
-// at `<repo>/.git` where the pin found none. The git directory of the hold is then
-// another folder, so holdLeftItsPath does not see the change.
+// dotGitFileNow reports whether `<repo>/.git` is a regular file now.
+func dotGitFileNow(repo string) bool {
+	fi, err := os.Lstat(filepath.Join(repo, ".git"))
+	return err == nil && fi.Mode().IsRegular()
+}
+
+// dotGitBecameLink reports whether a request with a daemon GIT_COMMON_DIR, or with a
+// `.git` file at the pin, finds a link at `<repo>/.git` where the pin found none. The
+// git directory of the hold is then another folder, so holdLeftItsPath does not see
+// the change.
 func (req *gitCall) dotGitBecameLink(repo string) bool {
-	return req.removePinned && !req.removeDotGitLink && daemonCommonDirSet() && dotGitLinkNow(repo)
+	return req.removePinned && !req.removeDotGitLink && (daemonCommonDirSet() || req.removeDotGitFile) && dotGitLinkNow(repo)
 }
 
 // holdLeftItsPath reports whether the path of the held git directory no longer names

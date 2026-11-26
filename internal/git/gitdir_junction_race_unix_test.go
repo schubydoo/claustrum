@@ -822,6 +822,53 @@ func TestRemoveOfAGoneLeafWithADaemonCommonDirAndDotGitReplaced(t *testing.T) {
 	f.wantSecondWhole(t)
 }
 
+// With no daemon GIT_COMMON_DIR and a `.git` file that names the git directory Z, a
+// link to a second repository is put at `.git` during the tree delete. The leaf and
+// the entry in Z go, the branch step is refused after one more `rev-parse --git-dir`,
+// and the second repository stays whole (87375cc7, measured on Windows). Mutation: in
+// dotGitBecameLink, drop the removeDotGitFile test (the ref of the second repository
+// goes). Drop the askGit call of that refusal (one `rev-parse --git-dir`).
+func TestRemoveWithADotGitFileAndDotGitReplaced(t *testing.T) {
+	f, m := newShadowMovedJunction(t)
+	runGit(t, m.B, "worktree", "add", "-q", "-b", "w1", filepath.Join(m.B, ".claude", "worktrees", "w1"))
+	z := filepath.Join(filepath.Dir(m.A), "Z")
+	if err := os.Rename(filepath.Join(m.A, ".git"), z); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(m.A, ".git"), "gitdir: "+z+"\n", 0o644)
+	runGit(t, m.A, "worktree", "add", "-q", "-b", "w1", filepath.Join(m.A, ".claude", "worktrees", "w1"))
+	log := filepath.Join(t.TempDir(), "envlog")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVLOG", log)
+	m.swapDotGit(t, "remove entry step")
+	spelled := filepath.Join(m.P, "repo")
+	raw, _ := f.call(t, "git.worktree_remove", map[string]any{"baseRepo": spelled,
+		"worktreePath": filepath.Join(spelled, ".claude", "worktrees", "w1"), "branchName": "w1"})
+	text := `removed the worktree, but left its branch "w1" in place: ` + repoConfigPrefix + gitDirLinkText(filepath.Join(spelled, ".git"))
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, text) + `,"branchKept":true}}`; raw != want {
+		t.Errorf("got  %s\nwant %s", raw, want)
+	}
+	if exists(filepath.Join(m.A, ".claude", "worktrees", "w1")) || exists(filepath.Join(z, "worktrees", "w1")) {
+		t.Error("the leaf or the entry of the first repository stayed")
+	}
+	if out := gitOut(t, z, "for-each-ref", "refs/heads/w1"); out == "" {
+		t.Error("the branch of the first repository went")
+	}
+	m.wantSecondWhole(t)
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asks := 0
+	for _, rec := range strings.Split(string(b), "\x1d\n") {
+		if parts := strings.SplitN(rec, "\x1e", 3); len(parts) == 3 && strings.HasSuffix(parts[1], "rev-parse\x1f--git-dir") {
+			asks++
+		}
+	}
+	if asks != 2 {
+		t.Errorf("%d calls of rev-parse --git-dir, want 2", asks)
+	}
+}
+
 // With "shadowDirOff":true and a link put at `.git` during the tree delete, the reply
 // has the registration text and no branchKept. The ref of the same name goes in the
 // second repository, also for a locked worktree there. Its entry, leaf and lock stay,

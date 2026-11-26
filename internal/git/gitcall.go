@@ -53,7 +53,9 @@ type gitCall struct {
 	removeHoldPath string
 	removeHoldInfo os.FileInfo
 	// removeDotGitLink is true when `<baseRepo>/.git` was a link at the pin.
+	// removeDotGitFile is true when it was a regular file then.
 	removeDotGitLink bool
+	removeDotGitFile bool
 	// behindJunction is true for a remove of a worktree behind a junction between
 	// baseRepo and the leaf. Only a record of the leaf as sent loses its registration
 	// (removeGoneWorktree).
