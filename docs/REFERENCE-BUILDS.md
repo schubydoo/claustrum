@@ -85,21 +85,29 @@ Issue 1053 reported the build, pinned by Claude Desktop 5.11492.0 for Linux. It 
 a `go1.25.14` stamp. The rules are on the pages of the methods and in
 [PROTOCOL.md](PROTOCOL.md). Each rule names its systems there.
 
-**Wire delta.** The frame battery ran `4c111e86` beside `87375cc7` on Linux, macOS and
-Windows. It showed these changes. Each item names the systems of its rows.
+**Wire delta.** A diff of `4c111e86` against `87375cc7` over the probe cells ran on
+Linux, macOS and Windows. It left out its slowest cases. It showed these changes. Each
+item names the systems of its rows.
 
 - `process.spawn` takes the member
   [`unattendedSeconds`](protocol/process-spawn.md#the-unattendedseconds-member-build-87375cc7).
   A negative value, some other members and a CLI without `--no-session-persistence` get
-  `-32602`. A value that is no whole number gets `Invalid params` (PR 1280, measured on
-  Linux, macOS and Windows).
+  `-32602`. A value that is no whole number gets `Invalid params` (PR 1280). The page
+  names the systems of each refusal.
 - An accepted value above 0 arms [the unattended end](protocol/process-spawn.md#the-unattended-end-build-87375cc7)
   of a child that no connection holds. Its exit frame carries `"killedBy":"unattended"`
   (PRs 1305 and 1314, measured on Linux, macOS and Windows).
 - With no git that it can use, `git.worktree_create` answers
   [`git_not_found`](protocol/git-worktree-create.md#response), where `4c111e86` answers
-  `not_a_repo` (measured on Linux and macOS). On Linux a git-lfs only on the login
+  `not_a_repo` (measured on Linux and macOS, and on Windows for a missing `baseRepo`). On Linux a git-lfs only on the login
   shell's PATH gives `git_lfs_not_found` (PR 1304).
+- With no git on its PATH, the daemon runs a git of [the login shell's
+  PATH](protocol/git-rules-calls.md#the-git-of-the-login-shells-path) (PR 1304, measured
+  on Linux, and its skip line on macOS).
+- On Linux under the session-folder off switch, `git.info` and `git.status` after a
+  session-folder refusal answer `git cannot run on this host; git not run: exit status 1`.
+  A failed start test where no git can start is no longer kept, on Linux and Windows (PR
+  1304).
 - On Windows a `no_usable_name` or `too_many_links` reply of `files.realpath` gains
   [`atLetter` or `stoppedShort`](protocol/files-realpath.md#windows-error-members) (PR
   1283, measured on Windows).
@@ -117,9 +125,6 @@ Linux, and the end itself on macOS too.
 `4c111e86` too, a row of that build gave the same answer. The other items had no row of
 `4c111e86`, so the build of their change is not known.
 
-- With no git on its PATH, the daemon runs a git of [the login shell's
-  PATH](protocol/git-rules-calls.md#the-git-of-the-login-shells-path) (PR 1304, measured
-  on Linux and macOS).
 - At a shutdown on Linux and macOS, a plain child in [its exit
   drain](protocol/server.md#a-child-in-its-exit-drain) gets one group `SIGKILL` (PR 1319,
   `4c111e86` and `87375cc7`).
@@ -157,9 +162,6 @@ Linux, and the end itself on macOS too.
 - On Windows a remove refuses when its `.git` file becomes a link to a second repository
   during the delete. That repository keeps its branch (PR 1358, [platform
   notes](protocol/git-worktree-remove.md#platform-notes), measured on Windows).
-- On Windows a remove with no held git directory keeps both registrations in two states.
-  In each, `baseRepo` leads to another folder at the delete (PR 1344). Its reply text is
-  claustrum's own.
 - On Windows three states follow `87375cc7` (PRs 1340 and 1346, measured on Windows). They
   are a create with a file or a junction at `worktrees`, and a remove with a refused
   config. The third is a `git.info` whose stat fails with `ERROR_INVALID_NAME` ([where git
@@ -176,12 +178,8 @@ Linux, and the end itself on macOS too.
   rules](protocol/git-rules-trust.md#the-daemon-variables-on-windows), PRs 1348, 1353,
   1356, 1357, 1359 and 1361, measured on Windows).
 
-The other PRs of this work follow rows of `4c111e86`. Their rules name `4c111e86` on the
-pages of the methods.
-
-**How it was bounded.** The frame battery of the wire delta above ran before the fixes.
-Each difference that it showed maps to a fix, a known cause or an item below. Each PR
-ran its rows beside `87375cc7` after the fix, on its systems.
+**How it was bounded.** Each difference that the diff of the wire delta showed maps to a
+fix, a known cause or an item below.
 
 These items stay open:
 
