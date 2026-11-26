@@ -545,10 +545,11 @@ func TestDaemonGitDirSkippedLinkedWorktree(t *testing.T) {
 // the daemon logs skippedGitDirLine once, before the line of the start test. So
 // it does in a daemon of five requests, for a remove as its first request and
 // for a relative GIT_DIR. A daemon GIT_COMMON_DIR adds skippedCommonDirLine
-// before it. With no daemon GIT_DIR it logs none (87375cc7, measured on
-// Windows). Mutations: in Handle drop the call of logSkippedGitDir,
-// in logSkippedGitDir drop the log of skippedCommonDirLine or swap the two
-// logs, or test daemonGitDirSkipped there in the place of gitDirNamesFolder.
+// before it, and logs it alone with no GIT_DIR. With neither it logs none
+// (87375cc7, measured on Windows). Mutations: in Handle drop the call of
+// logSkippedGitDir. In logSkippedGitDir drop the log of skippedCommonDirLine,
+// swap the two logs, return with no gitDir, log skippedGitDirLine with no
+// gitDir, or test daemonGitDirSkipped in the place of gitDirNamesFolder.
 func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 	setCopyPinsWalkGitDir(t, true)
 	type daemonEnv int
@@ -557,6 +558,7 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 		absGitDir
 		relGitDir
 		withCommonDir
+		onlyCommonDir
 	)
 	run := func(t *testing.T, env daemonEnv, removeFirst bool) {
 		f := newShadowFixture(t)
@@ -579,6 +581,8 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 		case withCommonDir:
 			t.Setenv("GIT_DIR", gitDir)
 			t.Setenv("GIT_COMMON_DIR", gitDir)
+		case onlyCommonDir:
+			t.Setenv("GIT_COMMON_DIR", gitDir)
 		}
 		if !removeFirst {
 			other, _ := configRepo(t)
@@ -596,6 +600,8 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 			want = 0
 		case withCommonDir:
 			wantCommon = 1
+		case onlyCommonDir:
+			want, wantCommon = 0, 1
 		}
 		if n := strings.Count(got, skippedGitDirLine); n != want {
 			t.Fatalf("%d lines of the skipped GIT_DIR, want %d:\n%s", n, want, got)
@@ -603,11 +609,11 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 		if n := strings.Count(got, skippedCommonDirLine); n != wantCommon {
 			t.Fatalf("%d lines of the skipped GIT_COMMON_DIR, want %d:\n%s", n, wantCommon, got)
 		}
-		at, shadow := strings.Index(got, skippedGitDirLine), strings.Index(got, shadowStateLine)
-		if shadow < 0 || at > shadow {
-			t.Errorf("the skipped GIT_DIR line at %d, the start test line at %d, want it first:\n%s", at, shadow, got)
+		at, common, shadow := strings.Index(got, skippedGitDirLine), strings.Index(got, skippedCommonDirLine), strings.Index(got, shadowStateLine)
+		if shadow < 0 || at > shadow || common > shadow {
+			t.Errorf("the skipped GIT_DIR line at %d, the GIT_COMMON_DIR line at %d, the start test line at %d, want both first:\n%s", at, common, shadow, got)
 		}
-		if common := strings.Index(got, skippedCommonDirLine); wantCommon == 1 && common > at {
+		if want == 1 && wantCommon == 1 && common > at {
 			t.Errorf("the skipped GIT_COMMON_DIR line at %d, the GIT_DIR line at %d, want it first:\n%s", common, at, got)
 		}
 	}
@@ -615,6 +621,7 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 	t.Run("remove first", func(t *testing.T) { run(t, absGitDir, true) })
 	t.Run("relative GIT_DIR", func(t *testing.T) { run(t, relGitDir, false) })
 	t.Run("GIT_COMMON_DIR too", func(t *testing.T) { run(t, withCommonDir, false) })
+	t.Run("GIT_COMMON_DIR alone", func(t *testing.T) { run(t, onlyCommonDir, false) })
 	t.Run("no daemon GIT_DIR", func(t *testing.T) { run(t, noGitDir, false) })
 }
 

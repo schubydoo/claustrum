@@ -358,27 +358,31 @@ const (
 	skippedCommonDirLine = "[GitHandler] GIT_COMMON_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
 )
 
-// skippedGitDirLogged is true once the daemon logged skippedGitDirLine.
+// skippedGitDirLogged is true once logSkippedGitDir logged its lines.
 var skippedGitDirLogged atomic.Bool
 
-// logSkippedGitDir logs skippedGitDirLine once per daemon, on Windows
-// (copyPinsWalkGitDir) with a daemon GIT_DIR that names a folder. It logs it at
-// the start of the first git request with no "shadowDirOff":true. A daemon
-// GIT_COMMON_DIR adds skippedCommonDirLine right before it. 87375cc7 logs them
-// so before the line of the start test, for an absolute and a relative GIT_DIR.
-// After a first git.info with "shadowDirOff":true it logs them in the second
-// request. With no daemon GIT_DIR it logs none (all measured on Windows). A
-// GIT_DIR that names no folder and a GIT_COMMON_DIR alone log none. The other
-// methods with "shadowDirOff":true count as that git.info (claustrum's own, not
-// measured).
+// logSkippedGitDir logs the lines of the daemon's GIT_COMMON_DIR and GIT_DIR
+// once per daemon, on Windows (copyPinsWalkGitDir). It logs them at the start of
+// the first git request with no "shadowDirOff":true. skippedCommonDirLine comes
+// with any daemon GIT_COMMON_DIR. skippedGitDirLine comes with a GIT_DIR that
+// names a folder, after the other line. 87375cc7 logs them so before the line of
+// the start test, for an absolute and a relative GIT_DIR and for a GIT_COMMON_DIR
+// alone. After a first git.info with "shadowDirOff":true it logs them in the
+// second request. With neither variable it logs none (all measured on Windows).
+// A GIT_DIR that names no folder logs none. A GIT_COMMON_DIR that names no
+// folder logs its line. The other methods with "shadowDirOff":true count as that
+// git.info (claustrum's own, not measured).
 func logSkippedGitDir() {
-	if !copyPinsWalkGitDir || !gitDirNamesFolder() || !skippedGitDirLogged.CompareAndSwap(false, true) {
+	commonDir, gitDir := daemonCommonDirSet(), gitDirNamesFolder()
+	if !copyPinsWalkGitDir || !commonDir && !gitDir || !skippedGitDirLogged.CompareAndSwap(false, true) {
 		return
 	}
-	if daemonCommonDirSet() {
+	if commonDir {
 		logging.Infof(skippedCommonDirLine)
 	}
-	logging.Infof(skippedGitDirLine)
+	if gitDir {
+		logging.Infof(skippedGitDirLine)
+	}
 }
 
 // gitDirNamesFolder reports whether the daemon's GIT_DIR names a folder. A
