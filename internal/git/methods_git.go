@@ -3442,8 +3442,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		// Measured side by side against f6010b97 on Linux, macOS and Windows (measured on
 		// macOS). A failed listing follows removeListingCheck. For a baseRepo that holds no
 		// repository, 89cb6289 runs the listing and the rev-parse twice before that answer
-		// (measured on Linux, macOS and Windows). 87375cc7 runs them one time on Windows after a good listing
-		// (measured on Windows, removeRechecksPlainFolder).
+		// (measured on Linux, macOS and Windows). (Windows: removeRechecksPlainFolder.)
 		t := requestGitDirTrust(repo, false)
 		verdict := t.verdict
 		if verdict == gitDirRefused {
