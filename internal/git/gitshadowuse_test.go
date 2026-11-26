@@ -48,6 +48,7 @@ func clearFolderEnv(t *testing.T) {
 // folder of another repository and a daemon GIT_COMMON_DIR keep the form of
 // before.
 func TestGitUseFolderVariables(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	clearFolderEnv(t)
 	f := newRepoFolderFixture(t)
 	u := f.useOf(t, f.repo)

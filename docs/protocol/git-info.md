@@ -75,7 +75,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The texts 
 |---|---|---|
 | `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits](git-rules-calls.md#time-limits-of-git-calls). |
 
-A `GIT_COMMON_DIR` in the daemon's environment turns the git-directory trust check off for this method.
+A `GIT_COMMON_DIR` in the daemon's environment turns the git-directory trust check off for this method, except under [the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows).
 
 ## The branch
 

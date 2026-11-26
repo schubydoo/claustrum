@@ -855,6 +855,7 @@ func TestGitDirTrustPinsTheCommonDirectory(t *testing.T) {
 // A relative GIT_DIR is taken per request directory, so a linked worktree (whose `.git`
 // is a file) answers no repository. A GIT_DIR naming nothing else is left to git.
 func TestGitDirTrustDaemonGitDir(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	t.Run("stray commondir in the named repository", func(t *testing.T) {
 		r := newTrustRepo(t)
 		x := filepath.Join(r.base, "X")
@@ -928,6 +929,7 @@ func TestGitDirTrustDaemonGitDir(t *testing.T) {
 // git.info and git.list_branches only. git.status and git.worktree_remove still refuse,
 // and git.worktree_create refuses with the text wrapped as a failed add.
 func TestGitDirTrustDaemonCommonDir(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	r := newTrustRepo(t)
 	gitDir := filepath.Join(r.T, ".git")
 	cd := filepath.Join(gitDir, "commondir")

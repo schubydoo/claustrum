@@ -315,9 +315,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	// of a clone of the repository, 4c111e86 registers the worktree in the
 	// repository and succeeds (measured on Linux and macOS). With one of another
 	// repository its add fails with the staged path of git as "the new folder"
-	// (measured on Linux). On Windows 4c111e86 registers the worktree in
-	// baseRepo and succeeds (measured on Windows). claustrum keeps the
-	// unstaged add on Windows, a known difference that TASK-702 follows.
+	// (measured on Linux). On Windows 4c111e86 and 87375cc7 register the
+	// worktree in baseRepo and succeed (measured on Windows). There the add
+	// names the copy as with no variable (daemonVarsKept).
 	named = (named || (daemonCommonDirStays() && f.addNamesCopy(repo))) && shadowLinksWorktrees
 	// heldAtListing is true when the path still names the held folder right
 	// before the listing of the add.

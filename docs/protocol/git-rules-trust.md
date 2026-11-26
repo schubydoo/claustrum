@@ -145,9 +145,8 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   except two cases of [git.worktree_remove](git-worktree-remove.md#the-repository-checks).
   Each failure of the copy step there gives that answer (claustrum's own, not measured).
 - On Linux and macOS a `GIT_DIR` that names a `.git` file means "no repository".
-  On Windows that `.git` file is trusted and pinned to itself. Without
-  `"shadowDirOff":true`
-  [class 2](git-rules-config.md#class-2-files-of-the-git-directory) then answers.
+  On Windows, in a request that keeps that `GIT_DIR` ([the Windows rule](#the-daemon-variables-on-windows)),
+  that `.git` file is trusted and pinned to itself (from the code).
 - Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the
   daemon's environment sets `GIT_COMMON_DIR`. A relative value is first joined
   to the request folder (both measured on Linux and Windows). On Windows `/dev/null` names nothing, so it becomes
@@ -172,18 +171,31 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   (claustrum's own, not measured). In the state `shadow` the calls of a trusted walk follow it
   ([the git calls](git-rules-settings-copy.md#the-git-calls)). A refusal of that
   `GIT_DIR` stays (from the code).
-- On Windows, with an absolute or relative daemon `GIT_DIR` of a folder, the daemon logs
+- On Windows, with a daemon `GIT_DIR`, the daemon logs
   `[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`
   once, in its first request with no `"shadowDirOff":true`, before the line of the start test. A daemon `GIT_COMMON_DIR` adds
   the same line with `GIT_COMMON_DIR` for `GIT_DIR` right before it, and logs it alone with no `GIT_DIR`, in the
-  first request (`87375cc7`, measured on Windows). The daemon tests a relative `GIT_DIR` from its own working folder. A `GIT_DIR` that names no folder logs none. A `GIT_COMMON_DIR` that names
-  no folder logs its line. After a `git.info` with that switch, the `GIT_COMMON_DIR` line follows the `GIT_DIR` rule. That switch on another method counts as on `git.info`. These five rules are claustrum's own, not measured.
-- A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
+  first request (`87375cc7`, measured on Windows). A `GIT_DIR` that names a missing path or a regular file logs its line too, and so does a `GIT_COMMON_DIR` that names
+  no folder (measured on Windows). After a `git.info` with that switch, the `GIT_COMMON_DIR` line follows the `GIT_DIR` rule. That switch on another method counts as on `git.info`. These two rules are claustrum's own, not measured.
+- A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`, except under
+  [the Windows rule](#the-daemon-variables-on-windows).
   The other three methods still run it. `git.worktree_create` then prefixes the
   refusal with `git worktree add failed: cannot locate the repository's git
   directory: `.
 - `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS` and `GIT_CEILING_DIRECTORIES` do not
   change the check.
+
+### The daemon variables on Windows
+
+On Windows the git requests run as with no daemon `GIT_DIR` and `GIT_COMMON_DIR`
+while no request with `"shadowDirOff":true` runs. The rules of a `GIT_COMMON_DIR` on
+this page then do not apply. An absolute `GIT_DIR` of a folder keeps the Windows rules
+above, and its refusal stays. The steps that test for any daemon `GIT_DIR` keep their rule with an ignored one. These are the refusals of a create on a `.git` that git cannot use and on a folder with no work tree, the start test of a remove on a missing `baseRepo`, the second ask of a remove, and the `.git` file tests of a remove, of a listing and of `git.status`. These rules are claustrum's own, not measured. In the state `shadow` `87375cc7` gives the calls, the
+replies and the disk after a create and a remove of a daemon with neither variable (measured
+on Windows). So it does under a relative `GIT_DIR`, a `GIT_DIR` with a `GIT_COMMON_DIR`, a
+`GIT_COMMON_DIR` alone, and either one that names a missing path or a regular file. With that
+switch it keeps both variables (measured). A request that starts while another one has the
+switch, and `fallback-git`, are claustrum's own, not measured.
 
 ### Trust refusal texts and frames
 

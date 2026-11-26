@@ -175,7 +175,7 @@ and how long an answer is kept.
 
 These rules are from the code and are not measured on `5fd08069`:
 
-- With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` read nothing.
+- With a daemon `GIT_COMMON_DIR` that the request keeps ([the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows)), `git.info` and `git.list_branches` read nothing.
 - `extensions.worktreeConfig` starts the `config.worktree` test with values that no
   run had, such as `oN` or `007`. The last such setting of the config counts.
 - Under format version `1` the value rule refuses extension values that no run had,

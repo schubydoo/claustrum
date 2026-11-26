@@ -315,6 +315,7 @@ func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 // noRepoCreateCalls (create), in removeGoneWorktree (remove) and in
 // externalWorkTreeRefusal (remove with worktreeRoot).
 func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	f := newNoRepoFixture(t)
 	root := filepath.Dir(f.n)
 	e := filepath.Join(root, "E")

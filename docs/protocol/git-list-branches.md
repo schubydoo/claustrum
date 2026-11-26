@@ -70,7 +70,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32603` | `git took too long: Claude stopped git <subcommand> after 2 minutes; try again` | A git call ran 2 minutes, and the daemon stopped it. While a `"shadowDirOff":true` request runs, that one included, the limit is 30 minutes, and the text says so (claustrum's own, not measured). [Time limits](git-rules-calls.md#time-limits-of-git-calls). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | git cannot list the branches. For example, the file `packed-refs` is corrupt. |
 
-A daemon `GIT_COMMON_DIR` skips the trust check.
+A daemon `GIT_COMMON_DIR` skips the trust check, except under [the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows).
 
 A warning of git does not become a branch name. If git warns about a broken ref and still lists the other branches, the response holds those branches.
 

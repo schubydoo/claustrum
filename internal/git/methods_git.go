@@ -48,6 +48,8 @@ func Handle(d *Deps, r *rpc.Request) rpc.Response {
 	if offSwitchSet(req.Params) {
 		d.OffRequests.Add(1)
 		defer d.OffRequests.Add(-1)
+		offRequestsLive.Add(1)
+		defer offRequestsLive.Add(-1)
 	}
 	// While a request with "shadowDirOff":true runs, every git request that
 	// starts, and each later git command of a request, run as with the member
@@ -3863,7 +3865,7 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 		}
 		// 87375cc7 asks git about the repository once more here, with and without a daemon
 		// GIT_COMMON_DIR (measured on Windows). The answer changes nothing. With that
-		// variable no such call runs here (from the code). With
+		// variable kept (daemonVarsKept) no such call runs here (from the code). With
 		// "shadowDirOff":true no call is added (claustrum's own, not measured).
 		if !bool(p.ShadowDirOff) {
 			if t := requestGitDirTrust(repo, false); req.shadow != nil && req.shadow.asksGit(t, false) {

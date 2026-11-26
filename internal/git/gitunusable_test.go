@@ -175,6 +175,7 @@ func TestCreateRefusesAnUnusableGit(t *testing.T) {
 // no git call runs with the variable. Mutations: drop the GIT_DIR test or
 // daemonCommonDirSet in unusableDotGit.
 func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	tmp := realTempDir(t)
 	b := plainFolder(t, tmp)
 	makeDir(t, filepath.Join(b, ".git"))
