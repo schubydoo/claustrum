@@ -323,8 +323,8 @@ func commonDirPinOf(t gitDirTrust) []string {
 // git.list_branches, a create and a remove on such a folder with the calls of a
 // daemon with no GIT_DIR: the listing and the next call carry GIT_DIR=NUL
 // (measured on Windows). A dir in which the walk finds another trusted git
-// directory gets the verdict of the walk too: 87375cc7 runs git.info, a create
-// and a remove in a second repository with the calls of that repository and
+// directory gets the verdict of the walk too: 87375cc7 runs git.info, git.status,
+// a create and a remove in a second repository with the calls of that repository and
 // none of the daemon's (measured on Windows). A walk that the check refuses gets
 // that refusal. 87375cc7 answers so for git.info, git.status, a create and a
 // remove on a stray commondir in a second repository, with GIT_DIR at the .git
@@ -370,14 +370,19 @@ var skippedGitDirLogged atomic.Bool
 // with any daemon GIT_COMMON_DIR. skippedGitDirLine comes with a GIT_DIR that
 // names a folder, after the other line. 87375cc7 logs them so before the line of
 // the start test, for an absolute and a relative GIT_DIR and for a GIT_COMMON_DIR
-// alone. After a first git.info with "shadowDirOff":true it logs them in the
-// second request. With neither variable it logs none (all measured on Windows).
+// alone. After a first git.info with "shadowDirOff":true it logs
+// skippedGitDirLine in the second request. With neither variable it logs none
+// (all measured on Windows).
 // A GIT_DIR that names no folder logs none. A GIT_COMMON_DIR that names no
-// folder logs its line. The other methods with "shadowDirOff":true count as that
-// git.info (claustrum's own, not measured).
+// folder logs its line. skippedCommonDirLine after that git.info, and the other
+// methods with "shadowDirOff":true, follow the same rule (claustrum's own, not
+// measured).
 func logSkippedGitDir() {
+	if !copyPinsWalkGitDir || skippedGitDirLogged.Load() {
+		return
+	}
 	commonDir, gitDir := daemonCommonDirSet(), gitDirNamesFolder()
-	if !copyPinsWalkGitDir || !commonDir && !gitDir || !skippedGitDirLogged.CompareAndSwap(false, true) {
+	if !commonDir && !gitDir || !skippedGitDirLogged.CompareAndSwap(false, true) {
 		return
 	}
 	if commonDir {
