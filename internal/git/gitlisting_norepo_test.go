@@ -340,7 +340,7 @@ func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
 	createWant := notRepoCreate
 	if copyPinsWalkGitDir {
 		createWant = `{"success":false,"error":` +
-			jsonString(t, "Git can't use `"+filepath.Join(e, ".git")+"`, so Claude made no worktree. A Claude session can damage it, so check it first. Then repair it, or turn off Worktree if this isn't meant to be a repository.") +
+			jsonString(t, "Git can't use `"+resolveTestRoot(t, filepath.Join(e, ".git"))+"`, so Claude made no worktree. A Claude session can damage it, so check it first. Then repair it, or turn off Worktree if this isn't meant to be a repository.") +
 			`,"errorCode":"worktree_add_failed"}`
 	}
 	for _, row := range []struct {
