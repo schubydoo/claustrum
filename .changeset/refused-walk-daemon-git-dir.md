@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On Windows a folder that fails the trust check now gets that refusal with no git call, also under a daemon GIT_DIR of another repository.
+On Windows, under an absolute daemon GIT_DIR of another repository, a folder whose own git directory fails the trust check now gets that refusal, except git.info with shadowDirOff.

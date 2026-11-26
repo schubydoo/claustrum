@@ -323,9 +323,9 @@ func commonDirPinOf(t gitDirTrust) []string {
 // directory gets the verdict of the walk too: 87375cc7 runs git.info, a create
 // and a remove in a second repository with the calls of that repository and
 // none of the daemon's (measured on Windows). A walk that the check refuses gets
-// that refusal, with no git call. 87375cc7 answers so for git.info, git.status, a
-// create and a remove on a stray commondir in a second repository (measured on
-// Windows). Other refusals and git.list_branches are claustrum's own, not
+// that refusal. 87375cc7 answers so for git.info, git.status, a create and a
+// remove on a stray commondir in a second repository, with GIT_DIR at the .git
+// folder of a plain repository (measured on Windows). Other refusals and git.list_branches are claustrum's own, not
 // measured. A walk that finds the folder of
 // the daemon's GIT_DIR keeps the daemon verdict, with its spelling (f6010b97,
 // measured on Windows for the pin with no copy, TestGitDirTrustShortNamePinWindows). git.info with "shadowDirOff":true

@@ -159,9 +159,9 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   A folder of a second repository gets the verdict of its trusted walk too, for `git.info`,
   a create and a remove (measured on Windows). `git.status`, `git.list_branches` and
   `fallback-git` there are claustrum's own, not measured. A folder of a second
-  repository whose walk the trust check refuses gets that refusal and runs no git
-  call. `87375cc7` answers so for `git.info`, `git.status`, a create and a remove on a
-  stray commondir (measured on Windows). Other refusals, `git.list_branches` and
+  repository whose walk the trust check refuses gets that refusal. `87375cc7` answers so for
+  `git.info`, `git.status`, a create and a remove on a stray commondir, with `GIT_DIR` at
+  the `.git` folder of a plain repository (measured on Windows). Other refusals, `git.list_branches` and
   `fallback-git` there are claustrum's own, not measured. `git.info` with `"shadowDirOff":true`
   keeps the verdict of that `GIT_DIR`, measured for a folder in no repository and
   claustrum's own in a repository. For 8.3 short folder names above the repository's `.git`,
