@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+
+	"github.com/schubydoo/claustrum/internal/logging"
 )
 
 // The git-directory trust check that every git.* method applies to the directory it runs git in, before
@@ -247,7 +250,7 @@ func daemonCommonDirStays() bool {
 // GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
 // a git.info on another repository makes the read of the config again.
-// git.status and git.info of a linked worktree, git.status in a second repository
+// git.status and git.info of a linked worktree
 // and git.list_branches on a repository are claustrum's own, not measured: the
 // copy follows the
 // walk only when the walk finds a trusted git directory. A relative GIT_DIR
@@ -320,8 +323,8 @@ func commonDirPinOf(t gitDirTrust) []string {
 // git.list_branches, a create and a remove on such a folder with the calls of a
 // daemon with no GIT_DIR: the listing and the next call carry GIT_DIR=NUL
 // (measured on Windows). A dir in which the walk finds another trusted git
-// directory gets the verdict of the walk too: 87375cc7 runs git.info, a create
-// and a remove in a second repository with the calls of that repository and
+// directory gets the verdict of the walk too: 87375cc7 runs git.info, git.status,
+// a create and a remove in a second repository with the calls of that repository and
 // none of the daemon's (measured on Windows). A walk that the check refuses gets
 // that refusal. 87375cc7 answers so for git.info, git.status, a create and a
 // remove on a stray commondir in a second repository, with GIT_DIR at the .git
@@ -348,6 +351,57 @@ func gitDirTrustFor(dir string) gitDirTrust {
 // the verdict of the daemon's GIT_DIR when it is set.
 func daemonGitDirVerdict(dir string) gitDirTrust {
 	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+}
+
+// skippedGitDirLine and skippedCommonDirLine are the log lines of a daemon
+// GIT_DIR and GIT_COMMON_DIR that the Windows daemon ignores (87375cc7, measured
+// on Windows).
+const (
+	skippedGitDirLine    = "[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+	skippedCommonDirLine = "[GitHandler] GIT_COMMON_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+)
+
+// skippedGitDirLogged is true once logSkippedGitDir logged its lines.
+var skippedGitDirLogged atomic.Bool
+
+// logSkippedGitDir logs the lines of the daemon's GIT_COMMON_DIR and GIT_DIR
+// once per daemon, on Windows (copyPinsWalkGitDir). It logs them at the start of
+// the first git request with no "shadowDirOff":true. skippedCommonDirLine comes
+// with any daemon GIT_COMMON_DIR. skippedGitDirLine comes with a GIT_DIR that
+// names a folder, after the other line. 87375cc7 logs them so before the line of
+// the start test, for an absolute and a relative GIT_DIR and for a GIT_COMMON_DIR
+// alone. After a first git.info with "shadowDirOff":true it logs
+// skippedGitDirLine in the second request. With neither variable it logs none
+// (all measured on Windows).
+// A GIT_DIR that names no folder logs none. A GIT_COMMON_DIR that names no
+// folder logs its line. skippedCommonDirLine after that git.info, and the other
+// methods with "shadowDirOff":true, follow the same rule (claustrum's own, not
+// measured).
+func logSkippedGitDir() {
+	if !copyPinsWalkGitDir || skippedGitDirLogged.Load() {
+		return
+	}
+	commonDir, gitDir := daemonCommonDirSet(), gitDirNamesFolder()
+	if !commonDir && !gitDir || !skippedGitDirLogged.CompareAndSwap(false, true) {
+		return
+	}
+	if commonDir {
+		logging.Infof(skippedCommonDirLine)
+	}
+	if gitDir {
+		logging.Infof(skippedGitDirLine)
+	}
+}
+
+// gitDirNamesFolder reports whether the daemon's GIT_DIR names a folder. A
+// relative value is taken from the daemon's working folder.
+func gitDirNamesFolder() bool {
+	gd := os.Getenv("GIT_DIR")
+	if gd == "" {
+		return false
+	}
+	fi, err := os.Stat(gd)
+	return err == nil && fi.IsDir()
 }
 
 // walkPairPin is the pin of the root pair of git.info (gitInfoRoot) for a
