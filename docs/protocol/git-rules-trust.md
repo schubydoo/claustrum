@@ -189,7 +189,7 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
 
 On Windows the git requests run as with no daemon `GIT_DIR` and `GIT_COMMON_DIR`
 while no request with `"shadowDirOff":true` runs. The rules of a `GIT_COMMON_DIR` on
-this page then do not apply. An absolute `GIT_DIR` of a folder keeps the Windows rules
+this page then do not apply, and no call carries the daemon `GIT_COMMON_DIR`, also outside a repository (`87375cc7`, measured on Windows). An absolute `GIT_DIR` of a folder keeps the Windows rules
 above, and its refusal stays. The steps that test for any daemon `GIT_DIR` keep their rule with an ignored one. These are the refusals of a create on a `.git` that git cannot use and on a folder with no work tree, the start test of a remove on a missing `baseRepo`, and the `.git` file tests of a remove, of a listing and of `git.status`. These rules are claustrum's own, not measured. In the state `shadow` `87375cc7` gives the calls, the
 replies and the disk after a create and a remove of a daemon with neither variable (measured
 on Windows). So it does under a relative `GIT_DIR`, a `GIT_DIR` with a `GIT_COMMON_DIR`, a
