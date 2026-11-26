@@ -265,6 +265,9 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	defer c.stopBatch()
 	body, text, hashFailed := c.readObject("commit", c.commit)
 	if hashFailed {
+		// The commit counts as read in the log line (87375cc7, measured on
+		// Windows). Every other failure counts no object (claustrum's own).
+		c.read++
 		return nil, c.hashRetryRefusal(text)
 	}
 	if text != "" {
