@@ -66,7 +66,7 @@ Decide by `errorCode` first.
 | `worktree_lfs_no_space` | A Git LFS download left under a tenth of the free space at the start, and the daemon stopped the checkout. |
 | `worktree_verify_content` | A file of [the content check](#the-content-check) does not match the commit, or is not executable though the commit records it so. |
 | `worktree_verify_link` | A committed link of the content check leads to the top of the new worktree, runs in a circle, or passes through `/proc` or `/dev/fd`. |
-| `worktree_verify_retry` | A file of the content check cannot be read. |
+| `worktree_verify_retry` | A file of the content check cannot be read, or git cannot hash the commit for the content check. |
 | `worktree_verify_other_writer` | A file of the content check is in the new worktree but not in the commit. |
 | `worktree_verify_repository` | git cannot read an object of the commit for the content check. |
 
@@ -174,6 +174,7 @@ Each text starts `Claude could not confirm that the new worktree matches its com
 | `Check what else writes into the folder the worktree is made in, or run "git fsck" in "<repo>": "<f>" appeared in the new worktree though commit <c> has no such file.` | `worktree_verify_other_writer`, for an `AGENTS.md` that something wrote into the new worktree |
 | `Check what else writes into the folder the worktree is made in, or run "git fsck" in "<repo>": "<f>" in the new worktree isn't what commit <c> has there (it changed while it was being checked).` | `worktree_verify_other_writer`, for a file that a link to `.` replaced during the `hash-object --stdin-paths` call. No `cat-file blob` call follows, and the log line counts 0 files (measured on Linux) |
 | `Run "git fsck" in "<repo>" to check the repository: git couldn't read what it stores for commit <c> (<detail>).` | `worktree_verify_repository`. A separate `cat-file` call that its limit stopped gives the detail `git took too long: Claude stopped git cat-file after 2 minutes; try again`. Wrong answers of the call about the repository before the read of the commit give the disagree text (`c9125eb8`, measured on macOS). |
+| `Try again: git couldn't check what the repository stores for commit <c> (<detail>).` | `worktree_verify_retry`, for a separate `hash-object --stdin -w` of the commit that fails. With every `hash-object` call failing with exit 1 and no stderr, the long-running one stops first. The detail is then `exit status 1`, the log line counts 1 object, and the rollback runs (`87375cc7`, measured on Windows). Claustrum's own, not measured: other failures, the read with no long-running `hash-object`, and a tree, which keeps the repository code. A call that its limit stopped gives the detail `git took too long: Claude stopped git hash-object after 2 minutes; try again` (claustrum's own, not measured). |
 
 ### Staged add failures
 
