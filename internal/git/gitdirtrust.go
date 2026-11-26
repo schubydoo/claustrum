@@ -279,9 +279,9 @@ func daemonCommonDirStays() bool {
 // GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
 // a git.info on another repository makes the read of the config again. A
-// relative GIT_DIR, one that names a missing path or a regular file, and a
-// GIT_DIR with a GIT_COMMON_DIR give the same calls, also on a linked worktree
-// (measured on Windows, daemonVarsKept). With an absolute GIT_DIR, git.status and
+// relative GIT_DIR and a GIT_DIR with a GIT_COMMON_DIR give the same calls, also
+// on a linked worktree. So does a GIT_DIR that names a missing path or a regular
+// file (measured on Windows, daemonVarsKept). With an absolute GIT_DIR, git.status and
 // git.info of a linked worktree and git.list_branches on a repository are
 // claustrum's own, not measured. The copy follows the walk only when the walk
 // finds a trusted git directory (claustrum's own, not measured).
