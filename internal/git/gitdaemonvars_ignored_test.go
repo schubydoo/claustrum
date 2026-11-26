@@ -190,8 +190,8 @@ func TestIgnoredCommonDirKeptWithTheOffSwitch(t *testing.T) {
 // TestIgnoredGitDirOffTheFallbackCalls: with the Windows rule (copyPinsWalkGitDir)
 // in the state fallback-git and no request with "shadowDirOff":true, git.info,
 // git.status, a create and a remove send no daemon GIT_DIR on any call. 87375cc7
-// does so for a relative GIT_DIR, an absolute one, and one with a GIT_COMMON_DIR
-// (measured on Windows). Mutation: in withoutIgnoredDaemonVars drop
+// does so for a relative GIT_DIR and one with a GIT_COMMON_DIR (measured on
+// Windows). The row of an absolute GIT_DIR alone is claustrum's own. Mutation: in withoutIgnoredDaemonVars drop
 // `|| name == "GIT_DIR"`.
 func TestIgnoredGitDirOffTheFallbackCalls(t *testing.T) {
 	setCopyPinsWalkGitDir(t, true)

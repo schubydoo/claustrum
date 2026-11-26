@@ -113,8 +113,9 @@ func gitChildEnv() []string {
 // when the requests ignore the daemon's variables (daemonVarsKept), and env
 // itself otherwise. 87375cc7 sends no daemon GIT_COMMON_DIR on any call then,
 // also outside a repository (measured on Windows). In the state fallback-git it
-// sends no daemon GIT_DIR on a repository call, for a relative or an absolute
-// GIT_DIR, also with a GIT_COMMON_DIR (measured on Windows). On Windows the name
+// sends no daemon GIT_DIR on a repository call, for a relative GIT_DIR and for
+// a relative or absolute one with a GIT_COMMON_DIR (measured on Windows). An
+// absolute GIT_DIR alone is claustrum's own, not measured. On Windows the name
 // matches in any letter case (claustrum's own, not measured).
 func withoutIgnoredDaemonVars(env []string) []string {
 	if daemonVarsKept() {

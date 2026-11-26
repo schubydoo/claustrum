@@ -195,7 +195,7 @@ replies and the disk after a create and a remove of a daemon with neither variab
 on Windows). So it does under a relative `GIT_DIR`, a `GIT_DIR` with a `GIT_COMMON_DIR`, a
 `GIT_COMMON_DIR` alone, and either one that names a missing path or a regular file. With that
 switch it keeps both variables (measured). In `fallback-git` no repository call carries the daemon
-`GIT_DIR` (measured). A request that starts while another one has the switch keeps them too (measured for a
+`GIT_DIR` (measured for a relative one and for one with a `GIT_COMMON_DIR`, claustrum's own for an absolute one alone). A request that starts while another one has the switch keeps them too (measured for a
 `GIT_COMMON_DIR`).
 
 ### Trust refusal texts and frames
