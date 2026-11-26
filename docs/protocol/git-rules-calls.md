@@ -185,8 +185,9 @@ The repository calls are the configuration listings, the hardened calls,
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
       relative path. `SSH_SK_PROVIDER` also needs `internal` or an absolute path on
       macOS and Windows.
-    - Every other entry stays, except the entries named below and the cuts of
-      [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child).
+    - Every other entry stays, except the entries named below, the cuts of
+      [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child) and, on
+      Windows, [the daemon variables](git-rules-trust.md#the-daemon-variables-on-windows).
 
 #### The config, protocol, trace and ssh names
 
