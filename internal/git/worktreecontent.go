@@ -266,7 +266,8 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	body, text, hashFailed := c.readObject("commit", c.commit)
 	if hashFailed {
 		// With an exit of 1 the commit counts as read in the log line
-		// (87375cc7, measured on Windows).
+		// (87375cc7, measured on Windows). Any other failed hash of the commit
+		// counts it too (claustrum's own, not measured).
 		c.read++
 		return nil, c.hashRetryRefusal(text)
 	}
@@ -490,9 +491,11 @@ func (c *contentCheck) askRepo() string {
 	return text
 }
 
-// failText is the detail of a failed call in the repository text. A stopped
-// call gives the stop text (measured on Linux, macOS and Windows). Any other
-// failure gives git's text (claustrum's own, not measured).
+// failText is the detail of a failed call in the repository text and in the
+// retry text of the commit hash. A stopped call gives the stop text (measured
+// on Linux, macOS and Windows for the repository text; claustrum's own, not
+// measured, for the retry text). Any other failure gives git's text
+// (claustrum's own, not measured).
 func failText(stderr string, err error) string {
 	if isGitStop(err) {
 		return err.Error()
