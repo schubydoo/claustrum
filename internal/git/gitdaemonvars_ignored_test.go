@@ -100,7 +100,7 @@ func ignoredVarsCalls(t *testing.T, set func(t *testing.T, gitDir, other string)
 //
 // Mutations: daemonCommonDirSet returns daemonCommonDirInEnv, daemonGitDirSkipped
 // keeps its IsAbs test, gitDirTrustFor drops the walk for a verdict that is not
-// trusted, and withoutIgnoredCommonDir returns env.
+// trusted, and withoutIgnoredDaemonVars returns env.
 func TestIgnoredDaemonVarsMakeTheCallsOfNoVariable(t *testing.T) {
 	setCopyPinsWalkGitDir(t, true)
 	var plain [][]string
@@ -184,5 +184,58 @@ func TestIgnoredCommonDirKeptWithTheOffSwitch(t *testing.T) {
 	}
 	if n := offRequestsLive.Load(); n != 0 {
 		t.Errorf("offRequestsLive = %d after the request, want 0", n)
+	}
+}
+
+// TestIgnoredGitDirOffTheFallbackCalls: with the Windows rule (copyPinsWalkGitDir)
+// in the state fallback-git and no request with "shadowDirOff":true, git.info,
+// git.status, a create and a remove send no daemon GIT_DIR on any call. 87375cc7
+// does so for a relative GIT_DIR, an absolute one, and one with a GIT_COMMON_DIR
+// (measured on Windows). Mutation: in withoutIgnoredDaemonVars drop
+// `|| name == "GIT_DIR"`.
+func TestIgnoredGitDirOffTheFallbackCalls(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	for _, row := range []struct {
+		name   string
+		common bool
+		rel    bool
+	}{
+		{"relative GIT_DIR", false, true},
+		{"absolute GIT_DIR", false, false},
+		{"relative GIT_DIR and GIT_COMMON_DIR", true, true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newShadowFixture(t)
+			h := f.d.Shadow
+			h.mu.Lock()
+			h.state, h.tested = controlFallback, shadowClock()
+			h.mu.Unlock()
+			repo, gitDir := configRepo(t)
+			want := gitDir
+			if row.rel {
+				t.Chdir(repo)
+				want = ".git"
+			}
+			t.Setenv("GIT_DIR", want)
+			if row.common {
+				t.Setenv("GIT_COMMON_DIR", gitDir)
+			}
+			n := 0
+			for _, m := range skipRequests(repo) {
+				raw, calls := f.call(t, m.method, m.params)
+				if strings.Contains(raw, `"error"`) && !strings.Contains(raw, `"success"`) {
+					t.Fatalf("%s = %s", m.method, raw)
+				}
+				for _, c := range calls {
+					n++
+					if v, ok := lookupExact(c.env, "GIT_DIR"); ok && v == want {
+						t.Errorf("%s: the call %q has the daemon GIT_DIR=%s", m.method, c.argv, v)
+					}
+				}
+			}
+			if n == 0 {
+				t.Fatal("no git call ran")
+			}
+		})
 	}
 }

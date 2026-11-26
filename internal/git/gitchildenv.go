@@ -103,18 +103,20 @@ var gitChildProgramNames = []string{
 // gitChildEnv is the daemon's own environment as a git child of the git methods
 // gets it, before the names that the call adds. The trace entries of
 // withTraceOff end it. The session folders are cut first (sessiondirs.CutPath),
-// and the names of sessiondirs.EditorNames go. A daemon GIT_COMMON_DIR that the
-// requests ignore goes too (withoutIgnoredCommonDir).
+// and the names of sessiondirs.EditorNames go. A daemon GIT_COMMON_DIR and
+// GIT_DIR that the requests ignore go too (withoutIgnoredDaemonVars).
 func gitChildEnv() []string {
-	return withTraceOff(withoutIgnoredCommonDir(cleanGitChildEnv(sessionCutDaemonEnv(), gitEnvHere)), gitEnvHere)
+	return withTraceOff(withoutIgnoredDaemonVars(cleanGitChildEnv(sessionCutDaemonEnv(), gitEnvHere)), gitEnvHere)
 }
 
-// withoutIgnoredCommonDir is env without its GIT_COMMON_DIR entries when the
-// requests ignore the daemon's GIT_COMMON_DIR (daemonVarsKept), and env itself
-// otherwise. 87375cc7 sends none on any call then, also outside a repository
-// (measured on Windows). On Windows the name matches in any letter case
-// (claustrum's own, not measured).
-func withoutIgnoredCommonDir(env []string) []string {
+// withoutIgnoredDaemonVars is env without its GIT_COMMON_DIR and GIT_DIR entries
+// when the requests ignore the daemon's variables (daemonVarsKept), and env
+// itself otherwise. 87375cc7 sends no daemon GIT_COMMON_DIR on any call then,
+// also outside a repository (measured on Windows). In the state fallback-git it
+// sends no daemon GIT_DIR on a repository call, for a relative or an absolute
+// GIT_DIR, also with a GIT_COMMON_DIR (measured on Windows). On Windows the name
+// matches in any letter case (claustrum's own, not measured).
+func withoutIgnoredDaemonVars(env []string) []string {
 	if daemonVarsKept() {
 		return env
 	}
@@ -123,7 +125,7 @@ func withoutIgnoredCommonDir(env []string) []string {
 		if gitEnvHere.windows {
 			name = strings.ToUpper(name)
 		}
-		return name == "GIT_COMMON_DIR"
+		return name == "GIT_COMMON_DIR" || name == "GIT_DIR"
 	})
 }
 

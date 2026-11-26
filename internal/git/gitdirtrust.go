@@ -245,8 +245,8 @@ var offRequestsLive atomic.Int32
 // too (measured on Windows). With "shadowDirOff":true it keeps them (measured on
 // Windows). A request that starts while another one has the switch is claustrum's
 // own, not measured. So is a flip of the answer while a request runs, when such a
-// request starts or ends. The state fallback-git ignores the variables too
-// (claustrum's own, not measured).
+// request starts or ends. In the state fallback-git 87375cc7 sends no daemon
+// GIT_DIR on a repository call (measured on Windows).
 func daemonVarsKept() bool {
 	return !copyPinsWalkGitDir || offRequestsLive.Load() > 0
 }
