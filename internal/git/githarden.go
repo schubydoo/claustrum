@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -254,12 +255,24 @@ func withoutSkippedGitDir(env []string) []string {
 // with --git-dir= has none (87375cc7, measured on Windows). It goes too when the
 // GIT_COMMON_DIR of a pin with no copy names another folder than that GIT_DIR, so
 // that git finds the repository of the pin (claustrum's own, not measured).
+//
+// In the state fallback-git (fallbackStateNow) the GIT_DIR goes too while the
+// requests ignore it (daemonVarsKept). 87375cc7 sends no daemon GIT_DIR on a
+// repository call there, for a relative GIT_DIR and for one with a GIT_COMMON_DIR
+// (measured on Windows). An absolute GIT_DIR alone is claustrum's own, not
+// measured. The calls outside a repository keep their own rules.
 func daemonPartFor(daemon, pin []string) []string {
-	if !pinNamesCopy(pin) && !pinNamesOtherGitDir(pin) {
+	fallbackDrop := fallbackStateNow.Load() && !daemonVarsKept()
+	if !pinNamesCopy(pin) && !pinNamesOtherGitDir(pin) && !fallbackDrop {
 		return daemon
 	}
 	return withoutSkippedGitDir(daemon)
 }
+
+// fallbackStateNow is true while the settings control of the daemon has the
+// state fallback-git. The gate sets it from the start test (ShadowHost.gate), and Close
+// clears it.
+var fallbackStateNow atomic.Bool
 
 // pinNamesOtherGitDir reports whether pin sets GIT_COMMON_DIR to another folder
 // than the common git directory of the daemon's GIT_DIR, as the trust check
