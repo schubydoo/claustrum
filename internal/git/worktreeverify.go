@@ -752,7 +752,7 @@ func otherEntryRefusal(worktreePath string) string {
 //   - a copy of the leaf in its place: "`<leaf>` is no longer the directory that
 //     was created for the worktree".
 //
-// Not measured: the order of the three tests, a `.git` that Lstat cannot read
+// Not measured: the order of the tests, a `.git` that Lstat cannot read
 // (it passes), a leaf that resolves to another place (it gets the text of a
 // copy), a leaf behind a link (the texts name it as sent), and the default
 // staged add, which does not run this test.
@@ -763,6 +763,16 @@ func offAddRefusal(worktreePath, registry string, cp worktreeCheckpoint) string 
 	}
 	if _, err := os.Stat(registry); errors.Is(err, fs.ErrNotExist) {
 		return gitFileGoneText(worktreePath)
+	}
+	// With a daemon GIT_COMMON_DIR of a clone, git registers the worktree in the
+	// clone. 87375cc7 then answers this text, and the registration stays there
+	// (measured on Windows). Other states keep no such test (claustrum's own).
+	if daemonCommonDirSet() {
+		if admin := linkedGitDirOf(worktreePath); admin != "" &&
+			!sameProbeFolder(filepath.Dir(absoluteAdminDir(worktreePath, admin)), registry) {
+			return "refusing to create worktree: " + tickPath(worktreePath) +
+				" carries a .git file that does not name this repository's own worktree admin directory"
+		}
 	}
 	if checkNewLeafIdentity(worktreePath, cp) != "" {
 		return leafReplacedText(worktreePath)

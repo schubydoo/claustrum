@@ -313,9 +313,13 @@ func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 // run on Windows, as in the rows above.
 // Mutations: read the answer of the listing without noRepoPinned in
 // noRepoCreateCalls (create), in removeGoneWorktree (remove) and in
-// externalWorkTreeRefusal (remove with worktreeRoot).
+// externalWorkTreeRefusal (remove with worktreeRoot). This is the rule of Linux
+// and macOS. On Windows the variable is kept only beside an off request
+// (keepDaemonVars), and there a kept GIT_COMMON_DIR of no folder gives the create
+// the text of keptVarDotGit (TestCreateUnderAKeptVarOfNoFolder). The remove rows
+// keep their frames on every system.
 func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
-	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
+	keepDaemonVars(t)
 	f := newNoRepoFixture(t)
 	root := filepath.Dir(f.n)
 	e := filepath.Join(root, "E")
@@ -333,13 +337,19 @@ func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
 		t.Fatalf("real listing in %s: err = %v, stderr = %q, want git's gitfile failure", e, err, stderr.String())
 	}
 	leaf := filepath.Join(e, ".claude", "worktrees", "w1")
+	createWant := notRepoCreate
+	if copyPinsWalkGitDir {
+		createWant = `{"success":false,"error":` +
+			jsonString(t, "Git can't use `"+resolveTestRoot(t, filepath.Join(e, ".git"))+"`, so Claude made no worktree. A Claude session can damage it, so check it first. Then repair it, or turn off Worktree if this isn't meant to be a repository.") +
+			`,"errorCode":"worktree_add_failed"}`
+	}
 	for _, row := range []struct {
 		name, method string
 		params       map[string]any
 		want         string
 		skipWindows  bool
 	}{
-		{"create", "git.worktree_create", map[string]any{"baseRepo": e, "branchName": "w1", "worktreePath": leaf}, notRepoCreate, false},
+		{"create", "git.worktree_create", map[string]any{"baseRepo": e, "branchName": "w1", "worktreePath": leaf}, createWant, false},
 		{"remove", "git.worktree_remove", map[string]any{"baseRepo": e, "branchName": "w1", "worktreePath": leaf},
 			`{"success":true,"branchKept":true}`, false},
 		{"remove with worktreeRoot", "git.worktree_remove", map[string]any{"baseRepo": e, "worktreePath": f.external(), "worktreeRoot": f.r},

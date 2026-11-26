@@ -186,3 +186,103 @@ func TestIgnoredCommonDirKeptWithTheOffSwitch(t *testing.T) {
 		t.Errorf("offRequestsLive = %d after the request, want 0", n)
 	}
 }
+
+// TestIgnoredGitDirOffTheFallbackCalls: with the Windows rule (copyPinsWalkGitDir)
+// in the state fallback-git and no request with "shadowDirOff":true, git.info,
+// git.status, a create and a remove send no daemon GIT_DIR on any call. 87375cc7
+// does so for a relative GIT_DIR and one with a GIT_COMMON_DIR (measured on
+// Windows). The row of an absolute GIT_DIR alone is claustrum's own. Mutation:
+// in daemonPartFor drop the test of fallbackStateNow and daemonVarsKept.
+func TestIgnoredGitDirOffTheFallbackCalls(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	for _, row := range []struct {
+		name   string
+		common bool
+		rel    bool
+	}{
+		{"relative GIT_DIR", false, true},
+		{"absolute GIT_DIR", false, false},
+		{"relative GIT_DIR and GIT_COMMON_DIR", true, true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newShadowFixture(t)
+			h := f.d.Shadow
+			h.mu.Lock()
+			h.state, h.tested = controlFallback, shadowClock()
+			h.mu.Unlock()
+			setFallbackState(t)
+			repo, gitDir := configRepo(t)
+			want := gitDir
+			if row.rel {
+				t.Chdir(repo)
+				want = ".git"
+			}
+			t.Setenv("GIT_DIR", want)
+			if row.common {
+				t.Setenv("GIT_COMMON_DIR", gitDir)
+			}
+			n := 0
+			for _, m := range skipRequests(repo) {
+				raw, calls := f.call(t, m.method, m.params)
+				if strings.Contains(raw, `"error"`) && !strings.Contains(raw, `"success"`) {
+					t.Fatalf("%s = %s", m.method, raw)
+				}
+				for _, c := range calls {
+					n++
+					if v, ok := lookupExact(c.env, "GIT_DIR"); ok && v == want {
+						t.Errorf("%s: the call %q has the daemon GIT_DIR=%s", m.method, c.argv, v)
+					}
+				}
+			}
+			if n == 0 {
+				t.Fatal("no git call ran")
+			}
+		})
+	}
+}
+
+// setFallbackState marks the state fallback-git for one test, as the start test
+// does (fallbackStateNow).
+func setFallbackState(t *testing.T) {
+	t.Helper()
+	old := fallbackStateNow.Load()
+	fallbackStateNow.Store(true)
+	t.Cleanup(func() { fallbackStateNow.Store(old) })
+}
+
+// TestIgnoredGitDirDropOnlyOnFallbackRepoCalls: under the Windows rule an ignored
+// daemon GIT_DIR goes only from a repository call in the state fallback-git. The
+// environment of the calls outside a repository (gitChildEnv) keeps it there. A
+// repository call with a pin that names no copy keeps it in the state shadow, as
+// on 757e60df. Mutations: withoutIgnoredCommonDir also drops GIT_DIR (the
+// outside call), and daemonPartFor drops the test of fallbackStateNow (the
+// shadow call).
+func TestIgnoredGitDirDropOnlyOnFallbackRepoCalls(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	clearFolderEnv(t)
+	_, gitDir := configRepo(t)
+	t.Setenv("GIT_DIR", gitDir)
+	pin := []string{"GIT_COMMON_DIR=" + gitDir}
+	daemonGitDir := func(env []string) bool {
+		for _, kv := range env {
+			if kv == "GIT_DIR="+gitDir {
+				return true
+			}
+		}
+		return false
+	}
+	if !daemonGitDir(hardenedGitEnv(false, pin, nil)) {
+		t.Error("the state shadow: a repository call with no copy lost the daemon GIT_DIR")
+	}
+	setFallbackState(t)
+	if !daemonGitDir(gitChildEnv()) {
+		t.Error("fallback-git: gitChildEnv lost the daemon GIT_DIR, want it kept for the calls outside a repository")
+	}
+	if daemonGitDir(hardenedGitEnv(false, pin, nil)) {
+		t.Error("fallback-git: a repository call has the daemon GIT_DIR, want none")
+	}
+	keepDaemonVars(t)
+	if !daemonGitDir(hardenedGitEnv(false, pin, nil)) {
+		t.Error("fallback-git with the off switch: a repository call lost the daemon GIT_DIR")
+	}
+}

@@ -155,9 +155,6 @@ the check off.
 The repository calls are the configuration listings, the hardened calls,
 `worktree add`, the checkout and `git status`.
 
-- On Windows a call of a request with no `"shadowDirOff":true` carries no daemon
-  `GIT_COMMON_DIR`, also outside a repository (`87375cc7`, measured on Windows,
-  [the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows)).
 - The daemon's environment is cleaned for the repository calls and the calls of
   the start test, entry by entry, in this order. The calls of the start test, not its first `git version`,
   also get no `GIT_` variable of the daemon. Both rules are claustrum's own, not measured.
@@ -188,8 +185,9 @@ The repository calls are the configuration listings, the hardened calls,
     - Six program names, such as `GIT_SSH` and `SSH_ASKPASS`, go when they are a
       relative path. `SSH_SK_PROVIDER` also needs `internal` or an absolute path on
       macOS and Windows.
-    - Every other entry stays, except the entries named below and the cuts of
-      [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child).
+    - Every other entry stays, except the entries named below, the cuts of
+      [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child) and, on
+      Windows, [the daemon variables](git-rules-trust.md#the-daemon-variables-on-windows).
 
 #### The config, protocol, trace and ssh names
 

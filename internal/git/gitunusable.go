@@ -137,7 +137,8 @@ func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, a
 // another account gives the refusal (measured on macOS, both). On Linux all of these are
 // claustrum's own, not measured. On Windows the walk has none of them (from the code).
 //
-// claustrum's own, not measured: a daemon GIT_DIR, or a kept GIT_COMMON_DIR, turns it off.
+// claustrum's own, not measured: a daemon GIT_DIR, or a kept GIT_COMMON_DIR, turns it
+// off, except on Windows for a kept variable of no folder (keptVarDotGit).
 // A `.git` folder of mode 0600 is unusable, as mode 0000 is. A `.git` file that names a
 // git directory the daemon cannot search counts as usable, so it keeps not_a_repo as
 // 683cc6a9 answers. So does a stat of a `.git` file target that fails with another error
@@ -147,7 +148,7 @@ func (req *gitCall) askForMissingOnShare(path string, off bool) (a repoAnswer, a
 // named.
 func unusableDotGit(dir string) (name string, noLook bool) {
 	if os.Getenv("GIT_DIR") != "" || daemonCommonDirSet() {
-		return "", false
+		return keptVarDotGit(dir), false
 	}
 	if dir == "" {
 		dir = "."
@@ -257,4 +258,49 @@ func gitFileUnusable(path, holder string) bool {
 		return false
 	}
 	return gitDirUnusable(target)
+}
+
+// keptVarDotGit is the first `.git` on the walk from dir, in the spelling of
+// unusableDotGit, when the Windows daemon keeps a GIT_DIR or GIT_COMMON_DIR that
+// names no folder (daemonVarsKept). It is "" otherwise. With "shadowDirOff":true
+// 87375cc7 answers a create with unusableGitText for `<baseRepo>\.git` there, for a
+// missing GIT_DIR, a missing GIT_COMMON_DIR and a GIT_COMMON_DIR of a regular file
+// (measured on Windows, a good repository at baseRepo). A baseRepo below the top
+// folder of its repository and a folder with no `.git` on the walk are claustrum's
+// own, not measured. Linux and macOS keep not_a_repo (from the code).
+func keptVarDotGit(dir string) string {
+	if !copyPinsWalkGitDir || !daemonVarsKept() {
+		return ""
+	}
+	bad := namesNoFolder(os.Getenv("GIT_DIR")) || daemonCommonDirSet() && namesNoFolder(os.Getenv("GIT_COMMON_DIR"))
+	if !bad {
+		return ""
+	}
+	if dir == "" {
+		dir = "."
+	}
+	start, err := walkStart(dir)
+	if err != nil {
+		return ""
+	}
+	if start, err = filepath.Abs(start); err != nil {
+		return ""
+	}
+	for d := start; ; d = filepath.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			return filepath.Join(d, ".git")
+		}
+		if filepath.Dir(d) == d {
+			return ""
+		}
+	}
+}
+
+// namesNoFolder reports whether p is set and names no folder.
+func namesNoFolder(p string) bool {
+	if p == "" {
+		return false
+	}
+	fi, err := os.Stat(p)
+	return err != nil || !fi.IsDir()
 }

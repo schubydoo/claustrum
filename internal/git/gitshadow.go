@@ -324,6 +324,7 @@ func (h *ShadowHost) gate(off bool) string {
 		// not measured.
 		if h.state == "" || h.unkept {
 			h.state, h.unkept = state, true
+			fallbackStateNow.Store(state == controlFallback)
 		}
 		logStateLine(state)
 		return ""
@@ -331,6 +332,7 @@ func (h *ShadowHost) gate(off bool) string {
 	h.tested = end
 	if state != h.state || h.unkept {
 		h.state, h.unkept = state, false
+		fallbackStateNow.Store(state == controlFallback)
 		logStateLine(state)
 	}
 	return ""
@@ -666,6 +668,7 @@ func (h *ShadowHost) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
+	fallbackStateNow.Store(false)
 	h.dropLock()
 	if h.dir != "" {
 		_ = h.removeEntry(filepath.Base(h.dir))

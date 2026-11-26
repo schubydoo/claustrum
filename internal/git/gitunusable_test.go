@@ -173,9 +173,11 @@ func TestCreateRefusesAnUnusableGit(t *testing.T) {
 // A daemon GIT_DIR or GIT_COMMON_DIR turns the unusable-git test off, so the create
 // keeps not_a_repo (claustrum's own, not measured). The test calls unusableDotGit, so
 // no git call runs with the variable. Mutations: drop the GIT_DIR test or
-// daemonCommonDirSet in unusableDotGit.
+// daemonCommonDirSet in unusableDotGit. This is the rule of Linux and macOS. On
+// Windows a kept variable of no folder names the `.git` (keptVarDotGit,
+// TestCreateUnderAKeptVarOfNoFolder), so the test runs the rule of Linux there.
 func TestUnusableGitOffWithDaemonGitDir(t *testing.T) {
-	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
+	setCopyPinsWalkGitDir(t, false)
 	tmp := realTempDir(t)
 	b := plainFolder(t, tmp)
 	makeDir(t, filepath.Join(b, ".git"))

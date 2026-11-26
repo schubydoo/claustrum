@@ -243,10 +243,10 @@ var offRequestsLive atomic.Int32
 // GIT_COMMON_DIR, and a GIT_DIR or GIT_COMMON_DIR that names no folder. Its
 // replies and the disk after a create and a remove are those of no variable
 // too (measured on Windows). With "shadowDirOff":true it keeps them (measured on
-// Windows). A request that starts while another one has the switch is claustrum's
-// own, not measured. So is a flip of the answer while a request runs, when such a
-// request starts or ends. The state fallback-git ignores the variables too
-// (claustrum's own, not measured).
+// Windows). So does a request that starts while another one has the switch
+// (measured on Windows for a GIT_COMMON_DIR). A flip of the answer while a
+// request runs, when such a request starts or ends, is claustrum's own, not
+// measured.
 func daemonVarsKept() bool {
 	return !copyPinsWalkGitDir || offRequestsLive.Load() > 0
 }
@@ -278,9 +278,9 @@ func daemonCommonDirStays() bool {
 // GIT_DIR and GIT_WORK_TREE of the walk, at their real paths. The calls with
 // --git-dir= and the `--attr-source` probe carry no GIT_DIR. A git.info after
 // a git.info on another repository makes the read of the config again. A
-// relative GIT_DIR, one that names a missing path or a regular file, and a
-// GIT_DIR with a GIT_COMMON_DIR give the same calls, also on a linked worktree
-// (measured on Windows, daemonVarsKept). With an absolute GIT_DIR, git.status and
+// relative GIT_DIR and a GIT_DIR with a GIT_COMMON_DIR give the same calls, also
+// on a linked worktree. So does a GIT_DIR that names a missing path or a regular
+// file (measured on Windows, daemonVarsKept). With an absolute GIT_DIR, git.status and
 // git.info of a linked worktree and git.list_branches on a repository are
 // claustrum's own, not measured. The copy follows the walk only when the walk
 // finds a trusted git directory (claustrum's own, not measured).

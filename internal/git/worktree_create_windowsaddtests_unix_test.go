@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -121,5 +122,51 @@ func TestWorktreeCreateGitFileGoneKeepsLeafOnWindows(t *testing.T) {
 				t.Error("refs/heads/w1 is gone, want it kept")
 			}
 		})
+	}
+}
+
+// TestWorktreeCreateOffAddCloneCommonDirOfWindows pins the row of 87375cc7 on
+// Windows: with "shadowDirOff":true and a daemon GIT_COMMON_DIR of a clone O, git
+// registers w1 in O. The create answers unsafe_path with the "does not name" text
+// and runs no checkout. The leaf and the registration in O stay (measured on
+// Windows). Mutation: in offAddRefusal skip the clone test (`if false &&
+// daemonCommonDirSet()`).
+func TestWorktreeCreateOffAddCloneCommonDirOfWindows(t *testing.T) {
+	setWindowsAddTests(t)
+	f, h := postAddFixture(t)
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "w0", filepath.Join(t.TempDir(), "w0"))
+	o := filepath.Join(t.TempDir(), "O")
+	runGit(t, t.TempDir(), "clone", "-q", f.top, o)
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(o, ".git"))
+	raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"shadowDirOff": true})
+	text := "refusing to create worktree: `" + f.leaf() + "` carries a .git file that does not name this repository's own worktree admin directory"
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, text) + `,"errorCode":"unsafe_path"}}`; raw != want {
+		t.Fatalf("reply = %s\nwant %s", raw, want)
+	}
+	if got := f.leafEntries(t); !slices.Equal(got, []string{".git"}) {
+		t.Errorf("leaf entries = %q, want only .git", got)
+	}
+	if _, err := os.Stat(filepath.Join(o, ".git", "worktrees", "w1", "HEAD")); err != nil {
+		t.Errorf("the registration w1 in O: %v, want it kept", err)
+	}
+}
+
+// TestWorktreeCreateOffAddOwnCommonDirOfWindows: with "shadowDirOff":true and a
+// daemon GIT_DIR and GIT_COMMON_DIR of the repository's own git directory, the
+// clone test of offAddRefusal passes, and the create succeeds. 87375cc7 creates
+// there (measured on Windows). Mutation: in offAddRefusal refuse whenever
+// daemonCommonDirSet is true.
+func TestWorktreeCreateOffAddOwnCommonDirOfWindows(t *testing.T) {
+	setWindowsAddTests(t)
+	f, h := postAddFixture(t)
+	runGit(t, f.top, "worktree", "add", "-q", "-b", "w0", filepath.Join(t.TempDir(), "w0"))
+	t.Setenv("GIT_DIR", filepath.Dir(f.regDir))
+	t.Setenv("GIT_COMMON_DIR", filepath.Dir(f.regDir))
+	raw, _ := f.createWith(t, h, "w1", 0, map[string]any{"shadowDirOff": true})
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("reply = %s, want success", raw)
+	}
+	if _, err := os.Stat(filepath.Join(f.regDir, "w1", "HEAD")); err != nil {
+		t.Errorf("the registration w1: %v, want it in the repository", err)
 	}
 }
