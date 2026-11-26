@@ -243,11 +243,12 @@ func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
 		if got := daemonGitDirSkipped(); got != row.want {
 			t.Errorf("%s: daemonGitDirSkipped = %v, want %v", row.name, got, row.want)
 		}
-		offRequestsLive.Add(1)
-		if got := daemonGitDirSkipped(); got != row.wantOff {
-			t.Errorf("%s, off switch: daemonGitDirSkipped = %v, want %v", row.name, got, row.wantOff)
-		}
-		offRequestsLive.Add(-1)
+		t.Run(row.name+" off switch", func(t *testing.T) {
+			keepDaemonVars(t)
+			if got := daemonGitDirSkipped(); got != row.wantOff {
+				t.Errorf("daemonGitDirSkipped = %v, want %v", got, row.wantOff)
+			}
+		})
 	}
 }
 

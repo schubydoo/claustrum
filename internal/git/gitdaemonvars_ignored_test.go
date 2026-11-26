@@ -157,12 +157,13 @@ func TestIgnoredCommonDirKeptWithTheOffSwitch(t *testing.T) {
 		t.Errorf("no off switch: daemonCommonDirSet %v, GIT_COMMON_DIR in gitChildEnv %v, daemonGitDirSkipped %v, want false, false, true",
 			daemonCommonDirSet(), has(), daemonGitDirSkipped())
 	}
-	offRequestsLive.Add(1)
-	if !daemonCommonDirSet() || !has() || daemonGitDirSkipped() {
-		t.Errorf("off switch: daemonCommonDirSet %v, GIT_COMMON_DIR in gitChildEnv %v, daemonGitDirSkipped %v, want true, true, false",
-			daemonCommonDirSet(), has(), daemonGitDirSkipped())
-	}
-	offRequestsLive.Add(-1)
+	t.Run("off switch", func(t *testing.T) {
+		keepDaemonVars(t)
+		if !daemonCommonDirSet() || !has() || daemonGitDirSkipped() {
+			t.Errorf("daemonCommonDirSet %v, GIT_COMMON_DIR in gitChildEnv %v, daemonGitDirSkipped %v, want true, true, false",
+				daemonCommonDirSet(), has(), daemonGitDirSkipped())
+		}
+	})
 	// Handle counts a request with the switch while it runs.
 	f := newShadowFixture(t)
 	t.Setenv("GIT_COMMON_DIR", dir)

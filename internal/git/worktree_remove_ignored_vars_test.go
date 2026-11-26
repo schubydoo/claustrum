@@ -141,8 +141,7 @@ func TestIgnoredCommonDirNamesTheCopy(t *testing.T) {
 	if _, ok := u.names(f.repo); !ok {
 		t.Error("names = false, want the copy")
 	}
-	offRequestsLive.Add(1)
-	defer offRequestsLive.Add(-1)
+	keepDaemonVars(t)
 	if _, ok := u.names(f.repo); ok {
 		t.Error("off switch: names = true, want no copy")
 	}
