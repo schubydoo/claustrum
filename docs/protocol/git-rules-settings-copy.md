@@ -325,7 +325,7 @@ arguments also carries `GIT_DIR` and `GIT_WORK_TREE` (Linux, macOS and Windows).
 four follow the profile values, in that order (order measured on Linux and
 macOS). The staged `worktree add` moves its `GIT_COMMON_DIR` to the end ([staged
 add](git-worktree-create.md#the-staged-add)).
-On Windows a request in the state `shadow` runs as with no daemon `GIT_DIR` and no daemon
+On Windows a request in the state `shadow` makes its calls as with no daemon `GIT_DIR` and no daemon
 `GIT_COMMON_DIR` ([the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows)). The
 calls of `git.info`, of `git.status` on the repository, of a create and of a remove
 follow the walk (`87375cc7`, measured on Windows). So do a remove as the first request
