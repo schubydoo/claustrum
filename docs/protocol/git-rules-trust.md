@@ -175,9 +175,9 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
 - On Windows, with an absolute or relative daemon `GIT_DIR` of a folder, the daemon logs
   `[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`
   once, in its first request with no `"shadowDirOff":true`, before the line of the start test. A daemon `GIT_COMMON_DIR` adds
-  the same line with `GIT_COMMON_DIR` for `GIT_DIR` right before it, and logs it alone with no `GIT_DIR`
-  (`87375cc7`, measured on Windows). A `GIT_DIR` that names no folder logs none. A `GIT_COMMON_DIR` that names
-  no folder logs its line. That switch on another method counts as on `git.info`. These three rules are claustrum's own, not measured.
+  the same line with `GIT_COMMON_DIR` for `GIT_DIR` right before it, and logs it alone with no `GIT_DIR`, in the
+  first request (`87375cc7`, measured on Windows). The daemon tests a relative `GIT_DIR` from its own working folder. A `GIT_DIR` that names no folder logs none. A `GIT_COMMON_DIR` that names
+  no folder logs its line. After a `git.info` with that switch, the `GIT_COMMON_DIR` line follows the `GIT_DIR` rule. That switch on another method counts as on `git.info`. These five rules are claustrum's own, not measured.
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
   refusal with `git worktree add failed: cannot locate the repository's git
