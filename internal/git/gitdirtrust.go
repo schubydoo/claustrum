@@ -327,7 +327,8 @@ func commonDirPinOf(t gitDirTrust) []string {
 // the daemon's GIT_DIR keeps the daemon verdict, with its spelling (f6010b97,
 // measured on Windows for the pin with no copy, TestGitDirTrustShortNamePinWindows). git.info with "shadowDirOff":true
 // keeps the daemon verdict (daemonGitDirVerdict): measured on Windows for a
-// folder in no repository, claustrum's own in a repository. The other methods
+// folder in no repository, claustrum's own in a repository. Its root pair takes
+// the walk's spelling when the walk finds the same folder (walkPairPin). The other methods
 // with that switch, and the state fallback-git, follow the walk (claustrum's
 // own, not measured).
 func gitDirTrustFor(dir string) gitDirTrust {
@@ -344,6 +345,26 @@ func gitDirTrustFor(dir string) gitDirTrust {
 // the verdict of the daemon's GIT_DIR when it is set.
 func daemonGitDirVerdict(dir string) gitDirTrust {
 	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
+}
+
+// walkPairPin is the pin of the root pair of git.info (gitInfoRoot) for a
+// request that keeps the daemon verdict (gitUse.daemonVerdict) and names no
+// copy. pin is the pin of that verdict. When the walk from dir finds the folder
+// of its GIT_COMMON_DIR, the pair takes the walk's spelling. For an 8.3 short
+// name in the daemon's GIT_DIR, 87375cc7 has the long name on both calls. It is
+// in --git-dir=, in the folder and in GIT_COMMON_DIR. GIT_DIR keeps the short
+// one (measured on Windows). The same folder reached by another spelling, such as
+// a junction, is claustrum's own, not measured. A walk that
+// finds another folder keeps pin (claustrum's own, not measured).
+func walkPairPin(dir string, pin []string) []string {
+	if len(pin) != 1 || !strings.HasPrefix(pin[0], "GIT_COMMON_DIR=") {
+		return pin
+	}
+	w := trustWithGitDir(dir, "")
+	if w.verdict != gitDirTrusted || w.pinCommonDir == "" || !sameProbeFolder(w.pinCommonDir, strings.TrimPrefix(pin[0], "GIT_COMMON_DIR=")) {
+		return pin
+	}
+	return commonDirPinOf(w)
 }
 
 // trustWithGitDir is gitDirTrustFor with gd in the place of the daemon's GIT_DIR.

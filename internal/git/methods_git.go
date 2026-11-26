@@ -431,7 +431,11 @@ func gitInfo(req *gitCall) rpc.Response {
 		copyOf = u.gitDir
 		front = u.gitDirFront()
 	}
-	top := gitInfoRoot(req.stop, walkRoot, walkGitDir, copyOf, u.gitDirPin(p.Path), front)
+	pairPin := u.gitDirPin(p.Path)
+	if copyOf == "" && u.daemonVerdict {
+		pairPin = walkPairPin(p.Path, pairPin)
+	}
+	top := gitInfoRoot(req.stop, walkRoot, walkGitDir, copyOf, pairPin, front)
 	// slug and defaultBranch come before the branch, matching the reference order.
 	slug := gitRepoSlug(req.use, p.Path)
 	defBranch := gitDefaultBranch(req.use, p.Path)
