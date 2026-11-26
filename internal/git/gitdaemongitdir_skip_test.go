@@ -541,14 +541,24 @@ func TestDaemonGitDirSkippedLinkedWorktree(t *testing.T) {
 	}
 }
 
-// TestDaemonGitDirSkippedLogsOnce: with daemonGitDirSkipped the daemon logs
-// skippedGitDirLine once, before the line of the start test. So it does in a
-// daemon of five requests and for a remove as its first request. With no daemon
-// GIT_DIR it logs none (87375cc7, measured on Windows). Mutation: in
-// daemonGitDirVerdict drop the call of logSkippedGitDir.
+// TestDaemonGitDirSkippedLogsOnce: with a daemon GIT_DIR of a folder on Windows
+// the daemon logs skippedGitDirLine once, before the line of the start test. So
+// it does in a daemon of five requests, for a remove as its first request and
+// for a relative GIT_DIR. A daemon GIT_COMMON_DIR adds skippedCommonDirLine
+// before it. With no daemon GIT_DIR it logs none (87375cc7, measured on
+// Windows). Mutations: in Handle drop the call of logSkippedGitDir,
+// in logSkippedGitDir drop the log of skippedCommonDirLine or swap the two
+// logs, or test daemonGitDirSkipped there in the place of gitDirNamesFolder.
 func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 	setCopyPinsWalkGitDir(t, true)
-	run := func(t *testing.T, withGitDir, removeFirst bool) {
+	type daemonEnv int
+	const (
+		noGitDir daemonEnv = iota
+		absGitDir
+		relGitDir
+		withCommonDir
+	)
+	run := func(t *testing.T, env daemonEnv, removeFirst bool) {
 		f := newShadowFixture(t)
 		setAttrSource(t, true)
 		skippedGitDirLogged.Store(false)
@@ -560,8 +570,15 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 			reqs = reqs[3:]
 		}
 		logs := captureLogBuf(t)
-		if withGitDir {
+		switch env {
+		case absGitDir:
 			t.Setenv("GIT_DIR", gitDir)
+		case relGitDir:
+			t.Chdir(repo)
+			t.Setenv("GIT_DIR", ".git")
+		case withCommonDir:
+			t.Setenv("GIT_DIR", gitDir)
+			t.Setenv("GIT_COMMON_DIR", gitDir)
 		}
 		if !removeFirst {
 			other, _ := configRepo(t)
@@ -573,19 +590,62 @@ func TestDaemonGitDirSkippedLogsOnce(t *testing.T) {
 			f.call(t, m.method, m.params)
 		}
 		got := logs.String()
-		want := 0
-		if withGitDir {
-			want = 1
+		want, wantCommon := 1, 0
+		switch env {
+		case noGitDir:
+			want = 0
+		case withCommonDir:
+			wantCommon = 1
 		}
 		if n := strings.Count(got, skippedGitDirLine); n != want {
 			t.Fatalf("%d lines of the skipped GIT_DIR, want %d:\n%s", n, want, got)
+		}
+		if n := strings.Count(got, skippedCommonDirLine); n != wantCommon {
+			t.Fatalf("%d lines of the skipped GIT_COMMON_DIR, want %d:\n%s", n, wantCommon, got)
 		}
 		at, shadow := strings.Index(got, skippedGitDirLine), strings.Index(got, shadowStateLine)
 		if shadow < 0 || at > shadow {
 			t.Errorf("the skipped GIT_DIR line at %d, the start test line at %d, want it first:\n%s", at, shadow, got)
 		}
+		if common := strings.Index(got, skippedCommonDirLine); wantCommon == 1 && common > at {
+			t.Errorf("the skipped GIT_COMMON_DIR line at %d, the GIT_DIR line at %d, want it first:\n%s", common, at, got)
+		}
 	}
-	t.Run("five requests", func(t *testing.T) { run(t, true, false) })
-	t.Run("remove first", func(t *testing.T) { run(t, true, true) })
-	t.Run("no daemon GIT_DIR", func(t *testing.T) { run(t, false, false) })
+	t.Run("five requests", func(t *testing.T) { run(t, absGitDir, false) })
+	t.Run("remove first", func(t *testing.T) { run(t, absGitDir, true) })
+	t.Run("relative GIT_DIR", func(t *testing.T) { run(t, relGitDir, false) })
+	t.Run("GIT_COMMON_DIR too", func(t *testing.T) { run(t, withCommonDir, false) })
+	t.Run("no daemon GIT_DIR", func(t *testing.T) { run(t, noGitDir, false) })
+}
+
+// TestDaemonGitDirSkippedLogsAfterOffInfo: after a first git.info with
+// "shadowDirOff":true, on a repository or on a folder in no repository, the
+// daemon logs skippedGitDirLine in the second request (87375cc7, measured on
+// Windows). Mutation: in Handle call logSkippedGitDir with no test of
+// offSwitchSet.
+func TestDaemonGitDirSkippedLogsAfterOffInfo(t *testing.T) {
+	setCopyPinsWalkGitDir(t, true)
+	run := func(t *testing.T, inRepo bool) {
+		f := newShadowFixture(t)
+		setAttrSource(t, true)
+		skippedGitDirLogged.Store(false)
+		t.Cleanup(func() { skippedGitDirLogged.Store(false) })
+		repo, gitDir := configRepo(t)
+		dir := repo
+		if !inRepo {
+			dir = t.TempDir()
+		}
+		logs := captureLogBuf(t)
+		t.Setenv("GIT_DIR", gitDir)
+		f.info(t, dir, map[string]any{"shadowDirOff": true})
+		if n := strings.Count(logs.String(), skippedGitDirLine); n != 0 {
+			t.Fatalf("%d lines of the skipped GIT_DIR after the first git.info, want 0:\n%s", n, logs.String())
+		}
+		f.info(t, dir, nil)
+		if n := strings.Count(logs.String(), skippedGitDirLine); n != 1 {
+			t.Fatalf("%d lines of the skipped GIT_DIR after the second git.info, want 1:\n%s", n, logs.String())
+		}
+	}
+	t.Run("repository", func(t *testing.T) { run(t, true) })
+	t.Run("folder in no repository", func(t *testing.T) { run(t, false) })
 }

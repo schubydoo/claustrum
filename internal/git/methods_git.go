@@ -41,6 +41,9 @@ func Handle(d *Deps, r *rpc.Request) rpc.Response {
 		return *bad
 	}
 	req.shadow = d.Shadow
+	if !offSwitchSet(req.Params) {
+		logSkippedGitDir()
+	}
 	// The daemon-wide window of gitWideLimit counts this request while it runs.
 	if offSwitchSet(req.Params) {
 		d.OffRequests.Add(1)

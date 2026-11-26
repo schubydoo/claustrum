@@ -347,29 +347,49 @@ func gitDirTrustFor(dir string) gitDirTrust {
 // daemonGitDirVerdict is gitDirTrustFor without the walk of daemonGitDirSkipped:
 // the verdict of the daemon's GIT_DIR when it is set.
 func daemonGitDirVerdict(dir string) gitDirTrust {
-	logSkippedGitDir()
 	return trustWithGitDir(dir, os.Getenv("GIT_DIR"))
 }
 
-// skippedGitDirLine is the log line of a daemon GIT_DIR that daemonGitDirSkipped
-// skips (87375cc7, measured on Windows).
-const skippedGitDirLine = "[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+// skippedGitDirLine and skippedCommonDirLine are the log lines of a daemon
+// GIT_DIR and GIT_COMMON_DIR that the Windows daemon ignores (87375cc7, measured
+// on Windows).
+const (
+	skippedGitDirLine    = "[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+	skippedCommonDirLine = "[GitHandler] GIT_COMMON_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names"
+)
 
 // skippedGitDirLogged is true once the daemon logged skippedGitDirLine.
 var skippedGitDirLogged atomic.Bool
 
-// logSkippedGitDir logs skippedGitDirLine once per daemon, at the trust check of
-// the first request, with daemonGitDirSkipped. 87375cc7 logs it once in a daemon
-// of five requests, before the line of the start test (measured on Windows). So
-// it does for a remove as the first request, and for a GIT_DIR in its 8.3 form,
-// in its long form and behind a junction. With no daemon GIT_DIR it logs none
-// (measured on Windows). A relative GIT_DIR and one that names no folder log
-// none (claustrum's own, not measured). The line of a first request with
-// "shadowDirOff":true or on a folder in no repository is claustrum's own too.
+// logSkippedGitDir logs skippedGitDirLine once per daemon, on Windows
+// (copyPinsWalkGitDir) with a daemon GIT_DIR that names a folder. It logs it at
+// the start of the first git request with no "shadowDirOff":true. A daemon
+// GIT_COMMON_DIR adds skippedCommonDirLine right before it. 87375cc7 logs them
+// so before the line of the start test, for an absolute and a relative GIT_DIR.
+// After a first git.info with "shadowDirOff":true it logs them in the second
+// request. With no daemon GIT_DIR it logs none (all measured on Windows). A
+// GIT_DIR that names no folder and a GIT_COMMON_DIR alone log none. The other
+// methods with "shadowDirOff":true count as that git.info (claustrum's own, not
+// measured).
 func logSkippedGitDir() {
-	if daemonGitDirSkipped() && skippedGitDirLogged.CompareAndSwap(false, true) {
-		logging.Infof(skippedGitDirLine)
+	if !copyPinsWalkGitDir || !gitDirNamesFolder() || !skippedGitDirLogged.CompareAndSwap(false, true) {
+		return
 	}
+	if daemonCommonDirSet() {
+		logging.Infof(skippedCommonDirLine)
+	}
+	logging.Infof(skippedGitDirLine)
+}
+
+// gitDirNamesFolder reports whether the daemon's GIT_DIR names a folder. A
+// relative value is taken from the daemon's working folder.
+func gitDirNamesFolder() bool {
+	gd := os.Getenv("GIT_DIR")
+	if gd == "" {
+		return false
+	}
+	fi, err := os.Stat(gd)
+	return err == nil && fi.IsDir()
 }
 
 // walkPairPin is the pin of the root pair of git.info (gitInfoRoot) for a
