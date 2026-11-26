@@ -294,6 +294,7 @@ func TestStatusCommonOfAnEntryThroughAJunction(t *testing.T) {
 // so a linked worktree through a junction is no false move. A folder that moved takes
 // the pin. Mutation: in pinnedCommonDir, drop the daemonCommonDirSet test.
 func TestPinnedCommonDirWithADaemonCommonDir(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	root := realTempDir(t)
 	base, other := filepath.Join(root, "base"), filepath.Join(root, "other")
 	for _, d := range []string{base, other} {

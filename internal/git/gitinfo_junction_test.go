@@ -147,6 +147,7 @@ func infoFrame(t *testing.T, root, branch, slug, defaultBranch string) string {
 // (measured on Windows). This overrules the rows of 89cb6289, whose walk kept the
 // spelled path. Mutation: in walkStart, drop the linkFreePath arm.
 func TestTrustWalkStartsAtRealPath(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	if runtime.GOOS == "windows" {
 		t.Skip("the cells run on real junctions in TestInfoThroughJunctionWindows")
 	}

@@ -103,9 +103,28 @@ var gitChildProgramNames = []string{
 // gitChildEnv is the daemon's own environment as a git child of the git methods
 // gets it, before the names that the call adds. The trace entries of
 // withTraceOff end it. The session folders are cut first (sessiondirs.CutPath),
-// and the names of sessiondirs.EditorNames go.
+// and the names of sessiondirs.EditorNames go. A daemon GIT_COMMON_DIR that the
+// requests ignore goes too (withoutIgnoredCommonDir).
 func gitChildEnv() []string {
-	return withTraceOff(cleanGitChildEnv(sessionCutDaemonEnv(), gitEnvHere), gitEnvHere)
+	return withTraceOff(withoutIgnoredCommonDir(cleanGitChildEnv(sessionCutDaemonEnv(), gitEnvHere)), gitEnvHere)
+}
+
+// withoutIgnoredCommonDir is env without its GIT_COMMON_DIR entries when the
+// requests ignore the daemon's GIT_COMMON_DIR (daemonVarsKept), and env itself
+// otherwise. 87375cc7 sends none on any call then, also outside a repository
+// (measured on Windows). On Windows the name matches in any letter case
+// (claustrum's own, not measured).
+func withoutIgnoredCommonDir(env []string) []string {
+	if daemonVarsKept() {
+		return env
+	}
+	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		name := envName(kv)
+		if gitEnvHere.windows {
+			name = strings.ToUpper(name)
+		}
+		return name == "GIT_COMMON_DIR"
+	})
 }
 
 // sessionCutDaemonEnv is the daemon's own environment with the session folders cut and

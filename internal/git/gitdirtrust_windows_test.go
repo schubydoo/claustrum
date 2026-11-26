@@ -3,9 +3,10 @@
 package git
 
 import (
-	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,59 +47,85 @@ func TestGitDirTrustCommondirWindowsSpelling(t *testing.T) {
 	}
 }
 
-// On Windows, with GIT_DIR=.git in the daemon's environment, a linked worktree's
-// `.git` file is trusted as a git directory that is not an entry. The daemon's own
-// tests of the git directory then refuse it, before any git call: its open as a
-// folder fails. 5fd08069 answers so on git.info, git.status, git.list_branches and
-// git.worktree_create with git 2.56 (measured on Windows), and on git.info with git 2.55. 89cb6289
-// answered the "no repository" shapes there (measured). The main worktree keeps its answer
-// (measured). Mutation: drop the test of a git directory that is a file (gitDirFilesDetail).
+// replyLines are the replies of rs, one line each.
+func replyLines(rs ...rpcReply) []string {
+	var out []string
+	for _, r := range rs {
+		line := string(r.Result)
+		if r.Error != nil {
+			line = fmt.Sprintf("error %d %s", r.Error.Code, r.Error.Message)
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// On Windows the requests ignore a relative daemon GIT_DIR=.git with no
+// "shadowDirOff":true (daemonVarsKept). git.info, git.status and
+// git.list_branches on a linked worktree and on its repository answer as with no
+// GIT_DIR. 87375cc7 answers git.info on a linked worktree so (measured on
+// Windows). Mutation: in gitDirTrustFor drop the walk for a verdict that is not
+// trusted.
 func TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows(t *testing.T) {
 	r := newTrustRepo(t)
+	replies := func() []string {
+		return replyLines(info(t, r.TW), status(t, r.TW, r.TW), listBranches(t, r.TW), info(t, r.T), listBranches(t, r.T))
+	}
+	want := replies()
+	if !strings.HasPrefix(want[0], `{"isRepo":true`) {
+		t.Fatalf("info(TW) with no GIT_DIR = %s", want[0])
+	}
 	t.Setenv("GIT_DIR", ".git")
-	want := "a file in this repository's .git directory cannot be used: open " + filepath.Join(r.TW, ".git") + ": not a directory"
-	wantRPCError(t, "info(TW)", info(t, r.TW), want)
-	wantRPCError(t, "status(TW)", status(t, r.TW, r.TW), want)
-	wantRPCError(t, "list_branches(TW)", listBranches(t, r.TW), want)
-	wantCreateRefused(t, r.TW, r.T, want)
-	wantResultPrefix(t, "info(T)", info(t, r.T), `{"isRepo":true`)
-	wantResultPrefix(t, "list_branches(T)", listBranches(t, r.T), `{"isRepo":true`)
+	if got := replies(); !slices.Equal(got, want) {
+		t.Errorf("replies = %q\nwant %q", got, want)
+	}
 }
 
 // The state of the test above on git.worktree_remove from baseRepo TW, in the state
-// shadow. The refusal is the reason of the lock-check text, and nothing is deleted
-// (measured on Windows, equal on 5fd08069 and claustrum). Mutation: drop the test
-// of a git directory that is a file (gitDirFilesDetail).
+// shadow. The remove deletes what it deletes with no GIT_DIR: the worktree folder
+// and its branch. 87375cc7 removes a worktree under a relative GIT_DIR as with
+// none (measured on Windows). Mutation: in gitDirTrustFor drop the walk for a
+// verdict that is not trusted.
 func TestGitDirTrustRelativeGitDirRemoveWindows(t *testing.T) {
-	r := newTrustRepo(t)
-	t.Setenv("GIT_DIR", ".git")
-	d, _ := newSeededShadowDeps(t)
-	got := trustCallOn(t, d, "git.worktree_remove", map[string]any{"baseRepo": r.TW, "worktreePath": r.SWW, "branchName": "s1"})
-	want, _ := json.Marshal(worktreeRemoveResult{Success: false, Error: "failed to remove worktree: could not check whether " + r.SWW +
-		" is locked: a file in this repository's .git directory cannot be used: open " + filepath.Join(r.TW, ".git") + ": not a directory"})
-	wantResult(t, "remove(TW,SWW)", got, string(want))
-	if !exists(r.SWW) {
-		t.Errorf("remove refused but deleted %s", r.SWW)
+	run := func(t *testing.T, withGitDir bool) string {
+		r := newTrustRepo(t)
+		if withGitDir {
+			t.Setenv("GIT_DIR", ".git")
+		}
+		d, _ := newSeededShadowDeps(t)
+		got := trustCallOn(t, d, "git.worktree_remove", map[string]any{"baseRepo": r.TW, "worktreePath": r.SWW, "branchName": "s1"})
+		return fmt.Sprintf("%s folder %v branch %v", replyLines(got)[0], exists(r.SWW), branchExists(t, r.T, "s1"))
 	}
-	if !branchExists(t, r.T, "s1") {
-		t.Errorf("remove refused but deleted branch s1")
+	var want, got string
+	t.Run("no GIT_DIR", func(t *testing.T) { want = run(t, false) })
+	t.Run("GIT_DIR", func(t *testing.T) { got = run(t, true) })
+	if !strings.HasPrefix(want, `{"success":true`) {
+		t.Fatalf("remove with no GIT_DIR = %s", want)
+	}
+	if got != want {
+		t.Errorf("remove = %s\nwant %s", got, want)
 	}
 }
 
-// A daemon GIT_DIR that names a regular file with no `gitdir:` line is refused by the
-// read of the config, with the error of its open as a folder. 5fd08069 answers so on
-// git.info and git.list_branches in T and on git.info in TW (measured on Windows).
-// Mutation: drop the test in readRepoConfig, or apply the class 2 refusal first.
+// A daemon GIT_DIR that names a regular file is ignored in the state shadow.
+// git.info and git.list_branches in T and git.info in TW answer as with no
+// GIT_DIR. 87375cc7 serves the repository so (measured on Windows). Mutation: in
+// gitDirTrustFor drop the walk for a verdict that is not trusted.
 func TestGitDirTrustDaemonGitDirPlainFileWindows(t *testing.T) {
 	r := newTrustRepo(t)
 	f := filepath.Join(r.base, "gitdir-file")
 	writeFile(t, f, "x", 0o644)
+	replies := func() []string {
+		d, _ := newSeededShadowDeps(t)
+		return replyLines(trustCallOn(t, d, "git.info", map[string]any{"path": r.T}),
+			trustCallOn(t, d, "git.list_branches", map[string]any{"path": r.T}),
+			trustCallOn(t, d, "git.info", map[string]any{"path": r.TW}))
+	}
+	want := replies()
 	t.Setenv("GIT_DIR", f)
-	d, _ := newSeededShadowDeps(t)
-	want := "this repository's git config cannot be used: open " + f + ": not a directory"
-	wantRPCError(t, "info(T)", trustCallOn(t, d, "git.info", map[string]any{"path": r.T}), want)
-	wantRPCError(t, "list_branches(T)", trustCallOn(t, d, "git.list_branches", map[string]any{"path": r.T}), want)
-	wantRPCError(t, "info(TW)", trustCallOn(t, d, "git.info", map[string]any{"path": r.TW}), want)
+	if got := replies(); !slices.Equal(got, want) {
+		t.Errorf("replies = %q\nwant %q", got, want)
+	}
 }
 
 // On Windows an entry replaced by a regular file is refused as an entry

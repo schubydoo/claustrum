@@ -76,6 +76,7 @@ const lockedText = "is locked (git worktree lock); unlock it to remove it"
 // Measured on Linux, macOS and Windows: the daemon has GIT_DIR and GIT_COMMON_DIR of
 // X. The folder goes. The entry s0 of T and the branch s0 of T stay.
 func TestWorktreeRemoveDaemonGitDirEndState(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	f := newRegFixture(t)
 	daemonGitEnv(t, gitDirOf(f.X), gitDirOf(f.X))
 	if raw := removeFrame(t, f.removeParams()); raw != removeOK {
@@ -96,6 +97,7 @@ func TestWorktreeRemoveDaemonGitDirEndState(t *testing.T) {
 // folder and the entry s0 of T go. X does not hold the commit of T here, so the
 // branch stays.
 func TestWorktreeRemoveDaemonCommonDirOnlyEndState(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	f := newRegFixture(t)
 	daemonGitEnv(t, "", gitDirOf(f.X))
 	if raw := removeFrame(t, f.removeParams()); raw != removeKept {
@@ -111,6 +113,7 @@ func TestWorktreeRemoveDaemonCommonDirOnlyEndState(t *testing.T) {
 // fixture, so the branch stays here. On macOS the fixture let 89cb6289 delete the
 // branch.
 func TestWorktreeRemoveDaemonCommonDirOnlySubfolderBase(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	f := newRegFixture(t)
 	sub := filepath.Join(f.T, "sub")
 	wt := filepath.Join(sub, ".claude", "worktrees", "p2b")
@@ -131,6 +134,7 @@ func TestWorktreeRemoveDaemonCommonDirOnlySubfolderBase(t *testing.T) {
 // Measured on Linux, macOS and Windows: the daemon has GIT_DIR of X and GIT_COMMON_DIR of a third repository Y. X holds an
 // entry zz whose record names S. The folder and the entry zz of X go, and the entry s0 of T stays.
 func TestWorktreeRemoveDaemonGitDirAndOtherCommonDir(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	f := newRegFixture(t)
 	y := filepath.Join(f.root, "Y")
 	runGit(t, f.root, "init", "-q", "-b", "yonly", y)
@@ -188,6 +192,7 @@ func TestWorktreeRemoveDaemonGitDirGoneLockedInBaseRepoIsRefused(t *testing.T) {
 // Measured on Linux, macOS and Windows: the same environment, and the lock is on an entry of X whose record names S. Both 89cb6289
 // and claustrum refuse and delete nothing.
 func TestWorktreeRemoveDaemonGitDirLockedInOtherRepoIsRefused(t *testing.T) {
+	keepDaemonVars(t) // the rule of Linux and macOS, also on Windows
 	f := newRegFixture(t)
 	zz := f.entry(f.X, "zz")
 	writeFile(t, filepath.Join(zz, "gitdir"), filepath.Join(f.S, ".git")+"\n", 0o644)

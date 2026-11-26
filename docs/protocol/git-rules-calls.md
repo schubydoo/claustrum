@@ -155,6 +155,9 @@ the check off.
 The repository calls are the configuration listings, the hardened calls,
 `worktree add`, the checkout and `git status`.
 
+- On Windows a call of a request with no `"shadowDirOff":true` carries no daemon
+  `GIT_COMMON_DIR`, also outside a repository (`87375cc7`, measured on Windows,
+  [the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows)).
 - The daemon's environment is cleaned for the repository calls and the calls of
   the start test, entry by entry, in this order. The calls of the start test, not its first `git version`,
   also get no `GIT_` variable of the daemon. Both rules are claustrum's own, not measured.

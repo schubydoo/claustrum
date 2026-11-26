@@ -127,7 +127,7 @@ Before any delete, the daemon checks the repository.
 - Without `worktreeRoot`, for a worktree directory that exists, a failed listing of the configuration runs once more. If the second try fails too, the text is `… is locked: <text of the failed listing>`. For a gone worktree directory there is no second try, and the text is `… is locked (<text>); retry`. The `git cannot run` text follows `is locked: ` there instead, with no `retry` (row 78).
 - Without `worktreeRoot`, in the state shadow, an answer of `git rev-parse --absolute-git-dir` that names another git directory gets one more call. A right second answer goes on. A wrong one gives `… is locked: <text>` after 4 calls, with the [disagree text](errors.md#the-texts), and nothing is deleted (`c9125eb8`, measured on Linux and Windows). These parts are claustrum's own, not measured:
     - macOS, and the content of calls 3 and 4.
-    - The ask runs only in the state shadow. It needs a trusted verdict that pins a git directory, and no daemon `GIT_DIR` or `GIT_COMMON_DIR`. An empty answer counts as before.
+    - The ask runs only in the state shadow. It needs a trusted verdict that pins a git directory, no daemon `GIT_DIR`, and no daemon `GIT_COMMON_DIR` that the request keeps ([the Windows rule](git-rules-trust.md#the-daemon-variables-on-windows)). An empty answer counts as before.
     - The text comes from the second call.
     - A failed second call gives the lock-check refusal after the repeated check. A copy that went on the second call gets it too.
     - For a linked worktree as `baseRepo`, the text names the entry of that worktree.

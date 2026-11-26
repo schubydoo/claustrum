@@ -48,6 +48,8 @@ func Handle(d *Deps, r *rpc.Request) rpc.Response {
 	if offSwitchSet(req.Params) {
 		d.OffRequests.Add(1)
 		defer d.OffRequests.Add(-1)
+		offRequestsLive.Add(1)
+		defer offRequestsLive.Add(-1)
 	}
 	// While a request with "shadowDirOff":true runs, every git request that
 	// starts, and each later git command of a request, run as with the member

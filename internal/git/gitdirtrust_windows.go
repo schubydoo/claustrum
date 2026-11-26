@@ -151,9 +151,9 @@ var startNameRefuses = func(err error) bool { return errors.Is(err, windows.ERRO
 // (walkStart). It is a variable so that a test can set it.
 var walkStartsAsSpelled = true
 
-// copyPinsWalkGitDir is true on Windows: with an absolute daemon GIT_DIR that names a
-// folder and no daemon GIT_COMMON_DIR a request with a copy runs as with no daemon
-// GIT_DIR (daemonGitDirSkipped).
+// copyPinsWalkGitDir is true on Windows: a request with a copy runs as with no daemon
+// GIT_DIR (daemonGitDirSkipped), and with no "shadowDirOff":true as with no daemon
+// GIT_COMMON_DIR too (daemonVarsKept).
 var copyPinsWalkGitDir = true
 
 // baseRepoWalksAsSpelled is true on Windows. The trust-root test of baseRepo and the
