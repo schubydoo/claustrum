@@ -161,7 +161,11 @@ A stray `commondir` is one in a git directory G that is not an entry: a main
   and the work tree of the walk (from the code, not measured). `git.status`, `git.list_branches` and
   `fallback-git` there are claustrum's own, not measured. `git.info` with `"shadowDirOff":true`
   keeps the verdict of that `GIT_DIR`, measured for a folder in no repository and
-  claustrum's own in a repository. The other methods with that switch, and `fallback-git`, follow the walk
+  claustrum's own in a repository. For 8.3 short folder names above the repository's `.git`,
+  `GIT_DIR` stays short. The two calls with `--git-dir=` take the long name there, in their
+  folder and in `GIT_COMMON_DIR` (`87375cc7`, measured on Windows). Another spelling of the same folder,
+  such as a junction, and a short name of `.git` itself are claustrum's own, not
+  measured. The other methods with that switch, and `fallback-git`, follow the walk
   (claustrum's own, not measured). In the state `shadow` the calls of a trusted walk follow it
   ([the git calls](git-rules-settings-copy.md#the-git-calls)). A refusal of that
   `GIT_DIR` stays (from the code). The daemon logs `[GitHandler] GIT_DIR from the helper's environment is ignored: on a Windows host the helper finds the repository from the folder that the app names`
