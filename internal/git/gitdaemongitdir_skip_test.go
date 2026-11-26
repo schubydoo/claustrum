@@ -204,7 +204,7 @@ func TestDaemonGitDirSkippedProbes(t *testing.T) {
 // such a request runs only an absolute daemon GIT_DIR that names a folder, with
 // no daemon GIT_COMMON_DIR, is skipped. Mutations: in daemonGitDirSkipped drop
 // the early return with no off switch, drop the tests of the value, or drop
-// `|| !filepath.IsAbs(gd)`.
+// the IsAbs test of absFolder.
 func TestDaemonGitDirSkippedNeedsAFolder(t *testing.T) {
 	setCopyPinsWalkGitDir(t, true)
 	clearFolderEnv(t)
