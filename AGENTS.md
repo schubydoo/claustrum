@@ -114,8 +114,8 @@ Windows lacks two methods: `files.find` and `files.mkdir`.
 
 ## Gotchas — Part A: always-on safety (hold these before touching code)
 
-Unmarked behavior follows the reference, pinned at `4c111e86`, except its
-terminal. It was measured there, on `c9125eb8`, `b3081b51`, `be1c1ca5` or an earlier build. A D-number,
+Unmarked behavior follows the reference, pinned at `87375cc7`, except its
+terminal. It was measured there, on `4c111e86`, `c9125eb8`, `b3081b51`, `be1c1ca5` or an earlier build. A D-number,
 "claustrum's own", "from the code" and "not measured" mark the exceptions. A
 rule that names another build follows that build. A file, function or Go API
 name describes claustrum's code, not a measurement.

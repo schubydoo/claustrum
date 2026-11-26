@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `87375cc7…` | 2026-11-11 (built) | the `unattendedSeconds` member of `process.spawn` and its unattended end, the `git_not_found` and `git_lfs_not_found` codes, the Windows members of `files.realpath` and new features. See below | [PRs 1280, 1283, 1304–1306, 1309, 1310, 1313–1315, 1319, 1320, 1323–1325, 1329, 1330, 1333–1336, 1339, 1340, 1342, 1344–1346, 1348, 1352, 1353, 1356–1362](https://github.com/schubydoo/claustrum/pull/1361) |
 | `4c111e86…` | 2026-11-08 (built) | the method `files.find`, the refusal of a given-up `id`, the `lost` list and the end of a lost private temp folder, new Git LFS codes of `git.worktree_create`, the unusable `.git` refusal, new launcher and peer check refusals and new features. See below | [PRs 1055, 1057, 1058, 1060–1065, 1068–1070, 1073–1076, 1078–1083, 1085, 1087–1092, 1094–1096, 1098–1101, 1105, 1106, 1108, 1109, 1111–1114, 1116–1118, 1120–1122, 1124, 1128, 1129, 1131–1133, 1136, 1138, 1139, 1142, 1144–1146](https://github.com/schubydoo/claustrum/pull/1146) |
 | `c9125eb8…` | 2026-11-02 (built) | the methods `files.mkdir` and `server.adoptEnv`, the `gitRead` and launcher members of `process.spawn`, the launcher file check, the adopt frame of the bridge, new git refusals and new `plugins.prune` skips. See below | [PRs 1008–1019, 1021–1041](https://github.com/schubydoo/claustrum/pull/1041) |
 | `b3081b51…` | 2026-10-30 (built) | new `server.capabilities` features, the launcher refusal of a value that is not a string, the session folders, the content check of a new worktree, new Windows git refusals and the `cliTempRoot` member. See below | [PRs 906, 907, 909–915, 920, 921, 923–927](https://github.com/schubydoo/claustrum/pull/927) |
@@ -44,6 +45,7 @@ release.
 
 | Reference SHA | Divergences opened | Divergences retired | Other divergence notes |
 |---|---|---|---|
+| `87375cc7…` | | D19 | |
 | `c9125eb8…` | | D16 | |
 | `b3081b51…` | D28 | | |
 | `be1c1ca5…` | | | D2 and D24 cover the staged add. A CT-7 cap that fires before the disk fills skips the second prune |
@@ -74,6 +76,126 @@ single measurements that fit no label above. **Divergences** names the entries o
 in** names the PRs. The baseline section has the header facts only. The forensics
 stay outside the committed tree. Correction of 2026-10-23: this paragraph said
 that each per-build section has three parts.
+
+### `87375cc7c944eb9d45c8d9267edc70a4b4827961` — 2026-11-11 (built)
+
+Its `-version` prints
+`claude-ssh 87375cc7c944eb9d45c8d9267edc70a4b4827961 (built 2026-11-11T18:52:12Z)`.
+Issue 1053 reported the build, pinned by Claude Desktop 5.11492.0 for Linux. It carries
+a `go1.25.14` stamp. The rules are on the pages of the methods and in
+[PROTOCOL.md](PROTOCOL.md). Each rule names its systems there.
+
+**Wire delta.** The frame battery ran `4c111e86` beside `87375cc7` on Linux, macOS and
+Windows. It showed these changes. Each item names the systems of its rows.
+
+- `process.spawn` takes the member
+  [`unattendedSeconds`](protocol/process-spawn.md#the-unattendedseconds-member-build-87375cc7).
+  A negative value, some other members and a CLI without `--no-session-persistence` get
+  `-32602`. A value that is no whole number gets `Invalid params` (PR 1280, measured on
+  Linux, macOS and Windows).
+- An accepted value above 0 arms [the unattended end](protocol/process-spawn.md#the-unattended-end-build-87375cc7)
+  of a child that no connection holds. Its exit frame carries `"killedBy":"unattended"`
+  (PRs 1305 and 1314, measured on Linux, macOS and Windows).
+- With no git that it can use, `git.worktree_create` answers
+  [`git_not_found`](protocol/git-worktree-create.md#response), where `4c111e86` answers
+  `not_a_repo` (measured on Linux and macOS). On Linux a git-lfs only on the login
+  shell's PATH gives `git_lfs_not_found` (PR 1304).
+- On Windows a `no_usable_name` or `too_many_links` reply of `files.realpath` gains
+  [`atLetter` or `stoppedShort`](protocol/files-realpath.md#windows-error-members) (PR
+  1283, measured on Windows).
+- `server.capabilities` lists [the new feature
+  names](protocol/server.md#names-of-87375cc7-that-claustrum-lists) (PRs 1306 and 1309,
+  measured on Linux, macOS and Windows).
+
+**Off-wire churn.** On Linux and macOS the daemon ends what an exited launcher left in
+its process group, unless `CLAUDE_SSH_LEAVE_GROUPS=1` is set ([the
+rules](protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7)). PRs
+1309, 1323, 1325 and 1333 follow its signals and its log lines. They are measured on
+Linux, and the end itself on macOS too.
+
+**Older gaps closed.** These fixes follow rows of `87375cc7`. Where an item names
+`4c111e86` too, a row of that build gave the same answer. The other items had no row of
+`4c111e86`, so the build of their change is not known.
+
+- With no git on its PATH, the daemon runs a git of [the login shell's
+  PATH](protocol/git-rules-calls.md#the-git-of-the-login-shells-path) (PR 1304, measured
+  on Linux and macOS).
+- At a shutdown on Linux and macOS, a plain child in [its exit
+  drain](protocol/server.md#a-child-in-its-exit-drain) gets one group `SIGKILL` (PR 1319,
+  `4c111e86` and `87375cc7`).
+- On Linux a shutdown does not wait 1 s for a child whose `SIGKILL` failed with `EPERM`,
+  in [the measured cases](DAEMON.md#child-records-and-the-reap-linux-and-macos) (PR 1334).
+- A refused group `KILL` of an ended child answers `-32603` (PR 1329, [rare
+  states](protocol/process-kill.md#rare-states), measured on Linux and macOS).
+- On Windows a keyed `pty` object gets [the refusal of the terminal
+  helper](protocol/process-spawn.md#a-keyed-pty-on-windows) (PR 1313, `4c111e86` and
+  `87375cc7`, measured on Windows).
+- A `gitRead` spawn skips [the SSH agent
+  hand-off](protocol/process-spawn.md#the-ssh-agent-hand-off-linux-and-macos) (PR 1310,
+  `4c111e86` and `87375cc7`, measured on Linux).
+- On macOS the [daemon log](DAEMON.md#daemon-log-remote-serverlog) gets the
+  `files.realpath` start line at each start, as on `4c111e86` and `87375cc7` (PR 1315). A
+  fast login shell logs its line first, as on `87375cc7` in most runs (PR 1335).
+- [The content check](protocol/git-worktree-create.md#the-content-check) asks git again
+  once its kept answer is 5 s old (PR 1336, `4c111e86` and `87375cc7`, measured on Linux).
+- At the `timeoutMs` deadline the content check kills its running helpers (PR 1320,
+  measured on Linux, macOS and Windows).
+- A failed hash of the commit in the content check answers
+  [`worktree_verify_retry`](protocol/git-worktree-create.md#content-check-refusals) (PR
+  1360, measured on Linux, macOS and Windows).
+- On macOS [the keep](protocol/git-worktree-create.md#the-keep) of the private LFS store
+  follows `87375cc7` (PR 1330, measured on macOS).
+- On Linux `git.worktree_create` makes its folders through handles, with [the modes and
+  texts](protocol/git-worktree-create.md#parent-folder-and-location-failures) of
+  `87375cc7` (PR 1342, measured on Linux).
+- On Windows a create that `timeoutMs` stops answers with no wait for a holder of
+  stdout ([time limits](protocol/git-rules-calls.md#time-limits-of-git-calls), PR 1339,
+  measured on Windows).
+- On Windows a junction in `baseRepo` leads the trust check, the remove and the create
+  rollback to the real git directory (PR 1324). The remove follows `4c111e86` and
+  `87375cc7` ([the paths](protocol/git-worktree-remove.md#where-the-paths-can-be)).
+- On Windows a remove refuses when its `.git` file becomes a link to a second repository
+  during the delete. That repository keeps its branch (PR 1358, [platform
+  notes](protocol/git-worktree-remove.md#platform-notes), measured on Windows).
+- On Windows a remove with no held git directory keeps both registrations in two states.
+  In each, `baseRepo` leads to another folder at the delete (PR 1344). Its reply text is
+  claustrum's own.
+- On Windows three states follow `87375cc7` (PRs 1340 and 1346, measured on Windows). They
+  are a create with a file or a junction at `worktrees`, and a remove with a refused
+  config. The third is a `git.info` whose stat fails with `ERROR_INVALID_NAME` ([where git
+  cannot start](protocol/git-rules-trust.md#where-git-cannot-start)).
+- On Windows a create runs its git calls in the order of `87375cc7`, also in
+  `fallback-git` (PRs 1345 and 1362, measured on Windows). See [the settings
+  copy](protocol/git-worktree-create.md#the-settings-copy).
+- On Windows a remove on a folder in no repository makes its listing and `rev-parse
+  --absolute-git-dir` once ([the repository
+  checks](protocol/git-worktree-remove.md#the-repository-checks), PR 1352, measured on
+  Windows).
+- On Windows, while no request with `shadowDirOff` runs, the git methods run as with no
+  daemon `GIT_DIR` and `GIT_COMMON_DIR`. One log line says so ([the
+  rules](protocol/git-rules-trust.md#the-daemon-variables-on-windows), PRs 1348, 1353,
+  1356, 1357, 1359 and 1361, measured on Windows).
+
+The other PRs of this work follow rows of `4c111e86`. Their rules name `4c111e86` on the
+pages of the methods.
+
+**How it was bounded.** The frame battery of the wire delta above ran before the fixes.
+Each difference that it showed maps to a fix, a known cause or an item below. Each PR
+ran its rows beside `87375cc7` after the fix, on its systems.
+
+These items stay open:
+
+- claustrum does not build the terminal: the `pty` member of `process.spawn` and the
+  method `process.resize`. On Linux and macOS a `pty` object with a key runs the command
+  with no terminal (claustrum's own). The maintainer holds the terminal until a Claude
+  Desktop build calls it.
+- The text of the ssh door in the `GIT_SSH_COMMAND` of the read-tree call differs from
+  the reference, by the maintainer's choice. A copy of that text is a copy of code by
+  the reference authors.
+- The pages of the methods mark each case that is claustrum's own or not measured.
+
+**Divergences.** The maintainer retired [D19](DIVERGENCES.md#d19) on 2026-11-23 to follow
+the reference (PR 1324).
 
 ### `4c111e86f743b90f84ee752123f94e2d239234ad` — 2026-11-08 (built)
 
