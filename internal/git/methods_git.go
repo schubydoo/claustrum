@@ -1162,9 +1162,9 @@ func gitListBranches(req *gitCall) rpc.Response {
 // `locked` file (4c111e86, measured on macOS). On 5fd08069 a missing folder gives none. b3081b51 and
 // c9125eb8 run the pair in the first create of a repository with no such folder (measured on Linux,
 // macOS and Windows, in the state shadow), so there a missing folder gives the pair (missingRuns).
-// With the member a missing folder still gives none: no row of those builds has it. The state
-// fallback-git gets no pair
-// (claustrum's own, not measured). For a linked baseRepo that folder is the one of the main repository
+// With the member a missing folder still gives none: no row of those builds has it. In the state
+// fallback-git a create without the member gets the pair on Windows (87375cc7, measured on Windows, with
+// a folder). Linux and macOS get none there (claustrum's own, not measured). For a linked baseRepo that folder is the one of the main repository
 // (gitDirRegistryDir, not measured). The calls come after `rev-parse --absolute-git-dir` and before
 // the listing of the add (measured on macOS and Windows). With a missing folder
 // they come after the listing of the add and right before the add on Linux and
@@ -1180,7 +1180,7 @@ func gitListBranches(req *gitCall) rpc.Response {
 // gives no pair, also when that folder holds a registration (measured on
 // Linux). A broken link and a file give none either (not measured). On
 // Windows a file or a junction there gives the pair, but not with the member
-// (87375cc7, measured on Windows, and 4c111e86 for the file). A directory
+// (87375cc7, measured on Windows). A directory
 // symbolic link there gets the same (claustrum's own, not measured).
 //
 // The calls are gitDirWorkTreeToplevel in the common git directory of gitDir.
@@ -1961,7 +1961,12 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// daemon GIT_COMMON_DIR skips the refusal below, so it gives no pair either
 	// (claustrum's own, not measured).
 	staleLockedPair := staleLocked && req.use.shadow() && !daemonCommonDirSet()
-	if (req.use.shadow() || bool(p.ShadowDirOff)) && (!staleMatched || staleGone || staleLockedPair) {
+	// On Windows the state fallback-git gives the pair without the member too.
+	// 87375cc7 runs it after `rev-parse --absolute-git-dir` and before the listing
+	// of the add, with a registrations folder (measured on Windows). Linux and
+	// macOS keep no pair there (claustrum's own, not measured).
+	fallbackPair := stagedAddWindowsSteps && !bool(p.ShadowDirOff) && !req.shadow.readsRepoConfig()
+	if (req.use.shadow() || bool(p.ShadowDirOff) || fallbackPair) && (!staleMatched || staleGone || staleLockedPair) {
 		// A request with "shadowDirOff":true gets no shadow use (settingsGate), so
 		// req.use.shadow() is false there (from the code).
 		pairFor = func(gitDir string) func() {
