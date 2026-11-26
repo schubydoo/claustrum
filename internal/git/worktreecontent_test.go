@@ -742,6 +742,48 @@ func TestContentCheckHashOfAnotherID(t *testing.T) {
 	}
 }
 
+// TestContentCheckHashOfCommitFails: with every hash-object call failing by
+// exit 1 and no stderr, the long-running one stops, and the separate `hash-object
+// --stdin -w` of the commit fails. That gives the retry code with the exit text,
+// the log line counts the commit as read, and the rollback runs (87375cc7,
+// measured on Windows).
+func TestContentCheckHashOfCommitFails(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
+	slowGit(t, "hash-object", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	logs := captureLogBuf(t)
+	raw, _ := f.create(t, nil)
+	commit := gitRevParse(t, f.repo, "HEAD")
+	hint := `Try again: git couldn't check what the repository stores for commit ` + commit[:12] + ` (exit status 1).`
+	if want := contentFrame(t, "worktree_verify_retry", hint); raw != want {
+		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
+	}
+	// The commit counts as read, and its separate read counts as one run.
+	if want := checkedLineSep("0", "files", 1, 1, commit, "refused: "+fmt.Sprintf("%q", strings.TrimSuffix(hint, "."))); !want.MatchString(logs.String()) {
+		t.Errorf("log:\n%s\nwant a line that matches %s", logs, want)
+	}
+	f.wantGone(t)
+}
+
+// TestContentCheckHashOfTreeFails: with the batch failing, a separate
+// `hash-object -t tree --stdin -w` that fails by exit 1 keeps the repository
+// code, and the rollback runs (claustrum's own, not measured).
+func TestContentCheckHashOfTreeFails(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "cat-file,--batch")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
+	slowGit(t, "hash-object,tree,--stdin,-w", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	raw, _ := f.create(t, nil)
+	commit := gitRevParse(t, f.repo, "HEAD")
+	hint := `Run "git fsck" in ` + fmt.Sprintf("%q", f.repo) + ` to check the repository: git couldn't read what it stores for commit ` +
+		commit[:12] + ` (exit status 1).`
+	if want := contentFrame(t, "worktree_verify_repository", hint); raw != want {
+		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
+	}
+	f.wantGone(t)
+}
+
 // TestContentCheckBodyNotWritten: a file of the object that cannot be written
 // sends that object to a separate `hash-object --stdin -w`, with no log line,
 // and the create matches. The long-running hash-object of each kind starts

@@ -543,7 +543,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 			case errors.Is(err, errContentDeadline):
 				return nil, err.Error()
 			case errors.Is(err, errNoHashHelper):
-				if text := c.writeObject("tree", t.id, body); text != "" {
+				if text, _ := c.writeObject("tree", t.id, body); text != "" {
 					return nil, text
 				}
 				c.read++
@@ -558,7 +558,7 @@ func (c *contentCheck) readLevel(level []*treeWalk) ([][]byte, string) {
 			hashing = false
 			c.depthEnded = true
 		}
-		body, text := c.readObject("tree", t.id)
+		body, text, _ := c.readObject("tree", t.id)
 		if text != "" {
 			return nil, text
 		}

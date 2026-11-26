@@ -263,7 +263,14 @@ func (c *contentCheck) run() (files []contentFile, refusal *contentRefusal) {
 	defer c.armDeadlineKill()()
 	c.startBatch()
 	defer c.stopBatch()
-	body, text := c.readObject("commit", c.commit)
+	body, text, hashFailed := c.readObject("commit", c.commit)
+	if hashFailed {
+		// With an exit of 1 the commit counts as read in the log line
+		// (87375cc7, measured on Windows). Any other failed hash of the commit
+		// counts it too (claustrum's own, not measured).
+		c.read++
+		return nil, c.hashRetryRefusal(text)
+	}
 	if text != "" {
 		return nil, c.repositoryRefusal(text)
 	}
@@ -388,6 +395,16 @@ func (c *contentCheck) repositoryRefusal(detail string) *contentRefusal {
 		c.repo, c.short(), detail)}
 }
 
+// hashRetryRefusal is the retry code for a separate `hash-object --stdin -w`
+// of the commit that fails. An exit of 1 with no stderr gives the detail "exit
+// status 1" (87375cc7, measured on Windows). Other failures and the trees are
+// claustrum's own, not measured.
+func (c *contentCheck) hashRetryRefusal(detail string) *contentRefusal {
+	return &contentRefusal{ErrorCode: "worktree_verify_retry", hint: fmt.Sprintf(
+		"Try again: git couldn't check what the repository stores for commit %s (%s).",
+		c.short(), detail)}
+}
+
 func (c *contentCheck) contentMismatch(name string) *contentRefusal {
 	return &contentRefusal{ErrorCode: "worktree_verify_content", hint: fmt.Sprintf(
 		"Check whether a filter that rewrites %q on checkout gives different output each time it runs: that file in the new worktree didn't match commit %s. Less often, two committed names that differ only in letter case, or a damaged repository (run \"git fsck\" in %q to check), cause this.",
@@ -474,9 +491,11 @@ func (c *contentCheck) askRepo() string {
 	return text
 }
 
-// failText is the detail of a failed call in the repository text. A stopped
-// call gives the stop text (measured on Linux, macOS and Windows). Any other
-// failure gives git's text (claustrum's own, not measured).
+// failText is the detail of a failed call in the repository text and in the
+// retry text of the commit hash. A stopped call gives the stop text (measured
+// on Linux, macOS and Windows for the repository text; claustrum's own, not
+// measured, for the retry text). Any other failure gives git's text
+// (claustrum's own, not measured).
 func failText(stderr string, err error) string {
 	if isGitStop(err) {
 		return err.Error()
@@ -489,49 +508,50 @@ func failText(stderr string, err error) string {
 // hash-object of the kind hashes it. After that git stopped, a separate run
 // reads the object again, and the batch runs on unused to the end of the
 // check (c9125eb8, measured on Linux). text is the detail of a failure, or "".
-func (c *contentCheck) readObject(kind, id string) (body []byte, text string) {
+// hashFailed reports a failed separate hash-object call.
+func (c *contentCheck) readObject(kind, id string) (body []byte, text string, hashFailed bool) {
 	body, stderr, err := c.catFile(kind, id)
 	if err != nil {
-		return nil, failText(stderr, err)
+		return nil, failText(stderr, err), false
 	}
 	if c.batch != nil && !c.stopped {
 		got, err := c.hashLong(kind, id, body)
 		switch {
 		case err == nil:
 			if text := hashText(kind, id, got); text != "" {
-				return nil, text
+				return nil, text, false
 			}
 			c.read++
-			return body, ""
+			return body, "", false
 		case errors.Is(err, errContentDeadline):
-			return nil, err.Error()
+			return nil, err.Error(), false
 		case c.endedByKill(err): // also a hash-object that fails by itself after the kill: its stop line is not written
-			return nil, errContentDeadline.Error()
+			return nil, errContentDeadline.Error(), false
 		case !errors.Is(err, errNoHashHelper):
 			logging.Infof(longStoppedLine, "hash-object", stopCause(err))
 			c.stopped = true
 			if body, stderr, err = c.catFile(kind, id); err != nil {
-				return nil, failText(stderr, err)
+				return nil, failText(stderr, err), false
 			}
 		}
 	}
-	if text := c.writeObject(kind, id, body); text != "" {
-		return nil, text
+	if text, failed := c.writeObject(kind, id, body); text != "" {
+		return nil, text, failed
 	}
 	c.read++
-	return body, ""
+	return body, "", false
 }
 
 // writeObject hashes body as an object of kind with a separate `hash-object
 // -t <kind> --literally --no-filters --stdin -w` into the folder of the check.
-// text is the detail of a failure, or "".
-func (c *contentCheck) writeObject(kind, id string, body []byte) string {
+// text is the detail of a failure, or "". failed reports a failed call.
+func (c *contentCheck) writeObject(kind, id string, body []byte) (text string, failed bool) {
 	out, stderr, err := c.git(c.repo, body, objectWriteEnv(c.objects),
 		"hash-object", "-t", kind, "--literally", "--no-filters", "--stdin", "-w")
 	if err != nil {
-		return failText(stderr, err)
+		return failText(stderr, err), true
 	}
-	return hashText(kind, id, strings.TrimSpace(string(out)))
+	return hashText(kind, id, strings.TrimSpace(string(out))), false
 }
 
 // hashText is the detail of an object of kind whose hash got is not its id,
@@ -890,7 +910,7 @@ func (c *contentCheck) compare(f contentFile) *contentRefusal {
 		}
 		// A failed or wrong hash of the blob refuses with the repository code
 		// (claustrum's own, not measured).
-		if text := c.writeObject("blob", f.id, blob); text != "" {
+		if text, _ := c.writeObject("blob", f.id, blob); text != "" {
 			return c.repositoryRefusal(text)
 		}
 		c.read++
