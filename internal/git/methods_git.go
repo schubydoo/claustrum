@@ -1180,7 +1180,7 @@ func gitListBranches(req *gitCall) rpc.Response {
 // gives no pair, also when that folder holds a registration (measured on
 // Linux). A broken link and a file give none either (not measured). On
 // Windows a file or a junction there gives the pair, but not with the member
-// (87375cc7, measured on Windows, and 4c111e86 for the file). A directory
+// (87375cc7, measured on Windows). A directory
 // symbolic link there gets the same (claustrum's own, not measured).
 //
 // The calls are gitDirWorkTreeToplevel in the common git directory of gitDir.

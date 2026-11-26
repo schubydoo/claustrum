@@ -130,10 +130,25 @@ func TestCreatePairInFallbackGit(t *testing.T) {
 }
 
 // wantFallbackPair runs a create in the state fallback-git and wants the pair
-// right after `rev-parse --absolute-git-dir`, or no pair.
+// right after `rev-parse --absolute-git-dir`, or no pair. It runs once with a
+// pair that works and once with a second call of the pair that fails. A failed
+// pair changes nothing, as in the state shadow
+// (TestCreatePairThatFailsChangesNothing): the create succeeds.
 func wantFallbackPair(t *testing.T, pair bool) {
 	t.Helper()
+	for _, fails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("the pair fails %v", fails), func(t *testing.T) {
+			wantFallbackPairOnce(t, pair, fails)
+		})
+	}
+}
+
+func wantFallbackPairOnce(t *testing.T, pair, fails bool) {
+	t.Helper()
 	f := newCheckoutRuleFixture(t)
+	if fails {
+		slowGit(t, "--show-toplevel,--work-tree="+f.repo, "fail", 0, "fatal: the stub fails the pair\n", "")
+	}
 	h := f.d.Shadow
 	h.mu.Lock()
 	h.state = controlFallback
