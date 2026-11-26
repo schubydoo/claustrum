@@ -742,6 +742,23 @@ func TestContentCheckHashOfAnotherID(t *testing.T) {
 	}
 }
 
+// TestContentCheckHashOfCommitFails: with every hash-object call failing by
+// exit 1 and no stderr, the long-running one stops, and the separate `hash-object
+// --stdin -w` of the commit fails. That gives the retry code with the exit text,
+// and the rollback runs (87375cc7, measured on Windows).
+func TestContentCheckHashOfCommitFails(t *testing.T) {
+	f := newContentFixture(t, map[string]string{"CLAUDE.md": "c\n"})
+	slowGit(t, "hash-object", "fail", 0, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "1")
+	raw, _ := f.create(t, nil)
+	commit := gitRevParse(t, f.repo, "HEAD")
+	hint := `Try again: git couldn't check what the repository stores for commit ` + commit[:12] + ` (exit status 1).`
+	if want := contentFrame(t, "worktree_verify_retry", hint); raw != want {
+		t.Errorf("git.worktree_create =\n%s\nwant\n%s", raw, want)
+	}
+	f.wantGone(t)
+}
+
 // TestContentCheckBodyNotWritten: a file of the object that cannot be written
 // sends that object to a separate `hash-object --stdin -w`, with no log line,
 // and the create matches. The long-running hash-object of each kind starts
