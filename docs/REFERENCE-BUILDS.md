@@ -184,16 +184,14 @@ fix, a known cause or an item below. Then the frame battery ran claustrum `3104b
 `87375cc7`, on Linux, macOS and Windows. It left out its slowest cases. Most differences
 it showed have a known cause. Some are the held terminal, the version text or a
 divergence. Some are a delete or a signal that its rule keeps in another call form. Some
-are claustrum's own, and two are known open gaps. The rest are noise such as a random
-name or timing. Three were bugs. PRs 1363, 1364 and 1365
+are claustrum's own, and a few are known differences that stay open. The rest are noise
+such as a random name or timing. Three were bugs. PRs 1363, 1364 and 1365
 fixed them after the battery, each with its own rows.
 
 These items stay open:
 
 - Some differences of that battery have no known cause yet. The round of the next build
-  measures them again. Two known gaps stay open too. In two Windows rows `87375cc7` keeps more in its
-  private folders than claustrum: a content-check folder after a kill, and `objects` in
-  its copy of the git directory.
+  measures them again.
 - claustrum does not build the terminal: the `pty` member of `process.spawn` and the
   method `process.resize`. On Linux and macOS a `pty` object with a key runs the command
   with no terminal (claustrum's own). The maintainer holds the terminal until a Claude
