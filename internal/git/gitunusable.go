@@ -241,7 +241,10 @@ func gitDirUnusable(g string) bool {
 // gitFileUnusable reports whether the `.git` file path in the folder holder names no
 // git directory that git can use: it has no `gitdir: ` line, or it names a missing
 // path, a file or a folder that gitDirUnusable refuses. A linked-worktree entry is
-// usable.
+// usable. On Windows a folder through a link to a network or device path is
+// unusable (hopsToDevice). With "shadowDirOff":true 87375cc7 answers so for a
+// directory symbolic link to `\\localhost\C$\...` (measured on Windows). Other
+// links and other device paths are claustrum's own, not measured.
 func gitFileUnusable(path, holder string) bool {
 	target, ok := readWalkGitFile(path, holder)
 	if !ok {
@@ -251,7 +254,7 @@ func gitFileUnusable(path, holder string) bool {
 	if err != nil {
 		return errors.Is(err, fs.ErrNotExist)
 	}
-	if !fi.IsDir() {
+	if !fi.IsDir() || networkLinkChecks && hopsToDevice(target) {
 		return true
 	}
 	if isWorktreeEntry(target) {

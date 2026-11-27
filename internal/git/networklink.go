@@ -286,6 +286,64 @@ const (
 	hopRooted
 )
 
+// gitFileLinkText is the text of 87375cc7 (measured on Windows). It names the
+// `.git` file cleaned, as networkLinkText names its path (claustrum's own, not measured).
+func gitFileLinkText(dotGit string) string {
+	return "Claude doesn't follow the path in `" + filepath.Clean(dotGit) + "` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive."
+}
+
+// gitFileLinkRefusal is the refusal of a request on dir whose walk (findGitDir)
+// finds a `.git` file that names a path through a link to a network or device
+// path (hopsToDevice), or "". 87375cc7 refuses git.info, git.status,
+// git.list_branches, git.worktree_create and git.worktree_remove so, with no git
+// call on the repository, for a junction to `\??\UNC\...` and for a directory
+// symbolic link to `\\localhost\C$\...` (measured on Windows). With
+// "shadowDirOff":true it gives no such text (measured), so the callers skip it
+// then. claustrum's own, not measured: a link that cannot be read, a rooted target
+// and a long chain pass here. A daemon GIT_DIR and the state fallback-git keep the
+// test (claustrum's own, not measured).
+func gitFileLinkRefusal(dir string) string {
+	if !networkLinkChecks {
+		return ""
+	}
+	if dir == "" {
+		dir = "."
+	}
+	start, err := walkStart(dir)
+	if err != nil {
+		return ""
+	}
+	if start, err = filepath.Abs(start); err != nil {
+		return ""
+	}
+	g, holder, ok := findGitDir(start)
+	if !ok || holder == "" {
+		return ""
+	}
+	dotGit := filepath.Join(holder, ".git")
+	if fi, err := os.Stat(dotGit); err != nil || !fi.Mode().IsRegular() || !hopsToDevice(g) {
+		return ""
+	}
+	return gitFileLinkText(dotGit)
+}
+
+// hopsToDevice reports whether the walk of linkHopRefusal on path meets a hop to
+// a network or device path (hopToDevice) before linkChainCap hops.
+func hopsToDevice(path string) bool {
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	for hops := 0; hops < linkChainCap; hops++ {
+		next, verdict := firstLinkHop(p)
+		if verdict != hopFollows || next == "" {
+			return verdict == hopToDevice
+		}
+		p = next
+	}
+	return false
+}
+
 // judgeLinkTarget judges the substitute name target of a link. relative is the
 // relative flag of a symbolic link. It returns the path that the link leads to when
 // the walk follows it. 4c111e86 and 87375cc7 answer so on Windows (measured):

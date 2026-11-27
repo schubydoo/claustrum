@@ -232,6 +232,7 @@ written in it` (`683cc6a9`, measured on Linux). In a git directory that the walk
 other failed Lstat of `<G>/commondir` but "does not exist" gets that text with the OS error and no
 path, as does a failed Stat of an entry G with no `commondir` (claustrum's own, as
 are macOS and Windows).
+On Windows, after [the `.git` file link test](git-rules-windows-paths.md#a-git-file-through-such-a-link), a G that a `.git` file names and whose Stat fails with `ERROR_INVALID_REPARSE_DATA` gets that text too. `87375cc7` answers so with `"shadowDirOff":true` for a junction to a UNC path (measured on Windows). A remove puts it after `is locked: `. Other Stat errors keep "no repository" (claustrum's own).
 
 ### A git directory that the daemon cannot search
 

@@ -106,6 +106,10 @@ type gitDirTrust struct {
 	// (settingsGate), as b3081b51 does (measured on Linux and macOS). Windows keeps
 	// the refusal (claustrum's own, not measured).
 	goneEnvGitDir bool
+	// statFailed is true for the refusal of a git directory that the walk found
+	// and whose stat failed with an error of walkStatRefuses. A remove puts its
+	// text after a colon (87375cc7, measured on Windows).
+	statFailed bool
 }
 
 // noRepoPin is the environment entry of a git call in a folder where the trust check
@@ -833,6 +837,14 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 			}
 			return gitDirTrust{pinCommonDir: g,
 				goneEnvGitDir: errors.Is(err, fs.ErrNotExist) && runtime.GOOS != "windows"}
+		}
+		// On Windows a stat that fails with ERROR_INVALID_REPARSE_DATA, as through a
+		// junction to a UNC path, gets the text of unexaminedGitDir. 87375cc7
+		// answers so with "shadowDirOff":true (measured on Windows, walkStatRefuses).
+		if walkStatRefuses(err) {
+			t, _ := unexaminedGitDir(err)
+			t.statFailed = true
+			return t
 		}
 		// A `.git` file that names a git dir which is gone. The calls of a removal
 		// carry GIT_COMMON_DIR=<that git dir> on 89cb6289 (measured on Linux and
