@@ -21,7 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
-| `87375cc7…` | 2026-11-11 (built) | the `unattendedSeconds` member of `process.spawn` and its unattended end, the `git_not_found` and `git_lfs_not_found` codes, the Windows members of `files.realpath` and new features. See below | [PRs 1280, 1283, 1304–1306, 1309, 1310, 1313–1315, 1319, 1320, 1323–1325, 1329, 1330, 1333–1336, 1339, 1340, 1342, 1344–1346, 1348, 1352, 1353, 1356–1362](https://github.com/schubydoo/claustrum/pull/1361) |
+| `87375cc7…` | 2026-11-11 (built) | the `unattendedSeconds` member of `process.spawn` and its unattended end, the `git_not_found` and `git_lfs_not_found` codes, the Windows members of `files.realpath` and new features. See below | [PRs 1280, 1283, 1304–1306, 1309, 1310, 1313–1315, 1319, 1320, 1323–1325, 1329, 1330, 1333–1336, 1339, 1340, 1342, 1344–1346, 1348, 1352, 1353, 1356–1365](https://github.com/schubydoo/claustrum/pull/1365) |
 | `4c111e86…` | 2026-11-08 (built) | the method `files.find`, the refusal of a given-up `id`, the `lost` list and the end of a lost private temp folder, new Git LFS codes of `git.worktree_create`, the unusable `.git` refusal, new launcher and peer check refusals and new features. See below | [PRs 1055, 1057, 1058, 1060–1065, 1068–1070, 1073–1076, 1078–1083, 1085, 1087–1092, 1094–1096, 1098–1101, 1105, 1106, 1108, 1109, 1111–1114, 1116–1118, 1120–1122, 1124, 1128, 1129, 1131–1133, 1136, 1138, 1139, 1142, 1144–1146](https://github.com/schubydoo/claustrum/pull/1146) |
 | `c9125eb8…` | 2026-11-02 (built) | the methods `files.mkdir` and `server.adoptEnv`, the `gitRead` and launcher members of `process.spawn`, the launcher file check, the adopt frame of the bridge, new git refusals and new `plugins.prune` skips. See below | [PRs 1008–1019, 1021–1041](https://github.com/schubydoo/claustrum/pull/1041) |
 | `b3081b51…` | 2026-10-30 (built) | new `server.capabilities` features, the launcher refusal of a value that is not a string, the session folders, the content check of a new worktree, new Windows git refusals and the `cliTempRoot` member. See below | [PRs 906, 907, 909–915, 920, 921, 923–927](https://github.com/schubydoo/claustrum/pull/927) |
@@ -100,7 +100,7 @@ item names the systems of its rows.
 - With no git that it can use, `git.worktree_create` answers
   [`git_not_found`](protocol/git-worktree-create.md#response), where `4c111e86` answers
   `not_a_repo` (measured on Linux and macOS, and on Windows for a missing `baseRepo`). On Linux a git-lfs only on the login
-  shell's PATH gives `git_lfs_not_found` (PR 1304).
+  shell's PATH, and not beside that git, gives `git_lfs_not_found` (PR 1304).
 - With no git on its PATH, the daemon runs a git of [the login shell's
   PATH](protocol/git-rules-calls.md#the-git-of-the-login-shells-path) (PR 1304, measured
   on Linux, and its skip line on macOS).
@@ -179,11 +179,12 @@ Linux, and the end itself on macOS too.
   1356, 1357, 1359 and 1361, measured on Windows).
 
 **How it was bounded.** Each difference that the diff of the wire delta showed maps to a
-fix, a known cause or an item below. Then the frame battery ran beside `87375cc7`, on Linux,
-macOS and Windows. It left out its slowest cases. Most differences
+fix, a known cause or an item below. Then the frame battery ran claustrum `3104b810` beside
+`87375cc7`, on Linux, macOS and Windows. It left out its slowest cases. Most differences
 it showed have a known cause. Some are the held terminal, the version text or a
-divergence. Some are a delete or a signal that its rule keeps in another call form. The
-rest are noise such as a random name or timing. Three were bugs. PRs 1363, 1364 and 1365
+divergence. Some are a delete or a signal that its rule keeps in another call form. Some
+are claustrum's own, and two are known open gaps. The rest are noise such as a random
+name or timing. Three were bugs. PRs 1363, 1364 and 1365
 fixed them after the battery, each with its own rows.
 
 These items stay open:
