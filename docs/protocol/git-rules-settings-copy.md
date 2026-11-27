@@ -31,8 +31,8 @@ sends it, and an error reply has none (Linux, macOS and Windows).
   `worktrees` of an existing git directory runs no test, and the reply has no member
   (Linux, macOS and Windows). A missing entry in a missing repository runs the test.
 - With no git in the daemon's `PATH`, `git.info` and (`4c111e86`, Linux) `git.list_branches`
-  on a repository answer "no repository" with no test. The daemon makes its
-  folder, with the lock file only. The member follows the daemon's state (not measured).
+  on a repository answer "no repository" with no test. These and `git.status`
+  make nothing in `git-shadow` (`87375cc7`, Linux, `git.info` after `git.list_branches`). The `git.info` member follows the daemon's state (not measured).
 - A `git.info` on a regular file gets the gate of the repository of its folder.
   Outside any repository it starts no test. As the first git request of a daemon its
   reply has no member on Linux and macOS. On Windows it is the hooks refusal,

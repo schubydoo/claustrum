@@ -17,17 +17,25 @@ func setStatusNoGitRunsTest(t *testing.T, on bool) {
 }
 
 // With no git on the PATH of the daemon, git.status answers isRepo:false with no
-// start test, twice. When git is back, the next request runs the test and keeps no
-// failure from before (Linux and macOS).
+// start test. When git is back, the next request runs the test and keeps no
+// failure from before (Linux and macOS). With no git, neither the main repository
+// nor a linked worktree as baseRepo makes git-shadow (87375cc7, measured on Linux).
+// Mutation: make the folder of the daemon (remakeFolder) in the no-git step of
+// gitStatus, and git-shadow is there.
 func TestGitStatusWithNoGitInThePath(t *testing.T) {
 	setStatusNoGitRunsTest(t, false)
 	f := newShadowFixture(t)
+	linked := filepath.Join(t.TempDir(), "w")
+	runGit(t, f.repo, "worktree", "add", "-q", "-b", "w981", linked)
 	withGit := os.Getenv("PATH")
 	t.Setenv("PATH", t.TempDir())
 	params := map[string]any{"path": f.repo, "baseRepo": f.repo}
-	for range 2 {
-		if raw, _ := f.call(t, "git.status", params); raw != statusNotRepo {
-			t.Errorf("git.status with no git = %s\nwant %s", raw, statusNotRepo)
+	for _, base := range []string{linked, f.repo, f.repo} {
+		if raw, _ := f.call(t, "git.status", map[string]any{"path": base, "baseRepo": base}); raw != statusNotRepo {
+			t.Errorf("git.status of %s with no git = %s\nwant %s", base, raw, statusNotRepo)
+		}
+		if _, err := os.Lstat(filepath.Join(f.run, shadowRootName)); !os.IsNotExist(err) {
+			t.Errorf("git-shadow after git.status of %s: %v, want no such folder", base, err)
 		}
 	}
 	t.Setenv("PATH", withGit)
