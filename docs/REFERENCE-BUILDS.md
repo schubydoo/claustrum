@@ -179,10 +179,17 @@ Linux, and the end itself on macOS too.
   1356, 1357, 1359 and 1361, measured on Windows).
 
 **How it was bounded.** Each difference that the diff of the wire delta showed maps to a
-fix, a known cause or an item below.
+fix, a known cause or an item below. Then the frame battery ran beside `87375cc7`, on Linux,
+macOS and Windows. It left out its slowest cases. Most differences
+it showed have a known cause. Some are the held terminal, the version text or a
+divergence. Some are a delete or a signal that its rule keeps in another call form. The
+rest are noise such as a random name or timing. Three were bugs. PRs 1363, 1364 and 1365
+fixed them after the battery, each with its own rows.
 
 These items stay open:
 
+- Some differences of that battery have no known cause yet. The round of the next build
+  measures them again.
 - claustrum does not build the terminal: the `pty` member of `process.spawn` and the
   method `process.resize`. On Linux and macOS a `pty` object with a key runs the command
   with no terminal (claustrum's own). The maintainer holds the terminal until a Claude
