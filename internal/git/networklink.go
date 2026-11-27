@@ -309,6 +309,11 @@ func gitFileLinkRefusal(dir string) string {
 	if dir == "" {
 		dir = "."
 	}
+	// A path that is not a folder gets no walk, so this test makes no resolve
+	// there (resolveWalkLinks). The trust check judges it (from the code).
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return ""
+	}
 	start, err := walkStart(dir)
 	if err != nil {
 		return ""
