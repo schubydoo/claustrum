@@ -167,8 +167,8 @@ Linux, and the end itself on macOS too.
   are a create with a file or a junction at `worktrees`, and a remove with a refused
   config. The third is a `git.info` whose stat fails with `ERROR_INVALID_NAME` ([where git
   cannot start](protocol/git-rules-trust.md#where-git-cannot-start)).
-- On Windows a create runs its git calls in the order of `87375cc7`, also in
-  `fallback-git` (PRs 1345 and 1362, measured on Windows). See [the settings
+- On Windows a create runs its git calls in the order of `87375cc7` in the rows that
+  its page tags (PRs 1345 and 1362, measured on Windows). See [the settings
   copy](protocol/git-worktree-create.md#the-settings-copy).
 - On Windows a remove on a folder in no repository makes its listing and `rev-parse
   --absolute-git-dir` once ([the repository
@@ -184,8 +184,8 @@ fix, a known cause or an item below. Then the frame battery ran claustrum `3104b
 `87375cc7`, on Linux, macOS and Windows. It left out its slowest cases. Most differences
 it showed have a known cause. Some are the held terminal, the version text or a
 divergence. Some are a delete or a signal that its rule keeps in another call form. Some
-are claustrum's own, and two are known open gaps. The rest are noise such as a random
-name or timing. Three were bugs. PRs 1363, 1364 and 1365
+are claustrum's own, and a few are known differences that stay open. The rest are noise
+such as a random name or timing. Three were bugs. PRs 1363, 1364 and 1365
 fixed them after the battery, each with its own rows.
 
 These items stay open:
