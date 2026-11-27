@@ -123,7 +123,7 @@ Linux, and the end itself on macOS too.
 
 **Older gaps closed.** These fixes follow rows of `87375cc7`. Where an item names
 `4c111e86` too, a row of that build gave the same answer. The other items had no row of
-`4c111e86`, so the build of their change is not known.
+`4c111e86`, so the build of their change is not known. They can be new in `87375cc7`.
 
 - At a shutdown on Linux and macOS, a plain child in [its exit
   drain](protocol/server.md#a-child-in-its-exit-drain) gets one group `SIGKILL` (PR 1319,
@@ -149,7 +149,8 @@ Linux, and the end itself on macOS too.
   [`worktree_verify_retry`](protocol/git-worktree-create.md#content-check-refusals) (PR
   1360, measured on Linux, macOS and Windows).
 - On macOS [the keep](protocol/git-worktree-create.md#the-keep) of the private LFS store
-  follows `87375cc7` (PR 1330, measured on macOS).
+  follows `87375cc7` in the rows that its page tags (PR 1330, measured on macOS). The
+  rest of the macOS keep is claustrum's own.
 - On Linux `git.worktree_create` makes its folders through handles, with [the modes and
   texts](protocol/git-worktree-create.md#parent-folder-and-location-failures) of
   `87375cc7` (PR 1342, measured on Linux).
