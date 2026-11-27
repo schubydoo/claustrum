@@ -167,8 +167,8 @@ Linux, and the end itself on macOS too.
   are a create with a file or a junction at `worktrees`, and a remove with a refused
   config. The third is a `git.info` whose stat fails with `ERROR_INVALID_NAME` ([where git
   cannot start](protocol/git-rules-trust.md#where-git-cannot-start)).
-- On Windows a create runs its git calls in the order of `87375cc7`, also in
-  `fallback-git` (PRs 1345 and 1362, measured on Windows). See [the settings
+- On Windows a create runs its git calls in the order of `87375cc7` in the rows that
+  its page tags (PRs 1345 and 1362, measured on Windows). See [the settings
   copy](protocol/git-worktree-create.md#the-settings-copy).
 - On Windows a remove on a folder in no repository makes its listing and `rev-parse
   --absolute-git-dir` once ([the repository
@@ -191,7 +191,7 @@ fixed them after the battery, each with its own rows.
 These items stay open:
 
 - Some differences of that battery have no known cause yet. The round of the next build
-  measures them again.
+  measures them again. Two known Windows gaps stay open too.
 - claustrum does not build the terminal: the `pty` member of `process.spawn` and the
   method `process.resize`. On Linux and macOS a `pty` object with a key runs the command
   with no terminal (claustrum's own). The maintainer holds the terminal until a Claude
