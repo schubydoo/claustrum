@@ -810,7 +810,7 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 	}
 	cmd := gitCommandContext(ctx, append(list, hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf
-	cmd.Env = env
+	cmd.Env = withShellPathGitFolder(env, cmd.Path)
 	// Own process group so the teardown below can SIGKILL the whole group and reap a
 	// descendant the checkout left holding the pipe.
 	cmd.SysProcAttr = sysproc.NewSysProcAttr()
