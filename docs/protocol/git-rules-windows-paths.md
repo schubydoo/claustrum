@@ -16,7 +16,7 @@ A `.git` file can name its entry through a junction to `\??\UNC\…` or a direct
 
 `` Claude doesn't follow the path in `<path>\.git` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. ``
 
-A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it and deletes nothing. With `"shadowDirOff":true` the junction gets [the hooks text that names the reparse error](git-rules-trust.md#trust-refusal-texts-and-frames). The symbolic link gets no link text, and a create there answers `` Git can't use `<path>\.git` `` (measured). Claustrum's own, not measured: only a hop to a network or device path refuses, and the place of the test.
+A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it and deletes nothing. With `"shadowDirOff":true` the junction gets [the hooks text that names the reparse error](git-rules-trust.md#trust-refusal-texts-and-frames). The symbolic link gets no link text, and a create there answers `` Git can't use `<path>\.git` `` (measured). Claustrum's own, not measured: only a hop to a network or device path refuses, the place of the test, and the test with a daemon `GIT_DIR` and in the state `fallback-git`.
 
 ### A folder that denies List
 
