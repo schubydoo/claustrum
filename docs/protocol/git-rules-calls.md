@@ -4,12 +4,11 @@ An untagged rule on this page matches build `5fd08069` or an earlier build. A se
 
 ## Hardened git calls
 
-Most git steps of the git methods are hardened calls: git calls
-with a fixed list of `-c` options and a fixed set of environment variables. The lists
+Most git steps of the git methods are hardened calls, with a fixed list of `-c` options
+and of environment variables. The lists
 and the variables follow `5fd08069`. The hook pins were measured against `f6010b97`,
 and their limits against `89cb6289`. A rule that names no system was measured on
-Linux, macOS and Windows. `internal/git/githarden.go` holds the lists, and
-`internal/git/githarden_shape_test.go` tests them. Each hardened call passes `-c core.fsmonitor=`
+Linux, macOS and Windows. Each hardened call passes `-c core.fsmonitor=`
 with an empty value (claustrum's own).
 
 Each hardened call passes no `-C`. Before each one, the daemon runs a config
@@ -17,7 +16,7 @@ listing (`git config -z --list`) with the profile of that call. Before its first
 listing, a request with no [kept value](git-rules-session-folders.md#the-off-switch) runs the excludes read, `git config
 --includes --path core.excludesFile` ([before a kept state](git-rules-session-folders.md#before-a-kept-state)). [Calls outside a repository](#calls-outside-a-repository)
 gives it and the `--attr-source` probe. On macOS a create in attach mode after a git.info runs one more
-listing in `baseRepo` right before the listing of its add. Without a git.info first it does the same (claustrum's own, not measured). On macOS, after a hold that ends at the
+listing in `baseRepo` right before the listing of its add. Without a git.info first that is claustrum's own, not measured. On macOS, after a hold that ends at the
 add, the create runs [the call about the repository](git-rules-settings-copy.md#the-call-about-the-repository)
 after the start test and before the read of the config. With a good answer, it makes no
 such call after it (`4c111e86`, measured on macOS for a checkout of a branch). An add of a commit id from `sourceBranch` keeps the call of its content check, after the read (claustrum's own, not measured). Linux keeps the call after the read, and
@@ -36,13 +35,13 @@ claustrum's own, not measured. There are two profiles:
 [The daemon's own git environment](#the-daemons-own-git-environment) gives the
 variables of the daemon that change these values. A variable that the daemon adds
 wins over the same variable of the daemon's own environment (measured on Linux and
-macOS). On Windows claustrum gives a git child its environment in name order. That
-is [D23](../DIVERGENCES.md#d23).
+macOS). On Windows a git child gets its environment in name order
+([D23](../DIVERGENCES.md#d23)).
 
 A client sees the hardening here:
 
 - `git.status` reads the real `HEAD` commit, also where `refs/replace` names another
-  (see [git.status](git-status.md#what-the-status-reads)).
+  ([git.status](git-status.md#what-the-status-reads)).
 - The failure texts of `git.worktree_create` hold no graft-file `hint:` lines: the
   light list turns them off. No `git.status` reply holds one either: its
   calls give only stdout to the reply.
@@ -54,7 +53,7 @@ A client sees the hardening here:
 - Each call that sets `core.hooksPath` passes `\\.\NUL` on Windows and `/dev/null` on Linux and macOS
   (`be1c1ca5`, measured on Linux and Windows, macOS not measured).
 - The config listings run with `LC_ALL=C` and `LANGUAGE=C`. git then writes its
-  listing errors in English (measured on Linux). The one exception is the second
+  listing errors in English (measured on Linux). The exception is the second
   listing before the checkout of a create in the state `shadow`, which adds
   `LANGUAGE=C` alone. The call after a listing keeps the daemon's `LC_ALL`,
   `LANGUAGE` and `LANG`. The checkout in the state `shadow` is an exception too: it
@@ -78,7 +77,7 @@ call. Each method answers these texts in its own error frame (see the
 | Hook names over 65536 bytes in sum | `config-defined hooks could not be pinned off; git not run: configured hook names exceed the aggregate pin byte bound` |
 
 A config value has no cap: 2 MiB passes. In some sections a key over 1024 bytes is
-refused before the listing (see [Repository config refusals](git-rules-config.md#repository-config-refusals)).
+refused before the listing ([Repository config refusals](git-rules-config.md#repository-config-refusals)).
 The limits refuse at the first listing only. In a folder that holds no repository, the
 first listing follows [The daemon's own git environment](#the-daemons-own-git-environment).
 There a limit refuses each method except `git.status`. That rule is from the code.
@@ -91,15 +90,15 @@ the code). A key
 dot, and it can be empty or hold dots. `hook.<var>` names no hook, and a hook key
 inside a value pins nothing. The call gets `hook.enabled=false` and an empty
 `hook.event`, and for each name `hook.<name>.enabled=false` and an empty
-`hook.<name>.event`. The pins go in through `GIT_CONFIG_COUNT` (see
-[The daemon's own git environment](#the-daemons-own-git-environment)). Only
+`hook.<name>.event`. The pins go in through `GIT_CONFIG_COUNT`
+([The daemon's own git environment](#the-daemons-own-git-environment)). Only
 `command` and `event` were measured as `<var>`.
 
 - A later listing over a limit does not refuse its call, which then gets
   only `hook.enabled=false` and an empty `hook.event` (from the code).
 - A later listing that fails refuses in three places:
-    - the two later listings of `git.status` (see
-      [git.status](git-status.md#rare-states)). This is measured on Linux in the git
+    - the two later listings of `git.status`
+      ([git.status](git-status.md#rare-states)). This is measured on Linux in the git
       directory, and from the code in the temporary folder.
     - the two listings before the checkout of a create in the state `shadow`
       (measured on Linux and macOS, see
@@ -108,7 +107,7 @@ inside a value pins nothing. The call gets `hook.enabled=false` and an empty
       of the checkout)
 - Two names that differ only in letter case get two pins. A name under two keys
   counts once toward the limits. The count is tested before the byte sum. These
-  three rules are from the code.
+  three are from the code.
 
 ## The git of the login shell's PATH
 
@@ -125,9 +124,14 @@ not measured).
 [sessiondirs] not using "<git>" from the login shell's PATH as Claude's git: not laid out as an install: not started (exec path ""). If this host has no other git, sessions here get no worktree. Claude uses a git on the system's own PATH, or one installed as <prefix>/bin/git with <prefix>/libexec/git-core or <prefix>/lib/git-core
 ```
 
+On `87375cc7` the filter of a create's checkout in the state `shadow` runs the git-lfs beside
+that git, also with another git-lfs first on the login PATH. That folder comes last on PATH
+(measured on Linux).
+
 Claustrum's own, not measured:
 
 - the walk past the first git on Linux, the rest of macOS, and no login shell on Windows
+- that folder on macOS and in the other states of a create. No other git call gets it
 - a git call waits for a read of that PATH that runs, as a spawn does, and never starts
   one. With no result there is no login git
 - the `--exec-path` call has a limit of 10 s. At the limit that one process gets a
@@ -144,9 +148,7 @@ Claustrum's own, not measured:
 
 ## The daemon's own git environment
 
-This section names the variables of the daemon's own environment that reach the
-git calls, and their refusals. A rule
-here holds on Linux, macOS and Windows, unless it names fewer systems. A git in a
+A rule here holds on Linux, macOS and Windows, unless it names fewer systems. A git in a
 [session folder](git-rules-session-folders.md) does not run, unless the request turns
 the check off.
 
@@ -407,10 +409,10 @@ git cannot parse it is from the code. "The count" below is the check of
   missing too, the "not reachable" refusal comes first. Each rule of this bullet
   is measured on Linux and macOS.
 
-These states are not measured. The rules are from the code.
+These states are from the code, not measured.
 
 - A listing in a folder that holds no repository passes, but it exceeds a limit
-  of the hook pins (see [Hardened git calls](#hardened-git-calls)).
+  of the hook pins ([Hardened git calls](#hardened-git-calls)).
   `git.info`, `git.list_branches` and `git.worktree_create` answer the limit
   refusal in their "refused" frames. `git.worktree_remove` answers it as `<text>`
   of its two frames in the table above. `git.status` answers
@@ -438,8 +440,8 @@ minutes (measured on Linux and macOS). Read-tree checkouts have no such limit.
   empty leaf. A stopped repository test of a create answers the stop text alone,
   with `worktree_add_failed` (measured on Linux). After a good add the rollback runs its
   own calls (measured on Linux and macOS). A stopped scan copies nothing, and the create succeeds.
-- While a `"shadowDirOff":true` request runs, no call of that request stops at
-  2 minutes. No call of another request stops at 2 minutes then either (measured on Linux). claustrum's own limit is then 30 minutes.
+- While a `"shadowDirOff":true` request runs, no call of it or of another request
+  stops at 2 minutes (measured on Linux). claustrum's own limit is then 30 minutes.
 - `timeoutMs` does not end the add. With `"shadowDirOff":true` it does not end
   the listing before the checkout either (measured on Linux).
 - With no `timeoutMs` a reply waits 2 s after git exits for a child that holds
@@ -480,7 +482,7 @@ against `89cb6289` on Linux.
 The step runs `for-each-ref`, `rev-parse --verify`, `rev-list` and
 `update-ref`. Each runs in `baseRepo` after its own configuration listing. It
 carries the light `-c` list and the six values of the heavy profile, in an order
-of their own (see [Hardened git calls](#hardened-git-calls)) (measured on Linux, macOS and
+of their own ([Hardened git calls](#hardened-git-calls)) (measured on Linux, macOS and
 Windows).
 
 ### Which branch the step deletes

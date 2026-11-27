@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/schubydoo/claustrum/internal/logging"
@@ -49,6 +50,27 @@ func lfsNotFoundForShellPathGit(stderr string) bool {
 		}
 	}
 	return false
+}
+
+// withShellPathGitFolder is env with the folder of git last on its PATH, when git
+// is the git of the login-shell PATH (ShellPathGit). The read-tree call of a
+// create gets it, so that a filter finds a git-lfs beside that git. In the state
+// shadow 87375cc7 runs the git-lfs beside that git, also with another git-lfs
+// first on the login-shell PATH, and the folder comes last on the PATH of the
+// filter (measured on Linux). Claustrum's own, not measured: macOS, the other
+// states of a create, and the PATH of the other git calls.
+// gitChildEnv drops an empty PATH, so each PATH entry here holds a folder.
+func withShellPathGitFolder(env []string, git string) []string {
+	if git == "" || git != ShellPathGit() {
+		return env
+	}
+	out := slices.Clone(env)
+	for i, kv := range out {
+		if envName(kv) == "PATH" {
+			out[i] = kv + string(filepath.ListSeparator) + filepath.Dir(git)
+		}
+	}
+	return out
 }
 
 // logLFSNotFound logs lfsNotFoundLine with the text of the failed checkout.
