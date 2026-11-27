@@ -585,4 +585,4 @@ A start that returns after the shutdown began gets no reply. Windows ends its ch
 - [D20](../DIVERGENCES.md#d20): the 50 ms wait in the reap before the `SIGKILL` of a group whose leader reads as gone.
 - [D23](../DIVERGENCES.md#d23): the Windows environment order.
 
-claustrum lacks the terminal of the pinned `4c111e86`. On Linux and macOS a `pty` object with a valid key runs the command with no terminal (claustrum's own). On Windows `c8e2f083` refuses `pty` with `-32602` (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
+claustrum lacks the terminal of the pinned `87375cc7`. On Linux and macOS a `pty` object with a valid key runs the command with no terminal (claustrum's own). On Windows `c8e2f083` refuses `pty` with `-32602` (measured on Windows, [open items](../REFERENCE-BUILDS.md#52d82f0a28317830ccacea80f6f4aac1d7563353-2026-10-09-built)).
