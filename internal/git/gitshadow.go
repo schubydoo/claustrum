@@ -390,23 +390,6 @@ func (h *ShadowHost) forgetRepoAnswers(t gitDirTrust, dir string) {
 	staleRepoVerdict(cfg)
 }
 
-// folderWithNoTest makes the folder of this daemon when it is not there, and
-// runs no test. It is the step of a git.info, a git.list_branches and (Linux,
-// macOS) a git.status on a host with no git (gitInfo, gitListBranches, gitStatus).
-// A folder that cannot be made is not measured: the request goes on.
-func (h *ShadowHost) folderWithNoTest() {
-	if !h.active() {
-		return
-	}
-	h.testMu.Lock()
-	defer h.testMu.Unlock()
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if !h.closed {
-		h.remakeFolder()
-	}
-}
-
 // keptFailure is the text of a failed test that is still kept, or "". It changes
 // nothing and runs no test.
 func (h *ShadowHost) keptFailure() string {

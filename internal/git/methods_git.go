@@ -379,15 +379,14 @@ func gitInfo(req *gitCall) rpc.Response {
 		gateTrust, gateDir, gate = ft, filepath.Dir(p.Path), inFile
 	}
 	// With no git in the PATH of the daemon, 5fd08069 answers "no repository"
-	// with no member, runs no test and logs no line about git. Its folder holds
-	// the lock file only (measured on Linux, 3 of 3 runs). git.list_branches takes
-	// the same step (gitListBranches, 4c111e86). git.status takes it on Linux and
-	// macOS. On Windows it runs a start test and keeps no failure (statusNoGitRunsTest).
+	// with no member, runs no test and logs no line about git (measured on Linux,
+	// 3 of 3 runs). After a git.list_branches, 87375cc7 makes nothing in git-shadow
+	// there (measured on Linux). Neither do git.list_branches and git.status (gitListBranches, gitStatus). On
+	// Windows git.status runs a start test and keeps no failure (statusNoGitRunsTest).
 	// A request with "shadowDirOff":true is not measured either, and it keeps its answer. The
 	// settingsControl member follows the state of the daemon: a daemon that
 	// passed its test before it lost git is not measured.
 	if gate && !bool(p.ShadowDirOff) && gitLookupError() != nil {
-		req.shadow.folderWithNoTest()
 		return notRepo()
 	}
 	if gate {
@@ -865,15 +864,14 @@ func gitStatus(req *gitCall) rpc.Response {
 	if msg := statusSourceRefusal(t.pinCommonDir, bool(p.ShadowDirOff)); msg != "" {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
-	// With no git on the PATH of the daemon, a linked worktree answers isRepo:false
+	// With no git on the PATH of the daemon, a folder baseRepo answers isRepo:false
 	// (statusNoGitRunsTest). Elsewhere than Windows no start test runs, so no failure
-	// is kept, and as in git.info the folder of the daemon is made (not measured). A
-	// baseRepo that is no folder and the off switch are not measured: they keep the gate.
+	// is kept. The main repository and a linked worktree make nothing in git-shadow
+	// (87375cc7, measured on Linux). macOS is not measured for the folder.
+	// A baseRepo that is no folder and the off switch are not measured: they keep the gate.
 	if fi, err := os.Stat(p.BaseRepo); err == nil && fi.IsDir() && !bool(p.ShadowDirOff) && gitLookupError() != nil {
 		if statusNoGitRunsTest {
 			_ = req.shadow.gate(false)
-		} else {
-			req.shadow.folderWithNoTest()
 		}
 		return notRepo
 	}
@@ -1105,11 +1103,10 @@ func gitListBranches(req *gitCall) rpc.Response {
 		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 	}
 	// With no git in the PATH of the daemon, a request with no "shadowDirOff":true
-	// answers the "no repository" shape, runs no start test and makes the folder of
-	// the daemon, as git.info does (4c111e86, measured on Linux and macOS, the folder
-	// on Linux). Windows is not measured.
+	// answers the "no repository" shape and runs no start test (4c111e86, measured
+	// on Linux and macOS). It makes nothing in git-shadow (87375cc7, measured on
+	// Linux). macOS and Windows are not measured for the folder.
 	if !bool(p.ShadowDirOff) && gitLookupError() != nil {
-		req.shadow.folderWithNoTest()
 		return rpc.OKResult(req.ID, rpc.BranchesReply{Branches: []string{}})
 	}
 	// The daemon's own read of the repository's config comes before the listing

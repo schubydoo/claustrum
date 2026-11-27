@@ -485,9 +485,12 @@ func TestShadowTestCallsDropNamespaceAndIndexFile(t *testing.T) {
 }
 
 // With no git in the PATH of the daemon, git.info answers "no
-// repository" with no member, runs no test and logs no line about git. The
-// folder of the daemon holds the lock file only, and the next request gets
-// the same reply. 5fd08069 answers so in 3 of 3 runs (measured).
+// repository" with no member, runs no test and logs no line about git, and the
+// next request gets the same reply. 5fd08069 answers so in 3 of 3 runs
+// (measured). Neither request makes git-shadow (87375cc7 after a
+// git.list_branches, measured on Linux).
+// Mutation: make the folder of the daemon (remakeFolder) in the no-git step of
+// gitInfo, and git-shadow is made.
 func TestGitInfoWithNoGitInThePath(t *testing.T) {
 	f := newShadowFixture(t)
 	logs := captureLogBuf(t)
@@ -501,8 +504,8 @@ func TestGitInfoWithNoGitInThePath(t *testing.T) {
 			t.Errorf("%d git calls with no git", len(calls))
 		}
 	}
-	if got := entryNames(t, daemonFolder(t, f.run)); !slices.Equal(got, []string{shadowLockName}) {
-		t.Errorf("folder of the daemon holds %v, want the lock file only", got)
+	if _, err := os.Lstat(filepath.Join(f.run, shadowRootName)); !os.IsNotExist(err) {
+		t.Errorf("git-shadow after the requests: %v, want no such folder", err)
 	}
 	if strings.Contains(logs.String(), "[GitHandler]") {
 		t.Errorf("log lines of the git handler:\n%s", logs.String())
@@ -511,10 +514,11 @@ func TestGitInfoWithNoGitInThePath(t *testing.T) {
 
 // With no git in the PATH of the daemon, git.list_branches answers the "no
 // repository" shape and runs no test, also after a first request with
-// "shadowDirOff":true, and with "sessionFoldersOff":true. The folder of the daemon
-// holds the lock file only. The first request makes no folder. 4c111e86 answers
-// so (measured on Linux, the reply on macOS). Mutation: drop the no-git step of
-// gitListBranches, and the start test answers its cannot-run text.
+// "shadowDirOff":true, and with "sessionFoldersOff":true. 4c111e86 answers so
+// (measured on Linux, the reply on macOS). No request makes git-shadow (87375cc7,
+// measured on Linux). Mutation: drop the no-git step of gitListBranches, and the
+// start test answers its cannot-run text. Make the folder there (remakeFolder), and
+// git-shadow is made.
 func TestGitListBranchesWithNoGitInThePath(t *testing.T) {
 	f := newShadowFixture(t)
 	t.Setenv("PATH", t.TempDir())
@@ -533,7 +537,7 @@ func TestGitListBranchesWithNoGitInThePath(t *testing.T) {
 			t.Errorf("git.list_branches %v = %s after %d git calls\nwant %s after none", extra, raw, len(calls), want)
 		}
 	}
-	if got := entryNames(t, daemonFolder(t, f.run)); !slices.Equal(got, []string{shadowLockName}) {
-		t.Errorf("folder of the daemon holds %v, want the lock file only", got)
+	if _, err := os.Lstat(filepath.Join(f.run, shadowRootName)); !os.IsNotExist(err) {
+		t.Errorf("git-shadow after the requests: %v, want no such folder", err)
 	}
 }
