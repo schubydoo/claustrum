@@ -131,7 +131,8 @@ that git, also with another git-lfs first on the login PATH. That folder comes l
 Claustrum's own, not measured:
 
 - the walk past the first git on Linux, the rest of macOS, and no login shell on Windows
-- that folder on macOS and in the other states of a create. No other git call gets it
+- that folder on macOS and in the other states of a create. No other git call gets it.
+  With no daemon PATH left, the read-tree call gets no PATH and no folder
 - a git call waits for a read of that PATH that runs, as a spawn does, and never starts
   one. With no result there is no login git
 - the `--exec-path` call has a limit of 10 s. At the limit that one process gets a
