@@ -10,6 +10,14 @@ On Windows `b3081b51` refuses a repository path through a symlink or junction to
 
 `git.status`, `git.info` and `git.list_branches` answer `-32603`, and a create `"errorCode":"worktree_add_failed"` with no folder or branch. A remove answers `"success":false` and deletes nothing (`4c111e86`, measured on Windows with a junction to a volume GUID path). A SUBST or mapped drive and a UNC path with no link on a share that answers pass (measured on Windows). Claustrum's own, not measured: `git.status` tests `baseRepo` alone, a refused `"shadowDirOff":true` request, the place after the chain test and the cleaned path.
 
+### A `.git` file through such a link
+
+A `.git` file can name its entry through a junction to `\??\UNC\…` or a directory symbolic link to `\\localhost\C$\…`. Without `"shadowDirOff":true` all five methods refuse it with no git call on the repository (`87375cc7`, measured on Windows). The text names the `.git` file:
+
+`` Claude doesn't follow the path in `<path>\.git` on a Windows host: it goes through a symlink or junction to a network or device path, so git wasn't run. Replace that link with a folder on a local drive. ``
+
+A remove puts `failed to remove worktree: could not check whether <worktreePath> is locked: ` before it and deletes nothing. With `"shadowDirOff":true` the junction gets [the hooks text that names the reparse error](git-rules-trust.md#trust-refusal-texts-and-frames). The symbolic link gets no link text, and a create there answers `` Git can't use `<path>\.git` `` (measured). Claustrum's own, not measured: only a hop to a network or device path refuses, the place of the test, and the test with a daemon `GIT_DIR` and in the state `fallback-git`.
+
 ### A folder that denies List
 
 A folder on the real path of the request that denies List fails the trust-root walk (`87375cc7`, measured on Windows). `git.status` and `git.list_branches` answer no repository with no git call. A create gets `nested_base_repo`, and a remove the same text. On a local drive `git.info` still reads the repository, and on a share it answers no repository. A denied folder past a junction is off the real path, and the request goes on (measured). A path with no link gets the same test in local, deeper, 8.3, share and share-root layouts (measured).

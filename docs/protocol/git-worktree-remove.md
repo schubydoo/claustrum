@@ -209,6 +209,7 @@ A gone worktree directory is no error by itself. After the repository checks, th
     - An alternates file with Windows line endings, `..` after a junction (`4c111e86`) or too many object directories gets `… is locked: <text>`, and nothing is deleted, also for a gone worktree folder (measured on Windows). [Object sources](git-rules-trust.md#the-object-sources-on-windows). A daemon `GIT_ALTERNATE_OBJECT_DIRECTORIES`, also for a gone folder but not with `worktreeRoot`: [Object sources](git-rules-trust.md#the-object-sources-on-windows).
     - An `IO_REPARSE_TAG_WIM` `.git` gets `… is locked: <text>` (`4c111e86`, measured on Windows). [Reparse tags](git-rules-windows-paths.md#a-folder-with-a-reparse-tag-that-is-no-link).
     - A `baseRepo` through a junction to a volume GUID path gets [the device link refusal](git-rules-windows-paths.md#a-link-to-a-network-or-device-path), and nothing is deleted (`4c111e86`, measured on Windows).
+    - A `.git` file through a link to a UNC path gets `… is locked: <text>`, and nothing is deleted (`87375cc7`, measured on Windows). That holds without `"shadowDirOff":true`, and with it through a junction. [The rule](git-rules-windows-paths.md#a-git-file-through-such-a-link).
     - A `\\?\UNC\` `baseRepo` or a refused share gets `"success":false`. [UNC refusals](git-rules-windows-paths.md#unc-refusals).
 
 ## Rare states

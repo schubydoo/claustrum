@@ -223,6 +223,11 @@ func gitInfo(req *gitCall) rpc.Response {
 		if msg := networkLinkRefusal(p.Path); msg != "" {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
+		// So is a `.git` file that names a path through such a link, unless
+		// "shadowDirOff" is true (87375cc7, measured on Windows, gitFileLinkRefusal).
+		if msg := gitFileLinkRefusal(p.Path); msg != "" && !bool(p.ShadowDirOff) {
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+		}
 	}
 	// notRepo is the "no repository" answer. It carries the settingsControl member
 	// that the request has at that moment (ShadowHost.replyControl): none before a
@@ -820,6 +825,12 @@ func gitStatus(req *gitCall) rpc.Response {
 	// The read of the user's excludes comes next, so it also runs before a trust
 	// refusal (measured on Linux).
 	globalExcludesPath()
+	// On Windows a `.git` file that names a path through a link to a network or
+	// device path is refused, unless "shadowDirOff" is true (87375cc7, measured on
+	// Windows, gitFileLinkRefusal).
+	if msg := gitFileLinkRefusal(p.BaseRepo); msg != "" && !bool(p.ShadowDirOff) {
+		return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+	}
 	// The git-directory trust check runs on baseRepo, not on path (gitdirtrust.go).
 	// The count check comes after a trust refusal and before the "no repository"
 	// answer.
@@ -1040,6 +1051,11 @@ func gitListBranches(req *gitCall) rpc.Response {
 	// (87375cc7, measured on Windows, linkHopRefusal).
 	if p.Path != "" {
 		if msg := linkHopRefusal(p.Path); msg != "" {
+			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
+		}
+		// So is a `.git` file that names a path through such a link, unless
+		// "shadowDirOff" is true (87375cc7, measured on Windows, gitFileLinkRefusal).
+		if msg := gitFileLinkRefusal(p.Path); msg != "" && !bool(p.ShadowDirOff) {
 			return rpc.ErrResult(req.ID, rpc.CodeInternal, msg)
 		}
 	}
@@ -1292,6 +1308,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 	// on Windows, networkLinkRefusal). No folder and no branch is made (measured on
 	// Windows).
 	if msg := networkLinkRefusal(repo); msg != "" {
+		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	}
+	// So is a `.git` file that names a path through such a link, unless
+	// "shadowDirOff" is true (87375cc7, measured on Windows, gitFileLinkRefusal).
+	if msg := gitFileLinkRefusal(repo); msg != "" && !bool(p.ShadowDirOff) {
 		return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
@@ -3217,6 +3238,13 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 	if msg := linkHopRefusal(repo); msg != "" {
 		return refuse(msg)
 	}
+	// A `.git` file that names a path through a link to a network or device path is
+	// refused after the lock-check words, with no git call and no delete, unless
+	// "shadowDirOff" is true (87375cc7, measured on Windows, gitFileLinkRefusal). Its
+	// place before the other tests of the remove is claustrum's own, not measured.
+	if msg := gitFileLinkRefusal(repo); msg != "" && !bool(p.ShadowDirOff) {
+		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
+	}
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
 	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
 	// The reference was measured on macOS (`f6010b97`, measured).
@@ -3469,8 +3497,10 @@ func gitWorktreeRemoveLocked(req *gitCall, p *gitParams, repo string) rpc.Respon
 			// macOS and Windows). On Windows a stray commondir that is not a small plain
 			// file answers so too (removeNamesStrayFile). Every other refusal keeps the
 			// lock-check text (not measured on b3081b51).
+			// So does a failed stat of the git directory (gitDirTrust.statFailed,
+			// 87375cc7, measured on Windows).
 			if strings.HasSuffix(t.refusal, strayShapeTail) || strings.HasSuffix(t.refusal, strayContentTail) ||
-				(removeNamesStrayFile && strings.HasSuffix(t.refusal, strayFileTail)) {
+				(removeNamesStrayFile && strings.HasSuffix(t.refusal, strayFileTail)) || t.statFailed {
 				return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + t.refusal)
 			}
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -4166,6 +4196,11 @@ func removeGoneWorktree(req *gitCall, p *gitParams, repo, path string) rpc.Respo
 			return keptAll()
 		}
 		t := requestGitDirTrust(repo, false)
+		// A failed stat of the git directory puts its text after a colon
+		// (gitDirTrust.statFailed, 87375cc7, measured on Windows).
+		if t.verdict == gitDirRefused && t.statFailed {
+			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + t.refusal)
+		}
 		if t.verdict == gitDirRefused {
 			return lockCheck(t.refusal)
 		}

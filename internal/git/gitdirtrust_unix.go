@@ -18,6 +18,9 @@ const openNonBlocking = syscall.O_NONBLOCK
 // replaced by a file and a GIT_DIR that names a `.git` file. Measured against f6010b97 on Linux.
 const nonDirGitDirIsNoRepo = true
 
+// walkStatRefuses is false on Linux and macOS. A variable, so that a test can take that step.
+var walkStatRefuses = func(error) bool { return false }
+
 // registrationsLinkRefused is true on Linux and macOS. A registrations folder
 // (`<git dir>/worktrees`) that is a symbolic link then takes no delete. A remove
 // refuses it (measured on Linux and macOS).

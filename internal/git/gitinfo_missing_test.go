@@ -89,3 +89,25 @@ func TestMissingPathListingStopKeepsTheReply(t *testing.T) {
 		t.Errorf("git.info = %s\nwant %s", raw, noRepoLine)
 	}
 }
+
+// The same steps with the Windows link tests on (networkLinkChecks). The test of
+// a `.git` file through a network link (gitFileLinkRefusal) makes no resolve of a
+// path that is not a folder, so the second resolve is still the pin of the
+// listing. Mutation: in gitFileLinkRefusal, drop the folder test before
+// walkStart. The folder then appears at the trust check, and git runs more
+// than the listing there.
+func TestMissingPathInfoReachesTheListingStartWithLinkChecks(t *testing.T) {
+	old := networkLinkChecks
+	networkLinkChecks = true
+	t.Cleanup(func() { networkLinkChecks = old })
+	TestMissingPathInfoReachesTheListingStart(t)
+}
+
+// TestMissingPathListingStopKeepsTheReply with the Windows link tests on, as in
+// TestMissingPathInfoReachesTheListingStartWithLinkChecks.
+func TestMissingPathListingStopKeepsTheReplyWithLinkChecks(t *testing.T) {
+	old := networkLinkChecks
+	networkLinkChecks = true
+	t.Cleanup(func() { networkLinkChecks = old })
+	TestMissingPathListingStopKeepsTheReply(t)
+}

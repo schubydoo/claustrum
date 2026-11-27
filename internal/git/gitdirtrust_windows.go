@@ -27,6 +27,15 @@ const registrationsLinkRefused = false
 // entryLinkRefusedLate is false on Windows (that rule is measured on Linux only).
 const entryLinkRefusedLate = false
 
+// walkStatRefuses reports whether err, the failed stat of a git directory that
+// the walk found, is ERROR_INVALID_REPARSE_DATA (judgeGitDir). A variable, so
+// that a test on another system can take that step. It must never accept a
+// "does not exist" error: unexaminedGitDir gives no text for one, and judgeGitDir
+// would then trust the git directory.
+var walkStatRefuses = func(err error) bool {
+	return errors.Is(err, windows.ERROR_INVALID_REPARSE_DATA)
+}
+
 // gitDirPartUsable is the test of `objects` and `refs` in the git-directory test
 // (isGitDirShape). On Windows the entry only has to exist, of any type. With
 // `objects` as a plain file, 52d82f0a answers git.info as a repository there
