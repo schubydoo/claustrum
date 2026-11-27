@@ -219,3 +219,65 @@ func TestGitFileThroughNetworkLinkIsUnusable(t *testing.T) {
 		t.Errorf("test off: %q", g)
 	}
 }
+
+// gitFileLinkRefusal gives no refusal where the walk finds no `.git` file, or
+// where its target has no hop to a network or device path. A folder with no
+// repository, a bare repository, a `.git` file with a local link or none, a link
+// that cannot be read, a chain of linkChainCap hops and a walk start that fails
+// pass (claustrum's own, not measured).
+func TestGitFileLinkRefusalPasses(t *testing.T) {
+	root := realTempDir(t)
+	plain := filepath.Join(root, "plain")
+	bare := filepath.Join(root, "bare.git")
+	for _, d := range []string{plain, filepath.Join(bare, "objects"), filepath.Join(bare, "refs")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(bare, "HEAD"), "ref: refs/heads/main\n", 0o644)
+	// A `.git` file in W names its git directory through the link L.
+	w := filepath.Join(root, "W")
+	if err := os.MkdirAll(filepath.Join(root, "G", "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "L")
+	symlinkOrSkip(t, filepath.Join(root, "G"), link)
+	if err := os.MkdirAll(w, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(w, ".git"), "gitdir: "+filepath.Join(link, "x")+"\n", 0o644)
+	// The same link refuses with a target on a share: the cases below differ only
+	// in the one step that each names.
+	fakeLinkTargets(t, map[string]string{link: `\??\UNC\localhost\share`})
+	if got := gitFileLinkRefusal(w); got != gitFileLinkText(filepath.Join(w, ".git")) {
+		t.Fatalf("through a link to a share: %q", got)
+	}
+	for _, c := range []struct {
+		name    string
+		dir     string
+		targets map[string]string
+	}{
+		{"a folder with no repository", plain, map[string]string{link: `\??\UNC\localhost\share`}},
+		{"a bare repository", bare, map[string]string{link: `\??\UNC\localhost\share`}},
+		{"a local link", w, map[string]string{link: "rel:G"}},
+		{"a link that cannot be read", w, map[string]string{}},
+		{"a chain of linkChainCap hops", w, map[string]string{link: "rel:L"}},
+	} {
+		fakeLinkTargets(t, c.targets)
+		if got := gitFileLinkRefusal(c.dir); got != "" {
+			t.Errorf("%s: %q", c.name, got)
+		}
+	}
+	fakeLinkTargets(t, map[string]string{link: `\??\UNC\localhost\share`})
+	old := resolveWalkLinks
+	resolveWalkLinks = func(p string) (string, error) {
+		if p == w {
+			return "", errors.New("no resolve")
+		}
+		return old(p)
+	}
+	t.Cleanup(func() { resolveWalkLinks = old })
+	if got := gitFileLinkRefusal(w); got != "" {
+		t.Errorf("a walk start that fails: %q", got)
+	}
+}
