@@ -191,7 +191,9 @@ fixed them after the battery, each with its own rows.
 These items stay open:
 
 - Some differences of that battery have no known cause yet. The round of the next build
-  measures them again. Two known Windows gaps stay open too.
+  measures them again. Two known gaps stay open too. In two Windows rows `87375cc7` keeps more in its
+  private folders than claustrum: a content-check folder after a kill, and `objects` in
+  its copy of the git directory.
 - claustrum does not build the terminal: the `pty` member of `process.spawn` and the
   method `process.resize`. On Linux and macOS a `pty` object with a key runs the command
   with no terminal (claustrum's own). The maintainer holds the terminal until a Claude
