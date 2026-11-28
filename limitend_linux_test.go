@@ -247,6 +247,9 @@ func TestLimitEndSweepsALeftProcess(t *testing.T) {
 		t.Fatal("no end at the limit")
 	}
 	s.closeAll(sock)
+	if strings.Contains(buf.String(), "can't be shown to lead") {
+		t.Errorf("the socket line came for a socket path that leads here:\n%s", buf.String())
+	}
 	wantLinesInOrder(t, buf.String(),
 		"[Server] shutdown requested",
 		"[Server] cleanup: ended 1 more process(es) that the children had started and left",
@@ -257,6 +260,44 @@ func TestLimitEndSweepsALeftProcess(t *testing.T) {
 			t.Fatalf("the left process %d still runs after the sweep", pid)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestLimitEndSocketGoneSkipsTheSweep: at the end at the limit a socket path that is
+// gone or holds a regular file gives the line of 13047a51, and no sweep runs. The left
+// process stays alive (measured on Linux).
+func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		replace bool
+	}{{"gone", false}, {"regular_file", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, sock := limitLineServer(t)
+			pid := leaveOneProcess(t, s, sock)
+			if err := os.Remove(sock); err != nil {
+				t.Fatal(err)
+			}
+			if tc.replace {
+				if err := os.WriteFile(sock, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			buf := captureLogBuf(t)
+			var w selfExitWatch
+			if !s.selfExitCheck(sock, &w, time.Duration(s.lastAttended.Load())+16*time.Minute) {
+				t.Fatal("no end at the limit")
+			}
+			s.closeAll(sock)
+			wantLinesInOrder(t, buf.String(),
+				"[Server] socket path "+sock+" can't be shown to lead to this helper any more, so only its children's own process groups are ended: what has left one may still be running",
+				"[Server] shutdown requested")
+			if strings.Contains(buf.String(), "that the children had started and left") {
+				t.Errorf("a sweep ran for a socket path that no longer leads here:\n%s", buf.String())
+			}
+			if !processLives(pid) {
+				t.Errorf("the left process %d ended, but the socket path no longer leads here", pid)
+			}
+		})
 	}
 }
 
@@ -311,10 +352,10 @@ func TestLimitEndAfterAnotherShutdown(t *testing.T) {
 // TestLimitEndLosesTheRace: another path takes the one start of the shutdown after the
 // begun test of limitEnd. Then limitEnd logs no line and sets no mark.
 func TestLimitEndLosesTheRace(t *testing.T) {
-	s, _ := limitLineServer(t)
+	s, sock := limitLineServer(t)
 	buf := captureLogBuf(t)
 	s.once.Do(func() {}) // the start is taken, and the shutdown channel is still open
-	if s.limitEnd(0, time.Duration(s.lastAttended.Load())+time.Hour) {
+	if s.limitEnd(sock, 0, time.Duration(s.lastAttended.Load())+time.Hour) {
 		t.Error("limitEnd reported a start that another path took")
 	}
 	if strings.Contains(buf.String(), "nobody has used this helper") || strings.Contains(buf.String(), "shutdown requested") || s.limitStopped.Load() {

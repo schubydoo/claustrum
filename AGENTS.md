@@ -281,7 +281,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   without a measured row.
 - **The end at the unattended limit** (Linux, 13047a51, `limitEnd`, [the rule](docs/DAEMON.md#the-end-at-the-limit)). With a limit from the host
   settings file and no connection for that long, the daemon stops by the shutdown path. The sweep above runs after its group kills.
-  Never widen: start it only on Linux, only with that limit and no client. Run the sweep only after this end, never with `-keep-children`.
+  Never widen: start it only on Linux, only with that limit and no client. Run the sweep only after this end, never with `-keep-children`, and none when the socket path no longer leads to the daemon.
 
 #### The private temp folder of a spawn
 

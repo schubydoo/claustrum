@@ -110,7 +110,7 @@ func (s *server) watchSocketOwnership(socket string) {
 func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duration) bool {
 	clients := s.connCount()
 	// The end at the unattended limit comes first (limitend.go). That order is not measured.
-	if s.limitEnd(clients, now) {
+	if s.limitEnd(socket, clients, now) {
 		return true
 	}
 	// The idle exit comes before the orphan checks, so a check where both exits are due

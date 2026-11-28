@@ -34,7 +34,7 @@ import (
 // limitEnd ends the daemon at the check at the time now (monoNow) when the limit is due.
 // clients is the number of connected clients at that check. It returns true once it
 // started the shutdown.
-func (s *server) limitEnd(clients int, now time.Duration) bool {
+func (s *server) limitEnd(socket string, clients int, now time.Duration) bool {
 	if !limitEndRuns || s.hostLimit.minutes <= 0 || clients > 0 || s.shutdownBegun() {
 		return false
 	}
@@ -50,11 +50,24 @@ func (s *server) limitEnd(clients int, now time.Duration) bool {
 		started = true
 		logging.Warnf("[Server] nobody has used this helper or been connected to it for %s, and the unattended limit in force is %d minutes (%s): shutting down and killing %d child process(es)",
 			alone.Truncate(time.Second), s.hostLimit.minutes, s.hostLimit.path, s.procs.AliveCount())
+		if !s.socketLeadsHere(socket) {
+			logging.Warnf("[Server] socket path %s can't be shown to lead to this helper any more, so only its children's own process groups are ended: what has left one may still be running", socket)
+			s.limitNoSweep.Store(true)
+		}
 		logging.Infof("[Server] shutdown requested")
 		s.limitStopped.Store(true)
 		s.beginShutdown()
 	})
 	return started
+}
+
+// socketLeadsHere is true while the socket path names the socket that this daemon bound.
+// 13047a51 logs the line of limitEnd and runs no sweep for a socket path that is gone,
+// a regular file, or a link to the socket of another daemon (measured on Linux). A stat
+// error counts as such a path, and no self-probe runs (claustrum's own, not measured).
+func (s *server) socketLeadsHere(socket string) bool {
+	cur, err := os.Stat(socket)
+	return err == nil && s.sockInfo != nil && os.SameFile(cur, s.sockInfo)
 }
 
 // shutdownBegun is true once the shutdown started.
@@ -99,9 +112,10 @@ func (s *server) noteAttended() { s.lastAttended.Store(int64(monoNow())) }
 // at the limit. closeAll calls it right after the group kills. 13047a51 logs its line
 // after the exit lines of the children and before the cleanup line, and logs none after
 // server.shutdown or the orphan end (measured on Linux). With -keep-children no sweep
-// runs, because the children stay (claustrum's own, not measured).
+// runs, because the children stay (claustrum's own, not measured). Nor does one run for a
+// socket path that no longer leads here (socketLeadsHere).
 func (s *server) sweepAfterLimit() {
-	if !s.limitStopped.Load() || s.keepChildren || s.procs.RunDir == "" {
+	if !s.limitStopped.Load() || s.limitNoSweep.Load() || s.keepChildren || s.procs.RunDir == "" {
 		return
 	}
 	n, err := leftsweep.Run(s.procs.RunDir)

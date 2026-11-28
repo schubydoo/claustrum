@@ -559,11 +559,15 @@ Measured on Linux against `13047a51`:
 - The group of each live child gets a `SIGKILL`, and the first line counts the live children.
 - A child with `stream-json` in its args, a bare `git` too, gets `SIGTERM` first. Its group gets the `SIGKILL` about 1.5 s later.
 - Then [the left-process sweep](#the-left-process-sweep-13047a51-linux) runs. Its line comes before the cleanup line.
+- A socket path that is gone, a regular file or a link to the socket of another daemon gets the third line below. Then no sweep runs.
 
 ```
 [Server] nobody has used this helper or been connected to it for 15m59s, and the unattended limit in force is 15 minutes (/etc/claude-desktop-ssh/settings.json): shutting down and killing 3 child process(es)
 [Server] cleanup: ended 3 more process(es) that the children had started and left
+[Server] socket path <run dir>/rpc.sock can't be shown to lead to this helper any more, so only its children's own process groups are ended: what has left one may still be running
 ```
+
+The third line comes right after the first. A failed stat of the socket path counts as such a path, and no self-probe runs (claustrum's own, not measured).
 
 `13047a51` sends that group `SIGKILL` twice, from two threads within 1 ms, for a `ccd-cli` or launcher spawn. Claustrum sends it once (claustrum's own).
 

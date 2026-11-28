@@ -127,9 +127,11 @@ type server struct {
 
 	// lastAttended is monoNow at the last connection close, or at the start of the
 	// daemon. limitStopped is set when the end at the unattended limit started the
-	// shutdown. Both belong to limitEnd (limitend.go).
+	// shutdown. limitNoSweep is set when that end found a socket path that no longer
+	// leads here. All three belong to limitEnd (limitend.go).
 	lastAttended atomic.Int64
 	limitStopped atomic.Bool
+	limitNoSweep atomic.Bool
 
 	// offGitRequests counts the git requests with "shadowDirOff":true that have
 	// not answered yet (gitWideLimit and gitCall.offLive).
