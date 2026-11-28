@@ -510,12 +510,14 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   group no signal. For a spawn with no group end, a member of the group that still
   lives with its own stdio stays alive. A launcher spawn with the end on gets [its group
   end](protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7) before
-  that frame. A child that is still there 1.5 s after the `SIGTERM` gets the group
+  that frame, and so does [a Claude Code spawn](protocol/process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51)
+  since `13047a51`. A child that is still there 1.5 s after the `SIGTERM` gets the group
   `SIGKILL`, as on the reference. No frame changes.
 - **Reference.** `b3081b51` also sends the group `SIGKILL` after the exit of such a
   child (measured on Linux). In the measured runs the group was empty, and the call
   answered `ESRCH`. For such a child with no launcher, `87375cc7` sends it to a group
   whose member has its own stdio, and that member ends (measured on Linux and macOS).
+  `13047a51` sends it there too (measured on Linux, 4 of 4 runs).
 - **Systems and switch.** Linux and macOS. Off-wire, always on, no switch. Windows
   sends no `SIGTERM` at a shutdown.
 - **Cost.** With no group end, a process that the child left in its group with its own
@@ -523,7 +525,8 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   holds back the exit frame. A [plain spawn](protocol/server.md#which-spawns-get-it) whose leader stayed in its group then gets the group `SIGKILL` before its exit frame, as on
   `87375cc7` (measured on Linux and macOS). That also ends a member on its own stdio, and a
   reused group number takes the signal (`87375cc7`, measured on Linux). Another spawn with no launcher gets the `SIGKILL` at 1.5 s only if the shutdown sent it a `SIGTERM`, also a refused one (from the code).
-- **Rule.** Approved by the maintainer on 2026-11-04. After the exit frame the group
+- **Rule.** Approved by the maintainer on 2026-11-04, and narrowed to follow the group end
+  of a Claude Code of `13047a51` on 2026-11-28. After the exit frame the group
   can be empty, and its number can then name another process. A `SIGKILL` there
   cannot be taken back, the same shape as [D20](#d20).
 - **Reopen trigger.** A client needs such a group member ended at a shutdown. Or a

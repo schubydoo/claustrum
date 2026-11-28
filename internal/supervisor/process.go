@@ -215,7 +215,8 @@ type Proc struct {
 	// tempRootTermed once the SIGTERM of that end went out.
 	tempRootEnd, tempRootTermed bool
 	tempRootKilled              atomic.Bool
-	// endsGroup is set once at spawn: a launcher spawn on Linux or macOS while
+	// endsGroup is set once at spawn: a launcher spawn, or a Claude Code spawn of
+	// cliExitEndsGroup, on Linux or macOS while
 	// CLAUDE_SSH_LEAVE_GROUPS is not 1. The exit goroutine then ends what the leader
 	// left in its group (launchergroup_unix.go). leaderHeld is true, under p.mu, while
 	// that end on Linux holds the unreaped leader. It clears before the wait.
@@ -238,7 +239,7 @@ type Proc struct {
 	// group, endAsked and a client KILL after the leader's exit send together.
 	groupKillClaimed groupKillClaim
 	// plainGroupEnd is set once at spawn: a spawn with no launcher, gitRead, link, temp
-	// folder, pty or unattended time, the shape of the rows of killGroupInOpenDrain.
+	// folder, pty, unattended time or group end, the shape of the rows of killGroupInOpenDrain.
 	// outPipes are the read ends of its stdout and stderr. leaderKeptGroup is set under
 	// p.mu before the reap: the exited leader still led the group of the spawn.
 	// pipesHeldAtGrace is set under p.mu when the drain grace ends with a pipe held.
@@ -379,7 +380,7 @@ type Manager struct {
 	JobTest *JobTest
 
 	// LeaveGroups is set once at the start of the daemon, by CLAUDE_SSH_LEAVE_GROUPS=1.
-	// A launcher spawn then gets no end of its group (launchergroup_unix.go).
+	// A launcher or Claude Code spawn then gets no end of its group (launchergroup_unix.go).
 	LeaveGroups bool
 	// KeepChildren is -keep-children, set once at the start of the daemon. A shutdown
 	// then sends no signal to the group of an exited launcher.
@@ -847,9 +848,10 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	p.sweepKilledGroup.Store(true)
 }
 
-// launcherLeaderGone reports that p is a launcher spawn whose leader has exited: seen
-// and held on Linux, reaped on macOS. endAsked counts such a child as exited (87375cc7,
-// measured on Linux and macOS).
+// launcherLeaderGone reports that p is a spawn with the group end (a launcher, or a
+// Claude Code of cliExitEndsGroup) whose leader has exited: seen and held on Linux,
+// reaped on macOS. endAsked counts such a child as exited (87375cc7 for a launcher,
+// measured on Linux and macOS, and claustrum's own for a Claude Code).
 func (p *Proc) launcherLeaderGone() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1439,7 +1441,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		sessionKey:  sessionKey,
 		askEnd:      argsAskEnd(args),
 		tempRootEnd: tempRoot.End,
-		endsGroup:   launcher != nil && LauncherGroupEndBuilt && !m.LeaveGroups,
+		endsGroup:   (launcher != nil || cliExitEndsGroup(command, tempRoot, gitRead != nil)) && LauncherGroupEndBuilt && !m.LeaveGroups,
 		keepsGroup:  m.KeepChildren,
 		subs:        map[*conn.Conn]struct{}{c: {}},
 		running:     true,
@@ -1456,7 +1458,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		unheldTTL:  unheld,
 		stopsBegan: &m.startsStopped,
 	}
-	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && tempRoot == (TempRootAsk{}) && unheld == 0
+	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && tempRoot == (TempRootAsk{}) && unheld == 0 && !p.endsGroup
 	p.outPipes = [2]*os.File{stdoutR, stderrR}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c

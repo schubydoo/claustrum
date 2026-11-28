@@ -23,6 +23,7 @@ var osCapabilityFeatures = append([]string{"files.mkdir.verified_parent", "git.w
 // before files.mkdir there (measured on Linux and macOS).
 var osCapabilityMethods = []string{"files.find", "files.mkdir"}
 
-// launcherGroupFeatures is launcher.exit_ends_group, the last name on Linux and macOS
-// (87375cc7, measured).
-var launcherGroupFeatures = []string{launcherExitFeature}
+// launcherGroupFeatures is launcher.exit_ends_group (87375cc7, measured) and
+// process.cli_exit_ends_group (13047a51, measured), the last names of claustrum's list
+// on Linux and macOS. On Linux 13047a51 lists its host creds feature after them.
+var launcherGroupFeatures = []string{launcherExitFeature, cliExitFeature}
