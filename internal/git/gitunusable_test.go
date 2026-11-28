@@ -248,3 +248,103 @@ func TestCreateUnusableGitFileStub(t *testing.T) {
 		}
 	}
 }
+
+// ownerRefusedRows run a create in the state shadow where git refuses the repository
+// for its owner (GIT_TEST_ASSUME_DIFFERENT_OWNER=1), and where git finds no repository.
+// The first names `<baseRepo>/.git` with unusableGitText where ownerRefusalNamesGitDir
+// holds (87375cc7 and 13047a51, measured on Windows, elevated daemon). The second
+// keeps not_a_repo (claustrum's own, not measured). Nothing is made.
+func ownerRefusedRows(t *testing.T) {
+	t.Helper()
+	for _, row := range []struct {
+		name    string
+		refused bool
+	}{
+		{"git refuses the owner", true},
+		{"git finds no repository", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
+			if row.refused {
+				t.Setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+				want = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+					jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(f.repo, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
+			} else {
+				answerProbe(t, 128, "", "fatal: not a git repository (or any of the parent directories): .git\n")
+				answerSecondProbe(t, 0, "")
+			}
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			params := map[string]any{"baseRepo": f.repo, "worktreePath": leaf, "branchName": "w1"}
+			if got, _ := f.call(t, "git.worktree_create", params); got != want {
+				t.Errorf("create = %s\nwant %s", got, want)
+			}
+			if exists(leaf) {
+				t.Errorf("the create made %s", leaf)
+			}
+		})
+	}
+}
+
+// TestCreateNamesGitDirThatGitRefusesForItsOwner runs ownerRefusedRows with the step
+// of ownerRefusedGitDir on, on each system. Windows pins its own value of the switch
+// (TestCreateInShadowRefusesARepositoryOfAnotherOwner). Mutation: drop the
+// ownerRefusedGitDir step of the create.
+func TestCreateNamesGitDirThatGitRefusesForItsOwner(t *testing.T) {
+	requireGit(t)
+	old := ownerRefusalNamesGitDir
+	t.Cleanup(func() { ownerRefusalNamesGitDir = old })
+	ownerRefusalNamesGitDir = true
+	ownerRefusedRows(t)
+}
+
+// TestCreateOwnerRefusalUnderADaemonVar: with the step of ownerRefusedGitDir on and the
+// Windows rule (copyPinsWalkGitDir), the call about the repository answers the owner
+// refusal of git. With no daemon variable the create names `<baseRepo>/.git`. In the
+// state shadow the request ignores a daemon GIT_DIR or GIT_COMMON_DIR, so the create
+// names the `.git` there too. A daemon GIT_DIR that the request keeps (keepDaemonVars)
+// keeps not_a_repo (all claustrum's own, not measured). Mutations: drop the test of the
+// daemon variables in ownerRefusedGitDir, or drop its daemonVarsKept test.
+func TestCreateOwnerRefusalUnderADaemonVar(t *testing.T) {
+	requireGit(t)
+	old := ownerRefusalNamesGitDir
+	t.Cleanup(func() { ownerRefusalNamesGitDir = old })
+	ownerRefusalNamesGitDir = true
+	setCopyPinsWalkGitDir(t, true)
+	for _, row := range []struct {
+		name     string
+		v        string
+		kept     bool
+		notARepo bool
+	}{
+		{"no daemon variable", "", false, false},
+		{"an ignored daemon GIT_DIR", "GIT_DIR", false, false},
+		{"an ignored daemon GIT_COMMON_DIR", "GIT_COMMON_DIR", false, false},
+		{"a kept daemon GIT_DIR", "GIT_DIR", true, true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if row.v != "" {
+				t.Setenv(row.v, f.gitDir)
+			}
+			if row.kept {
+				keepDaemonVars(t)
+			}
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(f.repo, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
+			if row.notARepo {
+				want = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
+			}
+			answerProbe(t, 128, "", ownerRefusalHead+"'"+filepath.ToSlash(f.repo)+"'\n")
+			answerSecondProbe(t, 0, "")
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			params := map[string]any{"baseRepo": f.repo, "worktreePath": leaf, "branchName": "w1"}
+			if got, _ := f.call(t, "git.worktree_create", params); got != want {
+				t.Errorf("create = %s\nwant %s", got, want)
+			}
+			if exists(leaf) {
+				t.Errorf("the create made %s", leaf)
+			}
+		})
+	}
+}

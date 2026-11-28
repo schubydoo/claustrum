@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -25,5 +26,19 @@ func TestExecChildRunDir(t *testing.T) {
 		if got := ExecChildRunDir(c.sock); got != filepath.FromSlash(c.want) {
 			t.Errorf("ExecChildRunDir(%q) = %q, want %q", c.sock, got, c.want)
 		}
+	}
+}
+
+// TestDropMarkerEnvDropsBothNames pins the filter of the two marker names: every entry of
+// either name goes, and the other entries keep their order. A name that only starts
+// with a marker name stays. The function is the same code on every system.
+func TestDropMarkerEnvDropsBothNames(t *testing.T) {
+	env := []string{
+		"A=1", EnvChildMarker + "=x", EnvRunDir + `=C:\x`, "B=2",
+		EnvChildMarker + "=y", EnvRunDir + "=/y", "CLAUDE_SSH_DAEMON_CHILD=1", "CLAUDE_SSH_CHILDREN=3",
+	}
+	want := []string{"A=1", "B=2", "CLAUDE_SSH_DAEMON_CHILD=1", "CLAUDE_SSH_CHILDREN=3"}
+	if got := DropMarkerEnv(env); !slices.Equal(got, want) {
+		t.Errorf("DropMarkerEnv = %q, want %q", got, want)
 	}
 }
