@@ -104,7 +104,7 @@ func TestCheckPlaceUsage(t *testing.T) {
 }
 
 // TestNoModeNamesEveryMode pins the line of a run with no mode flag: the
-// list of modes of 13047a51 (measured on Windows), with claustrum's program
+// list of modes of 13047a51 (measured on Linux and Windows), with claustrum's program
 // name, and exit 2.
 func TestNoModeNamesEveryMode(t *testing.T) {
 	const want = "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required\n"

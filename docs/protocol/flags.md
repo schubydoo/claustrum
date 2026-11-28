@@ -325,7 +325,7 @@ variable gives the kind `not_asked` and no path:
 claustrum: refusing to run (not_asked): CLAUDE_SSH_RUN_FROM is not set, or is empty, so there is nothing to check.
 ```
 
-The other modes check a set place first (an empty value checks nothing: claustrum's own). These rules are measured on Linux. macOS shows
+The other modes check a set place first. An empty value checks nothing (measured on Linux with no mode, claustrum's own for the other modes). These rules are measured on Linux. macOS shows
 `-serve`, and Windows shows `-serve`, `-bridge`, `-probe-cli` and no mode.
 
 - `-version` and `-stop` alone do not check.
@@ -351,7 +351,7 @@ before an owner of uid 65534, a write mode of `0775` and `another_file`:
 |---|---|
 | `not_absolute` | the path is not absolute |
 | `missing` | an entry does not exist |
-| `cannot_tell` | an entry is on FUSE, virtiofs or NFS, shows uid 65534 or cannot be read, or the check takes over 8 s |
+| `cannot_tell` | an entry is on FUSE, virtiofs (from the code) or NFS, shows uid 65534 or cannot be read, or the check takes over 8 s |
 | `owner` | root does not own an entry |
 | `writable` | a group or another account can write an entry, also with the sticky bit |
 | `another_file` | the program that runs is not that file |
@@ -390,8 +390,8 @@ A check past 8 s gets the 8 seconds reason. It gets it also when it passes later
 modes is claustrum's own. A stalled `-serve` removes its `-token-file` at the bound, before
 the wait (measured on Linux, a stall past 8 s).
 
-A known difference (measured on Linux): after one stall of 5 s on FUSE, 13047a51 still
-gives the 8 seconds reason. claustrum waits for the answer and gives the FUSE reason.
+A known difference (measured on Linux): on a FUSE mount that answers each statfs, or each
+stat of its root, after 5 s, 13047a51 still gives the 8 seconds reason. claustrum waits for the answer and gives the FUSE reason.
 
 Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
 `mode`, a link above the three parts, and a file that is not regular (claustrum: `another_file`).
