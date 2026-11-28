@@ -111,6 +111,12 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		fmt.Print(wd + "\n")
+	case "host-creds": // print what the file of CLAUDE_CODE_HOST_CREDS_FILE holds
+		b, err := os.ReadFile(os.Getenv("CLAUDE_CODE_HOST_CREDS_FILE"))
+		if err != nil {
+			b = []byte(err.Error())
+		}
+		fmt.Print(string(b) + "\n")
 	case "printenv": // print <name>=<value> for args[0] ("" when absent)
 		fmt.Print(args[0] + "=" + os.Getenv(args[0]) + "\n")
 	case "environ":

@@ -268,6 +268,16 @@ func runHelper(mode string, args []string) int {
 		}
 		appendLine(os.Getenv("CLAUSTRUM_GITSTUB_ENVLOG"), line)
 		return 1
+	case "host-creds":
+		// hostCreds fixture (Linux): print the file variable, whether args[0] is in the
+		// environment, the own pid, and what the file of the variable holds.
+		v := os.Getenv("CLAUDE_CODE_HOST_CREDS_FILE")
+		_, inEnv := os.LookupEnv(args[0])
+		b, err := os.ReadFile(v)
+		if err != nil {
+			b = []byte(err.Error())
+		}
+		fmt.Printf("var=%s\nin env=%t\npid=%d\npayload=%s\n", v, inEnv, os.Getpid(), b)
 	case "job-flags": // Windows: print the limit flags of the own job, as "0x2800"
 		fmt.Print(ownJobFlags() + "\n")
 	case "lookupenv": // print "<name> set <value>" or "<name> absent" for args[0]

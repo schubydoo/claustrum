@@ -97,7 +97,8 @@
         "launcher.checked_by_handle",
         "launcher.local_kinds_only",
         "server.instance_id",
-        "launcher.exit_ends_group"
+        "launcher.exit_ends_group",
+        "process.spawn.host_creds_pipe"
       ],
       "peerCheck": "off"
     }

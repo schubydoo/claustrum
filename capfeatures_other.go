@@ -23,6 +23,6 @@ var osCapabilityFeatures = append([]string{"files.mkdir.verified_parent", "git.w
 // before files.mkdir there (measured on Linux and macOS).
 var osCapabilityMethods = []string{"files.find", "files.mkdir"}
 
-// launcherGroupFeatures is launcher.exit_ends_group, the last name on Linux and macOS
-// (87375cc7, measured).
+// launcherGroupFeatures is launcher.exit_ends_group, after server.instance_id on Linux
+// and macOS (87375cc7, measured).
 var launcherGroupFeatures = []string{launcherExitFeature}

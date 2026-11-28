@@ -35,11 +35,8 @@ func (e *CwdRefusal) Unwrap() error { return e.Err }
 
 // ReasonForSpawnError gives the reason of a refusal that spawnVia returned (build
 // 52d82f0a). Measured on Linux and on Windows: cwd_missing, launcher, not_found and
-// other. Measured on Linux only: not_executable for a mode or a folder, and
-// cwd_unusable for a cwd of mode 000 (also on macOS). 87375cc7,
-// measured on Linux and Windows: busy. The same build, measured on Windows:
-// not_executable for a file that is not a program. The order of the tests is not
-// measured. The reasons on macOS other
+// other. Measured on Linux only: not_executable, and cwd_unusable for a cwd of mode
+// 000 (also on macOS). The reasons on macOS other
 // than cwd_unusable, the -32005 launcher start refusal, a pipe failure and an errno
 // that no row lists are claustrum's own, not measured.
 func ReasonForSpawnError(err error, cwd string) SpawnReason {
@@ -69,8 +66,6 @@ func ReasonForSpawnError(err error, cwd string) SpawnReason {
 			return SpawnReason{Reason: "cwd_unusable"}
 		}
 		return SpawnReason{Reason: "not_executable"}
-	case startErrnoReason(err) != "":
-		return SpawnReason{Reason: startErrnoReason(err)}
 	}
 	return SpawnReason{Reason: "other"}
 }

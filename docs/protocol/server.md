@@ -32,7 +32,7 @@ The reply is always this result.
   "methods": ["server.ping", "server.capabilities", "server.shutdown", "…"],
   "instanceId": "<32 hex characters>",
   "startedAt": 1760000000000,
-  "features": ["process.stdin.offset", "process.spawn.refuses_given_up_id", "process.spawn.unattended_seconds", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.worktree_create.not_found_codes", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "git.worktree_create.lfs_error_codes", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end", "launcher.checked_by_handle", "launcher.local_kinds_only", "server.instance_id", "launcher.exit_ends_group"],
+  "features": ["process.stdin.offset", "process.spawn.refuses_given_up_id", "process.spawn.unattended_seconds", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.worktree_create.not_found_codes", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "git.worktree_create.lfs_error_codes", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end", "launcher.checked_by_handle", "launcher.local_kinds_only", "server.instance_id", "launcher.exit_ends_group", "process.spawn.host_creds_pipe"],
   "peerCheck": "off"
 }
 ```
@@ -60,6 +60,10 @@ The `features` array is always present. The example above shows the Linux member
 #### Names of `87375cc7` that claustrum lists
 
 `87375cc7` adds `process.spawn.unattended_seconds` after `process.spawn.refuses_given_up_id` and `git.worktree_create.not_found_codes` after `git.worktree_create.unusable_git_refused` on the three systems (measured). On Windows only, it adds `files.realpath.how_far` after `files.read.real` (measured). On Linux and macOS it adds `launcher.exit_ends_group` after `server.instance_id` (measured). `CLAUDE_SSH_LEAVE_GROUPS=1` takes that name out. See [The group of an exited launcher](process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7).
+
+#### Names of `13047a51` that claustrum lists
+
+On Linux `13047a51` adds `process.spawn.host_creds_pipe` last, also with `CLAUDE_SSH_LEAVE_GROUPS=1` (measured). See [The hostCreds member](process-spawn.md#the-hostcreds-member-build-13047a51).
 
 ### The peer check
 
