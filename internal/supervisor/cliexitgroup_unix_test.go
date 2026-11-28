@@ -41,9 +41,10 @@ func spawnCLIGroup(t *testing.T, m *Manager, id, name string, ask TempRootAsk, s
 }
 
 // TestClaudeCodeSpawnEndsItsGroup: 13047a51 ends what an exited Claude Code child left
-// in its group, for a command named ccd-cli or in a folder named ccd-cli (measured on
-// Linux and macOS). A plain name, a pty spawn and CLAUDE_SSH_LEAVE_GROUPS=1 keep the
-// member (measured, the pty spawn on macOS by another rule that claustrum lacks).
+// in its group, for a command named ccd-cli (measured on Linux and macOS) or in a folder
+// named ccd-cli (measured on Linux). A plain name and CLAUDE_SSH_LEAVE_GROUPS=1 keep the
+// member (measured). claustrum also keeps the member of a pty spawn, which the reference
+// ends by another rule (measured on macOS).
 func TestClaudeCodeSpawnEndsItsGroup(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

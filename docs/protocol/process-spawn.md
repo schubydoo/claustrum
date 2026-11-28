@@ -178,7 +178,7 @@ claustrum's own rules of this end, not measured:
 
 On Linux and macOS `13047a51` ends the group of a Claude Code spawn with no launcher, as it ends [the group of a launcher](#the-group-of-an-exited-launcher-build-87375cc7) (measured). `87375cc7` does not (measured). claustrum follows `13047a51`.
 
-- A Claude Code is a command named `ccd-cli` (measured on Linux and macOS). A command in a folder of that name counts too, such as `<dir>/ccd-cli/2.0.0` (measured on Linux). A plain name gets no such end (measured). Other name shapes are claustrum's own, not measured.
+- A Claude Code is a command named `ccd-cli` (measured on Linux and macOS). A command in a folder of that name counts too, such as `<dir>/ccd-cli/2.0.0` (measured on Linux). On macOS that shape is claustrum's own, not measured. A plain name gets no such end (measured). Other name shapes are claustrum's own, not measured.
 - Linux: a member that ignores the `SIGTERM` gets the `SIGKILL` 1 to 3 s after it (measured). claustrum sends it at 1.5 s.
 - A `pty` spawn gets no such end from claustrum. `87375cc7` and `13047a51` end what it leaves in its group, also with `CLAUDE_SSH_LEAVE_GROUPS=1` (measured on macOS). claustrum keeps that member.
 - A Claude Code with `gitRead` gets no such end (claustrum's own, not measured). Windows has no such end, and `13047a51` lists no `process.cli_exit_ends_group` there (measured).

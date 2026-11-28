@@ -63,7 +63,7 @@ The `features` array is always present. The example above shows the Linux member
 
 #### Names of `13047a51` that claustrum lists
 
-On Linux and macOS `13047a51` adds `process.cli_exit_ends_group` right after `launcher.exit_ends_group` (measured). `CLAUDE_SSH_LEAVE_GROUPS=1` takes both names out (measured on Linux). See [The group of an exited Claude Code](process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51).
+On Linux and macOS `13047a51` adds `process.cli_exit_ends_group` right after `launcher.exit_ends_group` (measured). `CLAUDE_SSH_LEAVE_GROUPS=1` takes both names out (measured on Linux and macOS). See [The group of an exited Claude Code](process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51).
 
 ### The peer check
 
