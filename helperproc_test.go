@@ -420,6 +420,10 @@ func runHelper(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
+	case "leave-own-session":
+		// Start a 60 s sleeper in a new session with the environment of this process and no
+		// pipes, write its pid to args[0], and exit 0 at once (Unix only).
+		return leaveInOwnSession(args[0])
 	case "wrap":
 		// A managed-launcher stand-in, the shape of the wrapper of the measured rows: it writes
 		// "WRAP:<args>" to stderr, then runs args[0] with args[1:] and exits with its code. The

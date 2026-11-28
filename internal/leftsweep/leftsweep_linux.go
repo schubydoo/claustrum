@@ -16,8 +16,9 @@ import (
 	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
-// The two marks of a child of this daemon. Each must be one whole entry of the
-// environment of the process (rows K-1 B and C: one mark keeps the process alive).
+// The two marks of a child of this daemon. Rows K-1 B and C show that one mark keeps
+// the process alive. Each mark must be one whole entry of the environment, with the
+// exact run folder (claustrum's own, not measured).
 const (
 	runDirMark = "CLAUDE_SSH_RUN_DIR="
 	childMark  = "CLAUDE_SSH_DAEMON_CHILD=1"
@@ -146,7 +147,7 @@ func ownedByUs(dir string) bool {
 }
 
 // hasBothMarks reports whether the environment of the process holds both marks as
-// whole entries, with the exact run folder.
+// whole entries, with the exact run folder (claustrum's own, not measured).
 func hasBothMarks(dir, runDir string) bool {
 	f, err := os.Open(filepath.Join(dir, "environ"))
 	if err != nil {
@@ -169,15 +170,22 @@ func hasBothMarks(dir, runDir string) bool {
 // runDirLeft looks at the run folder path inside the root of the process. The
 // same folder as this daemon's, or no entry at that path (row K-1 E), lets the
 // process end. A different folder lets it end only without a children entry (rows
-// K-1 F and G). Every other error keeps it alive, and so does a link or a
-// non-folder at that path (claustrum's own, not measured). Only the last name is
-// read with Lstat. The parts above it are followed, and an absolute link there
-// resolves in the root of this daemon (claustrum's own, not measured).
+// K-1 F and G). A link at that path lets it end only when it leads to the run folder
+// of this daemon (row K-1 H). A link to a folder with a children entry stays (row
+// K-1 I). Every other error keeps it alive, and so do a link to anything else and a
+// non-folder at that path (claustrum's own, not measured). The parts above the last
+// name are followed, and an absolute link resolves in the root of this daemon
+// (claustrum's own, not measured). Row K-1 H does not settle whether 13047a51 resolves
+// the link in the root of the daemon or in the root of the process.
 func runDirLeft(dir, runDir string, own fs.FileInfo) bool {
 	at := filepath.Join(dir, "root", runDir)
 	fi, err := os.Lstat(at)
 	if errors.Is(err, fs.ErrNotExist) {
 		return true
+	}
+	if err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		to, err := os.Stat(at)
+		return err == nil && to.IsDir() && os.SameFile(to, own)
 	}
 	if err != nil || !fi.IsDir() {
 		return false

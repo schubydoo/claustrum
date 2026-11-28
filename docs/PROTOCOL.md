@@ -162,6 +162,7 @@ under [Stream notifications](protocol/streams.md#stream-notifications), is the w
 | `-32005` | a launcher that does not start, from `process.spawn` (see [Errors](protocol/process-spawn.md#errors)) | depends on the reason |
 | `-32006` | `Refused: this server could not confirm that the caller is in its own namespaces`, on Linux with `CLAUDE_SSH_PEER_CHECK=1` (see [A refused caller](protocol/server.md#a-refused-caller-linux)) | no, the connection closes |
 | `-32008` | a `gitRead` spawn in a repository in the git state `fallback-git`, from `process.spawn` (see [The state fallback-git](protocol/process-git-read.md#the-state-fallback-git)) | after the git state changes |
+| `-32010` | a bad host settings file, from `process.spawn` on Linux (see [host_settings](protocol/process-spawn.md#the-host_settings-refusal-build-13047a51)) | after a fix and a new start |
 | `-32001` | `Unauthorized: invalid or missing auth token` | not with the same token |
 
 The column *send again* is claustrum's own advice, read from its code.
@@ -296,7 +297,7 @@ removed a method.
 | Method | Params → result | Page |
 |---|---|---|
 | `server.ping` | none → `{"pong":true}` | [server.*](protocol/server.md#serverping) |
-| `server.capabilities` | none → `{"version","methods":[…24…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"]}` | [server.*](protocol/server.md#servercapabilities) |
+| `server.capabilities` | none → `{"version","methods":[…24…],"instanceId","startedAt","features":[…],"peerCheck"[,"peerCheckBy"][,"unattendedLimitMinutes"]}` | [server.*](protocol/server.md#servercapabilities) |
 | `server.shutdown` | none → `{"ok":true}`, when the reply wins the race with the close | [server.*](protocol/server.md#servershutdown) |
 | `server.adoptEnv` | `{env[,noLoginShell][,kept]}` → `{"ok":true}` | [server.adoptEnv](protocol/server-adopt-env.md) |
 | `files.list` | `{path[,includeDotNames,junctionsAsDirs]}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted) | [files.list](protocol/files-list.md) |

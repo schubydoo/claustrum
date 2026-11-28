@@ -34,6 +34,10 @@ type CapabilitiesReply struct {
 	// live in peercheck.go.
 	PeerCheck   string   `json:"peerCheck"`
 	PeerCheckBy []string `json:"peerCheckBy,omitempty"`
+	// Limit is the unattended limit in minutes that the host settings file sets. It
+	// comes after peerCheck, and only while a limit is set (13047a51, measured on
+	// Linux). Its place after peerCheckBy is claustrum's own, not measured.
+	Limit int `json:"unattendedLimitMinutes,omitempty"`
 }
 
 type StatReply struct {

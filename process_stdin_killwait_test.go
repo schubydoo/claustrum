@@ -97,7 +97,11 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" {
 		// 87375cc7 lists launcher.exit_ends_group last on Linux and macOS, and 13047a51
-		// lists process.cli_exit_ends_group after it.
+		// lists process.cli_exit_ends_group after it. 13047a51 lists
+		// server.unattended_limit before them on Linux only.
+		if runtime.GOOS == "linux" {
+			wantFeatures = append(wantFeatures, hostLimitFeature)
+		}
 		wantFeatures = append(wantFeatures, launcherExitFeature, cliExitFeature)
 	}
 	// 13047a51 lists process.spawn.host_creds_pipe last on Linux.

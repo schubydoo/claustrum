@@ -178,6 +178,24 @@ func TestRunEndsTheMarkedCasesOfRowK1(t *testing.T) {
 	}
 }
 
+// An absolute link at the run path that leads to the run folder of this daemon lets
+// the process end, as on 13047a51 (row K-1 H, measured on Linux).
+func TestRunEndsALinkToTheRunFolder(t *testing.T) {
+	f := newFakeProc(t)
+	runDir := t.TempDir()
+	mkdirAll(t, filepath.Join(runDir, childrenEntry))
+	root := t.TempDir()
+	at := filepath.Join(root, runDir)
+	mkdirAll(t, filepath.Dir(at))
+	if err := os.Symlink(runDir, at); err != nil {
+		t.Fatal(err)
+	}
+	f.add(fakeBase, []string{runDirMark + runDir, childMark}, root)
+	if n, err := Run(runDir); n != 1 || err != nil || !equalInts(f.ended, []int{fakeBase}) {
+		t.Fatalf("Run = %d, %v, ended %v, want 1, nil and %d", n, err, f.ended, fakeBase)
+	}
+}
+
 // A process of another uid stays alive (row K-1 D). The fake tree belongs to the
 // test user, so a different own uid stands for it.
 func TestRunKeepsAProcessOfAnotherUID(t *testing.T) {
@@ -229,9 +247,9 @@ func TestRunSendsNothingWhenTheHoldFails(t *testing.T) {
 }
 
 // The narrowing cases of claustrum's own, none measured. Each process has both
-// marks and stays alive: a mark inside a longer entry, a link, a dangling link or
-// a file at the run path, a loop or a closed folder above it, a dangling children
-// link in another folder, an environment over the cap, and pid 1. The file case
+// marks and stays alive: a mark inside a longer entry, a link to another folder, a
+// dangling link or a file at the run path, a loop or a closed folder above it, a dangling children
+// link in another folder, and an environment over the cap. The file case
 // stays alive through ENOTDIR at its children entry as well. The link cases are
 // the ones that only the folder test of the run path keeps alive.
 func TestRunKeepsTheNarrowedCases(t *testing.T) {
@@ -249,6 +267,11 @@ func TestRunKeepsTheNarrowedCases(t *testing.T) {
 		build(filepath.Join(r, runDir))
 		return r
 	}
+	// A link to a folder with a children entry stays alive (row K-1 I). One to a
+	// folder without it stays too (claustrum's own).
+	otherWithChildren := t.TempDir()
+	mkdirAll(t, filepath.Join(otherWithChildren, childrenEntry))
+	otherBare := t.TempDir()
 	link := func(target string) func(string) {
 		return func(at string) {
 			mkdirAll(t, filepath.Dir(at))
@@ -260,7 +283,8 @@ func TestRunKeepsTheNarrowedCases(t *testing.T) {
 	const (
 		pInner = fakeBase + iota
 		pSuffix
-		pLinkOwn
+		pLinkOther
+		pLinkBare
 		pLinkGone
 		pFile
 		pLoop
@@ -270,7 +294,8 @@ func TestRunKeepsTheNarrowedCases(t *testing.T) {
 	)
 	f.add(pInner, []string{run, "X=" + childMark}, "/")
 	f.add(pSuffix, []string{"Y=" + run, childMark}, "/")
-	f.add(pLinkOwn, marks, root(link(runDir)))
+	f.add(pLinkOther, marks, root(link(otherWithChildren)))
+	f.add(pLinkBare, marks, root(link(otherBare)))
 	f.add(pLinkGone, marks, root(link("/no/such/folder")))
 	f.add(pFile, marks, root(func(at string) {
 		mkdirAll(t, filepath.Dir(at))
