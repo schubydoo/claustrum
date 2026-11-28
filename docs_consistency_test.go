@@ -557,7 +557,7 @@ func TestDocsPinnedBuild(t *testing.T) {
 // document shows the Linux list. On Windows osCapabilityFeatures is only files.realpath.how_far, so the
 // test takes that name out and puts files.mkdir.verified_parent, git.worktree.external_root, process.spawn.link_bound,
 // git.worktree_create.another_account_code, git.worktree_create.own_lfs_store, git.worktree_create.lfs_error_codes, process.spawn.cli_temp_root and process.spawn.cli_temp_root_end back where methods_server.go appends them (after the
-// fixed names, before server.instance_id). Off Linux it puts the two launcher names of
+// fixed names, before server.instance_id). Off Linux it puts the three launcher names of
 // launcherOSFeatures back after them.
 func TestDocsCapabilityFeatures(t *testing.T) {
 	const ext = "git.worktree.external_root"
