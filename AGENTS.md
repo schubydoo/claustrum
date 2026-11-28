@@ -257,7 +257,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   the spawn did not make. Send each signal through `unheldGate` before the reap (Linux, macOS). Start no end after the
   shutdown began.
 
-#### The extract marker, the start and the reap
+#### The extract marker, the token file, the temp test, the reap and the sweep
 
 - **The extract marker.** `.synced` goes as a tree through the handle of `destDir` that
   `extractTarGz` tested (`writeSyncedMarker`, [the
