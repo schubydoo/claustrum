@@ -11,7 +11,7 @@ import (
 const hostLimitTestPath = "/etc/claude-desktop-ssh/settings.json"
 
 // TestJudgeHostLimit: the limit, the clamp and the fault of each measured body of the host
-// settings file (13047a51, measured on Linux, cell l_e76_hostset).
+// settings file (13047a51, measured on Linux).
 func TestJudgeHostLimit(t *testing.T) {
 	pad := `{"unattendedLimitMinutes": 30, "p": "%s"}`
 	for _, tc := range []struct {

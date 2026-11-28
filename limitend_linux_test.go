@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -264,15 +265,12 @@ func TestLimitEndSweepsALeftProcess(t *testing.T) {
 }
 
 // TestLimitEndSocketGoneSkipsTheSweep: at the end at the limit a socket path that is
-// gone or holds a regular file gives the line of 13047a51, and no sweep runs. The left
-// process stays alive, and the group of the live child still gets its kill (measured on
-// Linux).
+// gone, holds a regular file or links to the socket of another listener gives the line
+// of 13047a51, and no sweep runs. The left process stays alive, and the live child still
+// ends (measured on Linux).
 func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		replace bool
-	}{{"gone", false}, {"regular_file", true}} {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, kind := range []string{"gone", "regular_file", "link_other"} {
+		t.Run(kind, func(t *testing.T) {
 			s, sock := limitLineServer(t)
 			pid := leaveOneProcess(t, s, sock)
 			cl := spawnMarkedSleeper(t, sock, "c1")
@@ -281,8 +279,25 @@ func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
 			if err := os.Remove(sock); err != nil {
 				t.Fatal(err)
 			}
-			if tc.replace {
+			switch kind {
+			case "regular_file":
 				if err := os.WriteFile(sock, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "link_other":
+				// A short folder keeps the socket path within its limit.
+				dir, err := os.MkdirTemp("", "ol")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.RemoveAll(dir) })
+				other := filepath.Join(dir, "o.sock")
+				ln, err := net.Listen("unix", other)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = ln.Close() })
+				if err := os.Symlink(other, sock); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -302,7 +317,7 @@ func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
 			select {
 			case <-s.procs.Get("c1").DoneForTest():
 			case <-time.After(10 * time.Second):
-				t.Error("the child c1 did not end, but its group gets its kill without the sweep")
+				t.Error("the child c1 did not end, but the live child still ends without the sweep")
 			}
 			if !processLives(pid) {
 				t.Errorf("the left process %d ended, but the socket path no longer leads here", pid)

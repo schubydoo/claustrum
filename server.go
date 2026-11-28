@@ -921,9 +921,9 @@ func (s *server) serveConn(c *conn.Conn) {
 		}
 		// The clock of the limit end restarts before the connection leaves the count,
 		// so a check that counts no client sees the new time. Only a connection that
-		// showed the token restarts it, so a dial that sends nothing or no token, such
-		// as that of the host cleaner, does not (13047a51, measured on Linux). Nor does a
-		// dial of this daemon to itself (claustrum's own, not measured).
+		// showed the token restarts it, so a dial that sends nothing or no token does not
+		// (13047a51, measured on Linux). The dial of the host cleaner is one such dial.
+		// Nor does a dial of this daemon to itself (claustrum's own, not measured).
 		if c.TokenMark().Load() && !selfDial {
 			s.noteAttended()
 		}

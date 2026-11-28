@@ -240,6 +240,8 @@ A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"
 
 `busy` and the Windows `not_executable`: `87375cc7`, measured on Linux and Windows. The test order is not measured.
 
+On macOS only `cwd_unusable` is measured. The rest follows Linux, `busy` included, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
+
 ### The host_settings refusal (build `13047a51`)
 
 On Linux a Claude Code spawn gets `-32010` while [the host settings file](../DAEMON.md#the-host-settings-file-linux-build-13047a51) cannot be used, and logs its failed-start line. A plain spawn starts. `data` is `{"reason":"host_settings","settingsFault":"<fault>"}`. The message is `Claude Code was not started: this host's settings file for Claude Desktop, /etc/claude-desktop-ssh/settings.json, can't be used. <detail> Only the host's administrator can change it.` All this is measured on Linux. The refusal reaches `ccd-cli` with or without args, a command with `stream-json` in its args and a launcher spawn with such args. A plain command and a bare `git` with `--output-format=stream-json` start. The refusal comes after the `unattendedSeconds` test and before the command lookup. Claustrum's own, not measured: it refuses each [Claude Code shape](git-rules-session-folders.md#which-spawn-makes-a-session-folder) but no `gitRead` spawn, after the `linkBound` test.
@@ -252,7 +254,7 @@ On Linux a Claude Code spawn gets `-32010` while [the host settings file](../DAE
 | `writable` | ``` `<file or folder>` can be changed by accounts other than its owner (mode <mode>). Remove that write access. ``` |
 | `owner` | ``` `/etc/claude-desktop-ssh/settings.json` belongs to the account that signs in (uid <uid>). Root must own the settings file and every folder above it. ``` |
 
-On macOS only `cwd_unusable` is measured, and `13047a51` sends no `host_settings` there (measured on macOS). The rest follows Linux, `busy` included, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
+On macOS `13047a51` sends no `host_settings` (measured on macOS).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 

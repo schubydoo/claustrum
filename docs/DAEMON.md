@@ -557,7 +557,8 @@ Measured on Linux against `13047a51`:
 - A wrong token or a dial with no byte does not start it again. A held connection with the token holds the end off.
 - It logs the first line below and `[Server] shutdown requested`. Then it stops as at `server.shutdown`, and the socket and `daemon.token` go.
 - The group of each live child gets a `SIGKILL`, and the first line counts the live children.
-- A child with `stream-json` in its args, a bare `git` too, gets `SIGTERM` first. Its group gets the `SIGKILL` about 1.5 s later.
+- A child with `stream-json` in its args gets `SIGTERM` first. Its group gets the `SIGKILL` about 1.5 s later.
+- A bare `git` with `stream-json` in its args gets `SIGTERM` first too. Its group gets the `SIGKILL` within 0.5 s.
 - Then [the left-process sweep](#the-left-process-sweep-13047a51-linux) runs. Its line comes before the cleanup line.
 - A socket path that is gone, a regular file or a link to the socket of another daemon gets the third line below. Then no sweep runs.
 
@@ -567,9 +568,9 @@ Measured on Linux against `13047a51`:
 [Server] socket path <run dir>/rpc.sock can't be shown to lead to this helper any more, so only its children's own process groups are ended: what has left one may still be running
 ```
 
-The third line comes right after the first. A failed stat of the socket path counts as such a path, and no self-probe runs (claustrum's own, not measured).
+The third line comes right after the first (measured on Linux). A failed stat of the socket path counts as such a path, and no self-probe runs (claustrum's own, not measured).
 
-`13047a51` sends that group `SIGKILL` twice, from two threads within 1 ms, for a `ccd-cli` or launcher spawn. Claustrum sends it once (claustrum's own).
+For a `ccd-cli` or launcher spawn, `13047a51` sent that group `SIGKILL` a second time in some runs, within 1 ms. Claustrum sends it once (claustrum's own).
 
 Claustrum's own, not measured: a dial of the daemon to itself does not start the clock again. The check comes before the idle exit and the orphan checks, and not once the shutdown began. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
 
@@ -577,7 +578,7 @@ Claustrum's own, not measured: a dial of the daemon to itself does not start the
 
 `internal/leftsweep` ends the processes that the children of a daemon started and left. Only [the end at the limit](#the-end-at-the-limit) calls it. On `13047a51` it ran there (measured on Linux). After `server.shutdown` and after the orphan end, the log of `13047a51` shows no sweep line.
 
-Measured on `13047a51` on Linux, rows K-1 A to I. Each row starts a `setsid` sleep:
+Measured on `13047a51` on Linux, cases A to I. Each case starts a `setsid` sleep:
 
 - A has both marks, `CLAUDE_SSH_RUN_DIR=<run dir>` and `CLAUDE_SSH_DAEMON_CHILD=1`. It ends by one `pidfd_send_signal` `SIGKILL`.
 - B and C have one mark each. They stay alive.

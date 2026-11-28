@@ -23,9 +23,9 @@ import (
 // connection that sent a request with the token starts it again. A wrong token or a dial
 // with no byte does not. A connected client holds the end off for as long as it stays.
 // Live children got a group SIGKILL, and the line counted them. A child with stream-json
-// in its args gets the SIGTERM of the shutdown sweep first. 13047a51 sends the group
-// SIGKILL twice for a ccd-cli or launcher spawn, and claustrum sends it once (claustrum's
-// own).
+// in its args gets the SIGTERM of the shutdown sweep first. For a ccd-cli or launcher
+// spawn, 13047a51 sent the group SIGKILL a second time in some runs, within 1 ms.
+// Claustrum sends it once (claustrum's own).
 //
 // Claustrum's own, not measured: a dial of this daemon to itself does not start the clock
 // again. The check runs before the idle exit and the orphan checks, and not once the
