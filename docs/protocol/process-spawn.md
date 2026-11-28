@@ -113,7 +113,7 @@ A launcher spawn without `--no-session-persistence` gets the refusal above (meas
 On Linux a Claude Code child reads the `env` of `hostCreds` from a pipe. Those names do not reach its environment (measured).
 
 - `Invalid params` with no `data`: a `hostCreds` that is `null`, a text or a list, or an `env` value that is a number (Linux, macOS and Windows). An `env` that is a text or a list, or an `env` value of `null`, gets it too (Linux and macOS, and on Windows claustrum's own, not measured). Other members, such as `unless`, change nothing (Linux and macOS).
-- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`. No child starts (macOS). The failed-start line on Windows, and the place of this refusal before the launcher refusal on Windows and the `macos_host` refusal on macOS, are claustrum's own, not measured.
+- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`. No child starts (macOS). The failed-start line on Windows is claustrum's own, not measured.
 
 #### The Linux refusals
 
@@ -204,7 +204,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
 | `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. |
 | `-32602` | `Command is required` | `command` is absent or empty, with no `launcherSuppliesCli`. |
-| `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`, except with a [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
+| `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). It logs the failed-start line (`4c111e86`, measured on Linux and Windows, and `87375cc7`, measured on Windows). On macOS, and for `87375cc7` on Linux, the line is claustrum's own (not measured). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
@@ -262,7 +262,7 @@ A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"
 | `not_found` | not found | not found, a folder |
 | `not_executable` | mode 0644, a folder | not a program |
 | `busy` | a program open for a write | a program open for a write |
-| `launcher` | missing (`-32004`) | any `launcher`, except with a [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form |
+| `launcher` | missing (`-32004`) | any `launcher` |
 | `other` | a relative `command` with a `launcher` | a keyed `pty` |
 
 `busy` and the Windows `not_executable`: `87375cc7`, measured on Linux and Windows. The test order is not measured.
@@ -456,9 +456,11 @@ The folder keeps its `flock`, as does the folder of a late step (`4c111e86`, mea
 
 With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A spawn reads no managed settings. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
 
+A spawn with a `hostCreds` member gets [the hostCreds test](#the-hostcreds-member-build-13047a51) first, before every step of this list, on every system. The place of that test is claustrum's own, not measured.
+
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
-1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60 and no `--no-session-persistence`, `87375cc7` answers the refusal of that member instead (measured on Windows). A [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form gets its own refusal instead (claustrum's own, not measured). Other refused values here are claustrum's own.
+1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60 and no `--no-session-persistence`, `87375cc7` answers the refusal of that member instead (measured on Windows). Other refused values here are claustrum's own.
 2. A relative `command` gets `-32602 command must be an absolute path when a launcher is given`.
 3. The checks of `launcher.resolve` run, with `command` in place of `cliPath`. A refusal gets `-32004 the managed launcher cannot be used: <reason>`, with a reason of [Unusable reasons](launcher-resolve.md#unusable-reasons). `[]` gets the text for no launcher.
 4. The `cwd` test, with its usual error.
@@ -491,7 +493,7 @@ claustrum's own: the macOS refusal comes before step 2. With a command, the own-
 === "Windows"
 
     - **Process group and job.** The child gets a new process group and a [job](process-kill.md#windows-child-trees) (`52d82f0a`), since `4c111e86` after a passed [start test](process-kill.md#the-start-test-of-the-jobs).
-    - **`launcher`.** Refused with `-32004`, except with a [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form.
+    - **`launcher`.** Refused with `-32004`.
     - **`signal` in the `exit` frame.** Never.
 
     These rules are measured on Windows, unless a tag says otherwise.
