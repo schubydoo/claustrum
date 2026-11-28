@@ -80,7 +80,11 @@ func openLogWithLimit(t *testing.T, sock, logPath string) (*os.File, error) {
 }
 
 // wantFreshLog asserts that the log path holds a regular file of mode 0600 with one link
-// that is not the file of before (nil for no file before).
+// that is not the file of before (nil for no file before). A file system can give a new
+// file the inode of a removed entry at once, as ext4 does. So a regular file of before
+// must still be held, by an open handle or a second name, and it is compared by
+// identity. An entry of another kind is told apart by its kind. A new file of a test
+// with a before entry is empty.
 func wantFreshLog(t *testing.T, logPath string, before os.FileInfo) {
 	t.Helper()
 	fi, err := os.Lstat(logPath)
@@ -91,8 +95,14 @@ func wantFreshLog(t *testing.T, logPath string, before os.FileInfo) {
 	if !fi.Mode().IsRegular() || fi.Mode().Perm() != 0o600 || st == nil || st.Nlink != 1 {
 		t.Errorf("log entry = %v with %v links, want a regular file of mode 0600 with one link", fi.Mode(), st)
 	}
-	if before != nil && os.SameFile(before, fi) {
+	if before == nil {
+		return
+	}
+	if before.Mode().IsRegular() && os.SameFile(before, fi) {
 		t.Error("the log is the file of before, want a fresh file")
+	}
+	if fi.Size() != 0 {
+		t.Errorf("log size = %d, want an empty fresh file", fi.Size())
 	}
 }
 
@@ -232,6 +242,12 @@ func TestDaemonLogReplacesAFileThatCannotRotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The open handle holds the inode, so the new file cannot reuse it.
+	held, err := os.Open(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
 	buf := captureLogBuf(t)
 	f, err := openDaemonLog(sock)
 	if f == nil || err != nil {
