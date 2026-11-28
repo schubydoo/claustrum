@@ -20,10 +20,10 @@ import (
 //
 // Claustrum's own, not measured: the check runs at each tick of the 60 s ticker
 // (orphanCheckInterval), so the exact minute of the end is claustrum's own. The line cuts
-// the time to whole seconds. The clock also counts from the start of the daemon, the close
-// of any connection starts it again, and a connected client holds the end off for as long
-// as it stays. The check runs before the idle exit and the orphan checks, and not once the
-// shutdown began. With -keep-children the children stay. A live stream-json child gets the
+// the time to whole seconds. The clock also counts from the start of the daemon. Only the
+// close of a connection that showed the token starts it again, so a dial with no byte or
+// no token does not. A connected client holds the end off for as long as it stays. The
+// check runs before the idle exit and the orphan checks, and not once the shutdown began. With -keep-children the children stay. A live stream-json child gets the
 // SIGTERM of the shutdown sweep first.
 
 // limitEnd ends the daemon at the check at the time now (monoNow) when the limit is due.
@@ -37,16 +37,19 @@ func (s *server) limitEnd(clients int, now time.Duration) bool {
 	if alone < time.Duration(s.hostLimit.minutes)*time.Minute {
 		return false
 	}
-	logging.Warnf("[Server] nobody has used this helper or been connected to it for %s, and the unattended limit in force is %d minutes (%s): shutting down and killing %d child process(es)",
-		alone.Truncate(time.Second), s.hostLimit.minutes, s.hostLimit.path, s.procs.AliveCount())
-	logging.Infof("[Server] shutdown requested")
-	// The mark is set only by the call that starts the shutdown, before its start, so
-	// closeAll sees it and a shutdown that another path started runs no sweep.
+	// The lines and the mark come only from the call that starts the shutdown, before its
+	// start, so closeAll sees the mark. A shutdown that another path started gets no limit
+	// line and runs no sweep.
+	started := false
 	s.once.Do(func() {
+		started = true
+		logging.Warnf("[Server] nobody has used this helper or been connected to it for %s, and the unattended limit in force is %d minutes (%s): shutting down and killing %d child process(es)",
+			alone.Truncate(time.Second), s.hostLimit.minutes, s.hostLimit.path, s.procs.AliveCount())
+		logging.Infof("[Server] shutdown requested")
 		s.limitStopped.Store(true)
 		s.beginShutdown()
 	})
-	return true
+	return started
 }
 
 // shutdownBegun is true once the shutdown started.
@@ -60,7 +63,7 @@ func (s *server) shutdownBegun() bool {
 }
 
 // noteAttended restarts the clock of the limit end. newServerOnSocket calls it once,
-// and serveConn calls it at each connection close.
+// and serveConn calls it at the close of each connection that showed the token.
 func (s *server) noteAttended() { s.lastAttended.Store(int64(monoNow())) }
 
 // sweepAfterLimit ends the processes that the children started and left, after an end

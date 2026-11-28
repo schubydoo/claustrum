@@ -113,12 +113,36 @@ func TestLimitEndClockRestartsAtClose(t *testing.T) {
 	s, sock := limitLineServer(t)
 	s.lastAttended.Store(int64(monoNow() - time.Hour))
 	cl := dial(t, sock)
-	waitConnsExactly(t, s, 1)
+	if reply := string(cl.call(authed(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))); !strings.Contains(reply, `"result"`) {
+		t.Fatalf("server.ping = %s", reply)
+	}
 	_ = cl.nc.Close()
 	waitConnsExactly(t, s, 0)
 	var w selfExitWatch
 	if s.selfExitCheck(sock, &w, monoNow()+14*time.Minute) {
 		t.Fatal("the daemon ended 14 minutes after a close: the close did not restart the clock")
+	}
+}
+
+// TestLimitEndClockSkipsUnusedConnections: a dial that sends nothing, as the host
+// cleaner makes, and a request with no token do not start the clock again (claustrum's
+// own, not measured).
+func TestLimitEndClockSkipsUnusedConnections(t *testing.T) {
+	s, sock := limitLineServer(t)
+	old := int64(monoNow() - time.Hour)
+	s.lastAttended.Store(old)
+	silent := dial(t, sock)
+	waitConnsExactly(t, s, 1)
+	_ = silent.nc.Close()
+	waitConnsExactly(t, s, 0)
+	tokenless := dial(t, sock)
+	if reply := string(tokenless.call(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`)); !strings.Contains(reply, `"error"`) {
+		t.Fatalf("a server.ping with no token = %s", reply)
+	}
+	_ = tokenless.nc.Close()
+	waitConnsExactly(t, s, 0)
+	if got := s.lastAttended.Load(); got != old {
+		t.Errorf("a connection that showed no token started the clock again: %d, want %d", got, old)
 	}
 }
 
@@ -260,4 +284,19 @@ func TestLimitEndAfterAnotherShutdown(t *testing.T) {
 	if strings.Contains(buf.String(), "nobody has used this helper") || s.limitStopped.Load() {
 		t.Errorf("the limit end ran after another shutdown began:\n%s", buf.String())
 	}
+}
+
+// TestLimitEndLosesTheRace: another path takes the one start of the shutdown after the
+// begun test of limitEnd. Then limitEnd logs no line and sets no mark.
+func TestLimitEndLosesTheRace(t *testing.T) {
+	s, _ := limitLineServer(t)
+	buf := captureLogBuf(t)
+	s.once.Do(func() {}) // the start is taken, and the shutdown channel is still open
+	if s.limitEnd(0, time.Duration(s.lastAttended.Load())+time.Hour) {
+		t.Error("limitEnd reported a start that another path took")
+	}
+	if strings.Contains(buf.String(), "nobody has used this helper") || strings.Contains(buf.String(), "shutdown requested") || s.limitStopped.Load() {
+		t.Errorf("limitEnd logged or marked after it lost the start:\n%s", buf.String())
+	}
+	close(s.shutdown) // the taken start never closes it, so the test does
 }

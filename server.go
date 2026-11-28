@@ -946,8 +946,12 @@ func (s *server) serveConn(c *conn.Conn) {
 			s.stopsGone++
 		}
 		// The clock of the limit end restarts before the connection leaves the count,
-		// so a check that counts no client sees the new time.
-		s.noteAttended()
+		// so a check that counts no client sees the new time. Only a connection that
+		// showed the token restarts it, so a dial that sends nothing or no token, such
+		// as that of the host cleaner, does not (claustrum's own, not measured).
+		if c.TokenMark().Load() {
+			s.noteAttended()
+		}
 		delete(s.conns, c)
 		s.mu.Unlock()
 		s.procs.DetachConn(c)
