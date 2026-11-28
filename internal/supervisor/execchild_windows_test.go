@@ -41,7 +41,7 @@ func TestWrapCmdWithTrampolineWindowsInert(t *testing.T) {
 	}
 }
 
-// TestWrapCmdWithTrampolineWindowsDropsMarks pins row S1 of the m-25 Windows round: a
+// TestWrapCmdWithTrampolineWindowsDropsMarks: a
 // CLAUDE_SSH_CHILD and a CLAUDE_SSH_RUN_DIR in the env of a spawn reach no child, on
 // 87375cc7 and on 13047a51 (measured on Windows). The other entries keep their order,
 // CLAUDE_SSH_DAEMON_CHILD included. A nil env stays nil, so the child inherits.
