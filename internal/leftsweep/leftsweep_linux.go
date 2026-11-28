@@ -79,8 +79,9 @@ func Run(runDir string) (int, error) {
 		return 0, errors.New("leftsweep: /proc/self of " + procDir() + " is not this process")
 	}
 	ended := 0
+	signalled := map[int]bool{}
 	for pass := 1; ; pass++ {
-		n, err := sweepOnce(runDir, own)
+		n, err := sweepOnce(runDir, own, signalled)
 		ended += n
 		if err != nil || n == 0 || pass == maxPasses {
 			return ended, err
@@ -90,8 +91,10 @@ func Run(runDir string) (int, error) {
 }
 
 // sweepOnce runs one pass over /proc and returns the number of processes that took
-// the signal.
-func sweepOnce(runDir string, own fs.FileInfo) (int, error) {
+// the signal. A pid in signalled took it in an earlier pass and is passed over, so
+// a dying process that still shows its marks gets one signal and counts once
+// (claustrum's own, not measured).
+func sweepOnce(runDir string, own fs.FileInfo, signalled map[int]bool) (int, error) {
 	proc := procDir()
 	entries, err := os.ReadDir(proc)
 	if err != nil {
@@ -102,10 +105,11 @@ func sweepOnce(runDir string, own fs.FileInfo) (int, error) {
 		pid, err := strconv.Atoi(e.Name())
 		// 13047a51 opens no pid file descriptor for pid 1 or for the daemon
 		// itself (row K-1, strace). The parent skip is claustrum's own.
-		if err != nil || pid < 2 || pid == ownPID() || pid == ownPPID() {
+		if err != nil || pid < 2 || pid == ownPID() || pid == ownPPID() || signalled[pid] {
 			continue
 		}
 		if endIfLeft(proc, pid, runDir, own) {
+			signalled[pid] = true
 			ended++
 		}
 	}

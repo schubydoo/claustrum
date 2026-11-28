@@ -269,9 +269,9 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
 - **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
-  a pid file descriptor to a process of the own uid with both child marks. Its root must show the run folder,
-  no entry there, or another folder with no `children` entry. A link there keeps it alive (claustrum's own, not measured).
-  The parts above the last name are followed (claustrum's own, not measured). Never widen: signal only through
+  a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
+  the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
+  ([the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
   `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
   without a measured row.
 

@@ -231,7 +231,9 @@ func TestRunSendsNothingWhenTheHoldFails(t *testing.T) {
 // The narrowing cases of claustrum's own, none measured. Each process has both
 // marks and stays alive: a mark inside a longer entry, a link, a dangling link or
 // a file at the run path, a loop or a closed folder above it, a dangling children
-// link in another folder, an environment over the cap, and pid 1.
+// link in another folder, an environment over the cap, and pid 1. The file case
+// stays alive through ENOTDIR at its children entry as well. The link cases are
+// the ones that only the folder test of the run path keeps alive.
 func TestRunKeepsTheNarrowedCases(t *testing.T) {
 	f := newFakeProc(t)
 	runDir := t.TempDir()
@@ -313,6 +315,31 @@ func TestRunKeepsTheNarrowedCases(t *testing.T) {
 
 	if n, err := Run(runDir); n != 0 || err != nil || len(f.ended) != 0 {
 		t.Fatalf("Run = %d, %v, ended %v, want 0, nil and none", n, err, f.ended)
+	}
+}
+
+// A dying process still shows its marks in the next pass. It gets one signal and
+// counts once (claustrum's own).
+func TestRunSignalsAPidOnce(t *testing.T) {
+	f := newFakeProc(t)
+	runDir := t.TempDir()
+	f.add(fakeBase, []string{runDirMark + runDir, childMark}, "/")
+	f.add(fakeBase+1, []string{runDirMark + runDir, childMark}, "/")
+	hold := holdPID
+	holdPID = func(pid int) (func(syscall.Signal) error, func(), error) {
+		send, release, err := hold(pid)
+		if err != nil || pid != fakeBase {
+			return send, release, err
+		}
+		// The entry of fakeBase stays, as for a process that has not exited yet.
+		return func(syscall.Signal) error { f.ended = append(f.ended, pid); return nil }, release, nil
+	}
+	n, err := Run(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || !equalInts(sortedInts(f.ended), []int{fakeBase, fakeBase + 1}) {
+		t.Fatalf("Run = %d, ended %v, want 2 and each pid once", n, f.ended)
 	}
 }
 

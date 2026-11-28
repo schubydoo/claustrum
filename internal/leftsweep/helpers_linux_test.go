@@ -73,8 +73,21 @@ func TestRunEndsARealChildWithBothMarks(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	old := holdPID
-	t.Cleanup(func() { holdPID = old })
+	old, oldWait := holdPID, waitPass
+	t.Cleanup(func() { holdPID, waitPass = old, oldWait })
+	// The pause before the next pass waits until the killed child shows no
+	// environment, so a slow runner cannot see its marks again.
+	waitPass = func(time.Duration) {
+		end := time.Now().Add(10 * time.Second)
+		for time.Now().Before(end) {
+			b, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", both.Process.Pid))
+			if err != nil || len(b) == 0 {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Error("the killed child still shows its environment")
+	}
 	holdPID = func(pid int) (func(syscall.Signal) error, func(), error) {
 		if ours[pid] {
 			return procinfo.HoldPIDByFD(pid)
