@@ -122,8 +122,18 @@ type managedLauncherParams struct {
 }
 
 // launcherCheckParam is the launcherCheck member of launcher.resolve. check is nil
-// for an absent or null member.
-type launcherCheckParam struct{ check *install.LauncherCheck }
+// for an absent or null member. orManagedFolder is its orManagedFolder member, and
+// pinned is true for a non-empty sha256 list or an ownerUid other than 0 (13047a51,
+// handleLauncher).
+type launcherCheckParam struct {
+	check           *install.LauncherCheck
+	orManagedFolder bool
+	pinned          bool
+}
+
+// orManagedFolderPinnedText is the refusal of an orManagedFolder with sha256 or
+// ownerUid (13047a51, measured on Linux, macOS and Windows).
+const orManagedFolderPinnedText = "orManagedFolder can't be set with sha256 or ownerUid"
 
 // checkTakesAnyMembers is launcherCheckAnyMembers behind a seam, so a Linux test
 // drives the Windows arm of the decode. Production never reassigns it.
@@ -131,22 +141,38 @@ var checkTakesAnyMembers = launcherCheckAnyMembers
 
 // UnmarshalJSON decodes the member. With checkTakesAnyMembers any object counts as
 // a launcherCheck. On Windows 4c111e86 answers the shapes on the launcher.resolve
-// page as any other, such as "path":5 or "orManagedFolder":"yes" (measured on
-// Windows). Other member values are claustrum's own, not measured. Elsewhere a member of another JSON type fails the decode (claustrum's
+// page as any other, such as "path":5 (measured on Windows). Other member values are claustrum's own, not measured. Elsewhere a member of another JSON type fails the decode (claustrum's
 // own, not measured). A value that is not an object and not null fails it on every
 // system, and null counts as absent (4c111e86, measured on Windows for a string, "",
 // a number, true, [] and an array of one object, and null as absent. Linux and macOS are claustrum's own, not measured).
+// An orManagedFolder that is not a bool fails it on every system (13047a51, measured
+// with a string on Linux, macOS and Windows).
 func (c *launcherCheckParam) UnmarshalJSON(data []byte) error {
-	if !checkTakesAnyMembers {
-		return json.Unmarshal(data, &c.check)
-	}
 	var o map[string]json.RawMessage
-	if err := json.Unmarshal(data, &o); err != nil {
+	if err := json.Unmarshal(data, &o); err != nil || o == nil {
 		return err
 	}
-	if o != nil {
-		c.check = &install.LauncherCheck{}
+	var m struct {
+		OrManagedFolder bool `json:"orManagedFolder"`
 	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+	c.orManagedFolder = m.OrManagedFolder
+	if !checkTakesAnyMembers {
+		if err := json.Unmarshal(data, &c.check); err != nil {
+			return err
+		}
+		c.pinned = len(c.check.SHA256) > 0 || (c.check.OwnerUID != nil && *c.check.OwnerUID != 0)
+		return nil
+	}
+	c.check = &install.LauncherCheck{}
+	// On Windows a sha256 or ownerUid of another type does not pin (claustrum's own,
+	// not measured).
+	var sha []string
+	var uid float64
+	c.pinned = (json.Unmarshal(o["sha256"], &sha) == nil && len(sha) > 0) ||
+		(json.Unmarshal(o["ownerUid"], &uid) == nil && uid != 0)
 	return nil
 }
 
@@ -165,6 +191,10 @@ func (p *managedLauncherParams) ExpandPaths() {}
 // measured), on macOS macos_host (measured). On Windows a launcherCheck, also one
 // with no path, is unusable with windows_host (4c111e86, measured on Windows for the
 // shapes on the launcher.resolve page, claustrum's own for other member values).
+// An orManagedFolder with a sha256 digest gets -32602 before the host refusal and the
+// file check (13047a51, measured on Linux, macOS and Windows). An ownerUid of 0 does
+// not count (measured on Linux and Windows). Another ownerUid and the place of the
+// test after the path test are claustrum's own, not measured.
 func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
@@ -182,8 +212,11 @@ func (s *server) handleLauncher(req *request) rpc.Response {
 	if p.Path != "" && p.LauncherCheck.check == nil {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "launcherCheck is required with path")
 	}
+	if p.LauncherCheck.orManagedFolder && p.LauncherCheck.pinned {
+		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, orManagedFolderPinnedText)
+	}
 	if p.LauncherCheck.check != nil {
-		res := install.ResolveChecked(p.Path, *p.LauncherCheck.check)
+		res := install.ResolveChecked(p.Path, *p.LauncherCheck.check, p.LauncherCheck.orManagedFolder)
 		s.managedLog.noteChecked(res)
 		return rpc.OKResult(req.ID, res)
 	}

@@ -4,7 +4,7 @@
     "id": 1,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -15,7 +15,7 @@
     "id": 2,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -26,7 +26,7 @@
     "id": 3,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -37,7 +37,7 @@
     "id": 4,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -48,7 +48,7 @@
     "id": 5,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -59,7 +59,7 @@
     "id": 6,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -70,7 +70,7 @@
     "id": 7,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }
@@ -81,7 +81,7 @@
     "id": 8,
     "error": {
       "code": -32602,
-      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli",
+      "message": "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid",
       "data": {
         "reason": "other"
       }

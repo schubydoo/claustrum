@@ -27,9 +27,9 @@ func TestLauncherCheckLogRepeats(t *testing.T) {
 
 // TestLauncherCheckAnyMembers pins the decode of launcherCheck. With
 // checkTakesAnyMembers, as on Windows, a member of any type passes and the resolve
-// answers the file check. "path":5 and "orManagedFolder":"yes" are measured on
-// Windows (4c111e86). Other member values, such as a string sha256, are claustrum's
-// own. Without it, as on Linux and macOS, such a member gets Invalid params
+// answers the file check. "path":5 is measured on Windows (4c111e86). Other member
+// values, such as a string sha256, are claustrum's own. An orManagedFolder that is no
+// bool gets Invalid params either way (13047a51, measured on Linux, macOS and Windows). Without it, as on Linux and macOS, such a member gets Invalid params
 // (claustrum's own, not measured). A launcherCheck that is no object gets Invalid
 // params either way, and null counts as absent. On Windows that is measured for a
 // string, "", a number, true, [], an array of one object and null (4c111e86). The
@@ -45,7 +45,9 @@ func TestLauncherCheckAnyMembers(t *testing.T) {
 		want       string
 	}{
 		{true, `{"path":5}`, "unusable"},
-		{true, `{"orManagedFolder":"yes","sha256":"x"}`, "unusable"},
+		{true, `{"sha256":"x"}`, "unusable"},
+		{true, `{"orManagedFolder":"yes"}`, invalid},
+		{false, `{"orManagedFolder":"yes"}`, invalid},
 		{true, `"x"`, invalid},
 		{true, `null`, none},
 		{false, `{"path":5}`, invalid},
@@ -78,5 +80,40 @@ func TestLauncherCheckResetArm(t *testing.T) {
 	l.noteChecked(refused)
 	if n := strings.Count(logs.String(), line); n != 2 {
 		t.Errorf("%d lines, want 2:\n%s", n, logs.String())
+	}
+}
+
+// TestLauncherResolveOrManagedFolderPinned pins the -32602 of 13047a51 for an
+// orManagedFolder with a digest (measured on Linux, macOS and Windows, before the host
+// refusal). With an ownerUid of 0, as false, or as a top-level member it is no
+// refusal (measured on Linux, an ownerUid of 0 also on Windows). An ownerUid of 5 is claustrum's own, not
+// measured. Both arms of the decode answer alike.
+func TestLauncherResolveOrManagedFolderPinned(t *testing.T) {
+	const pinned = `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"orManagedFolder can't be set with sha256 or ownerUid"}}`
+	digest := `["` + strings.Repeat("0", 64) + `"]`
+	prev := checkTakesAnyMembers
+	t.Cleanup(func() { checkTakesAnyMembers = prev })
+	for _, anyMembers := range []bool{false, true} {
+		checkTakesAnyMembers = anyMembers
+		s := newTestServer(t)
+		for _, row := range []struct {
+			params  string
+			refused bool
+		}{
+			{`"path":"/x/l","launcherCheck":{"orManagedFolder":true,"sha256":` + digest + `}`, true},
+			{`"path":"/x/l","launcherCheck":{"orManagedFolder":true,"sha256":` + digest + `,"rootsLink":true}`, true},
+			{`"launcherCheck":{"orManagedFolder":true,"ownerUid":5}`, true},
+			{`"path":"/x/l","launcherCheck":{"orManagedFolder":true,"ownerUid":0}`, false},
+			{`"path":"/x/l","launcherCheck":{"orManagedFolder":false,"sha256":` + digest + `}`, false},
+			{`"path":"/x/l","orManagedFolder":true,"launcherCheck":{"sha256":` + digest + `}`, false},
+		} {
+			got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":{"cliPath":"x",`+row.params+`}}`))
+			if (got == pinned) != row.refused {
+				t.Errorf("anyMembers %v, %s: %s, refused %v", anyMembers, row.params, got, row.refused)
+			}
+			if !row.refused && !strings.Contains(got, `"result":{"status":"unusable"`) {
+				t.Errorf("anyMembers %v, %s: %s, want an unusable answer", anyMembers, row.params, got)
+			}
+		}
 	}
 }

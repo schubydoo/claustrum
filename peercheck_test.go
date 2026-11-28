@@ -34,8 +34,8 @@ func wantPeerCheckLine() string {
 
 // wantCapabilityFeatures is the features array in the order of the frame. Windows
 // lists no git.worktree.external_root, process.spawn.link_bound,
-// process.spawn.cli_temp_root or process.spawn.cli_temp_root_end. Only Linux lists launcher.checked_by_handle and
-// launcher.local_kinds_only. Only Windows lists files.realpath.how_far (87375cc7). Linux
+// process.spawn.cli_temp_root or process.spawn.cli_temp_root_end. Only Linux lists launcher.checked_by_handle,
+// launcher.local_kinds_only and launcher.in_managed_folder. Only Windows lists files.realpath.how_far (87375cc7). Linux
 // and macOS list launcher.exit_ends_group (87375cc7) and process.cli_exit_ends_group
 // (13047a51) last.
 func wantCapabilityFeatures() string {
@@ -45,7 +45,7 @@ func wantCapabilityFeatures() string {
 	}
 	const unix = `"files.mkdir.verified_parent","git.worktree.external_root","process.spawn.link_bound","git.worktree_create.another_account_code","git.worktree_create.own_lfs_store","git.worktree_create.lfs_error_codes","process.spawn.cli_temp_root","process.spawn.cli_temp_root_end",`
 	if runtime.GOOS == "linux" {
-		return head + unix + `"launcher.checked_by_handle","launcher.local_kinds_only","server.instance_id","launcher.exit_ends_group","process.cli_exit_ends_group"`
+		return head + unix + `"launcher.checked_by_handle","launcher.local_kinds_only","launcher.in_managed_folder","server.instance_id","launcher.exit_ends_group","process.cli_exit_ends_group"`
 	}
 	return head + unix + `"server.instance_id","launcher.exit_ends_group","process.cli_exit_ends_group"`
 }
