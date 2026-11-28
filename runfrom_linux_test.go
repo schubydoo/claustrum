@@ -171,6 +171,22 @@ func TestCheckPlaceLinuxOwnerKinds(t *testing.T) {
 	if r := testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 0}); r != nil {
 		t.Errorf("root owner refused: %s", r.line())
 	}
+	// The file system test of an entry comes before its owner test. The mode
+	// 0775 of the file pins that it comes before the write test too.
+	if err := os.Chmod(f.verDir, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err = os.Stat(f.verDir); err != nil {
+		t.Fatal(err)
+	}
+	placeFileSystem = func(string) (string, error) { return "nfs", nil }
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 65534}), "cannot_tell", f.file,
+		"`"+f.verDir+"` is on NFS, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.")
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 0}), "cannot_tell", f.file,
+		"`"+f.verDir+"` is on NFS, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.")
+	placeFileSystem = func(string) (string, error) { return "fuse", nil }
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 65534}), "cannot_tell", f.file,
+		"`"+f.verDir+"` is on FUSE or virtiofs, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.")
 }
 
 // ownerInfo is a FileInfo whose Sys gives the owner uid.
@@ -193,7 +209,7 @@ func TestCheckPlaceLinuxStalled(t *testing.T) {
 	oldBound := placeCheckBound
 	t.Cleanup(func() { placeCheckBound = oldBound })
 	placeCheckBound = 50 * time.Millisecond
-	release, returned := stallPlaceCheck(t, f.srvDir)
+	release, _, returned := stallPlaceCheck(t, f.srvDir)
 	stubOsExit(t)
 	lines := make(chan string, 1)
 	exitDone := make(chan int, 1)
@@ -209,7 +225,7 @@ func TestCheckPlaceLinuxStalled(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("no line within 10 s of a 50 ms bound")
 	}
-	if want := "claustrum: refusing to run (cannot_tell) from " + f.file + ": " + stalledText + "\n"; got != want {
+	if want := "claustrum: refusing to run (cannot_tell) from " + f.file + ": The file could not be checked within 8 seconds. If a folder on the way to it is on a network share, check that its server is reachable.\n"; got != want {
 		t.Errorf("line %q, want %q", got, want)
 	}
 	select {
@@ -429,22 +445,25 @@ func TestCheckPlaceLinuxGoodPlaceRuns(t *testing.T) {
 }
 
 // stallPlaceCheck makes the statfs of stalled block until the test calls
-// release. returned turns true when that call returns.
-func stallPlaceCheck(t *testing.T, stalled string) (release func(), returned *atomic.Bool) {
+// release. entered closes when that call begins to wait, and returned turns
+// true when it returns.
+func stallPlaceCheck(t *testing.T, stalled string) (release func(), entered <-chan struct{}, returned *atomic.Bool) {
 	t.Helper()
 	gate := make(chan struct{})
+	in := make(chan struct{})
 	returned = new(atomic.Bool)
-	var once sync.Once
+	var once, inOnce sync.Once
 	release = func() { once.Do(func() { close(gate) }) }
 	t.Cleanup(release)
 	placeFileSystem = func(p string) (string, error) {
 		if p == stalled {
+			inOnce.Do(func() { close(in) })
 			<-gate
 			returned.Store(true)
 		}
 		return "", nil
 	}
-	return release, returned
+	return release, in, returned
 }
 
 // TestCheckPlaceLinuxStalledModes pins that -check-place and -probe-cli print
@@ -458,10 +477,11 @@ func TestCheckPlaceLinuxStalledModes(t *testing.T) {
 	t.Setenv(runFromEnv, f.file)
 	line := "claustrum: refusing to run (cannot_tell) from " + f.file + ": " + stalledText + "\n"
 	for _, args := range [][]string{{"-check-place"}, {"-probe-cli", filepath.Join(f.top, "none")}} {
-		release, returned := stallPlaceCheck(t, f.srvDir)
-		// The release comes well after the bound, so an end before the
-		// return of the check shows as returned false.
+		release, entered, returned := stallPlaceCheck(t, f.srvDir)
+		// The release comes well after the stall began and the bound passed,
+		// so an end before the return of the check shows as returned false.
 		go func() {
+			<-entered
 			time.Sleep(300 * time.Millisecond)
 			release()
 		}()

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // runMainOut drives main() as runMain does, but keeps stdout and stderr in
@@ -78,6 +79,14 @@ func TestCheckPlaceRefused(t *testing.T) {
 	}
 	if out != "" || errText != relativeDenialLine() {
 		t.Errorf("stdout %q, stderr %q\nwant stderr %q", out, errText, relativeDenialLine())
+	}
+}
+
+// TestPlaceCheckBound pins the 8 s bound of the whole place check, as
+// 13047a51 has it (measured on Linux).
+func TestPlaceCheckBound(t *testing.T) {
+	if placeCheckBound != 8*time.Second {
+		t.Errorf("placeCheckBound %v, want 8s", placeCheckBound)
 	}
 }
 

@@ -360,6 +360,8 @@ A check past 8 s gets the 8 seconds reason, also when it passes later. On a stal
 mount 13047a51 prints the line at 8 to 9 s and exits when the stalled call returns
 (measured on Linux). claustrum prints the line and waits for the check too, because Go
 cannot stop a stalled stat. The wait of `-probe-cli` is claustrum's own, not measured.
+A stalled `-serve` leaves no `-token-file` (measured on Linux). claustrum removes it at the
+bound, before the wait (claustrum's own, not measured).
 
 Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
 `mode`, a link above the three parts, and a file that is not regular (claustrum: `another_file`).
