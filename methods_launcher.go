@@ -145,8 +145,9 @@ var checkTakesAnyMembers = launcherCheckAnyMembers
 // own, not measured). A value that is not an object and not null fails it on every
 // system, and null counts as absent (4c111e86, measured on Windows for a string, "",
 // a number, true, [] and an array of one object, and null as absent. Linux and macOS are claustrum's own, not measured).
-// An orManagedFolder that is not a bool fails it on every system (13047a51, measured
-// with a string on Linux, macOS and Windows).
+// An orManagedFolder string fails it on every system (13047a51, measured on Linux,
+// macOS and Windows). Another type that is not a bool fails it too, and a null counts
+// as false (claustrum's own, not measured).
 func (c *launcherCheckParam) UnmarshalJSON(data []byte) error {
 	var o map[string]json.RawMessage
 	if err := json.Unmarshal(data, &o); err != nil || o == nil {
@@ -191,10 +192,11 @@ func (p *managedLauncherParams) ExpandPaths() {}
 // measured), on macOS macos_host (measured). On Windows a launcherCheck, also one
 // with no path, is unusable with windows_host (4c111e86, measured on Windows for the
 // shapes on the launcher.resolve page, claustrum's own for other member values).
-// An orManagedFolder with a sha256 digest gets -32602 before the host refusal and the
-// file check (13047a51, measured on Linux, macOS and Windows). An ownerUid of 0 does
-// not count (measured on Linux and Windows). Another ownerUid and the place of the
-// test after the path test are claustrum's own, not measured.
+// An orManagedFolder with a sha256 digest gets -32602, on macOS and Windows before the
+// host refusal (13047a51, measured on Linux, macOS and Windows). An ownerUid of 0 does
+// not count (measured on Linux and Windows). Another ownerUid, the place of the test
+// after the path test and its place before the file check on Linux are claustrum's
+// own, not measured.
 func (s *server) handleLauncher(req *request) rpc.Response {
 	if req.Method != "launcher.resolve" {
 		return unknownMethod(req)
