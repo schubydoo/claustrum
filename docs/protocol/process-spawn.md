@@ -112,8 +112,8 @@ A launcher spawn without `--no-session-persistence` gets the refusal above (meas
 
 On Linux a Claude Code child reads the `env` of `hostCreds` from a pipe. Those names do not reach its environment (measured).
 
-- `Invalid params` with no `data`: `null`, a text, a list or a number value (Linux, macOS and Windows). An `env` that is a text or a list, or a `null` value, gets it too (Linux and macOS, and on Windows claustrum's own, not measured). Other members, such as `unless`, change nothing (Linux and macOS).
-- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`. No child starts (macOS).
+- `Invalid params` with no `data`: a `hostCreds` that is `null`, a text or a list, or an `env` value that is a number (Linux, macOS and Windows). An `env` that is a text or a list, or an `env` value of `null`, gets it too (Linux and macOS, and on Windows claustrum's own, not measured). Other members, such as `unless`, change nothing (Linux and macOS).
+- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`. No child starts (macOS). The failed-start line on Windows, and the place of this refusal before the launcher refusal on Windows and the `macos_host` refusal on macOS, are claustrum's own, not measured.
 
 #### The Linux refusals
 
@@ -235,7 +235,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 
 ### After a failure
 
-A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required`, `Command is required` or `A terminal needs a key of 32 bytes in hex` error writes no line (the key text: `4c111e86` and `87375cc7`, measured on Windows).
+A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). On Windows that line after a `hostCreds` refusal is claustrum's own, not measured. An `Invalid params`, `Process ID is required`, `Command is required` or `A terminal needs a key of 32 bytes in hex` error writes no line (the key text: `4c111e86` and `87375cc7`, measured on Windows).
 
 ### A keyed `pty` on Windows
 
@@ -458,7 +458,7 @@ With `launcher`, the child runs as `<launcher...> <command> <args...>`. The laun
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
-1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60 and no `--no-session-persistence`, `87375cc7` answers the refusal of that member instead (measured on Windows). Other refused values here are claustrum's own.
+1. On Windows any `launcher`, `[]` too, gets `-32004 … a launcher cannot be applied on a Windows host`. With `unattendedSeconds` 60 and no `--no-session-persistence`, `87375cc7` answers the refusal of that member instead (measured on Windows). A [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form gets its own refusal instead (claustrum's own, not measured). Other refused values here are claustrum's own.
 2. A relative `command` gets `-32602 command must be an absolute path when a launcher is given`.
 3. The checks of `launcher.resolve` run, with `command` in place of `cliPath`. A refusal gets `-32004 the managed launcher cannot be used: <reason>`, with a reason of [Unusable reasons](launcher-resolve.md#unusable-reasons). `[]` gets the text for no launcher.
 4. The `cwd` test, with its usual error.
