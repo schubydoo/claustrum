@@ -70,8 +70,8 @@ func recordShutdownSignals(t *testing.T, groupKill bool, procs ...*Proc) func(p 
 // TestShutdownSweepSignalsByArgs pins the shutdown sweep of b3081b51. On Linux and
 // macOS a child whose args ask for stream-json gets SIGTERM first and ends by it. The
 // sweep then logs the KillAll line. A child with other args gets the group SIGKILL at
-// once (measured on Linux and macOS). After the exit frame the ended child gets no
-// group SIGKILL (claustrum's own). On Windows every child gets the kill at once, and
+// once (measured on Linux and macOS). The ended stream-json child gets one group
+// SIGKILL after its exit (87375cc7 and 13047a51, measured on Linux and macOS). On Windows every child gets the kill at once, and
 // no KillAll line comes (measured on Windows).
 func TestShutdownSweepSignalsByArgs(t *testing.T) {
 	logs := captureLogBuf(t)
@@ -102,7 +102,7 @@ func TestShutdownSweepSignalsByArgs(t *testing.T) {
 	}
 	wantAsked := []string{"KILL"}
 	if ShutdownAsksEnd {
-		wantAsked = []string{"TERM"}
+		wantAsked = []string{"TERM", "KILL"}
 	}
 	if got := sent(asked); !slices.Equal(got, wantAsked) {
 		t.Errorf("signals to the stream-json child = %q, want %q", got, wantAsked)
@@ -176,7 +176,7 @@ func exitSignalOf(t *testing.T, frames <-chan ChildFrame) string {
 }
 
 // TestShutdownWaitSendsNoKillAfterRunningTurnsFalse pins the guard of the end of the
-// shutdown wait (D28): a child whose running flag is false gets no group SIGKILL,
+// shutdown wait: a child whose running flag is false gets no group SIGKILL,
 // also while its done channel is still open. The test builds that state by hand from
 // its own ended child, and the seam delivers nothing.
 func TestShutdownWaitSendsNoKillAfterRunningTurnsFalse(t *testing.T) {

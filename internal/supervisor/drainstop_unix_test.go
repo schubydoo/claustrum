@@ -190,22 +190,44 @@ func TestShutdownKeepChildrenSendsNoDrainKill(t *testing.T) {
 	}
 }
 
-// TestShutdownD28KeepsAMemberOnItsOwnStdio: a stream-json child ends on the SIGTERM and
-// its member has its own stdio. claustrum sends no group SIGKILL (D28).
-func TestShutdownD28KeepsAMemberOnItsOwnStdio(t *testing.T) {
+// startBystander starts a helper sleep in its own process group, outside every group
+// of the test spawns. It ends at the end of the test.
+func startBystander(t *testing.T) int {
+	t.Helper()
+	exe, env := helperCommand(t, "sleep")
+	cmd := exec.Command(exe, "60")
+	cmd.Env = BuildEnv(env)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("bystander: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	return cmd.Process.Pid
+}
+
+// TestShutdownKillsTheGroupOfAChildThatEndedOnTheTerm: a stream-json child ends on the
+// SIGTERM and its member has its own stdio. Its group gets one SIGKILL after the exit,
+// and the member ends (87375cc7 and 13047a51, measured on Linux and macOS). A process
+// in another group lives on.
+func TestShutdownKillsTheGroupOfAChildThatEndedOnTheTerm(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
+	bystander := startBystander(t)
 	p, member := spawnPlainWithMember(t, m, "closed", "stay", "stream-json")
 	sent := recordShutdownSignals(t, true, p)
 	if n := m.KillAllCount(); n != 1 {
 		t.Errorf("killAllCount = %d, want 1", n)
 	}
 	awaitDrainDone(t, p)
-	if got := sent(p); !slices.Equal(got, []string{"TERM"}) {
-		t.Errorf("signals = %q, want one TERM", got)
+	awaitDrainMemberGone(t, member)
+	if got := sent(p); !slices.Equal(got, []string{"TERM", "KILL"}) {
+		t.Errorf("signals = %q, want TERM, KILL", got)
 	}
-	if !memberLives(member) {
-		t.Error("the member on its own stdio ended, want it alive (D28)")
+	if !memberLives(bystander) {
+		t.Error("the bystander in another group ended, want it alive")
 	}
 }
 
@@ -600,7 +622,7 @@ func TestDrainKillInTheGapAfterTheGrace(t *testing.T) {
 }
 
 // TestGraceMarkNeedsAHeldPipe: a pipe with a writer at the grace counts. A pipe at its
-// end does not, so a member on its own stdio gets no send (D28). The Procs are built by
+// end does not, so a member on its own stdio gets no send. The Procs are built by
 // hand, and the seam delivers nothing.
 func TestGraceMarkNeedsAHeldPipe(t *testing.T) {
 	count := countDrainKills(t)

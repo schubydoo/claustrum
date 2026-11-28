@@ -245,8 +245,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   remove a tree delete. Never build the name of a remove there from a request value, a
   path or a link target.
 - **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM` first, then its group gets `SIGKILL` (`argsAskEnd`,
-  `endAsked`, [D28](docs/DIVERGENCES.md#d28)). Never widen: In the shutdown sweep, send a group
-  `SIGKILL` after the exit of a child only while its exit drain is open. On Linux and macOS a plain spawn whose reaped leader stayed in its group gets a group `SIGKILL` while any process holds its pipes. That process can be outside the group. With `-keep-children` it gets none
+  `endAsked`, [the stop](docs/protocol/server.md#what-the-stop-does)). Never widen: In the shutdown sweep, send a group
+  `SIGKILL` after the exit of a child only while its exit drain is open. On Linux and macOS a plain spawn whose reaped leader stayed in its group gets a group `SIGKILL` while any process holds its pipes. That process can be outside the group. A `stream-json` one that ended on the shutdown `SIGTERM` gets it with no held pipe (`87375cc7` and `13047a51`, measured on Linux and macOS). With `-keep-children` it gets none
   (`killGroupInOpenDrain`, [the rule](docs/protocol/server.md#a-child-in-its-exit-drain)). A reused group number takes that signal, as on `87375cc7` (measured on Linux), a risk the maintainer accepted. A client `KILL` can come before it, so the group can get two. A pty spawn gets none from this path. Never widen: send it from this path at most once for a child, only to a plain spawn, before its exit frame.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
@@ -365,7 +365,6 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 | D23 | The environment of a child is in name order | always-on | Windows |
 | D24 | Create rollback keeps a folder that replaced the registration | always-on | all |
 | D27 | The stale step keeps an entry with a live record | always-on | Windows |
-| D28 | No group `SIGKILL` after the exit frame at shutdown | always-on | Linux, macOS |
 | CT-1 | `wantPid` adds `pid` and `startTime` | the caller asks | all |
 | CT-2 | `-keep-children` keeps the children at shutdown | off | all |
 | CT-3 | The `claustrum.conf` config file | no file | all |

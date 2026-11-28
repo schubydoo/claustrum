@@ -255,7 +255,7 @@ func recordGroupKills(t *testing.T, cur *atomic.Pointer[Proc]) (kills, late *ato
 
 // TestAskedLauncherKillComesBeforeTheExitFrame: a launcher that the sweep asked to end
 // gets one group SIGKILL, from the end or from endAsked, before its exit frame, on Linux
-// and on macOS (D28). The shape "two" has a holder of the pipes in its own session.
+// and on macOS. The shape "two" has a holder of the pipes in its own session.
 // The log counts the child as exited (87375cc7, measured on Linux and macOS).
 func TestAskedLauncherKillComesBeforeTheExitFrame(t *testing.T) {
 	for _, shape := range []string{"closed", "two"} {
