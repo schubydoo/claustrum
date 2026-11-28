@@ -474,7 +474,7 @@ The folder keeps its `flock`, as does the folder of a late step (`4c111e86`, mea
 
 With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A spawn reads no managed settings. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
 
-A spawn with a `hostCreds` member gets [the hostCreds test](#the-hostcreds-member-build-13047a51) before every launcher check below. Before the refusal of step 1 that order is measured on Windows (`13047a51`). On Linux and macOS, before steps 2 to 6 and the macOS `launcherCheck` refusal, it is claustrum's own, not measured.
+A spawn with a `hostCreds` member gets [the hostCreds test](#the-hostcreds-member-build-13047a51) before every launcher check below. Before the refusal of step 1 that order is measured on Windows (`13047a51`). On Linux and macOS, before steps 2 to 6 and the macOS `launcherCheck` refusal, it is claustrum's own, not measured. Its place after the id, launcher shape, command, `unattendedSeconds` and `linkBound` tests, and on Windows after the keyed `pty` refusal, is claustrum's own, not measured.
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
