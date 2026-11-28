@@ -106,8 +106,8 @@ const hostCredsUnsupportedText = "hostCreds is not supported on this host"
 // Windows the test comes before the -32004 launcher refusal (measured). Its place after
 // the id, launcher shape, command, unattendedSeconds and linkBound tests is claustrum's
 // own, not measured. So is its place on Windows after the keyed pty refusal, and on
-// Linux and macOS before the launcher refusal. It comes before the gitRead combine
-// test (measured on Linux).
+// Linux and macOS before steps 2 to 6 of the launcher checks and the macOS launcherCheck
+// refusal. It comes before the gitRead combine test (measured on Linux).
 func hostCredsRefusal(req *request, p *spawnParams, env map[string]string) *rpc.Response {
 	if bad := ptyKeyRefusal(req, p.Pty); bad != nil {
 		return bad

@@ -113,7 +113,7 @@ A launcher spawn without `--no-session-persistence` gets the refusal above (meas
 On Linux a Claude Code child reads the `env` of `hostCreds` from a pipe. Those names do not reach its environment (measured).
 
 - `Invalid params` with no `data`: a `hostCreds` that is `null`, a text or a list, or an `env` value that is a number (Linux, macOS and Windows). An `env` that is a text or a list, or an `env` value of `null`, gets it too (Linux and macOS, and on Windows claustrum's own, not measured). Other members, such as `unless`, change nothing (Linux and macOS).
-- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`. No child starts (macOS).
+- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`, and log the failed-start line (measured on macOS and Windows). No child starts (macOS).
 
 #### The Linux refusals
 
@@ -474,7 +474,7 @@ The folder keeps its `flock`, as does the folder of a late step (`4c111e86`, mea
 
 With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A spawn reads no managed settings. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
 
-A spawn with a `hostCreds` member gets [the hostCreds test](#the-hostcreds-member-build-13047a51) before the launcher refusal of step 1. That order is measured on Windows (`13047a51`). On Linux and macOS it is claustrum's own, not measured.
+A spawn with a `hostCreds` member gets [the hostCreds test](#the-hostcreds-member-build-13047a51) before every launcher check below. Before the refusal of step 1 that order is measured on Windows (`13047a51`). On Linux and macOS, before steps 2 to 6 and the macOS `launcherCheck` refusal, it is claustrum's own, not measured.
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 
