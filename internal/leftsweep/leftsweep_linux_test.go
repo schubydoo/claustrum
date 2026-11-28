@@ -120,7 +120,8 @@ func mkdirAll(t *testing.T, p string) {
 // The cases of row K-1 of 13047a51 (Linux, run m25c-ubuntu2-20261128T060259Z) on a
 // fake /proc tree. A, E and G end by one SIGKILL each. B, C and F stay. Two more
 // cases are claustrum's own: a run folder value that differs, and a child mark with
-// another value, stay alive. The processes of the daemon itself and of its parent are passed over.
+// another value, stay alive. The daemon itself is passed over, as on 13047a51
+// (row K-1, strace). The parent skip is claustrum's own.
 func TestRunEndsTheMarkedCasesOfRowK1(t *testing.T) {
 	f := newFakeProc(t)
 	runDir := t.TempDir()

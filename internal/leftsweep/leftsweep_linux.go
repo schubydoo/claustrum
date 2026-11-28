@@ -57,13 +57,13 @@ var (
 // returns the number of processes that took the signal.
 //
 // For each process of /proc it opens a pid file descriptor first, as 13047a51
-// does for every entry (row K-1). Then the process must have the effective uid of
-// this daemon and both marks, and its root must show the run folder of this
+// does (row K-1). Then the process must have the own uid of this daemon (the
+// effective uid, claustrum's own) and both marks, and its root must show the run folder of this
 // daemon, no entry at that path, or a different folder there with no children
 // entry. The signal is one SIGKILL through the descriptor, never a group and never
 // kill(pid). If the open fails, no signal goes out (claustrum's own, not measured).
 //
-// If runDir is not an absolute clean path or cannot be read, nothing is sent and an
+// If runDir is not an absolute clean path or its stat fails, nothing is sent and an
 // error comes back. The same holds when /proc/self of the /proc mount is not this
 // process, as in a /proc of another pid namespace. A failed read of /proc ends the
 // sweep with its error. These refusals are claustrum's own, not measured.
@@ -100,8 +100,8 @@ func sweepOnce(runDir string, own fs.FileInfo) (int, error) {
 	ended := 0
 	for _, e := range entries {
 		pid, err := strconv.Atoi(e.Name())
-		// Pid 1, the daemon itself and its parent never take this signal
-		// (claustrum's own).
+		// 13047a51 opens no pid file descriptor for pid 1 or for the daemon
+		// itself (row K-1, strace). The parent skip is claustrum's own.
 		if err != nil || pid < 2 || pid == ownPID() || pid == ownPPID() {
 			continue
 		}
@@ -115,7 +115,7 @@ func sweepOnce(runDir string, own fs.FileInfo) (int, error) {
 // endIfLeft holds pid by a pid file descriptor, runs the tests, and sends SIGKILL
 // through that descriptor when all pass. The tests read /proc by path. If the pid
 // names a new process by then, the descriptor still names the old one, so the
-// signal fails and is not counted.
+// signal fails and is not counted (claustrum's own, not measured).
 func endIfLeft(proc string, pid int, runDir string, own fs.FileInfo) bool {
 	send, release, err := holdPID(pid)
 	if err != nil {
@@ -130,7 +130,8 @@ func endIfLeft(proc string, pid int, runDir string, own fs.FileInfo) bool {
 }
 
 // ownedByUs reports whether the /proc entry of the process has the effective uid
-// of this daemon (row K-1 D: a process of another uid stays alive).
+// of this daemon (row K-1 D: a process of another uid stays alive). The choice of
+// the effective uid is claustrum's own.
 func ownedByUs(dir string) bool {
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -165,8 +166,9 @@ func hasBothMarks(dir, runDir string) bool {
 // same folder as this daemon's, or no entry at that path (row K-1 E), lets the
 // process end. A different folder lets it end only without a children entry (rows
 // K-1 F and G). Every other error keeps it alive, and so does a link or a
-// non-folder at that path (claustrum's own, not measured). The final name is not
-// followed, because an absolute link target resolves in the root of this daemon.
+// non-folder at that path (claustrum's own, not measured). Only the last name is
+// read with Lstat. The parts above it are followed, and an absolute link there
+// resolves in the root of this daemon (claustrum's own, not measured).
 func runDirLeft(dir, runDir string, own fs.FileInfo) bool {
 	at := filepath.Join(dir, "root", runDir)
 	fi, err := os.Lstat(at)
