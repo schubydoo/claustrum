@@ -179,8 +179,10 @@ another user namespace, which cannot read the namespaces of the daemon. Each com
 `strict` (measured on Linux). The last is a strict value (measured on macOS and Windows). A client in another pid namespace
 gets `unavailable` on Linux (measured). 13047a51 prints `claude-ssh:` in front. Another mount, uts or ipc namespace
 passes (measured on Linux). A refused listener gets nothing (measured on macOS, claustrum's own on Linux and Windows).
-Claustrum's own: a failed read of the peer or of the own namespaces answers `unavailable`, and the redials of the adopt
-frame get no check.
+Claustrum's own: a failed read of the peer or of the own namespaces answers `unavailable`. The uid test takes the
+effective uid, before the pid test and the namespace reads. So a peer of another uid with pid 0 gets `other_user` and
+exit `79`, also with `1`. Each redial of the adopt frame gets the check before the bridge writes on it, and a pass
+there prints no line.
 
 ### -stop — ask a running daemon to shut down
 

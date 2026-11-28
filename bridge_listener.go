@@ -59,7 +59,7 @@ func (e *ownerRejection) Error() string {
 // listenerAnswerOf is the check of the system. A test replaces it.
 var listenerAnswerOf = listenerAnswer
 
-// judgeSocketOwner runs the listener check on nc, the first connection of the
+// judgeSocketOwner runs the listener check on nc, a connection of the
 // bridge, before the bridge sends anything (measured on macOS). A pass writes the line
 // "claustrum: listener check (<answer>)" to stderr. The text of the reference
 // differs only in the program name (13047a51, measured on Linux, macOS and

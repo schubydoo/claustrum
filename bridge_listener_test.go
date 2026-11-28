@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
 	"net"
+	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -138,5 +141,81 @@ func TestBridgeRefusesTheListenerBeforeItSends(t *testing.T) {
 	sock, _ = fakeListener(t, "")
 	if code, exited := runMain(t, "-bridge", "-socket", sock); !exited || code != 79 {
 		t.Errorf("main -bridge with a refused listener: exit %d (exited %v), want 79", code, exited)
+	}
+}
+
+// TestBridgeChecksTheListenerOfARedial: the listener of the first connection passes
+// and closes at the adopt frame, so the bridge dials again. The listener of that
+// redial is refused before the bridge writes on it (claustrum's own, not measured).
+// main prints the refusal line and exits 79, and the second listener gets nothing.
+func TestBridgeChecksTheListenerOfARedial(t *testing.T) {
+	var calls atomic.Int32
+	old := listenerAnswerOf
+	listenerAnswerOf = func(net.Conn) (string, *ownerRejection) {
+		if calls.Add(1) == 1 {
+			return listenerAnswerOn, nil
+		}
+		return "", &ownerRejection{kind: "other_user", detail: "user 4242 listens"}
+	}
+	t.Cleanup(func() { listenerAnswerOf = old })
+	t.Setenv(bridgeListenerEnv, "1")
+	t.Setenv(bridgeAdoptEnv, "1")
+	sock := adoptSocketDir(t, "test-token-0123")
+	if bridgeAdoptFrame(sock, os.Environ()) == nil {
+		t.Skip("the environment of this host gives no adopt frame, so the bridge never dials again")
+	}
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	second := make(chan []byte, 1)
+	go func() {
+		first, err := ln.Accept()
+		if err != nil {
+			second <- nil
+			return
+		}
+		_ = first.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, _ = bufio.NewReader(first).ReadString('\n')
+		_ = first.Close()
+		c, err := ln.Accept()
+		// A bridge that wrongly goes on dials a third time, and that dial then fails.
+		_ = ln.Close()
+		if err != nil {
+			second <- nil
+			return
+		}
+		defer c.Close()
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		b, _ := io.ReadAll(c)
+		second <- b
+	}()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStderr := os.Stderr
+	os.Stderr = w
+	code, exited := runMain(t, "-bridge", "-socket", sock)
+	os.Stderr = oldStderr
+	_ = w.Close()
+	printed, _ := io.ReadAll(r)
+	_ = r.Close()
+
+	if !exited || code != ownerRejectStatus {
+		t.Errorf("main -bridge with a refused redial: exit %d (exited %v), want 79", code, exited)
+	}
+	const want = "claustrum: listener check (on)\n" +
+		"claustrum: refusing the listener (other_user): user 4242 listens; nothing was sent to it\n"
+	if string(printed) != want {
+		t.Errorf("stderr %q, want %q", printed, want)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("the check ran %d times, want 2", n)
+	}
+	if b := <-second; len(b) != 0 {
+		t.Errorf("the listener of the redial got %d bytes, want nothing", len(b))
 	}
 }

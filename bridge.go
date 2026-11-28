@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -41,8 +42,8 @@ func runBridge(socket string) error {
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
-	// Only this first connection gets the listener check. The redials of
-	// sendAdoptFrame get none (claustrum's own, not measured).
+	// Each redial of sendAdoptFrame gets the same check, and a pass there prints no
+	// line (claustrum's own, not measured).
 	check, set := os.LookupEnv(bridgeListenerEnv)
 	if err := judgeSocketOwner(nc, check, set, os.Stderr); err != nil {
 		_ = nc.Close()
@@ -50,7 +51,12 @@ func runBridge(socket string) error {
 	}
 	var from io.Reader = nc
 	if frame := bridgeAdoptFrame(socket, os.Environ()); frame != nil {
-		if nc, from, err = sendAdoptFrame(socket, nc, frame); err != nil {
+		judgeRedial := func(c net.Conn) error { return judgeSocketOwner(c, check, set, io.Discard) }
+		if nc, from, err = sendAdoptFrame(socket, nc, frame, judgeRedial); err != nil {
+			var refused *ownerRejection
+			if errors.As(err, &refused) {
+				return err
+			}
 			return fmt.Errorf("dial server: %w", err)
 		}
 	}
@@ -171,7 +177,9 @@ func bridgeAdoptFrame(socket string, env []string) []byte {
 // read of the reply, so a daemon that never reads cannot hold the bridge. A failed
 // or late write counts as a close, any second failed try leads to the third
 // connection too, and a failed new dial ends the bridge with "dial server:".
-func sendAdoptFrame(socket string, nc net.Conn, frame []byte) (net.Conn, io.Reader, error) {
+// judge checks the listener of each new connection before the bridge writes on it,
+// and its refusal closes that connection and ends the bridge (claustrum's own, not measured).
+func sendAdoptFrame(socket string, nc net.Conn, frame []byte, judge func(net.Conn) error) (net.Conn, io.Reader, error) {
 	for try := 1; ; try++ {
 		br := bufio.NewReader(nc)
 		_ = nc.SetDeadline(time.Now().Add(bridgeAdoptWait))
@@ -185,6 +193,10 @@ func sendAdoptFrame(socket string, nc net.Conn, frame []byte) (net.Conn, io.Read
 		}
 		_ = nc.Close()
 		if nc, err = sockroute.DialUnixPath(socket, 0); err != nil {
+			return nil, nil, err
+		}
+		if err = judge(nc); err != nil {
+			_ = nc.Close()
 			return nil, nil, err
 		}
 		if try == bridgeAdoptFrames {
