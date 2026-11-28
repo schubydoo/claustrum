@@ -215,6 +215,9 @@ func refusedRedialRun(t *testing.T, refuseAt int32) (code int, exited bool, stde
 	code, exited = runMain(t, "-bridge", "-socket", sock)
 	os.Stderr = oldStderr
 	_ = w.Close()
+	// A bridge that stopped before its last dial leaves Accept waiting: close the
+	// listener so the goroutine sends and the test fails instead of hanging.
+	_ = ln.Close()
 	return code, exited, string(<-printed), n.Load(), <-last
 }
 
