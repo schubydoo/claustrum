@@ -94,6 +94,21 @@ func TestCheckPlaceUsage(t *testing.T) {
 	}
 }
 
+// TestNoModeNamesEveryMode pins the line of a run with no mode flag: the
+// list of modes of 13047a51 (measured on Windows), with claustrum's program
+// name, and exit 2.
+func TestNoModeNamesEveryMode(t *testing.T) {
+	const want = "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required\n"
+	t.Setenv(runFromEnv, "")
+	code, exited, out, errText := runMainOut(t)
+	if !exited || code != 2 {
+		t.Fatalf("exit = %d, %v, want 2", code, exited)
+	}
+	if out != "" || errText != want {
+		t.Errorf("stdout %q, stderr %q\nwant stderr %q", out, errText, want)
+	}
+}
+
 // TestProbeCLIRefusedPlace pins the -probe-cli answer of a refused place: the
 // refusal line on stderr, __CLI_BAD__ on stdout, and exit 0.
 func TestProbeCLIRefusedPlace(t *testing.T) {

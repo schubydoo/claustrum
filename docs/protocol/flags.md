@@ -359,8 +359,8 @@ an owner that is neither root nor this account. An entry that cannot be read giv
   and `-stop` do not create it. When no daemon has run, `-bridge` fails with
   `connect: no such file or directory`, and `-stop` prints `none`.
 - With no mode given, claustrum prints
-  `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required`
-  (it names no `-check-place`: claustrum's own, not measured)
+  `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required`
+  (the list of `13047a51`, measured on Windows)
   on stderr and exits `2`, with no usage dump. An *unknown flag* gets the stdlib
   `flag` error plus the usage, and exit `2`.
 

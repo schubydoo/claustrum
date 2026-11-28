@@ -321,8 +321,9 @@ func main() {
 		runStop(resolveSocket(), os.Stdout)
 		return
 	default:
-		// This text, which names no -check-place, is claustrum's own (not measured).
-		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required")
+		// The list of modes is that of 13047a51 (measured on Windows). The
+		// program name claustrum is claustrum's own.
+		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required")
 		osExit(2)
 	}
 }
