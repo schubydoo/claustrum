@@ -300,11 +300,11 @@ func TestCreateNamesGitDirThatGitRefusesForItsOwner(t *testing.T) {
 
 // TestCreateOwnerRefusalUnderADaemonVar: with the step of ownerRefusedGitDir on and the
 // Windows rule (copyPinsWalkGitDir), the call about the repository answers the owner
-// refusal of git. In the state shadow the request ignores the daemon variables, so the
-// call runs. With no daemon variable the create names `<baseRepo>/.git`. A daemon
-// GIT_DIR keeps not_a_repo, as in unusableDotGit. A GIT_COMMON_DIR that the request
-// ignores names the `.git` too (all claustrum's own, not measured). Mutation: drop the
-// test of the daemon variables in ownerRefusedGitDir.
+// refusal of git. With no daemon variable the create names `<baseRepo>/.git`. In the
+// state shadow the request ignores a daemon GIT_DIR or GIT_COMMON_DIR, so the create
+// names the `.git` there too. A daemon GIT_DIR that the request keeps (keepDaemonVars)
+// keeps not_a_repo (all claustrum's own, not measured). Mutations: drop the test of the
+// daemon variables in ownerRefusedGitDir, or drop its daemonVarsKept test.
 func TestCreateOwnerRefusalUnderADaemonVar(t *testing.T) {
 	requireGit(t)
 	old := ownerRefusalNamesGitDir
@@ -314,16 +314,21 @@ func TestCreateOwnerRefusalUnderADaemonVar(t *testing.T) {
 	for _, row := range []struct {
 		name     string
 		v        string
+		kept     bool
 		notARepo bool
 	}{
-		{"no daemon variable", "", false},
-		{"a daemon GIT_DIR", "GIT_DIR", true},
-		{"an ignored daemon GIT_COMMON_DIR", "GIT_COMMON_DIR", false},
+		{"no daemon variable", "", false, false},
+		{"an ignored daemon GIT_DIR", "GIT_DIR", false, false},
+		{"an ignored daemon GIT_COMMON_DIR", "GIT_COMMON_DIR", false, false},
+		{"a kept daemon GIT_DIR", "GIT_DIR", true, true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			if row.v != "" {
 				t.Setenv(row.v, f.gitDir)
+			}
+			if row.kept {
+				keepDaemonVars(t)
 			}
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
 				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(f.repo, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
