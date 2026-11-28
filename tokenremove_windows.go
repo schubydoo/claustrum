@@ -10,8 +10,9 @@ import (
 // Windows). The other kinds follow the Linux rows (not measured on Windows). A
 // missing path or a failed Lstat removes nothing. One DeleteFile by the path
 // that the flag names: it never removes a folder, also one that took the name
-// after the Lstat, and it removes a file link as a link. Its error is ignored
-// (claustrum's own, not measured).
+// after the Lstat, and it removes a file link as a link. Lstat gives a folder
+// link or a junction no ModeDir, so DeleteFile runs on it, fails, and the link
+// stays. That error and every other is ignored (claustrum's own, not measured).
 func removeRefusedTokenFile(path string) {
 	fi, err := os.Lstat(path)
 	if err != nil || fi.IsDir() {

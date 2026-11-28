@@ -33,7 +33,7 @@ the precedence of a flag and its key, and the bypass rule.
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (CT-8) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
 | `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on the prune after a good install, the new CLI among them ([other prunes](../INSTALL.md#the-prune-of-a-cache-miss)). The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
-| none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
+| none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3), and the `<version>` of [the place check](#the-place-check-13047a51) | -version, -check-place, -probe-cli, -serve, -bridge, -install |
 
 Bool keys accept `true/1/yes/on` and `false/0/no/off`. Any other bool value, and a
 negative or unparseable number, leaves the key unset, so the flag value or the
@@ -308,6 +308,7 @@ The other modes check a set place first (an empty value checks nothing: claustru
 - `-serve`, `-bridge`, `-install` and no mode exit `78`. A refused `-serve` makes no socket.
 - A refused `-serve` first removes its `-token-file`, unless it is a folder. A link goes
   as a link, and its target stays. A FIFO goes. macOS and Windows show a regular file.
+  On Windows a folder link or junction stays (claustrum's own, not measured).
 
 On macOS and Windows each set place gets the kind `host`, with the reason
 `Only a Linux host's file can be checked.`
@@ -346,7 +347,7 @@ The path must end in `srv/<version>/server`, this helper's own version, with no 
 `claustrum.conf`, or claustrum's own version (from the code).
 
 Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
-`mode`, a link above the three parts, a file that is not regular (claustrum: `mode`), and
+`mode`, a link above the three parts, a file that is not regular (claustrum: `another_file`), and
 an owner that is neither root nor this account. An entry that cannot be read gives
 `cannot_tell` with claustrum's own text. No row shows a time bound, and claustrum sets none.
 

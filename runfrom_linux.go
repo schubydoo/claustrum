@@ -55,7 +55,7 @@ var (
 // another_file comes before the shape. Not measured: the order of the owner
 // and the write test on one entry, of another_file and mode, the owner text
 // for an owner that is neither root nor this account, a link above the three
-// parts, and a non-regular file. The cannot_tell text of an error other than
+// parts, and a non-regular file (claustrum: another_file). The cannot_tell text of an error other than
 // FUSE is claustrum's own. A stalled entry has no time bound (claustrum's own,
 // not measured).
 func examinePlace(path, version string) *placeDenial {
@@ -87,6 +87,9 @@ func examinePlace(path, version string) *placeDenial {
 	if err != nil {
 		return placeUnreadable(path, path, err)
 	}
+	// A leaf that is not regular already answered another_file above, because
+	// the program that runs is a regular file. The IsRegular test guards the
+	// seam placeExePath only.
 	if !leaf.Mode().IsRegular() || leaf.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 || caps {
 		return &placeDenial{kind: "mode", path: path, text: modeText}
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 )
 
@@ -65,7 +66,7 @@ func TestCheckPlaceLinuxPasses(t *testing.T) {
 	if r := examinePlace(f.file, placeTestVersion); r != nil {
 		t.Fatalf("refused: %s", r.line())
 	}
-	// A deeper top folder passes too.
+	// The path with a trailing slash passes too, after the Clean.
 	if r := examineRunFrom(f.file+"/", placeTestVersion); r != nil {
 		t.Fatalf("refused the cleaned path: %s", r.line())
 	}
@@ -131,6 +132,30 @@ func TestCheckPlaceLinuxAnotherFile(t *testing.T) {
 	}
 	placeExePath = other
 	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "another_file", f.file, anotherFileText)
+}
+
+// TestCheckPlaceLinuxNotRegular pins that a folder and a FIFO at the place
+// answer another_file: the program that runs is a regular file.
+func TestCheckPlaceLinuxNotRegular(t *testing.T) {
+	f := newPlaceFixture(t)
+	dir := filepath.Join(f.top, "d", "srv", placeTestVersion, "server")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(f.top, "d"), filepath.Dir(filepath.Dir(dir)), filepath.Dir(dir), dir} {
+		if err := os.Chmod(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantPlaceDenial(t, examinePlace(dir, placeTestVersion), "another_file", dir, anotherFileText)
+	fifo := filepath.Join(f.verDir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantPlaceDenial(t, examinePlace(fifo, placeTestVersion), "another_file", fifo, anotherFileText)
 }
 
 func TestCheckPlaceLinuxMode(t *testing.T) {
