@@ -13,8 +13,8 @@ import (
 // injects no environment markers on windows. Measured on Windows, the 19f30c46 reference
 // daemon reports it is not the run-dir lock holder on windows and stamps neither
 // CLAUDE_SSH_RUN_DIR nor CLAUDE_SSH_CHILD (a child's env under a run-shaped socket matched a
-// bare-socket child's). WrapCmdWithTrampoline returns no exec-error pipe and leaves the
-// command's env unchanged even with a run dir set. A mutant that injected a marker on windows
+// bare-socket child's). WrapCmdWithTrampoline returns no exec-error pipe and leaves an
+// env with no marks unchanged, even with a run dir set. A mutant that injected a marker on windows
 // would fail here.
 func TestWrapCmdWithTrampolineWindowsInert(t *testing.T) {
 	cmd := exec.Command(`C:\Windows\System32\cmd.exe`, "/c", "echo hi")

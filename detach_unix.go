@@ -20,7 +20,8 @@ func detachSysProcAttr() *syscall.SysProcAttr {
 // daemonStartEnv is the environment of the launcher without CLAUDE_SSH_CHILD and
 // CLAUDE_SSH_RUN_DIR. It is the base of the environment of the daemonized child.
 // Measured on Linux against c9125eb8 and 4c111e86: the daemon keeps neither name of the
-// launcher. On macOS this is claustrum's own, not measured. A process.spawn child still
+// launcher. Measured on macOS too (87375cc7 and 13047a51). The place of the entries is
+// not measured there. A process.spawn child still
 // gets both names, because the spawn adds them (runDirEnv).
 func daemonStartEnv(env []string) []string {
 	return sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(env, supervisor.EnvChildMarker), supervisor.EnvRunDir)
