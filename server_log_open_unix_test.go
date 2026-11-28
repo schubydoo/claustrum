@@ -345,9 +345,9 @@ func TestDaemonizeFailsWhenTheLogEntryStays(t *testing.T) {
 	}
 }
 
-// Measured on 87375cc7 and 13047a51 (macOS, rows L4 to L6): a folder above the run folder
+// Measured on 87375cc7 and 13047a51 (macOS, rows L4 to L6): a folder above the socket folder
 // that cannot be searched fails the start at the mkdir, before the log open. The launcher
-// prints the error of the mkdir and exits 1. Linux is from the code, not measured. The fix
+// prints the error of the mkdir and exits 1. Linux is not measured. The fix
 // is the error arm of the MkdirAll in daemonizeWithToken.
 func TestDaemonizeFailsAtTheMkdirOfTheSocketFolder(t *testing.T) {
 	if os.Geteuid() == 0 {

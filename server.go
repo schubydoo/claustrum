@@ -587,8 +587,8 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// On Linux and macOS a failed create ends the launcher with the error of the mkdir and
 	// exit 1, before the log open (socketDirFailsStart). 87375cc7 and 13047a51 print
 	// "claude-ssh: mkdir <path>: permission denied" for a folder above that cannot be
-	// searched (measured on macOS, rows L4 to L6). Linux and the other errors are from the
-	// code, not measured. On Windows the error surfaces as that of the log open below.
+	// searched (measured on macOS, rows L4 to L6). Linux and the other errors are not
+	// measured. On Windows the error surfaces as that of the log open below.
 	if dir := filepath.Dir(socket); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o700); err != nil && socketDirFailsStart {
 			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
