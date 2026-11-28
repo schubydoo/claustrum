@@ -571,7 +571,7 @@ Measured on Linux against `13047a51`:
 
 The third line comes right after the first (measured on Linux). A failed stat of the socket path counts as such a path, and no self-probe runs (claustrum's own, not measured).
 
-For a `ccd-cli` or launcher spawn, `13047a51` sent that group `SIGKILL` a second time in some runs. Claustrum sends it once (claustrum's own).
+For a `ccd-cli` or launcher spawn, `13047a51` sent that group `SIGKILL` a second time in some runs. Claustrum on Linux sends a second one after the exit of the leader (`killAfterSweepKill`, claustrum's own, not measured at the limit end).
 
 Claustrum's own, not measured: a dial of the daemon to itself does not start the clock again. The check comes before the idle exit and the orphan checks, and not once the shutdown began. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
 
