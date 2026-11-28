@@ -9,7 +9,7 @@ import (
 )
 
 // TestSpawnRefusalReasonBusyLinux pins the reason busy for a program file that a
-// writer holds open (87375cc7 and 13047a51, measured on Linux for an ELF file and a
+// writer holds open (87375cc7, measured on Linux for an ELF file and a
 // script). The test holds a script open for a write, so execve fails with ETXTBSY.
 func TestSpawnRefusalReasonBusyLinux(t *testing.T) {
 	scr := filepath.Join(t.TempDir(), "prog.sh")

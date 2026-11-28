@@ -14,7 +14,7 @@ import (
 // TestSpawnRefusalReasonsWindows pins the reasons that Windows measured: a folder as
 // the command is not_found, and any launcher is refused with the fixed text and the
 // windows_host fault (c9125eb8). A text file that is not a program is not_executable,
-// and a program file that a writer holds open is busy (87375cc7 and 13047a51).
+// and a program file that a writer holds open is busy (87375cc7).
 func TestSpawnRefusalReasonsWindows(t *testing.T) {
 	dir := t.TempDir()
 	txt := filepath.Join(dir, "noexec.txt")

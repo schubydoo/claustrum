@@ -239,7 +239,7 @@ A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"
 
 `busy` and the Windows `not_executable`: `87375cc7`, measured on Linux and Windows. The test order is not measured.
 
-On macOS only `cwd_unusable` is measured, and `busy` needs a row. The rest follows Linux, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
+On macOS only `cwd_unusable` is measured. The rest follows Linux, `busy` included, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
