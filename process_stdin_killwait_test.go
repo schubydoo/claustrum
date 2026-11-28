@@ -98,6 +98,8 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		// 87375cc7 lists launcher.exit_ends_group last on Linux and macOS.
 		wantFeatures = append(wantFeatures, launcherExitFeature)
 	}
+	// 13047a51 lists process.spawn.host_creds_pipe last on Linux.
+	wantFeatures = append(wantFeatures, hostCredsFeatures...)
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
 	}
