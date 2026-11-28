@@ -56,8 +56,8 @@ downloads or reads the CLI, extracts and verifies it, puts it in place and runs
 with `-cli-url`.
 
 `-install` exits `0` whenever it prints the facts line. It reports a failure inside
-the facts as `cliError`. Three cases print no facts
-line. A flag that does not parse exits `2`. `-cli-version` with no `-cli-dir` and
+the facts as `cliError`. Four cases print no facts
+line. A refused [place](protocol/flags.md#the-place-check-13047a51) exits `78`. A flag that does not parse exits `2`. `-cli-version` with no `-cli-dir` and
 no home folder exits `2`. Any other `-install` run with no home folder exits `1` (for `-serve`, see [DAEMON.md](DAEMON.md)). With no `HOME`
 the reference prints `claude-ssh: cannot resolve home directory: $HOME is not defined`
 on stderr (Linux). claustrum prints the same line with its own prefix,
@@ -501,6 +501,8 @@ none with a home folder).
 - If the deadline had to kill it, stdout is `__CLI_HUNG__\n`.
 - If the binary is missing or does not run, stdout is `__CLI_BAD__\n`. Not running
   means it either fails to start or exits non-zero.
+- With a refused [`CLAUDE_SSH_RUN_FROM` place](protocol/flags.md#the-place-check-13047a51), stdout
+  is `__CLI_BAD__\n` after the refusal line on stderr (13047a51, measured on Linux and Windows).
 - On Windows, a path with no file at exactly that name gives `__CLI_BAD__\n`, and
   nothing starts. The probe never adds `.exe`. claustrum tests only that the path
   exists. The exact test of the reference, a folder, a relative path and a path

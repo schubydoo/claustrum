@@ -559,7 +559,8 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
     and the client stops uploading the reference each session. The value is 40 or
     64 hex digits, claustrum prints it in lower case, and any other value does
     nothing. [flags.md → -version](protocol/flags.md#-version) has the output and
-    how the client reads it.
+    how the client reads it. The key also sets the version that the place check expects
+    (claustrum's own).
 - **Reference.** None stated.
 - **Systems and switch.** All systems. Create the file.
 - **Cost.** A wrong digit still turns a cap or a deadline on: `10` for `0` on a cap,

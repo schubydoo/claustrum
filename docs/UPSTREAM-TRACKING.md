@@ -174,7 +174,7 @@ means that a probe which reaches the path shows it. The battery never drives
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
-| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the `-version` shape that the static check prints | The `claustrum.conf` file |
+| [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the `-version` shape that the static check prints and in the `<version>` that the [place check](protocol/flags.md#the-place-check-13047a51) expects | The `claustrum.conf` file |
 | [CT-4](DIVERGENCES.md#ct-4) | Not built | No | None |
 | [CT-5](DIVERGENCES.md#ct-5) | Opt-in, Windows | No | An extra named-pipe transport |
 | [CT-6](DIVERGENCES.md#ct-6) | Off | No | An opt-in size cap fails `files.extract_tar` |

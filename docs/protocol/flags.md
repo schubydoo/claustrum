@@ -1,13 +1,13 @@
 # Flags and modes of the binary
 
-This page gives the flags of the claustrum binary, except `-cli-dir`, `-cli-version`, `-cli-url`, `-cli-checksum` and `-cli-zst` of `-install`, and the config keys that match them. It then describes the modes `-serve`, `-bridge`, `-stop` and `-version`, and the rules that every mode shares. The modes `-install` and `-probe-cli` are on the [install page](../INSTALL.md).
+This page gives the flags of the claustrum binary, except `-cli-dir`, `-cli-version`, `-cli-url`, `-cli-checksum` and `-cli-zst` of `-install`, and the config keys that match them. It then describes the modes `-serve`, `-bridge`, `-stop`, `-version` and `-check-place`, and the rules that every mode shares. The modes `-install` and `-probe-cli` are on the [install page](../INSTALL.md).
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Daemon lifecycle (flags)
 
-One binary, six modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install` and
-`-probe-cli`. `-install` and `-probe-cli` are on
+One binary, seven modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install`,
+`-probe-cli` and `-check-place`. `-install` and `-probe-cli` are on
 [their own page](../INSTALL.md).
 
 ### Flags and config keys
@@ -33,7 +33,7 @@ the precedence of a flag and its key, and the bypass rule.
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (CT-8) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
 | `-cli-keep <n>` | none | `3` | version files of the cli-dir to retain on the prune after a good install, the new CLI among them ([other prunes](../INSTALL.md#the-prune-of-a-cache-miss)). The new CLI always stays. `0` and a negative value remove every version file but the new CLI | -install |
-| none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
+| none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3), and the `<version>` of [the place check](#the-place-check-13047a51) | -version, -check-place, -probe-cli, -serve, -bridge, -install |
 
 Bool keys accept `true/1/yes/on` and `false/0/no/off`. Any other bool value, and a
 negative or unparseable number, leaves the key unset, so the flag value or the
@@ -278,8 +278,97 @@ claustrum -version                   # → claude-ssh <sha> (via Claustrum <id>,
 
 The desktop client decides whether to upload the reference again from a
 `<bin> --version` output that matches `/claude-ssh\s+(\S+)/`. The override
-changes this stdout only. No JSON-RPC frame changes, and `server.capabilities`
+changes this stdout and the version of [the place check](#the-place-check-13047a51) only. No JSON-RPC frame changes, and `server.capabilities`
 still reports claustrum's own `<id>`.
+
+### The place check (13047a51)
+
+`CLAUDE_SSH_RUN_FROM` names the file that the binary must run from. `-check-place`
+checks that place and does nothing else. A good place gives exit `0` and no output.
+A refused place gives one stderr line and exit `78`:
+
+```text
+claustrum: refusing to run (<kind>) from <path>: <reason>
+```
+
+13047a51 writes `claude-ssh:` first. The line names the cleaned path (measured on Windows,
+from the code elsewhere). An unset or empty
+variable gives the kind `not_asked` and no path:
+
+```text
+claustrum: refusing to run (not_asked): CLAUDE_SSH_RUN_FROM is not set, or is empty, so there is nothing to check.
+```
+
+The other modes check a set place first (an empty value checks nothing: claustrum's own). These rules are measured on Linux. macOS shows
+`-serve`, and Windows shows `-serve`, `-bridge`, `-probe-cli` and no mode.
+
+- `-version` and `-stop` alone do not check.
+- These rules are claustrum's own, not measured. `-check-place` wins over every mode but
+  `-version`. A `-stop` with `-serve`, `-bridge` or `-install` checks too. The check comes
+  before the home folder, so a refused place wins over a missing `HOME`.
+- `-probe-cli` prints the line, then `__CLI_BAD__`, and exits `0`.
+- `-serve`, `-bridge`, `-install` and no mode exit `78`. A refused `-serve` makes no socket.
+- A refused `-serve` first removes its `-token-file`, unless it is a folder. A link goes
+  as a link, and its target stays. A FIFO goes. macOS and Windows show a regular file.
+  On Windows a folder link or junction stays (claustrum's own, not measured).
+
+On macOS and Windows each set place gets the kind `host`, with the reason
+`Only a Linux host's file can be checked.`
+
+On Linux the check walks from `/` down to the file. The first entry that fails names the
+reason. claustrum tests each entry from the top for `missing`, `cannot_tell`, `owner` and
+`writable`, in that order. Then it tests `another_file`, `mode` and `shape`. The rows show
+`writable` before `shape`, and `another_file` before `shape`. On NFS the NFS reason comes
+before an owner of uid 65534, a write mode of `0775` and `another_file`:
+
+| kind | the place fails when |
+|---|---|
+| `not_absolute` | the path is not absolute |
+| `missing` | an entry does not exist |
+| `cannot_tell` | an entry is on FUSE, virtiofs or NFS, shows uid 65534 or cannot be read, or the check takes over 8 s |
+| `owner` | root does not own an entry |
+| `writable` | a group or another account can write an entry, also with the sticky bit |
+| `another_file` | the program that runs is not that file |
+| `mode` | the file has a setuid or setgid bit or file capabilities |
+| `shape` | the path does not end in `srv/<version>/server`, or one of those three parts is a link |
+
+The reasons, with `<p>` for the entry, `<uid>` for its owner, `<error>` for the text of a
+failed call and `<mode>` for four octal digits:
+
+```text
+the helper must be an absolute path, not a bare name resolved via PATH
+`<p>`, on the way to the helper, does not exist
+`<p>` is on FUSE or virtiofs, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.
+`<p>` is on NFS, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.
+`<p>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the helper and every folder above it.
+`<p>`, on the way to the helper, cannot be checked: <error>
+The file could not be checked within 8 seconds. If a folder on the way to it is on a network share, check that its server is reachable.
+`<p>` belongs to the account that signs in (uid <uid>). Root must own the helper and every folder above it.
+`<p>` belongs to uid <uid>. Root must own the helper and every folder above it.
+`<p>` can be changed by accounts other than its owner (mode <mode>). Remove that write access.
+The program that runs is not the file at that path. If the file was replaced while the helper ran, connect again.
+It must be a regular file that gives the helper no more privilege than the account has: no setuid or setgid bit, no file capabilities (`setcap -r` removes them).
+The path must end in `srv/<version>/server`, this helper's own version, with no link among those three parts.
+```
+
+`<version>` is the version word of [`-version`](#-version): the `version-override` of
+`claustrum.conf`, or claustrum's own version (from the code).
+
+`<error>` is measured for an entry on the way: `permission denied`, and `transport endpoint
+is not connected` on FUSE. For the other calls it is claustrum's own.
+
+A check past 8 s gets the 8 seconds reason. It gets it also when it passes later
+(claustrum's own, not measured). On a stalled FUSE mount 13047a51 prints the line at 8 to
+9 s and exits when the stalled call returns (measured on Linux for `-check-place` and
+`-serve`). claustrum prints the line and waits for the check too. The wait of the other
+modes is claustrum's own. A stalled `-serve` removes its `-token-file` at the bound, before
+the wait (measured on Linux, a stall past 8 s).
+
+A known difference (measured on Linux): after one stall of 5 s on FUSE, 13047a51 still
+gives the 8 seconds reason. claustrum waits for the answer and gives the FUSE reason.
+
+Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
+`mode`, a link above the three parts, and a file that is not regular (claustrum: `another_file`).
 
 ### Behavior shared by every mode
 
@@ -289,7 +378,9 @@ still reports claustrum's own `<id>`.
   and `-stop` do not create it. When no daemon has run, `-bridge` fails with
   `connect: no such file or directory`, and `-stop` prints `none`.
 - With no mode given, claustrum prints
-  `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required`
+  `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required`
+  (the list of `13047a51`, measured on Linux and Windows, not on macOS. Its line starts with
+  `claude-ssh:`, so the name is claustrum's own)
   on stderr and exits `2`, with no usage dump. An *unknown flag* gets the stdlib
   `flag` error plus the usage, and exit `2`.
 

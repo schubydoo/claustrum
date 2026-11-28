@@ -106,6 +106,7 @@ claustrum -bridge  -socket <path>                       # dumb stdio<->socket re
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
 claustrum -install -cli-version <v> [-cli-dir <dir>] [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>]
 claustrum -version
+claustrum -check-place                                  # check the file that CLAUDE_SSH_RUN_FROM names: exit 0 or 78
 claustrum -probe-cli <cli>                              # probe <cli> --version (30s direct, 33s via a managed launcher): empty=runs / __CLI_HUNG__ / __CLI_BAD__ / __CLI_LAUNCHER__; exit 0
 ```
 
