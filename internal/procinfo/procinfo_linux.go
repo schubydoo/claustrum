@@ -101,3 +101,16 @@ func HoldPID(pid int) (send func(syscall.Signal) error, release func()) {
 	}
 	return send, func() { _ = syscall.Close(fd) }
 }
+
+// HoldPIDByFD is HoldPID with no kill(pid, sig) fallback. Any error of the open,
+// ENOSYS too, comes back at once, and no send exists. The send goes only through the
+// descriptor, so a reused pid never gets the signal. The left-process sweep
+// (internal/leftsweep) uses it.
+func HoldPIDByFD(pid int) (send func(syscall.Signal) error, release func(), err error) {
+	fd, err := hcPidfdOpen(pid)
+	if err != nil {
+		return nil, nil, err
+	}
+	send = func(sig syscall.Signal) error { return hcPidfdSend(fd, sig) }
+	return send, func() { _ = syscall.Close(fd) }, nil
+}

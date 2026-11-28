@@ -212,6 +212,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   a name from a directory read and no shape test (`removeRunDir`). An identity test precedes each signal
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
+- **The log entry** (Linux and macOS, 13047a51). At start each try is one plain `os.Remove` of the entry at `remote-server.log` beside the socket
+  (`openDaemonLogAt`, [the log](docs/DAEMON.md#daemon-log-remote-serverlog)). Never widen: remove only that one name, never a tree.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
   at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the scratch file remove, the seed copy remove and the keep swap
   (below). Do not build a name below it from a request value ([The
@@ -268,6 +270,12 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
+- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
+  a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
+  the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
+  ([the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
+  `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
+  without a measured row.
 
 #### The private temp folder of a spawn
 
@@ -348,7 +356,7 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 |----|---------|---------|--------|
 | D2 | Refuse a destructive path that is or holds home | always-on | all |
 | D6 | `-cli-version` must be one path component | always-on | all |
-| D8 | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | always-on | all |
+| D8 | Refuse a file link at `remote-server.log` after a failed rename (Windows). The `git-shadow` sweep writes nothing through a link | always-on | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
 | D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |

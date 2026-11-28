@@ -232,11 +232,14 @@ A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"
 | `cwd_missing` | missing or a file | the same |
 | `cwd_unusable` | a `cwd` of mode 000 that exists | none (claustrum's own) |
 | `not_found` | not found | not found, a folder |
-| `not_executable` | mode 0644, a folder | not measured |
+| `not_executable` | mode 0644, a folder | not a program |
+| `busy` | a program open for a write | a program open for a write |
 | `launcher` | missing (`-32004`) | any `launcher` |
-| `other` | a relative `command` with a `launcher` | not a program |
+| `other` | a relative `command` with a `launcher` | a keyed `pty` |
 
-On macOS only `cwd_unusable` is measured. The rest follows Linux, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
+`busy` and the Windows `not_executable`: `87375cc7`, measured on Linux and Windows. The test order is not measured.
+
+On macOS only `cwd_unusable` is measured. The rest follows Linux, `busy` included, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
@@ -265,6 +268,7 @@ After a good read, the child gets the login-shell `PATH` of the user. A `PATH` i
 |---|---|
 | `CLAUDE_RPC_TOKEN`, `CLAUDE_SSH_NO_JOBS` (`52d82f0a`, measured on Linux, macOS and Windows) | The daemon value, for every child. A value in the `env` of the request reaches the child (claustrum's own for `CLAUDE_SSH_NO_JOBS`). |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
+| `CLAUDE_SSH_CHILD`, `CLAUDE_SSH_RUN_DIR` | On Windows, a plain spawn, also from `env` (`87375cc7` and `13047a51`, measured). `gitRead`, adopted-base and launcher spawns: claustrum's own. Only the upper-case names match, so a name in another case, such as `claude_ssh_child`, gets through (claustrum's own, not measured). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
 | `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own). |
 | The eight editor names and the session folders | A spawn of the bare command `git`. See [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child) (`b3081b51`). |

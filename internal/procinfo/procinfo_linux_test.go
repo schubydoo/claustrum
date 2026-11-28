@@ -4,6 +4,7 @@ package procinfo
 
 import (
 	"errors"
+	"syscall"
 	"testing"
 )
 
@@ -78,4 +79,38 @@ func TestNodeIDUnavailablePartsLinux(t *testing.T) {
 			}
 		})
 	}
+}
+
+// HoldPIDByFD has no kill(pid) fallback. An ENOSYS of the open comes back with no
+// send, and an ENOSYS of the send comes back as it is. kill(pid) is never called.
+func TestHoldPIDByFDNeverFallsBackToKill(t *testing.T) {
+	oldOpen, oldSend, oldKill := hcPidfdOpen, hcPidfdSend, hcKillPid
+	t.Cleanup(func() { hcPidfdOpen, hcPidfdSend, hcKillPid = oldOpen, oldSend, oldKill })
+	hcKillPid = func(pid int, sig syscall.Signal) error {
+		t.Errorf("kill(%d, %v) was called", pid, sig)
+		return nil
+	}
+
+	hcPidfdOpen = func(int) (int, error) { return -1, syscall.ENOSYS }
+	if send, release, err := HoldPIDByFD(1 << 30); err != syscall.ENOSYS || send != nil || release != nil {
+		t.Fatalf("open ENOSYS: err = %v, send set %v, release set %v; want ENOSYS and none", err, send != nil, release != nil)
+	}
+
+	// A real descriptor of /dev/null stands for the pid file descriptor, so the
+	// release closes a descriptor of this test and no other.
+	fd, err := syscall.Open("/dev/null", syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hcPidfdOpen = func(int) (int, error) { return fd, nil }
+	var sentFD int
+	hcPidfdSend = func(f int, sig syscall.Signal) error { sentFD = f; return syscall.ENOSYS }
+	send, release, err := HoldPIDByFD(1 << 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := send(syscall.SIGKILL); err != syscall.ENOSYS || sentFD != fd {
+		t.Errorf("send = %v on fd %d, want ENOSYS on fd %d", err, sentFD, fd)
+	}
+	release()
 }
