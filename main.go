@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -294,6 +295,10 @@ func main() {
 		ignoreSigpipe()
 		if err := runBridge(resolveSocket()); err != nil {
 			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
+			var refused *ownerRejection
+			if errors.As(err, &refused) {
+				osExit(ownerRejectStatus)
+			}
 			osExit(1)
 		}
 		return
