@@ -578,6 +578,10 @@ component_management:
         - internal/procinfo/export_linux.go
         - internal/procinfo/fortest_unix.go
         - internal/procinfo/fortest_linux.go
+        # The left-process sweep of 13047a51 (Linux): the marks, the run folder test and the pidfd SIGKILL.
+        - internal/leftsweep/leftsweep.go
+        - internal/leftsweep/leftsweep_linux.go
+        - internal/leftsweep/leftsweep_other.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:

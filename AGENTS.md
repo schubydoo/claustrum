@@ -249,6 +249,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
   the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.
+#### The group of an exited child
+
 - **The group of an exited launcher** (87375cc7, [rules](docs/protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7)), and of [a Claude Code](docs/protocol/process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51) with no launcher and no pty (13047a51, `cliExitEndsGroup`). Linux: group `SIGTERM` and `SIGKILL` before the reap (`settleLeftGroupHeld`). macOS: a probe and a group `SIGKILL` right after the reap (`settleLeftGroupReaped`). A reused number can then hit an unrelated group, a risk the maintainer accepted. The refusal below does not prevent it. Never widen: on macOS send it only to the group of a launcher or Claude Code spawn of this daemon, once, right after its reap. A client `KILL` that passed its test before the reap mark can still send one more. Never widen: give no other name or spawn kind this end. Refuse a number of 1 or less, the own pid and the own group (`groupNumberRefused`, claustrum's own, not measured). Never widen: on Linux send the shutdown `SIGKILL` (`killHeldGroupAtStop`) only while `leaderHeld` holds the zombie, never after `cmd.Wait` and never with `-keep-children`. On Linux a group that a shutdown `SIGKILL` reached before the exit gets one more at once (`killAfterSweepKill`). Never widen: send it once, only while `leaderHeld` holds the zombie, and never with `-keep-children`.
 - **The unattended end of a spawn** (87375cc7). `SIGTERM` to the child, then the group `SIGKILL` after at most 7 s (Linux,
   macOS). Windows ends the job (`endUnheld`, `killGroupOnUnheldExit`,
@@ -268,6 +270,12 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
+- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
+  a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
+  the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
+  ([the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
+  `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
+  without a measured row.
 
 #### The private temp folder of a spawn
 
