@@ -107,7 +107,8 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 // took a SIGKILL of the shutdown before the end took p.mu. That kill can come before the
 // exit or in the zombie window after it. It runs while the end holds the unreaped leader,
 // under p.mu, and sends no SIGTERM. 87375cc7 sends it for a launcher that the sweep
-// killed, and 13047a51 for a launcher and for Claude Code (measured on Linux). 13047a51
+// killed, and 13047a51 for a launcher (measured on Linux). For a Claude Code it is
+// claustrum's own, not measured. 13047a51
 // sends one more also after the 1.5 s SIGKILL of a Claude Code (measured on Linux). That
 // it comes before the reap there, and the kill for a launcher after the 1.5 s SIGKILL,
 // are claustrum's own, not measured. With

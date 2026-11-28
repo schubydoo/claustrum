@@ -251,15 +251,16 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
   the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.
-#### The group of an exited child
-
-- **The group of an exited launcher** (87375cc7, [rules](docs/protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7)), and of [a Claude Code](docs/protocol/process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51) with no launcher and no pty (13047a51, `cliExitEndsGroup`). Linux: group `SIGTERM` and `SIGKILL` before the reap (`settleLeftGroupHeld`). macOS: a probe and a group `SIGKILL` right after the reap (`settleLeftGroupReaped`). A reused number can then hit an unrelated group, a risk the maintainer accepted. The refusal below does not prevent it. Never widen: on macOS send it only to the group of a launcher or Claude Code spawn of this daemon, once, right after its reap. A client `KILL` that passed its test before the reap mark can still send one more. Never widen: give no other name or spawn kind this end. Refuse a number of 1 or less, the own pid and the own group (`groupNumberRefused`, claustrum's own, not measured). Never widen: on Linux send the shutdown `SIGKILL` (`killHeldGroupAtStop`) only while `leaderHeld` holds the zombie, never after `cmd.Wait` and never with `-keep-children`. On Linux a group that a shutdown `SIGKILL` reached before the exit gets one more at once (`killAfterSweepKill`). Never widen: send it once, only while `leaderHeld` holds the zombie, and never with `-keep-children`.
 - **The unattended end of a spawn** (87375cc7). `SIGTERM` to the child, then the group `SIGKILL` after at most 7 s (Linux,
   macOS). Windows ends the job (`endUnheld`, `killGroupOnUnheldExit`,
   [process.spawn](docs/protocol/process-spawn.md#the-unattended-end-build-87375cc7)). Never widen: arm it only for an
   accepted top-level unattendedSeconds above 0. Send no `SIGKILL` for a refused `SIGTERM`. Signal only that child, its group or its job, and none to a group that
   the spawn did not make. Send each signal through `unheldGate` before the reap (Linux, macOS). Start no end after the
   shutdown began.
+
+#### The group of an exited child
+
+- **The group of an exited launcher** (87375cc7, [rules](docs/protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7)), and of [a Claude Code](docs/protocol/process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51) with no launcher and no pty (13047a51, `cliExitEndsGroup`). Linux: group `SIGTERM` and `SIGKILL` before the reap (`settleLeftGroupHeld`). macOS: a probe and a group `SIGKILL` right after the reap (`settleLeftGroupReaped`). A reused number can then hit an unrelated group, a risk the maintainer accepted. The refusal below does not prevent it. Never widen: on macOS send it only to the group of a launcher or Claude Code spawn of this daemon, once, right after its reap. A client `KILL` that passed its test before the reap mark can still send one more. Never widen: give no other name or spawn kind this end. Refuse a number of 1 or less, the own pid and the own group (`groupNumberRefused`, claustrum's own, not measured). Never widen: on Linux send the shutdown `SIGKILL` (`killHeldGroupAtStop`) only while `leaderHeld` holds the zombie, never after `cmd.Wait` and never with `-keep-children`. On Linux a group that a shutdown `SIGKILL` reached before the exit gets one more at once (`killAfterSweepKill`). Never widen: send it once, only while `leaderHeld` holds the zombie, and never with `-keep-children`.
 
 #### The extract marker, the token file, the temp test, the reap and the sweep
 
