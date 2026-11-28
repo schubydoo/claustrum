@@ -83,8 +83,9 @@ var capabilityMethods = append(append([]string{
 // (osCapabilityFeatures, measured on Windows). On Linux and macOS it lists
 // launcher.exit_ends_group after server.instance_id (launcherGroupFeatures, measured).
 // 13047a51 lists process.cli_exit_ends_group after it (measured on Linux and macOS).
+// 13047a51 lists process.spawn.host_creds_pipe last on Linux (hostCredsFeatures, measured).
 // The array is always emitted.
-var capabilityFeatures = append(append(append([]string{
+var capabilityFeatures = append(append(append(append([]string{
 	"process.stdin.offset",
 	"process.spawn.refuses_given_up_id",
 	"process.spawn.unattended_seconds",
@@ -116,7 +117,7 @@ var capabilityFeatures = append(append(append([]string{
 	"git.hooks_null_device",
 	"git.status.own_lfs_store",
 	filesReadRealFeature,
-}, osCapabilityFeatures...), "server.instance_id"), launcherGroupFeatures...)
+}, osCapabilityFeatures...), "server.instance_id"), launcherGroupFeatures...), hostCredsFeatures...)
 
 // filesReadRealFeature is listed only when files.ReadRealAvailable is true. The
 // exact start test is claustrum's own.

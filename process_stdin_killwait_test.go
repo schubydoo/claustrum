@@ -100,6 +100,8 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		// lists process.cli_exit_ends_group after it.
 		wantFeatures = append(wantFeatures, launcherExitFeature, cliExitFeature)
 	}
+	// 13047a51 lists process.spawn.host_creds_pipe last on Linux.
+	wantFeatures = append(wantFeatures, hostCredsFeatures...)
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
 	}

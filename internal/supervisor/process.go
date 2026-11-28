@@ -978,7 +978,13 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 // "cliTempRoot":true, and End is "cliTempRootEnd":true, which asks the daemon to end
 // the child when its private temp folder is lost (endForLostTempRoot). Pty is true for
 // a pty object in the request. It starts no step, and killGroupInOpenDrain skips it.
-type TempRootAsk struct{ Folder, End, Pty bool }
+// HostCreds is the env of a hostCreds member that passed its tests, or nil. On Linux
+// the child reads it from a pipe (hostcreds_linux.go). It leaves plainGroupEnd as it
+// was before the member existed (claustrum's own, not measured).
+type TempRootAsk struct {
+	Folder, End, Pty bool
+	HostCreds        map[string]string
+}
 
 // SpawnWithTempRoot is spawnVia with the cliTempRoot params of process.spawn. When
 // tempRoot.Folder is true, the step of clitemproot_unix.go runs after the env is
@@ -1223,6 +1229,22 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			releaseTemp()
 		}
 	}()
+	// The pipe of a hostCreds spawn (hostcreds_linux.go). Each end closes on every
+	// path, except the write end that sendHostCreds takes. Its place after the temp
+	// folder step is claustrum's own, not measured.
+	credsR, credsW, err := openHostCreds(tempRoot.HostCreds)
+	if err != nil {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
+		return nil, err
+	}
+	credsSent := false
+	defer func() {
+		_ = credsR.Close()
+		if !credsSent {
+			_ = credsW.Close()
+		}
+	}()
+	cmd.Env = hostCredsEnv(cmd.Env, credsR)
 	// The job mode of this child. A start test of the jobs that has not passed puts it in
 	// no job. The state is read once, so the start and the reply agree.
 	jobs, outsideJob := m.Jobs, false
@@ -1240,6 +1262,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// The env is a copy, because the wrap edits the env slice in place.
 	directPath, directArgs, directEnv := cmd.Path, cmd.Args, slices.Clone(cmd.Env)
 	execErrR, execErrW := WrapCmdWithTrampoline(cmd, m.RunDir)
+	placeHostCreds(cmd, credsR)
 	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
 	// below; a no-op (both ends nil) when the spawn was not trampolined.
 	closeExecErr := func() {
@@ -1328,6 +1351,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			Stdout:      stdoutW,
 			Stderr:      stderrW,
 		}
+		placeHostCreds(cmd, credsR)
 		if stdin, err = cmdStdinPipe(cmd); err == nil {
 			err = cmd.Start()
 		}
@@ -1366,6 +1390,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
 	afterChildStart(id, cmd.Process.Pid)
+	// The child holds its copy of the read end now. The deferred close drops ours.
+	sendHostCreds(credsW, tempRoot.HostCreds, cmd.Process.Pid)
+	credsSent = true
 	// Take the kill handle of the child. On Unix this is the process group from
 	// sysproc.NewSysProcAttr, so a kill can end the whole tree. On Windows it is a process
 	// handle of the direct child, and with m.jobs the job that the child joins here. A
@@ -1462,7 +1489,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		unheldTTL:  unheld,
 		stopsBegan: &m.startsStopped,
 	}
-	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && tempRoot == (TempRootAsk{}) && unheld == 0 && !p.endsGroup
+	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && !tempRoot.Folder && !tempRoot.End && !tempRoot.Pty && unheld == 0 && !p.endsGroup
 	p.outPipes = [2]*os.File{stdoutR, stderrR}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c

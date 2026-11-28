@@ -102,6 +102,10 @@ type spawnParams struct {
 	// UnattendedSeconds is read for its tests (unattendedValue, unattendedRefused).
 	// An accepted value above 0 arms the end of the child (supervisor.UnheldTTL).
 	UnattendedSeconds json.RawMessage `json:"unattendedSeconds"`
+	// HostCreds is read by hostCredsValue. On Linux its env reaches the child through
+	// a pipe (supervisor.TempRootAsk), and on macOS and Windows a spawn with it is
+	// refused (hostCredsRefusal).
+	HostCreds json.RawMessage `json:"hostCreds"`
 }
 
 // unattendedText is the refusal of an unattendedSeconds that 87375cc7 does not
@@ -334,7 +338,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// The place of the unattendedSeconds type test right after the decode is
 	// claustrum's own, not measured.
 	unattended, unattendedSet, unattendedOK := unattendedValue(p.UnattendedSeconds)
-	if ptyBare(p.Pty) || ptyMembersBad(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK {
+	// The place of the hostCreds form test here is claustrum's own, not measured.
+	hostEnv, hostSet, hostOK := hostCredsValue(p.HostCreds)
+	if ptyBare(p.Pty) || ptyMembersBad(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK || !hostOK {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 	}
 	if p.ID == "" {
@@ -387,6 +393,11 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if unattended > 0 {
 		unheld = supervisor.UnheldTTL(unattended)
 	}
+	if hostSet {
+		if bad := hostCredsRefusal(req, &p, hostEnv); bad != nil {
+			return *bad
+		}
+	}
 	var mp *supervisor.Proc
 	var err error
 	if p.GitRead {
@@ -414,7 +425,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			}
 			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders, unheld)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, spawnTempRootAsk(&p), folders, unheld)
+			ask := spawnTempRootAsk(&p)
+			ask.HostCreds = hostEnv
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, ask, folders, unheld)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {

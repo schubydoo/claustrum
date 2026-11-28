@@ -26,6 +26,7 @@ An untagged rule on this page is measured against build `89cb6289`. The removal 
 | `envOnlyIfSent` | no | A list of names, with `launcherSuppliesCli` (`c9125eb8`). Such names reach the child only from `env`, and an empty list counts as present (claustrum's own, not measured). |
 | `noLoginShell` | no | Accepted, and the spawn succeeds (`c9125eb8`, measured on Linux and Windows). It changes nothing, and a value of any type passes (claustrum's own, not measured). |
 | `unattendedSeconds` | no | A whole number of seconds (`87375cc7`). See [The unattendedSeconds member](#the-unattendedseconds-member-build-87375cc7). |
+| `hostCreds` | no | An object with an `env` object of strings (`13047a51`). See [The hostCreds member](#the-hostcreds-member-build-13047a51). |
 
 ### Members that turn on a feature
 
@@ -106,6 +107,33 @@ These rules are not measured.
 - On Windows a child that exits by itself just before its reap can still get `"killedBy":"unattended"` and the left line. No signal leaves its handle or its job.
 
 A launcher spawn without `--no-session-persistence` gets the refusal above (measured on Linux, macOS and Windows). With that arg, on Linux also with a `launcherCheck` object, claustrum arms the end, and a macOS `launcherCheck` gets its refusal (claustrum's own, not measured). On Windows every launcher is refused.
+
+### The hostCreds member (build `13047a51`)
+
+On Linux a Claude Code child reads the `env` of `hostCreds` from a pipe. Those names do not reach its environment (measured).
+
+- `Invalid params` with no `data`: a `hostCreds` that is `null`, a text or a list, or an `env` value that is a number (Linux, macOS and Windows). An `env` that is a text or a list, or an `env` value of `null`, gets it too (Linux and macOS, and on Windows claustrum's own, not measured). Other members, such as `unless`, change nothing (Linux and macOS).
+- macOS and Windows refuse a `hostCreds` of the right form with `-32602` `hostCreds is not supported on this host`, reason `other`. No child starts (macOS). The failed-start line on Windows is claustrum's own, not measured.
+
+#### The Linux refusals
+
+Each is `-32602` with reason `other` and logs the failed-start line, as on macOS.
+
+| Shape | Text |
+|---|---|
+| `{}` or an empty `env` | `hostCreds refused: its env is empty` |
+| An empty name, or a name with `=` or NUL | `hostCreds refused: a name is empty or holds = or NUL` |
+| A value of 70000 bytes | `hostCreds refused: its names and values come to over 32 KiB` |
+| `gitRead` or `linkBound` | `hostCreds refused: it came with pty, linkBound, gitRead or launcher` |
+| A name that the spawn's `env` holds too | `hostCreds refused: a name is also in the spawn's env` |
+| A program that is not Claude Code | `hostCreds refused: the program is not Claude Code, which alone reads it` |
+| A spawn `env` without both names at `1` | `hostCreds refused: the spawn's env does not set CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST and CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH to 1` |
+
+- Names with a space or a leading digit pass, and so does a NUL in a value. The names `CLAUDE_CODE_HOST_CREDS_FILE` and `LD_PRELOAD` pass too.
+- A `pty` object with no key keeps its own text, and `"launcher":true` gets `Invalid params`. A `gitRead` spawn of `git` gets the combine text, not the `gitRead` text.
+- A command named `ccd-cli` counts as Claude Code. claustrum uses the shape of [the unattendedSeconds test](#the-unattendedseconds-member-build-87375cc7) for other commands (claustrum's own, not measured).
+- The child gets `CLAUDE_CODE_HOST_CREDS_FILE=/proc/self/fd/99`, the read end of a pipe. It reads `{"env":{…},"expiresAt":null,"pid":…,"procStart":…}` with the names in name order, and then the end.
+- claustrum's own, not measured: the values of `pid` and `procStart`, the pid of the child and its start in clock ticks. So is an `env` of `null`, which counts as empty. So is the combine text for a keyed `pty` object or a `launcher` list. So is the exact 32 KiB bound, on the length of each name plus its value. So are the order of the other tests and the place of the test in the spawn. So are the place of the variable, the replace of a caller entry of that name and the bytes of the JSON text.
 
 ## Response
 
@@ -224,7 +252,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 
 ### After a failure
 
-A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). An `Invalid params`, `Process ID is required`, `Command is required` or `A terminal needs a key of 32 bytes in hex` error writes no line (the key text: `4c111e86` and `87375cc7`, measured on Windows).
+A failure starts no child and makes no record. It logs the failed-start line of [Lines of child processes](../DAEMON.md#lines-of-child-processes). On Windows that line after a `hostCreds` refusal is claustrum's own, not measured. An `Invalid params`, `Process ID is required`, `Command is required` or `A terminal needs a key of 32 bytes in hex` error writes no line (the key text: `4c111e86` and `87375cc7`, measured on Windows).
 
 ### A keyed `pty` on Windows
 
@@ -445,6 +473,8 @@ The folder keeps its `flock`, as does the folder of a late step (`4c111e86`, mea
 ### The managed launcher
 
 With `launcher`, the child runs as `<launcher...> <command> <args...>`. The launcher is the process, and the stream frames are its own. A spawn reads no managed settings. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change it (measured on Linux).
+
+A spawn with a `hostCreds` member gets [the hostCreds test](#the-hostcreds-member-build-13047a51) before every step of this list, on every system. The place of that test is claustrum's own, not measured.
 
 The checks run in this order. Step 1 is the Windows rule. The other steps are measured on Linux. Step 5 is measured on macOS too, and so is the interpreter text of step 6:
 

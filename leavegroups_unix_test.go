@@ -51,6 +51,14 @@ func TestStartLeaveGroups(t *testing.T) {
 				t.Errorf("the line appears %d times, leave %v", got, tc.leave)
 			}
 			features := (&server{procs: m}).featuresFor()
+			// 13047a51 lists process.spawn.host_creds_pipe last on Linux, also with
+			// the variable set (measured on Linux).
+			if n := len(hostCredsFeatures); n > 0 {
+				if features[len(features)-1] != hostCredsFeature {
+					t.Errorf("last feature = %q, want %s", features[len(features)-1], hostCredsFeature)
+				}
+				features = features[:len(features)-n]
+			}
 			for _, f := range []string{launcherExitFeature, cliExitFeature} {
 				if has := slices.Contains(features, f); has == tc.leave {
 					t.Errorf("%s listed = %v with leave %v", f, has, tc.leave)
