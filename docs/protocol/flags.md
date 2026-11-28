@@ -176,7 +176,7 @@ claustrum: refusing the listener (too_weak): here the check can say no more than
 
 The first is a daemon in another net namespace, and the second a daemon of another account. The third is a client in
 another user namespace, which cannot read the namespaces of the daemon. Each comes with `1`, `2` and
-`strict` (measured on Linux). The last is a strict value (measured on macOS and Windows). A client in another pid namespace
+`strict` (measured on Linux). The last is a strict value (measured on Linux, macOS and Windows). A client in another pid namespace
 gets `unavailable` on Linux (measured). 13047a51 prints `claude-ssh:` in front. Another mount, uts or ipc namespace
 passes (measured on Linux). A refused listener gets nothing (measured on macOS, claustrum's own on Linux and Windows).
 Claustrum's own: a failed read of the peer or of the own namespaces answers `unavailable`. The uid test takes the
