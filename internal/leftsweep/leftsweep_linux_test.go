@@ -122,7 +122,7 @@ func mkdirAll(t *testing.T, p string) {
 // cases are claustrum's own: a run folder value that differs, and a child mark with
 // another value, stay alive. The daemon itself is passed over, as on 13047a51
 // (measured on Linux). The parent skip is claustrum's own.
-func TestRunEndsTheMarkedCasesOfRowK1(t *testing.T) {
+func TestRunEndsTheMarkedCases(t *testing.T) {
 	f := newFakeProc(t)
 	runDir := t.TempDir()
 	// The run folder of a daemon holds a children entry. So only the identity

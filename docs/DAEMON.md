@@ -704,6 +704,8 @@ on Linux and macOS):
   and the other name of a file keep their bytes.
 - An exclusive create makes the fresh log.
 
+A create that finds a new entry tries again, up to 3 tries in all (claustrum's own, not measured).
+
 ```
 2026/11/28 04:28:39 INFO  [daemon] the last run's log is not kept as .old: it is no regular file, or has a second name
 ```

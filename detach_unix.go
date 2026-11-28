@@ -81,8 +81,8 @@ func openDaemonLogAt(path string) (*os.File, error) {
 // keepOldLog judges the entry at path by Lstat and renames a regular file with one link
 // to path.old. Any other entry stays for the remove of openDaemonLogAt, and a line on
 // the stderr of the launcher tells so. A failed rename logs its error in the same line.
-// The texts are those of 13047a51 (measured on Linux and macOS). A missing entry and a
-// failed Lstat log nothing.
+// The texts are those of 13047a51 (measured on Linux and macOS). A missing entry logs
+// nothing, and so does a failed Lstat (measured on macOS).
 func keepOldLog(path string) {
 	fi, err := os.Lstat(path)
 	if err != nil {

@@ -163,7 +163,7 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 - The 5 s pipe drain of the `exit` frame counts from the exit of the launcher, not from its reap.
 - A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. In some runs `87375cc7` sends a second group `SIGKILL` to the same group a few ms after the first (measured on Linux). claustrum sends one. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM` or a refused `SIGKILL`. The record goes.
 - A stream-json launcher that the shutdown asked to end with `SIGTERM` gets the steps above after its exit. A group `SIGKILL` of the shutdown ends them.
-- A running leader that took a group `SIGKILL` of the shutdown gets one more right after its exit (`87375cc7` and `13047a51`, measured on Linux). It comes before the reap, with no `SIGTERM`. `13047a51` sends one more also after the 1.5 s `SIGKILL` of a Claude Code (measured on Linux). That it comes before the reap there, and the kill for a launcher after the 1.5 s `SIGKILL`, are claustrum's own, not measured.
+- A running leader that took a group `SIGKILL` of the shutdown gets one more right after its exit (`87375cc7` and `13047a51`, measured on Linux). It comes before the reap, with no `SIGTERM`. For a Claude Code this kill is claustrum's own, not measured. `13047a51` sends one more also after the 1.5 s `SIGKILL` of a Claude Code (measured on Linux). That it comes before the reap there, and the kill for a launcher after the 1.5 s `SIGKILL`, are claustrum's own, not measured.
 
 #### The lines of the end on Linux
 
@@ -204,7 +204,7 @@ claustrum's own rules of this end, not measured:
 
 ### The group of an exited Claude Code (build `13047a51`)
 
-On Linux and macOS `13047a51` ends the group of a Claude Code spawn with no launcher, as it ends [the group of a launcher](#the-group-of-an-exited-launcher-build-87375cc7) (measured). `87375cc7` does not (measured).
+On Linux and macOS `13047a51` ends the group of a Claude Code spawn with no launcher, as it ends [the group of a launcher](#the-group-of-an-exited-launcher-build-87375cc7) (measured), except the kill after a shutdown `SIGKILL` (claustrum's own). `87375cc7` does not (measured).
 
 - A Claude Code is a command named `ccd-cli` (measured on macOS, claustrum's own on Linux). A command in a folder of that name counts too, such as `<dir>/ccd-cli/2.0.0` (measured on Linux). On macOS that shape is claustrum's own, not measured. A plain name gets no such end (measured). Other name shapes are claustrum's own, not measured.
 - Linux: a member that ignores the `SIGTERM` gets the `SIGKILL` 1 to 3 s after it (measured). claustrum sends it at 1.5 s.
