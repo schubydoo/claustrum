@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // placeFixture is a place that passes the Linux check through the seams: the
@@ -350,7 +352,7 @@ func TestPlaceFileSystemReal(t *testing.T) {
 
 // TestFileSystemName pins the statfs types that the place check names.
 func TestFileSystemName(t *testing.T) {
-	for magic, want := range map[int64]string{0x65735546: "fuse", 0x6969: "nfs", 0xef53: ""} {
+	for magic, want := range map[int64]string{unix.FUSE_SUPER_MAGIC: "fuse", unix.NFS_SUPER_MAGIC: "nfs", unix.EXT4_SUPER_MAGIC: ""} {
 		if got := fileSystemName(magic); got != want {
 			t.Errorf("type %#x: %q, want %q", magic, got, want)
 		}

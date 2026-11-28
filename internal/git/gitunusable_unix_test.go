@@ -179,7 +179,8 @@ func TestCreateLinkLoopAndFileBase(t *testing.T) {
 // An empty `.git` folder in a folder of another account answers not_a_repo (4c111e86,
 // measured on macOS with that folder owned by root, with its `.git` owned by root or by the daemon account). The
 // test stands for the other account with walkOwnUID. Linux is claustrum's own, not
-// measured. Mutation: answer false in heldByOtherAccount.
+// measured. 13047a51 is not measured for an empty `.git` on either system. Mutation: answer
+// false in heldByOtherAccount.
 func TestCreateKeepsNotARepoInAFolderOfAnotherAccount(t *testing.T) {
 	requireGit(t)
 	tmp := realTempDir(t)
@@ -258,4 +259,85 @@ func TestCreateUnsearchableGitInAFolderOfAnotherAccount(t *testing.T) {
 	walkOwnUID = func() int { return os.Geteuid() + 1 }
 	r, _ := create(t, b)
 	wantResult(t, "create", r, notRepoCreate)
+}
+
+// A good repository in a folder of another account, whose git refuses its owner, answers
+// repository_of_another_account with the text of not_a_repo (13047a51, measured on Linux
+// and macOS for a repository of root under a parent of root of mode 0555 or 0777, and
+// under a parent of the daemon account). GIT_TEST_ASSUME_DIFFERENT_OWNER makes git
+// refuse the owner, with no global config that trusts it, and walkOwnUID stands for the
+// other account. With the folder of the
+// daemon account the answer stays not_a_repo. Mutation: answer false in
+// repoOfAnotherAccount.
+func TestCreateAnswersARepositoryOfAnotherAccount(t *testing.T) {
+	requireGit(t)
+	tmp := realTempDir(t)
+	requireTempOutsideCheckout(t, tmp)
+	b := filepath.Join(tmp, "R")
+	initTrustMain(t, b)
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+	r, _ := create(t, b)
+	wantResult(t, "create in an own folder", r, notRepoCreate)
+	own := walkOwnUID
+	t.Cleanup(func() { walkOwnUID = own })
+	walkOwnUID = func() int { return os.Geteuid() + 1 }
+	r, _ = create(t, b)
+	wantResult(t, "create", r, `{"success":false,"error":"not a git repository","errorCode":"repository_of_another_account"}`)
+	if exists(filepath.Join(b, ".claude")) {
+		t.Errorf("the create made %s", filepath.Join(b, ".claude"))
+	}
+}
+
+// foreignFolders makes folderOwner answer another account for each folder of paths, and
+// the real owner for every other folder.
+func foreignFolders(t *testing.T, paths ...string) {
+	t.Helper()
+	real := folderOwner
+	t.Cleanup(func() { folderOwner = real })
+	folderOwner = func(d string) (int, bool) {
+		for _, p := range paths {
+			if filepath.Clean(d) == filepath.Clean(p) {
+				return os.Geteuid() + 1, true
+			}
+		}
+		return real(d)
+	}
+}
+
+// ownerRefusedRepo makes a good repository at <tmp>/P/R, and makes git refuse its owner
+// with no global config that trusts it (TestCreateAnswersARepositoryOfAnotherAccount).
+func ownerRefusedRepo(t *testing.T) (parent, repo string) {
+	t.Helper()
+	requireGit(t)
+	tmp := realTempDir(t)
+	requireTempOutsideCheckout(t, tmp)
+	parent = filepath.Join(tmp, "P")
+	repo = filepath.Join(parent, "R")
+	initTrustMain(t, repo)
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+	return parent, repo
+}
+
+// A refused repository of the daemon account below a parent of another account answers
+// not_a_repo (claustrum's own, not measured). In row a2 of 13047a51 on Linux git accepts
+// such a repository. Mutation: test the owner of the parent in repoOfAnotherAccount.
+func TestCreateKeepsNotARepoForAnOwnRepoBelowAFolderOfAnotherAccount(t *testing.T) {
+	parent, repo := ownerRefusedRepo(t)
+	foreignFolders(t, parent)
+	r, _ := create(t, repo)
+	wantResult(t, "create", r, notRepoCreate)
+}
+
+// A repository folder of another account whose `.git` is the daemon account's answers
+// repository_of_another_account (13047a51, row a3, measured on Linux). Mutation: test
+// the owner of the `.git` in repoOfAnotherAccount.
+func TestCreateAnswersAnotherAccountForAnOwnGitInAForeignFolder(t *testing.T) {
+	_, repo := ownerRefusedRepo(t)
+	foreignFolders(t, repo)
+	r, _ := create(t, repo)
+	wantResult(t, "create", r, `{"success":false,"error":"not a git repository","errorCode":"repository_of_another_account"}`)
 }

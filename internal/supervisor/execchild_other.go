@@ -14,14 +14,22 @@ import (
 // run-dir lock holder on windows and stamps neither marker — a child spawned under a
 // run-shaped socket has an environment byte-identical to one spawned under a bare socket.
 // Claustrum holds no run-dir lock on windows either (its runlock.LockRunFolder is a no-op there), so
-// on windows these are no-ops and the daemon spawns the target directly.
+// on windows the daemon spawns the target directly.
 
 // MaybeRunExecChild is a no-op on windows — there is no --exec-child mode to intercept.
 func MaybeRunExecChild() {}
 
-// WrapCmdWithTrampoline is a no-op on windows — the command is spawned directly, so it
-// returns no exec-error pipe and adds no environment markers.
-func WrapCmdWithTrampoline(*exec.Cmd, string) (execErrR, execErrW *os.File) { return nil, nil }
+// WrapCmdWithTrampoline spawns the command directly on windows, so it returns no
+// exec-error pipe and adds no environment markers. It removes every CLAUDE_SSH_CHILD and
+// CLAUDE_SSH_RUN_DIR entry from the env of the command, a value of the request too.
+// 87375cc7 and 13047a51 give a child neither name (measured on Windows). A nil env
+// stays nil, so the child still inherits the daemon environment.
+func WrapCmdWithTrampoline(cmd *exec.Cmd, _ string) (execErrR, execErrW *os.File) {
+	if cmd.Env != nil {
+		cmd.Env = DropMarkerEnv(cmd.Env)
+	}
+	return nil, nil
+}
 
 // TrampolineFallbackEnv is never reached on windows: no command is wrapped, so no
 // start of a trampoline can fail. It returns env unchanged.

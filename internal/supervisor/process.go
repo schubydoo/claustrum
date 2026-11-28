@@ -215,7 +215,8 @@ type Proc struct {
 	// tempRootTermed once the SIGTERM of that end went out.
 	tempRootEnd, tempRootTermed bool
 	tempRootKilled              atomic.Bool
-	// endsGroup is set once at spawn: a launcher spawn on Linux or macOS while
+	// endsGroup is set once at spawn: a launcher spawn, or a Claude Code spawn of
+	// cliExitEndsGroup, on Linux or macOS while
 	// CLAUDE_SSH_LEAVE_GROUPS is not 1. The exit goroutine then ends what the leader
 	// left in its group (launchergroup_unix.go). leaderHeld is true, under p.mu, while
 	// that end on Linux holds the unreaped leader. It clears before the wait.
@@ -238,7 +239,7 @@ type Proc struct {
 	// group, endAsked and a client KILL after the leader's exit send together.
 	groupKillClaimed groupKillClaim
 	// plainGroupEnd is set once at spawn: a spawn with no launcher, gitRead, link, temp
-	// folder, pty or unattended time, the shape of the rows of killGroupInOpenDrain.
+	// folder, pty, unattended time or group end, the shape of the rows of killGroupInOpenDrain.
 	// outPipes are the read ends of its stdout and stderr. leaderKeptGroup is set under
 	// p.mu before the reap: the exited leader still led the group of the spawn.
 	// pipesHeldAtGrace is set under p.mu when the drain grace ends with a pipe held.
@@ -379,7 +380,7 @@ type Manager struct {
 	JobTest *JobTest
 
 	// LeaveGroups is set once at the start of the daemon, by CLAUDE_SSH_LEAVE_GROUPS=1.
-	// A launcher spawn then gets no end of its group (launchergroup_unix.go).
+	// A launcher or Claude Code spawn then gets no end of its group (launchergroup_unix.go).
 	LeaveGroups bool
 	// KeepChildren is -keep-children, set once at the start of the daemon. A shutdown
 	// then sends no signal to the group of an exited launcher.
@@ -772,7 +773,7 @@ func (p *Proc) claimedGroupKillLocked() error {
 var afterGraceClose = func(*Proc) {}
 
 // notePipesHeldAtGrace records, before the grace closes the read ends, whether a process
-// still holds a pipe. A pipe that reached its end at that moment does not count (D28).
+// still holds a pipe. A pipe that reached its end at that moment does not count.
 func (p *Proc) notePipesHeldAtGrace() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -780,7 +781,8 @@ func (p *Proc) notePipesHeldAtGrace() {
 }
 
 // killGroupInOpenDrain sends the group SIGKILL of a shutdown to a plain child whose
-// leader is reaped while a process holds its stdout or stderr. 87375cc7 and 4c111e86
+// leader is reaped while a process holds its stdout or stderr, or that ended on the
+// shutdown SIGTERM. For the held pipes 87375cc7 and 4c111e86
 // send it after the shutdown starts, and none once the exit frame is out (measured
 // on Linux and macOS). It holds p.mu across the test and the signal, so it cannot follow
 // the frame. This path sends at most once for a child. The grace closes the read ends
@@ -789,7 +791,9 @@ func (p *Proc) notePipesHeldAtGrace() {
 //
 // The test is that some process holds a pipe, not that it is in the group. So a member
 // on its own stdio ends if a process in another session holds the pipes, as on 87375cc7
-// (measured on Linux). With no writer left it gets no signal (D28).
+// (measured on Linux). A stream-json child that ended on the shutdown SIGTERM needs no
+// held pipe. 87375cc7 and 13047a51 send it the group SIGKILL after its exit, and a member
+// with no pipe ends (measured on Linux and macOS). Another child with no writer left gets no signal.
 //
 // A client KILL before it, to the running leader or inside the drain, makes two group
 // kills, as on 87375cc7 (measured on Linux). A pty spawn gets none from this path (claustrum's own, not measured).
@@ -806,7 +810,8 @@ func (p *Proc) killGroupInOpenDrain() bool {
 		return false
 	}
 	pid := p.cmd.Process.Pid
-	if drainGroupRefused(pid) || (!p.pipesHeldAtGrace && !pipesStillHeld(p.outPipes)) {
+	endedOnStopTerm := ShutdownAsksEnd && p.askEnd && p.endedByShutdown
+	if drainGroupRefused(pid) || (!endedOnStopTerm && !p.pipesHeldAtGrace && !pipesStillHeld(p.outPipes)) {
 		return false
 	}
 	if !p.groupKillClaimed.takeFinal() {
@@ -817,7 +822,7 @@ func (p *Proc) killGroupInOpenDrain() bool {
 
 // killGroupBeforeExitFrame sends SIGKILL to the group of a process whose exit frame is
 // not out yet: a live child, or one in its exit drain. It holds p.mu across the test
-// and the signal, so no group signal goes after running turns false (D28). The end of
+// and the signal, so no group signal goes after running turns false. The end of
 // the shutdown wait of endAsked is its one caller. On Windows the error is ignored.
 func (p *Proc) killGroupBeforeExitFrame() {
 	p.mu.Lock()
@@ -847,9 +852,10 @@ func (p *Proc) killGroupBeforeExitFrame() {
 	p.sweepKilledGroup.Store(true)
 }
 
-// launcherLeaderGone reports that p is a launcher spawn whose leader has exited: seen
-// and held on Linux, reaped on macOS. endAsked counts such a child as exited (87375cc7,
-// measured on Linux and macOS).
+// launcherLeaderGone reports that p is a spawn with the group end (a launcher, or a
+// Claude Code of cliExitEndsGroup) whose leader has exited: seen and held on Linux,
+// reaped on macOS. endAsked counts such a child as exited (87375cc7 for a launcher,
+// measured on Linux and macOS, and claustrum's own for a Claude Code).
 func (p *Proc) launcherLeaderGone() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -972,7 +978,13 @@ func (m *Manager) spawnVia(c *conn.Conn, id, command string, args []string, cwd 
 // "cliTempRoot":true, and End is "cliTempRootEnd":true, which asks the daemon to end
 // the child when its private temp folder is lost (endForLostTempRoot). Pty is true for
 // a pty object in the request. It starts no step, and killGroupInOpenDrain skips it.
-type TempRootAsk struct{ Folder, End, Pty bool }
+// HostCreds is the env of a hostCreds member that passed its tests, or nil. On Linux
+// the child reads it from a pipe (hostcreds_linux.go). It leaves plainGroupEnd as it
+// was before the member existed (claustrum's own, not measured).
+type TempRootAsk struct {
+	Folder, End, Pty bool
+	HostCreds        map[string]string
+}
 
 // SpawnWithTempRoot is spawnVia with the cliTempRoot params of process.spawn. When
 // tempRoot.Folder is true, the step of clitemproot_unix.go runs after the env is
@@ -1217,6 +1229,22 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			releaseTemp()
 		}
 	}()
+	// The pipe of a hostCreds spawn (hostcreds_linux.go). Each end closes on every
+	// path, except the write end that sendHostCreds takes. Its place after the temp
+	// folder step is claustrum's own, not measured.
+	credsR, credsW, err := openHostCreds(tempRoot.HostCreds)
+	if err != nil {
+		logging.Errorf("[process.Manager] Failed to start process %s: %v", LogID(id), err)
+		return nil, err
+	}
+	credsSent := false
+	defer func() {
+		_ = credsR.Close()
+		if !credsSent {
+			_ = credsW.Close()
+		}
+	}()
+	cmd.Env = hostCredsEnv(cmd.Env, credsR)
 	// The job mode of this child. A start test of the jobs that has not passed puts it in
 	// no job. The state is read once, so the start and the reply agree.
 	jobs, outsideJob := m.Jobs, false
@@ -1234,6 +1262,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// The env is a copy, because the wrap edits the env slice in place.
 	directPath, directArgs, directEnv := cmd.Path, cmd.Args, slices.Clone(cmd.Env)
 	execErrR, execErrW := WrapCmdWithTrampoline(cmd, m.RunDir)
+	placeHostCreds(cmd, credsR)
 	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
 	// below; a no-op (both ends nil) when the spawn was not trampolined.
 	closeExecErr := func() {
@@ -1322,6 +1351,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 			Stdout:      stdoutW,
 			Stderr:      stderrW,
 		}
+		placeHostCreds(cmd, credsR)
 		if stdin, err = cmdStdinPipe(cmd); err == nil {
 			err = cmd.Start()
 		}
@@ -1360,6 +1390,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
 	afterChildStart(id, cmd.Process.Pid)
+	// The child holds its copy of the read end now. The deferred close drops ours.
+	sendHostCreds(credsW, tempRoot.HostCreds, cmd.Process.Pid)
+	credsSent = true
 	// Take the kill handle of the child. On Unix this is the process group from
 	// sysproc.NewSysProcAttr, so a kill can end the whole tree. On Windows it is a process
 	// handle of the direct child, and with m.jobs the job that the child joins here. A
@@ -1439,7 +1472,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		sessionKey:  sessionKey,
 		askEnd:      argsAskEnd(args),
 		tempRootEnd: tempRoot.End,
-		endsGroup:   launcher != nil && LauncherGroupEndBuilt && !m.LeaveGroups,
+		endsGroup:   (launcher != nil || cliExitEndsGroup(command, tempRoot, gitRead != nil)) && LauncherGroupEndBuilt && !m.LeaveGroups,
 		keepsGroup:  m.KeepChildren,
 		subs:        map[*conn.Conn]struct{}{c: {}},
 		running:     true,
@@ -1456,7 +1489,7 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 		unheldTTL:  unheld,
 		stopsBegan: &m.startsStopped,
 	}
-	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && tempRoot == (TempRootAsk{}) && unheld == 0
+	p.plainGroupEnd = launcher == nil && gitRead == nil && linkTTL == 0 && !tempRoot.Folder && !tempRoot.End && !tempRoot.Pty && unheld == 0 && !p.endsGroup
 	p.outPipes = [2]*os.File{stdoutR, stderrR}
 	if linkTTL > 0 {
 		p.linked, p.link = true, c
@@ -1638,7 +1671,9 @@ func (p *Proc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, g
 	askedAtStop := p.endedByShutdown
 	p.mu.Unlock()
 	// A child that the sweep asked to end and that left a process on its pipes gets the
-	// group SIGKILL at once, within 6 ms of the SIGTERM (87375cc7, measured on Linux).
+	// group SIGKILL at once, within 6 ms of the SIGTERM (87375cc7, measured on Linux). A
+	// stream-json child that ended on the SIGTERM gets it with no held pipe too (87375cc7
+	// and 13047a51, measured on Linux and macOS).
 	if askedAtStop {
 		p.killGroupInOpenDrain()
 	}
@@ -2481,9 +2516,9 @@ func (m *Manager) KillAllCount() int {
 // does too when the exit frame goes out inside the wait, or at the reap after the drain kill (awaitAskedExit). It counts any other spawn as killed. Then it logs one line, whose text is
 // the reference's (measured on Linux and macOS).
 //
-// b3081b51 also sends the group SIGKILL after the exit of an ended child (measured on
-// Linux). claustrum sends no signal to a child whose exit frame is out, and so none
-// in the arms that saw p.done (DIVERGENCES.md D28).
+// A plain child that ended on the SIGTERM gets its group SIGKILL at the reap
+// (killGroupInOpenDrain). claustrum sends no signal to a child whose exit frame is out,
+// and so none in the arms that saw p.done.
 func endAsked(asked []*Proc, start time.Time) {
 	timer := time.NewTimer(shutdownEndGrace)
 	defer timer.Stop()

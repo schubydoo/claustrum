@@ -16,7 +16,7 @@ An untagged rule on this page matches build `89cb6289`, measured on Linux. A rul
 |---|---|---|
 | `cliPath` | yes | The path of the CLI that the launcher is to run. Any non-empty string is accepted, a relative one too. The daemon does not `~`-expand it (claustrum's own) (not measured). |
 | `path` | no | A launcher to check, with `launcherCheck` (`c9125eb8`). An empty `path` counts as absent (claustrum's own, not measured). |
-| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only (Linux and macOS) and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). |
+| `launcherCheck` | no | An object: `sha256`, a list of digests, `ownerUid`, a uid, and `path` (`c9125eb8`). claustrum reads its `path` for the shape only (Linux and macOS) and checks the launcher (claustrum's own, not measured). See [The file check](#the-file-check-build-c9125eb8). `13047a51` adds the bool `orManagedFolder` ([The managed folder](#the-managed-folder-build-13047a51)). |
 
 ## Response
 
@@ -38,12 +38,16 @@ The result has one of four shapes, in this member order:
 
 On macOS `fault` follows `reason`: `missing` for a missing launcher, folder or file that cannot run, `not_absolute` for a bare name (`4c111e86`, measured on macOS). A `processWrapper` of `5` gets `other` (`4c111e86`, measured on macOS). Any other value that is not a string sends `other`, other refusals none (claustrum's own).
 
+### With a launcherCheck
+
 With `path` and `launcherCheck` the result has one of two shapes (`c9125eb8`, measured on Linux):
 
 ```jsonc
 {"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}
 {"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
 ```
+
+`13047a51` can add `checked` last in both shapes ([The managed folder](#the-managed-folder-build-13047a51)).
 
 `argv` names `path`, also when the settings name another launcher. `hostPolicySeen` is `true` when a settings file or drop-in holds any key but `processWrapper`. It is `false` for `processWrapper` only, `{}`, no file (measured on Linux and macOS) and a file that is not JSON (macOS). Also `false`: a file that is not a JSON object, cannot be read or is over 2 MiB (claustrum's own, not measured). On Linux a `launcherCheck` with no `path` gets the second shape and fault `not_absolute` (`c9125eb8`, measured on Linux).
 
@@ -58,6 +62,8 @@ The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` co
 | `-32602` | `Invalid params` | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string. |
 | `-32602` | `cliPath is required` | `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name (measured on Windows). The `cliPath` test comes first, so `{"path":…}` with no `cliPath` gets it too. |
 | `-32602` | `launcherCheck is required with path` | A `path` with no `launcherCheck` (`c9125eb8`). The error has no `data`. |
+| `-32602` | `orManagedFolder can't be set with sha256 or ownerUid` | An `orManagedFolder` of `true` with a `sha256` digest, before the host refusal (macOS, Windows) and the file check (Linux) (`13047a51`, measured on Linux, macOS and Windows). An `ownerUid` of `0` does not count (measured on Linux and Windows). Another one counts (claustrum's own, not measured). |
+| `-32602` | `Invalid params` | An `orManagedFolder` that is not a bool (`13047a51`, measured with a string on Linux, macOS and Windows). |
 | `-32601` | `Unknown method: launcher.<x>` | Another method of the `launcher.*` namespace. |
 
 ## Behavior
@@ -160,6 +166,12 @@ Only Linux runs it ([Platform notes](#platform-notes)). It tests the file at `pa
 - A path that moves during the check is not refused for the move. A swapped file meets the digest test (`4c111e86`, measured on Linux).
 - A folder high in the path is refused before a lower one. A file that the account cannot run is refused before a writable folder above it (`c9125eb8`, measured on Linux). The write test of an item comes before its owner test (`4c111e86`, measured on Linux). The other order of the tests is claustrum's own.
 
+#### The managed folder (build `13047a51`)
+
+On Linux, with an `orManagedFolder` of `true`, a `path` of `/etc/claude-desktop-ssh/launcher` with nothing there gets the check of `/etc/claude-code/desktop-ssh-launcher` (measured on Linux). The result ends with `"checked":"/etc/claude-code/desktop-ssh-launcher"`, and `argv` keeps `path`. A missing file or a folder there gets ``launcher `/etc/claude-code/desktop-ssh-launcher` does not exist or is not an executable regular file. Nothing lies at `/etc/claude-desktop-ssh/launcher` either.`` A write bit gets the text of the walk. Ownership by the login gets `` `<D>` belongs to the account that signs in (uid <n>), and no account may use a launcher that it can change itself. Sign in as another account, or make root its owner. ``
+
+Another `path`, or a usable file at `path`, gets the plain check with no `checked` (measured). claustrum's own, not measured: another entry at `path`, a dangling link there too, the other faults, and the owner text for a folder.
+
 #### File system kinds (Linux)
 
 | `fault` | Case | `reason` |
@@ -217,7 +229,7 @@ An unusable answer to a `launcherCheck` writes this line. On Linux a repeat of t
 
 === "Windows"
 
-    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`. `4c111e86` gives it for each shape that was measured on Windows: `{}`, a `path` that is missing, relative, a UNC path or the number `5`, `sha256` as a list, `ownerUid`, `orManagedFolder` as `true` or `"yes"`, and `rootsLink`, also with a top-level `path`. A string, `""`, a number, `true`, `[]` or an array of one object as `launcherCheck` gets `Invalid params`, and `null` counts as absent (`4c111e86`, measured on Windows). Another value that is not an object gets `Invalid params` too (claustrum's own, not measured).
+    There is no settings folder, so the daemon reads no file and answers `none`. `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` is not read, and no line is logged. Each resolve with a `launcherCheck` object answers unusable with the fault `windows_host` and the reason `a launcher cannot be applied on a Windows host`. `4c111e86` gives it for each shape that was measured on Windows: `{}`, a `path` that is missing, relative, a UNC path or the number `5`, `sha256` as a list, `ownerUid`, `orManagedFolder` as `true`, and `rootsLink`, also with a top-level `path`. `13047a51` answers the same (measured on Windows), but not to `orManagedFolder` as `"yes"` ([Errors](#errors)). A string, `""`, a number, `true`, `[]` or an array of one object as `launcherCheck` gets `Invalid params`, and `null` counts as absent (`4c111e86`, measured on Windows). Another value that is not an object gets `Invalid params` too (claustrum's own, not measured).
 
 ## Rare states
 
