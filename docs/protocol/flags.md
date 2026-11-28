@@ -360,7 +360,10 @@ A check past 8 s gets the 8 seconds reason. It gets it also when it passes later
 9 s and exits when the stalled call returns (measured on Linux for `-check-place` and
 `-serve`). claustrum prints the line and waits for the check too. The wait of the other
 modes is claustrum's own. A stalled `-serve` removes its `-token-file` at the bound, before
-the wait (claustrum's own).
+the wait (measured on Linux, a stall past 8 s).
+
+A known difference (measured on Linux): after one stall of 5 s on FUSE, 13047a51 still
+gives the 8 seconds reason. claustrum waits for the answer and gives the FUSE reason.
 
 Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
 `mode`, a link above the three parts, and a file that is not regular (claustrum: `another_file`).

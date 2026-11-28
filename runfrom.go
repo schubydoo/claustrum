@@ -67,7 +67,8 @@ var placeCheckBound = 8 * time.Second
 // cleaned path: Windows prints a path with "/" with "\" (measured), and the
 // Clean of the other systems is from the code. A check past placeCheckBound
 // is refused (measured on Linux), also when it passes later (claustrum's own,
-// not measured).
+// not measured). A known difference (measured on Linux): after one 5 s stall
+// on FUSE, 13047a51 gives the 8 s text, and claustrum gives the FUSE text.
 func examineRunFrom(place, version string) *placeDenial {
 	if place == "" {
 		return &placeDenial{kind: "not_asked", text: notAskedText}
@@ -108,9 +109,8 @@ func placeGateRuns(stop, serve, bridge, install bool) bool {
 // An unset or empty CLAUDE_SSH_RUN_FROM checks nothing (measured on Linux:
 // -serve runs). The empty value is measured for -check-place only. For a serve
 // run it first removes the -token-file, unless that is a folder (13047a51,
-// measured on Linux, a regular file on macOS and Windows). After a stalled
-// check 13047a51 leaves no token file either (measured on Linux). Its remove at
-// the 8 s bound, before the wait, is claustrum's own, not measured.
+// measured on Linux, a regular file on macOS and Windows). After a stall past
+// 8 s both remove it at the bound, before the wait (measured on Linux).
 func gateRunFrom(stderr func(string), place, version string, serveRuns bool, tokenFile string) {
 	if place == "" {
 		return
