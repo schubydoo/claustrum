@@ -593,6 +593,9 @@ component_management:
       name: bridge, CLI & config
       paths:
         - bridge.go
+        - bridge_listener.go
+        - bridge_listener_linux.go
+        - bridge_listener_other.go
         - bridge_unix.go
         - bridge_windows.go
         - main.go

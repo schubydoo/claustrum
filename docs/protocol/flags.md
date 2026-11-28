@@ -158,6 +158,30 @@ On Windows the daemon can miss the half-close of the bridge (see
 
 With `CLAUDE_SSH_ADOPT_ENV=1` the bridge first sends [a frame of its own](server-adopt-env.md#the-frame-of-the-bridge).
 
+#### The listener check (build 13047a51)
+
+`CLAUDE_SSH_LISTENER_CHECK` checks the listener after a good dial, before the bridge sends anything. No variable,
+`0` and an empty value turn it off. `1` passes the answers `on` and `unavailable`. `2`, `strict`, `yes` and `on` pass
+only `on` (measured on Linux, macOS and Windows). `off`, `false`, `no`, `true`, `3`, ` 1` and `00` count as strict
+too (measured on Linux). Linux
+answers `on` for a daemon in the own user and net namespaces, and refuses one in another user namespace alone
+(measured). macOS and Windows answer `unavailable`. A pass prints `claustrum: listener check (<answer>)` on stderr. A refusal prints one line and exits `79`:
+
+```text
+claustrum: refusing the listener (other_namespace): process <pid> listens in user:[<n>] net:[<n>], not user:[<n>] net:[<n>]; nothing was sent to it
+claustrum: refusing the listener (other_user): user <uid> listens; nothing was sent to it
+claustrum: refusing the listener (unreadable): readlink /proc/<pid>/ns/user: permission denied; nothing was sent to it
+claustrum: refusing the listener (too_weak): here the check can say no more than "unavailable"; nothing was sent to it
+```
+
+The first is a daemon in another net namespace, and the second a daemon of another account. The third is a client in
+another user namespace, which cannot read the namespaces of the daemon. Each comes with `1`, `2` and
+`strict` (measured on Linux). The last is a strict value (measured on macOS and Windows). A client in another pid namespace
+gets `unavailable` on Linux (measured). 13047a51 prints `claude-ssh:` in front. Another mount, uts or ipc namespace
+passes (measured on Linux). A refused listener gets nothing (measured on macOS, claustrum's own on Linux and Windows).
+Claustrum's own: a failed read of the peer or of the own namespaces answers `unavailable`, and the redials of the adopt
+frame get no check.
+
 ### -stop — ask a running daemon to shut down
 
 ```text

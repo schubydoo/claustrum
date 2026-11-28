@@ -41,6 +41,13 @@ func runBridge(socket string) error {
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
+	// Only this first connection gets the listener check. The redials of
+	// sendAdoptFrame get none (claustrum's own, not measured).
+	check, set := os.LookupEnv(bridgeListenerEnv)
+	if err := judgeSocketOwner(nc, check, set, os.Stderr); err != nil {
+		_ = nc.Close()
+		return err
+	}
 	var from io.Reader = nc
 	if frame := bridgeAdoptFrame(socket, os.Environ()); frame != nil {
 		if nc, from, err = sendAdoptFrame(socket, nc, frame); err != nil {
