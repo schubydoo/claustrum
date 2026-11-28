@@ -24,7 +24,7 @@ import (
 // with no byte does not. A connected client holds the end off for as long as it stays.
 // Live children got a group SIGKILL, and the line counted them. A child with stream-json
 // in its args gets the SIGTERM of the shutdown sweep first. For a ccd-cli or launcher
-// spawn, 13047a51 sent the group SIGKILL a second time in some runs, within 1 ms.
+// spawn, 13047a51 sent the group SIGKILL a second time in some runs.
 // Claustrum sends it once (claustrum's own).
 //
 // Claustrum's own, not measured: a dial of this daemon to itself does not start the clock
