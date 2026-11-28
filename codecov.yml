@@ -605,6 +605,13 @@ component_management:
         - ignorepipe.go
         - ignorepipe_unix.go
         - ignorepipe_windows.go
+        # The place check of CLAUDE_SSH_RUN_FROM (-check-place and every mode).
+        - runfrom.go
+        - runfrom_linux.go
+        - runfrom_other.go
+        # The token remove of a -serve whose place is refused.
+        - tokenremove_unix.go
+        - tokenremove_windows.go
         # Declaration-only (two generated consts, no statements), so Codecov
         # never reports it and its absence could not show up as a coverage gap.
         # Listed anyway: main.go's -version reads it, and the rule is that every

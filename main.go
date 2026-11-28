@@ -145,6 +145,9 @@ func main() {
 		tokenFile = flag.String("token-file", "", "Read auth token from this file at startup, then unlink it. Used by the daemonized child so the token never appears in /proc/<pid>/environ.")
 		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — this handoff never touches disk. -serve only, Linux and macOS only.")
 
+		// The usage text of -check-place is the one of 13047a51 (measured on Windows).
+		checkPlaceFlag = flag.Bool("check-place", false, "Check this file as CLAUDE_SSH_RUN_FROM asks and do nothing else: exit 0 only if it passes")
+
 		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
 
 		wireLogMax = flag.Int64("wire-log-max-string", wirelog.MaxString, "With -wire-log, keep at most this many `bytes` of any single string value; longer ones are replaced by a prefix plus their true length. 0 keeps every string whole — needed to reconstruct a session, since the remote CLI's whole stdio protocol rides inside process stream payloads, but the capture then grows at the rate of that session's output. -serve only; the wire-log-max-string key in claustrum.conf is the reachable way to set it.")
@@ -193,6 +196,17 @@ func main() {
 	case *version:
 		fmt.Println(versionLine(cfg.versionOverride))
 		return
+	case *checkPlaceFlag:
+		// -check-place checks the place of CLAUDE_SSH_RUN_FROM and does nothing
+		// else: exit 0 and no output if it passes, the refusal line and exit 78
+		// if not, as 13047a51 does (measured on Linux, macOS and Windows). Its
+		// place after -version is claustrum's own, not measured.
+		if r := examineRunFrom(os.Getenv(runFromEnv), placeVersion(cfg.versionOverride)); r != nil {
+			fmt.Fprint(os.Stderr, r.line())
+			r.awaitCheck()
+			osExit(placeRefusedExit)
+		}
+		return
 	case *probeCLI != "":
 		// -probe-cli <path> (reference build 19f30c46): run the bounded
 		// `<path> --version` runnability probe and exit 0, printing nothing if it
@@ -208,8 +222,29 @@ func main() {
 		// launcher (89cb6289, see cliinstall.RunProbeCLI).
 		ignoreSigpipe()
 		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
+		// A set CLAUDE_SSH_RUN_FROM whose place is refused prints the refusal
+		// line, then __CLI_BAD__, and exits 0 (13047a51, measured on Linux and
+		// Windows). It then runs no probe (from the code). After a check past
+		// its 8 s bound it waits for the check to return, as -check-place does.
+		// That wait is not measured for -probe-cli.
+		if place := os.Getenv(runFromEnv); place != "" {
+			if r := examineRunFrom(place, placeVersion(cfg.versionOverride)); r != nil {
+				fmt.Fprint(os.Stderr, r.line())
+				fmt.Fprintln(os.Stdout, "__CLI_BAD__")
+				r.awaitCheck()
+				return
+			}
+		}
 		cliinstall.RunProbeCLI(os.Stdout, os.Stderr, *probeCLI)
 		return
+	}
+
+	// Every other mode but -stop alone checks the place of CLAUDE_SSH_RUN_FROM
+	// first, and a refused place exits 78 (13047a51). Its place before the home
+	// folder is claustrum's own, not measured.
+	if placeGateRuns(*stop, *serve, *bridge, *install) {
+		gateRunFrom(func(s string) { fmt.Fprint(os.Stderr, s) }, os.Getenv(runFromEnv),
+			placeVersion(cfg.versionOverride), *serve && !*install && !*bridge, *tokenFile)
 	}
 
 	// The remaining modes resolve default paths from the user's home directory;
@@ -295,7 +330,9 @@ func main() {
 		runStop(resolveSocket(), os.Stdout)
 		return
 	default:
-		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required")
+		// The list of modes is that of 13047a51 (measured on Linux and Windows,
+		// not on macOS). The program name claustrum is claustrum's own.
+		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required")
 		osExit(2)
 	}
 }
