@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -210,4 +211,109 @@ func TestCheckPlaceLinuxShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantPlaceDenial(t, examinePlace(other, placeTestVersion), "shape", other, shapeText)
+}
+
+// TestPlaceOnFUSEReal runs the real statfs test: a temp folder is no FUSE,
+// and a missing path gives an error.
+func TestPlaceOnFUSEReal(t *testing.T) {
+	dir := t.TempDir()
+	on, err := placeOnFUSE(dir)
+	if err != nil {
+		t.Fatalf("statfs of a temp folder: %v", err)
+	}
+	if on {
+		t.Skip("the temp folder is on FUSE or virtiofs")
+	}
+	if _, err := placeOnFUSE(filepath.Join(dir, "missing")); err == nil {
+		t.Error("a missing path gave no error")
+	}
+}
+
+// TestPlaceHasCapsReal runs the real capability read: a plain file has none,
+// also where the file system has no xattrs, and a missing path gives an error.
+func TestPlaceHasCapsReal(t *testing.T) {
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "plain")
+	if err := os.WriteFile(plain, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	caps, err := placeHasCaps(plain)
+	if err != nil || caps {
+		t.Fatalf("plain file: caps %v, err %v, want false and no error", caps, err)
+	}
+	if _, err := placeHasCaps(filepath.Join(dir, "missing")); err == nil {
+		t.Error("a missing path gave no error")
+	}
+}
+
+// TestCheckPlaceLinuxUnreadable pins the cannot_tell text of claustrum's own
+// for each entry that a test fails to read.
+func TestCheckPlaceLinuxUnreadable(t *testing.T) {
+	f := newPlaceFixture(t)
+	// A failed stat of the program that runs.
+	placeExePath = filepath.Join(f.top, "gone")
+	r := examinePlace(f.file, placeTestVersion)
+	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+placeExePath+"` cannot be checked: ") {
+		t.Errorf("missing exe: %+v", r)
+	}
+	placeExePath = f.file
+	// A failed statfs of an entry.
+	placeOnFUSE = func(p string) (bool, error) {
+		if p == f.srvDir {
+			return false, errors.New("boom")
+		}
+		return false, nil
+	}
+	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file, "`"+f.srvDir+"` cannot be checked: boom")
+	placeOnFUSE = func(string) (bool, error) { return false, nil }
+	// An entry with no owner.
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.file, noOwnerInfo{}), "cannot_tell", f.file, "`"+f.file+"` cannot be checked: no owner")
+	// A failed Lstat in the shape test.
+	gone := filepath.Join(f.top, "gone", "srv", placeTestVersion, "server")
+	r = examineShape(gone, placeTestVersion)
+	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+gone+"` cannot be checked: ") {
+		t.Errorf("shape Lstat: %+v", r)
+	}
+	// A failed stat of a part of the path, in a folder of mode 0.
+	skipIfRoot(t)
+	a := filepath.Join(f.top, "a")
+	if err := os.Chmod(a, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(a, 0o755) })
+	r = examinePlace(f.file, placeTestVersion)
+	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+f.srvDir+"` cannot be checked: ") {
+		t.Errorf("folder of mode 0: %+v", r)
+	}
+}
+
+// noOwnerInfo is a FileInfo whose Sys gives no owner.
+type noOwnerInfo struct{ os.FileInfo }
+
+func (noOwnerInfo) Sys() any { return nil }
+
+// TestCheckPlaceLinuxGoodPlaceRuns pins that a good place passes the gate
+// and -check-place: no exit and no line.
+func TestCheckPlaceLinuxGoodPlaceRuns(t *testing.T) {
+	f := newPlaceFixture(t)
+	stubOsExit(t)
+	tok := filepath.Join(f.top, "tok")
+	if err := os.WriteFile(tok, []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if code, exited := catchExit(func() {
+		gateRunFrom(func(s string) { got += s }, f.file, placeTestVersion, true, tok)
+	}); exited || got != "" {
+		t.Fatalf("gate: exit %d, %v, line %q", code, exited, got)
+	}
+	if _, err := os.Lstat(tok); err != nil {
+		t.Errorf("token file gone for a good place: %v", err)
+	}
+	Version = placeTestVersion // runMainOut puts the old value back
+	t.Setenv(runFromEnv, f.file)
+	code, exited, out, errText := runMainOut(t, "-check-place")
+	if exited || out != "" || errText != "" {
+		t.Errorf("-check-place: exit %d, %v, stdout %q, stderr %q, want a return and no output", code, exited, out, errText)
+	}
 }
