@@ -12,7 +12,8 @@ const runFromEnv = "CLAUDE_SSH_RUN_FROM"
 
 // placeRefusedExit is the exit code of a refused place. 13047a51 exits 78 for
 // -check-place, -serve, -bridge, -install and no mode, measured on Linux. macOS
-// and Windows show it for -check-place and -serve, Windows for -bridge too.
+// and Windows show it for -check-place and -serve, Windows for -bridge and no
+// mode too.
 const placeRefusedExit = 78
 
 // The texts of a refused place, copied from the 13047a51 rows on Linux. The
@@ -39,8 +40,8 @@ type placeDenial struct {
 
 // awaitCheck waits for a check that ran past its bound to return. 13047a51
 // prints the line at 8 s and exits only when the stalled call returns
-// (measured on Linux, a stalled FUSE mount). Go cannot stop that call either,
-// so claustrum waits for it too.
+// (measured on Linux, a stalled FUSE mount). Go cannot stop that call, so
+// claustrum waits for it too.
 func (r *placeDenial) awaitCheck() {
 	if r.settle != nil {
 		<-r.settle
@@ -65,7 +66,8 @@ var placeCheckBound = 8 * time.Second
 // nil when the place passes. An empty value is not_asked. The line names the
 // cleaned path: Windows prints a path with "/" with "\" (measured), and the
 // Clean of the other systems is from the code. A check past placeCheckBound
-// is refused, also when it passes later (measured on Linux).
+// is refused (measured on Linux), also when it passes later (claustrum's own,
+// not measured).
 func examineRunFrom(place, version string) *placeDenial {
 	if place == "" {
 		return &placeDenial{kind: "not_asked", text: notAskedText}

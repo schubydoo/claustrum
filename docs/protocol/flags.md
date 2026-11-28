@@ -298,7 +298,7 @@ claustrum: refusing to run (not_asked): CLAUDE_SSH_RUN_FROM is not set, or is em
 ```
 
 The other modes check a set place first (an empty value checks nothing: claustrum's own). These rules are measured on Linux. macOS shows
-`-serve`, and Windows shows `-serve`, `-bridge` and `-probe-cli`.
+`-serve`, and Windows shows `-serve`, `-bridge`, `-probe-cli` and no mode.
 
 - `-version` and `-stop` alone do not check.
 - These rules are claustrum's own, not measured. `-check-place` wins over every mode but
@@ -317,7 +317,7 @@ On Linux the check walks from `/` down to the file. The first entry that fails n
 reason. claustrum tests each entry from the top for `missing`, `cannot_tell`, `owner` and
 `writable`, in that order. Then it tests `another_file`, `mode` and `shape`. The rows show
 `writable` before `shape`, and `another_file` before `shape`. On NFS the NFS reason comes
-before an owner of uid 65534, mode `0775` and `another_file`:
+before an owner of uid 65534, a write mode of `0775` and `another_file`:
 
 | kind | the place fails when |
 |---|---|
@@ -331,7 +331,7 @@ before an owner of uid 65534, mode `0775` and `another_file`:
 | `shape` | the path does not end in `srv/<version>/server`, or one of those three parts is a link |
 
 The reasons, with `<p>` for the entry, `<uid>` for its owner, `<error>` for the text of a
-failed call, such as `permission denied`, and `<mode>` for four octal digits:
+failed call and `<mode>` for four octal digits:
 
 ```text
 the helper must be an absolute path, not a bare name resolved via PATH
@@ -352,16 +352,15 @@ The path must end in `srv/<version>/server`, this helper's own version, with no 
 `<version>` is the version word of [`-version`](#-version): the `version-override` of
 `claustrum.conf`, or claustrum's own version (from the code).
 
-The first `owner` reason names the account that signs in, the second any other account.
-`<error>` is measured for a stat on the way: `permission denied`, and `transport endpoint
+`<error>` is measured for an entry on the way: `permission denied`, and `transport endpoint
 is not connected` on FUSE. For the other calls it is claustrum's own.
 
-A check past 8 s gets the 8 seconds reason, also when it passes later. On a stalled FUSE
-mount 13047a51 prints the line at 8 to 9 s and exits when the stalled call returns
-(measured on Linux). claustrum prints the line and waits for the check too, because Go
-cannot stop a stalled stat. The wait of `-probe-cli` is claustrum's own, not measured.
-A stalled `-serve` leaves no `-token-file` (measured on Linux). claustrum removes it at the
-bound, before the wait (claustrum's own, not measured).
+A check past 8 s gets the 8 seconds reason. It gets it also when it passes later
+(claustrum's own, not measured). On a stalled FUSE mount 13047a51 prints the line at 8 to
+9 s and exits when the stalled call returns (measured on Linux for `-check-place` and
+`-serve`). claustrum prints the line and waits for the check too. The wait of the other
+modes is claustrum's own. A stalled `-serve` removes its `-token-file` at the bound, before
+the wait (claustrum's own).
 
 Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
 `mode`, a link above the three parts, and a file that is not regular (claustrum: `another_file`).
@@ -375,7 +374,7 @@ Not measured: the order of `owner` and `writable` on one entry and of `another_f
   `connect: no such file or directory`, and `-stop` prints `none`.
 - With no mode given, claustrum prints
   `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required`
-  (the list of `13047a51`, measured on Windows only. Its line starts with
+  (the list of `13047a51`, measured on Linux and Windows, not on macOS. Its line starts with
   `claude-ssh:`, so the name is claustrum's own)
   on stderr and exits `2`, with no usage dump. An *unknown flag* gets the stdlib
   `flag` error plus the usage, and exit `2`.

@@ -325,8 +325,8 @@ func main() {
 		runStop(resolveSocket(), os.Stdout)
 		return
 	default:
-		// The list of modes is that of 13047a51 (measured on Windows). The
-		// program name claustrum is claustrum's own.
+		// The list of modes is that of 13047a51 (measured on Linux and Windows,
+		// not on macOS). The program name claustrum is claustrum's own.
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop/--check-place is required")
 		osExit(2)
 	}

@@ -185,7 +185,7 @@ func examineShape(path, version string) *placeDenial {
 
 // placeUnreadable is the refusal of an entry that a test failed to read. The
 // text names the error of the call, with no call name and no path, as
-// 13047a51 does for a stat of the walk (measured on Linux: permission denied,
+// 13047a51 does for an entry on the way (measured on Linux: permission denied,
 // and transport endpoint is not connected on FUSE). For the program that
 // runs, the capability read and the shape test the same text is claustrum's
 // own, not measured.
