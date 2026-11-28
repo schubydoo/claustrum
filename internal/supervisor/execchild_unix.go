@@ -36,14 +36,12 @@ import (
 //
 // The logic here is shared across the unix targets; only the child's start-time token is
 // OS-specific (ownStartToken: /proc/self/stat clock ticks on linux, the ps start-time on
-// darwin). On windows this is a no-op (execchild_other.go): the reference stamps no marker
-// there (measured, a windows child's env matches a bare-socket child's), so the daemon
-// spawns the target directly.
+// darwin). On windows the trampoline does not run (execchild_other.go): the reference stamps
+// no marker there (measured, a windows child's env matches a bare-socket child's), so the
+// daemon spawns the target directly.
 const (
-	execChildFlag  = "--exec-child"
-	HeldEnvPrefix  = "CLAUDE_SSH_HELD_"
-	EnvChildMarker = "CLAUDE_SSH_CHILD"
-	EnvRunDir      = "CLAUDE_SSH_RUN_DIR"
+	execChildFlag = "--exec-child"
+	HeldEnvPrefix = "CLAUDE_SSH_HELD_"
 	// execErrExtraFD is the child fd of the trampoline's exec-error pipe. spawn passes the
 	// pipe's write end as the sole cmd.ExtraFiles entry, so it lands at fd 3.
 	execErrExtraFD = 3
