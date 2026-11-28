@@ -272,7 +272,7 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   a pid file descriptor to a process of the own uid with both child marks. Its root must show the run folder,
   no entry there, or another folder with no `children` entry. A link there keeps it alive (claustrum's own, not measured).
   The parts above the last name are followed (claustrum's own, not measured). Never widen: signal only through
-  `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon or its parent (claustrum's own). Add no case
+  `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
   without a measured row.
 
 #### The private temp folder of a spawn
