@@ -481,6 +481,7 @@ component_management:
         - internal/supervisor/launchergroup_linux.go
         - internal/supervisor/launchergroup_darwin.go
         - internal/supervisor/launchergroup_other.go
+        - internal/supervisor/cliexitgroup.go
         - internal/supervisor/groupkillclaim.go
         - internal/supervisor/drainstop_unix.go
         - internal/supervisor/drainstop_other.go

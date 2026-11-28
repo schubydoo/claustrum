@@ -96,8 +96,9 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		wantFeatures = []string{"process.stdin.offset", "process.spawn.refuses_given_up_id", "process.spawn.unattended_seconds", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.worktree_create.not_found_codes", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.realpath.how_far", "server.instance_id"}
 	}
 	if runtime.GOOS != "windows" {
-		// 87375cc7 lists launcher.exit_ends_group last on Linux and macOS.
-		wantFeatures = append(wantFeatures, launcherExitFeature)
+		// 87375cc7 lists launcher.exit_ends_group last on Linux and macOS, and 13047a51
+		// lists process.cli_exit_ends_group after it.
+		wantFeatures = append(wantFeatures, launcherExitFeature, cliExitFeature)
 	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)

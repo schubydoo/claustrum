@@ -99,7 +99,8 @@
         "launcher.local_kinds_only",
         "launcher.in_managed_folder",
         "server.instance_id",
-        "launcher.exit_ends_group"
+        "launcher.exit_ends_group",
+        "process.cli_exit_ends_group"
       ],
       "peerCheck": "off"
     }

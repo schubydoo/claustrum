@@ -96,7 +96,8 @@
         "process.spawn.cli_temp_root",
         "process.spawn.cli_temp_root_end",
         "server.instance_id",
-        "launcher.exit_ends_group"
+        "launcher.exit_ends_group",
+        "process.cli_exit_ends_group"
       ],
       "peerCheck": "off"
     }

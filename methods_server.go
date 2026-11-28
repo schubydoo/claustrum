@@ -82,6 +82,7 @@ var capabilityMethods = append(append([]string{
 // Windows only, it lists files.realpath.how_far after files.read.real
 // (osCapabilityFeatures, measured on Windows). On Linux and macOS it lists
 // launcher.exit_ends_group after server.instance_id (launcherGroupFeatures, measured).
+// 13047a51 lists process.cli_exit_ends_group after it (measured on Linux and macOS).
 // The array is always emitted.
 var capabilityFeatures = append(append(append([]string{
 	"process.stdin.offset",
@@ -143,9 +144,10 @@ func (s *server) featuresFor() []string {
 	if !files.ReadRealAvailable() {
 		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == filesReadRealFeature })
 	}
-	// CLAUDE_SSH_LEAVE_GROUPS=1 takes the name out (87375cc7, measured on Linux and macOS).
+	// CLAUDE_SSH_LEAVE_GROUPS=1 takes both names out (87375cc7 and 13047a51, measured on
+	// Linux and macOS).
 	if s.procs != nil && s.procs.LeaveGroups {
-		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == launcherExitFeature })
+		list = slices.DeleteFunc(slices.Clone(list), func(f string) bool { return f == launcherExitFeature || f == cliExitFeature })
 	}
 	if s.procs == nil || s.procs.Jobs == supervisor.JobsOff {
 		return list

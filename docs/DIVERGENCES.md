@@ -136,7 +136,6 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 | [D23](#d23) | A child's environment block is in name order | off-wire (child environment, visible in stream output) | always-on | Windows |
 | [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | on-wire (the index-placement text, and the Windows `.git` swap) | always-on | all |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists | on-wire | always-on | Windows |
-| [D28](#d28) | Send no group `SIGKILL` after the exit frame of a child that a shutdown asked to end | off-wire | always-on | Linux, macOS |
 | [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | on-wire | off (the caller asks) | all |
 | [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off-wire | off | all |
 | [CT-3](#ct-3) | The `claustrum.conf` config file | off-wire | off (no file) | all |
@@ -499,34 +498,6 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 - **Reopen trigger.** A measurement that shows `5fd08069` with the same test.
 - **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#differences-by-system).
 
-### D28 · Send no group `SIGKILL` after the exit frame of a child that a shutdown asked to end (Linux and macOS) { #d28 }
-
-- **Behavior.** At a shutdown the daemon sends `SIGTERM` to a child whose args ask
-  for `stream-json`. Once the exit frame of that child is out, claustrum sends its
-  group no signal. For a spawn with no group end, a member of the group that still
-  lives with its own stdio stays alive. A launcher spawn with the end on gets [its group
-  end](protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7) before
-  that frame. A child that is still there 1.5 s after the `SIGTERM` gets the group
-  `SIGKILL`, as on the reference. No frame changes.
-- **Reference.** `b3081b51` also sends the group `SIGKILL` after the exit of such a
-  child (measured on Linux). In the measured runs the group was empty, and the call
-  answered `ESRCH`. For such a child with no launcher, `87375cc7` sends it to a group
-  whose member has its own stdio, and that member ends (measured on Linux and macOS).
-- **Systems and switch.** Linux and macOS. Off-wire, always on, no switch. Windows
-  sends no `SIGTERM` at a shutdown.
-- **Cost.** With no group end, a process that the child left in its group with its own
-  stdio outlives the shutdown, if no process holds the pipes. A process that holds the pipes
-  holds back the exit frame. A [plain spawn](protocol/server.md#which-spawns-get-it) whose leader stayed in its group then gets the group `SIGKILL` before its exit frame, as on
-  `87375cc7` (measured on Linux and macOS). That also ends a member on its own stdio, and a
-  reused group number takes the signal (`87375cc7`, measured on Linux). Another spawn with no launcher gets the `SIGKILL` at 1.5 s only if the shutdown sent it a `SIGTERM`, also a refused one (from the code).
-- **Rule.** Approved by the maintainer on 2026-11-04. After the exit frame the group
-  can be empty, and its number can then name another process. A `SIGKILL` there
-  cannot be taken back, the same shape as [D20](#d20).
-- **Reopen trigger.** A client needs such a group member ended at a shutdown. Or a
-  measurement shows that the reference sends no `SIGKILL` there.
-- **Pointers.** [server.shutdown](protocol/server.md#what-the-stop-does) and
-  `internal/supervisor/process.go` (`endAsked`, `killGroupInOpenDrain`).
-
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
 - **Behavior.** `process.spawn` and `process.reattach` accept an optional
@@ -801,6 +772,13 @@ log](DAEMON.md#daemon-log-remote-serverlog).
 
 On Linux claustrum checks the namespaces of each caller with the frames of the
 reference: see [server.capabilities](protocol/server.md#the-peer-check).
+
+### D28 · Send no group `SIGKILL` after the exit of a child that a shutdown asked to end (retired) { #d28 }
+
+The maintainer retired it on 2026-11-28 to follow the reference. On Linux and macOS a plain
+`stream-json` spawn that ends on the shutdown `SIGTERM` gets one group `SIGKILL` after its exit.
+A member of its group with no pipe then ends (`87375cc7` and `13047a51`, measured on Linux and
+macOS): see [server.shutdown](protocol/server.md#what-the-stop-does).
 
 ## Candidates considered but not taken
 

@@ -125,7 +125,7 @@ After the result, the output comes as [stream notifications](streams.md#stream-n
 
 ### The group of an exited launcher (build `87375cc7`)
 
-On Linux and macOS, `87375cc7` ends what a launcher left in its process group after the launcher ends, also after a kill of the launcher by another process or a `process.kill` (measured). A spawn with no launcher gets no such end (measured on Linux and macOS). claustrum has no such end on Windows, and `87375cc7` lists no `launcher.exit_ends_group` there (measured).
+On Linux and macOS, `87375cc7` ends what a launcher left in its process group after the launcher ends, also after a kill of the launcher by another process or a `process.kill` (measured). A spawn with no launcher gets no such end (measured on Linux and macOS), except [a Claude Code](#the-group-of-an-exited-claude-code-build-13047a51) on `13047a51`. claustrum has no such end on Windows, and `87375cc7` lists no `launcher.exit_ends_group` there (measured).
 
 **Linux** (measured):
 
@@ -135,13 +135,19 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 - The 5 s pipe drain of the `exit` frame counts from the exit of the launcher, not from its reap.
 - A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. In some runs `87375cc7` sends a second group `SIGKILL` to the same group a few ms after the first (measured on Linux). claustrum sends one. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM` or a refused `SIGKILL`. The record goes.
 - A stream-json launcher that the shutdown asked to end with `SIGTERM` gets the steps above after its exit. A group `SIGKILL` of the shutdown ends them.
+- A running leader that took a group `SIGKILL` of the shutdown gets one more right after its exit (`87375cc7` and `13047a51`, measured on Linux). It comes before the reap, with no `SIGTERM`. `13047a51` sends one more also after the 1.5 s `SIGKILL` of a Claude Code (measured on Linux). That it comes before the reap there, and the kill for a launcher after the 1.5 s `SIGKILL`, are claustrum's own, not measured.
+
+#### The lines of the end on Linux
+
 - On Linux, after the group `SIGKILL` of this end, a `SIGTERM` of the end logs the first line below. A shutdown in the wait logs none. In some runs with the second `SIGKILL` above, `87375cc7` logs it (measured on Linux). After a client `KILL` that ended the wait the line still goes (claustrum's own, not measured).
 - On Linux a refused group `SIGKILL` of this end logs the second line below, before the first (`87375cc7`, measured). One of a shutdown logs none. On macOS claustrum logs no such line (claustrum's own, not measured).
 
 ```
-[process.Manager] Process <id> exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL
+[process.Manager] Process <id> exited and its output was not at its end 200ms later: what was left of its process group, if anything, was sent SIGTERM ahead of the SIGKILL
 [process.Manager] the process group of pid <pid>, which has exited, was not sent SIGKILL: operation not permitted
 ```
+
+The first line is that of `13047a51` (measured on Linux).
 
 #### The end on macOS (measured)
 
@@ -152,19 +158,30 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 
 #### `CLAUDE_SSH_LEAVE_GROUPS`
 
-This holds on Linux and macOS (measured). The daemon reads it once at its start. The value `1` turns the end off. The daemon then logs one line before its listening line and lists no `launcher.exit_ends_group`. `0`, `yes` and empty leave it on. Each of these values leaves the environment of the children. Another value also leaves it on (claustrum's own, not measured).
+This holds on Linux and macOS (measured). The daemon reads it once at its start. The value `1` turns the end off, also [the end of a Claude Code](#the-group-of-an-exited-claude-code-build-13047a51). The daemon then logs one line before its listening line and lists no `launcher.exit_ends_group` and no `process.cli_exit_ends_group`. `0`, `yes` and empty leave it on. Each of these values leaves the environment of the children. Another value also leaves it on (claustrum's own, not measured).
 
 ```
-[daemon] what an exited launcher leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set
+[daemon] what an exited launcher or Claude Code leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set
 ```
+
+That is the line of `13047a51` (measured on Linux and macOS).
 
 claustrum's own rules of this end, not measured:
 
 - A group number of 1 or less, the daemon's pid and the daemon's group get no signal.
-- After the temp-root or unattended end killed the group, or after the shutdown sent the group its `SIGKILL`, this end sends nothing.
+- After the temp-root or unattended end killed the group, this end sends nothing. It sends nothing either after the shutdown sent its `SIGKILL` to the group of an already held leader. On macOS, after any group `SIGKILL` of the shutdown, it sends nothing either.
 - After the exit of the leader, this end, the 1.5 s step of a shutdown and a client `KILL` share one claim on the group `SIGKILL`. A client `KILL` that passed its test just before the exit can still send a second one. A refused client or 1.5 s `KILL` gives the claim back, unless a mark of the end came meanwhile.
 - With `-keep-children` a shutdown that began before the last test of the Linux end gets no group `SIGKILL` from it. A signal that passed its test just before the shutdown still goes.
 - On Linux a request in the wait treats the child as exited, so its `exit` frame gets no `killedBy` from that request. A `process.kill` with `KILL` there ends the group at once.
+
+### The group of an exited Claude Code (build `13047a51`)
+
+On Linux and macOS `13047a51` ends the group of a Claude Code spawn with no launcher, as it ends [the group of a launcher](#the-group-of-an-exited-launcher-build-87375cc7) (measured). `87375cc7` does not (measured). claustrum follows `13047a51`.
+
+- A Claude Code is a command named `ccd-cli` (measured on Linux and macOS). A command in a folder of that name counts too, such as `<dir>/ccd-cli/2.0.0` (measured on Linux). On macOS that shape is claustrum's own, not measured. A plain name gets no such end (measured). Other name shapes are claustrum's own, not measured.
+- Linux: a member that ignores the `SIGTERM` gets the `SIGKILL` 1 to 3 s after it (measured). claustrum sends it at 1.5 s.
+- A `pty` spawn gets no such end from claustrum. `87375cc7` and `13047a51` end what it leaves in its group, also with `CLAUDE_SSH_LEAVE_GROUPS=1` (measured on macOS). claustrum keeps that member.
+- A Claude Code with `gitRead` gets no such end (claustrum's own, not measured). Windows has no such end, and `13047a51` lists no `process.cli_exit_ends_group` there (measured).
 
 ## Errors
 
