@@ -232,11 +232,14 @@ A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"
 | `cwd_missing` | missing or a file | the same |
 | `cwd_unusable` | a `cwd` of mode 000 that exists | none (claustrum's own) |
 | `not_found` | not found | not found, a folder |
-| `not_executable` | mode 0644, a folder | not measured |
+| `not_executable` | mode 0644, a folder | not a program |
+| `busy` | a program open for a write | a program open for a write |
 | `launcher` | missing (`-32004`) | any `launcher` |
-| `other` | a relative `command` with a `launcher` | not a program |
+| `other` | a relative `command` with a `launcher` | a keyed `pty` |
 
-On macOS only `cwd_unusable` is measured. The rest follows Linux, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
+`busy` and the Windows `not_executable`: `87375cc7`, measured on Linux and Windows. The test order is not measured.
+
+On macOS only `cwd_unusable` is measured. The rest follows Linux, `busy` included, as do the other `-32004` refusals and `-32005` (`launcher`) and other errors (`other`) (claustrum's own).
 
 One failure ends another process first: a session spawn whose command exists and does not start. See [Session supersede](#session-supersede).
 
