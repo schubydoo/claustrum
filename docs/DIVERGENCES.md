@@ -129,14 +129,13 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 |----|---------|------|---------|----|
 | [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | on-wire | always-on | all |
 | [D6](#d6) | `-cli-version` is one path component | off-wire (`-install` output) | always-on | all |
-| [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
+| [D8](#d8) | Refuse a file link at `remote-server.log` after a failed rename (Windows). The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
 | [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | Linux, macOS |
 | [D23](#d23) | A child's environment block is in name order | off-wire (child environment, visible in stream output) | always-on | Windows |
 | [D24](#d24) | In a create rollback, keep a folder that replaced the registration. On Windows, run no git call after a `.git` file swap | on-wire (the index-placement text, and the Windows `.git` swap) | always-on | all |
 | [D27](#d27) | Keep a stale entry whose record names a path that exists | on-wire | always-on | Windows |
-| [D28](#d28) | Send no group `SIGKILL` after the exit frame of a child that a shutdown asked to end | off-wire | always-on | Linux, macOS |
 | [CT-1](#ct-1) | `wantPid` adds `pid` and `startTime` | on-wire | off (the caller asks) | all |
 | [CT-2](#ct-2) | `-keep-children` keeps the child tree at shutdown | off-wire | off | all |
 | [CT-3](#ct-3) | The `claustrum.conf` config file | off-wire | off (no file) | all |
@@ -249,43 +248,39 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   component.
 - **Pointers.** `internal/install/install.go`.
 
-### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log`, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
+### D8 · claustrum refuses a file link at `remote-server.log` after a failed rename on Windows, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
 
-- **Behavior.** If the fresh create of the log fails, the launcher judges the
-  entry at the log path by `Lstat`.
-  [DAEMON.md → Daemon log](DAEMON.md#daemon-log-remote-serverlog) has the
-  steps, which match `5fd08069` apart from the entries below.
-  - Linux and macOS: an own regular file, or the own regular file behind an own
-    link, is truncated. Every other entry fails the start with
-    `claustrum: open log: open <path>: permission denied` and exit 1, and stays
-    unchanged. Examples are a link to another user's file, a FIFO and another
-    user's file. Three rules are claustrum's own, not measured. The target of an
-    own link must be an own regular file with one link. An own file with a
-    second hard link is refused. An own file that the open cannot write fails
-    the start with the error of that open.
-  - Windows: a regular file is truncated with no owner test. A file symbolic
-    link is refused.
+- **Behavior.**
+  - Windows: if the rename of the log to `.old` and the fresh create both fail, the
+    launcher judges the entry by `Lstat`. A regular file is truncated with no owner
+    test. A file symbolic link fails the start with `permission denied` ([DAEMON.md
+    → Daemon log](DAEMON.md#daemon-log-remote-serverlog)).
   - The `git-shadow` sweep: a symbolic link with a folder name of this host goes
     with one plain remove, and on Windows a junction too. Nothing is written in
     the target.
-- **Reference.** On Linux it refuses the same entries in a sticky
-  world-writable folder with the `fs.protected` sysctls on. On macOS, and on
-  Linux with those sysctls off, it writes through a link or into another user's
-  file, and it blocks on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
-  an empty lock file in the target of a link (Linux, macOS and Windows).
-- **Systems and switch.** Linux, macOS and Windows, as split above. Always on,
-  no switch.
+- **Reference.** On Windows `5fd08069` writes through a file symbolic link when a
+  folder at `.old` stops the rename (measured on Windows). With no folder there,
+  `87375cc7` and `13047a51` rename the link to `.old` and write nothing through it,
+  as claustrum does (measured on Windows, row O6). No row measured `13047a51` with a
+  stopped rename. Its sweep makes an empty lock file in the target of a link (Linux,
+  macOS and Windows).
+- **Retired part.** The log part on Linux and macOS is retired. claustrum follows
+  `13047a51` there, which replaces the entry and never writes through it (measured
+  on rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)).
+- **Systems and switch.** Windows for the log, Linux, macOS and Windows for the
+  sweep. Always on, no switch.
 - **Cost.** None in the deployed socket folder.
 - **Rule.** The maintainer's decision of 2026-10-19, after `5fd08069` truncated
   a file of another user and the target of a planted link. Rule 3 clause (b):
   the deployed socket folder (`~/.claude/remote/`) is per-user and not
   world-writable. So no honest start reaches the refusal, and no honest sweep
-  meets a planted link.
+  meets a planted link. The maintainer's decision of 2026-11-28 to follow
+  `13047a51` retired the log part on Linux and macOS.
 - **Reopen trigger.** A deployment that puts the socket folder somewhere shared,
-  the reference refusing these entries on every host, or the reference making
-  no lock file through a link.
-- **Pointers.** `server.go` (`openDaemonLog`), `detach_unix.go`
-  (`openHeldDaemonLog`) and `internal/git/gitshadowsweep.go` (`sweepLink`).
+  a Windows row of a stopped rename on `13047a51` or a later build, or the
+  reference making no lock file through a link.
+- **Pointers.** `detach_windows.go` (`openDaemonLogAt`, `openHeldDaemonLog`) and
+  `internal/git/gitshadowsweep.go` (`sweepLink`).
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 
@@ -502,34 +497,6 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   destroys the records of a live worktree in a state that a client can reach.
 - **Reopen trigger.** A measurement that shows `5fd08069` with the same test.
 - **Pointers.** [git.worktree_create](protocol/git-worktree-create.md#differences-by-system).
-
-### D28 · Send no group `SIGKILL` after the exit frame of a child that a shutdown asked to end (Linux and macOS) { #d28 }
-
-- **Behavior.** At a shutdown the daemon sends `SIGTERM` to a child whose args ask
-  for `stream-json`. Once the exit frame of that child is out, claustrum sends its
-  group no signal. For a spawn with no group end, a member of the group that still
-  lives with its own stdio stays alive. A launcher spawn with the end on gets [its group
-  end](protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7) before
-  that frame. A child that is still there 1.5 s after the `SIGTERM` gets the group
-  `SIGKILL`, as on the reference. No frame changes.
-- **Reference.** `b3081b51` also sends the group `SIGKILL` after the exit of such a
-  child (measured on Linux). In the measured runs the group was empty, and the call
-  answered `ESRCH`. For such a child with no launcher, `87375cc7` sends it to a group
-  whose member has its own stdio, and that member ends (measured on Linux and macOS).
-- **Systems and switch.** Linux and macOS. Off-wire, always on, no switch. Windows
-  sends no `SIGTERM` at a shutdown.
-- **Cost.** With no group end, a process that the child left in its group with its own
-  stdio outlives the shutdown, if no process holds the pipes. A process that holds the pipes
-  holds back the exit frame. A [plain spawn](protocol/server.md#which-spawns-get-it) whose leader stayed in its group then gets the group `SIGKILL` before its exit frame, as on
-  `87375cc7` (measured on Linux and macOS). That also ends a member on its own stdio, and a
-  reused group number takes the signal (`87375cc7`, measured on Linux). Another spawn with no launcher gets the `SIGKILL` at 1.5 s only if the shutdown sent it a `SIGTERM`, also a refused one (from the code).
-- **Rule.** Approved by the maintainer on 2026-11-04. After the exit frame the group
-  can be empty, and its number can then name another process. A `SIGKILL` there
-  cannot be taken back, the same shape as [D20](#d20).
-- **Reopen trigger.** A client needs such a group member ended at a shutdown. Or a
-  measurement shows that the reference sends no `SIGKILL` there.
-- **Pointers.** [server.shutdown](protocol/server.md#what-the-stop-does) and
-  `internal/supervisor/process.go` (`endAsked`, `killGroupInOpenDrain`).
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
@@ -805,6 +772,13 @@ log](DAEMON.md#daemon-log-remote-serverlog).
 
 On Linux claustrum checks the namespaces of each caller with the frames of the
 reference: see [server.capabilities](protocol/server.md#the-peer-check).
+
+### D28 · Send no group `SIGKILL` after the exit of a child that a shutdown asked to end (retired) { #d28 }
+
+The maintainer retired it on 2026-11-28 to follow the reference. On Linux and macOS a plain
+`stream-json` spawn that ends on the shutdown `SIGTERM` gets one group `SIGKILL` after its exit.
+A member of its group with no pipe then ends (`87375cc7` and `13047a51`, measured on Linux and
+macOS): see [server.shutdown](protocol/server.md#what-the-stop-does).
 
 ## Candidates considered but not taken
 

@@ -79,11 +79,12 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "git.worktree_remove,launcher.resolve,process.spawn") {
 		t.Errorf("methods missing launcher.resolve between git.worktree_remove and process.spawn: %v", got.Methods)
 	}
-	wantFeatures := []string{"process.stdin.offset", "process.spawn.refuses_given_up_id", "process.spawn.unattended_seconds", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.worktree_create.not_found_codes", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "git.worktree_create.lfs_error_codes", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end", "server.instance_id"}
+	wantFeatures := []string{"process.stdin.offset", "process.spawn.refuses_given_up_id", "process.spawn.unattended_seconds", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.worktree_create.not_found_codes", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.another_account_code", "git.worktree_create.own_lfs_store", "git.worktree_create.lfs_error_codes", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end", "server.instance_id"}
 	if runtime.GOOS == "linux" {
-		// 4c111e86 lists the two launcher features before server.instance_id on Linux.
+		// 4c111e86 lists two launcher features before server.instance_id on Linux, and
+		// 13047a51 a third.
 		last := len(wantFeatures) - 1
-		wantFeatures = append(wantFeatures[:last:last], "launcher.checked_by_handle", "launcher.local_kinds_only", wantFeatures[last])
+		wantFeatures = append(wantFeatures[:last:last], "launcher.checked_by_handle", "launcher.local_kinds_only", "launcher.in_managed_folder", wantFeatures[last])
 	}
 	if runtime.GOOS == "windows" {
 		// external_root is gated off on Windows (capfeatures_windows.go), matching the
@@ -95,8 +96,9 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		wantFeatures = []string{"process.stdin.offset", "process.spawn.refuses_given_up_id", "process.spawn.unattended_seconds", "process.kill.farewell", "files.extract_tar.execBit", "files.list.includeDotNames", "files.list.junctionsAsDirs", "git.status.baseRepo", "git.info.discovered_root", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_create.verified_config", "git.worktree_create.verify_error_codes", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "process.spawn.failure_reason", "process.spawn.git_read", "server.line_end", "launcher.managed", "launcher.non_string_refused", "launcher.supplies_cli", "server.peer_check", "server.peer_check.out_of_resources", "server.peer_check.absence_shown", "git.outside_session_folders", "git.worktree_create.unusable_git_refused", "git.worktree_create.not_found_codes", "git.shadow_dir", "git.hooks_null_device", "git.status.own_lfs_store", "files.read.real", "files.realpath.how_far", "server.instance_id"}
 	}
 	if runtime.GOOS != "windows" {
-		// 87375cc7 lists launcher.exit_ends_group last on Linux and macOS.
-		wantFeatures = append(wantFeatures, launcherExitFeature)
+		// 87375cc7 lists launcher.exit_ends_group last on Linux and macOS, and 13047a51
+		// lists process.cli_exit_ends_group after it.
+		wantFeatures = append(wantFeatures, launcherExitFeature, cliExitFeature)
 	}
 	// 13047a51 lists process.spawn.host_creds_pipe last on Linux.
 	wantFeatures = append(wantFeatures, hostCredsFeatures...)

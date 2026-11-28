@@ -18,14 +18,15 @@ func launcherShapeReq(t *testing.T, n int, params map[string]any) string {
 
 // TestSocketLauncherShapeRefusals pins the shape test of the launcher members of
 // c9125eb8 (measured on Linux, macOS and Windows): the combined text with the reason
-// other, before "Command is required", and Invalid params for a member of the wrong
+// other, in the words of 13047a51 (measured on Windows for a launcherCheck with no
+// launcher only, claustrum's own for the other cases and systems), before "Command is required", and Invalid params for a member of the wrong
 // type. None of these starts a child or tests a file, so the frames hold on every OS.
 // Each shape refusal logs its failed-start line (measured on Linux).
 func TestSocketLauncherShapeRefusals(t *testing.T) {
 	logs := captureLogBuf(t)
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	const shape = `{"code":-32602,"message":"invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli","data":{"reason":"other"}}`
+	const shape = `{"code":-32602,"message":"invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid","data":{"reason":"other"}}`
 	const invalid = `{"code":-32602,"message":"Invalid params"}`
 	cmd, L := "/opt/x/cli", "/opt/x/launcher.sh"
 	digest := map[string]any{"sha256": []string{strings.Repeat("0", 64)}}
@@ -69,7 +70,7 @@ func TestSocketLauncherShapeRefusals(t *testing.T) {
 	if want := "[process.Manager] Failed to start process l_shape_…: invalid process.spawn: "; !strings.Contains(out, want) || strings.Contains(out, "l_shape_long") {
 		t.Errorf("no cut shape line %q in:\n%s", want, out)
 	}
-	if want := "[process.Manager] Failed to start process l4: invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli\n"; !strings.Contains(out, want) {
+	if want := "[process.Manager] Failed to start process l4: invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid\n"; !strings.Contains(out, want) {
 		t.Errorf("no shape line %q in:\n%s", want, out)
 	}
 	if strings.Contains(out, "Failed to start process l9:") {

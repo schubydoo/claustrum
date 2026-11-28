@@ -17,7 +17,7 @@ import (
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
 
-const groupTermLineTail = "exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL"
+const groupTermLineTail = "exited and its output was not at its end 200ms later: what was left of its process group, if anything, was sent SIGTERM ahead of the SIGKILL"
 
 // groupSignalSeen is one signal of the end, with the state of the leader at it.
 type groupSignalSeen struct {
@@ -158,6 +158,38 @@ func TestLauncherGroupHeldPipesGetsTermThenKillBeforeReap(t *testing.T) {
 		t.Errorf("ended before the %v wait", groupTermAfter)
 	}
 	if want := "[process.Manager] Process lgheld " + groupTermLineTail; !strings.Contains(buf.String(), want) {
+		t.Errorf("log has no line %q", want)
+	}
+}
+
+// TestClaudeCodeGroupGetsTermThenKillBeforeReap: 13047a51 on Linux ends the group of a
+// Claude Code child with no launcher as the group of a launcher. A member that holds the
+// pipes and ignores SIGTERM gets SIGTERM 200 ms after the exit, with the line, then the
+// SIGKILL at the bound (measured at 1 to 3 s). The leader is a zombie at both signals.
+func TestClaudeCodeGroupGetsTermThenKillBeforeReap(t *testing.T) {
+	old := groupKillBound
+	groupKillBound = 400 * time.Millisecond
+	t.Cleanup(func() { groupKillBound = old })
+	seen := recordLeftGroupSignals(t)
+	buf := captureLogBuf(t)
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	p, member := spawnCLIGroup(t, m, "ccheld", "ccd-cli/2.0.0", TempRootAsk{}, "hold", "ignore")
+	awaitProcDone(t, p)
+	awaitMemberGone(t, member)
+	got := seen()
+	if !slices.Equal(sigsOf(got), []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL}) {
+		t.Fatalf("signals = %v, want SIGTERM, SIGKILL", got)
+	}
+	for _, s := range got {
+		if s.leader != "Z" {
+			t.Errorf("leader state at %v = %q, want the zombie Z", s.sig, s.leader)
+		}
+	}
+	if d := got[1].at.Sub(got[0].at); d < groupKillBound {
+		t.Errorf("SIGKILL %v after the SIGTERM, want the %v bound", d, groupKillBound)
+	}
+	if want := "[process.Manager] Process ccheld " + groupTermLineTail; !strings.Contains(buf.String(), want) {
 		t.Errorf("log has no line %q", want)
 	}
 }
@@ -332,9 +364,10 @@ func TestKillInTheGroupWaitClaimsNoExit(t *testing.T) {
 	}
 }
 
-// TestNoGroupEndAfterTheSweepSignalled: a group that the shutdown sweep sent SIGKILL
-// gets nothing from this end (claustrum's own, not measured).
-func TestNoGroupEndAfterTheSweepSignalled(t *testing.T) {
+// TestGroupEndAfterTheSweepKillSendsOneKill: a running launcher that the shutdown sweep
+// sent SIGKILL gets one more group SIGKILL from this end, at once and before its reap,
+// with no SIGTERM (87375cc7 and 13047a51, measured on Linux).
+func TestGroupEndAfterTheSweepKillSendsOneKill(t *testing.T) {
 	seen := recordLeftGroupSignals(t)
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
@@ -345,8 +378,12 @@ func TestNoGroupEndAfterTheSweepSignalled(t *testing.T) {
 	m.RefuseStarts()
 	p.signalIfLive("KILL", "shutdown")
 	awaitProcDone(t, p)
-	if got := seen(); len(got) != 0 {
-		t.Errorf("signals = %v, want none", got)
+	got := seen()
+	if !slices.Equal(sigsOf(got), []syscall.Signal{syscall.SIGKILL}) {
+		t.Fatalf("signals = %v, want one SIGKILL", got)
+	}
+	if got[0].leader != "Z" {
+		t.Errorf("leader state at the SIGKILL = %q, want Z", got[0].leader)
 	}
 }
 
@@ -1173,19 +1210,44 @@ func TestEndSendsTheKillAfterARefusedClaim(t *testing.T) {
 }
 
 // TestEndClaimsAGroupThatTheSweepKilled: after a group SIGKILL of the sweep, the end
-// takes the claim, so a later KILL in the drain adds none.
+// sends one SIGKILL at once and takes the claim, so a later KILL in the drain adds none.
+// With -keep-children it sends nothing. The kill call is a fake.
 func TestEndClaimsAGroupThatTheSweepKilled(t *testing.T) {
-	sent := fakeLeftGroup(t, nil)
-	p := startExitedLeader(t, "lgswept")
-	p.endedByShutdown = true
-	p.sweepKilledGroup.Store(true)
-	p.settleLeftGroupHeld(make(chan struct{}))
-	_ = p.cmd.Wait()
-	if got := sent(); len(got) != 0 {
-		t.Errorf("signals = %v, want none", got)
-	}
-	if !p.groupKillClaimed.Load() {
-		t.Error("the claim is free after the sweep killed the group")
+	realGroup := signalGroup
+	var later atomic.Int32
+	signalGroup = func(*ProcGroup, *os.Process, string) error { later.Add(1); return nil }
+	t.Cleanup(func() { signalGroup = realGroup })
+	// taken is the claim of the 1.5 s kill. The sweep KILL of a running leader takes none.
+	for _, tc := range []struct{ keep, taken bool }{{false, true}, {true, true}, {false, false}} {
+		keep := tc.keep
+		later.Store(0)
+		sent := fakeLeftGroup(t, nil)
+		p := startExitedLeader(t, "lgswept")
+		p.keepsGroup = keep
+		p.endedByShutdown = true
+		p.sweepKilledGroup.Store(true)
+		if tc.taken {
+			p.groupKillClaimed.tryTake()
+		}
+		p.settleLeftGroupHeld(make(chan struct{}))
+		_ = p.cmd.Wait()
+		want := []syscall.Signal{syscall.SIGKILL}
+		if keep {
+			want = nil
+		}
+		if got := sent(); !slices.Equal(got, want) {
+			t.Errorf("keep %v: signals = %v, want %v", keep, got, want)
+		}
+		if !p.groupKillClaimed.spent() {
+			t.Errorf("keep %v: the claim is not spent after the sweep killed the group", keep)
+		}
+		// A later group kill of the exited child sends no third SIGKILL.
+		if err := p.killGroupAfterExit(); err != nil {
+			t.Fatal(err)
+		}
+		if n := later.Load(); n != 0 {
+			t.Errorf("keep %v: %d later group SIGKILL, want none", keep, n)
+		}
 	}
 }
 

@@ -153,7 +153,7 @@ After the result, the output comes as [stream notifications](streams.md#stream-n
 
 ### The group of an exited launcher (build `87375cc7`)
 
-On Linux and macOS, `87375cc7` ends what a launcher left in its process group after the launcher ends, also after a kill of the launcher by another process or a `process.kill` (measured). A spawn with no launcher gets no such end (measured on Linux and macOS). claustrum has no such end on Windows, and `87375cc7` lists no `launcher.exit_ends_group` there (measured).
+On Linux and macOS, `87375cc7` ends what a launcher left in its process group after the launcher ends, also after a kill of the launcher by another process or a `process.kill` (measured). A spawn with no launcher gets no such end (measured on Linux and macOS), except [a Claude Code](#the-group-of-an-exited-claude-code-build-13047a51) on `13047a51`. claustrum has no such end on Windows, and `87375cc7` lists no `launcher.exit_ends_group` there (measured).
 
 **Linux** (measured):
 
@@ -163,13 +163,19 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 - The 5 s pipe drain of the `exit` frame counts from the exit of the launcher, not from its reap.
 - A shutdown inside this wait, before or after the `SIGTERM`: a group `SIGKILL` at once, then the reap. No `SIGTERM` follows. In some runs `87375cc7` sends a second group `SIGKILL` to the same group a few ms after the first (measured on Linux). claustrum sends one. The cleanup line counts the group as ended, except after a member that already ended on the `SIGTERM` or a refused `SIGKILL`. The record goes.
 - A stream-json launcher that the shutdown asked to end with `SIGTERM` gets the steps above after its exit. A group `SIGKILL` of the shutdown ends them.
+- A running leader that took a group `SIGKILL` of the shutdown gets one more right after its exit (`87375cc7` and `13047a51`, measured on Linux). It comes before the reap, with no `SIGTERM`. `13047a51` sends one more also after the 1.5 s `SIGKILL` of a Claude Code (measured on Linux). That it comes before the reap there, and the kill for a launcher after the 1.5 s `SIGKILL`, are claustrum's own, not measured.
+
+#### The lines of the end on Linux
+
 - On Linux, after the group `SIGKILL` of this end, a `SIGTERM` of the end logs the first line below. A shutdown in the wait logs none. In some runs with the second `SIGKILL` above, `87375cc7` logs it (measured on Linux). After a client `KILL` that ended the wait the line still goes (claustrum's own, not measured).
 - On Linux a refused group `SIGKILL` of this end logs the second line below, before the first (`87375cc7`, measured). One of a shutdown logs none. On macOS claustrum logs no such line (claustrum's own, not measured).
 
 ```
-[process.Manager] Process <id> exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL
+[process.Manager] Process <id> exited and its output was not at its end 200ms later: what was left of its process group, if anything, was sent SIGTERM ahead of the SIGKILL
 [process.Manager] the process group of pid <pid>, which has exited, was not sent SIGKILL: operation not permitted
 ```
+
+The first line is that of `13047a51` (measured on Linux).
 
 #### The end on macOS (measured)
 
@@ -180,19 +186,30 @@ On Linux and macOS, `87375cc7` ends what a launcher left in its process group af
 
 #### `CLAUDE_SSH_LEAVE_GROUPS`
 
-This holds on Linux and macOS (measured). The daemon reads it once at its start. The value `1` turns the end off. The daemon then logs one line before its listening line and lists no `launcher.exit_ends_group`. `0`, `yes` and empty leave it on. Each of these values leaves the environment of the children. Another value also leaves it on (claustrum's own, not measured).
+This holds on Linux and macOS (measured). The daemon reads it once at its start. The value `1` turns the end off, also [the end of a Claude Code](#the-group-of-an-exited-claude-code-build-13047a51). The daemon then logs one line before its listening line and lists no `launcher.exit_ends_group` and no `process.cli_exit_ends_group`. `0`, `yes` and empty leave it on. Each of these values leaves the environment of the children. Another value also leaves it on (claustrum's own, not measured).
 
 ```
-[daemon] what an exited launcher leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set
+[daemon] what an exited launcher or Claude Code leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set
 ```
+
+That is the line of `13047a51` (measured on Linux and macOS).
 
 claustrum's own rules of this end, not measured:
 
 - A group number of 1 or less, the daemon's pid and the daemon's group get no signal.
-- After the temp-root or unattended end killed the group, or after the shutdown sent the group its `SIGKILL`, this end sends nothing.
+- After the temp-root or unattended end killed the group, this end sends nothing. It sends nothing either after the shutdown sent its `SIGKILL` to the group of an already held leader. On macOS, after any group `SIGKILL` of the shutdown, it sends nothing either.
 - After the exit of the leader, this end, the 1.5 s step of a shutdown and a client `KILL` share one claim on the group `SIGKILL`. A client `KILL` that passed its test just before the exit can still send a second one. A refused client or 1.5 s `KILL` gives the claim back, unless a mark of the end came meanwhile.
 - With `-keep-children` a shutdown that began before the last test of the Linux end gets no group `SIGKILL` from it. A signal that passed its test just before the shutdown still goes.
 - On Linux a request in the wait treats the child as exited, so its `exit` frame gets no `killedBy` from that request. A `process.kill` with `KILL` there ends the group at once.
+
+### The group of an exited Claude Code (build `13047a51`)
+
+On Linux and macOS `13047a51` ends the group of a Claude Code spawn with no launcher, as it ends [the group of a launcher](#the-group-of-an-exited-launcher-build-87375cc7) (measured). `87375cc7` does not (measured). claustrum follows `13047a51`.
+
+- A Claude Code is a command named `ccd-cli` (measured on Linux and macOS). A command in a folder of that name counts too, such as `<dir>/ccd-cli/2.0.0` (measured on Linux). On macOS that shape is claustrum's own, not measured. A plain name gets no such end (measured). Other name shapes are claustrum's own, not measured.
+- Linux: a member that ignores the `SIGTERM` gets the `SIGKILL` 1 to 3 s after it (measured). claustrum sends it at 1.5 s.
+- A `pty` spawn gets no such end from claustrum. `87375cc7` and `13047a51` end what it leaves in its group, also with `CLAUDE_SSH_LEAVE_GROUPS=1` (measured on macOS). claustrum keeps that member.
+- A Claude Code with `gitRead` gets no such end (claustrum's own, not measured). Windows has no such end, and `13047a51` lists no `process.cli_exit_ends_group` there (measured).
 
 ## Errors
 
@@ -202,7 +219,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 |---|---|---|
 | `-32602` | `Invalid params` | No `params`, or a member that the method reads has the wrong type. A `launcher` that is not an array, or that holds an element that is not a string, gets it too. A `null` element becomes an empty argument. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
-| `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. |
+| `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. The text follows `13047a51`, measured on Windows for a `launcherCheck` with no `launcher`. For the `envOnlyIfSent` cases, which get this same text, and on Linux and macOS, it is claustrum's own, not measured. A spawn does not test `orManagedFolder`: it drops the member, so a `launcherCheck` with `orManagedFolder` and a `sha256` passes this test (claustrum's own, not measured). |
 | `-32602` | `Command is required` | `command` is absent or empty, with no `launcherSuppliesCli`. |
 | `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
@@ -296,6 +313,7 @@ After a good read, the child gets the login-shell `PATH` of the user. A `PATH` i
 |---|---|
 | `CLAUDE_RPC_TOKEN`, `CLAUDE_SSH_NO_JOBS` (`52d82f0a`, measured on Linux, macOS and Windows) | The daemon value, for every child. A value in the `env` of the request reaches the child (claustrum's own for `CLAUDE_SSH_NO_JOBS`). |
 | `CLAUDE_SSH_MANAGED_LAUNCHER`, `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` | Every child. The removal covers the `env` of the request too (measured on Linux and macOS). The removal on Windows (claustrum's own). |
+| `CLAUDE_SSH_CHILD`, `CLAUDE_SSH_RUN_DIR` | On Windows, a plain spawn, also from `env` (`87375cc7` and `13047a51`, measured). `gitRead`, adopted-base and launcher spawns: claustrum's own. Only the upper-case names match, so a name in another case, such as `claude_ssh_child`, gets through (claustrum's own, not measured). |
 | `CLAUDE_CODE_PROCESS_WRAPPER` | A child with a `launcher`, also from the `env` of the request. A child without one keeps it (measured on Linux and macOS, claustrum's own on Windows). |
 | `CLAUDE_SSH_NO_LOGIN_PATH_WARM` | The daemon value, for every child (claustrum's own on Windows). A value in `env` reaches the child (claustrum's own). |
 | The eight editor names and the session folders | A spawn of the bare command `git`. See [Session folders](git-rules-session-folders.md#the-variables-of-a-git-child) (`b3081b51`). |

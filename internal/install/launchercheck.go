@@ -120,6 +120,12 @@ var (
 // A path that moves during the check is not refused for the move. A swapped file meets
 // the digest test like any other (4c111e86, measured on Linux).
 func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
+	return checkLauncherPath(p, chk, false)
+}
+
+// checkLauncherPath is CheckLauncherFile. With inFolder set it checks the launcher of
+// the managed-settings folder, whose owner text differs (checkManagedFolderLauncher).
+func checkLauncherPath(p string, chk LauncherCheck, inFolder bool) (fault, reason string) {
 	shown := managedShown(p)
 	switch {
 	case !filepath.IsAbs(p):
@@ -155,7 +161,7 @@ func CheckLauncherFile(p string, chk LauncherCheck) (fault, reason string) {
 			continue
 		}
 		seen[item] = true
-		if f, r := checkLauncherItem(p, item, chk.OwnerUID, digests); f != "" {
+		if f, r := checkLauncherItem(p, item, chk.OwnerUID, digests, inFolder); f != "" {
 			return f, r
 		}
 	}
@@ -227,8 +233,9 @@ func launcherFolders(dir string) []string {
 // the daemon gets writable there, also with that uid as ownerUid. With a digest the owner test still
 // runs, and that mount gets owner (both rules: 4c111e86, measured on Linux). The write test
 // there is claustrum's own, not measured. An item whose
-// facts cannot be read is missing (claustrum's own, not measured).
-func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (fault, reason string) {
+// facts cannot be read is missing (claustrum's own, not measured). inFolder gives the
+// owner text of the launcher in the managed-settings folder (checkLauncherPath).
+func checkLauncherItem(launcher, item string, ownerUID *uint32, digests, inFolder bool) (fault, reason string) {
 	f, err := launcherPathFacts(item)
 	shown := "`" + managedShown(item) + "`"
 	if err != nil {
@@ -268,6 +275,10 @@ func checkLauncherItem(launcher, item string, ownerUID *uint32, digests bool) (f
 		// fourth follow 4c111e86 (measured on Linux, the fourth with a digest, on ext4
 		// and on NFS).
 		switch {
+		case inFolder && int64(f.uid) == int64(launcherOwnUID()):
+			// 13047a51, measured on Linux for the launcher file. The same text for a
+			// folder above it is claustrum's own, not measured.
+			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d), and no account may use a launcher that it can change itself. Sign in as another account, or make root its owner.", shown, f.uid)
 		case int64(f.uid) == int64(launcherOwnUID()):
 			return FaultOwner, fmt.Sprintf("%s belongs to the account that signs in (uid %d). Root must own the launcher and every folder above it.", shown, f.uid)
 		case f.uid == nobodyUID && ownerUID != nil && *ownerUID == nobodyUID:

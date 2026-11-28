@@ -212,6 +212,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   a name from a directory read and no shape test (`removeRunDir`). An identity test precedes each signal
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
+- **The log entry** (Linux and macOS, 13047a51). At start each try is one plain `os.Remove` of the entry at `remote-server.log` beside the socket
+  (`openDaemonLogAt`, [the log](docs/DAEMON.md#daemon-log-remote-serverlog)). Never widen: remove only that one name, never a tree.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
   at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the scratch file remove, the seed copy remove and the keep swap
   (below). Do not build a name below it from a request value ([The
@@ -243,13 +245,15 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   remove a tree delete. Never build the name of a remove there from a request value, a
   path or a link target.
 - **The shutdown sweep.** On Linux and macOS, a child whose args ask for `stream-json` gets `SIGTERM` first, then its group gets `SIGKILL` (`argsAskEnd`,
-  `endAsked`, [D28](docs/DIVERGENCES.md#d28)). Never widen: In the shutdown sweep, send a group
-  `SIGKILL` after the exit of a child only while its exit drain is open. On Linux and macOS a plain spawn whose reaped leader stayed in its group gets a group `SIGKILL` while any process holds its pipes. That process can be outside the group. With `-keep-children` it gets none
-  (`killGroupInOpenDrain`, [the rule](docs/protocol/server.md#a-child-in-its-exit-drain)). A reused group number takes that signal, as on `87375cc7` (measured on Linux), a risk the maintainer accepted. A client `KILL` can come before it, so the group can get two. A pty spawn gets none from this path. Never widen: send it from this path at most once for a child, only to a plain spawn, before its exit frame.
+  `endAsked`, [the stop](docs/protocol/server.md#what-the-stop-does)). Never widen: In the shutdown sweep, send a group
+  `SIGKILL` after the exit of a child only while its exit drain is open. On Linux and macOS a plain spawn whose reaped leader stayed in its group gets a group `SIGKILL` while any process holds its pipes. That process can be outside the group. A `stream-json` one that ended on the shutdown `SIGTERM` gets it with no held pipe (`87375cc7` and `13047a51`, measured on Linux and macOS). With `-keep-children` it gets none
+  (`killGroupInOpenDrain`, [the rule](docs/protocol/server.md#a-child-in-its-exit-drain)). A reused group number takes that signal (`87375cc7`, measured on Linux), a risk the maintainer accepted, now at every usual shutdown of plain `stream-json` children. A client `KILL` can come before it, so the group can get two. A pty spawn gets none from this path. Never widen: send it from this path at most once for a child, only to a plain spawn, before its exit frame.
 - **A give-up during a start.** A spawn of an `id` given up after its start test ends its new child (on Linux and macOS a group `SIGKILL`)
   (`endUnstarted`, [process.spawn](docs/protocol/process-spawn.md#a-give-up-during-the-start)). Never widen: send it only to
   the group that this spawn made, before the one `cmd.Wait` of that child, and to no other child.
-- **The group of an exited launcher** (87375cc7, [rules](docs/protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7)). Linux: group `SIGTERM` and `SIGKILL` before the reap (`settleLeftGroupHeld`). macOS: a probe and a group `SIGKILL` right after the reap (`settleLeftGroupReaped`). A reused number can then hit an unrelated group, a risk the maintainer accepted. The refusal below does not prevent it. Never widen: on macOS send it only to the group of a launcher spawn that this daemon started, once, right after its reap. A client `KILL` that passed its test before the reap mark can still send one more. Refuse a number of 1 or less, the own pid and the own group (`groupNumberRefused`, claustrum's own, not measured). Never widen: on Linux send the shutdown `SIGKILL` (`killHeldGroupAtStop`) only while `leaderHeld` holds the zombie, never after `cmd.Wait` and never with `-keep-children`.
+#### The group of an exited child
+
+- **The group of an exited launcher** (87375cc7, [rules](docs/protocol/process-spawn.md#the-group-of-an-exited-launcher-build-87375cc7)), and of [a Claude Code](docs/protocol/process-spawn.md#the-group-of-an-exited-claude-code-build-13047a51) with no launcher and no pty (13047a51, `cliExitEndsGroup`). Linux: group `SIGTERM` and `SIGKILL` before the reap (`settleLeftGroupHeld`). macOS: a probe and a group `SIGKILL` right after the reap (`settleLeftGroupReaped`). A reused number can then hit an unrelated group, a risk the maintainer accepted. The refusal below does not prevent it. Never widen: on macOS send it only to the group of a launcher or Claude Code spawn of this daemon, once, right after its reap. A client `KILL` that passed its test before the reap mark can still send one more. Never widen: give no other name or spawn kind this end. Refuse a number of 1 or less, the own pid and the own group (`groupNumberRefused`, claustrum's own, not measured). Never widen: on Linux send the shutdown `SIGKILL` (`killHeldGroupAtStop`) only while `leaderHeld` holds the zombie, never after `cmd.Wait` and never with `-keep-children`. On Linux a group that a shutdown `SIGKILL` reached before the exit gets one more at once (`killAfterSweepKill`). Never widen: send it once, only while `leaderHeld` holds the zombie, and never with `-keep-children`.
 - **The unattended end of a spawn** (87375cc7). `SIGTERM` to the child, then the group `SIGKILL` after at most 7 s (Linux,
   macOS). Windows ends the job (`endUnheld`, `killGroupOnUnheldExit`,
   [process.spawn](docs/protocol/process-spawn.md#the-unattended-end-build-87375cc7)). Never widen: arm it only for an
@@ -268,6 +272,12 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
+- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
+  a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
+  the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
+  ([the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
+  `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
+  without a measured row.
 
 #### The private temp folder of a spawn
 
@@ -348,14 +358,13 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 |----|---------|---------|--------|
 | D2 | Refuse a destructive path that is or holds home | always-on | all |
 | D6 | `-cli-version` must be one path component | always-on | all |
-| D8 | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | always-on | all |
+| D8 | Refuse a file link at `remote-server.log` after a failed rename (Windows). The `git-shadow` sweep writes nothing through a link | always-on | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
 | D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |
 | D23 | The environment of a child is in name order | always-on | Windows |
 | D24 | Create rollback keeps a folder that replaced the registration | always-on | all |
 | D27 | The stale step keeps an entry with a live record | always-on | Windows |
-| D28 | No group `SIGKILL` after the exit frame at shutdown | always-on | Linux, macOS |
 | CT-1 | `wantPid` adds `pid` and `startTime` | the caller asks | all |
 | CT-2 | `-keep-children` keeps the children at shutdown | off | all |
 | CT-3 | The `claustrum.conf` config file | no file | all |

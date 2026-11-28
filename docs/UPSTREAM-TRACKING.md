@@ -165,14 +165,13 @@ means that a probe which reaches the path shows it. The battery never drives
 |----|---------|------------------|---------|
 | [D2](DIVERGENCES.md#d2) | Always-on | Maybe | A delete path that is or holds the home folder is refused, also on `-install` |
 | [D6](DIVERGENCES.md#d6) | Always-on | No, install path | A `-cli-version` of more than one path component is refused |
-| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Linux and macOS a FIFO, another user's file or a link to one at `remote-server.log` fails the start. On Windows a file link does. The `git-shadow` sweep writes nothing through a link |
+| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Windows a file link at `remote-server.log` fails the start after a failed rename. The `git-shadow` sweep writes nothing through a link |
 | [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
 | [D22](DIVERGENCES.md#d22) | Always-on, Linux and macOS | Maybe | `git.worktree_remove` refuses a lock where `89cb6289` answers success (four states, and a missing daemon `GIT_DIR` of `b3081b51`), and differs with `worktreeRoot` in three more |
 | [D23](DIVERGENCES.md#d23) | Always-on, Windows | Maybe, in stream frames | The environment block of a child is in name order |
 | [D24](DIVERGENCES.md#d24) | Always-on | No for a replaced folder: the disk differs. Yes at the index placement (not measured), and after a `.git` file swap on Windows | A create rollback keeps a folder that replaced the registration. On Windows it runs no git call after a `.git` file swap. On Linux and macOS a branch git made through a `.git` link to another folder stays |
 | [D27](DIVERGENCES.md#d27) | Always-on, Windows | Yes, in a case-sensitive folder | The stale step keeps an entry whose record path exists |
-| [D28](DIVERGENCES.md#d28) | Always-on, Linux and macOS | No, off the wire | After a shutdown `SIGTERM`, the group of an ended child gets no `SIGKILL` after its exit frame. A launcher spawn with the end on gets its group end before that frame |
 | [CT-1](DIVERGENCES.md#ct-1) | Opt-in | Yes, on request | `pid` and `startTime` on spawn and reattach |
 | [CT-2](DIVERGENCES.md#ct-2) | Opt-in | No | Children survive shutdown |
 | [CT-3](DIVERGENCES.md#ct-3) | Opt-in | Only `version-override`, in the `-version` shape that the static check prints | The `claustrum.conf` file |
@@ -182,13 +181,17 @@ means that a probe which reaches the path shows it. The battery never drives
 | [CT-7](DIVERGENCES.md#ct-7) | Off | No, install path | An opt-in size cap fails `-install` |
 | [CT-8](DIVERGENCES.md#ct-8) | Off | No, install path | An opt-in bound fails a slow `-install` download |
 
-D1, D4, D5, D7, D9, D11, D13, D14, D16, D17, D18, D19, D21 and D25 are retired: claustrum
+D1, D4, D5, D7, D9, D11, D13, D14, D16, D17, D18, D19, D21, D25 and D28 are retired: claustrum
 matches the reference there. A difference on those paths is drift, unless a live
 entry above covers it. One thing on those paths is claustrum's own and not
 drift: the D13 chmod, clear and rename come after the checksum test. A difference against `89cb6289` on the D4 paths is
 expected, and so is the stop of a slow git call (D5). See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries), and the
 `files-read-regular-only` paragraph below.
+
+On Linux and macOS claustrum follows `13047a51` for the old log entry, ahead of the pin
+([the rules](DAEMON.md#the-old-log-entry)). A battery diff against `87375cc7` on a
+link, FIFO, folder or second-name file kept as `.old` there is expected, not drift.
 
 Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and
