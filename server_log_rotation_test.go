@@ -10,8 +10,8 @@ import (
 // prior remote-server.log is renamed to remote-server.log.old (content preserved)
 // and a fresh own log is created, on every restart. Before this claustrum unlinked
 // the prior log, leaving no .old. This lives in a portable (non-unix) file on
-// purpose: openDaemonLog's os.Rename-to-.old is untagged and runs on Windows too,
-// so the rotation needs coverage on every OS the daemon builds for.
+// purpose: both openDaemonLogAt files rename a one-link file to .old, so the
+// rotation needs coverage on every OS the daemon builds for.
 func TestOpenDaemonLogRotatesToOld(t *testing.T) {
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "s.sock")

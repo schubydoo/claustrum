@@ -3,10 +3,13 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"syscall"
 
+	"github.com/schubydoo/claustrum/internal/logging"
 	"github.com/schubydoo/claustrum/internal/supervisor"
 	"github.com/schubydoo/claustrum/internal/sysproc"
 )
@@ -30,67 +33,67 @@ func daemonStartEnv(env []string) []string {
 // startDetached starts the daemonized child. On unix it is cmd.Start. Windows has its own.
 func startDetached(cmd *exec.Cmd) error { return cmd.Start() }
 
+// socketDirFailsStart is true on unix: a failed create of the socket folder ends the
+// launcher before the log open (daemonizeWithToken). Windows has its own.
+const socketDirFailsStart = true
+
 // daemonLogAppend is the append flag of the log open. On unix every write goes to the end
 // of the file. Windows has its own.
 const daemonLogAppend = os.O_APPEND
 
-// daemonLogOwned reports whether the user of the daemon owns the entry of fi. It is a
-// seam, so a test can stage an entry of another user.
-var daemonLogOwned = func(fi os.FileInfo) bool {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && int(st.Uid) == os.Geteuid()
+// daemonLogTries is the count of remove and create pairs of openDaemonLogAt. A create
+// that finds a new entry at the path tries again. The retry and its count are not
+// measured.
+const daemonLogTries = 3
+
+// afterLogRemove runs between the remove and the create of each try. It is a seam, so a
+// test can plant an entry at the path there.
+var afterLogRemove = func(string) {}
+
+// openDaemonLogAt opens the log at path. It never opens or writes through the old entry.
+// 13047a51 gives the same outcomes (measured, rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
+//   - keepOldLog renames a regular file with one link to remote-server.log.old.
+//   - One plain remove by name then deletes whatever is at the path: a link, a FIFO, a
+//     socket, an empty folder or a file with a second name. A link target and the other
+//     name keep their bytes. The remove is never a tree delete.
+//   - An exclusive create makes a fresh regular log, mode 0600.
+//
+// A failed remove fails the start with its error, for example "directory not empty"
+// for a folder with entries, or "operation not permitted" for the file of another user
+// in a sticky folder on Linux. The entry stays.
+func openDaemonLogAt(path string) (*os.File, error) {
+	keepOldLog(path)
+	var err error
+	for range daemonLogTries {
+		if rerr := os.Remove(path); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+			return nil, rerr
+		}
+		afterLogRemove(path)
+		var f *os.File
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL|daemonLogAppend, 0o600)
+		if !errors.Is(err, fs.ErrExist) {
+			return f, err
+		}
+	}
+	return nil, err
 }
 
-// openHeldDaemonLog opens the regular file or the link at the log path that the rotate
-// cannot move, and truncates the file. fi is its Lstat. The lines then go there with
-// the mode kept, as on 5fd08069 (measured on Linux and macOS). A file of another user
-// fails with "permission denied" and stays unchanged (D8).
-//
-// A link must belong to the user of the daemon, and it is opened through, as on
-// 5fd08069 (measured on Linux). Its target must be a regular file of that user with
-// one link (claustrum's own, not measured). Another link fails with "permission
-// denied" (D8).
-//
-// A file with more than one link is refused the same way, so no other name is truncated
-// (not measured, claustrum's own). The open does not block on a FIFO. It then tests
-// that the open file is the file that was judged. An open error fails the start with
-// that error (not measured).
-func openHeldDaemonLog(path string, fi os.FileInfo) (*os.File, error) {
-	refused := &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}
-	flags := syscall.O_WRONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC | daemonLogAppend
-	if fi.Mode().Type() == os.ModeSymlink {
-		if !daemonLogOwned(fi) {
-			return nil, refused
-		}
-		target, err := os.Stat(path)
-		if err != nil {
-			return nil, refused
-		}
-		fi = target
-		flags &^= syscall.O_NOFOLLOW
+// keepOldLog judges the entry at path by Lstat and renames a regular file with one link
+// to path.old. Any other entry stays for the remove of openDaemonLogAt, and a line on
+// the stderr of the launcher tells so. A failed rename logs its error in the same line.
+// The texts are those of 13047a51 (measured on Linux and macOS). A missing entry and a
+// failed Lstat log nothing. A failed Lstat other than a missing entry is not measured.
+func keepOldLog(path string) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return
 	}
 	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok || !fi.Mode().IsRegular() || !daemonLogOwned(fi) || st.Nlink != 1 {
-		return nil, refused
+	if !ok || !fi.Mode().IsRegular() || st.Nlink != 1 {
+		logging.Infof("[daemon] the last run's log is not kept as .old: it is no regular file, or has a second name")
+		return
 	}
-	fd, err := syscall.Open(path, flags, 0)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	if err := os.Rename(path, path+".old"); err != nil {
+		logging.Infof("[daemon] the last run's log is not kept as .old: %v", err)
 	}
-	var now syscall.Stat_t
-	err = syscall.Fstat(fd, &now)
-	if err == nil && (now.Dev != st.Dev || now.Ino != st.Ino || now.Mode&syscall.S_IFMT != syscall.S_IFREG || now.Nlink != 1) {
-		err = syscall.EACCES
-	}
-	if err == nil {
-		err = syscall.SetNonblock(fd, false)
-	}
-	if err == nil {
-		err = syscall.Ftruncate(fd, 0)
-	}
-	if err != nil {
-		_ = syscall.Close(fd)
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
-	}
-	return os.NewFile(uintptr(fd), path), nil
 }
