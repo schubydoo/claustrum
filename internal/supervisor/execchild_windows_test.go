@@ -4,6 +4,7 @@ package supervisor
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -37,5 +38,27 @@ func TestWrapCmdWithTrampolineWindowsInert(t *testing.T) {
 		if strings.HasPrefix(e, "CLAUDE_SSH_RUN_DIR=") || strings.HasPrefix(e, "CLAUDE_SSH_CHILD=") {
 			t.Errorf("WrapCmdWithTrampoline injected a marker on windows: %q", e)
 		}
+	}
+}
+
+// TestWrapCmdWithTrampolineWindowsDropsMarks pins row S1 of the m-25 Windows round: a
+// CLAUDE_SSH_CHILD and a CLAUDE_SSH_RUN_DIR in the env of a spawn reach no child, on
+// 87375cc7 and on 13047a51 (measured on Windows). The other entries keep their order,
+// CLAUDE_SSH_DAEMON_CHILD included. A nil env stays nil, so the child inherits.
+func TestWrapCmdWithTrampolineWindowsDropsMarks(t *testing.T) {
+	cmd := exec.Command(`C:\Windows\System32\cmd.exe`, "/c", "set")
+	cmd.Env = []string{"FOO=bar", EnvChildMarker + "=y", "CLAUDE_SSH_DAEMON_CHILD=1", EnvRunDir + `=C:\w\y`, "ZED=1"}
+
+	if r, w := WrapCmdWithTrampoline(cmd, `C:\x\run\c1`); r != nil || w != nil {
+		t.Errorf("WrapCmdWithTrampoline returned a pipe on windows; it must return (nil, nil)")
+	}
+	if want := []string{"FOO=bar", "CLAUDE_SSH_DAEMON_CHILD=1", "ZED=1"}; !slices.Equal(cmd.Env, want) {
+		t.Errorf("cmd.Env = %q, want %q", cmd.Env, want)
+	}
+
+	bare := exec.Command(`C:\Windows\System32\cmd.exe`, "/c", "set")
+	WrapCmdWithTrampoline(bare, `C:\x\run\c1`)
+	if bare.Env != nil {
+		t.Errorf("a nil env became %q, want it to stay nil", bare.Env)
 	}
 }

@@ -93,8 +93,9 @@ inherit it as on the reference.
 The daemon drops `CLAUDE_SSH_CHILD` and `CLAUDE_SSH_RUN_DIR` of the launcher from its
 environment, and `CLAUDE_SSH_DAEMON_CHILD=1` is its last entry. A launcher value `0`
 gives way to `1` there. This is measured on Linux against `c9125eb8` and `4c111e86`. On
-macOS it is claustrum's own, not measured. Windows keeps both names (claustrum's own). On
-Linux and macOS a `process.spawn` child still gets both names from the spawn.
+macOS `87375cc7` and `13047a51` do the same (measured), and the place is not measured. On
+Windows `87375cc7` and `13047a51` drop both names (measured). On Linux and macOS a
+`process.spawn` child still gets both names from the spawn.
 `CLAUSTRUM_DAEMON_CHILD=1` stands right before the last entry, because the re-exec test
 reads it. With `-token-fd`, `CLAUSTRUM_TOKEN_PIPE=3` stands before both (claustrum's own).
 
