@@ -124,7 +124,7 @@ func TestSocketResponseBattery(t *testing.T) {
 		// the battery's capabilities frame differs from the unix golden on that one field.
 		golden = "socket_responses_windows.golden.json"
 	case "darwin":
-		// Only Linux lists launcher.checked_by_handle and launcher.local_kinds_only
+		// Only Linux lists launcher.checked_by_handle, launcher.local_kinds_only and launcher.in_managed_folder
 		// (capfeatures_launcher_linux.go).
 		golden = "socket_responses_darwin.golden.json"
 	}

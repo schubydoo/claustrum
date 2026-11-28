@@ -15,7 +15,7 @@ package main
 // git.worktree_create.lfs_error_codes after it (measured on Linux and macOS).
 // 4c111e86 lists cli_temp_root_end right after cli_temp_root on Linux and macOS,
 // and not on Windows (measured).
-// On Linux the two launcher features of launcherOSFeatures follow.
+// On Linux the three launcher features of launcherOSFeatures follow.
 var osCapabilityFeatures = append([]string{"files.mkdir.verified_parent", "git.worktree.external_root", "process.spawn.link_bound", "git.worktree_create.own_lfs_store", "git.worktree_create.lfs_error_codes", "process.spawn.cli_temp_root", "process.spawn.cli_temp_root_end"}, launcherOSFeatures...)
 
 // osCapabilityMethods is files.mkdir, which c9125eb8 lists after plugins.prune and

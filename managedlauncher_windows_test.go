@@ -118,7 +118,7 @@ func TestLauncherResolveCheckOnWindows(t *testing.T) {
 		`{"cliPath":"x","path":"C:\\l.exe","launcherCheck":{}}`,
 		`{"cliPath":"x","launcherCheck":{"path":"C:\\l.exe"}}`,
 		`{"cliPath":"x","launcherCheck":{"path":5}}`,
-		`{"cliPath":"x","launcherCheck":{"path":"C:\\l.exe","orManagedFolder":"yes"}}`,
+		`{"cliPath":"x","launcherCheck":{"path":"C:\\l.exe","orManagedFolder":true}}`,
 	} {
 		if got := dispatchRaw(t, s, authed(`{"jsonrpc":"2.0","id":1,"method":"launcher.resolve","params":`+params+`}`)); got != refused {
 			t.Errorf("%s:\n got %s\nwant %s", params, got, refused)
