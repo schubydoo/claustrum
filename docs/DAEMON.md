@@ -519,6 +519,32 @@ After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the who
 
 Two risks remain (from the code). A process can change between the last read of `/proc` or `ps` and the signal. That window is wider on macOS, where `ps` runs as its own process. And a remove of a record takes what sits at its name at that time, by one plain remove, never as a tree.
 
+## The left-process sweep (13047a51, Linux)
+
+`internal/leftsweep` ends the processes that the children of a daemon started and left. No path of claustrum calls it yet. On `13047a51` it ran only at the end by the unattended limit (measured on Linux). After `server.shutdown` and after the orphan end, the log of `13047a51` shows no sweep line.
+
+Measured on `13047a51` on Linux, rows K-1 A to G. Each row starts a `setsid` sleep:
+
+- A has both marks, `CLAUDE_SSH_RUN_DIR=<run dir>` and `CLAUDE_SSH_DAEMON_CHILD=1`. It ends by one `pidfd_send_signal` `SIGKILL`.
+- B and C have one mark each. They stay alive.
+- D runs as another user, `nobody` for the real and the effective uid. It stays alive.
+- E runs in a mount namespace where the run folder path is missing. It ends.
+- F sees another folder at that path, with a `children` entry. It stays alive.
+- G sees another folder at that path, with no `children` entry. It ends.
+
+The strace of `13047a51` shows one pid file descriptor open for each pid from 2 up, and none for pid 1 or the daemon. After the pass that ended A, E and G, a second pass ran. It ended none, and the sweep stopped.
+
+claustrum's own, not measured:
+
+- The parent of the daemon is passed over.
+- At most 3 passes run, with a pause of 20 ms before each next pass. A pid that took the signal gets no second one and counts once.
+- An environment over 8 MiB counts as one with no marks.
+- The sweep sends no signal and returns an error for a relative or unclean run folder or a failed stat of it. The same holds for a `/proc` whose `self` is another process.
+- The uid test compares the effective uid. Row D cannot tell the real uid from the effective uid.
+- A link or a non-folder at the run path keeps the process alive. Only the last name of that path is read without following a link. The parts above it are followed, and an absolute link there resolves in the root of the daemon.
+- A failed open of the pid file descriptor sends nothing, also on a kernel with no pidfd.
+- macOS and Windows run no sweep.
+
 ## Idle-connection close
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read

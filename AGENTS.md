@@ -256,6 +256,9 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   accepted top-level unattendedSeconds above 0. Send no `SIGKILL` for a refused `SIGTERM`. Signal only that child, its group or its job, and none to a group that
   the spawn did not make. Send each signal through `unheldGate` before the reap (Linux, macOS). Start no end after the
   shutdown began.
+
+#### The extract marker, the start and the reap
+
 - **The extract marker.** `.synced` goes as a tree through the handle of `destDir` that
   `extractTarGz` tested (`writeSyncedMarker`, [the
   steps](docs/protocol/files-extract-tar.md#what-the-request-does)). Never widen: This step is approved by the maintainer. Do not
@@ -271,6 +274,12 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
+- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
+  a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
+  the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
+  ([the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
+  `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
+  without a measured row.
 
 #### The private temp folder of a spawn
 
