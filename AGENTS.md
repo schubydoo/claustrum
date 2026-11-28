@@ -270,8 +270,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   Remove one bare name, never a tree.
 - **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
   a pid file descriptor to a process of the own effective uid with both child marks. Its root must show the run folder,
-  no entry there, or another folder with no `children` entry. Never widen: signal only through `procinfo.HoldPIDByFD`,
-  never a group, another uid or the daemon itself. Add no case without a measured row.
+  no entry there, or another folder with no `children` entry. A link there keeps it alive. Never widen: signal only
+  through `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon or its parent. Add no case without a measured row.
 
 #### The private temp folder of a spawn
 

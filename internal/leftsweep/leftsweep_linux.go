@@ -46,6 +46,8 @@ var (
 	procDir  = procinfo.Root
 	ownEUID  = os.Geteuid
 	ownPID   = os.Getpid
+	ownPPID  = os.Getppid
+	readlink = os.Readlink
 	holdPID  = procinfo.HoldPIDByFD
 	waitPass = time.Sleep
 )
@@ -61,12 +63,20 @@ var (
 // entry. The signal is one SIGKILL through the descriptor, never a group and never
 // kill(pid). If the open fails, no signal goes out (claustrum's own, not measured).
 //
-// If runDir cannot be read, nothing is sent and the error comes back. A failed read
-// of /proc ends the sweep with its error.
+// If runDir is not an absolute clean path or cannot be read, nothing is sent and an
+// error comes back. The same holds when /proc/self of the /proc mount is not this
+// process, as in a /proc of another pid namespace. A failed read of /proc ends the
+// sweep with its error. These refusals are claustrum's own, not measured.
 func Run(runDir string) (int, error) {
+	if !filepath.IsAbs(runDir) || filepath.Clean(runDir) != runDir {
+		return 0, errors.New("leftsweep: the run folder is no absolute clean path: " + strconv.Quote(runDir))
+	}
 	own, err := os.Stat(runDir)
 	if err != nil {
 		return 0, err
+	}
+	if self, err := readlink(filepath.Join(procDir(), "self")); err != nil || self != strconv.Itoa(ownPID()) {
+		return 0, errors.New("leftsweep: /proc/self of " + procDir() + " is not this process")
 	}
 	ended := 0
 	for pass := 1; ; pass++ {
@@ -90,8 +100,9 @@ func sweepOnce(runDir string, own fs.FileInfo) (int, error) {
 	ended := 0
 	for _, e := range entries {
 		pid, err := strconv.Atoi(e.Name())
-		// The daemon itself and pid 1 never take this signal (claustrum's own).
-		if err != nil || pid < 2 || pid == ownPID() {
+		// Pid 1, the daemon itself and its parent never take this signal
+		// (claustrum's own).
+		if err != nil || pid < 2 || pid == ownPID() || pid == ownPPID() {
 			continue
 		}
 		if endIfLeft(proc, pid, runDir, own) {
@@ -153,14 +164,16 @@ func hasBothMarks(dir, runDir string) bool {
 // runDirLeft looks at the run folder path inside the root of the process. The
 // same folder as this daemon's, or no entry at that path (row K-1 E), lets the
 // process end. A different folder lets it end only without a children entry (rows
-// K-1 F and G). Every other error keeps it alive (claustrum's own, not measured).
+// K-1 F and G). Every other error keeps it alive, and so does a link or a
+// non-folder at that path (claustrum's own, not measured). The final name is not
+// followed, because an absolute link target resolves in the root of this daemon.
 func runDirLeft(dir, runDir string, own fs.FileInfo) bool {
 	at := filepath.Join(dir, "root", runDir)
-	fi, err := os.Stat(at)
+	fi, err := os.Lstat(at)
 	if errors.Is(err, fs.ErrNotExist) {
 		return true
 	}
-	if err != nil {
+	if err != nil || !fi.IsDir() {
 		return false
 	}
 	if os.SameFile(fi, own) {
