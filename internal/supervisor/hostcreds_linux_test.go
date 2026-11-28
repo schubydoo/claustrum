@@ -10,12 +10,20 @@ import (
 	"time"
 )
 
-// spawnHostCreds starts the host-creds helper with the hostCreds env FOO=1 and
-// returns its Proc and its stdout.
-func spawnHostCreds(t *testing.T, m *Manager, id string) (*Proc, string) {
+// startCredsChild starts the host-creds helper with the hostCreds env FOO=1 and
+// returns its Proc and its stdout. A name other than "" starts it through a link of
+// that name in a temp folder.
+func startCredsChild(t *testing.T, m *Manager, id, name string) (*Proc, string) {
 	t.Helper()
 	c, frames := pipeConn(t)
 	exe, env := helperCommand(t, "host-creds")
+	if name != "" {
+		link := filepath.Join(t.TempDir(), name)
+		if err := os.Symlink(exe, link); err != nil {
+			t.Fatal(err)
+		}
+		exe = link
+	}
 	p, err := m.SpawnWithTempRoot(c, id, exe, nil, "", env, false, nil, 0, TempRootAsk{HostCreds: map[string]string{"FOO": "1"}}, nil, 0)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
@@ -25,16 +33,31 @@ func spawnHostCreds(t *testing.T, m *Manager, id string) (*Proc, string) {
 
 const wantCredsHead = `{"env":{"FOO":"1"},"expiresAt":null,"pid":`
 
-// TestHostCredsSpawnStaysPlain pins that a hostCreds spawn keeps the shape of a plain
-// spawn for killGroupInOpenDrain, as before the member existed (claustrum's own, not
-// measured), and that its child reads the payload through the trampoline.
+// TestHostCredsSpawnStaysPlain pins that the HostCreds field does not change
+// plainGroupEnd of a spawn with a plain name (claustrum's own, not measured). Its child
+// reads the payload through the trampoline.
 func TestHostCredsSpawnStaysPlain(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
 	m.RunDir = t.TempDir()
-	p, out := spawnHostCreds(t, m, "hc-plain")
+	p, out := startCredsChild(t, m, "hc-plain", "")
 	if !p.plainGroupEnd {
 		t.Error("plainGroupEnd = false for a hostCreds spawn, want true")
+	}
+	if !strings.HasPrefix(out, wantCredsHead) {
+		t.Errorf("child read %q, want %s…", out, wantCredsHead)
+	}
+}
+
+// TestHostCredsCLISpawnEndsGroup pins that a hostCreds spawn of a command named ccd-cli
+// gets the group end of cliExitEndsGroup, not the plain one.
+func TestHostCredsCLISpawnEndsGroup(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.KillAll)
+	m.RunDir = t.TempDir()
+	p, out := startCredsChild(t, m, "hc-cli", "ccd-cli")
+	if !p.endsGroup || p.plainGroupEnd {
+		t.Errorf("endsGroup %v, plainGroupEnd %v, want true and false", p.endsGroup, p.plainGroupEnd)
 	}
 	if !strings.HasPrefix(out, wantCredsHead) {
 		t.Errorf("child read %q, want %s…", out, wantCredsHead)
@@ -51,7 +74,7 @@ func TestHostCredsDirectStart(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.KillAll)
 	m.RunDir = t.TempDir()
-	if _, out := spawnHostCreds(t, m, "hc-direct"); !strings.HasPrefix(out, wantCredsHead) {
+	if _, out := startCredsChild(t, m, "hc-direct", ""); !strings.HasPrefix(out, wantCredsHead) {
 		t.Errorf("child read %q, want %s…", out, wantCredsHead)
 	}
 }
