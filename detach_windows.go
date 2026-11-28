@@ -70,6 +70,10 @@ func startDetached(cmd *exec.Cmd) error {
 	return nil
 }
 
+// socketDirFailsStart is false on Windows: a failed create of the socket folder surfaces
+// as the error of the log open after it (from the code, not measured).
+const socketDirFailsStart = false
+
 // daemonLogAppend is 0 on Windows: each daemon writes at the offset of its own handle.
 // 5fd08069 does so (measured on Windows). A first daemon that writes on after a second
 // one truncated the file leaves a block of NUL bytes, as there.

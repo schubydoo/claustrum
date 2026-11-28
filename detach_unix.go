@@ -32,6 +32,10 @@ func daemonStartEnv(env []string) []string {
 // startDetached starts the daemonized child. On unix it is cmd.Start. Windows has its own.
 func startDetached(cmd *exec.Cmd) error { return cmd.Start() }
 
+// socketDirFailsStart is true on unix: a failed create of the socket folder ends the
+// launcher before the log open (daemonizeWithToken). Windows has its own.
+const socketDirFailsStart = true
+
 // daemonLogAppend is the append flag of the log open. On unix every write goes to the end
 // of the file. Windows has its own.
 const daemonLogAppend = os.O_APPEND

@@ -584,10 +584,16 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
 	// behind, while claustrum refused to start at all.
 	//
-	// The error is not reported here: a failure surfaces at once as the error of the
-	// log create below.
+	// On Linux and macOS a failed create ends the launcher with the error of the mkdir and
+	// exit 1, before the log open (socketDirFailsStart). 87375cc7 and 13047a51 print
+	// "claude-ssh: mkdir <path>: permission denied" for a folder above that cannot be
+	// searched (measured on macOS, rows L4 to L6). Linux and the other errors are from the
+	// code, not measured. On Windows the error surfaces as that of the log open below.
 	if dir := filepath.Dir(socket); dir != "" && dir != "." {
-		_ = os.MkdirAll(dir, 0o700)
+		if err := os.MkdirAll(dir, 0o700); err != nil && socketDirFailsStart {
+			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
+			osExit(1)
+		}
 	}
 	cmd := exec.Command(self, os.Args[1:]...)
 	// daemonChildEnv is our private re-exec sentinel (detected in runServe);

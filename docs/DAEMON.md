@@ -419,6 +419,11 @@ a launcher with `HOME` unset or empty prints `claustrum: cannot resolve home dir
 and exits `2`. The reference does the same with its own prefix (`4c111e86`, measured on Linux; macOS from the code). On Windows an
 unset or empty `USERPROFILE` exits `2`, and the line names `%userprofile%` (from the code, not measured). The
 launcher creates a missing socket folder with mode `0700`. Windows ignores that mode (from the code).
+On Linux and macOS a failed create prints `claustrum: mkdir <folder>: <error>` and exits `1` before the log open.
+The folder is the one whose mkdir failed.
+`87375cc7` and `13047a51` print the same with their prefix for a folder above that cannot be searched:
+`mkdir <folder>: permission denied` (measured on macOS, rows L4 to L6). Linux and the other errors are from the code,
+not measured. On Windows the error of the log open follows instead (from the code).
 
 ### The launcher wait
 

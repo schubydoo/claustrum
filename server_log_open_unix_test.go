@@ -345,6 +345,57 @@ func TestDaemonizeFailsWhenTheLogEntryStays(t *testing.T) {
 	}
 }
 
+// Measured on 87375cc7 and 13047a51 (macOS, rows L4 to L6): a folder above the run folder
+// that cannot be searched fails the start at the mkdir, before the log open. The launcher
+// prints the error of the mkdir and exits 1. Linux is from the code, not measured. The fix
+// is the error arm of the MkdirAll in daemonizeWithToken.
+func TestDaemonizeFailsAtTheMkdirOfTheSocketFolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root searches a folder of mode 000")
+	}
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+		sock string // the socket path below the closed folder
+		want string // the folder whose mkdir fails, below the closed folder
+	}{
+		{"L4 run mode 000", 0o000, "c1/rpc.sock", "c1"},
+		{"L5 run mode 600", 0o600, "c1/rpc.sock", "c1"},
+		{"L6 remote mode 000", 0o000, "run/c1/rpc.sock", "run"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubOsExit(t)
+			oldStart := startDaemonChild
+			started := false
+			startDaemonChild = func(*exec.Cmd) error { started = true; return errStartRefused }
+			t.Cleanup(func() { startDaemonChild = oldStart })
+
+			closed := filepath.Join(shortTempDir(t), "closed")
+			sock := filepath.Join(closed, tc.sock)
+			if err := os.MkdirAll(filepath.Dir(sock), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(closed, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(closed, 0o700) })
+
+			captureLogBuf(t)
+			var code int
+			var exited bool
+			stderr := captureStderr(t, func() {
+				code, exited = catchExit(func() { daemonizeWithToken(sock, "") })
+			})
+			if !exited || code != 1 || started {
+				t.Errorf("exited=%v code=%d started=%v, want exit 1 before any child start", exited, code, started)
+			}
+			if want := "claustrum: mkdir " + filepath.Join(closed, tc.want) + ": permission denied\n"; stderr != want {
+				t.Errorf("stderr = %q, want %q", stderr, want)
+			}
+		})
+	}
+}
+
 // stubAfterLogRemove plants an entry at the path between the remove and the create of
 // each of the first n tries.
 func stubAfterLogRemove(t *testing.T, n int, plant func(path string)) *int {
