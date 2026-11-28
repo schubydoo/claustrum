@@ -617,7 +617,7 @@ rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
 - One plain remove then deletes the entry at the path, never as a tree. A link target
   and the other name of a file keep their bytes.
 - An exclusive create makes the fresh log. A create that finds a new entry tries
-  again, at most 3 times (not measured).
+  again (3 tries in all, not measured).
 
 ```
 2026/11/28 04:28:39 INFO  [daemon] the last run's log is not kept as .old: it is no regular file, or has a second name
