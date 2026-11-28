@@ -92,9 +92,11 @@ func shareGitDir(repo string) string {
 // unusableGitText for `<baseRepo>\.git` (measured on Windows, elevated daemon). The
 // rows had repositories owned by Administrators or by the account. A baseRepo below
 // the top folder gets the `.git` of the top folder, and a `.git` file keeps
-// not_a_repo, as in shareGitDir (claustrum's own, not measured).
+// not_a_repo, as in shareGitDir (claustrum's own, not measured). A daemon GIT_DIR,
+// or a daemon GIT_COMMON_DIR that the request keeps, keeps not_a_repo too, as in
+// unusableDotGit (claustrum's own, not measured).
 func ownerRefusedGitDir(repo string) string {
-	if !ownerRefusalNamesGitDir {
+	if !ownerRefusalNamesGitDir || os.Getenv("GIT_DIR") != "" || daemonCommonDirSet() {
 		return ""
 	}
 	root, _ := gitWalkRoot(repo)

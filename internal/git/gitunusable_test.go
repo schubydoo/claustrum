@@ -297,3 +297,49 @@ func TestCreateNamesGitDirThatGitRefusesForItsOwner(t *testing.T) {
 	ownerRefusalNamesGitDir = true
 	ownerRefusedRows(t)
 }
+
+// TestCreateOwnerRefusalUnderADaemonVar: with the step of ownerRefusedGitDir on and the
+// Windows rule (copyPinsWalkGitDir), the call about the repository answers the owner
+// refusal of git. In the state shadow the request ignores the daemon variables, so the
+// call runs. With no daemon variable the create names `<baseRepo>/.git`. A daemon
+// GIT_DIR keeps not_a_repo, as in unusableDotGit. A GIT_COMMON_DIR that the request
+// ignores names the `.git` too (all claustrum's own, not measured). Mutation: drop the
+// test of the daemon variables in ownerRefusedGitDir.
+func TestCreateOwnerRefusalUnderADaemonVar(t *testing.T) {
+	requireGit(t)
+	old := ownerRefusalNamesGitDir
+	t.Cleanup(func() { ownerRefusalNamesGitDir = old })
+	ownerRefusalNamesGitDir = true
+	setCopyPinsWalkGitDir(t, true)
+	for _, row := range []struct {
+		name     string
+		v        string
+		notARepo bool
+	}{
+		{"no daemon variable", "", false},
+		{"a daemon GIT_DIR", "GIT_DIR", true},
+		{"an ignored daemon GIT_COMMON_DIR", "GIT_COMMON_DIR", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			if row.v != "" {
+				t.Setenv(row.v, f.gitDir)
+			}
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(f.repo, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
+			if row.notARepo {
+				want = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
+			}
+			answerProbe(t, 128, "", ownerRefusalHead+"'"+filepath.ToSlash(f.repo)+"'\n")
+			answerSecondProbe(t, 0, "")
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			params := map[string]any{"baseRepo": f.repo, "worktreePath": leaf, "branchName": "w1"}
+			if got, _ := f.call(t, "git.worktree_create", params); got != want {
+				t.Errorf("create = %s\nwant %s", got, want)
+			}
+			if exists(leaf) {
+				t.Errorf("the create made %s", leaf)
+			}
+		})
+	}
+}

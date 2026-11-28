@@ -536,9 +536,11 @@ func (req *gitCall) keepLiveForm(off bool, t gitDirTrust, dir string) {
 func (req *gitCall) keepLiveCreate(off bool, t gitDirTrust, repo string, added *bool, held **acceptedGitDir) {
 	req.followSwitch(off, func(l *liveSwitch, ask bool) (gitUse, bool) {
 		use, read, gitRefused, configRefused := req.use, req.repoRead, req.gitRefused, req.configRefused
+		ownerRefused := req.gitOwnerRefused
 		keep := false
 		defer func() {
 			req.gitRefused, req.configRefused = gitRefused, configRefused
+			req.gitOwnerRefused = ownerRefused
 			if !keep {
 				req.use, req.repoRead = use, read
 			}
