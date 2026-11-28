@@ -231,7 +231,7 @@ func TestRunSendsNothingWhenTheHoldFails(t *testing.T) {
 // The narrowing cases of claustrum's own, none measured. Each process has both
 // marks and stays alive: a mark inside a longer entry, a link, a dangling link or
 // a file at the run path, a loop or a closed folder above it, a dangling children
-// link in another folder, an environment over the cap, and pid 1. The file case
+// link in another folder, and an environment over the cap. The file case
 // stays alive through ENOTDIR at its children entry as well. The link cases are
 // the ones that only the folder test of the run path keeps alive.
 func TestRunKeepsTheNarrowedCases(t *testing.T) {

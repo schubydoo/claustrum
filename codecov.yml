@@ -138,6 +138,7 @@ component_management:
         - internal/runlock/names_linux.go
         - internal/runlock/fortest_unix.go
         - orphanexit.go
+        - limitend.go
         - selfexit_unix.go
         - selfexit_windows.go
         # 19f30c46: raise the daemon's RLIMIT_NOFILE at serve startup so process.spawn
@@ -166,6 +167,10 @@ component_management:
         - peercheck.go
         - peercheck_linux.go
         - peercheck_other.go
+        # The host settings file of 13047a51 (Linux): the limit and the host_settings refusal.
+        - hostlimit.go
+        - hostlimit_linux.go
+        - hostlimit_other.go
         - internal/files/methods_files.go
         - internal/git/methods_git.go
         - internal/git/gitparams.go

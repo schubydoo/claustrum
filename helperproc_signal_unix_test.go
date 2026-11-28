@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -73,3 +74,22 @@ func childJobState(*supervisor.Proc) string { return "" }
 
 // ownJobFlags is empty off Windows, which has no jobs.
 func ownJobFlags() string { return "" }
+
+// leaveInOwnSession runs the "leave-own-session" helper mode: a 60 s sleeper in a new
+// session, with the marks of this child, that outlives it.
+func leaveInOwnSession(pidFile string) int {
+	exe, err := os.Executable()
+	if err != nil {
+		return 1
+	}
+	kid := exec.Command(exe, "60")
+	kid.Env = sysproc.ReplaceOrAppendEnv(os.Environ(), "CLAUSTRUM_TEST_HELPER", "sleep")
+	kid.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := kid.Start(); err != nil {
+		return 1
+	}
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(kid.Process.Pid)), 0o644); err != nil {
+		return 1
+	}
+	return 0
+}

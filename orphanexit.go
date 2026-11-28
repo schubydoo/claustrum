@@ -109,8 +109,12 @@ func (s *server) watchSocketOwnership(socket string) {
 // started the shutdown.
 func (s *server) selfExitCheck(socket string, w *selfExitWatch, now time.Duration) bool {
 	clients := s.connCount()
-	// The idle exit comes first, so a check where both exits are due writes the idle
-	// line and not the orphan lines. That order is not measured.
+	// The end at the unattended limit comes first (limitend.go). That order is not measured.
+	if s.limitEnd(clients, now) {
+		return true
+	}
+	// The idle exit comes before the orphan checks, so a check where both exits are due
+	// writes the idle line and not the orphan lines. That order is not measured.
 	if idle := now - time.Duration(s.lastCounted.Load()); clients == 0 && idle >= idleExitAfter {
 		logging.Infof("[Server] no request for %s and no connections; shutting down", idle.Round(time.Second))
 		logging.Infof("[Server] shutdown requested")

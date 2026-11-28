@@ -267,11 +267,20 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 	if strings.Contains(logLines[0], limitLine) {
 		banner = 1
 	}
+	limits := banner
+	// On Linux the line of the host settings file comes next (13047a51). Its text
+	// depends on the file of this host, which the test only reads.
+	if runtime.GOOS == "linux" {
+		if !strings.Contains(logLines[banner], " [Server] ") || !strings.Contains(logLines[banner], "/etc/claude-desktop-ssh/settings.json") {
+			t.Errorf("log line %d = %q, want the line of the host settings file", banner, logLines[banner])
+		}
+		banner++
+	}
 	if !strings.Contains(logLines[banner], "listening on "+sock) {
 		t.Errorf("log line %d = %q, want the banner naming the socket", banner, logLines[banner])
 	}
-	if n := strings.Count(string(b), limitLine); n != banner {
-		t.Errorf("the limit line appears %d times, want %d and only as the first line", n, banner)
+	if n := strings.Count(string(b), limitLine); n != limits {
+		t.Errorf("the limit line appears %d times, want %d and only as the first line", n, limits)
 	}
 	// The banner of the real start ends with the pid and the instance.
 	if !regexp.MustCompile(` \(pid \d+, instance [0-9a-f]{32}\)$`).MatchString(logLines[banner]) {

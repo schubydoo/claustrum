@@ -1,0 +1,82 @@
+package main
+
+import (
+	"time"
+
+	"github.com/schubydoo/claustrum/internal/leftsweep"
+	"github.com/schubydoo/claustrum/internal/logging"
+)
+
+// The end of the daemon at the unattended limit of the host settings file (13047a51,
+// measured on Linux). A daemon with a limit from its start read, and with no connection
+// for that long, logs its line and "[Server] shutdown requested". Then it stops by the
+// same teardown as server.shutdown: the socket and daemon.token go, and the group of each
+// plain child gets its SIGKILL (closeAll). Then the left-process sweep runs
+// (sweepAfterLimit).
+//
+// Measured on Linux with a limit of 1 that counts as 15: the end came 15m49s to 15m59s
+// after the last connection closed. A client spawned plain children and left. Live
+// children got a group SIGKILL, and the line counted them.
+//
+// Claustrum's own, not measured: the check runs at each tick of the 60 s ticker
+// (orphanCheckInterval), so the exact minute of the end is claustrum's own. The line cuts
+// the time to whole seconds. The clock also counts from the start of the daemon, the close
+// of any connection starts it again, and a connected client holds the end off for as long
+// as it stays. The check runs before the idle exit and the orphan checks, and not once the
+// shutdown began. With -keep-children the children stay. A live stream-json child gets the
+// SIGTERM of the shutdown sweep first.
+
+// limitEnd ends the daemon at the check at the time now (monoNow) when the limit is due.
+// clients is the number of connected clients at that check. It returns true once it
+// started the shutdown.
+func (s *server) limitEnd(clients int, now time.Duration) bool {
+	if !limitEndRuns || s.hostLimit.minutes <= 0 || clients > 0 || s.shutdownBegun() {
+		return false
+	}
+	alone := now - time.Duration(s.lastAttended.Load())
+	if alone < time.Duration(s.hostLimit.minutes)*time.Minute {
+		return false
+	}
+	logging.Warnf("[Server] nobody has used this helper or been connected to it for %s, and the unattended limit in force is %d minutes (%s): shutting down and killing %d child process(es)",
+		alone.Truncate(time.Second), s.hostLimit.minutes, s.hostLimit.path, s.procs.AliveCount())
+	logging.Infof("[Server] shutdown requested")
+	// The mark is set only by the call that starts the shutdown, before its start, so
+	// closeAll sees it and a shutdown that another path started runs no sweep.
+	s.once.Do(func() {
+		s.limitStopped.Store(true)
+		s.beginShutdown()
+	})
+	return true
+}
+
+// shutdownBegun is true once the shutdown started.
+func (s *server) shutdownBegun() bool {
+	select {
+	case <-s.shutdown:
+		return true
+	default:
+		return false
+	}
+}
+
+// noteAttended restarts the clock of the limit end. newServerOnSocket calls it once,
+// and serveConn calls it at each connection close.
+func (s *server) noteAttended() { s.lastAttended.Store(int64(monoNow())) }
+
+// sweepAfterLimit ends the processes that the children started and left, after an end
+// at the limit. closeAll calls it right after the group kills. 13047a51 logs its line
+// after the exit lines of the children and before the cleanup line, and logs none after
+// server.shutdown or the orphan end (measured on Linux). With -keep-children no sweep
+// runs, because the children stay (claustrum's own, not measured).
+func (s *server) sweepAfterLimit() {
+	if !s.limitStopped.Load() || s.keepChildren || s.procs.RunDir == "" {
+		return
+	}
+	n, err := leftsweep.Run(s.procs.RunDir)
+	if err != nil {
+		// The line of a failed sweep is claustrum's own, not measured.
+		logging.Warnf("[Server] cleanup: ended %d more process(es) that the children had started and left, then the search stopped: %v", n, err)
+		return
+	}
+	logging.Infof("[Server] cleanup: ended %d more process(es) that the children had started and left", n)
+}

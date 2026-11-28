@@ -392,6 +392,13 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		}
 		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, gitReadShape(p.Args), s.gitReadStep(p.Cwd, p.Args))
 	} else {
+		// A spawn of a Claude Code shape is refused while the host settings file cannot
+		// be used (13047a51, measured on Linux for a command named ccd-cli, also with
+		// unattendedSeconds). The shape rule is claustrum's own (claudeCodeShape). So is
+		// the place of the test here, and its skip for gitRead, not measured.
+		if bad := s.hostLimit.spawnRefusal(req.ID, &p); bad != nil {
+			return *bad
+		}
 		// The place of this test after the id, launcher, command and linkBound
 		// tests is claustrum's own, not measured. On Linux and macOS a pty object with
 		// a valid key gives a plain spawn with no terminal (claustrum's own: it has none).

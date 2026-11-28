@@ -85,6 +85,10 @@ type server struct {
 	instanceID string
 	startedAt  int64
 
+	// hostLimit is what the start read of the host settings file found (hostlimit.go).
+	// It is set before the first connection and never changes.
+	hostLimit hostLimit
+
 	mu           sync.Mutex
 	conns        map[*conn.Conn]struct{}
 	stopsGone    int // connections that sent server.shutdown and left conns, for the cleanup count
@@ -120,6 +124,12 @@ type server struct {
 	// lastCounted is monoNow at the last counted request, or at the start of the
 	// daemon. The idle exit reads it (orphanexit.go).
 	lastCounted atomic.Int64
+
+	// lastAttended is monoNow at the last connection close, or at the start of the
+	// daemon. limitStopped is set when the end at the unattended limit started the
+	// shutdown. Both belong to limitEnd (limitend.go).
+	lastAttended atomic.Int64
+	limitStopped atomic.Bool
 
 	// offGitRequests counts the git requests with "shadowDirOff":true that have
 	// not answered yet (gitWideLimit and gitCall.offLive).
@@ -232,6 +242,10 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// limit cannot be read or raised. Kept in this shell — not newServerOnSocket — so
 	// in-process tests never mutate the test process's own limit.
 	raiseInheritedFileLimit()
+	// The host settings file is read at the start, with its one line right after the open-files
+	// line and before the listening line (13047a51, measured on Linux). Kept in this
+	// shell, so an in-process test boot reads no file of the host.
+	limit := readHostLimitAtStart()
 
 	// The handler for SIGTERM and SIGINT is in place before the claim of the run dir,
 	// so a signal during the start does not end the start (see signalWatch).
@@ -244,6 +258,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
 		osExit(1)
 	}
+	s.hostLimit = limit
 	// A signal that came during the start requests the shutdown here, before the
 	// listening line.
 	watch.attach(s)
@@ -487,6 +502,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wirelog.Options,
 		peerCheck: gate,
 	}
 	s.noteCountedRequest()
+	s.noteAttended()
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {
@@ -929,6 +945,9 @@ func (s *server) serveConn(c *conn.Conn) {
 		if _, ok := s.conns[c]; ok && c.SentStop() {
 			s.stopsGone++
 		}
+		// The clock of the limit end restarts before the connection leaves the count,
+		// so a check that counts no client sees the new time.
+		s.noteAttended()
 		delete(s.conns, c)
 		s.mu.Unlock()
 		s.procs.DetachConn(c)
@@ -1213,18 +1232,19 @@ func isChanClosed(ch chan struct{}) bool {
 // signalShutdown requests a graceful stop exactly once. From here a spawn that has
 // not passed the check before the start starts no child (supervisor.Manager.RefuseStarts). It does not
 // block, so the teardown drops the connections at once.
-func (s *server) signalShutdown() {
-	s.once.Do(func() {
-		if s.procs != nil {
-			s.procs.RefuseStarts()
-		}
-		// No late try of the run-dir lock takes the lock once the shutdown began
-		// (claustrum's own, not measured).
-		if s.stopLateLock != nil {
-			s.stopLateLock()
-		}
-		close(s.shutdown)
-	})
+func (s *server) signalShutdown() { s.once.Do(s.beginShutdown) }
+
+// beginShutdown is the one start of the shutdown, run under s.once.
+func (s *server) beginShutdown() {
+	if s.procs != nil {
+		s.procs.RefuseStarts()
+	}
+	// No late try of the run-dir lock takes the lock once the shutdown began
+	// (claustrum's own, not measured).
+	if s.stopLateLock != nil {
+		s.stopLateLock()
+	}
+	close(s.shutdown)
 }
 
 // signalWatch handles the first SIGTERM or SIGINT of a daemon. runServe starts it
@@ -1356,6 +1376,7 @@ func (s *server) closeAll(socket string) {
 	// 5fd08069 (Linux, 3 of 3 runs). macOS runs this code too, and that order is not
 	// measured there.
 	killed := s.stopChildren()
+	s.sweepAfterLimit()
 	// A read of the login-shell PATH that still runs ends here, measured on Linux and
 	// macOS against 52d82f0a. Its shell is no child, so the cleanup line does not
 	// count it (measured on Linux). Its place among these steps is claustrum's own

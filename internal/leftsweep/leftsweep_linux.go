@@ -16,8 +16,9 @@ import (
 	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
-// The two marks of a child of this daemon. Each must be one whole entry of the
-// environment of the process (rows K-1 B and C: one mark keeps the process alive).
+// The two marks of a child of this daemon. Rows K-1 B and C show that one mark keeps
+// the process alive. Each mark must be one whole entry of the environment, with the
+// exact run folder (claustrum's own, not measured).
 const (
 	runDirMark = "CLAUDE_SSH_RUN_DIR="
 	childMark  = "CLAUDE_SSH_DAEMON_CHILD=1"
@@ -146,7 +147,7 @@ func ownedByUs(dir string) bool {
 }
 
 // hasBothMarks reports whether the environment of the process holds both marks as
-// whole entries, with the exact run folder.
+// whole entries, with the exact run folder (claustrum's own, not measured).
 func hasBothMarks(dir, runDir string) bool {
 	f, err := os.Open(filepath.Join(dir, "environ"))
 	if err != nil {

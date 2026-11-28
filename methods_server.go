@@ -82,8 +82,9 @@ var capabilityMethods = append(append([]string{
 // Windows only, it lists files.realpath.how_far after files.read.real
 // (osCapabilityFeatures, measured on Windows). On Linux and macOS it lists
 // launcher.exit_ends_group after server.instance_id (launcherGroupFeatures, measured).
-// The array is always emitted.
-var capabilityFeatures = append(append(append([]string{
+// 13047a51 lists server.unattended_limit between them on Linux only (hostLimitFeatures,
+// measured on Linux, macOS and Windows). The array is always emitted.
+var capabilityFeatures = append(append(append(append([]string{
 	"process.stdin.offset",
 	"process.spawn.refuses_given_up_id",
 	"process.spawn.unattended_seconds",
@@ -115,7 +116,7 @@ var capabilityFeatures = append(append(append([]string{
 	"git.hooks_null_device",
 	"git.status.own_lfs_store",
 	filesReadRealFeature,
-}, osCapabilityFeatures...), "server.instance_id"), launcherGroupFeatures...)
+}, osCapabilityFeatures...), "server.instance_id"), hostLimitFeatures...), launcherGroupFeatures...)
 
 // filesReadRealFeature is listed only when files.ReadRealAvailable is true. The
 // exact start test is claustrum's own.
@@ -172,6 +173,7 @@ func (s *server) handleServer(c *conn.Conn, req *request) *rpc.Response {
 			Features:    s.featuresFor(),
 			PeerCheck:   s.peerCheckAnswer(),
 			PeerCheckBy: s.peerCheckByAnswer(),
+			Limit:       s.hostLimit.minutes,
 		}))
 	case methodShutdown:
 		// The reply is {"ok":true}, but it reaches the client only when its write

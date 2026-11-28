@@ -57,8 +57,13 @@ func TestStartLeaveGroups(t *testing.T) {
 			if !tc.leave && features[len(features)-1] != launcherExitFeature {
 				t.Errorf("last feature = %q", features[len(features)-1])
 			}
-			if tc.leave && features[len(features)-1] != "server.instance_id" {
-				t.Errorf("last feature = %q, want server.instance_id", features[len(features)-1])
+			// On Linux server.unattended_limit follows server.instance_id (hostLimitFeatures).
+			wantLast := "server.instance_id"
+			if len(hostLimitFeatures) > 0 {
+				wantLast = hostLimitFeatures[len(hostLimitFeatures)-1]
+			}
+			if tc.leave && features[len(features)-1] != wantLast {
+				t.Errorf("last feature = %q, want %s", features[len(features)-1], wantLast)
 			}
 		})
 	}

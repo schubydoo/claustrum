@@ -268,12 +268,18 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
-- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
+
+#### The end at the limit and its sweep
+
+- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). Only the end at the limit below calls `Run` (`sweepAfterLimit`). It sends one `SIGKILL` through
   a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
   the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
-  ([the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
+  (claustrum's own, [the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
   `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
   without a measured row.
+- **The end at the unattended limit** (Linux, 13047a51, `limitEnd`, [the rule](docs/DAEMON.md#the-end-at-the-limit)). With a limit from the host
+  settings file and no connection for that long, the daemon stops by the shutdown path. The sweep above runs after its group kills.
+  Never widen: start it only on Linux, only with that limit and no client. Run the sweep only after this end, never with `-keep-children`.
 
 #### The private temp folder of a spawn
 
