@@ -552,9 +552,12 @@ The start line follows the open-files line and comes before the banner. It is on
 
 Measured on Linux against `13047a51`:
 
-- With a limit of 15 minutes the daemon ended 15m49s to 15m59s after the last connection closed.
+- The check runs every 60 s from the start of the daemon. The first check after 15 minutes with no client ends it.
+- The clock also counts from the start. The close of a connection that sent a request with the token starts it again.
+- A wrong token or a dial with no byte does not start it again. A held connection with the token holds the end off.
 - It logs the first line below and `[Server] shutdown requested`. Then it stops as at `server.shutdown`, and the socket and `daemon.token` go.
-- The group of each live plain child gets one `SIGKILL`, and the first line counts the live children.
+- The group of each live child gets a `SIGKILL`, and the first line counts the live children.
+- A child with `stream-json` in its args, a bare `git` too, gets `SIGTERM` first. Its group gets the `SIGKILL` about 1.5 s later.
 - Then [the left-process sweep](#the-left-process-sweep-13047a51-linux) runs. Its line comes before the cleanup line.
 
 ```
@@ -562,7 +565,9 @@ Measured on Linux against `13047a51`:
 [Server] cleanup: ended 3 more process(es) that the children had started and left
 ```
 
-Claustrum's own, not measured: the check runs once a minute, and the line cuts the time to whole seconds. The clock also counts from the start. Only the close of a connection that showed the token starts it again, so a dial with no byte or no token does not. Nor does a dial of the daemon to itself. A connected client holds the end off. The check comes before the idle exit and the orphan checks, and not once the shutdown began. A live stream-json child gets the `SIGTERM` of the shutdown sweep first. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
+`13047a51` sends that group `SIGKILL` twice, from two threads within 1 ms, for a `ccd-cli` or launcher spawn. Claustrum sends it once (claustrum's own).
+
+Claustrum's own, not measured: a dial of the daemon to itself does not start the clock again. The check comes before the idle exit and the orphan checks, and not once the shutdown began. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
 
 ## The left-process sweep (13047a51, Linux)
 

@@ -17,17 +17,19 @@ import (
 // plain child gets its SIGKILL (closeAll). Then the left-process sweep runs
 // (sweepAfterLimit).
 //
-// Measured on Linux with a limit of 1 that counts as 15: the end came 15m49s to 15m59s
-// after the last connection closed. A client spawned plain children and left. Live
-// children got a group SIGKILL, and the line counted them.
+// Measured on Linux with a limit of 1 that counts as 15: the check runs at each tick of
+// the 60 s ticker from the start of the daemon (orphanCheckInterval), and the first tick
+// with 15 minutes alone ends it. The clock also counts from the start. Only the close of a
+// connection that sent a request with the token starts it again. A wrong token or a dial
+// with no byte does not. A connected client holds the end off for as long as it stays.
+// Live children got a group SIGKILL, and the line counted them. A child with stream-json
+// in its args gets the SIGTERM of the shutdown sweep first. 13047a51 sends the group
+// SIGKILL twice for a ccd-cli or launcher spawn, and claustrum sends it once (claustrum's
+// own).
 //
-// Claustrum's own, not measured: the check runs at each tick of the 60 s ticker
-// (orphanCheckInterval), so the exact minute of the end is claustrum's own. The line cuts
-// the time to whole seconds. The clock also counts from the start of the daemon. Only the
-// close of a connection that showed the token starts it again, so a dial with no byte or
-// no token does not. Nor does a dial of this daemon to itself. A connected client holds the end off for as long as it stays. The
-// check runs before the idle exit and the orphan checks, and not once the shutdown began. With -keep-children the children stay. A live stream-json child gets the
-// SIGTERM of the shutdown sweep first.
+// Claustrum's own, not measured: a dial of this daemon to itself does not start the clock
+// again. The check runs before the idle exit and the orphan checks, and not once the
+// shutdown began. With -keep-children the children stay.
 
 // limitEnd ends the daemon at the check at the time now (monoNow) when the limit is due.
 // clients is the number of connected clients at that check. It returns true once it
