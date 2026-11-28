@@ -136,7 +136,7 @@ func TestCheckPlaceLinuxFUSE(t *testing.T) {
 }
 
 // TestCheckPlaceLinuxNFS pins the NFS text of 13047a51. It comes before the
-// mode and another_file tests of the entries below it.
+// writable and another_file tests of the entries below it.
 func TestCheckPlaceLinuxNFS(t *testing.T) {
 	f := newPlaceFixture(t)
 	placeFileSystem = func(p string) (string, error) {

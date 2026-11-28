@@ -14,8 +14,8 @@ import (
 )
 
 // notKeptLine is the launcher line of an entry that keepOldLog does not rename. 13047a51
-// writes the same text after its timestamp (measured on Linux and macOS, rows R1 to R3,
-// R5 and O2). claustrum puts its level tag before it.
+// writes the same text after its timestamp (measured on Linux and macOS). claustrum
+// puts its level tag before it.
 const notKeptLine = "INFO  [daemon] the last run's log is not kept as .old: it is no regular file, or has a second name"
 
 // logOpenDir is a short folder with the socket and the log path in it.
@@ -114,7 +114,7 @@ func wantFileText(t *testing.T, path, want string) {
 	}
 }
 
-// Measured on 13047a51 (Linux and macOS, rows R1, R1b, R2, R2b, R3 and O2): an entry that
+// Measured on 13047a51 (Linux and macOS): an entry that
 // is no regular file, or a regular file with a second name, is not renamed. The launcher
 // logs one line, one remove deletes the entry, and a fresh 0600 log takes its place. A
 // link target and the other name keep their bytes, and no FIFO is opened. The fixes are
@@ -202,7 +202,7 @@ func TestDaemonLogReplacesAnEntryThatIsNotKept(t *testing.T) {
 	}
 }
 
-// Measured on 13047a51 (Linux and macOS, rows R4 and ctl_regular): a regular file with one
+// Measured on 13047a51 (Linux and macOS): a regular file with one
 // link goes to remote-server.log.old with its bytes, a fresh 0600 log takes its place, and
 // no line is logged. This is the control of the test above.
 func TestDaemonLogKeepsAOneLinkFileAsOld(t *testing.T) {
@@ -223,7 +223,7 @@ func TestDaemonLogKeepsAOneLinkFileAsOld(t *testing.T) {
 	}
 }
 
-// Measured on 13047a51 (Linux and macOS, row O5): a folder at remote-server.log.old stops
+// Measured on 13047a51 (Linux and macOS): a folder at remote-server.log.old stops
 // the rename of a one-link file. The launcher logs the error of the rename, the file goes
 // by the remove, and a fresh 0600 log takes its place. The folder at .old stays. The fix
 // is the line after a failed rename in keepOldLog.
@@ -263,10 +263,10 @@ func TestDaemonLogReplacesAFileThatCannotRotate(t *testing.T) {
 }
 
 // A failed remove fails the open with its error, and the entry stays. Measured on
-// 13047a51 (Linux and macOS, row R5): a folder with an entry gives "directory not empty".
+// 13047a51 (Linux and macOS): a folder with an entry gives "directory not empty".
 // The second case is a file in a folder that the user cannot write. It stands for the
-// sticky rows S1 and O4b, which a test cannot stage without root, and its error text is
-// claustrum's own case, not measured. The fix is the error return of the remove in
+// sticky folder cases (measured on Linux and macOS), which a test cannot stage
+// without root, and its error text is claustrum's own case, not measured. The fix is the error return of the remove in
 // openDaemonLogAt.
 func TestDaemonLogEntryThatStaysFailsTheOpen(t *testing.T) {
 	t.Run("folder with an entry", func(t *testing.T) {
@@ -308,7 +308,7 @@ func TestDaemonLogEntryThatStaysFailsTheOpen(t *testing.T) {
 	})
 }
 
-// Measured on 13047a51 (Linux and macOS, row R5): at the launcher a log entry that stays
+// Measured on 13047a51 (Linux and macOS): at the launcher a log entry that stays
 // prints the refusal as its last stderr line and exits 1. No child starts, so no daemon,
 // socket, daemon.lock or daemon.token comes (from the code). The fix is the error arm of
 // daemonizeWithToken.
@@ -345,7 +345,7 @@ func TestDaemonizeFailsWhenTheLogEntryStays(t *testing.T) {
 	}
 }
 
-// Measured on 87375cc7 and 13047a51 (macOS, rows L4 to L6): a folder above the socket folder
+// Measured on 87375cc7 and 13047a51 (macOS): a folder above the socket folder
 // that cannot be searched fails the start at the mkdir, before the log open. The launcher
 // prints the error of the mkdir and exits 1. Linux is not measured. The fix
 // is the error arm of the MkdirAll in daemonizeWithToken.

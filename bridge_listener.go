@@ -33,8 +33,9 @@ const (
 // ownerTestLevel reads the value of bridgeListenerEnv. No variable, 0 and an
 // empty value turn the check off. 1 passes the answers "on" and "unavailable". 2,
 // strict, yes and on pass only the answer "on" (13047a51, measured on Linux,
-// macOS and Windows). Both refuse a listener in another namespace. On Linux,
-// off, false, no, true, 3, " 1" and 00 are strict too (13047a51, measured).
+// macOS and Windows). On Linux both refuse a listener in another user or net
+// namespace. On Linux, off, false, no, true, 3, " 1" and 00 are strict too
+// (13047a51, measured).
 func ownerTestLevel(value string, set bool) int {
 	switch {
 	case !set, value == "", value == "0":

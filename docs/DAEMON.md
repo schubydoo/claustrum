@@ -423,7 +423,7 @@ launcher creates a missing socket folder with mode `0700`. Windows ignores that 
 On Linux and macOS a failed create prints `claustrum: mkdir <folder>: <error>` and exits `1` before the log open.
 The folder is the one whose mkdir failed.
 `87375cc7` and `13047a51` print the same line with their prefix and exit `1` for a folder above that cannot be searched:
-`mkdir <folder>: permission denied` (measured on macOS, rows L4 to L6). Linux and the other errors are not
+`mkdir <folder>: permission denied` (measured on macOS). Linux and the other errors are not
 measured. On Windows the error of the log open follows instead (from the code).
 
 ### The launcher wait
@@ -571,7 +571,7 @@ Measured on Linux against `13047a51`:
 
 The third line comes right after the first (measured on Linux). A failed stat of the socket path counts as such a path, and no self-probe runs (claustrum's own, not measured).
 
-For a `ccd-cli` or launcher spawn, `13047a51` sent that group `SIGKILL` a second time in some runs, within 1 ms. Claustrum sends it once (claustrum's own).
+For a `ccd-cli` or launcher spawn, `13047a51` sent that group `SIGKILL` a second time in some runs. Claustrum on Linux sends a second one after the exit of the leader (`killAfterSweepKill`, claustrum's own, not measured at the limit end).
 
 Claustrum's own, not measured: a dial of the daemon to itself does not start the clock again. The check comes before the idle exit and the orphan checks, and not once the shutdown began. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
 
@@ -690,11 +690,11 @@ At start on Linux, the daemon logs one of these lines once, before the first con
 ### The old log entry
 
 On Linux and macOS the launcher judges the entry at the path by `Lstat`. It never
-opens the old entry or writes through it. `13047a51` gives the same outcomes (measured,
-rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
+opens the old entry or writes through it. `13047a51` gives the same outcomes (measured
+on Linux and macOS):
 
 - Only a regular file with one link goes to `.old`. Another user's file in an own
-  folder goes there too (measured on macOS, row O4a).
+  folder goes there too (measured on macOS).
 - Any other entry is not renamed, and the launcher writes a line on its own stderr,
   not in the log. Examples are a link, a FIFO, a socket, a folder and a file with a
   second name.
@@ -702,8 +702,9 @@ rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
   `.old` gives `rename <path> <path>.old: file exists`.
 - One plain remove then deletes the entry at the path, never as a tree. A link target
   and the other name of a file keep their bytes.
-- An exclusive create makes the fresh log. A create that finds a new entry tries
-  again (3 tries in all, not measured).
+- An exclusive create makes the fresh log.
+
+A create that finds a new entry tries again, up to 3 tries in all (claustrum's own, not measured).
 
 ```
 2026/11/28 04:28:39 INFO  [daemon] the last run's log is not kept as .old: it is no regular file, or has a second name
@@ -711,11 +712,11 @@ rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
 
 A failed remove fails the start, and the entry stays. A folder with entries gives
 `directory not empty`. Another user's file in a sticky folder gives `operation not
-permitted` on Linux and `permission denied` on macOS (rows S1 and O4b). A failed
+permitted` on Linux and `permission denied` on macOS. A failed
 create fails the start with its error.
 
 A failed start prints the refusal as its last stderr line and exits 1. `13047a51`
-prints the same refusal with its own prefix (row R5). No daemon, socket, `daemon.lock`
+prints the same refusal with its own prefix (measured on Linux and macOS). No daemon, socket, `daemon.lock`
 or `daemon.token` follows it (from the code):
 
 ```
@@ -723,7 +724,7 @@ claustrum: open log: remove <path>: directory not empty
 ```
 
 On Windows the rename acts on a link itself, so the target keeps its bytes. `87375cc7`
-and `13047a51` do the same (measured on Windows, row O6). An error of the rename is
+and `13047a51` do the same (measured on Windows). An error of the rename is
 ignored. After a failed create, nothing at the path fails the start with the error of
 the create (from the code), and a folder with `is a directory`. A regular file is
 truncated, keeps its mode and gets the lines. A file link fails the start

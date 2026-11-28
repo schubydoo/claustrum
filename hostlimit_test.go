@@ -125,9 +125,9 @@ func TestHostLimitSpawnRefusal(t *testing.T) {
 			t.Errorf("fault %q refuses a plain spawn", tc.h.fault)
 		}
 	}
-	// The shapes other than a ccd-cli command are claustrum's own, not measured: they follow
-	// claudeCodeShape. A stream-json arg on another command and a launcher spawn are
-	// refused, and a bare git with a stream-json arg is not.
+	// The shapes other than a ccd-cli command follow claudeCodeShape (measured on
+	// Linux). A stream-json arg on another command and a launcher spawn are refused,
+	// and a bare git with a stream-json arg is not.
 	bad := hostLimit{path: hostLimitTestPath}.withFault(hostFaultValue, hostDetailValue)
 	for _, tc := range []struct {
 		name string

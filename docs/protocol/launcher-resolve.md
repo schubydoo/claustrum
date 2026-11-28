@@ -62,8 +62,8 @@ The bytes follow Go's default JSON encoder. In a frame, `<`, `&`, `>` and `"` co
 | `-32602` | `Invalid params` | No `params` member, a `params` that is not an object, or a `cliPath` that is not a string. |
 | `-32602` | `cliPath is required` | `{}`, `"params":null`, a `null` or empty `cliPath`, or a key with another name (measured on Windows). The `cliPath` test comes first, so `{"path":…}` with no `cliPath` gets it too. |
 | `-32602` | `launcherCheck is required with path` | A `path` with no `launcherCheck` (`c9125eb8`). The error has no `data`. |
-| `-32602` | `orManagedFolder can't be set with sha256 or ownerUid` | An `orManagedFolder` of `true` with a `sha256` digest, before the host refusal (macOS, Windows) and the file check (Linux) (`13047a51`, measured on Linux, macOS and Windows). An `ownerUid` of `0` does not count (measured on Linux and Windows). Another one counts (claustrum's own, not measured). |
-| `-32602` | `Invalid params` | An `orManagedFolder` that is not a bool (`13047a51`, measured with a string on Linux, macOS and Windows). |
+| `-32602` | `orManagedFolder can't be set with sha256 or ownerUid` | An `orManagedFolder` of `true` with a `sha256` digest, on macOS and Windows before the host refusal (`13047a51`, measured on Linux, macOS and Windows). Its place before the file check on Linux is claustrum's own, not measured. An `ownerUid` of `0` does not count (measured on Linux and Windows). Another one counts (claustrum's own, not measured). |
+| `-32602` | `Invalid params` | An `orManagedFolder` string (`13047a51`, measured on Linux, macOS and Windows). Claustrum's own, not measured: another type that is not a bool gets it too, and a `null` counts as `false`. |
 | `-32601` | `Unknown method: launcher.<x>` | Another method of the `launcher.*` namespace. |
 
 ## Behavior

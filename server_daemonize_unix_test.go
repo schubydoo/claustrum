@@ -413,7 +413,7 @@ func TestServeShutsDownOnSIGTERM(t *testing.T) {
 // TestOpenDaemonLogDoesNotFollowSymlink: a remote-server.log symlink in a writable
 // folder is never followed. One remove deletes the link itself and O_EXCL creates a
 // fresh regular file, so the target of the link keeps its bytes. 13047a51 does the same
-// (measured on Linux and macOS, row R1). A mutant that opened the path with O_TRUNC
+// (measured on Linux and macOS). A mutant that opened the path with O_TRUNC
 // without the remove truncates the target.
 func TestOpenDaemonLogDoesNotFollowSymlink(t *testing.T) {
 	dir := t.TempDir()

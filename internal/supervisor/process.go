@@ -1254,8 +1254,9 @@ func (m *Manager) spawnWith(c *conn.Conn, id, command string, args []string, cwd
 	cmd.SysProcAttr = SpawnSysProcAttr(jobs)
 	// Launch through the exec-child trampoline, on every socket shape, so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
-	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
-	// its error frame is unchanged). Applied after BuildEnv/SysProcAttr so it can rewrite
+	// darwin). On windows and other systems the wrap only removes those two names from
+	// the env. On linux and darwin it is a no-op for a command that would fail at Start,
+	// so its error frame is unchanged. Applied after BuildEnv/SysProcAttr so it can rewrite
 	// the resolved argv and hold the Go-runtime env. When the trampoline itself does
 	// not start, the command is started directly below.
 	// The path, argv and env before the wrap are kept for the direct start below.

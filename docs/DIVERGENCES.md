@@ -261,12 +261,12 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
 - **Reference.** On Windows `5fd08069` writes through a file symbolic link when a
   folder at `.old` stops the rename (measured on Windows). With no folder there,
   `87375cc7` and `13047a51` rename the link to `.old` and write nothing through it,
-  as claustrum does (measured on Windows, row O6). No row measured `13047a51` with a
+  as claustrum does (measured on Windows). No row measured `13047a51` with a
   stopped rename. Its sweep makes an empty lock file in the target of a link (Linux,
   macOS and Windows).
 - **Retired part.** The log part on Linux and macOS is retired. claustrum follows
   `13047a51` there, which replaces the entry and never writes through it (measured
-  on rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)).
+  on Linux and macOS).
 - **Systems and switch.** Windows for the log, Linux, macOS and Windows for the
   sweep. Always on, no switch.
 - **Cost.** None in the deployed socket folder.
