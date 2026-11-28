@@ -510,6 +510,12 @@ func TestProbeAnswers(t *testing.T) {
 					if method == "git.info" {
 						want = `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}}`
 					}
+					// On Windows a create that git refuses for its owner names the
+					// `.git` (ownerRefusedGitDir).
+					if method == "git.worktree_create" && ownerRefusalNamesGitDir && ownerRefusalStderr(a.stderr) {
+						want = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+							jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(f.repo, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
+					}
 				} else {
 					want = probeErrorShapes(t, f, fmt.Sprintf(a.text, f.repo, f.gitDir))[i]
 				}

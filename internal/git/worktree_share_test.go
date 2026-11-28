@@ -24,7 +24,8 @@ import (
 // the `.git` of the top folder (4c111e86, measured on Windows). A `.git` file,
 // also one above baseRepo that ends the walk below a `.git` folder, keeps the
 // answers of a local folder (claustrum's own, not measured). A folder that is
-// not on a share keeps not_a_repo and the lock-check refusal.
+// not on a share keeps the lock-check refusal. Its create keeps not_a_repo on
+// Linux and macOS, and on Windows it names the `.git` (ownerRefusedGitDir).
 func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 	const dubious = "fatal: detected dubious ownership in repository at '//127.0.0.1/s/repo'\n"
 	notARepo := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`
@@ -84,7 +85,15 @@ func TestShareGitDirThatGitDoesNotUse(t *testing.T) {
 				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(filepath.Dir(base), ".git"))) + `,"errorCode":"worktree_add_failed"}}`
 		}},
 		{"create from below a .git file on a share", belowGitFileBase, true, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
-		{"create on a local folder", repoBase, false, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
+		// On Windows git refused the local folder for its owner, so the create names
+		// its `.git` (ownerRefusedGitDir).
+		{"create on a local folder", repoBase, false, true, false, false, false, "git.worktree_create", func(base, _ string) string {
+			if !ownerRefusalNamesGitDir {
+				return notARepo
+			}
+			return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+				jsonQuoted(t, fmt.Sprintf(unusableGitText, filepath.Join(base, ".git"))) + `,"errorCode":"worktree_add_failed"}}`
+		}},
 		{"create from a .git file on a share", gitFileBase, true, true, false, false, false, "git.worktree_create", func(string, string) string { return notARepo }},
 		{"remove of a gone worktree on a share", repoBase, true, true, false, false, false, "git.worktree_remove", func(string, string) string {
 			return `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`

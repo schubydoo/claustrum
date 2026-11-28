@@ -206,8 +206,8 @@ func TestGitFileThroughNetworkLinkIsUnusable(t *testing.T) {
 		}
 	}
 	fakeLinkTargets(t, map[string]string{link: `\??\UNC\localhost\share`})
-	if g, noLook := unusableDotGit(f.W); g != filepath.Join(f.W, ".git") || noLook {
-		t.Errorf("through a network link: %q %v", g, noLook)
+	if g, end := unusableDotGit(f.W); g != filepath.Join(f.W, ".git") || end != walkUnusable {
+		t.Errorf("through a network link: %q %v", g, end)
 	}
 	fakeLinkTargets(t, map[string]string{link: `\??\C:\work\T\.git`})
 	if g, _ := unusableDotGit(f.W); g != "" {
