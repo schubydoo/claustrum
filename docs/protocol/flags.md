@@ -316,27 +316,33 @@ On macOS and Windows each set place gets the kind `host`, with the reason
 On Linux the check walks from `/` down to the file. The first entry that fails names the
 reason. claustrum tests each entry from the top for `missing`, `cannot_tell`, `owner` and
 `writable`, in that order. Then it tests `another_file`, `mode` and `shape`. The rows show
-`writable` before `shape`, and `another_file` before `shape`:
+`writable` before `shape`, and `another_file` before `shape`. On NFS the NFS reason comes
+before an owner of uid 65534, mode `0775` and `another_file`:
 
 | kind | the place fails when |
 |---|---|
 | `not_absolute` | the path is not absolute |
 | `missing` | an entry does not exist |
-| `cannot_tell` | an entry is on FUSE or virtiofs |
+| `cannot_tell` | an entry is on FUSE, virtiofs or NFS, shows uid 65534 or cannot be read, or the check takes over 8 s |
 | `owner` | root does not own an entry |
 | `writable` | a group or another account can write an entry, also with the sticky bit |
 | `another_file` | the program that runs is not that file |
 | `mode` | the file has a setuid or setgid bit or file capabilities |
 | `shape` | the path does not end in `srv/<version>/server`, or one of those three parts is a link |
 
-The reasons, with `<p>` for the entry, `<uid>` for its owner and `<mode>` for four octal
-digits:
+The reasons, with `<p>` for the entry, `<uid>` for its owner, `<error>` for the text of a
+failed call, such as `permission denied`, and `<mode>` for four octal digits:
 
 ```text
 the helper must be an absolute path, not a bare name resolved via PATH
 `<p>`, on the way to the helper, does not exist
 `<p>` is on FUSE or virtiofs, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.
+`<p>` is on NFS, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.
+`<p>` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the helper and every folder above it.
+`<p>`, on the way to the helper, cannot be checked: <error>
+The file could not be checked within 8 seconds. If a folder on the way to it is on a network share, check that its server is reachable.
 `<p>` belongs to the account that signs in (uid <uid>). Root must own the helper and every folder above it.
+`<p>` belongs to uid <uid>. Root must own the helper and every folder above it.
 `<p>` can be changed by accounts other than its owner (mode <mode>). Remove that write access.
 The program that runs is not the file at that path. If the file was replaced while the helper ran, connect again.
 It must be a regular file that gives the helper no more privilege than the account has: no setuid or setgid bit, no file capabilities (`setcap -r` removes them).
@@ -346,10 +352,17 @@ The path must end in `srv/<version>/server`, this helper's own version, with no 
 `<version>` is the version word of [`-version`](#-version): the `version-override` of
 `claustrum.conf`, or claustrum's own version (from the code).
 
+The first `owner` reason names the account that signs in, the second any other account.
+`<error>` is measured for a stat on the way: `permission denied`, and `transport endpoint
+is not connected` on FUSE. For the other calls it is claustrum's own.
+
+A check past 8 s gets the 8 seconds reason, also when it passes later. On a stalled FUSE
+mount 13047a51 prints the line at 8 to 9 s and exits when the stalled call returns
+(measured on Linux). claustrum prints the line and waits for the check too, because Go
+cannot stop a stalled stat. The wait of `-probe-cli` is claustrum's own, not measured.
+
 Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
-`mode`, a link above the three parts, a file that is not regular (claustrum: `another_file`), and
-an owner that is neither root nor this account. An entry that cannot be read gives
-`cannot_tell` with claustrum's own text. No row shows a time bound, and claustrum sets none.
+`mode`, a link above the three parts, and a file that is not regular (claustrum: `another_file`).
 
 ### Behavior shared by every mode
 

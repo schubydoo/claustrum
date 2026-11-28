@@ -202,6 +202,7 @@ func main() {
 		// place after -version is claustrum's own, not measured.
 		if r := examineRunFrom(os.Getenv(runFromEnv), placeVersion(cfg.versionOverride)); r != nil {
 			fmt.Fprint(os.Stderr, r.line())
+			r.awaitCheck()
 			osExit(placeRefusedExit)
 		}
 		return
@@ -222,11 +223,14 @@ func main() {
 		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
 		// A set CLAUDE_SSH_RUN_FROM whose place is refused prints the refusal
 		// line, then __CLI_BAD__, and exits 0 (13047a51, measured on Linux and
-		// Windows). It then runs no probe (from the code).
+		// Windows). It then runs no probe (from the code). After a check past
+		// its 8 s bound it waits for the check to return, as -check-place does.
+		// That wait is not measured for -probe-cli.
 		if place := os.Getenv(runFromEnv); place != "" {
 			if r := examineRunFrom(place, placeVersion(cfg.versionOverride)); r != nil {
 				fmt.Fprint(os.Stderr, r.line())
 				fmt.Fprintln(os.Stdout, "__CLI_BAD__")
+				r.awaitCheck()
 				return
 			}
 		}

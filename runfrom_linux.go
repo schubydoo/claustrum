@@ -22,14 +22,16 @@ var (
 	// placeWalkTop is the first folder of the walk. A test starts below the
 	// shared temp folder, whose mode 1777 refuses each place under it.
 	placeWalkTop = "/"
-	// placeOnFUSE answers whether statfs gives FUSE as the file system of an
-	// entry. virtiofs gives that type too.
-	placeOnFUSE = func(path string) (bool, error) {
+	// placeLoginUID is the account that signs in.
+	placeLoginUID = uint32(os.Getuid())
+	// placeFileSystem names the file system of an entry as statfs gives it:
+	// "fuse", "nfs" or "" for any other. virtiofs gives the FUSE type too.
+	placeFileSystem = func(path string) (string, error) {
 		var st unix.Statfs_t
 		if err := unix.Statfs(path, &st); err != nil {
-			return false, err
+			return "", err
 		}
-		return st.Type == unix.FUSE_SUPER_MAGIC, nil
+		return fileSystemName(int64(st.Type)), nil //nolint:unconvert // Type is int32 on some systems
 	}
 	// placeHasCaps answers whether a file carries file capabilities.
 	placeHasCaps = func(path string) (bool, error) {
@@ -45,19 +47,18 @@ var (
 )
 
 // examinePlace is the Linux place check, in claustrum's order. A path that is not absolute is not_absolute. Then each
-// folder from the top and the file itself must exist, be on no FUSE, be owned
-// by root and be writable by no group or other account. The first that fails
-// names the refusal. Then the program that runs must be that file, the file
+// folder from the top and the file itself must exist, be on no FUSE and no NFS,
+// be owned by root and be writable by no group or other account. The first that
+// fails names the refusal. Then the program that runs must be that file, the file
 // must be regular with no setuid, setgid or capabilities, and the path must
 // end in srv/<version>/server with no link among those three parts.
 //
 // Measured orders: a writable folder above comes before the shape, and
-// another_file comes before the shape. Not measured: the order of the owner
-// and the write test on one entry, of another_file and mode, the owner text
-// for an owner that is neither root nor this account, a link above the three
-// parts, and a non-regular file (claustrum: another_file). The cannot_tell text of an error other than
-// FUSE is claustrum's own. A stalled entry has no time bound (claustrum's own,
-// not measured).
+// another_file comes before the shape. On NFS the NFS text comes before an
+// owner nobody, mode 0775 and another_file. Not measured: the order of the owner
+// and the write test on one entry, of another_file and mode, a link above the three
+// parts, and a non-regular file (claustrum: another_file). examineRunFrom bounds
+// the whole check at 8 s.
 func examinePlace(path, version string) *placeDenial {
 	if !filepath.IsAbs(path) {
 		return &placeDenial{kind: "not_absolute", path: path, text: notAbsoluteText}
@@ -113,24 +114,47 @@ func placeWalk(path string) []string {
 	return out
 }
 
-// testPlaceEntry tests one entry of the walk: FUSE, then the owner, then
+// fileSystemName names the statfs type of FUSE and NFS, and gives "" for
+// any other type.
+func fileSystemName(magic int64) string {
+	switch magic {
+	case unix.FUSE_SUPER_MAGIC:
+		return "fuse"
+	case unix.NFS_SUPER_MAGIC:
+		return "nfs"
+	}
+	return ""
+}
+
+// nobodyUID is the owner that a login sees for a file whose real owner it
+// cannot map. 13047a51 names uid 65534 so (measured on Linux).
+const nobodyUID = 65534
+
+// testPlaceEntry tests one entry of the walk: FUSE or NFS, then the owner, then
 // the write access of a group or another account.
 func testPlaceEntry(path, p string, fi os.FileInfo) *placeDenial {
-	onFUSE, err := placeOnFUSE(p)
+	kind, err := placeFileSystem(p)
 	if err != nil {
 		return placeUnreadable(path, p, err)
 	}
-	if onFUSE {
+	switch kind {
+	case "fuse":
 		return &placeDenial{kind: "cannot_tell", path: path, text: fmt.Sprintf("`%s` is on FUSE or virtiofs, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.", p)}
+	case "nfs":
+		return &placeDenial{kind: "cannot_tell", path: path, text: fmt.Sprintf("`%s` is on NFS, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.", p)}
 	}
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
 		return placeUnreadable(path, p, errors.New("no owner"))
 	}
-	// The owner text of a third account, neither root nor the one that signs
-	// in, is claustrum's own (not measured).
 	if st.Uid != placeOwnerUID {
-		return &placeDenial{kind: "owner", path: path, text: fmt.Sprintf("`%s` belongs to the account that signs in (uid %d). Root must own the helper and every folder above it.", p, st.Uid)}
+		switch st.Uid {
+		case nobodyUID:
+			return &placeDenial{kind: "cannot_tell", path: path, text: fmt.Sprintf("`%s` shows as uid %d (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the helper and every folder above it.", p, st.Uid)}
+		case placeLoginUID:
+			return &placeDenial{kind: "owner", path: path, text: fmt.Sprintf("`%s` belongs to the account that signs in (uid %d). Root must own the helper and every folder above it.", p, st.Uid)}
+		}
+		return &placeDenial{kind: "owner", path: path, text: fmt.Sprintf("`%s` belongs to uid %d. Root must own the helper and every folder above it.", p, st.Uid)}
 	}
 	if st.Mode&0o022 != 0 {
 		return &placeDenial{kind: "writable", path: path, text: fmt.Sprintf("`%s` can be changed by accounts other than its owner (mode %04o). Remove that write access.", p, st.Mode&0o7777)}
@@ -159,8 +183,16 @@ func examineShape(path, version string) *placeDenial {
 	return nil
 }
 
-// placeUnreadable is the refusal of an entry that a test failed to read. Its
-// text is claustrum's own, not measured.
+// placeUnreadable is the refusal of an entry that a test failed to read. The
+// text names the error of the call, with no call name and no path, as
+// 13047a51 does for a stat of the walk (measured on Linux: permission denied,
+// and transport endpoint is not connected on FUSE). For the program that
+// runs, the capability read and the shape test the same text is claustrum's
+// own, not measured.
 func placeUnreadable(path, p string, err error) *placeDenial {
-	return &placeDenial{kind: "cannot_tell", path: path, text: fmt.Sprintf("`%s` cannot be checked: %v", p, err)}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	return &placeDenial{kind: "cannot_tell", path: path, text: fmt.Sprintf("`%s`, on the way to the helper, cannot be checked: %v", p, err)}
 }

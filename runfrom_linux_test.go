@@ -6,8 +6,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // placeFixture is a place that passes the Linux check through the seams: the
@@ -38,17 +41,17 @@ func newPlaceFixture(t *testing.T) placeFixture {
 		}
 	}
 	oldExe, oldUID, oldTop := placeExePath, placeOwnerUID, placeWalkTop
-	oldFS, oldCaps := placeOnFUSE, placeHasCaps
+	oldFS, oldCaps, oldLogin := placeFileSystem, placeHasCaps, placeLoginUID
 	t.Cleanup(func() {
 		placeExePath, placeOwnerUID, placeWalkTop = oldExe, oldUID, oldTop
-		placeOnFUSE, placeHasCaps = oldFS, oldCaps
+		placeFileSystem, placeHasCaps, placeLoginUID = oldFS, oldCaps, oldLogin
 	})
 	placeExePath = f.file
 	placeOwnerUID = uint32(os.Getuid())
 	placeWalkTop = top
 	placeHasCaps = func(string) (bool, error) { return false, nil }
-	// A temp folder on FUSE or virtiofs refuses no test.
-	placeOnFUSE = func(string) (bool, error) { return false, nil }
+	// A temp folder on FUSE, virtiofs or NFS refuses no test.
+	placeFileSystem = func(string) (string, error) { return "", nil }
 	return f
 }
 
@@ -120,9 +123,109 @@ func TestCheckPlaceLinuxOwner(t *testing.T) {
 
 func TestCheckPlaceLinuxFUSE(t *testing.T) {
 	f := newPlaceFixture(t)
-	placeOnFUSE = func(p string) (bool, error) { return p == f.srvDir, nil }
+	placeFileSystem = func(p string) (string, error) {
+		if p == f.srvDir {
+			return "fuse", nil
+		}
+		return "", nil
+	}
 	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file,
 		"`"+f.srvDir+"` is on FUSE or virtiofs, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.")
+}
+
+// TestCheckPlaceLinuxNFS pins the NFS text of 13047a51. It comes before the
+// mode and another_file tests of the entries below it.
+func TestCheckPlaceLinuxNFS(t *testing.T) {
+	f := newPlaceFixture(t)
+	placeFileSystem = func(p string) (string, error) {
+		if strings.HasPrefix(p, f.srvDir) {
+			return "nfs", nil
+		}
+		return "", nil
+	}
+	want := "`" + f.srvDir + "` is on NFS, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image."
+	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file, want)
+	if err := os.Chmod(f.file, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	placeExePath = f.top
+	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file, want)
+}
+
+// TestCheckPlaceLinuxOwnerKinds pins the three owner texts of 13047a51: uid
+// 65534 is cannot_tell, the account that signs in and a third account are owner.
+func TestCheckPlaceLinuxOwnerKinds(t *testing.T) {
+	f := newPlaceFixture(t)
+	placeOwnerUID = 0
+	placeLoginUID = 1000
+	fi, err := os.Stat(f.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 65534}), "cannot_tell", f.file,
+		"`"+f.verDir+"` shows as uid 65534 (nobody), which usually means this login can't see its real owner, as in a sandbox that doesn't map root or on a squashed network export. This login must see root as the owner of the helper and every folder above it.")
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 1}), "owner", f.file,
+		"`"+f.verDir+"` belongs to uid 1. Root must own the helper and every folder above it.")
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 1000}), "owner", f.file,
+		"`"+f.verDir+"` belongs to the account that signs in (uid 1000). Root must own the helper and every folder above it.")
+	if r := testPlaceEntry(f.file, f.verDir, ownerInfo{fi, 0}); r != nil {
+		t.Errorf("root owner refused: %s", r.line())
+	}
+}
+
+// ownerInfo is a FileInfo whose Sys gives the owner uid.
+type ownerInfo struct {
+	os.FileInfo
+	uid uint32
+}
+
+func (o ownerInfo) Sys() any {
+	st := *o.FileInfo.Sys().(*syscall.Stat_t)
+	st.Uid = o.uid
+	return &st
+}
+
+// TestCheckPlaceLinuxStalled pins the bound of the whole check: a check past
+// it is refused with the stalled text, also when it passes later, and the
+// gate exits only after the check returned.
+func TestCheckPlaceLinuxStalled(t *testing.T) {
+	f := newPlaceFixture(t)
+	oldBound := placeCheckBound
+	t.Cleanup(func() { placeCheckBound = oldBound })
+	placeCheckBound = 50 * time.Millisecond
+	release, returned := stallPlaceCheck(t, f.srvDir)
+	stubOsExit(t)
+	lines := make(chan string, 1)
+	exitDone := make(chan int, 1)
+	go func() {
+		code, _ := catchExit(func() {
+			gateRunFrom(func(s string) { lines <- s }, f.file, placeTestVersion, false, "")
+		})
+		exitDone <- code
+	}()
+	var got string
+	select {
+	case got = <-lines:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no line within 10 s of a 50 ms bound")
+	}
+	if want := "claustrum: refusing to run (cannot_tell) from " + f.file + ": " + stalledText + "\n"; got != want {
+		t.Errorf("line %q, want %q", got, want)
+	}
+	select {
+	case code := <-exitDone:
+		t.Fatalf("exit %d before the stalled check returned", code)
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	select {
+	case code := <-exitDone:
+		if code != placeRefusedExit || !returned.Load() {
+			t.Errorf("exit %d, check returned %v, want %d after the return", code, returned.Load(), placeRefusedExit)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no exit after the stalled check returned")
+	}
 }
 
 func TestCheckPlaceLinuxAnotherFile(t *testing.T) {
@@ -213,19 +316,28 @@ func TestCheckPlaceLinuxShape(t *testing.T) {
 	wantPlaceDenial(t, examinePlace(other, placeTestVersion), "shape", other, shapeText)
 }
 
-// TestPlaceOnFUSEReal runs the real statfs test: a temp folder is no FUSE,
-// and a missing path gives an error.
-func TestPlaceOnFUSEReal(t *testing.T) {
+// TestPlaceFileSystemReal runs the real statfs test: a temp folder is no FUSE
+// and no NFS, and a missing path gives an error.
+func TestPlaceFileSystemReal(t *testing.T) {
 	dir := t.TempDir()
-	on, err := placeOnFUSE(dir)
+	kind, err := placeFileSystem(dir)
 	if err != nil {
 		t.Fatalf("statfs of a temp folder: %v", err)
 	}
-	if on {
-		t.Skip("the temp folder is on FUSE or virtiofs")
+	if kind != "" {
+		t.Skipf("the temp folder is on %s", kind)
 	}
-	if _, err := placeOnFUSE(filepath.Join(dir, "missing")); err == nil {
+	if _, err := placeFileSystem(filepath.Join(dir, "missing")); err == nil {
 		t.Error("a missing path gave no error")
+	}
+}
+
+// TestFileSystemName pins the statfs types that the place check names.
+func TestFileSystemName(t *testing.T) {
+	for magic, want := range map[int64]string{0x65735546: "fuse", 0x6969: "nfs", 0xef53: ""} {
+		if got := fileSystemName(magic); got != want {
+			t.Errorf("type %#x: %q, want %q", magic, got, want)
+		}
 	}
 }
 
@@ -253,25 +365,25 @@ func TestCheckPlaceLinuxUnreadable(t *testing.T) {
 	// A failed stat of the program that runs.
 	placeExePath = filepath.Join(f.top, "gone")
 	r := examinePlace(f.file, placeTestVersion)
-	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+placeExePath+"` cannot be checked: ") {
+	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+placeExePath+"`, on the way to the helper, cannot be checked: ") {
 		t.Errorf("missing exe: %+v", r)
 	}
 	placeExePath = f.file
 	// A failed statfs of an entry.
-	placeOnFUSE = func(p string) (bool, error) {
+	placeFileSystem = func(p string) (string, error) {
 		if p == f.srvDir {
-			return false, errors.New("boom")
+			return "", errors.New("boom")
 		}
-		return false, nil
+		return "", nil
 	}
-	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file, "`"+f.srvDir+"` cannot be checked: boom")
-	placeOnFUSE = func(string) (bool, error) { return false, nil }
+	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file, "`"+f.srvDir+"`, on the way to the helper, cannot be checked: boom")
+	placeFileSystem = func(string) (string, error) { return "", nil }
 	// An entry with no owner.
-	wantPlaceDenial(t, testPlaceEntry(f.file, f.file, noOwnerInfo{}), "cannot_tell", f.file, "`"+f.file+"` cannot be checked: no owner")
+	wantPlaceDenial(t, testPlaceEntry(f.file, f.file, noOwnerInfo{}), "cannot_tell", f.file, "`"+f.file+"`, on the way to the helper, cannot be checked: no owner")
 	// A failed Lstat in the shape test.
 	gone := filepath.Join(f.top, "gone", "srv", placeTestVersion, "server")
 	r = examineShape(gone, placeTestVersion)
-	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+gone+"` cannot be checked: ") {
+	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+gone+"`, on the way to the helper, cannot be checked: ") {
 		t.Errorf("shape Lstat: %+v", r)
 	}
 	// A failed stat of a part of the path, in a folder of mode 0.
@@ -281,10 +393,8 @@ func TestCheckPlaceLinuxUnreadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(a, 0o755) })
-	r = examinePlace(f.file, placeTestVersion)
-	if r == nil || r.kind != "cannot_tell" || !strings.HasPrefix(r.text, "`"+f.srvDir+"` cannot be checked: ") {
-		t.Errorf("folder of mode 0: %+v", r)
-	}
+	wantPlaceDenial(t, examinePlace(f.file, placeTestVersion), "cannot_tell", f.file,
+		"`"+f.srvDir+"`, on the way to the helper, cannot be checked: permission denied")
 }
 
 // noOwnerInfo is a FileInfo whose Sys gives no owner.
@@ -315,5 +425,58 @@ func TestCheckPlaceLinuxGoodPlaceRuns(t *testing.T) {
 	code, exited, out, errText := runMainOut(t, "-check-place")
 	if exited || out != "" || errText != "" {
 		t.Errorf("-check-place: exit %d, %v, stdout %q, stderr %q, want a return and no output", code, exited, out, errText)
+	}
+}
+
+// stallPlaceCheck makes the statfs of stalled block until the test calls
+// release. returned turns true when that call returns.
+func stallPlaceCheck(t *testing.T, stalled string) (release func(), returned *atomic.Bool) {
+	t.Helper()
+	gate := make(chan struct{})
+	returned = new(atomic.Bool)
+	var once sync.Once
+	release = func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	placeFileSystem = func(p string) (string, error) {
+		if p == stalled {
+			<-gate
+			returned.Store(true)
+		}
+		return "", nil
+	}
+	return release, returned
+}
+
+// TestCheckPlaceLinuxStalledModes pins that -check-place and -probe-cli print
+// the stalled line and end only after the stalled check returned.
+func TestCheckPlaceLinuxStalledModes(t *testing.T) {
+	f := newPlaceFixture(t)
+	oldBound := placeCheckBound
+	t.Cleanup(func() { placeCheckBound = oldBound })
+	placeCheckBound = 20 * time.Millisecond
+	Version = placeTestVersion // runMainOut puts the old value back
+	t.Setenv(runFromEnv, f.file)
+	line := "claustrum: refusing to run (cannot_tell) from " + f.file + ": " + stalledText + "\n"
+	for _, args := range [][]string{{"-check-place"}, {"-probe-cli", filepath.Join(f.top, "none")}} {
+		release, returned := stallPlaceCheck(t, f.srvDir)
+		// The release comes well after the bound, so an end before the
+		// return of the check shows as returned false.
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			release()
+		}()
+		code, exited, out, errText := runMainOut(t, args...)
+		if !returned.Load() {
+			t.Errorf("%v ended before the stalled check returned", args)
+		}
+		if errText != line {
+			t.Errorf("%v: stderr %q, want %q", args, errText, line)
+		}
+		if args[0] == "-check-place" && (!exited || code != placeRefusedExit || out != "") {
+			t.Errorf("-check-place: exit %d, %v, stdout %q, want 78 and no output", code, exited, out)
+		}
+		if args[0] == "-probe-cli" && (exited || out != "__CLI_BAD__\n") {
+			t.Errorf("-probe-cli: exit %d, %v, stdout %q, want a return and __CLI_BAD__", code, exited, out)
+		}
 	}
 }

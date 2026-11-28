@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 )
 
 // runFromEnv names the file that a launcher asks the binary to check before it
@@ -21,15 +22,29 @@ const (
 	hostText        = "Only a Linux host's file can be checked."
 	notAbsoluteText = "the helper must be an absolute path, not a bare name resolved via PATH"
 	anotherFileText = "The program that runs is not the file at that path. If the file was replaced while the helper ran, connect again."
+	stalledText     = "The file could not be checked within 8 seconds. If a folder on the way to it is on a network share, check that its server is reachable."
 	modeText        = "It must be a regular file that gives the helper no more privilege than the account has: no setuid or setgid bit, no file capabilities (`setcap -r` removes them)."
 )
 
 // placeDenial is one refused place: its kind, the path that the line names
 // and the reason. path is empty for not_asked, whose line names no path.
+// settle is set when the check ran past its bound: it answers when the check
+// returns.
 type placeDenial struct {
-	kind string
-	path string
-	text string
+	kind   string
+	path   string
+	text   string
+	settle <-chan *placeDenial
+}
+
+// awaitCheck waits for a check that ran past its bound to return. 13047a51
+// prints the line at 8 s and exits only when the stalled call returns
+// (measured on Linux, a stalled FUSE mount). Go cannot stop that call either,
+// so claustrum waits for it too.
+func (r *placeDenial) awaitCheck() {
+	if r.settle != nil {
+		<-r.settle
+	}
 }
 
 // line is the stderr line of the refusal. 13047a51 writes "claude-ssh:" first.
@@ -41,15 +56,31 @@ func (r *placeDenial) line() string {
 	return fmt.Sprintf("claustrum: refusing to run (%s) from %s: %s\n", r.kind, r.path, r.text)
 }
 
+// placeCheckBound bounds the whole place check. 13047a51 refuses a check that
+// takes longer with cannot_tell and stalledText (measured on Linux). A test
+// sets a short bound.
+var placeCheckBound = 8 * time.Second
+
 // examineRunFrom checks the place of the value of CLAUDE_SSH_RUN_FROM. It answers
 // nil when the place passes. An empty value is not_asked. The line names the
 // cleaned path: Windows prints a path with "/" with "\" (measured), and the
-// Clean of the other systems is from the code.
+// Clean of the other systems is from the code. A check past placeCheckBound
+// is refused, also when it passes later (measured on Linux).
 func examineRunFrom(place, version string) *placeDenial {
 	if place == "" {
 		return &placeDenial{kind: "not_asked", text: notAskedText}
 	}
-	return examinePlace(filepath.Clean(place), version)
+	path := filepath.Clean(place)
+	done := make(chan *placeDenial, 1)
+	go func() { done <- examinePlace(path, version) }()
+	bound := time.NewTimer(placeCheckBound)
+	defer bound.Stop()
+	select {
+	case r := <-done:
+		return r
+	case <-bound.C:
+		return &placeDenial{kind: "cannot_tell", path: path, text: stalledText, settle: done}
+	}
 }
 
 // placeVersion is the version that the shape of a place names. 13047a51 names
@@ -88,5 +119,6 @@ func gateRunFrom(stderr func(string), place, version string, serveRuns bool, tok
 		removeRefusedTokenFile(tokenFile)
 	}
 	stderr(r.line())
+	r.awaitCheck()
 	osExit(placeRefusedExit)
 }
