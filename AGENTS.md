@@ -212,6 +212,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   a name from a directory read and no shape test (`removeRunDir`). An identity test precedes each signal
   ([guards](docs/DAEMON.md#host-cleaner-off-wire-linux-and-macos)). Never widen: Build no
   run-dir name from a request value or an operator path.
+- **The log entry** (Linux and macOS, 13047a51). At start each try is one plain `os.Remove` of the entry at `remote-server.log` beside the socket
+  (`openDaemonLogAt`, [the log](docs/DAEMON.md#daemon-log-remote-serverlog)). Never widen: remove only that one name, never a tree.
 - **`git-shadow`.** Each delete is `homeguard.WipesHomeDir`, then one call through a root
   at `<socket folder>/git-shadow` (`removeEntry`, `removeLink`) or at the daemon's `.probe` (`removeProbeEntry`), except the HEAD copy rmdir, the request folder rmdir, the scratch file remove, the seed copy remove and the keep swap
   (below). Do not build a name below it from a request value ([The
@@ -356,7 +358,7 @@ A divergence is a deliberate difference from the reference. It is not a bug. Do 
 |----|---------|---------|--------|
 | D2 | Refuse a destructive path that is or holds home | always-on | all |
 | D6 | `-cli-version` must be one path component | always-on | all |
-| D8 | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | always-on | all |
+| D8 | Refuse a file link at `remote-server.log` after a failed rename (Windows). The `git-shadow` sweep writes nothing through a link | always-on | all |
 | D15 | Verify a lock holder before a signal | always-on | macOS |
 | D20 | Wait 50 ms before the `SIGKILL` of a gone leader | always-on | Linux, macOS |
 | D22 | Remove refuses a lock in the `.git` folder of `baseRepo` | always-on | Linux, macOS |

@@ -535,24 +535,7 @@ const daemonLogName = "remote-server.log"
 // openDaemonLog opens remote-server.log beside the socket for the daemon child.
 // An error fails the start (daemonizeWithToken). A nil file with a nil error, for an
 // empty socket path or a Windows open that fails, keeps the stdio of the launcher.
-//
-// The prior log is renamed to remote-server.log.old first, and an error of that rename
-// is ignored, as on 4534d86 and 5fd08069. The rename acts on a link itself. Then an
-// exclusive create makes a fresh regular log, mode 0600 (measured on Linux and macOS).
-//
-// If the create fails, claustrum judges the entry at the path by Lstat, so nothing is
-// opened first and a FIFO never blocks the launcher. Measurements show this on Linux
-// and macOS:
-//   - Nothing at the path fails the start with the error of the create, as on 5fd08069
-//     (measured on Linux).
-//   - A folder fails the start with "is a directory", as on 5fd08069
-//     (measured).
-//   - openHeldDaemonLog opens an own regular file and an own link to an own file
-//     (measured).
-//   - A FIFO and any other kind fail the start with "permission denied" (measured, D8).
-//
-// On Windows the rename moves a folder onto a regular .old, as on 5fd08069 (measured
-// on Windows).
+// The steps differ by system (openDaemonLogAt in detach_unix.go and detach_windows.go).
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
@@ -560,25 +543,7 @@ func openDaemonLog(socket string) (*os.File, error) {
 	if socket == "" {
 		return nil, nil
 	}
-	path := filepath.Join(filepath.Dir(socket), daemonLogName)
-	_ = os.Rename(path, path+".old") // rotate prior log to .old (parity)
-	// daemonLogAppend is O_APPEND on unix and 0 on Windows (detach_*.go).
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL|daemonLogAppend, 0o600)
-	if err == nil {
-		return f, nil
-	}
-	createErr := err
-	fi, err := os.Lstat(path)
-	if err != nil {
-		return nil, createErr
-	}
-	switch {
-	case fi.Mode().Type() == os.ModeDir:
-		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EISDIR}
-	case !fi.Mode().IsRegular() && fi.Mode().Type() != os.ModeSymlink:
-		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}
-	}
-	return openHeldDaemonLog(path, fi)
+	return openDaemonLogAt(filepath.Join(filepath.Dir(socket), daemonLogName))
 }
 
 // daemonizeWithToken re-execs the binary detached from the terminal. If forwardToken is
@@ -619,10 +584,16 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
 	// behind, while claustrum refused to start at all.
 	//
-	// The error is not reported here: a failure surfaces at once as the error of the
-	// log create below.
+	// On Linux and macOS a failed create ends the launcher with the error of the mkdir and
+	// exit 1, before the log open (socketDirFailsStart). 87375cc7 and 13047a51 print
+	// "claude-ssh: mkdir <path>: permission denied" for a folder above that cannot be
+	// searched (measured on macOS, rows L4 to L6). Linux and the other errors are not
+	// measured. On Windows the error surfaces as that of the log open below.
 	if dir := filepath.Dir(socket); dir != "" && dir != "." {
-		_ = os.MkdirAll(dir, 0o700)
+		if err := os.MkdirAll(dir, 0o700); err != nil && socketDirFailsStart {
+			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
+			osExit(1)
+		}
 	}
 	cmd := exec.Command(self, os.Args[1:]...)
 	// daemonChildEnv is our private re-exec sentinel (detected in runServe);
