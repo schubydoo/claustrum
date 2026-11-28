@@ -190,8 +190,8 @@ expected, and so is the stop of a slow git call (D5). See
 `files-read-regular-only` paragraph below.
 
 On Linux and macOS claustrum follows `13047a51` for the old log entry, ahead of the pin
-([the rules](DAEMON.md#the-old-log-entry)). A battery diff against `87375cc7` on a
-link, FIFO, folder or second-name file kept as `.old` there is expected, not drift.
+([the rules](DAEMON.md#the-old-log-entry)). A battery diff against `87375cc7` on the
+old log entry, or on the error of a failed log open, is expected, not drift.
 
 Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and

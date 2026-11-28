@@ -51,7 +51,7 @@ const daemonLogTries = 3
 var afterLogRemove = func(string) {}
 
 // openDaemonLogAt opens the log at path. It never opens or writes through the old entry.
-// 13047a51 gives the same outcomes (measured, rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
+// 13047a51 gives the same outcomes (measured on Linux and macOS):
 //   - keepOldLog renames a regular file with one link to remote-server.log.old.
 //   - One plain remove by name then deletes whatever is at the path: a link, a FIFO, a
 //     socket, an empty folder or a file with a second name. A link target and the other
@@ -82,7 +82,7 @@ func openDaemonLogAt(path string) (*os.File, error) {
 // to path.old. Any other entry stays for the remove of openDaemonLogAt, and a line on
 // the stderr of the launcher tells so. A failed rename logs its error in the same line.
 // The texts are those of 13047a51 (measured on Linux and macOS). A missing entry and a
-// failed Lstat log nothing. A failed Lstat other than a missing entry is not measured.
+// failed Lstat log nothing.
 func keepOldLog(path string) {
 	fi, err := os.Lstat(path)
 	if err != nil {

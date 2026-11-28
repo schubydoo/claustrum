@@ -117,11 +117,11 @@ func mkdirAll(t *testing.T, p string) {
 	}
 }
 
-// The cases of row K-1 of 13047a51 (Linux, run m25c-ubuntu2-20261128T060259Z) on a
+// The cases A to G of the sweep on 13047a51 (measured on Linux) on a
 // fake /proc tree. A, E and G end by one SIGKILL each. B, C and F stay. Two more
 // cases are claustrum's own: a run folder value that differs, and a child mark with
 // another value, stay alive. The daemon itself is passed over, as on 13047a51
-// (row K-1, strace). The parent skip is claustrum's own.
+// (measured on Linux). The parent skip is claustrum's own.
 func TestRunEndsTheMarkedCasesOfRowK1(t *testing.T) {
 	f := newFakeProc(t)
 	runDir := t.TempDir()
@@ -164,7 +164,7 @@ func TestRunEndsTheMarkedCasesOfRowK1(t *testing.T) {
 		t.Fatalf("Run = %d, ended %v, want 3 and %v", n, f.ended, want)
 	}
 	// The pass that ended three processes is followed by one more pass, which
-	// ends none, and then the sweep stops (row K-1).
+	// ends none, and then the sweep stops (measured on Linux).
 	if len(f.pauses) != 1 || f.pauses[0] != passPause {
 		t.Fatalf("pauses = %v, want one of %v", f.pauses, passPause)
 	}
@@ -179,7 +179,7 @@ func TestRunEndsTheMarkedCasesOfRowK1(t *testing.T) {
 }
 
 // An absolute link at the run path that leads to the run folder of this daemon lets
-// the process end, as on 13047a51 (row K-1 H, measured on Linux).
+// the process end, as on 13047a51 (measured on Linux).
 func TestRunEndsALinkToTheRunFolder(t *testing.T) {
 	f := newFakeProc(t)
 	runDir := t.TempDir()
@@ -196,8 +196,8 @@ func TestRunEndsALinkToTheRunFolder(t *testing.T) {
 	}
 }
 
-// A process of another uid stays alive (row K-1 D). The fake tree belongs to the
-// test user, so a different own uid stands for it.
+// A process of another uid stays alive (13047a51, measured on Linux). The fake tree
+// belongs to the test user, so a different own uid stands for it.
 func TestRunKeepsAProcessOfAnotherUID(t *testing.T) {
 	f := newFakeProc(t)
 	runDir := t.TempDir()
@@ -267,7 +267,7 @@ func TestRunKeepsTheNarrowedCases(t *testing.T) {
 		build(filepath.Join(r, runDir))
 		return r
 	}
-	// A link to a folder with a children entry stays alive (row K-1 I). One to a
+	// A link to a folder with a children entry stays alive (measured on Linux). One to a
 	// folder without it stays too (claustrum's own).
 	otherWithChildren := t.TempDir()
 	mkdirAll(t, filepath.Join(otherWithChildren, childrenEntry))

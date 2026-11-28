@@ -16,8 +16,8 @@ import (
 	"github.com/schubydoo/claustrum/internal/procinfo"
 )
 
-// The two marks of a child of this daemon. Rows K-1 B and C show that one mark keeps
-// the process alive. Each mark must be one whole entry of the environment, with the
+// The two marks of a child of this daemon. One mark keeps the process alive (13047a51,
+// measured on Linux). Each mark must be one whole entry of the environment, with the
 // exact run folder (claustrum's own, not measured).
 const (
 	runDirMark = "CLAUDE_SSH_RUN_DIR="
@@ -25,17 +25,17 @@ const (
 )
 
 // childrenEntry is the entry that a different folder at the run folder path must
-// lack before its process ends (rows K-1 F and G).
+// lack before its process ends (13047a51, measured on Linux).
 const childrenEntry = "children"
 
 const (
 	// maxPasses bounds the passes over /proc. 13047a51 ran a second pass after a
-	// pass that ended a process, and stopped after a pass that ended none (row
-	// K-1). The bound of 3 is claustrum's own, not measured.
+	// pass that ended a process, and stopped after a pass that ended none
+	// (measured on Linux). The bound of 3 is claustrum's own, not measured.
 	maxPasses = 3
 	// passPause is the wait before the next pass. On 13047a51 about 29 ms passed
-	// from the last open of one pass to the first open of the next (row K-1). The
-	// 20 ms are claustrum's own, not measured.
+	// from the last open of one pass to the first open of the next (measured on
+	// Linux). The 20 ms are claustrum's own, not measured.
 	passPause = 20 * time.Millisecond
 	// maxEnviron bounds the read of one environment. A longer environment counts
 	// as one with no marks (claustrum's own, not measured).
@@ -58,7 +58,7 @@ var (
 // returns the number of processes that took the signal.
 //
 // For each process of /proc it opens a pid file descriptor first, as 13047a51
-// does (row K-1). Then the process must have the own uid of this daemon (the
+// does (measured on Linux). Then the process must have the own uid of this daemon (the
 // effective uid, claustrum's own) and both marks, and its root must show the run folder of this
 // daemon, no entry at that path, or a different folder there with no children
 // entry. The signal is one SIGKILL through the descriptor, never a group and never
@@ -105,7 +105,7 @@ func sweepOnce(runDir string, own fs.FileInfo, signalled map[int]bool) (int, err
 	for _, e := range entries {
 		pid, err := strconv.Atoi(e.Name())
 		// 13047a51 opens no pid file descriptor for pid 1 or for the daemon
-		// itself (row K-1, strace). The parent skip is claustrum's own.
+		// itself (measured on Linux). The parent skip is claustrum's own.
 		if err != nil || pid < 2 || pid == ownPID() || pid == ownPPID() || signalled[pid] {
 			continue
 		}
@@ -135,8 +135,8 @@ func endIfLeft(proc string, pid int, runDir string, own fs.FileInfo) bool {
 }
 
 // ownedByUs reports whether the /proc entry of the process has the effective uid
-// of this daemon (row K-1 D: a process of another uid stays alive). The choice of
-// the effective uid is claustrum's own.
+// of this daemon. 13047a51 keeps a process of another uid alive (measured on Linux).
+// The choice of the effective uid is claustrum's own.
 func ownedByUs(dir string) bool {
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -168,15 +168,15 @@ func hasBothMarks(dir, runDir string) bool {
 }
 
 // runDirLeft looks at the run folder path inside the root of the process. The
-// same folder as this daemon's, or no entry at that path (row K-1 E), lets the
-// process end. A different folder lets it end only without a children entry (rows
-// K-1 F and G). A link at that path lets it end only when it leads to the run folder
-// of this daemon (row K-1 H). A link to a folder with a children entry stays (row
-// K-1 I). Every other error keeps it alive, and so do a link to anything else and a
-// non-folder at that path (claustrum's own, not measured). The parts above the last
-// name are followed, and an absolute link resolves in the root of this daemon
-// (claustrum's own, not measured). Row K-1 H does not settle whether 13047a51 resolves
-// the link in the root of the daemon or in the root of the process.
+// same folder as this daemon's, or no entry at that path, lets the process end. A
+// different folder lets it end only without a children entry. A link at that path
+// lets it end only when it leads to the run folder of this daemon. A link to a folder
+// with a children entry stays. 13047a51 does the same (measured on Linux). Every other
+// error keeps it alive, and so do a link to anything else and a non-folder at that
+// path (claustrum's own, not measured). The parts above the last name are followed,
+// and an absolute link resolves in the root of this daemon (claustrum's own, not
+// measured). The measured link case does not settle whether 13047a51 resolves the
+// link in the root of the daemon or in the root of the process.
 func runDirLeft(dir, runDir string, own fs.FileInfo) bool {
 	at := filepath.Join(dir, "root", runDir)
 	fi, err := os.Lstat(at)
