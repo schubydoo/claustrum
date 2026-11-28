@@ -577,7 +577,7 @@ Claustrum's own, not measured: a dial of the daemon to itself does not start the
 
 `internal/leftsweep` ends the processes that the children of a daemon started and left. Only [the end at the limit](#the-end-at-the-limit) calls it. On `13047a51` it ran there (measured on Linux). After `server.shutdown` and after the orphan end, the log of `13047a51` shows no sweep line.
 
-Measured on `13047a51` on Linux, rows K-1 A to G. Each row starts a `setsid` sleep:
+Measured on `13047a51` on Linux, rows K-1 A to I. Each row starts a `setsid` sleep:
 
 - A has both marks, `CLAUDE_SSH_RUN_DIR=<run dir>` and `CLAUDE_SSH_DAEMON_CHILD=1`. It ends by one `pidfd_send_signal` `SIGKILL`.
 - B and C have one mark each. They stay alive.
@@ -585,6 +585,8 @@ Measured on `13047a51` on Linux, rows K-1 A to G. Each row starts a `setsid` sle
 - E runs in a mount namespace where the run folder path is missing. It ends.
 - F sees another folder at that path, with a `children` entry. It stays alive.
 - G sees another folder at that path, with no `children` entry. It ends.
+- H sees an absolute link at that path to the real run folder. It ends.
+- I sees a link at that path to a folder with a `children` entry. It stays alive.
 
 The strace of `13047a51` shows one pid file descriptor open for each pid from 2 up, and none for pid 1 or the daemon. After the pass that ended A, E and G, a second pass ran. It ended none, and the sweep stopped.
 
@@ -596,7 +598,7 @@ claustrum's own, not measured:
 - An environment over 8 MiB counts as one with no marks.
 - The sweep sends no signal and returns an error for a relative or unclean run folder or a failed stat of it. The same holds for a `/proc` whose `self` is another process.
 - The uid test compares the effective uid. Row D cannot tell the real uid from the effective uid.
-- A link or a non-folder at the run path keeps the process alive. Only the last name of that path is read without following a link. The parts above it are followed, and an absolute link there resolves in the root of the daemon.
+- Any other link or a non-folder at the run path keeps the process alive. The parts above the last name are followed, and an absolute link resolves in the root of the daemon.
 - A failed open of the pid file descriptor sends nothing, also on a kernel with no pidfd.
 - macOS and Windows run no sweep.
 

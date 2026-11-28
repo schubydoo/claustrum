@@ -275,8 +275,8 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
 
 - **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). Only the end at the limit below calls `Run` (`sweepAfterLimit`). It sends one `SIGKILL` through
   a pid file descriptor to a process of the own effective uid (claustrum's own) with both child marks. Its root must show
-  the run folder, no entry there, or another folder with no `children` entry. A link or a non-folder there keeps it alive
-  (claustrum's own, [the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
+  the run folder, no entry there, or another folder with no `children` entry. A link there must lead to the run folder.
+  Any other link or a non-folder keeps it alive (claustrum's own, [the sweep](docs/DAEMON.md#the-left-process-sweep-13047a51-linux)). Never widen: signal only through
   `procinfo.HoldPIDByFD`, never a group, another uid, pid 1, the daemon, or (claustrum's own) its parent. Add no case
   without a measured row.
 - **The end at the unattended limit** (Linux, 13047a51, `limitEnd`, [the rule](docs/DAEMON.md#the-end-at-the-limit)). With a limit from the host

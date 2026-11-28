@@ -5,9 +5,12 @@
 // (claustrum's own, not measured).
 //
 // Measured on 13047a51 (Linux, rows K-1 A to G of TASK-937, run
-// m25c-ubuntu2-20261128T060259Z): a process with both marks ends by one
+// m25c-ubuntu2-20261128T060259Z, and rows K-1 H and I of TASK-764, run
+// m25r2k1h-ubuntu2-20261128T143140Z): a process with both marks ends by one
 // pidfd_send_signal SIGKILL, also in a mount namespace where the run folder path
-// is missing, or where another folder with no children entry stands at that path.
+// is missing, where another folder with no children entry stands at that path, or
+// where an absolute link there leads to the run folder. A link to a folder with a
+// children entry keeps it alive.
 // A process with one mark, a process of another uid and a process whose other
 // folder at that path holds a children entry stay alive.
 //
