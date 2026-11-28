@@ -39,6 +39,9 @@ const (
 	// repository in the git state fallback-git. c9125eb8 sends it on Linux,
 	// macOS and Windows (measured).
 	CodeNoSettingsCopy = -32008
+	// CodeHostSettings is the process.spawn code of a Claude Code spawn while the host
+	// settings file can't be used. 13047a51 sends it on Linux (measured).
+	CodeHostSettings = -32010
 )
 
 // Request holds the five wire members of one inbound JSON-RPC line. Package

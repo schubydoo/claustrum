@@ -12,10 +12,12 @@ import (
 
 // SpawnReason is the data member of an error that the start path of process.spawn
 // makes. The member order is code, message, data. A launcher refusal of c9125eb8
-// puts launcherFault before reason (measured on Linux, macOS and Windows).
+// puts launcherFault before reason (measured on Linux, macOS and Windows). The
+// host_settings refusal of 13047a51 puts settingsFault after reason (measured on Linux).
 type SpawnReason struct {
 	LauncherFault string `json:"launcherFault,omitempty"`
 	Reason        string `json:"reason"`
+	SettingsFault string `json:"settingsFault,omitempty"`
 }
 
 // GitReadStepError marks a failed step of a gitRead spawn (SpawnGitRead). Its

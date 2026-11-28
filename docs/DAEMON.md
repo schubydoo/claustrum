@@ -524,11 +524,62 @@ After the `SIGTERM` the daemon polls for 2 s. At each poll a group takes the who
 
 Two risks remain (from the code). A process can change between the last read of `/proc` or `ps` and the signal. That window is wider on macOS, where `ps` runs as its own process. And a remove of a record takes what sits at its name at that time, by one plain remove, never as a tree.
 
+## The host settings file (Linux, build `13047a51`)
+
+On Linux the daemon reads `/etc/claude-desktop-ssh/settings.json` at its start. Its member `unattendedLimitMinutes` sets the unattended limit in minutes, shown by [server.capabilities](protocol/server.md#servercapabilities). macOS and Windows read no file (measured on macOS and Windows). The rules below are measured on Linux:
+
+- No folder `/etc/claude-desktop-ssh`, or no `unattendedLimitMinutes`, sets no limit. A link is followed, and a leading UTF-8 byte order mark passes.
+- A value below 15 counts as 15, and a value above 43200 as 43200.
+- A value that is no whole number of 1 or more makes the file unusable. So does a body that is not one JSON object.
+- A size above 64 KiB, a folder and an open refused for its permission make it unusable too.
+- A file of the daemon account makes it unusable. A root file passes.
+- Modes 0664, 0666 and 0646 on the file and 0775, 0777, 0757 and 0753 on its folder make it unusable. Modes 0604 and 0644 and a folder of 0755 pass.
+- The write bits come before the read access. A root file of mode 0642 gets the `writable` fault.
+- An unknown key sets nothing. A line that sets a limit counts the unknown keys of the top object and names the first.
+
+A file that cannot be used sets no limit, and a Claude Code spawn gets [the `host_settings` refusal](protocol/process-spawn.md#the-host_settings-refusal-build-13047a51). Claustrum's own, not measured: a folder with no file sets no limit, and a FIFO counts as a folder does. A file of another account passes. Any group or other write bit counts. The rules test the target of a link, and only the folder of the file, with no owner test. The first unknown key is the first in the file. The unknown-key tail comes after the clamp tail, and the no-limit line gets it too. Another read error sets no limit and logs one WARN line. A read again after the start is not built.
+
+The start line follows the open-files line and comes before the banner. It is one of these:
+
+```
+[Server] No unattended limit is set in /etc/claude-desktop-ssh/settings.json
+[Server] /etc/claude-desktop-ssh/settings.json sets an unattended limit of 60 minutes: once nobody has been connected for that long, this helper ends itself and what it started
+[Server] /etc/claude-desktop-ssh/settings.json sets an unattended limit of 15 minutes: once nobody has been connected for that long, this helper ends itself and what it started; unattendedLimitMinutes is 1, which counts as 15 (the bounds are 15 and 43200)
+[Server] /etc/claude-desktop-ssh/settings.json sets an unattended limit of 30 minutes: once nobody has been connected for that long, this helper ends itself and what it started; 2 key(s) are unknown to this version of the helper and ignored, the first of them "other" (a misspelt key sets nothing)
+[Server] /etc/claude-desktop-ssh/settings.json can't be used, so no Claude Code is started until it is fixed. <detail> No unattended limit applies meanwhile.
+```
+
+### The end at the limit
+
+Measured on Linux against `13047a51`:
+
+- The check runs every 60 s from the start of the daemon. The first check after 15 minutes with no client ends it.
+- The clock also counts from the start. The close of a connection that sent a request with the token starts it again.
+- A wrong token or a dial with no byte does not start it again. A held connection with the token holds the end off.
+- It logs the first line below and `[Server] shutdown requested`. Then it stops as at `server.shutdown`, and the socket and `daemon.token` go.
+- The group of each live child gets a `SIGKILL`, and the first line counts the live children.
+- A child with `stream-json` in its args gets `SIGTERM` first. Its group gets the `SIGKILL` about 1.5 s later.
+- A bare `git` with `stream-json` in its args gets `SIGTERM` first too. Its group gets the `SIGKILL` within 0.5 s.
+- Then [the left-process sweep](#the-left-process-sweep-13047a51-linux) runs. Its line comes before the cleanup line.
+- A socket path that is gone, a regular file or a link to the socket of another daemon gets the third line below. Then no sweep runs.
+
+```
+[Server] nobody has used this helper or been connected to it for 15m59s, and the unattended limit in force is 15 minutes (/etc/claude-desktop-ssh/settings.json): shutting down and killing 3 child process(es)
+[Server] cleanup: ended 3 more process(es) that the children had started and left
+[Server] socket path <run dir>/rpc.sock can't be shown to lead to this helper any more, so only its children's own process groups are ended: what has left one may still be running
+```
+
+The third line comes right after the first (measured on Linux). A failed stat of the socket path counts as such a path, and no self-probe runs (claustrum's own, not measured).
+
+For a `ccd-cli` or launcher spawn, `13047a51` sent that group `SIGKILL` a second time in some runs, within 1 ms. Claustrum sends it once (claustrum's own).
+
+Claustrum's own, not measured: a dial of the daemon to itself does not start the clock again. The check comes before the idle exit and the orphan checks, and not once the shutdown began. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
+
 ## The left-process sweep (13047a51, Linux)
 
-`internal/leftsweep` ends the processes that the children of a daemon started and left. No path of claustrum calls it yet. On `13047a51` it ran only at the end by the unattended limit (measured on Linux). After `server.shutdown` and after the orphan end, the log of `13047a51` shows no sweep line.
+`internal/leftsweep` ends the processes that the children of a daemon started and left. Only [the end at the limit](#the-end-at-the-limit) calls it. On `13047a51` it ran there (measured on Linux). After `server.shutdown` and after the orphan end, the log of `13047a51` shows no sweep line.
 
-Measured on `13047a51` on Linux, rows K-1 A to G. Each row starts a `setsid` sleep:
+Measured on `13047a51` on Linux, cases A to I. Each case starts a `setsid` sleep:
 
 - A has both marks, `CLAUDE_SSH_RUN_DIR=<run dir>` and `CLAUDE_SSH_DAEMON_CHILD=1`. It ends by one `pidfd_send_signal` `SIGKILL`.
 - B and C have one mark each. They stay alive.
@@ -536,6 +587,8 @@ Measured on `13047a51` on Linux, rows K-1 A to G. Each row starts a `setsid` sle
 - E runs in a mount namespace where the run folder path is missing. It ends.
 - F sees another folder at that path, with a `children` entry. It stays alive.
 - G sees another folder at that path, with no `children` entry. It ends.
+- H sees an absolute link at that path to the real run folder. It ends.
+- I sees a link at that path to a folder with a `children` entry. It stays alive.
 
 The strace of `13047a51` shows one pid file descriptor open for each pid from 2 up, and none for pid 1 or the daemon. After the pass that ended A, E and G, a second pass ran. It ended none, and the sweep stopped.
 
@@ -543,10 +596,11 @@ claustrum's own, not measured:
 
 - The parent of the daemon is passed over.
 - At most 3 passes run, with a pause of 20 ms before each next pass. A pid that took the signal gets no second one and counts once.
+- Each mark must be one whole entry, with the exact run folder.
 - An environment over 8 MiB counts as one with no marks.
 - The sweep sends no signal and returns an error for a relative or unclean run folder or a failed stat of it. The same holds for a `/proc` whose `self` is another process.
 - The uid test compares the effective uid. Row D cannot tell the real uid from the effective uid.
-- A link or a non-folder at the run path keeps the process alive. Only the last name of that path is read without following a link. The parts above it are followed, and an absolute link there resolves in the root of the daemon.
+- Any other link or a non-folder at the run path keeps the process alive. The parts above the last name are followed, and an absolute link resolves in the root of the daemon.
 - A failed open of the pid file descriptor sends nothing, also on a kernel with no pidfd.
 - macOS and Windows run no sweep.
 
