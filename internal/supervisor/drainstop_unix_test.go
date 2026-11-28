@@ -663,6 +663,32 @@ func TestGraceMarkNeedsAHeldPipe(t *testing.T) {
 	}
 }
 
+// TestDrainKillSkipsAStreamJSONChildThatEndedByItself: a stream-json child that the
+// shutdown sent no SIGTERM, with no pipe held, gets no send. Only a child that ended on
+// the shutdown SIGTERM skips the pipe test. The Proc is built by hand, and the seam
+// delivers nothing.
+func TestDrainKillSkipsAStreamJSONChildThatEndedByItself(t *testing.T) {
+	count := countDrainKills(t)
+	for _, tc := range []struct {
+		name            string
+		endedByShutdown bool
+		sends           int
+	}{{"ended by itself", false, 0}, {"ended on the shutdown SIGTERM", true, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := count()
+			p := &Proc{
+				id: "self", askEnd: true, endedByShutdown: tc.endedByShutdown,
+				plainGroupEnd: true, leaderKeptGroup: true, running: true, reaped: true,
+				cmd: &exec.Cmd{Process: &os.Process{Pid: 999999}}, group: &ProcGroup{},
+			}
+			p.killGroupInOpenDrain()
+			if got := count() - before; got != tc.sends {
+				t.Errorf("KILL sends = %d, want %d", got, tc.sends)
+			}
+		})
+	}
+}
+
 // TestPipeTestPollsAgainAfterEINTR: a poll that EINTR stops does not read as "no writer".
 // The retry has a bound, and any other error stops it at once. The pipe is the test's own.
 func TestPipeTestPollsAgainAfterEINTR(t *testing.T) {

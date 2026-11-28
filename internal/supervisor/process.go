@@ -781,7 +781,8 @@ func (p *Proc) notePipesHeldAtGrace() {
 }
 
 // killGroupInOpenDrain sends the group SIGKILL of a shutdown to a plain child whose
-// leader is reaped while a process holds its stdout or stderr. 87375cc7 and 4c111e86
+// leader is reaped while a process holds its stdout or stderr, or that ended on the
+// shutdown SIGTERM. For the held pipes 87375cc7 and 4c111e86
 // send it after the shutdown starts, and none once the exit frame is out (measured
 // on Linux and macOS). It holds p.mu across the test and the signal, so it cannot follow
 // the frame. This path sends at most once for a child. The grace closes the read ends
