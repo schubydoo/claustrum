@@ -367,7 +367,7 @@ func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 // Measured: the socket folder cannot be written and holds no log. The launcher prints
 // the error of the log create on stderr and exits 1 at once, with no child. 5fd08069
 // does so (measured on Linux). The fix is the return of that create error in
-// openDaemonLog, where an Lstat finds nothing at the path.
+// openDaemonLogAt, where the remove finds nothing at the path.
 func TestDaemonizeFailsWhenLogUnopenable(t *testing.T) {
 	skipIfRoot(t) // root creates the log in a 0500 directory regardless
 	stubOsExit(t)

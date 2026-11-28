@@ -129,7 +129,7 @@ names what changes. Default "off" means a flag, a key or the caller turns it on.
 |----|---------|------|---------|----|
 | [D2](#d2) | Refuse a destructive path that is or holds `$HOME` | on-wire | always-on | all |
 | [D6](#d6) | `-cli-version` is one path component | off-wire (`-install` output) | always-on | all |
-| [D8](#d8) | Refuse a link, a FIFO or another user's `remote-server.log` (Linux, macOS) at start. An own link to an own file passes on Linux and macOS. The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
+| [D8](#d8) | Refuse a file link at `remote-server.log` after a failed rename (Windows). The `git-shadow` sweep writes nothing through a link | off-wire | always-on | all |
 | [D15](#d15) | Verify a lock holder before a signal | off-wire | always-on | macOS |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a leader that reads as gone | off-wire | always-on | Linux, macOS |
 | [D22](#d22) | Refuse a worktree locked in the `.git` folder of `baseRepo` on remove | on-wire | always-on | Linux, macOS |
@@ -249,43 +249,39 @@ they are options, not divergences (the maintainer's decision of 2026-11-13).
   component.
 - **Pointers.** `internal/install/install.go`.
 
-### D8 · claustrum refuses a link, a FIFO or another user's `remote-server.log`, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
+### D8 · claustrum refuses a file link at `remote-server.log` after a failed rename on Windows, and the `git-shadow` sweep writes nothing through a link (always-on) { #d8 }
 
-- **Behavior.** If the fresh create of the log fails, the launcher judges the
-  entry at the log path by `Lstat`.
-  [DAEMON.md → Daemon log](DAEMON.md#daemon-log-remote-serverlog) has the
-  steps, which match `5fd08069` apart from the entries below.
-  - Linux and macOS: an own regular file, or the own regular file behind an own
-    link, is truncated. Every other entry fails the start with
-    `claustrum: open log: open <path>: permission denied` and exit 1, and stays
-    unchanged. Examples are a link to another user's file, a FIFO and another
-    user's file. Three rules are claustrum's own, not measured. The target of an
-    own link must be an own regular file with one link. An own file with a
-    second hard link is refused. An own file that the open cannot write fails
-    the start with the error of that open.
-  - Windows: a regular file is truncated with no owner test. A file symbolic
-    link is refused.
+- **Behavior.**
+  - Windows: if the rename of the log to `.old` and the fresh create both fail, the
+    launcher judges the entry by `Lstat`. A regular file is truncated with no owner
+    test. A file symbolic link fails the start with `permission denied` ([DAEMON.md
+    → Daemon log](DAEMON.md#daemon-log-remote-serverlog)).
   - The `git-shadow` sweep: a symbolic link with a folder name of this host goes
     with one plain remove, and on Windows a junction too. Nothing is written in
     the target.
-- **Reference.** On Linux it refuses the same entries in a sticky
-  world-writable folder with the `fs.protected` sysctls on. On macOS, and on
-  Linux with those sysctls off, it writes through a link or into another user's
-  file, and it blocks on a FIFO. On Windows it writes through a file symbolic link. Its sweep makes
-  an empty lock file in the target of a link (Linux, macOS and Windows).
-- **Systems and switch.** Linux, macOS and Windows, as split above. Always on,
-  no switch.
+- **Reference.** On Windows `5fd08069` writes through a file symbolic link when a
+  folder at `.old` stops the rename (measured on Windows). With no folder there,
+  `87375cc7` and `13047a51` rename the link to `.old` and write nothing through it,
+  as claustrum does (measured on Windows, row O6). No row measured `13047a51` with a
+  stopped rename. Its sweep makes an empty lock file in the target of a link (Linux,
+  macOS and Windows).
+- **Retired part.** The log part on Linux and macOS is retired. claustrum follows
+  `13047a51` there, which replaces the entry and never writes through it (measured
+  on rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)).
+- **Systems and switch.** Windows for the log, Linux, macOS and Windows for the
+  sweep. Always on, no switch.
 - **Cost.** None in the deployed socket folder.
 - **Rule.** The maintainer's decision of 2026-10-19, after `5fd08069` truncated
   a file of another user and the target of a planted link. Rule 3 clause (b):
   the deployed socket folder (`~/.claude/remote/`) is per-user and not
   world-writable. So no honest start reaches the refusal, and no honest sweep
-  meets a planted link.
+  meets a planted link. The maintainer's decision of 2026-11-28 to follow
+  `13047a51` retired the log part on Linux and macOS.
 - **Reopen trigger.** A deployment that puts the socket folder somewhere shared,
-  the reference refusing these entries on every host, or the reference making
-  no lock file through a link.
-- **Pointers.** `server.go` (`openDaemonLog`), `detach_unix.go`
-  (`openHeldDaemonLog`) and `internal/git/gitshadowsweep.go` (`sweepLink`).
+  a Windows row of a stopped rename on `13047a51` or a later build, or the
+  reference making no lock file through a link.
+- **Pointers.** `detach_windows.go` (`openDaemonLogAt`, `openHeldDaemonLog`) and
+  `internal/git/gitshadowsweep.go` (`sweepLink`).
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 

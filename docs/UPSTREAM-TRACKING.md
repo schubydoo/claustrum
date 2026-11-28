@@ -165,7 +165,7 @@ means that a probe which reaches the path shows it. The battery never drives
 |----|---------|------------------|---------|
 | [D2](DIVERGENCES.md#d2) | Always-on | Maybe | A delete path that is or holds the home folder is refused, also on `-install` |
 | [D6](DIVERGENCES.md#d6) | Always-on | No, install path | A `-cli-version` of more than one path component is refused |
-| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Linux and macOS a FIFO, another user's file or a link to one at `remote-server.log` fails the start. On Windows a file link does. The `git-shadow` sweep writes nothing through a link |
+| [D8](DIVERGENCES.md#d8) | Always-on | No, a start failure | On Windows a file link at `remote-server.log` fails the start after a failed rename. The `git-shadow` sweep writes nothing through a link |
 | [D15](DIVERGENCES.md#d15) | Always-on, macOS | No, off the wire | A lock holder that is not our `-serve` gets no signal |
 | [D20](DIVERGENCES.md#d20) | Always-on, Linux and macOS | No, off the wire | The group `SIGKILL` of a gone leader comes about 50 ms later, or not at all |
 | [D22](DIVERGENCES.md#d22) | Always-on, Linux and macOS | Maybe | `git.worktree_remove` refuses a lock where `89cb6289` answers success (four states, and a missing daemon `GIT_DIR` of `b3081b51`), and differs with `worktreeRoot` in three more |
@@ -189,6 +189,10 @@ drift: the D13 chmod, clear and rename come after the checksum test. A differenc
 expected, and so is the stop of a slow git call (D5). See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries), and the
 `files-read-regular-only` paragraph below.
+
+On Linux and macOS claustrum follows `13047a51` for the old log entry, ahead of the pin
+([the rules](DAEMON.md#the-old-log-entry)). A battery diff against `87375cc7` on a
+link, FIFO, folder or second-name file kept as `.old` there is expected, not drift.
 
 Some flags are claustrum's own and have no entry: `-token-fd`
 ([flags.md → Flags and config keys](protocol/flags.md#flags-and-config-keys)), and
