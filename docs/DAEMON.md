@@ -539,7 +539,7 @@ system was measured on that system, and an unmarked rule on Linux and macOS.
 
 At each start the launcher renames an existing `remote-server.log` in the
 socket's directory to `remote-server.log.old` and creates a fresh one
-with mode `0600`. The daemonized child writes its stdout and stderr there. claustrum keeps the log at shutdown (from the code), unlike the socket and `daemon.token`. The name and location are fixed.
+with mode `0600`. On Linux and macOS some entries are not renamed (below). The daemonized child writes its stdout and stderr there. claustrum keeps the log at shutdown (from the code), unlike the socket and `daemon.token`. The name and location are fixed.
 
 claustrum writes a level tag before each line of its logger. The banner and a
 start error that begins `claustrum:` have none. The reference writes no tag. `CLAUSTRUM_LOG_LEVEL=warn` drops the INFO lines.
@@ -601,26 +601,47 @@ At start on Linux, the daemon logs one of these lines once, before the first con
 [FilesHandler] files.realpath: cannot read /proc/self/fd or mnt_id in /proc/self/fdinfo; falling back to filepath.EvalSymlinks, checked against the opened file; files.read will not return real
 ```
 
-If the fresh create fails, the launcher judges the entry at the path without
-following it, and it opens no FIFO:
+### The old log entry
 
-- Nothing at the path fails the start with the error of the create (measured on
-  Linux).
-- A folder fails the start with `is a directory`.
-- An own regular file is truncated. It keeps its mode and gets the lines.
-- An own link to an own regular file gets the same: the file is truncated
-  (measured on Linux). On Windows a link fails with `permission denied`
-  ([D8](DIVERGENCES.md#d8)).
-- Every other entry fails the start with `permission denied` and stays
-  unchanged. That is [D8](DIVERGENCES.md#d8).
+On Linux and macOS the launcher judges the entry at the path by `Lstat`. It never
+opens the old entry or writes through it. `13047a51` gives the same outcomes (measured,
+rows R1 to R5, O2, O5 (Linux and macOS), S1 to S3 (Linux)):
 
-A failed start prints one line on stderr and exits 1. The reference prints the
-same refusal with its own prefix. No daemon, socket, `daemon.lock` or
-`daemon.token` follows it (from the code):
+- Only a regular file with one link goes to `.old`. Another user's file in an own
+  folder goes there too (measured on macOS, row O4a).
+- Any other entry is not renamed, and the launcher writes a line on its own stderr,
+  not in the log. Examples are a link, a FIFO, a socket, a folder and a file with a
+  second name.
+- A failed rename writes the same line with the error of the rename. A folder at
+  `.old` gives `rename <path> <path>.old: file exists`.
+- One plain remove then deletes the entry at the path, never as a tree. A link target
+  and the other name of a file keep their bytes.
+- An exclusive create makes the fresh log. A create that finds a new entry tries
+  again, at most 3 times (not measured).
 
 ```
-claustrum: open log: open <path>: is a directory
+2026/11/28 04:28:39 INFO  [daemon] the last run's log is not kept as .old: it is no regular file, or has a second name
 ```
+
+A failed remove fails the start, and the entry stays. A folder with entries gives
+`directory not empty`. Another user's file in a sticky folder gives `operation not
+permitted` on Linux and `permission denied` on macOS (rows S1 and O4b). A failed
+create fails the start with its error.
+
+A failed start prints the refusal as its last stderr line and exits 1. `13047a51`
+prints the same refusal with its own prefix (row R5). No daemon, socket, `daemon.lock`
+or `daemon.token` follows it (from the code):
+
+```
+claustrum: open log: remove <path>: directory not empty
+```
+
+On Windows the rename acts on a link itself, so the target keeps its bytes. `87375cc7`
+and `13047a51` do the same (measured on Windows, row O6). An error of the rename is
+ignored. After a failed create, nothing at the path fails the start with the error of
+the create (from the code), and a folder with `is a directory`. A regular file is
+truncated, keeps its mode and gets the lines. A file link fails the start
+([D8](DIVERGENCES.md#d8)).
 
 On Windows the rename moves a folder onto a regular `.old`. A second daemon can start on a live socket. The first daemon holds the log open, so the rename fails and the launcher truncates the log for the second daemon. Each daemon writes at the offset of its own handle, so the first daemon's earlier lines are lost and later ones follow NUL bytes. A log that another process holds with no delete share is truncated too,
 and `.old` stays. This is parity ([D21](DIVERGENCES.md#d21) is retired).
