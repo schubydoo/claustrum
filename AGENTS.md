@@ -37,7 +37,7 @@ daemon. The wire surface is the product.
 ## Architecture
 
 There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
-`-stop`, `-version`, `-install`, `-probe-cli`.
+`-stop`, `-version`, `-install`, `-probe-cli`, `-check-place`.
 
 The table names the files that an agent must not break. The file map of the
 modes and the OS splits is in
@@ -260,6 +260,9 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `extractTarGz` tested (`writeSyncedMarker`, [the
   steps](docs/protocol/files-extract-tar.md#what-the-request-does)). Never widen: This step is approved by the maintainer. Do not
   widen it. Do not build that name from a parameter or from the archive.
+- **The token file of a refused place** (13047a51). A `-serve` whose `CLAUDE_SSH_RUN_FROM` place is refused removes its
+  `-token-file` by one unlink (Windows: DeleteFile), unless it is a folder (`removeRefusedTokenFile`, [the
+  rule](docs/protocol/flags.md#the-place-check-13047a51)). Never widen: remove only the path that `-token-file` names, never a tree, and a link as a link.
 - **The temp-folder test** (Linux and macOS) removes its own `.claude-ssh-<n>` file by one plain `os.Remove`
   ([process.spawn](docs/protocol/process-spawn.md)). Never widen: Do not make or remove
   the file in any folder but the inherited folder or its nearest existing parent.

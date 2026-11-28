@@ -412,7 +412,8 @@ The launcher wait and the self-locate are measured against `5fd08069`, and the o
 against `89cb6289`, on the systems that each rule names.
 
 The launcher is the `-serve` process that the operator starts. It re-execs its own
-binary as the detached daemon and waits for it. On Linux a launcher that cannot
+binary as the detached daemon and waits for it. A refused `CLAUDE_SSH_RUN_FROM` place exits
+`78` first ([the place check](protocol/flags.md#the-place-check-13047a51)). On Linux a launcher that cannot
 read `/proc/self/exe` prints `claustrum: locate self: <error>` and exits `1` before
 any write. macOS and Windows re-exec `os.Args[0]` instead (not measured). On Linux and macOS
 a launcher with `HOME` unset or empty prints `claustrum: cannot resolve home directory: $HOME is not defined`

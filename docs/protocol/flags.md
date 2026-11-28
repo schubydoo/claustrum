@@ -1,13 +1,13 @@
 # Flags and modes of the binary
 
-This page gives the flags of the claustrum binary, except `-cli-dir`, `-cli-version`, `-cli-url`, `-cli-checksum` and `-cli-zst` of `-install`, and the config keys that match them. It then describes the modes `-serve`, `-bridge`, `-stop` and `-version`, and the rules that every mode shares. The modes `-install` and `-probe-cli` are on the [install page](../INSTALL.md).
+This page gives the flags of the claustrum binary, except `-cli-dir`, `-cli-version`, `-cli-url`, `-cli-checksum` and `-cli-zst` of `-install`, and the config keys that match them. It then describes the modes `-serve`, `-bridge`, `-stop`, `-version` and `-check-place`, and the rules that every mode shares. The modes `-install` and `-probe-cli` are on the [install page](../INSTALL.md).
 
 An untagged rule on this page matches build `5fd08069` or an earlier build. A section that names its systems or its build keeps that scope.
 
 ## Daemon lifecycle (flags)
 
-One binary, six modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install` and
-`-probe-cli`. `-install` and `-probe-cli` are on
+One binary, seven modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install`,
+`-probe-cli` and `-check-place`. `-install` and `-probe-cli` are on
 [their own page](../INSTALL.md).
 
 ### Flags and config keys
@@ -276,8 +276,79 @@ claustrum -version                   # → claude-ssh <sha> (via Claustrum <id>,
 
 The desktop client decides whether to upload the reference again from a
 `<bin> --version` output that matches `/claude-ssh\s+(\S+)/`. The override
-changes this stdout only. No JSON-RPC frame changes, and `server.capabilities`
+changes this stdout and the version of [the place check](#the-place-check-13047a51) only. No JSON-RPC frame changes, and `server.capabilities`
 still reports claustrum's own `<id>`.
+
+### The place check (13047a51)
+
+`CLAUDE_SSH_RUN_FROM` names the file that the binary must run from. `-check-place`
+checks that place and does nothing else. A good place gives exit `0` and no output.
+A refused place gives one stderr line and exit `78`:
+
+```text
+claustrum: refusing to run (<kind>) from <path>: <reason>
+```
+
+13047a51 writes `claude-ssh:` first. The line names the cleaned path (measured on Windows,
+from the code elsewhere). An unset or empty
+variable gives the kind `not_asked` and no path:
+
+```text
+claustrum: refusing to run (not_asked): CLAUDE_SSH_RUN_FROM is not set, or is empty, so there is nothing to check.
+```
+
+The other modes check a set place first (an empty value checks nothing: claustrum's own). These rules are measured on Linux. macOS shows
+`-serve`, and Windows shows `-serve`, `-bridge` and `-probe-cli`.
+
+- `-version` and `-stop` alone do not check.
+- These rules are claustrum's own, not measured. `-check-place` wins over every mode but
+  `-version`. A `-stop` with `-serve`, `-bridge` or `-install` checks too. The check comes
+  before the home folder, so a refused place wins over a missing `HOME`.
+- `-probe-cli` prints the line, then `__CLI_BAD__`, and exits `0`.
+- `-serve`, `-bridge`, `-install` and no mode exit `78`. A refused `-serve` makes no socket.
+- A refused `-serve` first removes its `-token-file`, unless it is a folder. A link goes
+  as a link, and its target stays. A FIFO goes. macOS and Windows show a regular file.
+
+On macOS and Windows each set place gets the kind `host`, with the reason
+`Only a Linux host's file can be checked.`
+
+On Linux the check walks from `/` down to the file. The first entry that fails names the
+reason. claustrum tests each entry from the top for `missing`, `cannot_tell`, `owner` and
+`writable`, in that order. Then it tests `another_file`, `mode` and `shape`. The rows show
+`writable` before `shape`, and `another_file` before `shape`:
+
+| kind | the place fails when |
+|---|---|
+| `not_absolute` | the path is not absolute |
+| `missing` | an entry does not exist |
+| `cannot_tell` | an entry is on FUSE or virtiofs |
+| `owner` | root does not own an entry |
+| `writable` | a group or another account can write an entry, also with the sticky bit |
+| `another_file` | the program that runs is not that file |
+| `mode` | the file has a setuid or setgid bit or file capabilities |
+| `shape` | the path does not end in `srv/<version>/server`, or one of those three parts is a link |
+
+The reasons, with `<p>` for the entry, `<uid>` for its owner and `<mode>` for four octal
+digits:
+
+```text
+the helper must be an absolute path, not a bare name resolved via PATH
+`<p>`, on the way to the helper, does not exist
+`<p>` is on FUSE or virtiofs, so who can change it can't be checked. Keep the helper and every folder above it on a local disk, such as ext4 or XFS, or in a container's image.
+`<p>` belongs to the account that signs in (uid <uid>). Root must own the helper and every folder above it.
+`<p>` can be changed by accounts other than its owner (mode <mode>). Remove that write access.
+The program that runs is not the file at that path. If the file was replaced while the helper ran, connect again.
+It must be a regular file that gives the helper no more privilege than the account has: no setuid or setgid bit, no file capabilities (`setcap -r` removes them).
+The path must end in `srv/<version>/server`, this helper's own version, with no link among those three parts.
+```
+
+`<version>` is the version word of [`-version`](#-version): the `version-override` of
+`claustrum.conf`, or claustrum's own version (from the code).
+
+Not measured: the order of `owner` and `writable` on one entry and of `another_file` and
+`mode`, a link above the three parts, a file that is not regular (claustrum: `mode`), and
+an owner that is neither root nor this account. An entry that cannot be read gives
+`cannot_tell` with claustrum's own text. No row shows a time bound, and claustrum sets none.
 
 ### Behavior shared by every mode
 
@@ -288,6 +359,7 @@ still reports claustrum's own `<id>`.
   `connect: no such file or directory`, and `-stop` prints `none`.
 - With no mode given, claustrum prints
   `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required`
+  (it names no `-check-place`: claustrum's own, not measured)
   on stderr and exits `2`, with no usage dump. An *unknown flag* gets the stdlib
   `flag` error plus the usage, and exit `2`.
 
