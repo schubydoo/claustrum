@@ -265,7 +265,8 @@ func TestLimitEndSweepsALeftProcess(t *testing.T) {
 
 // TestLimitEndSocketGoneSkipsTheSweep: at the end at the limit a socket path that is
 // gone or holds a regular file gives the line of 13047a51, and no sweep runs. The left
-// process stays alive (measured on Linux).
+// process stays alive, and the group of the live child still gets its kill (measured on
+// Linux).
 func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -274,6 +275,9 @@ func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, sock := limitLineServer(t)
 			pid := leaveOneProcess(t, s, sock)
+			cl := spawnMarkedSleeper(t, sock, "c1")
+			_ = cl.nc.Close()
+			waitConnsExactly(t, s, 0)
 			if err := os.Remove(sock); err != nil {
 				t.Fatal(err)
 			}
@@ -290,9 +294,15 @@ func TestLimitEndSocketGoneSkipsTheSweep(t *testing.T) {
 			s.closeAll(sock)
 			wantLinesInOrder(t, buf.String(),
 				"[Server] socket path "+sock+" can't be shown to lead to this helper any more, so only its children's own process groups are ended: what has left one may still be running",
-				"[Server] shutdown requested")
+				"[Server] shutdown requested",
+				"[Server] cleanup: closed 0 connection(s), ended 1 child process group(s)")
 			if strings.Contains(buf.String(), "that the children had started and left") {
 				t.Errorf("a sweep ran for a socket path that no longer leads here:\n%s", buf.String())
+			}
+			select {
+			case <-s.procs.Get("c1").DoneForTest():
+			case <-time.After(10 * time.Second):
+				t.Error("the child c1 did not end, but its group gets its kill without the sweep")
 			}
 			if !processLives(pid) {
 				t.Errorf("the left process %d ended, but the socket path no longer leads here", pid)

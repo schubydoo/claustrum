@@ -175,7 +175,8 @@ func hasBothMarks(dir, runDir string) bool {
 // K-1 I). Every other error keeps it alive, and so do a link to anything else and a
 // non-folder at that path (claustrum's own, not measured). The parts above the last
 // name are followed, and an absolute link resolves in the root of this daemon
-// (claustrum's own, not measured).
+// (claustrum's own, not measured). Row K-1 H does not settle whether 13047a51 resolves
+// the link in the root of the daemon or in the root of the process.
 func runDirLeft(dir, runDir string, own fs.FileInfo) bool {
 	at := filepath.Join(dir, "root", runDir)
 	fi, err := os.Lstat(at)

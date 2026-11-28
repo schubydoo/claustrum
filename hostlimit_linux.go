@@ -56,8 +56,8 @@ func readHostLimitFile(path string) ([]byte, error) {
 
 // unreadableFault gives the fault of an open of path that failed with openErr. For a
 // refused open of a regular file the owner and mode rules come first: 13047a51 gives the
-// write text for a root file of mode 0642 (measured on Linux). The folder rule in that case
-// is claustrum's own, not measured. Any other failure gives openErr.
+// write text for a root file of mode 0642 (measured on Linux). The folder rule and the
+// owner rule in that case are claustrum's own, not measured. Any other failure gives openErr.
 func unreadableFault(path string, openErr error) error {
 	if !errors.Is(openErr, fs.ErrPermission) {
 		return openErr
