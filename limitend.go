@@ -1,8 +1,11 @@
 package main
 
 import (
+	"os"
+	"sync/atomic"
 	"time"
 
+	"github.com/schubydoo/claustrum/internal/conn"
 	"github.com/schubydoo/claustrum/internal/leftsweep"
 	"github.com/schubydoo/claustrum/internal/logging"
 )
@@ -22,7 +25,7 @@ import (
 // (orphanCheckInterval), so the exact minute of the end is claustrum's own. The line cuts
 // the time to whole seconds. The clock also counts from the start of the daemon. Only the
 // close of a connection that showed the token starts it again, so a dial with no byte or
-// no token does not. A connected client holds the end off for as long as it stays. The
+// no token does not. Nor does a dial of this daemon to itself. A connected client holds the end off for as long as it stays. The
 // check runs before the idle exit and the orphan checks, and not once the shutdown began. With -keep-children the children stay. A live stream-json child gets the
 // SIGTERM of the shutdown sweep first.
 
@@ -62,8 +65,32 @@ func (s *server) shutdownBegun() bool {
 	}
 }
 
+// limitSelfPID is the pid of this daemon for the self-dial test of the limit clock. A
+// test sets it, so that its own dials count as those of a client. It is atomic, because
+// a connection of an earlier test can still read it.
+var limitSelfPID atomic.Int64
+
+func init() { limitSelfPID.Store(int64(os.Getpid())) }
+
+// dialedBySelf reports whether the peer of c is this daemon itself, such as the
+// self-probe of the orphan checks. The close of such a connection does not start the
+// limit clock again (claustrum's own, not measured). The peer is read by SO_PEERCRED,
+// on Linux only.
+func (s *server) dialedBySelf(c *conn.Conn) bool {
+	if !limitEndRuns {
+		return false
+	}
+	nc := c.NC()
+	if ac := c.AC(); ac != nil {
+		nc = ac.Conn
+	}
+	pid := connPeerPID(nc)
+	return pid != 0 && int64(pid) == limitSelfPID.Load()
+}
+
 // noteAttended restarts the clock of the limit end. newServerOnSocket calls it once,
-// and serveConn calls it at the close of each connection that showed the token.
+// and serveConn calls it at the close of each connection that showed the token and
+// that this daemon did not dial itself.
 func (s *server) noteAttended() { s.lastAttended.Store(int64(monoNow())) }
 
 // sweepAfterLimit ends the processes that the children started and left, after an end

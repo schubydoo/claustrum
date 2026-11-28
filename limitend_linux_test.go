@@ -23,9 +23,31 @@ func limitLineServer(t *testing.T) (*server, string) {
 
 func limitLineServerKeep(t *testing.T, keepChildren bool) (*server, string) {
 	t.Helper()
+	// The dials of the test come from the own pid, so they count as a client here.
+	old := limitSelfPID.Swap(-1)
+	t.Cleanup(func() { limitSelfPID.Store(old) })
 	s, sock := bootLineServer(t, keepChildren)
 	s.hostLimit = hostLimit{path: hostLimitPath, minutes: 15}
 	return s, sock
+}
+
+// TestLimitEndClockSkipsASelfDial: a connection that this daemon dials to itself, such
+// as the orphan self-probe, does not start the clock again, also with the token
+// (claustrum's own, not measured).
+func TestLimitEndClockSkipsASelfDial(t *testing.T) {
+	s, sock := bootLineServer(t, false)
+	s.hostLimit = hostLimit{path: hostLimitPath, minutes: 15}
+	old := int64(monoNow() - time.Hour)
+	s.lastAttended.Store(old)
+	cl := dial(t, sock)
+	if reply := string(cl.call(authed(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))); !strings.Contains(reply, `"result"`) {
+		t.Fatalf("server.ping = %s", reply)
+	}
+	_ = cl.nc.Close()
+	waitConnsExactly(t, s, 0)
+	if got := s.lastAttended.Load(); got != old {
+		t.Errorf("a dial of the daemon to itself started the clock again: %d, want %d", got, old)
+	}
 }
 
 // spawnMarkedSleeper spawns one helper sleeper with both child marks, on its own

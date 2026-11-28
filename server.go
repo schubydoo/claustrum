@@ -924,6 +924,7 @@ var dispatchRequest = func(s *server, c *conn.Conn, raw []byte, req request) *rp
 
 func (s *server) serveConn(c *conn.Conn) {
 	var spoke spokeReader
+	selfDial := s.dialedBySelf(c)
 	defer func() {
 		// Logged before the close, as the reference does (docs/PROTOCOL.md, Transport).
 		// Claustrum's own: a connection that never showed the token
@@ -948,8 +949,9 @@ func (s *server) serveConn(c *conn.Conn) {
 		// The clock of the limit end restarts before the connection leaves the count,
 		// so a check that counts no client sees the new time. Only a connection that
 		// showed the token restarts it, so a dial that sends nothing or no token, such
-		// as that of the host cleaner, does not (claustrum's own, not measured).
-		if c.TokenMark().Load() {
+		// as that of the host cleaner, does not. Nor does a dial of this daemon to itself
+		// (claustrum's own, not measured).
+		if c.TokenMark().Load() && !selfDial {
 			s.noteAttended()
 		}
 		delete(s.conns, c)

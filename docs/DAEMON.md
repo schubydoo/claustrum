@@ -556,7 +556,7 @@ Measured on Linux against `13047a51`:
 [Server] cleanup: ended 3 more process(es) that the children had started and left
 ```
 
-Claustrum's own, not measured: the check runs once a minute, and the line cuts the time to whole seconds. The clock also counts from the start. Only the close of a connection that showed the token starts it again, so a dial with no byte or no token does not. A connected client holds the end off. The check comes before the idle exit and the orphan checks, and not once the shutdown began. A live stream-json child gets the `SIGTERM` of the shutdown sweep first. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
+Claustrum's own, not measured: the check runs once a minute, and the line cuts the time to whole seconds. The clock also counts from the start. Only the close of a connection that showed the token starts it again, so a dial with no byte or no token does not. Nor does a dial of the daemon to itself. A connected client holds the end off. The check comes before the idle exit and the orphan checks, and not once the shutdown began. A live stream-json child gets the `SIGTERM` of the shutdown sweep first. With `-keep-children` the children stay and no sweep runs. A failed sweep logs a WARN line of its own.
 
 ## The left-process sweep (13047a51, Linux)
 
