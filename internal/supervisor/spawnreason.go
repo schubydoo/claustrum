@@ -69,10 +69,8 @@ func ReasonForSpawnError(err error, cwd string) SpawnReason {
 			return SpawnReason{Reason: "cwd_unusable"}
 		}
 		return SpawnReason{Reason: "not_executable"}
-	case startNotExecutable(err):
-		return SpawnReason{Reason: "not_executable"}
-	case startBusy(err):
-		return SpawnReason{Reason: "busy"}
+	case startErrnoReason(err) != "":
+		return SpawnReason{Reason: startErrnoReason(err)}
 	}
 	return SpawnReason{Reason: "other"}
 }

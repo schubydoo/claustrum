@@ -15,10 +15,13 @@ func cwdUnusable(cwd string) bool {
 	return unix.Access(cwd, unix.X_OK) != nil
 }
 
-// startBusy tells if the start failed because the program file is open for a write.
-// Linux measured ETXTBSY for an ELF file and a script. On macOS no row shows this.
-func startBusy(err error) bool { return errors.Is(err, syscall.ETXTBSY) }
-
-// startNotExecutable is false on Linux and macOS. The Linux not_executable rows
-// reach the permission test of ReasonForSpawnError.
-func startNotExecutable(error) bool { return false }
+// startErrnoReason gives busy if the start failed because the program file is open
+// for a write, else "". Linux measured ETXTBSY for an ELF file and a script. On
+// macOS no row shows this. The Linux not_executable rows reach the permission test
+// of ReasonForSpawnError.
+func startErrnoReason(err error) string {
+	if errors.Is(err, syscall.ETXTBSY) {
+		return "busy"
+	}
+	return ""
+}
