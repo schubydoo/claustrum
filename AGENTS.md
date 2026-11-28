@@ -268,6 +268,10 @@ the cli-dir. Do not turn a remove of the prune or the sweeps into a tree delete.
   `forgetLate` takes one bare name by one `os.Root.Remove`. The gone-leader group `SIGKILL` follows the
   wait of [D20](docs/DIVERGENCES.md#d20). Never widen: signal only the group of `rec.Pid` after its identity test.
   Remove one bare name, never a tree.
+- **The left-process sweep** (Linux, 13047a51, `internal/leftsweep`). No path calls `Run` yet. It sends one `SIGKILL` through
+  a pid file descriptor to a process of the own effective uid with both child marks. Its root must show the run folder,
+  no entry there, or another folder with no `children` entry. Never widen: signal only through `procinfo.HoldPIDByFD`,
+  never a group, another uid or the daemon itself. Add no case without a measured row.
 
 #### The private temp folder of a spawn
 
