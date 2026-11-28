@@ -323,8 +323,8 @@ func ownerRefusedRepo(t *testing.T) (parent, repo string) {
 }
 
 // A refused repository of the daemon account below a parent of another account answers
-// not_a_repo (claustrum's own, not measured). In row a2 of 13047a51 on Linux git accepts
-// such a repository. Mutation: test the owner of the parent in repoOfAnotherAccount.
+// not_a_repo (claustrum's own, not measured). On 13047a51 git accepts such a repository
+// (measured on Linux). Mutation: test the owner of the parent in repoOfAnotherAccount.
 func TestCreateKeepsNotARepoForAnOwnRepoBelowAFolderOfAnotherAccount(t *testing.T) {
 	parent, repo := ownerRefusedRepo(t)
 	foreignFolders(t, parent)
@@ -333,7 +333,7 @@ func TestCreateKeepsNotARepoForAnOwnRepoBelowAFolderOfAnotherAccount(t *testing.
 }
 
 // A repository folder of another account whose `.git` is the daemon account's answers
-// repository_of_another_account (13047a51, row a3, measured on Linux). Mutation: test
+// repository_of_another_account (13047a51, measured on Linux). Mutation: test
 // the owner of the `.git` in repoOfAnotherAccount.
 func TestCreateAnswersAnotherAccountForAnOwnGitInAForeignFolder(t *testing.T) {
 	_, repo := ownerRefusedRepo(t)
