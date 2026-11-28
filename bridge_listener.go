@@ -61,7 +61,8 @@ var listenerAnswerOf = listenerAnswer
 
 // judgeSocketOwner runs the listener check on nc, a connection of the
 // bridge, before the bridge sends anything (measured on macOS). A pass writes the line
-// "claustrum: listener check (<answer>)" to stderr. The text of the reference
+// "claustrum: listener check (<answer>)" to the writer stderr, which is io.Discard
+// on a redial. The text of the reference
 // differs only in the program name (13047a51, measured on Linux, macOS and
 // Windows). A strict mode refuses any answer but "on" with the kind too_weak.
 // The check runs after a good dial, so a failed dial still gives "dial server:"

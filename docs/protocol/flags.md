@@ -182,7 +182,7 @@ passes (measured on Linux). A refused listener gets nothing (measured on macOS, 
 Claustrum's own: a failed read of the peer or of the own namespaces answers `unavailable`. The uid test takes the
 effective uid, before the pid test and the namespace reads. So a peer of another uid with pid 0 gets `other_user` and
 exit `79`, also with `1`. Each redial of the adopt frame gets the check before the bridge writes on it, and a pass
-there prints no line.
+there prints no line (claustrum's own, not measured).
 
 ### -stop — ask a running daemon to shut down
 
