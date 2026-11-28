@@ -34,8 +34,10 @@ var (
 // A shutdown that starts in the wait gets the group SIGKILL at once, with no SIGTERM,
 // before the reap (87375cc7, measured on Linux). With -keep-children it sends nothing,
 // so a member is kept (claustrum's own). A leader that the sweep asked to end with
-// SIGTERM gets this normal end (87375cc7, measured on Linux). Only a SIGKILL of the
-// sweep to the group stops it.
+// SIGTERM gets this normal end (87375cc7, measured on Linux). A group SIGKILL of the
+// sweep that landed before this end took p.mu stops it, and the group then gets one more
+// SIGKILL at once, before the reap (killAfterSweepKill). That SIGKILL can also land in the
+// zombie window after the exit. The group then still gets two kills in all.
 func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	if p.cmd == nil || p.cmd.Process == nil {
 		return time.Time{}
@@ -54,8 +56,9 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	}
 	p.mu.Lock()
 	// Under p.mu the sweep either signalled this child already, or finds leaderHeld
-	// (killHeldGroupAtStop). A group that the sweep killed gets no signal below.
+	// (killHeldGroupAtStop). A group that the sweep killed gets only killAfterSweepKill.
 	asked := p.endedByShutdown
+	swept := p.sweepKilledGroup.Load()
 	p.reaped = true
 	p.leaderHeld = true
 	p.mu.Unlock()
@@ -64,6 +67,10 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 		p.leaderHeld = false
 		p.mu.Unlock()
 	}()
+	if swept {
+		p.killAfterSweepKill(pid)
+		return seen
+	}
 	stopped := p.shutdownBegan
 	if asked {
 		stopped = p.sweepKilledGroup.Load
@@ -91,9 +98,29 @@ func (p *Proc) settleLeftGroupHeld(drained <-chan struct{}) time.Time {
 	// SIGKILL, 87375cc7 logs it (measured on Linux). After a client KILL that
 	// ended the wait, the line still goes (claustrum's own, not measured).
 	if termed {
-		logging.Infof("[process.Manager] Process %s exited and its output was not at its end 200ms later: its process group was sent SIGTERM ahead of the SIGKILL", LogID(p.id))
+		logging.Infof("[process.Manager] Process %s exited and its output was not at its end 200ms later: what was left of its process group, if anything, was sent SIGTERM ahead of the SIGKILL", LogID(p.id))
 	}
 	return seen
+}
+
+// killAfterSweepKill sends one group SIGKILL right after the exit of a leader whose group
+// took a SIGKILL of the shutdown before the end took p.mu. That kill can come before the
+// exit or in the zombie window after it. It runs while the end holds the unreaped leader,
+// under p.mu, and sends no SIGTERM. 87375cc7 sends it for a launcher that the sweep
+// killed, and 13047a51 for a launcher and for Claude Code (measured on Linux). 13047a51
+// sends one more also after the 1.5 s SIGKILL of a Claude Code (measured on Linux). That
+// it comes before the reap there, and the kill for a launcher after the 1.5 s SIGKILL,
+// are claustrum's own, not measured. With
+// -keep-children it sends nothing. It logs no line, also after a refused kill
+// (claustrum's own, not measured). It takes the claim, so no later kill of the end goes.
+func (p *Proc) killAfterSweepKill(pid int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.groupKillClaimed.Store(true)
+	if p.keepsGroup || !p.leaderHeld {
+		return
+	}
+	p.heldGroupKilled = signalCheckedGroup(pid, syscall.SIGKILL) == nil
 }
 
 // sendHeldEndKill sends the one group SIGKILL of the end. It runs under p.mu, so a kill

@@ -357,10 +357,14 @@ type ManagedLauncherReply struct {
 //
 //	{"status":"usable","argv":["<path>"],"hostPolicySeen":<bool>}
 //	{"status":"unusable","reason":"<text>","fault":"<fault>","hostPolicySeen":<bool>}
+//
+// Checked names the launcher of the managed-settings folder after an orManagedFolder
+// check of it, last in both shapes (13047a51, measured on Linux).
 type LauncherCheckReply struct {
 	Status         string   `json:"status"`
 	Argv           []string `json:"argv,omitempty"`
 	Reason         string   `json:"reason,omitempty"`
 	Fault          string   `json:"fault,omitempty"`
 	HostPolicySeen bool     `json:"hostPolicySeen"`
+	Checked        string   `json:"checked,omitempty"`
 }

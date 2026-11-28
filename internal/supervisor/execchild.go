@@ -5,7 +5,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/schubydoo/claustrum/internal/sysproc"
 )
+
+// The names of the two identity markers of a child. On Linux and macOS the spawn sets
+// both (execchild_unix.go). On Windows the spawn sets neither and removes both
+// (execchild_other.go).
+const (
+	EnvChildMarker = "CLAUDE_SSH_CHILD"
+	EnvRunDir      = "CLAUDE_SSH_RUN_DIR"
+)
+
+// DropMarkerEnv returns a copy of env with no CLAUDE_SSH_CHILD and no CLAUDE_SSH_RUN_DIR
+// entry. The other entries keep their order. Only the exact names match. A name in
+// another letter case is not measured.
+func DropMarkerEnv(env []string) []string {
+	return sysproc.RemoveEnvKey(sysproc.RemoveEnvKey(env, EnvChildMarker), EnvRunDir)
+}
 
 // ReadExecChildError consumes the exec-child trampoline's exec-error pipe after the
 // wrapped command started: any bytes are the target's exec error (surfaced as the

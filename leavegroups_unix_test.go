@@ -16,10 +16,11 @@ import (
 )
 
 // TestStartLeaveGroups: only the exact value 1 turns the end off, logs the line and
-// takes the feature out. Every value leaves the environment (87375cc7, measured on
-// Linux and macOS). The feature is the last name while the rule is on.
+// takes both features out. Every value leaves the environment (87375cc7, measured on
+// Linux and macOS). The two features are the last names while the rule is on. The line
+// and the second feature are those of 13047a51 (measured on Linux and macOS).
 func TestStartLeaveGroups(t *testing.T) {
-	const line = "[daemon] what an exited launcher leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set"
+	const line = "[daemon] what an exited launcher or Claude Code leaves in its process group lives on: CLAUDE_SSH_LEAVE_GROUPS is set"
 	for _, tc := range []struct {
 		value string
 		set   bool
@@ -50,12 +51,21 @@ func TestStartLeaveGroups(t *testing.T) {
 				t.Errorf("the line appears %d times, leave %v", got, tc.leave)
 			}
 			features := (&server{procs: m}).featuresFor()
-			has := slices.Contains(features, launcherExitFeature)
-			if has == tc.leave {
-				t.Errorf("feature listed = %v with leave %v", has, tc.leave)
+			// 13047a51 lists process.spawn.host_creds_pipe last on Linux, also with
+			// the variable set (measured on Linux).
+			if n := len(hostCredsFeatures); n > 0 {
+				if features[len(features)-1] != hostCredsFeature {
+					t.Errorf("last feature = %q, want %s", features[len(features)-1], hostCredsFeature)
+				}
+				features = features[:len(features)-n]
 			}
-			if !tc.leave && features[len(features)-1] != launcherExitFeature {
-				t.Errorf("last feature = %q", features[len(features)-1])
+			for _, f := range []string{launcherExitFeature, cliExitFeature} {
+				if has := slices.Contains(features, f); has == tc.leave {
+					t.Errorf("%s listed = %v with leave %v", f, has, tc.leave)
+				}
+			}
+			if n := len(features); !tc.leave && (features[n-2] != launcherExitFeature || features[n-1] != cliExitFeature) {
+				t.Errorf("last features = %q", features[n-2:])
 			}
 			// On Linux server.unattended_limit follows server.instance_id (hostLimitFeatures).
 			wantLast := "server.instance_id"

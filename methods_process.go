@@ -102,6 +102,10 @@ type spawnParams struct {
 	// UnattendedSeconds is read for its tests (unattendedValue, unattendedRefused).
 	// An accepted value above 0 arms the end of the child (supervisor.UnheldTTL).
 	UnattendedSeconds json.RawMessage `json:"unattendedSeconds"`
+	// HostCreds is read by hostCredsValue. On Linux its env reaches the child through
+	// a pipe (supervisor.TempRootAsk), and on macOS and Windows a spawn with it is
+	// refused (hostCredsRefusal).
+	HostCreds json.RawMessage `json:"hostCreds"`
 }
 
 // unattendedText is the refusal of an unattendedSeconds that 87375cc7 does not
@@ -162,8 +166,11 @@ func sessionOffTypeRefused(v json.RawMessage) bool {
 }
 
 // launcherShapeText is the refusal of a launcher member that lacks the member it
-// needs (c9125eb8, measured on Linux, macOS and Windows).
-const launcherShapeText = "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli"
+// needs (c9125eb8, measured on Linux, macOS and Windows). 13047a51 ends it with the
+// orManagedFolder sentence in place of the envOnlyIfSent one (measured on Windows).
+// That text on Linux and macOS is claustrum's own, not measured. The tests behind it
+// are those of c9125eb8 (claustrum's own for 13047a51, not measured).
+const launcherShapeText = "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid"
 
 // launcherShapeRefusal is the refusal of the launcher members, or nil. Measured: a
 // launcherCheck with no launcher ({} too), a launcherSuppliesCli with a command or
@@ -331,7 +338,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	// The place of the unattendedSeconds type test right after the decode is
 	// claustrum's own, not measured.
 	unattended, unattendedSet, unattendedOK := unattendedValue(p.UnattendedSeconds)
-	if ptyBare(p.Pty) || ptyMembersBad(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK {
+	// The place of the hostCreds form test here is claustrum's own, not measured.
+	hostEnv, hostSet, hostOK := hostCredsValue(p.HostCreds)
+	if ptyBare(p.Pty) || ptyMembersBad(p.Pty) || sessionOffTypeRefused(p.SessionFoldersOff) || !unattendedOK || !hostOK {
 		return rpc.ErrResult(req.ID, rpc.CodeInvalidParam, "Invalid params")
 	}
 	if p.ID == "" {
@@ -384,6 +393,11 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 	if unattended > 0 {
 		unheld = supervisor.UnheldTTL(unattended)
 	}
+	if hostSet {
+		if bad := hostCredsRefusal(req, &p, hostEnv); bad != nil {
+			return *bad
+		}
+	}
 	var mp *supervisor.Proc
 	var err error
 	if p.GitRead {
@@ -419,7 +433,9 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 			}
 			mp, err = s.procs.SpawnLaunched(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, *p.Launcher, lo, folders, unheld)
 		} else {
-			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, spawnTempRootAsk(&p), folders, unheld)
+			ask := spawnTempRootAsk(&p)
+			ask.HostCreds = hostEnv
+			mp, err = s.procs.SpawnWithTempRoot(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher, linkTTL, ask, folders, unheld)
 		}
 	}
 	if errors.Is(err, supervisor.ErrStartsStopped) {

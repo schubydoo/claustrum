@@ -79,6 +79,10 @@ func procStartTicks(pid int) int64 {
 	return parseStartTicks(string(b))
 }
 
+// ProcStartTicks is procStartTicks for the payload of a hostCreds spawn
+// (internal/supervisor/hostcreds_linux.go).
+func ProcStartTicks(pid int) int64 { return procStartTicks(pid) }
+
 // procUsable reports whether procinfo.Root answers for this process. A /proc with no
 // self/stat counts as no /proc (from the code).
 func procUsable() bool {
