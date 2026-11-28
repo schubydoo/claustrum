@@ -100,8 +100,8 @@ const hostCredsFeature = "process.spawn.host_creds_pipe"
 const hostCredsUnsupportedText = "hostCreds is not supported on this host"
 
 // hostCredsRefusal is the refusal of a spawn with a hostCreds env, or nil. A pty
-// object with no valid key keeps its own text (13047a51, measured on Linux and
-// Windows). Each refusal is -32602 with the reason other and logs its failed-start line
+// object with no key keeps its own text (13047a51, measured on Linux and Windows).
+// Each refusal is -32602 with the reason other and logs its failed-start line
 // (measured on Linux, and on macOS and Windows for hostCredsUnsupportedText). On
 // Windows the test comes before the -32004 launcher refusal (measured). Its place after
 // the id, launcher shape, command, unattendedSeconds and linkBound tests is claustrum's
