@@ -204,7 +204,7 @@ A failure is a JSON-RPC error. There is no `errorCode` member.
 | `-32602` | `Process ID is required` | `id` is absent or empty. |
 | `-32602` | `invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli` | A `launcherCheck` with no `launcher`, a `launcherSuppliesCli` with a `command` or with no `launcherCheck`, or an `envOnlyIfSent` with no `launcherSuppliesCli` (`c9125eb8`). This test comes before `Command is required`. |
 | `-32602` | `Command is required` | `command` is absent or empty, with no `launcherSuppliesCli`. |
-| `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
+| `-32004` | `the managed launcher cannot be used: <reason>` | The launcher checks refuse `launcher`. On Windows every `launcher` gets this, with the reason `a launcher cannot be applied on a Windows host`, except with a [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form. A `launcherSuppliesCli` spawn gets `the launcher cannot be used: <reason>` (`c9125eb8`). |
 | `-32602` | `command must be an absolute path when a launcher is given` | A relative `command` with a `launcher`. |
 | `-32602` | `linkBound cannot be combined with pty or launcher` | With `launcher` (`683cc6a9`). It logs the failed-start line (`4c111e86`, measured on Linux and Windows, and `87375cc7`, measured on Windows). On macOS, and for `87375cc7` on Linux, the line is claustrum's own (not measured). |
 | `-32602` | `this id is in use, or was a terminal's or a link-bound process's: take a fresh one` | A [spent](process-link-bound.md#the-spent-id) `id` (`683cc6a9`). |
@@ -262,7 +262,7 @@ A `-32004` refusal of `c9125eb8` puts `launcherFault` first: `{"launcherFault":"
 | `not_found` | not found | not found, a folder |
 | `not_executable` | mode 0644, a folder | not a program |
 | `busy` | a program open for a write | a program open for a write |
-| `launcher` | missing (`-32004`) | any `launcher` |
+| `launcher` | missing (`-32004`) | any `launcher`, except with a [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form |
 | `other` | a relative `command` with a `launcher` | a keyed `pty` |
 
 `busy` and the Windows `not_executable`: `87375cc7`, measured on Linux and Windows. The test order is not measured.
@@ -491,7 +491,7 @@ claustrum's own: the macOS refusal comes before step 2. With a command, the own-
 === "Windows"
 
     - **Process group and job.** The child gets a new process group and a [job](process-kill.md#windows-child-trees) (`52d82f0a`), since `4c111e86` after a passed [start test](process-kill.md#the-start-test-of-the-jobs).
-    - **`launcher`.** Refused with `-32004`.
+    - **`launcher`.** Refused with `-32004`, except with a [`hostCreds`](#the-hostcreds-member-build-13047a51) of the right form.
     - **`signal` in the `exit` frame.** Never.
 
     These rules are measured on Windows, unless a tag says otherwise.
