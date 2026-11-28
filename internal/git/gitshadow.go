@@ -1295,6 +1295,7 @@ func (req *gitCall) settingsGateRefusal(t gitDirTrust, off rpc.JSONTrueSwitch, d
 // call with --git-dir=.
 func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir string, ask bool) (msg string, noRepo bool) {
 	req.gitRefused, req.gitNotARepo, req.gitDisagreed, req.configRefused, req.goneCopyText = false, false, false, false, ""
+	req.gitOwnerRefused = false
 	// git.info and git.list_branches skip the trust check with a GIT_COMMON_DIR
 	// in the daemon environment (requestGitDirTrust). With a GIT_DIR there too,
 	// the request still gets its copy (daemonCommonDirStays). The gate then
@@ -1337,6 +1338,7 @@ func (req *gitCall) settingsGate(t gitDirTrust, off rpc.JSONTrueSwitch, dir stri
 	if ask && req.shadow.asksGit(t, bool(off)) {
 		if a := req.shadow.askGit(t, dir); a.bad() {
 			req.gitRefused, req.gitNotARepo, req.gitDisagreed = true, a.notARepo, a.disagree
+			req.gitOwnerRefused = a.ownerRefused
 			return a.text, a.noRepo
 		}
 	} else if req.askInGate && req.shadow.asksGit(t, bool(off)) {

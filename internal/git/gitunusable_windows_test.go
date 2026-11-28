@@ -44,8 +44,8 @@ func shareTestLink(t *testing.T, link, target string) {
 // the unusable-git refusal that names its `.git` (87375cc7 and 13047a51, measured on
 // Windows for a repository folder owned by SYSTEM). GIT_TEST_ASSUME_DIFFERENT_OWNER makes
 // git refuse the owner, with no global config that trusts it. With the owner of the
-// daemon account the answer stays not_a_repo. Mutation: answer false in the stand-in of
-// repoOfAnotherAccount.
+// daemon account and no settings copy the answer stays not_a_repo (claustrum's own, not
+// measured). Mutation: answer false in the stand-in of repoOfAnotherAccount.
 func TestCreateRefusesARepositoryOfAnotherOwner(t *testing.T) {
 	requireGit(t)
 	tmp := realTempDir(t)
@@ -65,6 +65,16 @@ func TestCreateRefusesARepositoryOfAnotherOwner(t *testing.T) {
 	if exists(filepath.Join(b, ".claude")) {
 		t.Errorf("the create made %s", filepath.Join(b, ".claude"))
 	}
+}
+
+// TestCreateInShadowRefusesARepositoryOfAnotherOwner runs ownerRefusedRows with the
+// Windows value of ownerRefusalNamesGitDir. The repository belongs to the account,
+// and GIT_TEST_ASSUME_DIFFERENT_OWNER makes git refuse it (87375cc7 and 13047a51,
+// measured on Windows). Mutations: set ownerRefusalNamesGitDir false, or drop the
+// ownerRefusedGitDir step of the create.
+func TestCreateInShadowRefusesARepositoryOfAnotherOwner(t *testing.T) {
+	requireGit(t)
+	ownerRefusedRows(t)
 }
 
 // A folder that the test made belongs to the user of the daemon's token (from the

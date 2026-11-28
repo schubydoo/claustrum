@@ -1437,6 +1437,11 @@ func gitWorktreeCreateLocked(req *gitCall, p *gitParams, repo string, arrival ti
 		if g := shareGitDir(repo); g != "" && req.gitRefused {
 			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: fmt.Sprintf(unusableGitText, g), ErrorCode: "worktree_add_failed"})
 		}
+		// On Windows a `.git` folder whose repository git refuses for its owner
+		// (ownerRefusedGitDir).
+		if g := ownerRefusedGitDir(repo); g != "" && req.gitOwnerRefused {
+			return rpc.OKResult(req.ID, rpc.WorktreeReply{Success: false, Error: fmt.Sprintf(unusableGitText, g), ErrorCode: "worktree_add_failed"})
+		}
 		return notARepoResult(req.ID, repo)
 	}
 	// The create holds the git directory that its gate accepted until it answers

@@ -55,6 +55,11 @@ var repoOfAnotherAccount = func(d string) bool {
 // Windows).
 const anotherAccountCode = false
 
+// ownerRefusalNamesGitDir is true: a create whose repository git refuses for its
+// owner answers unusableGitText (ownerRefusedGitDir, 87375cc7 and 13047a51, measured
+// on Windows). A variable, so that a test on another system can run that step.
+var ownerRefusalNamesGitDir = true
+
 // repoOnShare reports whether repo is a path on a network share, in the form
 // `\\server\share\...` (shareGitDir). A `\\?\` or `\\.\` path is not. A variable,
 // so that a test on another system can run that step.

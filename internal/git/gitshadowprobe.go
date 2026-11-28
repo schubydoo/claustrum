@@ -142,13 +142,15 @@ func (k keptProbe) fresh(root string) bool {
 // text is the text of an error. notARepo is true for a noRepo answer whose first
 // call exited 128 with a text of notARepoStderr (askGit). said is the error
 // output of that first call, through worktreeGitText. disagree is true when
-// text is the "disagree" text (disagreeText).
+// text is the "disagree" text (disagreeText). ownerRefused is true for a noRepo
+// answer whose first call exited 128 with a text of ownerRefusalStderr.
 type repoAnswer struct {
-	noRepo   bool
-	notARepo bool
-	said     string
-	disagree bool
-	text     string
+	noRepo       bool
+	notARepo     bool
+	ownerRefused bool
+	said         string
+	disagree     bool
+	text         string
 }
 
 func (a repoAnswer) bad() bool {
@@ -477,6 +479,7 @@ func (h *ShadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			if exitedWith128(r) {
 				a := secondProbe(folder, root, env, r, inGitDir)
 				a.notARepo = a.noRepo && notARepoStderr(r.stderr, filepath.ToSlash(filepath.Join(root, ".git")))
+				a.ownerRefused = a.noRepo && ownerRefusalStderr(r.stderr)
 				if a.notARepo {
 					a.said = worktreeGitText(r.stderr, nil)
 				}
@@ -657,6 +660,17 @@ func notARepoStderr(stderr, gitDir string) bool {
 	return strings.HasPrefix(stderr, notARepoHead) ||
 		strings.TrimRight(stderr, "\r\n") == "fatal: error reading '"+gitDir+"'"
 }
+
+// ownerRefusalStderr reports whether stderr, the error output of a call about the
+// repository that exited 128, says that git refuses the repository for its owner.
+// The test of that text is claustrum's own, not measured.
+func ownerRefusalStderr(stderr string) bool {
+	return strings.HasPrefix(stderr, ownerRefusalHead)
+}
+
+// ownerRefusalHead starts the error output of git where it refuses a repository of
+// another owner.
+const ownerRefusalHead = "fatal: detected dubious ownership in repository at "
 
 // printedProbePath is the path of git in the "disagree" text: out, the answer
 // as git printed it, when asIs is true or when only the direction of its

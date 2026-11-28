@@ -50,6 +50,10 @@ func repoOfAnotherAccount(d string) bool { return heldByOtherAccount(d) }
 // walkOtherAccount (13047a51, measured on Linux and macOS).
 const anotherAccountCode = true
 
+// ownerRefusalNamesGitDir is false on Linux and macOS: ownerRefusedGitDir has no step
+// there (from the code). A variable, so that a test can run that step.
+var ownerRefusalNamesGitDir = false
+
 // repoOnShare is false on Linux and macOS: shareGitDir has no step there (from the
 // code). A variable, so that a test can run that step.
 var repoOnShare = func(repo string) bool { return false }

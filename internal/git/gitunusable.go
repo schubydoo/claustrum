@@ -85,6 +85,29 @@ func shareGitDir(repo string) string {
 	return ""
 }
 
+// ownerRefusedGitDir is the `.git` folder of the work tree root of repo where
+// ownerRefusalNamesGitDir is true, and "" otherwise. The caller uses it only where
+// git refused that repository for its owner (repoAnswer.ownerRefused). Under
+// GIT_TEST_ASSUME_DIFFERENT_OWNER=1 87375cc7 and 13047a51 then answer
+// unusableGitText for `<baseRepo>\.git` (measured on Windows, elevated daemon). The
+// rows had repositories owned by Administrators or by the account. A baseRepo below
+// the top folder gets the `.git` of the top folder, and a `.git` file keeps
+// not_a_repo, as in shareGitDir (claustrum's own, not measured).
+func ownerRefusedGitDir(repo string) string {
+	if !ownerRefusalNamesGitDir {
+		return ""
+	}
+	root, _ := gitWalkRoot(repo)
+	if root == "" {
+		return ""
+	}
+	g := filepath.Join(root, ".git")
+	if fi, err := lstatPath(g); err != nil || !fi.IsDir() {
+		return ""
+	}
+	return g
+}
+
 // missingShareRepo is the folder that holds the `.git` of shareGitDir when path
 // does not exist. It is "" otherwise, so it is always "" on Linux and macOS.
 func missingShareRepo(path string) string {
