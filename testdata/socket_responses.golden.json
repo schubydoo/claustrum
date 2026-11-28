@@ -97,6 +97,7 @@
         "process.spawn.cli_temp_root_end",
         "launcher.checked_by_handle",
         "launcher.local_kinds_only",
+        "launcher.in_managed_folder",
         "server.instance_id",
         "launcher.exit_ends_group"
       ],

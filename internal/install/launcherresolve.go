@@ -2,6 +2,8 @@ package install
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -18,10 +20,19 @@ import (
 // gets not_absolute (measured on Linux). On Windows each request with a launcherCheck
 // comes here, with or without p, and gets the Windows refusal (4c111e86, measured on
 // Windows).
-func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckReply {
+//
+// orManagedFolder is the orManagedFolder member of the launcherCheck (13047a51). With
+// it, a p of managedFolderNamed that names nothing gets the check of the launcher in
+// the managed-settings folder (checkManagedFolderLauncher).
+func ResolveChecked(p string, chk LauncherCheck, orManagedFolder bool) rpc.LauncherCheckReply {
 	res := rpc.LauncherCheckReply{HostPolicySeen: policyHoldsOtherKey()}
 	fault, reason := LauncherCheckHostRefusal()
-	if fault == "" {
+	switch {
+	case fault != "":
+	case orManagedFolder && p == managedFolderNamed && nothingAt(p):
+		res.Checked = managedFolderLauncher
+		fault, reason = checkManagedFolderLauncher(chk)
+	default:
 		fault, reason = CheckLauncherFile(p, chk)
 	}
 	if fault != "" {
@@ -30,6 +41,36 @@ func ResolveChecked(p string, chk LauncherCheck) rpc.LauncherCheckReply {
 	}
 	res.Status, res.Argv = managedStatusUsable, []string{p}
 	return res
+}
+
+// The two paths of an orManagedFolder check (13047a51, measured on Linux).
+// managedFolderNamed is the path that the request names, and managedFolderLauncher is
+// the launcher in the managed-settings folder. Seams, so a test points them at a temp
+// folder. Production never reassigns them. macOS and Windows refuse before they count.
+var (
+	managedFolderNamed    = "/etc/claude-desktop-ssh/launcher"
+	managedFolderLauncher = "/etc/claude-code/desktop-ssh-launcher"
+)
+
+// nothingAt reports that no entry has the name p. 13047a51 checks the managed folder
+// when p is absent (measured on Linux). A link, a folder or a refused file at p
+// keeps the check on p (claustrum's own, not measured).
+func nothingAt(p string) bool {
+	_, err := os.Lstat(p)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// checkManagedFolderLauncher runs the file check on managedFolderLauncher. Its texts
+// follow 13047a51 (measured on Linux): the writable text of the walk, an owner text of
+// its own for the uid of the login, and for a missing file or a folder the text of
+// the walk with a second sentence. The other faults keep the texts of the walk
+// (claustrum's own, not measured).
+func checkManagedFolderLauncher(chk LauncherCheck) (fault, reason string) {
+	fault, reason = checkLauncherPath(managedFolderLauncher, chk, true)
+	if fault == FaultMissing && reason == managedNotExecutable(managedFolderLauncher) {
+		reason += ". Nothing lies at `" + managedShown(managedFolderNamed) + "` either."
+	}
+	return fault, reason
 }
 
 // policyHoldsOtherKey reports whether a managed settings file holds a key other than

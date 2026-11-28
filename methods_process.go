@@ -162,8 +162,11 @@ func sessionOffTypeRefused(v json.RawMessage) bool {
 }
 
 // launcherShapeText is the refusal of a launcher member that lacks the member it
-// needs (c9125eb8, measured on Linux, macOS and Windows).
-const launcherShapeText = "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; envOnlyIfSent needs launcherSuppliesCli"
+// needs (c9125eb8, measured on Linux, macOS and Windows). 13047a51 ends it with the
+// orManagedFolder sentence in place of the envOnlyIfSent one (measured on Windows).
+// That text on Linux and macOS is claustrum's own, not measured. The tests behind it
+// are those of c9125eb8 (claustrum's own for 13047a51, not measured).
+const launcherShapeText = "invalid process.spawn: launcherCheck needs a launcher; launcherSuppliesCli needs a launcherCheck and an empty command; orManagedFolder can't be set with sha256 or ownerUid"
 
 // launcherShapeRefusal is the refusal of the launcher members, or nil. Measured: a
 // launcherCheck with no launcher ({} too), a launcherSuppliesCli with a command or
