@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -29,7 +30,7 @@ const limitEndRuns = true
 func readHostLimitFile(path string) ([]byte, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC|unix.O_NOCTTY, 0)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
+		return nil, unreadableFault(path, &fs.PathError{Op: "open", Path: path, Err: err})
 	}
 	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
@@ -53,12 +54,31 @@ func readHostLimitFile(path string) ([]byte, error) {
 	return b, nil
 }
 
+// unreadableFault gives the fault of an open of path that failed with openErr. For a
+// refused open of a regular file the owner and mode rules come first: 13047a51 gives the
+// write text for a root file of mode 0642 (measured on Linux). The folder rule in that case
+// is claustrum's own, not measured. Any other failure gives openErr.
+func unreadableFault(path string, openErr error) error {
+	if !errors.Is(openErr, fs.ErrPermission) {
+		return openErr
+	}
+	fi, err := os.Stat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return openErr
+	}
+	var ff *hostFileFault
+	if errors.As(hostFileRules(path, fi), &ff) {
+		return ff
+	}
+	return openErr
+}
+
 // hostLimitOwnUID is the account of the daemon. A test gives it another value.
 var hostLimitOwnUID = os.Getuid
 
-// hostLimitWriteBits are the group and other write bits. 0664 and 0666 on the file and
-// 0777 on its folder break the rule (measured on Linux). An other write bit with no group
-// write bit, such as 0646 or 0757, is claustrum's own, not measured.
+// hostLimitWriteBits are the group and other write bits. 0664, 0666 and 0646 on the file
+// and 0775, 0777, 0757 and 0753 on its folder break the rule (13047a51, measured on Linux).
+// Other modes with one of these bits are claustrum's own, not measured.
 const hostLimitWriteBits = 0o022
 
 // hostFileRules tests the owner and mode of the opened file fi at path and the mode of

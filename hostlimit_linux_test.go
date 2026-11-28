@@ -116,7 +116,7 @@ func otherOwner(t *testing.T) {
 }
 
 // TestHostFileRules: the owner and mode rules of the file and its folder, with the texts of
-// 13047a51 (measured on Linux, rows mode666, mode664, owner_login and dir777).
+// 13047a51 (measured on Linux for the modes and the owner below).
 func TestHostFileRules(t *testing.T) {
 	body := []byte(`{"unattendedLimitMinutes": 30}`)
 	mk := func(t *testing.T, dirMode, fileMode os.FileMode) (string, string) {
@@ -153,7 +153,7 @@ func TestHostFileRules(t *testing.T) {
 		{"mode666", 0o755, 0o666, "0666", false},
 		{"mode664", 0o755, 0o664, "0664", false},
 		{"dir777", 0o777, 0o644, "0777", true},
-		// An other write bit with no group write bit is claustrum's own, not measured.
+		// An other write bit with no group write bit (measured on Linux for 0646 and 0757).
 		{"mode646", 0o755, 0o646, "0646", false},
 		{"dir757", 0o757, 0o644, "0757", true},
 	} {
@@ -170,6 +170,20 @@ func TestHostFileRules(t *testing.T) {
 			}
 		})
 	}
+	// A file that the daemon cannot read and others can change gives the write text, as
+	// a root file of mode 0642 does on 13047a51 (measured on Linux). Mode 0242 makes the
+	// file of the test account unreadable to it.
+	t.Run("unreadable_writable", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root reads a file of any mode")
+		}
+		otherOwner(t)
+		_, p := mk(t, 0o755, 0o242)
+		want := "`" + p + "` can be changed by accounts other than its owner (mode 0242). Remove that write access."
+		if h := readHostLimit(p); h.fault != hostFaultWritable || h.detail != want {
+			t.Errorf("got fault %q, detail %q, want %q", h.fault, h.detail, want)
+		}
+	})
 	t.Run("owner_login", func(t *testing.T) {
 		if os.Geteuid() == 0 {
 			t.Skip("a root file passes the owner rule")

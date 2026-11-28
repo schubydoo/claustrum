@@ -532,10 +532,11 @@ On Linux the daemon reads `/etc/claude-desktop-ssh/settings.json` at its start. 
 - A value that is no whole number of 1 or more makes the file unusable. So does a body that is not one JSON object.
 - A size above 64 KiB, a folder and an open refused for its permission make it unusable too.
 - A file of the daemon account makes it unusable. A root file passes.
-- Modes 0664 and 0666 on the file and 0777 on its folder make it unusable.
+- Modes 0664, 0666 and 0646 on the file and 0775, 0777, 0757 and 0753 on its folder make it unusable. Modes 0604 and 0644 and a folder of 0755 pass.
+- The write bits come before the read access. A root file of mode 0642 gets the `writable` fault.
 - An unknown key sets nothing. A line that sets a limit counts the unknown keys of the top object and names the first.
 
-A file that cannot be used sets no limit, and a Claude Code spawn gets [the `host_settings` refusal](protocol/process-spawn.md#the-host_settings-refusal-build-13047a51). Claustrum's own, not measured: a folder with no file sets no limit, and a FIFO counts as a folder does. A file of another account passes. Any group or other write bit, such as 0646 or 0757, counts. The rules test the target of a link, and only the folder of the file, with no owner test. The first unknown key is the first in the file. The unknown-key tail comes after the clamp tail, and the no-limit line gets it too. Another read error sets no limit and logs one WARN line. A read again after the start is not built.
+A file that cannot be used sets no limit, and a Claude Code spawn gets [the `host_settings` refusal](protocol/process-spawn.md#the-host_settings-refusal-build-13047a51). Claustrum's own, not measured: a folder with no file sets no limit, and a FIFO counts as a folder does. A file of another account passes. Any group or other write bit counts. The rules test the target of a link, and only the folder of the file, with no owner test. The first unknown key is the first in the file. The unknown-key tail comes after the clamp tail, and the no-limit line gets it too. Another read error sets no limit and logs one WARN line. A read again after the start is not built.
 
 The start line follows the open-files line and comes before the banner. It is one of these:
 

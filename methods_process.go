@@ -393,9 +393,10 @@ func (s *server) processSpawn(c *conn.Conn, req *request) rpc.Response {
 		mp, err = s.procs.SpawnGitRead(c, p.ID, p.Args, p.Cwd, gitReadShape(p.Args), s.gitReadStep(p.Cwd, p.Args))
 	} else {
 		// A spawn of a Claude Code shape is refused while the host settings file cannot
-		// be used (13047a51, measured on Linux for a command named ccd-cli, also with
-		// unattendedSeconds). The shape rule is claustrum's own (claudeCodeShape). So is
-		// the place of the test here, and its skip for gitRead, not measured.
+		// be used (13047a51, measured on Linux for ccd-cli, for stream-json args, for a
+		// launcher with them, and after the unattendedSeconds test and before the command
+		// lookup). The rest of claudeCodeShape, the place after linkBound and the skip
+		// for gitRead are claustrum's own, not measured.
 		if bad := s.hostLimit.spawnRefusal(req.ID, &p); bad != nil {
 			return *bad
 		}

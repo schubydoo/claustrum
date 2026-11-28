@@ -92,7 +92,7 @@ func readHostLimitAtStart() hostLimit {
 // is followed (measured on Linux). A folder, and any other kind that is not a regular
 // file, cannot be used (measured on Linux for a folder).
 // An open that is refused for its permission cannot be used (measured on Linux for a root
-// file of mode 0600). Any other read error sets no limit and refuses no spawn, with one
+// file of mode 0600), unless the file breaks a mode rule (unreadableFault). Any other read error sets no limit and refuses no spawn, with one
 // WARN line (claustrum's own, not measured). A broken owner or mode rule cannot be used
 // (hostFileRules).
 func readHostLimit(path string) hostLimit {
