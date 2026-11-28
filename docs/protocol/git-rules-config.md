@@ -164,7 +164,8 @@ listing.
 A folder with no repository keeps its "not a repository" answers, and the daemon reads
 no config there. That holds for a `HEAD` that is no ref and no object id, also with
 format version `2`. It also holds for a repository of another owner with no
-`safe.directory` (also macOS and Windows). Such an answer is not kept, so a new
+`safe.directory` (also macOS and Windows), except for [the
+create](git-worktree-create.md#response). Such an answer is not kept, so a new
 `safe.directory` line counts at the next request (also macOS). After a change of the
 owner inside the 5 seconds of a kept good answer, a request answers normally. The
 first request after that time answers "not a repository".
